@@ -1,24 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const CouponController = require('../controllers/couponController');
-const { validate, schemas } = require('../utils/validation');
+const couponController = require('../controllers/couponController');
 
-// Get available coupons
-router.get('/', validate(schemas.getCoupons), CouponController.getAvailableCoupons);
-
-// Get coupon by code
-router.get('/:code', CouponController.getCouponByCode);
+// Admin routes (create, update, delete)
+router.post('/', couponController.createCoupon);
+router.get('/', couponController.getCoupons);
+router.get('/:id', couponController.getCouponById);
+router.put('/:id', couponController.updateCoupon);
+router.delete('/:id', couponController.deleteCoupon);
 
 // Generate QR code for coupon
-router.get('/:code/qr', CouponController.generateQRCode);
+router.get('/:id/qr', couponController.generateQRCode);
 
-// Validate coupon for order
-router.get('/:code/validate', validate(schemas.validateCoupon), CouponController.validateCoupon);
-
-// Redeem coupon
-router.post('/:code/redeem', validate(schemas.redeemCoupon), CouponController.redeemCoupon);
-
-// Get usage history
-router.get('/usage/history', validate(schemas.getUsageHistory), CouponController.getCouponUsageHistory);
+// Distribute coupon to users
+router.post('/:id/distribute', couponController.distributeCoupon);
 
 module.exports = router;
