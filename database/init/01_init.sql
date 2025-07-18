@@ -22,7 +22,7 @@ CREATE OR REPLACE FUNCTION health_check()
 RETURNS TABLE(
     status TEXT,
     database_name TEXT,
-    current_time TIMESTAMP WITH TIME ZONE,
+    check_time TIMESTAMP WITH TIME ZONE,
     total_users BIGINT,
     total_bookings BIGINT
 ) AS $$
