@@ -3,113 +3,58 @@ global:
   evaluation_interval: 15s
 
 rule_files:
-  - "loyalty_app_rules.yml"
-
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets:
-          # - alertmanager:9093
+  # - "first_rules.yml"
+  # - "second_rules.yml"
 
 scrape_configs:
-  # Prometheus itself
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
 
-  # Kong API Gateway
-  - job_name: 'kong'
-    static_configs:
-      - targets: ['api-gateway:8001']
-    metrics_path: '/metrics'
-    scrape_interval: 30s
-
-  # User Service
   - job_name: 'user-service'
     static_configs:
       - targets: ['user-service:3000']
-    metrics_path: '/metrics'
     scrape_interval: 30s
+    metrics_path: /health
 
-  # Loyalty Service
   - job_name: 'loyalty-service'
     static_configs:
       - targets: ['loyalty-service:3000']
-    metrics_path: '/metrics'
     scrape_interval: 30s
+    metrics_path: /health
 
-  # Campaign Service
   - job_name: 'campaign-service'
     static_configs:
       - targets: ['campaign-service:3000']
-    metrics_path: '/metrics'
     scrape_interval: 30s
+    metrics_path: /health
 
-  # Survey Service
   - job_name: 'survey-service'
     static_configs:
       - targets: ['survey-service:3000']
-    metrics_path: '/metrics'
     scrape_interval: 30s
+    metrics_path: /health
 
-  # Coupon Service
   - job_name: 'coupon-service'
     static_configs:
       - targets: ['coupon-service:3000']
-    metrics_path: '/metrics'
     scrape_interval: 30s
+    metrics_path: /health
 
-  # Notification Service
   - job_name: 'notification-service'
     static_configs:
       - targets: ['notification-service:3000']
-    metrics_path: '/metrics'
     scrape_interval: 30s
+    metrics_path: /health
 
-  # Analytics Service
   - job_name: 'analytics-service'
     static_configs:
       - targets: ['analytics-service:3000']
-    metrics_path: '/metrics'
     scrape_interval: 30s
+    metrics_path: /health
 
-  # Integration Service
   - job_name: 'integration-service'
     static_configs:
       - targets: ['integration-service:3000']
-    metrics_path: '/metrics'
     scrape_interval: 30s
-
-  # PWA Frontend
-  - job_name: 'pwa-frontend'
-    static_configs:
-      - targets: ['pwa-frontend:3000']
-    metrics_path: '/metrics'
-    scrape_interval: 60s
-
-  # PostgreSQL
-  - job_name: 'postgres'
-    static_configs:
-      - targets: ['postgres:5432']
-    metrics_path: '/metrics'
-    scrape_interval: 30s
-
-  # Redis
-  - job_name: 'redis'
-    static_configs:
-      - targets: ['redis:6379']
-    metrics_path: '/metrics'
-    scrape_interval: 30s
-
-  # RabbitMQ
-  - job_name: 'rabbitmq'
-    static_configs:
-      - targets: ['rabbitmq:15692']
-    metrics_path: '/metrics'
-    scrape_interval: 30s
-
-  # Node Exporter (if added for system metrics)
-  - job_name: 'node-exporter'
-    static_configs:
-      - targets: ['node-exporter:9100']
-    scrape_interval: 30s
+    metrics_path: /health
