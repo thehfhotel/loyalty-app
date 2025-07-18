@@ -159,6 +159,31 @@ class PointTransaction {
     return result.rows[0];
   }
 
+  static async getExpiringPoints(userId, days = 30) {
+    const query = `
+      SELECT 
+        SUM(points_amount) as expiring_points_total,
+        COUNT(*) as expiring_transactions,
+        json_agg(
+          json_build_object(
+            'id', id,
+            'points_amount', points_amount,
+            'description', description,
+            'created_at', created_at,
+            'expires_at', expires_at
+          )
+        ) as expiring_transactions_detail
+      FROM point_transactions
+      WHERE user_id = $1 
+      AND transaction_type = 'earned'
+      AND expires_at BETWEEN NOW() AND NOW() + INTERVAL '$2 days'
+      AND expires_at IS NOT NULL
+    `;
+
+    const result = await db.query(query, [userId, days]);
+    return result.rows[0];
+  }
+
   static async checkTierUpgrade(client, userId, totalPoints) {
     const tierQuery = `
       SELECT tier_name

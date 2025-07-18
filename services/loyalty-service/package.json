@@ -23,7 +23,8 @@
     "amqplib": "^0.10.3",
     "uuid": "^9.0.1",
     "moment": "^2.29.4",
-    "decimal.js": "^10.4.3"
+    "decimal.js": "^10.4.3",
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.2",

@@ -16,7 +16,7 @@ const schemas = {
   }),
 
   redeemReward: Joi.object({
-    rewardId: Joi.string().uuid().required()
+    quantity: Joi.number().integer().min(1).max(10).default(1)
   }),
 
   getTransactions: Joi.object({
