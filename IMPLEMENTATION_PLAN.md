@@ -1,7 +1,7 @@
 # Hotel Loyalty App Implementation Plan
 
 **Generated**: 2025-07-18  
-**Version**: 1.1  
+**Version**: 1.2  
 **Status**: Phase 1.1 Complete - Infrastructure Ready  
 **Strategy**: Systematic full-stack implementation with parallel development streams  
 
@@ -9,9 +9,10 @@
 
 ### Executive Summary
 - **Project**: Hotel Loyalty Progressive Web Application (PWA)
-- **Timeline**: 8-10 weeks (3 phases)
-- **Team Size**: 6-8 developers across specializations
-- **Architecture**: Full-stack PWA with microservices backend
+- **Timeline**: 8-10 weeks (4 phases)
+- **Team Size**: 4-6 developers across specializations
+- **Architecture**: Full-stack PWA with containerized backend
+- **Deployment**: Single-server Docker Compose + Cloudflare Tunnel
 
 ### Auto-Activated Personas
 - 🏗️ **architect**: System design and technology decisions
@@ -317,20 +318,25 @@
 
 ### 4.3 Production Deployment
 **Persona**: 🔧 backend + 🛡️ security  
-**Estimated Time**: 28 hours  
+**Estimated Time**: 24 hours  
 **Status**: 📋 Pending
 
-#### Tasks
-- [ ] Production Setup (16h)
-  - Cloud infrastructure setup
-  - SSL/TLS configuration
-  - Domain & DNS setup
-  - CDN configuration
-- [ ] Monitoring & Logging (12h)
-  - Application monitoring
-  - Error tracking
+#### Single-Server Docker Deployment (24h)
+- [ ] Production Docker Configuration (8h)
+  - Multi-stage production builds
+  - Environment variables setup
+  - Volume mounting for data persistence
+  - Health checks and restart policies
+- [ ] Cloudflare Tunnel Setup (8h)
+  - Cloudflare tunnel configuration
+  - SSL/TLS termination at Cloudflare
+  - Domain mapping and DNS configuration
+  - Security headers and protection rules
+- [ ] Monitoring & Logging (8h)
+  - Application monitoring with Docker logs
+  - Error tracking and alerting
   - Performance monitoring
-  - Security monitoring
+  - Backup and recovery procedures
 
 ## Parallel Work Streams
 
@@ -384,12 +390,19 @@
 - **Status**: 📋 Requires attention
 
 ### Medium Risk Items
-⚠️ **Performance at Scale**
+⚠️ **Single-Server Deployment Risks**
 - **Risk Level**: Medium
-- **Impact**: User experience degradation
-- **Mitigation**: Load testing, database optimization
-- **Contingency**: Cloud auto-scaling, CDN implementation
-- **Status**: 📋 Monitor during development
+- **Impact**: Service availability and performance
+- **Mitigation**: Docker health checks, automated restarts, comprehensive monitoring
+- **Contingency**: Cloud migration plan, load balancer setup
+- **Status**: 📋 Monitor during deployment
+
+⚠️ **Cloudflare Tunnel Dependency**
+- **Risk Level**: Medium
+- **Impact**: External access to application
+- **Mitigation**: Multiple tunnel configurations, backup domain setup
+- **Contingency**: Direct IP access, alternative CDN provider
+- **Status**: 📋 Test thoroughly
 
 ⚠️ **Data Privacy Compliance**
 - **Risk Level**: Medium
@@ -412,19 +425,58 @@
 - **Loyalty Impact**: >25% increase in repeat bookings
 - **Revenue**: >15% increase from loyalty program
 
+## Deployment Architecture
+
+### Single-Server Docker Compose Deployment
+
+**Infrastructure Overview**:
+- **Single Server**: Docker Compose orchestration on dedicated server
+- **Public Access**: Cloudflare tunnel for secure external connectivity
+- **SSL/TLS**: Managed by Cloudflare with automatic certificate provisioning
+- **Domain**: Custom domain routed through Cloudflare DNS
+- **Backup**: Automated database and file backups to cloud storage
+
+**Key Components**:
+- **Nginx**: Reverse proxy and static file serving
+- **PostgreSQL**: Primary database with persistence
+- **Redis**: Session storage and caching
+- **Backend**: Node.js API server
+- **Frontend**: React PWA served by Nginx
+
+**Cloudflare Tunnel Configuration**:
+```yaml
+tunnel_config:
+  ingress:
+    - hostname: loyalty.yourdomain.com
+      service: http://localhost:80
+    - service: http_status:404
+```
+
+**Security Features**:
+- Zero-trust network access through Cloudflare tunnel
+- Automatic DDoS protection and rate limiting
+- Web Application Firewall (WAF) rules
+- SSL/TLS termination at Cloudflare edge
+
+**Monitoring & Maintenance**:
+- Docker health checks and automatic restarts
+- Automated backup scheduling
+- Log aggregation and monitoring
+- Performance metrics collection
+
 ## Resource Allocation
 
-### Total Estimated Hours: 612 hours
+### Total Estimated Hours: 584 hours
 - **Phase 1**: 108 hours (Foundation)
 - **Phase 2**: 200 hours (Core Features)
 - **Phase 3**: 124 hours (Marketing & Advanced)
-- **Phase 4**: 120 hours (Testing & Deployment)
-- **Buffer**: 60 hours (10% contingency)
+- **Phase 4**: 96 hours (Testing & Deployment - Reduced by 24h)
+- **Buffer**: 56 hours (10% contingency)
 
 ### Team Composition
 - **Backend Developers**: 2 FTE
 - **Frontend Developers**: 2 FTE
-- **DevOps Engineer**: 1 FTE
+- **DevOps Engineer**: 0.5 FTE (Reduced from 1 FTE)
 - **Security Specialist**: 0.5 FTE
 - **UI/UX Designer**: 0.5 FTE
 - **Project Manager**: 0.5 FTE
@@ -490,7 +542,55 @@
 
 ---
 
+## PRD Feature Mapping
+
+### Core Features Alignment
+✅ **Customer Profiles / CRM (Section 3.1)**
+- **Implementation**: Phase 2.1 Customer Profile Management
+- **Features**: Registration/login, profile management, admin view, PMS integration
+- **Status**: Ready for Phase 2.1 implementation
+
+✅ **Survey Management (Section 3.2)**
+- **Implementation**: Phase 2.4 Survey Management
+- **Features**: Survey creation, targeted distribution, in-app notifications, analytics
+- **Status**: Fully mapped to implementation plan
+
+✅ **Marketing Campaign Management (Section 3.3)**
+- **Implementation**: Phase 3.1 Marketing Campaign Management
+- **Features**: Campaign creation, segmentation, push notifications, scheduling
+- **Status**: Aligned with PWA push notification strategy
+
+✅ **Coupon Management (Section 3.4)**
+- **Implementation**: Phase 2.3 Coupon Management System
+- **Features**: Coupon creation, QR codes, in-app wallet, expiration notifications
+- **Status**: QR code scanning integrated with PWA camera access
+
+✅ **Loyalty Points & Tiers (Section 3.5)**
+- **Implementation**: Phase 2.2 Loyalty Points & Tiers System
+- **Features**: Tier definition, points rules, redemption, automatic progression
+- **Status**: Complete backend engine with frontend dashboard
+
+### Technical Requirements Compliance
+✅ **PWA Platform (Section 4)**
+- **Service Workers**: Implemented in Phase 1.3
+- **Offline Capability**: Core features accessible offline
+- **Push Notifications**: Firebase integration with Service Workers
+- **Responsive Design**: Mobile-first approach with Tailwind CSS
+- **Add to Home Screen**: Web manifest and PWA configuration
+
+✅ **Security & Compliance (Section 4)**
+- **Data Privacy**: GDPR/CCPA compliance built into data models
+- **Authentication**: JWT + OAuth2 implementation
+- **API Security**: Rate limiting, validation, encryption
+- **Scalability**: Docker-based architecture with optimization
+
 ## Implementation History
+
+### Version 1.2 - 2025-07-18
+- **Deployment Update**: Single-server Docker Compose with Cloudflare tunnel
+- **Resource Optimization**: Reduced deployment complexity and resource allocation
+- **PRD Alignment**: Complete feature mapping validation
+- **Infrastructure**: Simplified deployment architecture with maintained security
 
 ### Version 1.1 - 2025-07-18
 - **Phase 1.1 Complete**: Infrastructure and foundation setup
