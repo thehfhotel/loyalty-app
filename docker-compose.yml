@@ -35,8 +35,8 @@ services:
     ports:
       - "3011:3000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db?sslmode=disable
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=your-jwt-secret-key
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
@@ -55,8 +55,8 @@ services:
     ports:
       - "3012:3000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db?sslmode=disable
       - REDIS_URL=redis://redis:6379
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
@@ -74,8 +74,8 @@ services:
     ports:
       - "3013:3000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db?sslmode=disable
       - REDIS_URL=redis://redis:6379
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
       - FIREBASE_PROJECT_ID=your-firebase-project-id
@@ -95,8 +95,8 @@ services:
     ports:
       - "3014:3000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db?sslmode=disable
       - REDIS_URL=redis://redis:6379
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
@@ -114,8 +114,8 @@ services:
     ports:
       - "3015:3000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db?sslmode=disable
       - REDIS_URL=redis://redis:6379
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     depends_on:
@@ -133,8 +133,8 @@ services:
     ports:
       - "3016:3000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db?sslmode=disable
       - REDIS_URL=redis://redis:6379
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
       - FIREBASE_PROJECT_ID=your-firebase-project-id
@@ -158,8 +158,8 @@ services:
     ports:
       - "3017:3000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db?sslmode=disable
       - REDIS_URL=redis://redis:6379
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
       - GOOGLE_ANALYTICS_ID=your-ga-id
@@ -178,8 +178,8 @@ services:
     ports:
       - "3018:3000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://loyalty_user:password@postgres:5432/loyalty_db?sslmode=disable
       - REDIS_URL=redis://redis:6379
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
       - PMS_API_URL=https://your-pms-api.com
@@ -194,15 +194,17 @@ services:
 
   # PWA Frontend
   pwa-frontend:
-    build: ./frontend
+    build: 
+      context: ./frontend
+      args:
+        REACT_APP_API_URL: http://192.168.100.228:3011
+        REACT_APP_FIREBASE_CONFIG: your-firebase-config
+        REACT_APP_DOMAIN: saichon.com
     container_name: loyalty-pwa-frontend
     ports:
       - "3010:3000"
     environment:
-      - NODE_ENV=production
-      - REACT_APP_API_URL=https://api.saichon.com
-      - REACT_APP_FIREBASE_CONFIG=your-firebase-config
-      - REACT_APP_DOMAIN=saichon.com
+      - NODE_ENV=development
     depends_on:
       - api-gateway
     networks:
@@ -214,7 +216,7 @@ services:
     image: postgres:15
     container_name: loyalty-postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       - POSTGRES_DB=loyalty_db
       - POSTGRES_USER=loyalty_user
@@ -223,6 +225,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init:/docker-entrypoint-initdb.d
+      - ./database/schemas:/docker-entrypoint-initdb.d/schemas
     networks:
       - loyalty-network
     restart: unless-stopped
