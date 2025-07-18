@@ -1,0 +1,22 @@
+{
+  "name": "loyalty-app-tests",
+  "version": "1.0.0",
+  "description": "End-to-end tests for the Hotel Loyalty App",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:registration": "playwright test tests/registration.spec.js",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "install-browsers": "playwright install"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.40.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.40.0"
+  },
+  "keywords": ["e2e", "testing", "playwright", "loyalty", "hotel"],
+  "author": "Hotel Loyalty App Team",
+  "license": "MIT"
+}
