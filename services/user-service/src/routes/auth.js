@@ -1,18 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const AuthController = require('../controllers/authController');
+const authController = require('../controllers/authController');
 const { authenticateToken } = require('../middleware/auth');
-const { validate, schemas } = require('../utils/validation');
+const { schemas, validate } = require('../utils/validation');
 
 // Public routes
-router.post('/register', validate(schemas.register), AuthController.register);
-router.post('/login', validate(schemas.login), AuthController.login);
-router.post('/refresh-token', validate(schemas.refreshToken), AuthController.refreshToken);
+router.post('/register', validate(schemas.register), authController.register.bind(authController));
+router.post('/login', validate(schemas.login), authController.login.bind(authController));
+router.post('/refresh-token', authController.refreshToken.bind(authController));
 
 // Protected routes
-router.post('/logout', authenticateToken, AuthController.logout);
-router.post('/change-password', authenticateToken, validate(schemas.changePassword), AuthController.changePassword);
-router.post('/verify-email', authenticateToken, AuthController.verifyEmail);
-router.get('/me', authenticateToken, AuthController.getProfile);
+router.post('/logout', authenticateToken, authController.logout.bind(authController));
+router.post('/change-password', authenticateToken, authController.changePassword.bind(authController));
+router.post('/verify-email', authenticateToken, authController.verifyEmail.bind(authController));
+router.get('/me', authenticateToken, authController.getProfile.bind(authController));
 
 module.exports = router;

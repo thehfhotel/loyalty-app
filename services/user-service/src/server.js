@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 3000;
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3010'],
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3010', 'http://192.168.100.228:3010'],
   credentials: true
 }));
 

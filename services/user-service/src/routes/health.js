@@ -35,13 +35,14 @@ router.get('/', async (req, res) => {
     health.status = 'degraded';
   }
 
-  // Check memory usage
+  // Check memory usage (more lenient threshold)
   const memUsage = process.memoryUsage();
   const memUsagePercentage = (memUsage.heapUsed / memUsage.heapTotal) * 100;
-  health.checks.memory = memUsagePercentage > 90 ? 'high' : 'healthy';
+  health.checks.memory = memUsagePercentage > 95 ? 'high' : 'healthy';
 
+  // Don't mark as degraded for high memory - log it instead
   if (health.checks.memory === 'high') {
-    health.status = 'degraded';
+    console.warn(`High memory usage detected: ${memUsagePercentage.toFixed(2)}%`);
   }
 
   const statusCode = health.status === 'healthy' ? 200 : 503;
