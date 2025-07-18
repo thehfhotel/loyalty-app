@@ -1,46 +1,41 @@
-FROM node:18-alpine
+# Frontend Dockerfile
+FROM node:18-alpine AS base
 
-# Set working directory
+# Install dependencies only when needed
+FROM base AS deps
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY package.json package-lock.json* ./
+COPY shared/package.json ./shared/
+RUN npm ci
 
-# Install dependencies
-RUN npm install --only=production
+# Rebuild the source code only when needed
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
 
-# Copy source code
-COPY public/ ./public/
-COPY src/ ./src/
+# Build shared package first
+RUN cd shared && npm run build
 
-# Accept build arguments for React environment variables
-ARG REACT_APP_API_URL
-ARG REACT_APP_FIREBASE_CONFIG
-ARG REACT_APP_DOMAIN
-
-# Set environment variables for the build process
-ENV REACT_APP_API_URL=$REACT_APP_API_URL
-ENV REACT_APP_FIREBASE_CONFIG=$REACT_APP_FIREBASE_CONFIG
-ENV REACT_APP_DOMAIN=$REACT_APP_DOMAIN
-
-# Build the application
+# Build frontend
 RUN npm run build
 
-# Install serve to serve the built application
-RUN npm install -g serve
+# Production image, copy all the files and run
+FROM nginx:alpine AS runner
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
 
-# Change ownership of app directory
-RUN chown -R nodejs:nodejs /app
+# Copy built app
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Switch to non-root user
-USER nodejs
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost/ || exit 1
 
-# Expose port 3000
-EXPOSE 3000
+EXPOSE 80
 
-# Start the application
-CMD ["serve", "-s", "build", "-l", "3000"]
+CMD ["nginx", "-g", "daemon off;"]
