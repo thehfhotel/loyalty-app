@@ -19,10 +19,11 @@ db.on('connect', () => {
 });
 
 // Connect to database
-export async function connectDatabase(): Promise<void> {
+export async function connectDatabase(): Promise<{ pool: Pool }> {
   try {
     await db.query('SELECT NOW()');
     logger.info('Connected to database successfully');
+    return { pool: db };
   } catch (error) {
     logger.error('Failed to connect to database:', error);
     throw error;

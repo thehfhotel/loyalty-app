@@ -12,6 +12,7 @@ const ProfilePage = React.lazy(() => import('./pages/profile/ProfilePage'));
 const LoyaltyPage = React.lazy(() => import('./pages/loyalty/LoyaltyPage'));
 const CouponsPage = React.lazy(() => import('./pages/coupons/CouponsPage'));
 const SurveysPage = React.lazy(() => import('./pages/surveys/SurveysPage'));
+const TakeSurveyPage = React.lazy(() => import('./pages/surveys/TakeSurveyPage'));
 
 // Layout components
 import { AuthLayout } from './layouts/AuthLayout';
@@ -80,6 +81,7 @@ const App: React.FC = () => {
             <Route path="loyalty" element={<LoyaltyPage />} />
             <Route path="coupons" element={<CouponsPage />} />
             <Route path="surveys" element={<SurveysPage />} />
+            <Route path="surveys/take/:responseId" element={<TakeSurveyPage />} />
           </Route>
           
           {/* Catch all route */}

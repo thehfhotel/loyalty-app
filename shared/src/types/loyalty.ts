@@ -1,72 +1,24 @@
 import { z } from 'zod';
 
-// Loyalty Tier Types
-export const TierSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string(),
-  description: z.string(),
-  minPoints: z.number().min(0),
-  maxPoints: z.number().optional(),
-  benefits: z.array(z.string()),
-  color: z.string(),
-  icon: z.string(),
-  isActive: z.boolean().default(true),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-});
-
-export type Tier = z.infer<typeof TierSchema>;
-
-// Customer Profile Types
-export const CustomerProfileSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
-  tierId: z.string().uuid(),
-  pointsBalance: z.number().min(0).default(0),
-  lifetimePoints: z.number().min(0).default(0),
-  totalSpent: z.number().min(0).default(0),
-  stayCount: z.number().min(0).default(0),
-  preferences: z.object({
-    roomType: z.string().optional(),
-    bedType: z.string().optional(),
-    smokingPreference: z.boolean().optional(),
-    specialRequests: z.array(z.string()).default([]),
-  }).optional(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-});
-
-export type CustomerProfile = z.infer<typeof CustomerProfileSchema>;
-
-// Points Transaction Types
-export const PointsTransactionSchema = z.object({
-  id: z.string().uuid(),
-  customerProfileId: z.string().uuid(),
-  type: z.enum(['earned', 'redeemed', 'expired', 'bonus']),
-  amount: z.number(),
-  description: z.string(),
-  referenceId: z.string().optional(),
-  referenceType: z.enum(['stay', 'purchase', 'survey', 'social', 'promotion']).optional(),
-  expiresAt: z.date().optional(),
-  createdAt: z.date(),
-});
-
-export type PointsTransaction = z.infer<typeof PointsTransactionSchema>;
-
-// Points Earning Rules
+// Points Rule Types
 export const PointsRuleSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
-  description: z.string(),
-  type: z.enum(['spend', 'stay', 'activity']),
+  description: z.string().optional(),
+  type: z.enum([
+    'booking',
+    'spending',
+    'referral',
+    'review',
+    'survey',
+    'birthday',
+    'anniversary',
+    'promotion',
+    'manual'
+  ]),
   pointsPerUnit: z.number().min(0),
-  multiplier: z.number().min(1).default(1),
-  conditions: z.object({
-    minAmount: z.number().optional(),
-    maxAmount: z.number().optional(),
-    tierIds: z.array(z.string().uuid()).optional(),
-    categories: z.array(z.string()).optional(),
-  }).optional(),
+  multiplier: z.number().min(0).default(1),
+  conditions: z.record(z.unknown()).default({}),
   isActive: z.boolean().default(true),
   validFrom: z.date().optional(),
   validTo: z.date().optional(),
@@ -76,17 +28,53 @@ export const PointsRuleSchema = z.object({
 
 export type PointsRule = z.infer<typeof PointsRuleSchema>;
 
-// Redemption Options
+// Points Transaction Types
+export const PointsTransactionSchema = z.object({
+  id: z.string().uuid(),
+  customerProfileId: z.string().uuid(),
+  type: z.enum(['earned', 'redeemed', 'expired', 'adjusted', 'bonus']),
+  amount: z.number().int(),
+  description: z.string(),
+  referenceId: z.string().optional(),
+  referenceType: z.string().optional(),
+  expiresAt: z.date().optional(),
+  createdAt: z.date(),
+});
+
+export type PointsTransaction = z.infer<typeof PointsTransactionSchema>;
+
+// Points Earning Request
+export const PointsEarningRequestSchema = z.object({
+  customerProfileId: z.string().uuid(),
+  ruleType: z.string(),
+  amount: z.number().min(0),
+  referenceId: z.string().optional(),
+  referenceType: z.string().optional(),
+  metadata: z.record(z.unknown()).default({}),
+});
+
+export type PointsEarningRequest = z.infer<typeof PointsEarningRequestSchema>;
+
+// Redemption Option Types
 export const RedemptionOptionSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
-  description: z.string(),
-  category: z.enum(['room', 'dining', 'spa', 'experience', 'merchandise']),
-  pointsCost: z.number().min(1),
-  cashValue: z.number().min(0),
-  availability: z.number().optional(),
+  description: z.string().optional(),
+  category: z.enum([
+    'room_upgrade',
+    'dining',
+    'spa',
+    'activities',
+    'merchandise',
+    'cash_back',
+    'experiences',
+    'travel',
+  ]),
+  pointsCost: z.number().int().min(1),
+  cashValue: z.number().min(0).default(0),
+  availability: z.number().int().optional(),
   terms: z.string().optional(),
-  imageUrl: z.string().optional(),
+  imageUrl: z.string().url().optional(),
   isActive: z.boolean().default(true),
   validFrom: z.date().optional(),
   validTo: z.date().optional(),
@@ -96,13 +84,13 @@ export const RedemptionOptionSchema = z.object({
 
 export type RedemptionOption = z.infer<typeof RedemptionOptionSchema>;
 
-// Redemption Request
+// Redemption Request Types
 export const RedemptionRequestSchema = z.object({
   id: z.string().uuid(),
   customerProfileId: z.string().uuid(),
   redemptionOptionId: z.string().uuid(),
-  pointsUsed: z.number().min(1),
-  status: z.enum(['pending', 'approved', 'rejected', 'used']),
+  pointsUsed: z.number().int().min(1),
+  status: z.enum(['pending', 'approved', 'fulfilled', 'cancelled']).default('pending'),
   notes: z.string().optional(),
   approvedBy: z.string().uuid().optional(),
   approvedAt: z.date().optional(),
@@ -112,3 +100,108 @@ export const RedemptionRequestSchema = z.object({
 });
 
 export type RedemptionRequest = z.infer<typeof RedemptionRequestSchema>;
+
+// Create Redemption Request
+export const CreateRedemptionRequestSchema = z.object({
+  redemptionOptionId: z.string().uuid(),
+  notes: z.string().optional(),
+});
+
+export type CreateRedemptionRequest = z.infer<typeof CreateRedemptionRequestSchema>;
+
+// Loyalty Dashboard Data
+export const LoyaltyDashboardSchema = z.object({
+  currentTier: z.string(),
+  pointsBalance: z.number().int(),
+  lifetimePoints: z.number().int(),
+  nextTier: z.string().optional(),
+  pointsToNextTier: z.number().int().optional(),
+  tierProgress: z.number().min(0).max(100),
+  recentTransactions: z.array(PointsTransactionSchema),
+  availableRedemptions: z.array(RedemptionOptionSchema),
+  pendingRedemptions: z.array(RedemptionRequestSchema),
+  tierBenefits: z.array(z.string()),
+});
+
+export type LoyaltyDashboard = z.infer<typeof LoyaltyDashboardSchema>;
+
+// Points Balance Update
+export const PointsBalanceUpdateSchema = z.object({
+  amount: z.number().int(),
+  description: z.string(),
+  type: z.enum(['earned', 'redeemed', 'adjusted', 'bonus']),
+  referenceId: z.string().optional(),
+  referenceType: z.string().optional(),
+});
+
+export type PointsBalanceUpdate = z.infer<typeof PointsBalanceUpdateSchema>;
+
+// Loyalty Analytics
+export const LoyaltyAnalyticsSchema = z.object({
+  totalPointsEarned: z.number().int(),
+  totalPointsRedeemed: z.number().int(),
+  activeRedemptions: z.number().int(),
+  topRedemptionCategories: z.array(z.object({
+    category: z.string(),
+    count: z.number().int(),
+    totalPoints: z.number().int(),
+  })),
+  tierDistribution: z.record(z.string(), z.number()),
+  pointsExpiringThisMonth: z.number().int(),
+  averagePointsPerCustomer: z.number(),
+});
+
+export type LoyaltyAnalytics = z.infer<typeof LoyaltyAnalyticsSchema>;
+
+// Tier Management
+export const TierUpdateSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().optional(),
+  minPoints: z.number().int().min(0).optional(),
+  maxPoints: z.number().int().optional(),
+  benefits: z.array(z.string()).optional(),
+  color: z.string().optional(),
+  icon: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type TierUpdate = z.infer<typeof TierUpdateSchema>;
+
+export const CreateTierSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  minPoints: z.number().int().min(0),
+  maxPoints: z.number().int().optional(),
+  benefits: z.array(z.string()).default([]),
+  color: z.string().default('#000000'),
+  icon: z.string().optional(),
+});
+
+export type CreateTier = z.infer<typeof CreateTierSchema>;
+
+// Points Rule Management
+export const CreatePointsRuleSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  type: PointsRuleSchema.shape.type,
+  pointsPerUnit: z.number().min(0),
+  multiplier: z.number().min(0).default(1),
+  conditions: z.record(z.unknown()).default({}),
+  validFrom: z.date().optional(),
+  validTo: z.date().optional(),
+});
+
+export type CreatePointsRule = z.infer<typeof CreatePointsRuleSchema>;
+
+export const UpdatePointsRuleSchema = z.object({
+  name: z.string().optional(),
+  description: z.string().optional(),
+  pointsPerUnit: z.number().min(0).optional(),
+  multiplier: z.number().min(0).optional(),
+  conditions: z.record(z.unknown()).optional(),
+  isActive: z.boolean().optional(),
+  validFrom: z.date().optional(),
+  validTo: z.date().optional(),
+});
+
+export type UpdatePointsRule = z.infer<typeof UpdatePointsRuleSchema>;
