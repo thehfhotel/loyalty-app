@@ -1,61 +1,48 @@
-# Dependencies
+# Node modules
 node_modules/
+*/node_modules/
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.*
+
+# Build outputs
+dist/
+build/
+*/dist/
+*/build/
+
+# Logs
+logs/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Production builds
-dist/
-build/
-*.tsbuildinfo
-
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
-
-# OS
 .DS_Store
-Thumbs.db
 
-# Logs
-logs/
-*.log
-
-# Docker
-docker-compose.override.yml
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
+# Test coverage
+coverage/
+.nyc_output/
 
 # Temporary files
 tmp/
 temp/
+*.tmp
 
-# Coverage
-coverage/
-*.lcov
+# Database
+postgres_data/
 
-# PWA
-sw.js
-workbox-*.js
+# Upload files
+uploads/
+public/uploads/
 
-# Certificates
-*.pem
-*.key
-*.crt
-
-# Backup files
-*.backup
-*.bak
+# OS files
+Thumbs.db

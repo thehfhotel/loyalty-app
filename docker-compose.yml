@@ -1,98 +1,86 @@
 version: '3.8'
 
 services:
-  # Database
   postgres:
     image: postgres:15-alpine
-    container_name: loyalty-db
+    container_name: loyalty_postgres
     environment:
-      POSTGRES_DB: loyalty_app
-      POSTGRES_USER: loyalty_user
+      POSTGRES_USER: loyalty
       POSTGRES_PASSWORD: loyalty_pass
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: loyalty_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init:/docker-entrypoint-initdb.d
-    networks:
-      - loyalty-network
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loyalty"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Redis for caching and sessions
   redis:
     image: redis:7-alpine
-    container_name: loyalty-redis
+    container_name: loyalty_redis
     ports:
       - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - loyalty-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Backend API
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: loyalty-backend
+    container_name: loyalty_backend
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgres://loyalty_user:loyalty_pass@postgres:5432/loyalty_app
+      PORT: 4000
+      DATABASE_URL: postgresql://loyalty:loyalty_pass@postgres:5432/loyalty_db
       REDIS_URL: redis://redis:6379
       JWT_SECRET: your-super-secret-jwt-key-change-in-production
-      PORT: 3001
-    ports:
-      - "3001:3001"
-    depends_on:
-      - postgres
-      - redis
+      JWT_REFRESH_SECRET: your-super-secret-refresh-key-change-in-production
     volumes:
       - ./backend:/app
       - /app/node_modules
-    networks:
-      - loyalty-network
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     command: npm run dev
 
-  # Frontend PWA
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: loyalty-frontend
+    container_name: loyalty_frontend
     environment:
       NODE_ENV: development
-      REACT_APP_API_URL: http://localhost:3001
-      REACT_APP_FIREBASE_CONFIG: '{}'
+      VITE_API_URL: http://localhost:4000/api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     ports:
       - "3000:3000"
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    networks:
-      - loyalty-network
     command: npm run dev
 
-  # Nginx reverse proxy
   nginx:
     image: nginx:alpine
-    container_name: loyalty-nginx
+    container_name: loyalty_nginx
     ports:
       - "80:80"
-      - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - frontend
       - backend
-    networks:
-      - loyalty-network
 
 volumes:
   postgres_data:
-  redis_data:
-
-networks:
-  loyalty-network:
-    driver: bridge

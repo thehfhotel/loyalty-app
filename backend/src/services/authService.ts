@@ -1,234 +1,267 @@
-import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
-import { JWTPayload, User } from '@hotel-loyalty/shared/types/auth';
-import { redisClient } from '../config/redis.js';
+import jwt from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
+import { query, getClient } from '../config/database';
+import { getRedisClient } from '../config/redis';
+import { AppError } from '../middleware/errorHandler';
+import { User, UserProfile, JWTPayload, AuthTokens } from '../types/auth';
+import { logger } from '../utils/logger';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret';
+const ACCESS_TOKEN_EXPIRE = '15m';
+const REFRESH_TOKEN_EXPIRE = '7d';
 
 export class AuthService {
-  private readonly JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-  private readonly JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret';
-  private readonly JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '15m';
-  private readonly JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
-  private readonly SALT_ROUNDS = 12;
+  async register(data: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    phone?: string;
+  }): Promise<{ user: User; tokens: AuthTokens }> {
+    const client = await getClient();
+    
+    try {
+      await client.query('BEGIN');
 
-  /**
-   * Hash password with bcrypt
-   */
-  async hashPassword(password: string): Promise<string> {
-    return bcrypt.hash(password, this.SALT_ROUNDS);
+      // Check if user exists
+      const existingUser = await query<User>(
+        'SELECT * FROM users WHERE email = $1',
+        [data.email]
+      );
+
+      if (existingUser.length > 0) {
+        throw new AppError(409, 'Email already registered');
+      }
+
+      // Hash password
+      const passwordHash = await bcrypt.hash(data.password, 10);
+
+      // Create user
+      const [user] = await client.query<User>(
+        `INSERT INTO users (email, password_hash) 
+         VALUES ($1, $2) 
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [data.email, passwordHash]
+      ).then(res => res.rows);
+
+      // Create user profile
+      await client.query(
+        `INSERT INTO user_profiles (user_id, first_name, last_name, phone) 
+         VALUES ($1, $2, $3, $4)`,
+        [user.id, data.firstName, data.lastName, data.phone]
+      );
+
+      // Generate tokens
+      const tokens = await this.generateTokens(user);
+
+      // Log registration
+      await this.logUserAction(user.id, 'register', { email: data.email });
+
+      await client.query('COMMIT');
+
+      return { user, tokens };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
-  /**
-   * Verify password against hash
-   */
-  async verifyPassword(password: string, hash: string): Promise<boolean> {
-    return bcrypt.compare(password, hash);
+  async login(email: string, password: string): Promise<{ user: User; tokens: AuthTokens }> {
+    // Find user
+    const [user] = await query<User & { passwordHash: string }>(
+      `SELECT id, email, password_hash AS "passwordHash", role, is_active AS "isActive", 
+              email_verified AS "emailVerified", created_at AS "createdAt", updated_at AS "updatedAt"
+       FROM users WHERE email = $1`,
+      [email]
+    );
+
+    if (!user) {
+      throw new AppError(401, 'Invalid credentials');
+    }
+
+    // Check if user is active
+    if (!user.isActive) {
+      throw new AppError(403, 'Account is disabled');
+    }
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+    if (!isValidPassword) {
+      throw new AppError(401, 'Invalid credentials');
+    }
+
+    // Generate tokens
+    const tokens = await this.generateTokens(user);
+
+    // Log login
+    await this.logUserAction(user.id, 'login', { email });
+
+    // Remove password hash from response
+    const { passwordHash, ...userWithoutPassword } = user;
+
+    return { user: userWithoutPassword, tokens };
   }
 
-  /**
-   * Generate JWT access token
-   */
-  generateAccessToken(user: Pick<User, 'id' | 'email'>, role: 'customer' | 'admin' = 'customer'): string {
-    const payload: Omit<JWTPayload, 'iat' | 'exp'> = {
+  async refreshToken(refreshToken: string): Promise<AuthTokens> {
+    try {
+      // Verify refresh token
+      const payload = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as JWTPayload;
+
+      // Check if token exists in database
+      const [storedToken] = await query<{ userId: string }>(
+        'SELECT user_id AS "userId" FROM refresh_tokens WHERE token = $1 AND expires_at > NOW()',
+        [refreshToken]
+      );
+
+      if (!storedToken || storedToken.userId !== payload.userId) {
+        throw new AppError(401, 'Invalid refresh token');
+      }
+
+      // Get user
+      const [user] = await query<User>(
+        `SELECT id, email, role, is_active AS "isActive" 
+         FROM users WHERE id = $1`,
+        [payload.userId]
+      );
+
+      if (!user || !user.isActive) {
+        throw new AppError(401, 'User not found or inactive');
+      }
+
+      // Generate new tokens
+      const tokens = await this.generateTokens(user);
+
+      // Delete old refresh token
+      await query('DELETE FROM refresh_tokens WHERE token = $1', [refreshToken]);
+
+      return tokens;
+    } catch (error) {
+      if (error instanceof jwt.JsonWebTokenError) {
+        throw new AppError(401, 'Invalid refresh token');
+      }
+      throw error;
+    }
+  }
+
+  async logout(userId: string, refreshToken: string): Promise<void> {
+    // Delete refresh token
+    await query('DELETE FROM refresh_tokens WHERE user_id = $1 AND token = $2', [
+      userId,
+      refreshToken,
+    ]);
+
+    // Log logout
+    await this.logUserAction(userId, 'logout');
+  }
+
+  async resetPasswordRequest(email: string): Promise<void> {
+    const [user] = await query<User>('SELECT id, email FROM users WHERE email = $1', [email]);
+
+    if (!user) {
+      // Don't reveal if email exists
+      logger.info('Password reset requested for non-existent email:', email);
+      return;
+    }
+
+    // Generate reset token
+    const resetToken = uuidv4();
+    const hashedToken = await bcrypt.hash(resetToken, 10);
+
+    // Store token (expires in 1 hour)
+    await query(
+      `INSERT INTO password_reset_tokens (user_id, token, expires_at) 
+       VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
+      [user.id, hashedToken]
+    );
+
+    // TODO: Send email with reset link containing resetToken
+    logger.info('Password reset token generated for:', email);
+    logger.info('Reset token:', resetToken); // Remove in production
+
+    await this.logUserAction(user.id, 'password_reset_request');
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    // Find valid token
+    const [resetToken] = await query<{ userId: string; hashedToken: string }>(
+      `SELECT user_id AS "userId", token AS "hashedToken" 
+       FROM password_reset_tokens 
+       WHERE expires_at > NOW() AND used = false 
+       ORDER BY created_at DESC 
+       LIMIT 1`,
+      []
+    );
+
+    if (!resetToken) {
+      throw new AppError(400, 'Invalid or expired reset token');
+    }
+
+    // Verify token
+    const isValidToken = await bcrypt.compare(token, resetToken.hashedToken);
+    if (!isValidToken) {
+      throw new AppError(400, 'Invalid or expired reset token');
+    }
+
+    // Update password
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await query('UPDATE users SET password_hash = $1 WHERE id = $2', [
+      passwordHash,
+      resetToken.userId,
+    ]);
+
+    // Mark token as used
+    await query('UPDATE password_reset_tokens SET used = true WHERE token = $1', [
+      resetToken.hashedToken,
+    ]);
+
+    await this.logUserAction(resetToken.userId, 'password_reset_complete');
+  }
+
+  private async generateTokens(user: User): Promise<AuthTokens> {
+    const payload: JWTPayload = {
       userId: user.id,
       email: user.email,
-      role,
+      role: user.role,
     };
 
-    return jwt.sign(payload, this.JWT_SECRET, {
-      expiresIn: this.JWT_EXPIRES_IN,
+    const accessToken = jwt.sign(payload, JWT_SECRET, {
+      expiresIn: ACCESS_TOKEN_EXPIRE,
     });
-  }
 
-  /**
-   * Generate JWT refresh token
-   */
-  generateRefreshToken(userId: string): string {
-    const payload = { userId, type: 'refresh' };
-    return jwt.sign(payload, this.JWT_REFRESH_SECRET, {
-      expiresIn: this.JWT_REFRESH_EXPIRES_IN,
+    const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, {
+      expiresIn: REFRESH_TOKEN_EXPIRE,
     });
+
+    // Store refresh token
+    await query(
+      `INSERT INTO refresh_tokens (user_id, token, expires_at) 
+       VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
+      [user.id, refreshToken]
+    );
+
+    return { accessToken, refreshToken };
   }
 
-  /**
-   * Verify JWT access token
-   */
-  verifyAccessToken(token: string): JWTPayload {
+  private async logUserAction(
+    userId: string,
+    action: string,
+    details: Record<string, any> = {}
+  ): Promise<void> {
+    await query(
+      'INSERT INTO user_audit_log (user_id, action, details) VALUES ($1, $2, $3)',
+      [userId, action, details]
+    );
+  }
+
+  async verifyToken(token: string): Promise<JWTPayload> {
     try {
-      return jwt.verify(token, this.JWT_SECRET) as JWTPayload;
+      return jwt.verify(token, JWT_SECRET) as JWTPayload;
     } catch (error) {
-      throw new Error('Invalid or expired access token');
+      throw new AppError(401, 'Invalid token');
     }
-  }
-
-  /**
-   * Verify JWT refresh token
-   */
-  verifyRefreshToken(token: string): { userId: string; type: string } {
-    try {
-      return jwt.verify(token, this.JWT_REFRESH_SECRET) as { userId: string; type: string };
-    } catch (error) {
-      throw new Error('Invalid or expired refresh token');
-    }
-  }
-
-  /**
-   * Store refresh token in Redis with expiration
-   */
-  async storeRefreshToken(userId: string, refreshToken: string): Promise<void> {
-    const key = `refresh_token:${userId}`;
-    const expiresIn = this.parseTimeToSeconds(this.JWT_REFRESH_EXPIRES_IN);
-    
-    await redisClient.setex(key, expiresIn, refreshToken);
-  }
-
-  /**
-   * Validate refresh token from Redis
-   */
-  async validateRefreshToken(userId: string, refreshToken: string): Promise<boolean> {
-    const key = `refresh_token:${userId}`;
-    const storedToken = await redisClient.get(key);
-    
-    return storedToken === refreshToken;
-  }
-
-  /**
-   * Revoke refresh token (logout)
-   */
-  async revokeRefreshToken(userId: string): Promise<void> {
-    const key = `refresh_token:${userId}`;
-    await redisClient.del(key);
-  }
-
-  /**
-   * Generate password reset token
-   */
-  generatePasswordResetToken(): string {
-    return crypto.randomBytes(32).toString('hex');
-  }
-
-  /**
-   * Store password reset token with expiration (1 hour)
-   */
-  async storePasswordResetToken(email: string, token: string): Promise<void> {
-    const key = `password_reset:${email}`;
-    await redisClient.setex(key, 3600, token); // 1 hour expiration
-  }
-
-  /**
-   * Validate password reset token
-   */
-  async validatePasswordResetToken(email: string, token: string): Promise<boolean> {
-    const key = `password_reset:${email}`;
-    const storedToken = await redisClient.get(key);
-    
-    return storedToken === token;
-  }
-
-  /**
-   * Remove password reset token after use
-   */
-  async removePasswordResetToken(email: string): Promise<void> {
-    const key = `password_reset:${email}`;
-    await redisClient.del(key);
-  }
-
-  /**
-   * Extract token from Authorization header
-   */
-  extractTokenFromHeader(authHeader: string | undefined): string | null {
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return null;
-    }
-    
-    return authHeader.substring(7); // Remove "Bearer " prefix
-  }
-
-  /**
-   * Generate secure random session ID
-   */
-  generateSessionId(): string {
-    return crypto.randomBytes(32).toString('hex');
-  }
-
-  /**
-   * Parse time string to seconds
-   */
-  private parseTimeToSeconds(time: string): number {
-    const match = time.match(/^(\d+)([smhd])$/);
-    if (!match) return 900; // Default 15 minutes
-    
-    const value = parseInt(match[1]);
-    const unit = match[2];
-    
-    switch (unit) {
-      case 's': return value;
-      case 'm': return value * 60;
-      case 'h': return value * 3600;
-      case 'd': return value * 86400;
-      default: return 900;
-    }
-  }
-
-  /**
-   * Validate password strength
-   */
-  validatePasswordStrength(password: string): { valid: boolean; errors: string[] } {
-    const errors: string[] = [];
-    
-    if (password.length < 8) {
-      errors.push('Password must be at least 8 characters long');
-    }
-    
-    if (!/(?=.*[a-z])/.test(password)) {
-      errors.push('Password must contain at least one lowercase letter');
-    }
-    
-    if (!/(?=.*[A-Z])/.test(password)) {
-      errors.push('Password must contain at least one uppercase letter');
-    }
-    
-    if (!/(?=.*\d)/.test(password)) {
-      errors.push('Password must contain at least one number');
-    }
-    
-    if (!/(?=.*[@$!%*?&])/.test(password)) {
-      errors.push('Password must contain at least one special character (@$!%*?&)');
-    }
-    
-    return {
-      valid: errors.length === 0,
-      errors,
-    };
-  }
-
-  /**
-   * Check if email is in valid format and not disposable
-   */
-  validateEmail(email: string): { valid: boolean; errors: string[] } {
-    const errors: string[] = [];
-    
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      errors.push('Invalid email format');
-    }
-    
-    // Basic disposable email check
-    const disposableDomains = [
-      '10minutemail.com', 'tempmail.org', 'guerrillamail.com',
-      'mailinator.com', 'yopmail.com', 'temp-mail.org'
-    ];
-    
-    const domain = email.split('@')[1]?.toLowerCase();
-    if (domain && disposableDomains.includes(domain)) {
-      errors.push('Disposable email addresses are not allowed');
-    }
-    
-    return {
-      valid: errors.length === 0,
-      errors,
-    };
   }
 }
-
-export const authService = new AuthService();

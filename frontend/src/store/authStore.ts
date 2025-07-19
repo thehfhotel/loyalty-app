@@ -1,96 +1,135 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { authService } from '../services/authService';
+import toast from 'react-hot-toast';
 
 interface User {
   id: string;
   email: string;
-  firstName: string;
-  lastName: string;
-  role: 'customer' | 'admin';
-  tier?: 'bronze' | 'silver' | 'gold' | 'platinum';
-  avatar?: string;
+  role: 'customer' | 'admin' | 'super_admin';
 }
 
 interface AuthState {
   user: User | null;
-  token: string | null;
+  accessToken: string | null;
+  refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   
-  // Actions
-  login: (token: string, user: User) => void;
-  logout: () => void;
-  updateUser: (user: Partial<User>) => void;
-  setLoading: (loading: boolean) => void;
-  initializeAuth: () => void;
+  login: (email: string, password: string) => Promise<void>;
+  register: (data: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    phone?: string;
+  }) => Promise<void>;
+  logout: () => Promise<void>;
+  refreshAuth: () => Promise<void>;
+  setTokens: (accessToken: string, refreshToken: string) => void;
+  clearAuth: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
-      token: null,
+      accessToken: null,
+      refreshToken: null,
       isAuthenticated: false,
-      isLoading: true,
-      
-      login: (token: string, user: User) => {
-        set({
-          token,
-          user,
-          isAuthenticated: true,
-          isLoading: false,
-        });
-      },
-      
-      logout: () => {
-        set({
-          user: null,
-          token: null,
-          isAuthenticated: false,
-          isLoading: false,
-        });
-        
-        // Clear any other stored data
-        localStorage.removeItem('auth-storage');
-      },
-      
-      updateUser: (userUpdate: Partial<User>) => {
-        const currentUser = get().user;
-        if (currentUser) {
+      isLoading: false,
+
+      login: async (email: string, password: string) => {
+        set({ isLoading: true });
+        try {
+          const response = await authService.login(email, password);
           set({
-            user: { ...currentUser, ...userUpdate },
-          });
-        }
-      },
-      
-      setLoading: (loading: boolean) => {
-        set({ isLoading: loading });
-      },
-      
-      initializeAuth: () => {
-        // This will be called on app start to restore auth state
-        const state = get();
-        
-        // Validate token if it exists
-        if (state.token && state.user) {
-          // TODO: Validate token with backend
-          set({
+            user: response.user,
+            accessToken: response.tokens.accessToken,
+            refreshToken: response.tokens.refreshToken,
             isAuthenticated: true,
             isLoading: false,
           });
-        } else {
+          toast.success('Welcome back!');
+        } catch (error: any) {
+          set({ isLoading: false });
+          toast.error(error.message || 'Login failed');
+          throw error;
+        }
+      },
+
+      register: async (data) => {
+        set({ isLoading: true });
+        try {
+          const response = await authService.register(data);
           set({
-            isAuthenticated: false,
+            user: response.user,
+            accessToken: response.tokens.accessToken,
+            refreshToken: response.tokens.refreshToken,
+            isAuthenticated: true,
             isLoading: false,
           });
+          toast.success('Account created successfully!');
+        } catch (error: any) {
+          set({ isLoading: false });
+          toast.error(error.message || 'Registration failed');
+          throw error;
         }
+      },
+
+      logout: async () => {
+        const { refreshToken } = get();
+        try {
+          if (refreshToken) {
+            await authService.logout(refreshToken);
+          }
+        } catch (error) {
+          console.error('Logout error:', error);
+        } finally {
+          get().clearAuth();
+          toast.success('Logged out successfully');
+        }
+      },
+
+      refreshAuth: async () => {
+        const { refreshToken } = get();
+        if (!refreshToken) {
+          get().clearAuth();
+          return;
+        }
+
+        try {
+          const response = await authService.refreshToken(refreshToken);
+          set({
+            accessToken: response.tokens.accessToken,
+            refreshToken: response.tokens.refreshToken,
+          });
+        } catch (error) {
+          get().clearAuth();
+          throw error;
+        }
+      },
+
+      setTokens: (accessToken: string, refreshToken: string) => {
+        set({ accessToken, refreshToken });
+      },
+
+      clearAuth: () => {
+        set({
+          user: null,
+          accessToken: null,
+          refreshToken: null,
+          isAuthenticated: false,
+        });
       },
     }),
     {
       name: 'auth-storage',
       partialize: (state) => ({
-        token: state.token,
         user: state.user,
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
+        isAuthenticated: state.isAuthenticated,
       }),
     }
   )

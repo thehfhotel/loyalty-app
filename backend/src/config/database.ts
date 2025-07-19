@@ -1,52 +1,46 @@
 import { Pool } from 'pg';
-import { logger } from '../utils/logger.js';
+import { logger } from '../utils/logger';
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://loyalty_user:loyalty_pass@localhost:5432/loyalty_app';
+let pool: Pool;
 
-export const db = new Pool({
-  connectionString: DATABASE_URL,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
-
-db.on('error', (err) => {
-  logger.error('Unexpected database error:', err);
-});
-
-db.on('connect', () => {
-  logger.info('Database connection established');
-});
-
-// Connect to database
-export async function connectDatabase(): Promise<{ pool: Pool }> {
+export async function connectDatabase(): Promise<void> {
   try {
-    await db.query('SELECT NOW()');
-    logger.info('Connected to database successfully');
-    return { pool: db };
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    });
+
+    // Test the connection
+    await pool.query('SELECT NOW()');
+    logger.info('Database connected successfully');
   } catch (error) {
-    logger.error('Failed to connect to database:', error);
+    logger.error('Database connection failed:', error);
     throw error;
   }
 }
 
-// Disconnect from database
-export async function disconnectDatabase(): Promise<void> {
+export function getPool(): Pool {
+  if (!pool) {
+    throw new Error('Database pool not initialized. Call connectDatabase first.');
+  }
+  return pool;
+}
+
+export async function query<T>(text: string, params?: any[]): Promise<T[]> {
+  const start = Date.now();
   try {
-    await db.end();
-    logger.info('Disconnected from database');
+    const result = await pool.query(text, params);
+    const duration = Date.now() - start;
+    logger.debug('Executed query', { text, duration, rows: result.rowCount });
+    return result.rows;
   } catch (error) {
-    logger.error('Error disconnecting from database:', error);
+    logger.error('Database query error:', { text, error });
+    throw error;
   }
 }
 
-// Health check
-export async function databaseHealthCheck(): Promise<boolean> {
-  try {
-    const result = await db.query('SELECT NOW()');
-    return !!result.rows[0];
-  } catch (error) {
-    logger.error('Database health check failed:', error);
-    return false;
-  }
+export async function getClient() {
+  return pool.connect();
 }
