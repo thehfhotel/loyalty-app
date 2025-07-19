@@ -8,7 +8,7 @@ interface GoogleLoginButtonProps {
 export default function GoogleLoginButton({ onSuccess, onFailure }: GoogleLoginButtonProps) {
   const handleGoogleClick = () => {
     // Redirect to backend OAuth endpoint
-    window.location.href = 'http://localhost:4000/api/oauth/google';
+    window.location.href = `${import.meta.env.VITE_API_URL}/oauth/google`;
   };
 
   return (

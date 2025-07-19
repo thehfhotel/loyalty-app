@@ -7,6 +7,7 @@ import { userService, UserProfile } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
 import { FiUser, FiPhone, FiCalendar, FiArrowLeft, FiCamera } from 'react-icons/fi';
+import { getUserDisplayName, getOAuthProviderName, isOAuthUser } from '../utils/userHelpers';
 
 const profileSchema = z.object({
   firstName: z.string().min(1, 'First name is required'),
@@ -103,7 +104,14 @@ export default function ProfilePage() {
             </div>
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-500">Logged in as {user?.email}</span>
+                <span className="text-sm text-gray-500">
+                  Logged in as {getUserDisplayName(user)}
+                  {isOAuthUser(user) && (
+                    <span className="ml-1 text-xs text-gray-400">
+                      via {getOAuthProviderName(user)}
+                    </span>
+                  )}
+                </span>
                 {user?.role && user.role !== 'customer' && (
                   <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
                     user.role === 'super_admin' 

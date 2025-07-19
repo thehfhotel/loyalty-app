@@ -85,6 +85,46 @@ router.get('/facebook/callback',
   }
 );
 
+// LINE OAuth routes
+router.get('/line', (req, res, next) => {
+  // Check if LINE strategy is configured
+  const lineChannelId = process.env.LINE_CHANNEL_ID;
+  
+  if (!lineChannelId || lineChannelId === 'your-line-channel-id') {
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=line_not_configured`);
+  }
+  
+  passport.authenticate('line')(req, res, next);
+});
+
+router.get('/line/callback', 
+  passport.authenticate('line', { session: false }),
+  async (req, res) => {
+    try {
+      const oauthResult = req.user as any;
+      
+      if (!oauthResult) {
+        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=oauth_failed`);
+      }
+
+      const { user, tokens, isNewUser } = oauthResult;
+
+      // Create success URL with tokens
+      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL || 'http://localhost:3000');
+      successUrl.searchParams.set('token', tokens.accessToken);
+      successUrl.searchParams.set('refreshToken', tokens.refreshToken);
+      successUrl.searchParams.set('isNewUser', isNewUser.toString());
+
+      logger.info(`LINE OAuth success for user ${user.email}, isNewUser: ${isNewUser}`);
+      
+      res.redirect(successUrl.toString());
+    } catch (error) {
+      logger.error('LINE OAuth callback error:', error);
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=oauth_error`);
+    }
+  }
+);
+
 // OAuth status endpoint for frontend to get user info after OAuth
 router.get('/me', async (req, res) => {
   try {
@@ -100,12 +140,16 @@ router.get('/me', async (req, res) => {
     const auth = new AuthService();
     const payload = await auth.verifyToken(token);
 
-    // Get user data
+    // Get user data with profile information
     const { query } = await import('../config/database');
     const [user] = await query(
-      `SELECT id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
-              created_at AS "createdAt", updated_at AS "updatedAt"
-       FROM users WHERE id = $1`,
+      `SELECT u.id, u.email, u.role, u.is_active AS "isActive", u.email_verified AS "emailVerified", 
+              u.created_at AS "createdAt", u.updated_at AS "updatedAt",
+              u.oauth_provider AS "oauthProvider", u.oauth_provider_id AS "oauthProviderId",
+              p.first_name AS "firstName", p.last_name AS "lastName", p.avatar_url AS "avatarUrl"
+       FROM users u
+       LEFT JOIN user_profiles p ON u.id = p.user_id
+       WHERE u.id = $1`,
       [payload.userId]
     );
 

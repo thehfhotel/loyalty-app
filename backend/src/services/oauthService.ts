@@ -1,6 +1,7 @@
 import passport from 'passport';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import { Strategy as LineStrategy } from 'passport-line-auth';
 import { query } from '../config/database';
 import { AuthService } from './authService';
 import { User, AuthTokens } from '../types/auth';
@@ -39,6 +40,13 @@ interface GoogleProfile {
   photos?: Array<{
     value: string;
   }>;
+}
+
+interface LineProfile {
+  id: string;
+  displayName: string;
+  pictureUrl?: string;
+  statusMessage?: string;
 }
 
 export class OAuthService {
@@ -94,6 +102,30 @@ export class OAuthService {
       }));
     } else {
       logger.warn('Facebook OAuth not configured - Facebook App ID and Secret required');
+    }
+
+    // Initialize LINE Strategy if credentials are provided
+    const lineChannelId = process.env.LINE_CHANNEL_ID;
+    const lineChannelSecret = process.env.LINE_CHANNEL_SECRET;
+
+    if (lineChannelId && lineChannelSecret && lineChannelId !== 'your-line-channel-id') {
+      logger.info('Initializing LINE OAuth strategy');
+      
+      passport.use(new LineStrategy({
+        channelID: lineChannelId,
+        channelSecret: lineChannelSecret,
+        callbackURL: process.env.LINE_CALLBACK_URL || 'http://localhost:4000/api/oauth/line/callback'
+      }, async (accessToken: string, refreshToken: string, profile: LineProfile, done: any) => {
+        try {
+          const result = await this.handleLineAuth(profile);
+          return done(null, result);
+        } catch (error) {
+          logger.error('LINE OAuth error:', error);
+          return done(error, null);
+        }
+      }));
+    } else {
+      logger.warn('LINE OAuth not configured - LINE Channel ID and Secret required');
     }
 
     // Serialize user for session
@@ -338,6 +370,122 @@ export class OAuthService {
     await query(
       'INSERT INTO user_audit_log (user_id, action, details) VALUES ($1, $2, $3)',
       [user.id, 'oauth_login', { provider: 'facebook', isNewUser }]
+    );
+
+    return { user, tokens, isNewUser };
+  }
+
+  private async handleLineAuth(profile: LineProfile): Promise<{ user: User; tokens: AuthTokens; isNewUser: boolean }> {
+    const lineId = profile.id;
+    
+    if (!lineId) {
+      throw new Error('No LINE ID provided');
+    }
+
+    // For LINE, we'll use a special email format since LINE doesn't provide email by default
+    const lineEmail = `line_${lineId}@line.oauth`;
+    
+    // Check if user exists by LINE ID or LINE email
+    const [existingUser] = await query<User>(
+      `SELECT id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+              created_at AS "createdAt", updated_at AS "updatedAt"
+       FROM users WHERE email = $1 OR oauth_provider_id = $2`,
+      [lineEmail, lineId]
+    );
+
+    let user: User;
+    let isNewUser = false;
+
+    if (existingUser) {
+      // Update existing user's profile if needed
+      user = existingUser;
+      
+      // Update LINE-specific data if available
+      const displayName = profile.displayName || '';
+      const firstName = displayName.split(' ')[0] || '';
+      const lastName = displayName.split(' ').slice(1).join(' ') || '';
+      const avatarUrl = profile.pictureUrl;
+
+      if (firstName || lastName || avatarUrl) {
+        await query(
+          `UPDATE user_profiles 
+           SET first_name = COALESCE(NULLIF($2, ''), first_name),
+               last_name = COALESCE(NULLIF($3, ''), last_name),
+               avatar_url = COALESCE(NULLIF($4, ''), avatar_url),
+               updated_at = NOW()
+           WHERE user_id = $1`,
+          [user.id, firstName, lastName, avatarUrl]
+        );
+      }
+
+      // Update OAuth provider info
+      await query(
+        'UPDATE users SET oauth_provider = $1, oauth_provider_id = $2, updated_at = NOW() WHERE id = $3',
+        ['line', lineId, user.id]
+      );
+    } else {
+      // Create new user for LINE
+      isNewUser = true;
+      
+      const displayName = profile.displayName || '';
+      const firstName = displayName.split(' ')[0] || '';
+      const lastName = displayName.split(' ').slice(1).join(' ') || '';
+      const avatarUrl = profile.pictureUrl;
+
+      // Create user account (no password needed for OAuth, email_verified false since we don't have real email)
+      const [newUser] = await query<User>(
+        `INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id) 
+         VALUES ($1, '', false, 'line', $2) 
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                   created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [lineEmail, lineId]
+      );
+
+      user = newUser;
+
+      // Create user profile
+      await query(
+        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url) 
+         VALUES ($1, $2, $3, $4)`,
+        [user.id, firstName, lastName, avatarUrl]
+      );
+    }
+
+    // Check if user should have elevated role (won't apply to LINE users typically, but keeping consistent)
+    const requiredRole = adminConfigService.getRequiredRole(user.email);
+    if (requiredRole && user.role === 'customer') {
+      logger.info(`Upgrading LINE user ${user.email} to ${requiredRole} role based on admin config`);
+      
+      const [upgradedUser] = await query<User>(
+        `UPDATE users SET role = $1, updated_at = NOW() 
+         WHERE id = $2 
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                   created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [requiredRole, user.id]
+      );
+      
+      user = upgradedUser;
+    } else if (requiredRole && user.role === 'admin' && requiredRole === 'super_admin') {
+      logger.info(`Upgrading LINE user ${user.email} from admin to super_admin role based on admin config`);
+      
+      const [upgradedUser] = await query<User>(
+        `UPDATE users SET role = 'super_admin', updated_at = NOW() 
+         WHERE id = $1 
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                   created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [user.id]
+      );
+      
+      user = upgradedUser;
+    }
+
+    // Generate JWT tokens
+    const tokens = await authService.generateTokens(user);
+
+    // Log OAuth login
+    await query(
+      'INSERT INTO user_audit_log (user_id, action, details) VALUES ($1, $2, $3)',
+      [user.id, 'oauth_login', { provider: 'line', isNewUser, lineId: profile.id }]
     );
 
     return { user, tokens, isNewUser };

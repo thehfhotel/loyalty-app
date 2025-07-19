@@ -86,10 +86,4 @@ CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
 CREATE TRIGGER update_user_profiles_updated_at BEFORE UPDATE ON user_profiles
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Create default admin user (password: admin123)
--- Note: Change this password immediately in production
-INSERT INTO users (email, password_hash, role, email_verified)
-VALUES ('admin@hotel.com', '$2a$10$YKpY.B4RKLhFTfV4gBrQHOuDfRlT.SR0HvSJqZbfPeWvQH7vXd8g6', 'super_admin', true);
-
-INSERT INTO user_profiles (user_id, first_name, last_name)
-VALUES ((SELECT id FROM users WHERE email = 'admin@hotel.com'), 'System', 'Admin');
+-- Admin user will be created via API after system startup

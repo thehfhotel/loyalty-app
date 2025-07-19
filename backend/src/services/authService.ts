@@ -268,7 +268,7 @@ export class AuthService {
     await this.logUserAction(resetToken.userId, 'password_reset_complete');
   }
 
-  private async generateTokens(user: User, client?: any): Promise<AuthTokens> {
+  async generateTokens(user: User, client?: any): Promise<AuthTokens> {
     const payload: JWTPayload = {
       userId: user.id,
       email: user.email,

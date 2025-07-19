@@ -1,6 +1,7 @@
 import { useAuthStore } from '../store/authStore';
 import { FiUser, FiLogOut, FiSettings } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
+import { getUserDisplayName } from '../utils/userHelpers';
 
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
@@ -14,7 +15,7 @@ export default function DashboardPage() {
           <div className="flex justify-between items-center py-6">
             <h1 className="text-3xl font-bold text-gray-900">Hotel Loyalty Dashboard</h1>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-500">Welcome, {user?.email}</span>
+              <span className="text-sm text-gray-500">Welcome, {getUserDisplayName(user)}</span>
               <button
                 onClick={logout}
                 className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"

@@ -7,6 +7,11 @@ interface User {
   id: string;
   email: string;
   role: 'customer' | 'admin' | 'super_admin';
+  firstName?: string;
+  lastName?: string;
+  avatarUrl?: string;
+  oauthProvider?: string;
+  oauthProviderId?: string;
 }
 
 interface AuthState {

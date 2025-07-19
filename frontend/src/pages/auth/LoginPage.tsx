@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { useAuthStore } from '../../store/authStore';
 import { FiMail, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
 import GoogleLoginButton from '../../components/auth/GoogleLoginButton';
+import LineLoginButton from '../../components/auth/LineLoginButton';
 import toast from 'react-hot-toast';
 
 const loginSchema = z.object({
@@ -28,6 +29,8 @@ export default function LoginPage() {
       toast.error('Google login is not configured. Please use email login.');
     } else if (error === 'facebook_not_configured') {
       toast.error('Facebook login is not configured. Please use email login.');
+    } else if (error === 'line_not_configured') {
+      toast.error('LINE login is not configured. Please use email login.');
     } else if (error === 'oauth_failed') {
       toast.error('Social login failed. Please try again.');
     } else if (error === 'oauth_error') {
@@ -157,8 +160,9 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="mt-6">
+          <div className="mt-6 space-y-3">
             <GoogleLoginButton />
+            <LineLoginButton />
           </div>
         </div>
       </div>
