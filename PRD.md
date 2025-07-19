@@ -4,7 +4,7 @@
 
 ### **1.1 Purpose**
 
-This Product Requirements Document (PRD) outlines the features and functionalities for a new mobile loyalty application designed for \[Your Hotel Name/Chain\]. The app aims to enhance customer engagement, foster loyalty, and provide a direct channel for communication, feedback, and personalized offers.
+This Product Requirements Document (PRD) outlines the features and functionalities for a new mobile loyalty application designed for The Harbour Front Hotel. The app aims to enhance customer engagement, foster loyalty, and provide a direct channel for communication, feedback, and personalized offers.
 
 ### **1.2 Scope**
 
@@ -12,11 +12,13 @@ This document covers the initial release (MVP \- Minimum Viable Product) of the 
 
 ### **1.3 Goals**
 
+* Collect customer information and repeat customers.
 * Increase customer retention and repeat bookings.
 * Improve customer satisfaction through direct feedback channels.
 * Drive incremental revenue through targeted marketing and promotions.
 * Enhance the overall customer experience with exclusive benefits and personalized interactions.
 * Build a comprehensive customer database for better understanding and segmentation.
+* Connect customers from 2 location in 1 membership loyalty program.
 
 ## **2\. User Stories / Personas**
 
@@ -41,7 +43,7 @@ This document covers the initial release (MVP \- Minimum Viable Product) of the 
 
 * **Description:** A system to capture, store, and manage detailed customer information and their interactions with the hotel.
 * **Functionality:**
-  * **Customer Registration/Login:** Secure user authentication (e.g., email/password, social login).
+  * **Customer Registration/Login:** Secure user authentication (e.g., email/password, social login via Google, Facebook, LINE).
   * **Profile Management:** Customers can view and update their personal information (name, contact, preferences).
   * **Admin View:** Hotel staff can access comprehensive customer profiles including:
     * Contact details
@@ -104,29 +106,27 @@ This document covers the initial release (MVP \- Minimum Viable Product) of the 
 ## **4\. Technical Requirements (High-Level)**
 
 * **Platform:** Progressive Web Application (PWA) accessible via web browsers and installable on mobile devices.
-  * **Offline Capability:** Core features should be accessible offline or with limited connectivity using Service Workers.
+  * **Offline Capability:** Core features should be accessible offline or with limited connectivity using Service Workers. (low priority)
   * **Push Notifications:** Support for web push notifications.
   * **Add to Home Screen:** Ability for users to "install" the PWA to their device's home screen.
   * **Responsive Design:** Optimized for various screen sizes (mobile, tablet, desktop).
-* **Backend:** Robust, scalable, and secure backend infrastructure (e.g., cloud-based solution).
+* **Backend:** Robust, scalable, and secure backend infrastructure using docker compose on ubuntu server.
 * **APIs:** Well-documented APIs for integration with PMS, payment gateways, and other hotel systems.
 * **Security:** Adherence to data privacy regulations (e.g., GDPR, CCPA) and industry best practices for data encryption and user authentication.
-* **Scalability:** Designed to handle a growing number of users and data.
-* **Analytics Integration:** Integration with analytics tools (e.g., Google Analytics, Firebase Analytics) for comprehensive usage tracking.
+* **Scalability:** Designed to handle a growing number of users and data. (100-1,000 users for this scope)
+* **Analytics Integration:** Integration with analytics tools (e.g., Google Analytics, Firebase Analytics) for comprehensive usage tracking. (low priority)
 
 ## **5\. Future Considerations (Out of Scope for MVP)**
 
 * Online Booking Integration within the app.
-* Digital Key functionality.
 * In-app chat with concierge/front desk.
 * Gamification elements (badges, leaderboards).
-* Partnership integrations (e.g., airline miles, car rentals).
 * Referral program.
 
 ## **6\. Key Performance Indicators (KPIs)**
 
 * **Customer Engagement:**
-  * App download and active user rates.
+  * Active user rates.
   * Feature usage (e.g., coupon redemption rate, survey completion rate).
   * Push notification engagement rate.
 * **Loyalty & Retention:**
