@@ -7,6 +7,7 @@ import { AuthService } from './authService';
 import { User, AuthTokens } from '../types/auth';
 import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
+// import { accountLinkingService } from './accountLinkingService';
 
 const authService = new AuthService();
 
@@ -195,30 +196,69 @@ export class OAuthService {
         user.emailVerified = true;
       }
     } else {
-      // Create new user
-      isNewUser = true;
-      
-      const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || '';
-      const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
-      const avatarUrl = profile.photos?.[0]?.value;
-
-      // Create user account (no password needed for OAuth)
-      const [newUser] = await query<User>(
-        `INSERT INTO users (email, password_hash, email_verified) 
-         VALUES ($1, '', true) 
-         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
-                   created_at AS "createdAt", updated_at AS "updatedAt"`,
+      // Check for existing email-based account to auto-link
+      const [emailUser] = await query<User>(
+        `SELECT id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                created_at AS "createdAt", updated_at AS "updatedAt"
+         FROM users WHERE email = $1 AND oauth_provider IS NULL`,
         [email]
       );
 
-      // Create user profile
-      await query(
-        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url) 
-         VALUES ($1, $2, $3, $4)`,
-        [newUser.id, firstName, lastName, avatarUrl]
-      );
+      if (emailUser) {
+        // Auto-link to existing email account
+        logger.info(`Auto-linking Google OAuth to existing email account: ${email}`);
+        
+        // Create new OAuth user
+        isNewUser = true;
+        const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || '';
+        const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
+        const avatarUrl = profile.photos?.[0]?.value;
 
-      user = newUser;
+        const [newOAuthUser] = await query<User>(
+          `INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id) 
+           VALUES ($1, '', true, 'google', $2) 
+           RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                     created_at AS "createdAt", updated_at AS "updatedAt"`,
+          [`google_${profile.id}@google.oauth`, profile.id]
+        );
+
+        // Create user profile
+        await query(
+          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url) 
+           VALUES ($1, $2, $3, $4)`,
+          [newOAuthUser.id, firstName, lastName, avatarUrl]
+        );
+
+        // Auto-link accounts (temporarily disabled)
+        // await accountLinkingService.autoLinkOAuthToEmail(newOAuthUser.id, email, 'google');
+        
+        user = newOAuthUser;
+      } else {
+        // Create new user
+        isNewUser = true;
+        
+        const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || '';
+        const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
+        const avatarUrl = profile.photos?.[0]?.value;
+
+        // Create user account (no password needed for OAuth)
+        const [newUser] = await query<User>(
+          `INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id) 
+           VALUES ($1, '', true, 'google', $2) 
+           RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                     created_at AS "createdAt", updated_at AS "updatedAt"`,
+          [email, profile.id]
+        );
+
+        // Create user profile
+        await query(
+          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url) 
+           VALUES ($1, $2, $3, $4)`,
+          [newUser.id, firstName, lastName, avatarUrl]
+        );
+
+        user = newUser;
+      }
     }
 
     // Check if user should have elevated role
