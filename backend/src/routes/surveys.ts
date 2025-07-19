@@ -143,17 +143,6 @@ export function createSurveyRoutes(db: Pool): Router {
     surveyController.getSurveyAnalytics
   );
 
-  /**
-   * @route POST /api/surveys/:id/generate-qr
-   * @desc Generate new QR code for survey
-   * @access Private (Admin)
-   */
-  router.post('/:id/generate-qr',
-    authenticateToken,
-    requireRole('admin'),
-    surveyValidation.getSurvey,
-    surveyController.generateQRCode
-  );
 
   return router;
 }

@@ -113,17 +113,6 @@ export function createCouponRoutes(db: Pool): Router {
     couponController.getCouponAnalytics
   );
 
-  /**
-   * @route POST /api/coupons/:id/generate-qr
-   * @desc Generate new QR code for coupon
-   * @access Private (Admin)
-   */
-  router.post('/:id/generate-qr',
-    authenticateToken,
-    requireRole('admin'),
-    couponValidation.getCoupon,
-    couponController.generateQRCode
-  );
 
   return router;
 }
