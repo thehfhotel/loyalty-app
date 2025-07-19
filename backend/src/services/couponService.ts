@@ -4,59 +4,23 @@ import { v4 as uuidv4 } from 'uuid';
 import { addDays, isAfter, isBefore } from 'date-fns';
 import { logger } from '../utils/logger.js';
 import { 
-  COUPON_TYPES, 
-  COUPON_CATEGORIES, 
+  Coupon,
+  CustomerCoupon,
+  CouponWithCustomerInfo,
+  RedemptionResult,
+  CreateCoupon,
+  UpdateCoupon,
+  CouponRedemptionRequest,
+  QRCodeValidationRequest,
+  QRCodeValidationResponse,
+  CouponDistributionRequest,
+  CouponSearch,
+  CouponAnalytics,
+  CustomerCouponsResponse,
+  BulkCouponOperation,
   ERROR_CODES 
 } from '@hotel-loyalty/shared';
 
-export interface Coupon {
-  id: string;
-  code: string;
-  title: string;
-  description: string;
-  type: keyof typeof COUPON_TYPES;
-  category: keyof typeof COUPON_CATEGORIES;
-  value: number;
-  minSpend?: number;
-  maxDiscount?: number;
-  validFrom: Date;
-  validUntil: Date;
-  usageLimit?: number;
-  usageCount: number;
-  isActive: boolean;
-  terms?: string;
-  imageUrl?: string;
-  qrCode?: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface CustomerCoupon {
-  id: string;
-  customerId: string;
-  couponId: string;
-  isUsed: boolean;
-  usedAt?: Date;
-  redeemedAt?: Date;
-  redemptionLocation?: string;
-  redemptionAmount?: number;
-  createdAt: Date;
-}
-
-export interface CouponCreationData {
-  title: string;
-  description: string;
-  type: keyof typeof COUPON_TYPES;
-  category: keyof typeof COUPON_CATEGORIES;
-  value: number;
-  minSpend?: number;
-  maxDiscount?: number;
-  validFrom: Date;
-  validUntil: Date;
-  usageLimit?: number;
-  terms?: string;
-  imageUrl?: string;
-}
 
 export interface CouponDistributionRule {
   id: string;
@@ -75,7 +39,7 @@ export class CouponService {
   /**
    * Create a new coupon
    */
-  async createCoupon(data: CouponCreationData): Promise<Coupon> {
+  async createCoupon(data: CreateCoupon): Promise<Coupon> {
     const client = await this.db.connect();
     
     try {
@@ -185,10 +149,7 @@ export class CouponService {
   /**
    * Get customer's coupons
    */
-  async getCustomerCoupons(customerId: string): Promise<{
-    coupon: Coupon;
-    customerCoupon: CustomerCoupon;
-  }[]> {
+  async getCustomerCoupons(customerId: string): Promise<CouponWithCustomerInfo[]> {
     try {
       const result = await this.db.query(
         `SELECT c.*, cc.* FROM customer_coupons cc
@@ -262,23 +223,16 @@ export class CouponService {
    * Validate and redeem coupon
    */
   async redeemCoupon(
-    code: string, 
-    customerId: string, 
-    redemptionAmount: number,
-    location?: string
-  ): Promise<{
-    success: boolean;
-    discountAmount: number;
-    finalAmount: number;
-    customerCoupon: CustomerCoupon;
-  }> {
+    data: CouponRedemptionRequest,
+    customerId: string
+  ): Promise<RedemptionResult> {
     const client = await this.db.connect();
     
     try {
       await client.query('BEGIN');
       
       // Get coupon by code
-      const coupon = await this.getCouponByCode(code);
+      const coupon = await this.getCouponByCode(data.code);
       if (!coupon) {
         throw new Error(ERROR_CODES.RESOURCE_NOT_FOUND);
       }
@@ -290,7 +244,7 @@ export class CouponService {
       }
       
       // Check minimum spend requirement
-      if (coupon.minSpend && redemptionAmount < coupon.minSpend) {
+      if (coupon.minSpend && data.amount < coupon.minSpend) {
         throw new Error(`Minimum spend of $${coupon.minSpend} required`);
       }
       
@@ -311,21 +265,21 @@ export class CouponService {
       let discountAmount = 0;
       
       switch (coupon.type) {
-        case COUPON_TYPES.PERCENTAGE:
-          discountAmount = (redemptionAmount * coupon.value) / 100;
+        case 'percentage':
+          discountAmount = (data.amount * coupon.value) / 100;
           if (coupon.maxDiscount) {
             discountAmount = Math.min(discountAmount, coupon.maxDiscount);
           }
           break;
-        case COUPON_TYPES.FIXED_AMOUNT:
-          discountAmount = Math.min(coupon.value, redemptionAmount);
+        case 'fixed_amount':
+          discountAmount = Math.min(coupon.value, data.amount);
           break;
-        case COUPON_TYPES.FREE_ITEM:
+        case 'free_item':
           discountAmount = coupon.value;
           break;
       }
       
-      const finalAmount = Math.max(0, redemptionAmount - discountAmount);
+      const finalAmount = Math.max(0, data.amount - discountAmount);
       
       // Mark coupon as used
       await client.query(
@@ -333,7 +287,7 @@ export class CouponService {
          SET is_used = true, used_at = NOW(), redeemed_at = NOW(),
              redemption_location = $1, redemption_amount = $2
          WHERE id = $3`,
-        [location, redemptionAmount, customerCoupon.id]
+        [data.location, data.amount, customerCoupon.id]
       );
       
       // Update coupon usage count
@@ -344,7 +298,7 @@ export class CouponService {
       
       await client.query('COMMIT');
       
-      logger.info(`Coupon redeemed: ${code} by customer ${customerId}`);
+      logger.info(`Coupon redeemed: ${data.code} by customer ${customerId}`);
       
       return {
         success: true,
@@ -355,8 +309,8 @@ export class CouponService {
           is_used: true,
           used_at: new Date(),
           redeemed_at: new Date(),
-          redemption_location: location,
-          redemption_amount: redemptionAmount
+          redemption_location: data.location,
+          redemption_amount: data.amount
         })
       };
     } catch (error) {
@@ -365,6 +319,60 @@ export class CouponService {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  /**
+   * Validate QR code
+   */
+  async validateQRCode(qrData: string): Promise<QRCodeValidationResponse> {
+    try {
+      // Parse QR code data
+      let parsedData;
+      try {
+        parsedData = JSON.parse(qrData);
+      } catch (error) {
+        return {
+          coupon: {} as Coupon,
+          valid: false,
+          code: ''
+        };
+      }
+
+      // Validate QR code structure
+      if (!parsedData.couponId || !parsedData.code || parsedData.type !== 'coupon_redemption') {
+        return {
+          coupon: {} as Coupon,
+          valid: false,
+          code: ''
+        };
+      }
+
+      // Get coupon by ID
+      const coupon = await this.getCouponById(parsedData.couponId);
+      if (!coupon) {
+        return {
+          coupon: {} as Coupon,
+          valid: false,
+          code: parsedData.code
+        };
+      }
+
+      // Check if coupon is valid
+      const now = new Date();
+      const isValid = coupon.isActive && 
+                     !isBefore(now, coupon.validFrom) && 
+                     !isAfter(now, coupon.validUntil) &&
+                     (coupon.usageLimit === null || coupon.usageLimit === undefined || coupon.usageCount < coupon.usageLimit);
+
+      return {
+        coupon,
+        valid: isValid,
+        code: parsedData.code
+      };
+    } catch (error) {
+      logger.error('Error validating QR code:', error);
+      throw new Error(ERROR_CODES.SYSTEM_ERROR);
     }
   }
 

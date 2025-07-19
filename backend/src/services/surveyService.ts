@@ -1,102 +1,32 @@
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { addDays, isAfter, isBefore } from 'date-fns';
+import QRCode from 'qrcode';
 import { logger } from '../utils/logger.js';
-import { QRCodeGenerator } from '../utils/qrCodeGenerator.js';
 import { 
-  SURVEY_QUESTION_TYPES, 
-  ERROR_CODES,
-  POINTS_EARNING 
+  Survey,
+  SurveyQuestion,
+  SurveyResponse,
+  SurveyWithProgress,
+  QuestionAnswer,
+  CreateSurvey,
+  UpdateSurvey,
+  StartSurveyResponseRequest,
+  SubmitAnswerRequest,
+  CompleteSurveyResponseRequest,
+  CompleteSurveyResponseResponse,
+  SurveyQRCodeValidationRequest,
+  SurveyQRCodeValidationResponse,
+  SaveSurveyProgressRequest,
+  SurveySearch,
+  SurveyAnalytics,
+  SurveyDistributionRequest,
+  BulkSurveyOperation,
+  SurveyQuestionValidation,
+  SurveyQuestionValidationResult,
+  ERROR_CODES 
 } from '@hotel-loyalty/shared';
 
-export interface SurveyQuestion {
-  id: string;
-  surveyId: string;
-  type: keyof typeof SURVEY_QUESTION_TYPES;
-  title: string;
-  description?: string;
-  isRequired: boolean;
-  order: number;
-  options?: string[];
-  metadata?: Record<string, any>;
-  createdAt: Date;
-}
-
-export interface Survey {
-  id: string;
-  title: string;
-  description: string;
-  code: string;
-  isActive: boolean;
-  startDate: Date;
-  endDate: Date;
-  maxResponses?: number;
-  responseCount: number;
-  pointsReward: number;
-  targetAudience?: string;
-  estimatedTime: number; // in minutes
-  qrCode?: string;
-  questions: SurveyQuestion[];
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface SurveyResponse {
-  id: string;
-  surveyId: string;
-  customerId: string;
-  responses: Array<{
-    questionId: string;
-    answer: any;
-    answeredAt: Date;
-  }>;
-  startedAt: Date;
-  completedAt?: Date;
-  isCompleted: boolean;
-  ipAddress?: string;
-  userAgent?: string;
-  pointsAwarded: number;
-  createdAt: Date;
-}
-
-export interface SurveyCreationData {
-  title: string;
-  description: string;
-  startDate: Date;
-  endDate: Date;
-  maxResponses?: number;
-  pointsReward?: number;
-  targetAudience?: string;
-  estimatedTime: number;
-  questions: Array<{
-    type: keyof typeof SURVEY_QUESTION_TYPES;
-    title: string;
-    description?: string;
-    isRequired: boolean;
-    order: number;
-    options?: string[];
-    metadata?: Record<string, any>;
-  }>;
-}
-
-export interface SurveyAnalytics {
-  surveyId: string;
-  totalResponses: number;
-  completionRate: number;
-  averageTime: number;
-  questionAnalytics: Array<{
-    questionId: string;
-    questionTitle: string;
-    responseCount: number;
-    answerDistribution: Record<string, number>;
-    averageRating?: number;
-  }>;
-  responsesByDate: Array<{
-    date: string;
-    count: number;
-  }>;
-  audienceBreakdown: Record<string, number>;
-}
 
 export class SurveyService {
   constructor(private db: Pool) {}
@@ -104,7 +34,7 @@ export class SurveyService {
   /**
    * Create a new survey
    */
-  async createSurvey(data: SurveyCreationData): Promise<Survey> {
+  async createSurvey(data: CreateSurvey): Promise<Survey> {
     const client = await this.db.connect();
     
     try {
@@ -112,10 +42,20 @@ export class SurveyService {
       
       const surveyId = uuidv4();
       const code = this.generateSurveyCode();
-      const pointsReward = data.pointsReward || POINTS_EARNING.SURVEY_COMPLETION;
+      const pointsReward = data.pointsReward || 0;
       
       // Generate QR code for survey access
-      const qrCode = await QRCodeGenerator.generateSurveyQR(surveyId, code);
+      const qrCodeData = JSON.stringify({
+        surveyId: surveyId,
+        code: code,
+        type: 'survey_access'
+      });
+      
+      const qrCode = await QRCode.toDataURL(qrCodeData, {
+        errorCorrectionLevel: 'M',
+        margin: 2,
+        scale: 8
+      });
       
       // Create survey
       const surveyResult = await client.query(
@@ -225,7 +165,7 @@ export class SurveyService {
   /**
    * Get active surveys for customer
    */
-  async getActiveSurveys(customerId?: string): Promise<Survey[]> {
+  async getActiveSurveys(customerId?: string): Promise<SurveyWithProgress[]> {
     try {
       let query = `
         SELECT DISTINCT s.* FROM surveys s
@@ -359,7 +299,7 @@ export class SurveyService {
       const question = this.mapQuestionRow(questionResult.rows[0]);
       
       // Validate answer format
-      this.validateAnswer(question, answer);
+      this.validateAnswerInternal(question, answer);
       
       // Check if answer already exists
       const existingAnswer = await client.query(
@@ -396,11 +336,10 @@ export class SurveyService {
   /**
    * Complete survey response
    */
-  async completeSurveyResponse(responseId: string, answers?: Array<{questionId: string, answer: any}>): Promise<{
-    success: boolean;
-    pointsAwarded: number;
-    response: SurveyResponse;
-  }> {
+  async completeSurveyResponse(
+    responseId: string, 
+    answers?: QuestionAnswer[]
+  ): Promise<CompleteSurveyResponseResponse> {
     const client = await this.db.connect();
     
     try {
@@ -452,7 +391,7 @@ export class SurveyService {
         for (const answer of answers) {
           await client.query(
             'INSERT INTO survey_answers (id, response_id, question_id, answer, answered_at) VALUES ($1, $2, $3, $4, $5)',
-            [uuidv4(), responseId, answer.questionId, JSON.stringify(answer.answer), new Date()]
+            [uuidv4(), responseId, answer.questionId, JSON.stringify(answer.answer), answer.answeredAt || new Date()]
           );
         }
       }
@@ -562,9 +501,87 @@ export class SurveyService {
   }
 
   /**
+   * Validate QR code
+   */
+  async validateQRCode(qrData: string): Promise<SurveyQRCodeValidationResponse> {
+    try {
+      // Parse QR code data
+      let parsedData;
+      try {
+        parsedData = JSON.parse(qrData);
+      } catch (error) {
+        return {
+          survey: {
+            id: '',
+            title: '',
+            description: '',
+            estimatedTime: 0,
+            pointsReward: 0
+          },
+          valid: false,
+          code: ''
+        };
+      }
+
+      // Validate QR code structure
+      if (!parsedData.surveyId || !parsedData.code || parsedData.type !== 'survey_access') {
+        return {
+          survey: {
+            id: '',
+            title: '',
+            description: '',
+            estimatedTime: 0,
+            pointsReward: 0
+          },
+          valid: false,
+          code: ''
+        };
+      }
+
+      // Get survey by ID
+      const survey = await this.getSurveyById(parsedData.surveyId, false);
+      if (!survey) {
+        return {
+          survey: {
+            id: '',
+            title: '',
+            description: '',
+            estimatedTime: 0,
+            pointsReward: 0
+          },
+          valid: false,
+          code: parsedData.code
+        };
+      }
+
+      // Check if survey is valid
+      const now = new Date();
+      const isValid = survey.isActive && 
+                     !isBefore(now, survey.startDate) && 
+                     !isAfter(now, survey.endDate) &&
+                     (survey.maxResponses === null || survey.maxResponses === undefined || survey.responseCount < survey.maxResponses);
+
+      return {
+        survey: {
+          id: survey.id,
+          title: survey.title,
+          description: survey.description,
+          estimatedTime: survey.estimatedTime,
+          pointsReward: survey.pointsReward
+        },
+        valid: isValid,
+        code: parsedData.code
+      };
+    } catch (error) {
+      logger.error('Error validating QR code:', error);
+      throw new Error(ERROR_CODES.SYSTEM_ERROR);
+    }
+  }
+
+  /**
    * Save survey progress
    */
-  async saveSurveyProgress(responseId: string, answers: Array<{questionId: string, answer: any}>): Promise<void> {
+  async saveSurveyProgress(responseId: string, answers: QuestionAnswer[]): Promise<void> {
     const client = await this.db.connect();
     
     try {
@@ -590,7 +607,7 @@ export class SurveyService {
       for (const answer of answers) {
         await client.query(
           'INSERT INTO survey_answers (id, response_id, question_id, answer, answered_at) VALUES ($1, $2, $3, $4, $5)',
-          [uuidv4(), responseId, answer.questionId, JSON.stringify(answer.answer), new Date()]
+          [uuidv4(), responseId, answer.questionId, JSON.stringify(answer.answer), answer.answeredAt || new Date()]
         );
       }
       
@@ -661,12 +678,12 @@ export class SurveyService {
           let ratingCount = 0;
           
           answers.forEach(answer => {
-            if (question.type === SURVEY_QUESTION_TYPES.RATING) {
+            if (question.type === 'rating') {
               totalRating += parseInt(answer);
               ratingCount++;
-            } else if (question.type === SURVEY_QUESTION_TYPES.SINGLE_CHOICE) {
+            } else if (question.type === 'single_choice') {
               answerDistribution[answer] = (answerDistribution[answer] || 0) + 1;
-            } else if (question.type === SURVEY_QUESTION_TYPES.MULTIPLE_CHOICE) {
+            } else if (question.type === 'multiple_choice') {
               answer.forEach((choice: string) => {
                 answerDistribution[choice] = (answerDistribution[choice] || 0) + 1;
               });
@@ -701,13 +718,18 @@ export class SurveyService {
       }));
       
       return {
-        surveyId,
+        totalSurveys: 1,
+        activeSurveys: survey.isActive ? 1 : 0,
         totalResponses,
         completionRate,
-        averageTime,
-        questionAnalytics,
+        averageResponseTime: averageTime,
+        pointsAwarded: totalResponses * survey.pointsReward,
         responsesByDate,
-        audienceBreakdown: {} // Can be extended based on targeting
+        topSurveys: [{ survey, responseCount: totalResponses, completionRate }],
+        questionTypeDistribution: survey.questions.reduce((acc, q) => {
+          acc[q.type] = (acc[q.type] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>)
       };
     } catch (error) {
       logger.error('Error getting survey analytics:', error);
@@ -730,38 +752,75 @@ export class SurveyService {
   /**
    * Validate answer format
    */
-  private validateAnswer(question: SurveyQuestion, answer: any): void {
+  validateAnswer(question: SurveyQuestion, answer: any): SurveyQuestionValidationResult {
+    if (question.isRequired && (answer === null || answer === undefined || answer === '')) {
+      return { isValid: false, error: 'This question is required' };
+    }
+
+    if (!question.isRequired && (answer === null || answer === undefined || answer === '')) {
+      return { isValid: true };
+    }
+
     switch (question.type) {
-      case SURVEY_QUESTION_TYPES.TEXT:
+      case 'text':
         if (typeof answer !== 'string') {
-          throw new Error('Text answer must be a string');
+          return { isValid: false, error: 'Answer must be text' };
+        }
+        if (answer.length > 1000) {
+          return { isValid: false, error: 'Answer must be less than 1000 characters' };
         }
         break;
-      case SURVEY_QUESTION_TYPES.NUMBER:
-        if (typeof answer !== 'number') {
-          throw new Error('Number answer must be a number');
+
+      case 'number':
+        if (typeof answer !== 'number' || isNaN(answer)) {
+          return { isValid: false, error: 'Answer must be a valid number' };
         }
         break;
-      case SURVEY_QUESTION_TYPES.BOOLEAN:
+
+      case 'boolean':
         if (typeof answer !== 'boolean') {
-          throw new Error('Boolean answer must be true or false');
+          return { isValid: false, error: 'Please select Yes or No' };
         }
         break;
-      case SURVEY_QUESTION_TYPES.SINGLE_CHOICE:
+
+      case 'single_choice':
         if (!question.options?.includes(answer)) {
-          throw new Error('Invalid choice selected');
+          return { isValid: false, error: 'Please select a valid option' };
         }
         break;
-      case SURVEY_QUESTION_TYPES.MULTIPLE_CHOICE:
-        if (!Array.isArray(answer) || !answer.every(choice => question.options?.includes(choice))) {
-          throw new Error('Invalid choices selected');
+
+      case 'multiple_choice':
+        if (!Array.isArray(answer)) {
+          return { isValid: false, error: 'Please select at least one option' };
+        }
+        if (answer.length === 0) {
+          return { isValid: false, error: 'Please select at least one option' };
+        }
+        if (!answer.every(choice => question.options?.includes(choice))) {
+          return { isValid: false, error: 'Please select valid options only' };
         }
         break;
-      case SURVEY_QUESTION_TYPES.RATING:
+
+      case 'rating':
         if (typeof answer !== 'number' || answer < 1 || answer > 5) {
-          throw new Error('Rating must be a number between 1 and 5');
+          return { isValid: false, error: 'Please select a rating between 1 and 5' };
         }
         break;
+
+      default:
+        return { isValid: false, error: 'Unknown question type' };
+    }
+
+    return { isValid: true };
+  }
+
+  /**
+   * Private validate answer for internal use
+   */
+  private validateAnswerInternal(question: SurveyQuestion, answer: any): void {
+    const result = this.validateAnswer(question, answer);
+    if (!result.isValid) {
+      throw new Error(result.error);
     }
   }
 

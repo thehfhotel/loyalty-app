@@ -2,11 +2,8 @@ import { Request, Response } from 'express';
 import asyncHandler from 'express-async-handler';
 import { body, query, param, validationResult } from 'express-validator';
 import { CouponService } from '../services/couponService.js';
-import { QRCodeGenerator } from '../utils/qrCodeGenerator.js';
 import { logger } from '../utils/logger.js';
 import { 
-  COUPON_TYPES, 
-  COUPON_CATEGORIES, 
   HttpStatus, 
   ERROR_CODES 
 } from '@hotel-loyalty/shared';
@@ -192,13 +189,9 @@ export class CouponController {
         });
       }
 
-      const { code, amount, location } = req.body;
-      
       const result = await this.couponService.redeemCoupon(
-        code,
-        customerId,
-        amount,
-        location
+        req.body,
+        customerId
       );
       
       res.json({
@@ -228,31 +221,11 @@ export class CouponController {
     try {
       const { qrData } = req.body;
       
-      const parsedData = QRCodeGenerator.parseQRCodeData(qrData);
-      
-      if (parsedData.type !== 'coupon_redemption') {
-        return res.status(HttpStatus.BAD_REQUEST).json({
-          success: false,
-          message: 'Invalid QR code type'
-        });
-      }
-      
-      const coupon = await this.couponService.getCouponById(parsedData.id);
-      
-      if (!coupon) {
-        return res.status(HttpStatus.NOT_FOUND).json({
-          success: false,
-          message: 'Coupon not found'
-        });
-      }
+      const result = await this.couponService.validateQRCode(qrData);
       
       res.json({
         success: true,
-        data: {
-          coupon,
-          valid: coupon.isActive && new Date() <= coupon.validUntil,
-          code: parsedData.code
-        }
+        data: result
       });
     } catch (error) {
       logger.error('Error validating QR code:', error);
@@ -319,38 +292,6 @@ export class CouponController {
     }
   });
 
-  /**
-   * Generate new QR code for coupon
-   */
-  generateQRCode = asyncHandler(async (req: Request, res: Response) => {
-    try {
-      const coupon = await this.couponService.getCouponById(req.params.id);
-      
-      if (!coupon) {
-        return res.status(HttpStatus.NOT_FOUND).json({
-          success: false,
-          message: 'Coupon not found'
-        });
-      }
-      
-      const qrCode = await QRCodeGenerator.generateCouponQR(
-        coupon.id,
-        coupon.code,
-        req.body.options || {}
-      );
-      
-      res.json({
-        success: true,
-        data: { qrCode }
-      });
-    } catch (error) {
-      logger.error('Error generating QR code:', error);
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        success: false,
-        message: 'Failed to generate QR code'
-      });
-    }
-  });
 }
 
 // Validation middleware
@@ -358,8 +299,8 @@ export const couponValidation = {
   createCoupon: [
     body('title').trim().isLength({ min: 1, max: 100 }).withMessage('Title is required and must be less than 100 characters'),
     body('description').trim().isLength({ min: 1, max: 500 }).withMessage('Description is required and must be less than 500 characters'),
-    body('type').isIn(Object.values(COUPON_TYPES)).withMessage('Invalid coupon type'),
-    body('category').isIn(Object.values(COUPON_CATEGORIES)).withMessage('Invalid coupon category'),
+    body('type').isIn(['percentage', 'fixed_amount', 'free_item']).withMessage('Invalid coupon type'),
+    body('category').isIn(['room', 'dining', 'spa', 'experience', 'general']).withMessage('Invalid coupon category'),
     body('value').isFloat({ min: 0 }).withMessage('Value must be a positive number'),
     body('minSpend').optional().isFloat({ min: 0 }).withMessage('Minimum spend must be a positive number'),
     body('maxDiscount').optional().isFloat({ min: 0 }).withMessage('Maximum discount must be a positive number'),

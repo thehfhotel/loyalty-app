@@ -2,10 +2,8 @@ import { Request, Response } from 'express';
 import asyncHandler from 'express-async-handler';
 import { body, query, param, validationResult } from 'express-validator';
 import { SurveyService } from '../services/surveyService.js';
-import { QRCodeGenerator } from '../utils/qrCodeGenerator.js';
 import { logger } from '../utils/logger.js';
 import { 
-  SURVEY_QUESTION_TYPES, 
   HttpStatus, 
   ERROR_CODES 
 } from '@hotel-loyalty/shared';
@@ -305,42 +303,11 @@ export class SurveyController {
     try {
       const { qrData } = req.body;
       
-      const parsedData = QRCodeGenerator.parseQRCodeData(qrData);
-      
-      if (parsedData.type !== 'survey_access') {
-        return res.status(HttpStatus.BAD_REQUEST).json({
-          success: false,
-          message: 'Invalid QR code type'
-        });
-      }
-      
-      const survey = await this.surveyService.getSurveyById(parsedData.id, false);
-      
-      if (!survey) {
-        return res.status(HttpStatus.NOT_FOUND).json({
-          success: false,
-          message: 'Survey not found'
-        });
-      }
-      
-      const now = new Date();
-      const isValid = survey.isActive && 
-                     now >= survey.startDate && 
-                     now <= survey.endDate;
+      const result = await this.surveyService.validateQRCode(qrData);
       
       res.json({
         success: true,
-        data: {
-          survey: {
-            id: survey.id,
-            title: survey.title,
-            description: survey.description,
-            estimatedTime: survey.estimatedTime,
-            pointsReward: survey.pointsReward
-          },
-          valid: isValid,
-          code: parsedData.code
-        }
+        data: result
       });
     } catch (error) {
       logger.error('Error validating QR code:', error);
@@ -351,38 +318,6 @@ export class SurveyController {
     }
   });
 
-  /**
-   * Generate new QR code for survey
-   */
-  generateQRCode = asyncHandler(async (req: Request, res: Response) => {
-    try {
-      const survey = await this.surveyService.getSurveyById(req.params.id, false);
-      
-      if (!survey) {
-        return res.status(HttpStatus.NOT_FOUND).json({
-          success: false,
-          message: 'Survey not found'
-        });
-      }
-      
-      const qrCode = await QRCodeGenerator.generateSurveyQR(
-        survey.id,
-        survey.code,
-        req.body.options || {}
-      );
-      
-      res.json({
-        success: true,
-        data: { qrCode }
-      });
-    } catch (error) {
-      logger.error('Error generating QR code:', error);
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        success: false,
-        message: 'Failed to generate QR code'
-      });
-    }
-  });
 
   /**
    * Get survey questions
@@ -447,7 +382,7 @@ export const surveyValidation = {
     body('pointsReward').optional().isInt({ min: 0 }).withMessage('Points reward must be a non-negative integer'),
     body('estimatedTime').isInt({ min: 1 }).withMessage('Estimated time is required and must be positive'),
     body('questions').isArray({ min: 1 }).withMessage('At least one question is required'),
-    body('questions.*.type').isIn(Object.values(SURVEY_QUESTION_TYPES)).withMessage('Invalid question type'),
+    body('questions.*.type').isIn(['text', 'number', 'single_choice', 'multiple_choice', 'rating', 'boolean']).withMessage('Invalid question type'),
     body('questions.*.title').trim().isLength({ min: 1, max: 200 }).withMessage('Question title is required'),
     body('questions.*.isRequired').isBoolean().withMessage('isRequired must be boolean'),
     body('questions.*.order').isInt({ min: 0 }).withMessage('Order must be a non-negative integer')
