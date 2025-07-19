@@ -2,6 +2,7 @@ import { Router } from 'express';
 import passport from 'passport';
 import { oauthService } from '../services/oauthService';
 import { logger } from '../utils/logger';
+import { featureToggleService } from '../services/featureToggleService';
 
 const router = Router();
 
@@ -46,21 +47,42 @@ router.get('/google/callback',
 );
 
 // Facebook OAuth routes (keeping for backward compatibility)
-router.get('/facebook', (req, res, next) => {
-  // Check if Facebook strategy is configured
-  const facebookAppId = process.env.FACEBOOK_APP_ID;
-  
-  if (!facebookAppId || facebookAppId === 'your-facebook-app-id') {
-    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=facebook_not_configured`);
+router.get('/facebook', async (req, res, next) => {
+  try {
+    // Check if Facebook OAuth feature is enabled
+    const isFacebookOAuthEnabled = await featureToggleService.isFeatureEnabled('facebook_oauth');
+    
+    if (!isFacebookOAuthEnabled) {
+      logger.info('Facebook OAuth access denied - feature disabled');
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=facebook_not_configured`);
+    }
+    
+    // Check if Facebook strategy is configured
+    const facebookAppId = process.env.FACEBOOK_APP_ID;
+    
+    if (!facebookAppId || facebookAppId === 'your-facebook-app-id') {
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=facebook_not_configured`);
+    }
+    
+    passport.authenticate('facebook', { scope: ['email'] })(req, res, next);
+  } catch (error) {
+    logger.error('Facebook OAuth feature check error:', error);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=facebook_not_configured`);
   }
-  
-  passport.authenticate('facebook', { scope: ['email'] })(req, res, next);
 });
 
 router.get('/facebook/callback', 
   passport.authenticate('facebook', { session: false }),
   async (req, res) => {
     try {
+      // Check if Facebook OAuth feature is enabled
+      const isFacebookOAuthEnabled = await featureToggleService.isFeatureEnabled('facebook_oauth');
+      
+      if (!isFacebookOAuthEnabled) {
+        logger.info('Facebook OAuth callback denied - feature disabled');
+        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=facebook_not_configured`);
+      }
+      
       const oauthResult = req.user as any;
       
       if (!oauthResult) {

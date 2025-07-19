@@ -7,7 +7,9 @@ import { useAuthStore } from '../../store/authStore';
 import { FiMail, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
 import GoogleLoginButton from '../../components/auth/GoogleLoginButton';
 import LineLoginButton from '../../components/auth/LineLoginButton';
+import FacebookLoginButton from '../../components/auth/FacebookLoginButton';
 import toast from 'react-hot-toast';
+import { useFeatureToggle, FEATURE_KEYS } from '../../hooks/useFeatureToggle';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -22,6 +24,9 @@ export default function LoginPage() {
   const login = useAuthStore((state) => state.login);
   const isLoading = useAuthStore((state) => state.isLoading);
   const [showPassword, setShowPassword] = useState(false);
+  
+  // Check if Facebook OAuth is enabled
+  const isFacebookOAuthEnabled = useFeatureToggle(FEATURE_KEYS.FACEBOOK_OAUTH);
 
   useEffect(() => {
     const error = searchParams.get('error');
@@ -163,6 +168,7 @@ export default function LoginPage() {
           <div className="mt-6 space-y-3">
             <GoogleLoginButton />
             <LineLoginButton />
+            {isFacebookOAuthEnabled && <FacebookLoginButton />}
           </div>
         </div>
       </div>
