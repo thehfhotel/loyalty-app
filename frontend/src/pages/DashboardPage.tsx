@@ -1,11 +1,14 @@
 import { useAuthStore } from '../store/authStore';
-import { FiUser, FiLogOut, FiSettings } from 'react-icons/fi';
+import { FiUser, FiLogOut, FiSettings, FiToggleLeft } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { getUserDisplayName } from '../utils/userHelpers';
 
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  
+  // Check if user is super admin
+  const isSuperAdmin = user?.role === 'super_admin';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -97,6 +100,32 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+
+            {/* Feature Toggle Card (Super Admin Only) */}
+            {isSuperAdmin && (
+              <Link
+                to="/admin/feature-toggles"
+                className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+              >
+                <div className="p-5">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <FiToggleLeft className="h-6 w-6 text-purple-600" />
+                    </div>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-sm font-medium text-gray-500 truncate">
+                          Feature Toggles
+                        </dt>
+                        <dd className="mt-1 text-lg font-semibold text-gray-900">
+                          Manage system features
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            )}
           </div>
 
           {/* Welcome Message */}

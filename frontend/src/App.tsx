@@ -7,12 +7,19 @@ import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import OAuthSuccessPage from './pages/auth/OAuthSuccessPage';
 import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
+import AccountLinkingPage from './pages/AccountLinkingPage';
+import FeatureTogglePage from './pages/admin/FeatureTogglePage';
+import FeatureDisabledPage from './components/FeatureDisabledPage';
 import { useEffect, useState } from 'react';
+import { useFeatureToggle, FEATURE_KEYS } from './hooks/useFeatureToggle';
 
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const user = useAuthStore((state) => state.user);
   const [isInitialized, setIsInitialized] = useState(false);
+  
+  // Check feature toggles
+  const isAccountLinkingEnabled = useFeatureToggle(FEATURE_KEYS.ACCOUNT_LINKING);
 
   useEffect(() => {
     // Give Zustand persist time to rehydrate state from localStorage
@@ -75,6 +82,27 @@ function App() {
         <Route
           path="/profile"
           element={isAuthenticated ? <ProfilePage /> : <Navigate to="/login" />}
+        />
+        <Route
+          path="/account-linking"
+          element={
+            isAuthenticated ? (
+              isAccountLinkingEnabled ? (
+                <AccountLinkingPage />
+              ) : (
+                <FeatureDisabledPage
+                  featureName="Account Linking"
+                  description="Account linking is currently disabled by the system administrator. Please contact support if you need this feature enabled."
+                />
+              )
+            ) : (
+              <Navigate to="/login" />
+            )
+          }
+        />
+        <Route
+          path="/admin/feature-toggles"
+          element={isAuthenticated ? <FeatureTogglePage /> : <Navigate to="/login" />}
         />
 
         {/* Default redirect */}
