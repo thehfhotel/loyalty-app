@@ -1,5 +1,6 @@
 // Types
 export * from './types/auth';
+export * from './types/customer';
 export * from './types/loyalty';
 export * from './types/campaigns';
 export * from './types/api';

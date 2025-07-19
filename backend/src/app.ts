@@ -8,6 +8,10 @@ import { connectRedis } from './config/redis.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
 import { logger, requestLogger } from './utils/logger.js';
 import authRoutes from './routes/auth.js';
+import customerRoutes from './routes/customer.js';
+import loyaltyRoutes from './routes/loyalty.js';
+import { createCouponRoutes } from './routes/coupons.js';
+import { createSurveyRoutes } from './routes/surveys.js';
 
 const app = express();
 
@@ -85,8 +89,34 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Initialize connections and get database pool
+let dbPool: any = null;
+
 // API routes
 app.use('/api/auth', authRoutes);
+app.use('/api/customers', customerRoutes);
+app.use('/api/loyalty', loyaltyRoutes);
+
+// Routes that need database connection
+app.use('/api/coupons', (req, res, next) => {
+  if (!dbPool) {
+    return res.status(503).json({
+      success: false,
+      message: 'Database not available'
+    });
+  }
+  next();
+}, createCouponRoutes(dbPool));
+
+app.use('/api/surveys', (req, res, next) => {
+  if (!dbPool) {
+    return res.status(503).json({
+      success: false,
+      message: 'Database not available'
+    });
+  }
+  next();
+}, createSurveyRoutes(dbPool));
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -109,7 +139,8 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
 // Initialize connections
 export async function initializeApp(): Promise<void> {
   try {
-    await connectDatabase();
+    const { pool } = await connectDatabase();
+    dbPool = pool;
     await connectRedis();
     logger.info('Application initialized successfully');
   } catch (error) {
