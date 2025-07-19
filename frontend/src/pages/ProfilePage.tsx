@@ -102,7 +102,22 @@ export default function ProfilePage() {
               <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-500">Logged in as {user?.email}</span>
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-gray-500">Logged in as {user?.email}</span>
+                {user?.role && user.role !== 'customer' && (
+                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
+                    user.role === 'super_admin' 
+                      ? 'bg-purple-100 text-purple-800' 
+                      : user.role === 'admin'
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {user.role === 'super_admin' ? 'Super Admin' : 
+                     user.role === 'admin' ? 'Admin' : 
+                     user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                  </span>
+                )}
+              </div>
               <button
                 onClick={logout}
                 className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
@@ -137,9 +152,24 @@ export default function ProfilePage() {
                 </button>
               </div>
               <div className="ml-6">
-                <h3 className="text-lg font-medium text-gray-900">
-                  {profile ? `${profile.firstName} ${profile.lastName}` : 'Loading...'}
-                </h3>
+                <div className="flex items-center space-x-3">
+                  <h3 className="text-lg font-medium text-gray-900">
+                    {profile ? `${profile.firstName} ${profile.lastName}` : 'Loading...'}
+                  </h3>
+                  {user?.role && user.role !== 'customer' && (
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      user.role === 'super_admin' 
+                        ? 'bg-purple-100 text-purple-800' 
+                        : user.role === 'admin'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {user.role === 'super_admin' ? 'Super Admin' : 
+                       user.role === 'admin' ? 'Admin' : 
+                       user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                    </span>
+                  )}
+                </div>
                 <p className="text-sm text-gray-500">
                   Member since {profile ? new Date(profile.createdAt).toLocaleDateString() : '...'}
                 </p>

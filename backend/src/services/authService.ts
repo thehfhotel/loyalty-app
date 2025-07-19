@@ -6,6 +6,7 @@ import { getRedisClient } from '../config/redis';
 import { AppError } from '../middleware/errorHandler';
 import { User, UserProfile, JWTPayload, AuthTokens } from '../types/auth';
 import { logger } from '../utils/logger';
+import { adminConfigService } from './adminConfigService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret';
@@ -53,11 +54,11 @@ export class AuthService {
         [user.id, data.firstName, data.lastName, data.phone]
       );
 
-      // Generate tokens
-      const tokens = await this.generateTokens(user);
+      // Generate tokens (pass client for transaction)
+      const tokens = await this.generateTokens(user, client);
 
       // Log registration
-      await this.logUserAction(user.id, 'register', { email: data.email });
+      await this.logUserAction(user.id, 'register', { email: data.email }, client);
 
       await client.query('COMMIT');
 
@@ -94,14 +95,60 @@ export class AuthService {
       throw new AppError(401, 'Invalid credentials');
     }
 
-    // Generate tokens
-    const tokens = await this.generateTokens(user);
+    // Check if email should have elevated role and update if necessary
+    let updatedUser = user;
+    const requiredRole = adminConfigService.getRequiredRole(email);
+    
+    if (requiredRole && user.role === 'customer') {
+      logger.info(`Upgrading user ${email} to ${requiredRole} role based on admin config`);
+      
+      // Update user role
+      const [upgradedUser] = await query<User & { passwordHash: string }>(
+        `UPDATE users SET role = $1, updated_at = NOW() 
+         WHERE id = $2 
+         RETURNING id, email, password_hash AS "passwordHash", role, is_active AS "isActive", 
+                   email_verified AS "emailVerified", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [requiredRole, user.id]
+      );
+      
+      updatedUser = upgradedUser;
+      
+      // Log role upgrade
+      await this.logUserAction(user.id, 'role_upgrade', { 
+        oldRole: 'customer', 
+        newRole: requiredRole, 
+        reason: 'admin_config_match' 
+      });
+    } else if (requiredRole && user.role === 'admin' && requiredRole === 'super_admin') {
+      // Handle upgrade from admin to super_admin
+      logger.info(`Upgrading user ${email} from admin to super_admin role based on admin config`);
+      
+      const [upgradedUser] = await query<User & { passwordHash: string }>(
+        `UPDATE users SET role = 'super_admin', updated_at = NOW() 
+         WHERE id = $1 
+         RETURNING id, email, password_hash AS "passwordHash", role, is_active AS "isActive", 
+                   email_verified AS "emailVerified", created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [user.id]
+      );
+      
+      updatedUser = upgradedUser;
+      
+      // Log role upgrade
+      await this.logUserAction(user.id, 'role_upgrade', { 
+        oldRole: 'admin', 
+        newRole: 'super_admin', 
+        reason: 'admin_config_precedence' 
+      });
+    }
+
+    // Generate tokens with updated user data
+    const tokens = await this.generateTokens(updatedUser);
 
     // Log login
-    await this.logUserAction(user.id, 'login', { email });
+    await this.logUserAction(updatedUser.id, 'login', { email });
 
     // Remove password hash from response
-    const { passwordHash, ...userWithoutPassword } = user;
+    const { passwordHash, ...userWithoutPassword } = updatedUser;
 
     return { user: userWithoutPassword, tokens };
   }
@@ -221,7 +268,7 @@ export class AuthService {
     await this.logUserAction(resetToken.userId, 'password_reset_complete');
   }
 
-  private async generateTokens(user: User): Promise<AuthTokens> {
+  private async generateTokens(user: User, client?: any): Promise<AuthTokens> {
     const payload: JWTPayload = {
       userId: user.id,
       email: user.email,
@@ -237,11 +284,19 @@ export class AuthService {
     });
 
     // Store refresh token
-    await query(
-      `INSERT INTO refresh_tokens (user_id, token, expires_at) 
-       VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
-      [user.id, refreshToken]
-    );
+    if (client) {
+      await client.query(
+        `INSERT INTO refresh_tokens (user_id, token, expires_at) 
+         VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
+        [user.id, refreshToken]
+      );
+    } else {
+      await query(
+        `INSERT INTO refresh_tokens (user_id, token, expires_at) 
+         VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
+        [user.id, refreshToken]
+      );
+    }
 
     return { accessToken, refreshToken };
   }
@@ -249,12 +304,20 @@ export class AuthService {
   private async logUserAction(
     userId: string,
     action: string,
-    details: Record<string, any> = {}
+    details: Record<string, any> = {},
+    client?: any
   ): Promise<void> {
-    await query(
-      'INSERT INTO user_audit_log (user_id, action, details) VALUES ($1, $2, $3)',
-      [userId, action, details]
-    );
+    if (client) {
+      await client.query(
+        'INSERT INTO user_audit_log (user_id, action, details) VALUES ($1, $2, $3)',
+        [userId, action, details]
+      );
+    } else {
+      await query(
+        'INSERT INTO user_audit_log (user_id, action, details) VALUES ($1, $2, $3)',
+        [userId, action, details]
+      );
+    }
   }
 
   async verifyToken(token: string): Promise<JWTPayload> {

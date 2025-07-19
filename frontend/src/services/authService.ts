@@ -12,9 +12,20 @@ const api = axios.create({
 // Add auth token to requests
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    // Get token from Zustand persist storage
+    const authStorage = localStorage.getItem('auth-storage');
+    
+    if (authStorage) {
+      try {
+        const parsedAuth = JSON.parse(authStorage);
+        const token = parsedAuth.state?.accessToken;
+        
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+      } catch (error) {
+        console.error('Error parsing auth storage:', error);
+      }
     }
     return config;
   },
@@ -33,19 +44,27 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (refreshToken) {
-          const response = await authService.refreshToken(refreshToken);
-          localStorage.setItem('accessToken', response.tokens.accessToken);
-          localStorage.setItem('refreshToken', response.tokens.refreshToken);
+        // Get refresh token from Zustand persist storage
+        const authStorage = localStorage.getItem('auth-storage');
+        if (authStorage) {
+          const parsedAuth = JSON.parse(authStorage);
+          const refreshToken = parsedAuth.state?.refreshToken;
           
-          originalRequest.headers.Authorization = `Bearer ${response.tokens.accessToken}`;
-          return api(originalRequest);
+          if (refreshToken) {
+            const response = await authService.refreshToken(refreshToken);
+            
+            // Update the Zustand storage with new tokens
+            parsedAuth.state.accessToken = response.tokens.accessToken;
+            parsedAuth.state.refreshToken = response.tokens.refreshToken;
+            localStorage.setItem('auth-storage', JSON.stringify(parsedAuth));
+            
+            originalRequest.headers.Authorization = `Bearer ${response.tokens.accessToken}`;
+            return api(originalRequest);
+          }
         }
       } catch (refreshError) {
         // Refresh failed, clear auth and redirect to login
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('auth-storage');
         window.location.href = '/login';
       }
     }
