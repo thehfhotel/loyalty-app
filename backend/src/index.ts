@@ -13,6 +13,11 @@ import { connectRedis } from './config/redis';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
 import oauthRoutes from './routes/oauth';
+import featureToggleRoutes from './routes/featureToggles';
+// import accountLinkingRoutes from './routes/accountLinking.minimal';
+// import { accountLinkingService } from './services/accountLinkingService';
+import { authenticate } from './middleware/auth';
+// import { query } from './config/database';
 // Import and initialize OAuth service to register strategies
 import './services/oauthService';
 
@@ -58,6 +63,27 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/oauth', oauthRoutes);
+app.use('/api/feature-toggles', featureToggleRoutes);
+// Account linking routes (basic implementation for testing)
+app.get('/api/account-linking/health', authenticate, async (req, res) => {
+  res.json({ success: true, message: 'Account linking API is available' });
+});
+
+app.get('/api/account-linking/requests', authenticate, async (req, res) => {
+  res.json({ success: true, data: { sent: [], received: [] } });
+});
+
+app.get('/api/account-linking/linked-accounts', authenticate, async (req, res) => {
+  res.json({ success: true, data: [] });
+});
+
+app.post('/api/account-linking/request', authenticate, async (req, res) => {
+  res.status(201).json({ success: true, message: 'Account linking feature coming soon' });
+});
+
+app.get('/api/account-linking/status/:email', authenticate, async (req, res) => {
+  res.json({ success: true, data: { canLink: true, targetExists: false } });
+});
 
 // Error handling
 app.use(errorHandler);
