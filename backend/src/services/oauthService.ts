@@ -1,0 +1,352 @@
+import passport from 'passport';
+import { Strategy as FacebookStrategy } from 'passport-facebook';
+import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import { query } from '../config/database';
+import { AuthService } from './authService';
+import { User, AuthTokens } from '../types/auth';
+import { logger } from '../utils/logger';
+import { adminConfigService } from './adminConfigService';
+
+const authService = new AuthService();
+
+interface FacebookProfile {
+  id: string;
+  displayName: string;
+  name: {
+    familyName?: string;
+    givenName?: string;
+  };
+  emails?: Array<{
+    value: string;
+    verified?: boolean;
+  }>;
+  photos?: Array<{
+    value: string;
+  }>;
+}
+
+interface GoogleProfile {
+  id: string;
+  displayName: string;
+  name: {
+    familyName?: string;
+    givenName?: string;
+  };
+  emails?: Array<{
+    value: string;
+    verified?: boolean;
+  }>;
+  photos?: Array<{
+    value: string;
+  }>;
+}
+
+export class OAuthService {
+  constructor() {
+    this.initializePassport();
+  }
+
+  private initializePassport(): void {
+    // Initialize Google Strategy if credentials are provided
+    const googleClientId = process.env.GOOGLE_CLIENT_ID;
+    const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+    if (googleClientId && googleClientSecret && googleClientId !== 'your-google-client-id') {
+      logger.info('Initializing Google OAuth strategy');
+      
+      passport.use(new GoogleStrategy({
+        clientID: googleClientId,
+        clientSecret: googleClientSecret,
+        callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4000/api/oauth/google/callback'
+      }, async (accessToken: string, refreshToken: string, profile: GoogleProfile, done: any) => {
+        try {
+          const result = await this.handleGoogleAuth(profile);
+          return done(null, result);
+        } catch (error) {
+          logger.error('Google OAuth error:', error);
+          return done(error, null);
+        }
+      }));
+    } else {
+      logger.warn('Google OAuth not configured - Google Client ID and Secret required');
+    }
+
+    // Only initialize Facebook Strategy if credentials are provided (keeping for fallback)
+    const facebookAppId = process.env.FACEBOOK_APP_ID;
+    const facebookAppSecret = process.env.FACEBOOK_APP_SECRET;
+
+    if (facebookAppId && facebookAppSecret && facebookAppId !== 'your-facebook-app-id') {
+      logger.info('Initializing Facebook OAuth strategy');
+      
+      passport.use(new FacebookStrategy({
+        clientID: facebookAppId,
+        clientSecret: facebookAppSecret,
+        callbackURL: process.env.FACEBOOK_CALLBACK_URL || 'http://localhost:4000/api/auth/facebook/callback',
+        profileFields: ['id', 'displayName', 'name', 'emails', 'photos']
+      }, async (accessToken: string, refreshToken: string, profile: FacebookProfile, done: any) => {
+        try {
+          const result = await this.handleFacebookAuth(profile);
+          return done(null, result);
+        } catch (error) {
+          logger.error('Facebook OAuth error:', error);
+          return done(error, null);
+        }
+      }));
+    } else {
+      logger.warn('Facebook OAuth not configured - Facebook App ID and Secret required');
+    }
+
+    // Serialize user for session
+    passport.serializeUser((user: any, done) => {
+      done(null, user.id);
+    });
+
+    // Deserialize user from session
+    passport.deserializeUser(async (id: string, done) => {
+      try {
+        const [user] = await query<User>(
+          'SELECT id, email, role, is_active AS "isActive" FROM users WHERE id = $1',
+          [id]
+        );
+        done(null, user || null);
+      } catch (error) {
+        done(error, null);
+      }
+    });
+  }
+
+  private async handleGoogleAuth(profile: GoogleProfile): Promise<{ user: User; tokens: AuthTokens; isNewUser: boolean }> {
+    const email = profile.emails?.[0]?.value;
+    
+    if (!email) {
+      throw new Error('No email provided by Google');
+    }
+
+    // Check if user exists
+    const [existingUser] = await query<User>(
+      `SELECT id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+              created_at AS "createdAt", updated_at AS "updatedAt"
+       FROM users WHERE email = $1`,
+      [email]
+    );
+
+    let user: User;
+    let isNewUser = false;
+
+    if (existingUser) {
+      // Update existing user's profile if needed
+      user = existingUser;
+      
+      // Update Google-specific data if available
+      const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || '';
+      const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
+      const avatarUrl = profile.photos?.[0]?.value;
+
+      if (firstName || lastName || avatarUrl) {
+        await query(
+          `UPDATE user_profiles 
+           SET first_name = COALESCE(NULLIF($2, ''), first_name),
+               last_name = COALESCE(NULLIF($3, ''), last_name),
+               avatar_url = COALESCE(NULLIF($4, ''), avatar_url),
+               updated_at = NOW()
+           WHERE user_id = $1`,
+          [user.id, firstName, lastName, avatarUrl]
+        );
+      }
+
+      // Mark email as verified since it's from Google
+      if (!user.emailVerified) {
+        await query(
+          'UPDATE users SET email_verified = true, updated_at = NOW() WHERE id = $1',
+          [user.id]
+        );
+        user.emailVerified = true;
+      }
+    } else {
+      // Create new user
+      isNewUser = true;
+      
+      const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || '';
+      const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
+      const avatarUrl = profile.photos?.[0]?.value;
+
+      // Create user account (no password needed for OAuth)
+      const [newUser] = await query<User>(
+        `INSERT INTO users (email, password_hash, email_verified) 
+         VALUES ($1, '', true) 
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                   created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [email]
+      );
+
+      // Create user profile
+      await query(
+        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url) 
+         VALUES ($1, $2, $3, $4)`,
+        [newUser.id, firstName, lastName, avatarUrl]
+      );
+
+      user = newUser;
+    }
+
+    // Check if user should have elevated role
+    const requiredRole = adminConfigService.getRequiredRole(email);
+    if (requiredRole && user.role === 'customer') {
+      logger.info(`Upgrading Google user ${email} to ${requiredRole} role based on admin config`);
+      
+      const [upgradedUser] = await query<User>(
+        `UPDATE users SET role = $1, updated_at = NOW() 
+         WHERE id = $2 
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                   created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [requiredRole, user.id]
+      );
+      
+      user = upgradedUser;
+    } else if (requiredRole && user.role === 'admin' && requiredRole === 'super_admin') {
+      logger.info(`Upgrading Google user ${email} from admin to super_admin role based on admin config`);
+      
+      const [upgradedUser] = await query<User>(
+        `UPDATE users SET role = 'super_admin', updated_at = NOW() 
+         WHERE id = $1 
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                   created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [user.id]
+      );
+      
+      user = upgradedUser;
+    }
+
+    // Generate JWT tokens
+    const tokens = await authService.generateTokens(user);
+
+    // Log OAuth login
+    await query(
+      'INSERT INTO user_audit_log (user_id, action, details) VALUES ($1, $2, $3)',
+      [user.id, 'oauth_login', { provider: 'google', isNewUser }]
+    );
+
+    return { user, tokens, isNewUser };
+  }
+
+  private async handleFacebookAuth(profile: FacebookProfile): Promise<{ user: User; tokens: AuthTokens; isNewUser: boolean }> {
+    const email = profile.emails?.[0]?.value;
+    
+    if (!email) {
+      throw new Error('No email provided by Facebook');
+    }
+
+    // Check if user exists
+    const [existingUser] = await query<User>(
+      `SELECT id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+              created_at AS "createdAt", updated_at AS "updatedAt"
+       FROM users WHERE email = $1`,
+      [email]
+    );
+
+    let user: User;
+    let isNewUser = false;
+
+    if (existingUser) {
+      // Update existing user's profile if needed
+      user = existingUser;
+      
+      // Update Facebook-specific data if available
+      const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || '';
+      const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
+      const avatarUrl = profile.photos?.[0]?.value;
+
+      if (firstName || lastName || avatarUrl) {
+        await query(
+          `UPDATE user_profiles 
+           SET first_name = COALESCE(NULLIF($2, ''), first_name),
+               last_name = COALESCE(NULLIF($3, ''), last_name),
+               avatar_url = COALESCE(NULLIF($4, ''), avatar_url),
+               updated_at = NOW()
+           WHERE user_id = $1`,
+          [user.id, firstName, lastName, avatarUrl]
+        );
+      }
+
+      // Mark email as verified since it's from Facebook
+      if (!user.emailVerified) {
+        await query(
+          'UPDATE users SET email_verified = true, updated_at = NOW() WHERE id = $1',
+          [user.id]
+        );
+        user.emailVerified = true;
+      }
+    } else {
+      // Create new user
+      isNewUser = true;
+      
+      const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || '';
+      const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
+      const avatarUrl = profile.photos?.[0]?.value;
+
+      // Create user account (no password needed for OAuth)
+      const [newUser] = await query<User>(
+        `INSERT INTO users (email, password_hash, email_verified) 
+         VALUES ($1, '', true) 
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                   created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [email]
+      );
+
+      // Create user profile
+      await query(
+        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url) 
+         VALUES ($1, $2, $3, $4)`,
+        [newUser.id, firstName, lastName, avatarUrl]
+      );
+
+      user = newUser;
+    }
+
+    // Check if user should have elevated role
+    const requiredRole = adminConfigService.getRequiredRole(email);
+    if (requiredRole && user.role === 'customer') {
+      logger.info(`Upgrading Facebook user ${email} to ${requiredRole} role based on admin config`);
+      
+      const [upgradedUser] = await query<User>(
+        `UPDATE users SET role = $1, updated_at = NOW() 
+         WHERE id = $2 
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                   created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [requiredRole, user.id]
+      );
+      
+      user = upgradedUser;
+    } else if (requiredRole && user.role === 'admin' && requiredRole === 'super_admin') {
+      logger.info(`Upgrading Facebook user ${email} from admin to super_admin role based on admin config`);
+      
+      const [upgradedUser] = await query<User>(
+        `UPDATE users SET role = 'super_admin', updated_at = NOW() 
+         WHERE id = $1 
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                   created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [user.id]
+      );
+      
+      user = upgradedUser;
+    }
+
+    // Generate JWT tokens
+    const tokens = await authService.generateTokens(user);
+
+    // Log OAuth login
+    await query(
+      'INSERT INTO user_audit_log (user_id, action, details) VALUES ($1, $2, $3)',
+      [user.id, 'oauth_login', { provider: 'facebook', isNewUser }]
+    );
+
+    return { user, tokens, isNewUser };
+  }
+
+  // Add method to make generateTokens accessible
+  async generateTokensForUser(user: User): Promise<AuthTokens> {
+    return authService.generateTokens(user);
+  }
+}
+
+export const oauthService = new OAuthService();

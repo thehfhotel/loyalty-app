@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuthStore } from '../../store/authStore';
 import { FiMail, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
+import GoogleLoginButton from '../../components/auth/GoogleLoginButton';
+import toast from 'react-hot-toast';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -15,9 +17,23 @@ type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const login = useAuthStore((state) => state.login);
   const isLoading = useAuthStore((state) => state.isLoading);
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    const error = searchParams.get('error');
+    if (error === 'google_not_configured') {
+      toast.error('Google login is not configured. Please use email login.');
+    } else if (error === 'facebook_not_configured') {
+      toast.error('Facebook login is not configured. Please use email login.');
+    } else if (error === 'oauth_failed') {
+      toast.error('Social login failed. Please try again.');
+    } else if (error === 'oauth_error') {
+      toast.error('An error occurred during social login. Please try again.');
+    }
+  }, [searchParams]);
 
   const {
     register,
@@ -129,6 +145,22 @@ export default function LoginPage() {
             </button>
           </div>
         </form>
+
+        {/* Social Login Section */}
+        <div className="mt-6">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300" />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-gray-50 text-gray-500">Or continue with</span>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <GoogleLoginButton />
+          </div>
+        </div>
       </div>
     </div>
   );

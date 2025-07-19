@@ -4,6 +4,7 @@ import { useAuthStore } from './store/authStore';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
+import OAuthSuccessPage from './pages/auth/OAuthSuccessPage';
 import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
 import { useEffect, useState } from 'react';
@@ -60,6 +61,10 @@ function App() {
         <Route
           path="/reset-password"
           element={!isAuthenticated ? <ResetPasswordPage /> : <Navigate to="/dashboard" />}
+        />
+        <Route
+          path="/oauth/success"
+          element={<OAuthSuccessPage />}
         />
 
         {/* Protected routes */}

@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import passport from 'passport';
+import session from 'express-session';
 import { createServer } from 'http';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
@@ -10,6 +12,9 @@ import { connectDatabase } from './config/database';
 import { connectRedis } from './config/redis';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
+import oauthRoutes from './routes/oauth';
+// Import and initialize OAuth service to register strategies
+import './services/oauthService';
 
 // Load environment variables
 dotenv.config();
@@ -26,6 +31,22 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Session middleware for OAuth
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-session-secret-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
+
 app.use(requestLogger);
 
 // Health check endpoint
@@ -36,6 +57,7 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/oauth', oauthRoutes);
 
 // Error handling
 app.use(errorHandler);
