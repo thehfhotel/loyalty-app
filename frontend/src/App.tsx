@@ -10,6 +10,7 @@ import ProfilePage from './pages/ProfilePage';
 import AccountLinkingPage from './pages/AccountLinkingPage';
 import FeatureTogglePage from './pages/admin/FeatureTogglePage';
 import FeatureDisabledPage from './components/FeatureDisabledPage';
+import LoyaltyDashboard from './pages/loyalty/LoyaltyDashboard';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import SessionManager from './components/auth/SessionManager';
 import DevTools from './components/dev/DevTools';
@@ -100,6 +101,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ProfilePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/loyalty"
+          element={
+            <ProtectedRoute>
+              <LoyaltyDashboard />
             </ProtectedRoute>
           }
         />

@@ -60,6 +60,7 @@
     "myProfile": "My Profile",
     "manageProfile": "Manage your personal information",
     "loyaltyPoints": "Loyalty Points",
+    "manageLoyalty": "View points and tier status",
     "comingSoon": "Coming in Phase {{phase}}",
     "myCoupons": "My Coupons",
     "featureToggles": "Feature Toggles",
@@ -169,5 +170,47 @@
   "languages": {
     "en": "English",
     "th": "ไทย"
+  },
+  "loyalty": {
+    "title": "Loyalty Program",
+    "pointsBalance": "Points Balance",
+    "member": "Member",
+    "availablePoints": "Available Points",
+    "lifetimePoints": "Lifetime Points",
+    "expiringPoints": "Expiring Soon",
+    "expiresOn": "Expires on",
+    "tierBenefits": "Tier Benefits",
+    "noDescription": "No description available",
+    "moreBenefits": "more benefits",
+    "tierStatus": "Tier Status",
+    "points": "points",
+    "pointsToGo": "points to go",
+    "currentTier": "Current Tier",
+    "nextTierBenefits": "{{tier}} Benefits",
+    "unlockBenefits": "Earn {{points}} more points to unlock",
+    "topTierMessage": "Congratulations! You've reached our highest tier!",
+    "topTierDescription": "Enjoy all the premium benefits of our loyalty program",
+    "transactionHistory": "Transaction History",
+    "noTransactions": "No transactions yet",
+    "expires": "Expires",
+    "transactionTypes": {
+      "earnedStay": "Hotel Stay",
+      "earnedBonus": "Bonus Points",
+      "redeemed": "Points Redeemed",
+      "expired": "Points Expired",
+      "adminAdjustment": "Admin Adjustment",
+      "adminAward": "Admin Award",
+      "adminDeduction": "Admin Deduction"
+    },
+    "simulateStay": "Simulate Hotel Stay",
+    "amountSpent": "Amount Spent",
+    "stayId": "Stay ID (Optional)",
+    "earnPoints": "Earn Points",
+    "pointsEarned": "Points Earned Successfully!",
+    "dashboard": {
+      "title": "Loyalty Dashboard",
+      "welcome": "Welcome to your loyalty dashboard",
+      "description": "Track your points, tier status, and benefits"
+    }
   }
 }

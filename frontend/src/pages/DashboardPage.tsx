@@ -65,12 +65,17 @@ export default function DashboardPage() {
               </div>
             </Link>
 
-            {/* Loyalty Points Card (Placeholder for Phase 2) */}
-            <div className="bg-white overflow-hidden shadow rounded-lg opacity-50 cursor-not-allowed">
+            {/* Loyalty Points Card */}
+            <Link
+              to="/loyalty"
+              className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+            >
               <div className="p-5">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <div className="h-6 w-6 bg-gold-500 rounded-full"></div>
+                    <div className="h-6 w-6 bg-gold-500 rounded-full flex items-center justify-center">
+                      <span className="text-xs text-white font-bold">★</span>
+                    </div>
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
@@ -78,13 +83,13 @@ export default function DashboardPage() {
                         {t('dashboard.loyaltyPoints')}
                       </dt>
                       <dd className="mt-1 text-lg font-semibold text-gray-900">
-                        {t('dashboard.comingSoon', { phase: '2' })}
+                        {t('dashboard.manageLoyalty')}
                       </dd>
                     </dl>
                   </div>
                 </div>
               </div>
-            </div>
+            </Link>
 
             {/* Coupons Card (Placeholder for Phase 3) */}
             <div className="bg-white overflow-hidden shadow rounded-lg opacity-50 cursor-not-allowed">

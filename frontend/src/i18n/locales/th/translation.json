@@ -60,6 +60,7 @@
     "myProfile": "ข้อมูลส่วนตัว",
     "manageProfile": "จัดการข้อมูลส่วนบุคคลของคุณ",
     "loyaltyPoints": "คะแนนสะสม",
+    "manageLoyalty": "ดูคะแนนและสถานะระดับสมาชิก",
     "comingSoon": "เร็วๆ นี้ในเฟส {{phase}}",
     "myCoupons": "คูปองของฉัน",
     "featureToggles": "การจัดการฟีเจอร์",
@@ -169,5 +170,47 @@
   "languages": {
     "en": "English",
     "th": "ไทย"
+  },
+  "loyalty": {
+    "title": "โปรแกรมสะสมคะแนน",
+    "pointsBalance": "ยอดคะแนนคงเหลือ",
+    "member": "สมาชิก",
+    "availablePoints": "คะแนนที่ใช้ได้",
+    "lifetimePoints": "คะแนนรวมตลอดชีวิต",
+    "expiringPoints": "กำลังจะหมดอายุ",
+    "expiresOn": "หมดอายุวันที่",
+    "tierBenefits": "สิทธิประโยชน์ระดับสมาชิก",
+    "noDescription": "ไม่มีคำอธิบาย",
+    "moreBenefits": "สิทธิประโยชน์เพิ่มเติม",
+    "tierStatus": "สถานะระดับสมาชิก",
+    "points": "คะแนน",
+    "pointsToGo": "คะแนนที่เหลือ",
+    "currentTier": "ระดับปัจจุบัน",
+    "nextTierBenefits": "สิทธิประโยชน์ระดับ {{tier}}",
+    "unlockBenefits": "เก็บคะแนนอีก {{points}} คะแนนเพื่อปลดล็อก",
+    "topTierMessage": "ยินดีด้วย! คุณได้เข้าถึงระดับสูงสุดแล้ว!",
+    "topTierDescription": "เพลิดเพลินกับสิทธิประโยชน์พรีเมียมทั้งหมดของโปรแกรมสะสมคะแนน",
+    "transactionHistory": "ประวัติการทำรายการ",
+    "noTransactions": "ยังไม่มีรายการ",
+    "expires": "หมดอายุ",
+    "transactionTypes": {
+      "earnedStay": "การเข้าพักโรงแรม",
+      "earnedBonus": "คะแนนโบนัส",
+      "redeemed": "แลกคะแนน",
+      "expired": "คะแนนหมดอายุ",
+      "adminAdjustment": "ปรับปรุงโดยผู้ดูแล",
+      "adminAward": "มอบคะแนนโดยผู้ดูแล",
+      "adminDeduction": "หักคะแนนโดยผู้ดูแล"
+    },
+    "simulateStay": "จำลองการเข้าพักโรงแรม",
+    "amountSpent": "ยอดเงินที่ใช้จ่าย",
+    "stayId": "รหัสการเข้าพัก (ไม่บังคับ)",
+    "earnPoints": "รับคะแนน",
+    "pointsEarned": "รับคะแนนสำเร็จ!",
+    "dashboard": {
+      "title": "แดชบอร์ดโปรแกรมสะสมคะแนน",
+      "welcome": "ยินดีต้อนรับสู่แดชบอร์ดโปรแกรมสะสมคะแนน",
+      "description": "ติดตามคะแนน สถานะระดับสมาชิก และสิทธิประโยชน์ของคุณ"
+    }
   }
 }
