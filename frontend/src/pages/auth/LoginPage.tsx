@@ -54,7 +54,16 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginFormData) => {
     try {
       await login(data.email, data.password);
-      navigate('/dashboard');
+      
+      // Check for returnUrl in query params
+      const returnUrl = searchParams.get('returnUrl');
+      if (returnUrl) {
+        // Validate the return URL to prevent open redirect vulnerabilities
+        const isValidReturnUrl = returnUrl.startsWith('/') && !returnUrl.startsWith('//');
+        navigate(isValidReturnUrl ? returnUrl : '/dashboard');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (error) {
       // Error is handled in the store
     }

@@ -33,6 +33,7 @@ interface AuthState {
   refreshAuth: () => Promise<void>;
   setTokens: (accessToken: string, refreshToken: string) => void;
   clearAuth: () => void;
+  checkAuthStatus: () => Promise<boolean>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -126,6 +127,46 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: null,
           isAuthenticated: false,
         });
+      },
+
+      checkAuthStatus: async () => {
+        const state = get();
+        
+        // If no access token, not authenticated
+        if (!state.accessToken) {
+          if (state.isAuthenticated) {
+            get().clearAuth();
+          }
+          return false;
+        }
+
+        try {
+          // Try to verify the token by getting user info
+          const response = await authService.getMe();
+          
+          // Update user info if it has changed
+          if (response.user.email !== state.user?.email) {
+            set({ user: response.user });
+          }
+          
+          return true;
+        } catch (error) {
+          // Token is invalid or expired, try to refresh
+          if (state.refreshToken) {
+            try {
+              await get().refreshAuth();
+              return true;
+            } catch (refreshError) {
+              // Refresh failed, clear auth
+              get().clearAuth();
+              return false;
+            }
+          }
+          
+          // No refresh token, clear auth
+          get().clearAuth();
+          return false;
+        }
       },
     }),
     {

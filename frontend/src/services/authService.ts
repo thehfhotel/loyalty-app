@@ -113,6 +113,11 @@ export const authService = {
     const response = await api.get('/auth/me');
     return response.data;
   },
+  
+  async getMe() {
+    const response = await api.get('/auth/me');
+    return response.data;
+  },
 };
 
 export default api;
