@@ -2,8 +2,11 @@ import { useAuthStore } from '../store/authStore';
 import { FiUser, FiLogOut, FiSettings, FiToggleLeft } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { getUserDisplayName } from '../utils/userHelpers';
+import { useTranslation } from 'react-i18next';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 
 export default function DashboardPage() {
+  const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   
@@ -16,15 +19,18 @@ export default function DashboardPage() {
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
-            <h1 className="text-3xl font-bold text-gray-900">Hotel Loyalty Dashboard</h1>
+            <h1 className="text-3xl font-bold text-gray-900">{t('dashboard.title')}</h1>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-500">Welcome, {getUserDisplayName(user)}</span>
+              <LanguageSwitcher />
+              <span className="text-sm text-gray-500">
+                {t('dashboard.welcome', { name: getUserDisplayName(user) })}
+              </span>
               <button
                 onClick={logout}
                 className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
               >
                 <FiLogOut className="mr-2 h-4 w-4" />
-                Logout
+                {t('common.logout')}
               </button>
             </div>
           </div>
@@ -48,10 +54,10 @@ export default function DashboardPage() {
                   <div className="ml-5 w-0 flex-1">
                     <dl>
                       <dt className="text-sm font-medium text-gray-500 truncate">
-                        My Profile
+                        {t('dashboard.myProfile')}
                       </dt>
                       <dd className="mt-1 text-lg font-semibold text-gray-900">
-                        Manage your personal information
+                        {t('dashboard.manageProfile')}
                       </dd>
                     </dl>
                   </div>
@@ -69,10 +75,10 @@ export default function DashboardPage() {
                   <div className="ml-5 w-0 flex-1">
                     <dl>
                       <dt className="text-sm font-medium text-gray-500 truncate">
-                        Loyalty Points
+                        {t('dashboard.loyaltyPoints')}
                       </dt>
                       <dd className="mt-1 text-lg font-semibold text-gray-900">
-                        Coming in Phase 2
+                        {t('dashboard.comingSoon', { phase: '2' })}
                       </dd>
                     </dl>
                   </div>
@@ -90,10 +96,10 @@ export default function DashboardPage() {
                   <div className="ml-5 w-0 flex-1">
                     <dl>
                       <dt className="text-sm font-medium text-gray-500 truncate">
-                        My Coupons
+                        {t('dashboard.myCoupons')}
                       </dt>
                       <dd className="mt-1 text-lg font-semibold text-gray-900">
-                        Coming in Phase 3
+                        {t('dashboard.comingSoon', { phase: '3' })}
                       </dd>
                     </dl>
                   </div>
@@ -115,10 +121,10 @@ export default function DashboardPage() {
                     <div className="ml-5 w-0 flex-1">
                       <dl>
                         <dt className="text-sm font-medium text-gray-500 truncate">
-                          Feature Toggles
+                          {t('dashboard.featureToggles')}
                         </dt>
                         <dd className="mt-1 text-lg font-semibold text-gray-900">
-                          Manage system features
+                          {t('dashboard.manageFeatures')}
                         </dd>
                       </dl>
                     </div>
@@ -132,13 +138,11 @@ export default function DashboardPage() {
           <div className="mt-8 bg-white shadow rounded-lg">
             <div className="px-4 py-5 sm:p-6">
               <h3 className="text-lg leading-6 font-medium text-gray-900">
-                Welcome to the Hotel Loyalty Program!
+                {t('dashboard.welcomeMessage')}
               </h3>
               <div className="mt-2 max-w-xl text-sm text-gray-500">
                 <p>
-                  This is Phase 1 of our loyalty system. You can manage your profile and account
-                  settings. More features including loyalty points, coupons, and surveys will be
-                  available in upcoming phases.
+                  {t('dashboard.welcomeDescription')}
                 </p>
               </div>
             </div>
