@@ -13,6 +13,17 @@ export default function TierStatus({ loyaltyStatus, allTiers }: TierStatusProps)
   const currentTierIndex = allTiers.findIndex(tier => tier.name === loyaltyStatus.tier_name);
   const isTopTier = currentTierIndex === allTiers.length - 1;
 
+  // Helper function to safely convert progress_percentage to number
+  const getProgressPercentage = () => {
+    try {
+      const percentage = Number(loyaltyStatus.progress_percentage);
+      return isNaN(percentage) ? 0 : percentage;
+    } catch (error) {
+      console.warn('Error converting progress_percentage to number:', error);
+      return 0;
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <div className="flex items-center justify-between mb-6">
@@ -76,14 +87,14 @@ export default function TierStatus({ loyaltyStatus, allTiers }: TierStatusProps)
                         {loyaltyStatus.points_to_next_tier?.toLocaleString()} {t('loyalty.pointsToGo')}
                       </span>
                       <span>
-                        {loyaltyStatus.progress_percentage.toFixed(1)}%
+                        {getProgressPercentage().toFixed(1)}%
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div 
                         className="h-2 rounded-full transition-all duration-300"
                         style={{ 
-                          width: `${loyaltyStatus.progress_percentage}%`,
+                          width: `${getProgressPercentage()}%`,
                           backgroundColor: tier.color
                         }}
                       ></div>
