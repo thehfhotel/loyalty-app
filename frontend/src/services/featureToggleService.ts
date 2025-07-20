@@ -31,15 +31,19 @@ class FeatureToggleService {
       throw new Error('No authentication token found');
     }
 
-    const authData = JSON.parse(token);
-    if (!authData.state?.accessToken) {
-      throw new Error('No access token found');
-    }
+    try {
+      const authData = JSON.parse(token);
+      if (!authData.state?.accessToken) {
+        throw new Error('No access token found');
+      }
 
-    return {
-      'Authorization': `Bearer ${authData.state.accessToken}`,
-      'Content-Type': 'application/json'
-    };
+      return {
+        'Authorization': `Bearer ${authData.state.accessToken}`,
+        'Content-Type': 'application/json'
+      };
+    } catch (error) {
+      throw new Error('Invalid authentication token');
+    }
   }
 
   /**
@@ -146,19 +150,9 @@ class FeatureToggleService {
    */
   async isFeatureEnabled(featureKey: string): Promise<boolean> {
     try {
-      const response = await fetch(`${API_URL}/feature-toggles/check/${featureKey}`, {
-        method: 'GET',
-        headers: await this.getAuthHeaders()
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.warn(`Failed to check feature ${featureKey}:`, data.error);
-        return false; // Default to false on error
-      }
-
-      return data.data.isEnabled;
+      // Use the public endpoint which doesn't require authentication
+      const publicFeatures = await this.getPublicFeatures();
+      return publicFeatures[featureKey] || false;
     } catch (error) {
       console.warn(`Failed to check feature ${featureKey}:`, error);
       return false; // Default to false on error

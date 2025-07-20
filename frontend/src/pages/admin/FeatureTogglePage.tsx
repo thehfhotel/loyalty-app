@@ -3,6 +3,7 @@ import { toast } from 'react-hot-toast';
 import { FiToggleLeft, FiToggleRight, FiClock, FiUser, FiInfo, FiRefreshCw, FiAlertCircle } from 'react-icons/fi';
 import { featureToggleService, FeatureToggle, FeatureToggleAudit } from '../../services/featureToggleService';
 import { useAuthStore } from '../../store/authStore';
+import { clearFeatureCache } from '../../hooks/useFeatureToggle';
 
 export default function FeatureTogglePage() {
   const [features, setFeatures] = useState<FeatureToggle[]>([]);
@@ -47,6 +48,10 @@ export default function FeatureTogglePage() {
       await featureToggleService.toggleFeature(featureKey, !currentStatus, toggleReason);
       toast.success(`Feature ${!currentStatus ? 'enabled' : 'disabled'} successfully`);
       setToggleReason('');
+      
+      // Clear the feature cache so the app picks up the new state
+      clearFeatureCache();
+      
       await loadFeatures();
       
       // Refresh audit history if it's currently shown
