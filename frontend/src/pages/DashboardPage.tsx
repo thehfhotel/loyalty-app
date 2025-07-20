@@ -1,5 +1,5 @@
 import { useAuthStore } from '../store/authStore';
-import { FiUser, FiLogOut, FiToggleLeft } from 'react-icons/fi';
+import { FiUser, FiLogOut, FiToggleLeft, FiAward } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { getUserDisplayName } from '../utils/userHelpers';
 import { useTranslation } from 'react-i18next';
@@ -10,8 +10,9 @@ export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   
-  // Check if user is super admin
+  // Check user roles
   const isSuperAdmin = user?.role === 'super_admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -111,6 +112,32 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+
+            {/* Loyalty Management Card (Admin+ Only) */}
+            {isAdmin && (
+              <Link
+                to="/admin/loyalty"
+                className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+              >
+                <div className="p-5">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <FiAward className="h-6 w-6 text-blue-600" />
+                    </div>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-sm font-medium text-gray-500 truncate">
+                          {t('dashboard.loyaltyManagement')}
+                        </dt>
+                        <dd className="mt-1 text-lg font-semibold text-gray-900">
+                          {t('dashboard.manageLoyaltyAdmin')}
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            )}
 
             {/* Feature Toggle Card (Super Admin Only) */}
             {isSuperAdmin && (

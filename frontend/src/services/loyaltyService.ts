@@ -2,6 +2,39 @@ import axios from 'axios';
 
 const API_URL = import.meta.env?.VITE_API_URL || 'http://localhost:4000/api';
 
+// Create axios instance with auth interceptor
+const api = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Add auth token to requests
+api.interceptors.request.use(
+  (config) => {
+    // Get token from Zustand persist storage
+    const authStorage = localStorage.getItem('auth-storage');
+    
+    if (authStorage) {
+      try {
+        const parsedAuth = JSON.parse(authStorage);
+        const token = parsedAuth.state?.accessToken;
+        
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+      } catch (error) {
+        console.error('Error parsing auth storage:', error);
+      }
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 export interface Tier {
   id: string;
   name: string;
@@ -60,6 +93,8 @@ export interface AdminUserLoyalty extends UserLoyaltyStatus {
   first_name: string | null;
   last_name: string | null;
   email: string;
+  oauth_provider: string | null;
+  oauth_provider_id: string | null;
   user_created_at: string;
 }
 
@@ -74,7 +109,7 @@ export class LoyaltyService {
    */
   async getTiers(): Promise<Tier[]> {
     try {
-      const response = await axios.get(`${API_URL}/loyalty/tiers`);
+      const response = await api.get('/loyalty/tiers');
       return response.data.data;
     } catch (error) {
       console.error('Error fetching tiers:', error);
@@ -87,7 +122,7 @@ export class LoyaltyService {
    */
   async getUserLoyaltyStatus(): Promise<UserLoyaltyStatus> {
     try {
-      const response = await axios.get(`${API_URL}/loyalty/status`);
+      const response = await api.get('/loyalty/status');
       return response.data.data;
     } catch (error) {
       console.error('Error fetching loyalty status:', error);
@@ -100,7 +135,7 @@ export class LoyaltyService {
    */
   async getPointsCalculation(): Promise<PointsCalculation> {
     try {
-      const response = await axios.get(`${API_URL}/loyalty/points/calculation`);
+      const response = await api.get('/loyalty/points/calculation');
       return response.data.data;
     } catch (error) {
       console.error('Error fetching points calculation:', error);
@@ -113,7 +148,7 @@ export class LoyaltyService {
    */
   async getPointsHistory(limit: number = 50, offset: number = 0): Promise<PointsHistoryResponse> {
     try {
-      const response = await axios.get(`${API_URL}/loyalty/history`, {
+      const response = await api.get('/loyalty/history', {
         params: { limit, offset }
       });
       return response.data.data;
@@ -131,7 +166,7 @@ export class LoyaltyService {
     loyaltyStatus: UserLoyaltyStatus;
   }> {
     try {
-      const response = await axios.post(`${API_URL}/loyalty/simulate-stay`, {
+      const response = await api.post('/loyalty/simulate-stay', {
         amountSpent,
         stayId
       });
@@ -158,7 +193,7 @@ export class LoyaltyService {
         params.search = searchTerm;
       }
 
-      const response = await axios.get(`${API_URL}/loyalty/admin/users`, { params });
+      const response = await api.get('/loyalty/admin/users', { params });
       return response.data.data;
     } catch (error) {
       console.error('Error fetching all users loyalty status:', error);
@@ -179,7 +214,7 @@ export class LoyaltyService {
     loyaltyStatus: UserLoyaltyStatus;
   }> {
     try {
-      const response = await axios.post(`${API_URL}/loyalty/admin/award-points`, {
+      const response = await api.post('/loyalty/admin/award-points', {
         userId,
         points,
         description,
@@ -204,7 +239,7 @@ export class LoyaltyService {
     loyaltyStatus: UserLoyaltyStatus;
   }> {
     try {
-      const response = await axios.post(`${API_URL}/loyalty/admin/deduct-points`, {
+      const response = await api.post('/loyalty/admin/deduct-points', {
         userId,
         points,
         reason
@@ -225,7 +260,7 @@ export class LoyaltyService {
     offset: number = 0
   ): Promise<PointsHistoryResponse> {
     try {
-      const response = await axios.get(`${API_URL}/loyalty/admin/user/${userId}/history`, {
+      const response = await api.get(`/loyalty/admin/user/${userId}/history`, {
         params: { limit, offset }
       });
       return response.data.data;
@@ -240,7 +275,7 @@ export class LoyaltyService {
    */
   async getEarningRules(): Promise<any[]> {
     try {
-      const response = await axios.get(`${API_URL}/loyalty/admin/earning-rules`);
+      const response = await api.get('/loyalty/admin/earning-rules');
       return response.data.data;
     } catch (error) {
       console.error('Error fetching earning rules:', error);
@@ -253,7 +288,7 @@ export class LoyaltyService {
    */
   async expirePoints(): Promise<{ expiredCount: number }> {
     try {
-      const response = await axios.post(`${API_URL}/loyalty/admin/expire-points`);
+      const response = await api.post('/loyalty/admin/expire-points');
       return response.data.data;
     } catch (error) {
       console.error('Error expiring points:', error);

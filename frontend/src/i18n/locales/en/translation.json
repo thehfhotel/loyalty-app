@@ -63,6 +63,8 @@
     "manageLoyalty": "View points and tier status",
     "comingSoon": "Coming in Phase {{phase}}",
     "myCoupons": "My Coupons",
+    "loyaltyManagement": "Loyalty Management",
+    "manageLoyaltyAdmin": "Manage user points and tiers",
     "featureToggles": "Feature Toggles",
     "manageFeatures": "Manage system features",
     "welcomeMessage": "Welcome to the Hotel Loyalty Program!",
@@ -212,5 +214,77 @@
       "welcome": "Welcome to your loyalty dashboard",
       "description": "Track your points, tier status, and benefits"
     }
+  },
+  "admin": {
+    "loyalty": {
+      "title": "Loyalty Management",
+      "subtitle": "Manage user loyalty points and tiers",
+      "usersList": "Users List",
+      "searchPlaceholder": "Search by name or email...",
+      "selectUser": "Select a user to view details",
+      "userDetails": "User Details",
+      "currentPoints": "Current Points",
+      "lifetimePoints": "Lifetime Points",
+      "currentTier": "Current Tier",
+      "recentTransactions": "Recent Transactions",
+      "noTransactions": "No transactions found",
+      "noUsers": "No users found",
+      "refresh": "Refresh",
+      "expirePoints": "Expire Old Points",
+      "awardPoints": "Award Points",
+      "deductPoints": "Deduct Points",
+      "pointsAmount": "Points Amount",
+      "description": "Description",
+      "referenceId": "Reference ID",
+      "confirmExpire": "Are you sure you want to expire all old points? This action cannot be undone.",
+      "table": {
+        "user": "User",
+        "tier": "Tier",
+        "points": "Points",
+        "actions": "Actions"
+      },
+      "pagination": {
+        "showing": "Showing {{start}} to {{end}} of {{total}} users"
+      },
+      "success": {
+        "pointsAwarded": "Successfully awarded {{points}} points",
+        "pointsDeducted": "Successfully deducted {{points}} points",
+        "pointsExpired": "Successfully expired {{count}} point transactions"
+      },
+      "errors": {
+        "loadFailed": "Failed to load users",
+        "transactionsFailed": "Failed to load transactions",
+        "pointsOperationFailed": "Points operation failed",
+        "expireFailed": "Failed to expire points"
+      }
+    }
+  },
+  "common": {
+    "appName": "Hotel Loyalty Program",
+    "welcome": "Welcome",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "submit": "Submit",
+    "search": "Search",
+    "filter": "Filter",
+    "refresh": "Refresh",
+    "logout": "Logout",
+    "login": "Login",
+    "register": "Register",
+    "or": "Or",
+    "and": "and",
+    "yes": "Yes",
+    "no": "No",
+    "confirm": "Confirm",
+    "optional": "Optional",
+    "processing": "Processing..."
   }
 }

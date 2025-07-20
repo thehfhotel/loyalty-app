@@ -7,6 +7,7 @@ import { AuthService } from './authService';
 import { User, AuthTokens } from '../types/auth';
 import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
+import { loyaltyService } from './loyaltyService';
 // import { accountLinkingService } from './accountLinkingService';
 
 const authService = new AuthService();
@@ -298,6 +299,9 @@ export class OAuthService {
       [user.id, 'oauth_login', { provider: 'google', isNewUser }]
     );
 
+    // Auto-enroll in loyalty program (ensure enrollment on every OAuth login)
+    await loyaltyService.ensureUserLoyaltyEnrollment(user.id);
+
     return { user, tokens, isNewUser };
   }
 
@@ -411,6 +415,9 @@ export class OAuthService {
       'INSERT INTO user_audit_log (user_id, action, details) VALUES ($1, $2, $3)',
       [user.id, 'oauth_login', { provider: 'facebook', isNewUser }]
     );
+
+    // Auto-enroll in loyalty program (ensure enrollment on every OAuth login)
+    await loyaltyService.ensureUserLoyaltyEnrollment(user.id);
 
     return { user, tokens, isNewUser };
   }
@@ -527,6 +534,9 @@ export class OAuthService {
       'INSERT INTO user_audit_log (user_id, action, details) VALUES ($1, $2, $3)',
       [user.id, 'oauth_login', { provider: 'line', isNewUser, lineId: profile.id }]
     );
+
+    // Auto-enroll in loyalty program (ensure enrollment on every OAuth login)
+    await loyaltyService.ensureUserLoyaltyEnrollment(user.id);
 
     return { user, tokens, isNewUser };
   }

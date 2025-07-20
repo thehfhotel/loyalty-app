@@ -1,4 +1,4 @@
-import { pool } from '../config/database';
+import { getPool } from '../config/database';
 import { logger } from '../utils/logger';
 
 export interface Tier {
@@ -52,7 +52,7 @@ export class LoyaltyService {
    */
   async getAllTiers(): Promise<Tier[]> {
     try {
-      const result = await pool.query(
+      const result = await getPool().query(
         'SELECT * FROM tiers WHERE is_active = true ORDER BY sort_order ASC'
       );
       return result.rows;
@@ -67,7 +67,7 @@ export class LoyaltyService {
    */
   async getUserLoyaltyStatus(userId: string): Promise<UserLoyaltyStatus | null> {
     try {
-      const result = await pool.query(
+      const result = await getPool().query(
         'SELECT * FROM user_tier_info WHERE user_id = $1',
         [userId]
       );
@@ -91,7 +91,7 @@ export class LoyaltyService {
   async initializeUserLoyalty(userId: string): Promise<void> {
     try {
       // Get the Bronze tier (lowest tier)
-      const bronzeTier = await pool.query(
+      const bronzeTier = await getPool().query(
         'SELECT id FROM tiers WHERE is_active = true ORDER BY sort_order ASC LIMIT 1'
       );
 
@@ -99,17 +99,36 @@ export class LoyaltyService {
         throw new Error('No active tiers found');
       }
 
-      await pool.query(
+      const result = await getPool().query(
         `INSERT INTO user_loyalty (user_id, current_points, lifetime_points, tier_id)
          VALUES ($1, 0, 0, $2)
-         ON CONFLICT (user_id) DO NOTHING`,
+         ON CONFLICT (user_id) DO NOTHING
+         RETURNING user_id`,
         [userId, bronzeTier.rows[0].id]
       );
 
-      logger.info(`Initialized loyalty status for user ${userId}`);
+      if (result.rows.length > 0) {
+        logger.info(`Initialized loyalty status for user ${userId} - new enrollment`);
+      } else {
+        logger.debug(`User ${userId} already has loyalty status - skipping initialization`);
+      }
     } catch (error) {
       logger.error('Error initializing user loyalty:', error);
       throw new Error('Failed to initialize user loyalty');
+    }
+  }
+
+  /**
+   * Ensure user has loyalty status (auto-enroll if needed)
+   * This is the main function to call on every login
+   */
+  async ensureUserLoyaltyEnrollment(userId: string): Promise<void> {
+    try {
+      await this.initializeUserLoyalty(userId);
+    } catch (error) {
+      logger.error(`Failed to ensure loyalty enrollment for user ${userId}:`, error);
+      // Don't throw error to avoid breaking login flow
+      // Loyalty enrollment failure shouldn't prevent login
     }
   }
 
@@ -127,7 +146,7 @@ export class LoyaltyService {
     expiresAt?: Date
   ): Promise<string> {
     try {
-      const result = await pool.query(
+      const result = await getPool().query(
         'SELECT award_points($1, $2, $3, $4, $5, $6, $7, $8) as transaction_id',
         [
           userId,
@@ -194,7 +213,7 @@ export class LoyaltyService {
   ): Promise<{ transactions: PointsTransaction[]; total: number }> {
     try {
       // Get transactions with pagination
-      const transactionsResult = await pool.query(
+      const transactionsResult = await getPool().query(
         `SELECT pt.*, u.email as admin_email
          FROM points_transactions pt
          LEFT JOIN users u ON pt.admin_user_id = u.id
@@ -205,7 +224,7 @@ export class LoyaltyService {
       );
 
       // Get total count
-      const countResult = await pool.query(
+      const countResult = await getPool().query(
         'SELECT COUNT(*) as total FROM points_transactions WHERE user_id = $1',
         [userId]
       );
@@ -225,7 +244,7 @@ export class LoyaltyService {
    */
   async calculateUserPoints(userId: string): Promise<PointsCalculation> {
     try {
-      const result = await pool.query(
+      const result = await getPool().query(
         'SELECT * FROM calculate_user_points($1)',
         [userId]
       );
@@ -252,6 +271,8 @@ export class LoyaltyService {
           up.first_name,
           up.last_name,
           u.email,
+          u.oauth_provider,
+          u.oauth_provider_id,
           u.created_at as user_created_at
         FROM user_tier_info uti
         JOIN users u ON uti.user_id = u.id
@@ -270,7 +291,7 @@ export class LoyaltyService {
       query += ` ORDER BY uti.current_points DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
-      const usersResult = await pool.query(query, params);
+      const usersResult = await getPool().query(query, params);
 
       // Get total count
       let countQuery = `
@@ -286,7 +307,7 @@ export class LoyaltyService {
         countParams.push(`%${searchTerm}%`);
       }
 
-      const countResult = await pool.query(countQuery, countParams);
+      const countResult = await getPool().query(countQuery, countParams);
 
       return {
         users: usersResult.rows,
@@ -303,7 +324,7 @@ export class LoyaltyService {
    */
   async getPointsEarningRules(): Promise<any[]> {
     try {
-      const result = await pool.query(
+      const result = await getPool().query(
         'SELECT * FROM points_earning_rules WHERE is_active = true ORDER BY created_at DESC'
       );
       return result.rows;
@@ -366,7 +387,7 @@ export class LoyaltyService {
    */
   async expireOldPoints(): Promise<number> {
     try {
-      const result = await pool.query(
+      const result = await getPool().query(
         `INSERT INTO points_transactions (user_id, points, type, description, created_at)
          SELECT 
            user_id,
@@ -394,3 +415,6 @@ export class LoyaltyService {
     }
   }
 }
+
+// Export singleton instance for use in other services
+export const loyaltyService = new LoyaltyService();

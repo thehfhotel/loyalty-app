@@ -7,6 +7,7 @@ import { AppError } from '../middleware/errorHandler';
 import { User, UserProfile, JWTPayload, AuthTokens } from '../types/auth';
 import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
+import { loyaltyService } from './loyaltyService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret';
@@ -61,6 +62,9 @@ export class AuthService {
       await this.logUserAction(user.id, 'register', { email: data.email }, client);
 
       await client.query('COMMIT');
+
+      // Auto-enroll in loyalty program (after transaction commit)
+      await loyaltyService.ensureUserLoyaltyEnrollment(user.id);
 
       return { user, tokens };
     } catch (error) {
@@ -146,6 +150,9 @@ export class AuthService {
 
     // Log login
     await this.logUserAction(updatedUser.id, 'login', { email });
+
+    // Auto-enroll in loyalty program (ensure enrollment on every login)
+    await loyaltyService.ensureUserLoyaltyEnrollment(updatedUser.id);
 
     // Remove password hash from response
     const { passwordHash, ...userWithoutPassword } = updatedUser;

@@ -9,6 +9,7 @@ import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
 import AccountLinkingPage from './pages/AccountLinkingPage';
 import FeatureTogglePage from './pages/admin/FeatureTogglePage';
+import LoyaltyAdminPage from './pages/admin/LoyaltyAdminPage';
 import FeatureDisabledPage from './components/FeatureDisabledPage';
 import LoyaltyDashboard from './pages/loyalty/LoyaltyDashboard';
 import ProtectedRoute from './components/auth/ProtectedRoute';
@@ -26,17 +27,33 @@ function App() {
   const isAccountLinkingEnabled = useFeatureToggle(FEATURE_KEYS.ACCOUNT_LINKING);
 
   useEffect(() => {
-    // Give Zustand persist time to rehydrate state from localStorage
-    const timer = setTimeout(() => {
+    const initializeAuth = async () => {
+      // Give Zustand persist time to rehydrate state from localStorage
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Check if we have tokens and validate them
+      const checkAuthStatus = useAuthStore.getState().checkAuthStatus;
+      try {
+        await checkAuthStatus();
+      } catch (error) {
+        // Auth check failed, but we'll continue - user will be redirected to login if needed
+        console.warn('Auth validation failed during initialization:', error);
+      }
+      
       setIsInitialized(true);
+      
       // Only log in development mode
       if (import.meta.env?.DEV) {
-        console.log('App initialized. Auth state:', { isAuthenticated, user: user?.email });
+        const currentState = useAuthStore.getState();
+        console.log('App initialized. Auth state:', { 
+          isAuthenticated: currentState.isAuthenticated, 
+          user: currentState.user?.email 
+        });
       }
-    }, 100);
+    };
     
-    return () => clearTimeout(timer);
-  }, [isAuthenticated, user]);
+    initializeAuth();
+  }, []); // Only run once on mount
 
   // Show loading while Zustand rehydrates from localStorage
   if (!isInitialized) {
@@ -132,6 +149,14 @@ function App() {
           element={
             <ProtectedRoute requiredRole="super_admin">
               <FeatureTogglePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/loyalty"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <LoyaltyAdminPage />
             </ProtectedRoute>
           }
         />

@@ -63,6 +63,8 @@
     "manageLoyalty": "ดูคะแนนและสถานะระดับสมาชิก",
     "comingSoon": "เร็วๆ นี้ในเฟส {{phase}}",
     "myCoupons": "คูปองของฉัน",
+    "loyaltyManagement": "จัดการโปรแกรมสะสมคะแนน",
+    "manageLoyaltyAdmin": "จัดการคะแนนและระดับสมาชิกของผู้ใช้",
     "featureToggles": "การจัดการฟีเจอร์",
     "manageFeatures": "จัดการฟีเจอร์ของระบบ",
     "welcomeMessage": "ยินดีต้อนรับสู่โปรแกรมสะสมคะแนนโรงแรม!",
@@ -211,6 +213,50 @@
       "title": "แดชบอร์ดโปรแกรมสะสมคะแนน",
       "welcome": "ยินดีต้อนรับสู่แดชบอร์ดโปรแกรมสะสมคะแนน",
       "description": "ติดตามคะแนน สถานะระดับสมาชิก และสิทธิประโยชน์ของคุณ"
+    }
+  },
+  "admin": {
+    "loyalty": {
+      "title": "จัดการโปรแกรมสะสมคะแนน",
+      "subtitle": "จัดการคะแนนและระดับสมาชิกของผู้ใช้",
+      "usersList": "รายชื่อผู้ใช้",
+      "searchPlaceholder": "ค้นหาด้วยชื่อหรืออีเมล...",
+      "selectUser": "เลือกผู้ใช้เพื่อดูรายละเอียด",
+      "userDetails": "รายละเอียดผู้ใช้",
+      "currentPoints": "คะแนนปัจจุบัน",
+      "lifetimePoints": "คะแนนสะสมตลอดชีวิต",
+      "currentTier": "ระดับสมาชิกปัจจุบัน",
+      "recentTransactions": "ธุรกรรมล่าสุด",
+      "noTransactions": "ไม่พบธุรกรรม",
+      "noUsers": "ไม่พบผู้ใช้",
+      "refresh": "รีเฟรช",
+      "expirePoints": "ทำให้คะแนนเก่าหมดอายุ",
+      "awardPoints": "มอบคะแนน",
+      "deductPoints": "หักคะแนน",
+      "pointsAmount": "จำนวนคะแนน",
+      "description": "รายละเอียด",
+      "referenceId": "รหัสอ้างอิง",
+      "confirmExpire": "คุณแน่ใจหรือไม่ที่จะทำให้คะแนนเก่าทั้งหมดหมดอายุ? การดำเนินการนี้ไม่สามารถยกเลิกได้",
+      "table": {
+        "user": "ผู้ใช้",
+        "tier": "ระดับสมาชิก",
+        "points": "คะแนน",
+        "actions": "การดำเนินการ"
+      },
+      "pagination": {
+        "showing": "แสดง {{start}} ถึง {{end}} จาก {{total}} ผู้ใช้"
+      },
+      "success": {
+        "pointsAwarded": "มอบคะแนน {{points}} คะแนนสำเร็จ",
+        "pointsDeducted": "หักคะแนน {{points}} คะแนนสำเร็จ",
+        "pointsExpired": "ทำให้คะแนน {{count}} ธุรกรรมหมดอายุสำเร็จ"
+      },
+      "errors": {
+        "loadFailed": "โหลดข้อมูลผู้ใช้ไม่สำเร็จ",
+        "transactionsFailed": "โหลดข้อมูลธุรกรรมไม่สำเร็จ",
+        "pointsOperationFailed": "การดำเนินการคะแนนไม่สำเร็จ",
+        "expireFailed": "ทำให้คะแนนหมดอายุไม่สำเร็จ"
+      }
     }
   }
 }

@@ -1,12 +1,12 @@
 import express from 'express';
 import { LoyaltyController } from '../controllers/loyaltyController';
-import { authenticateToken } from '../middleware/auth';
+import { authenticate } from '../middleware/auth';
 
 const router = express.Router();
 const loyaltyController = new LoyaltyController();
 
 // Public routes (authenticated users)
-router.use(authenticateToken);
+router.use(authenticate);
 
 /**
  * @swagger

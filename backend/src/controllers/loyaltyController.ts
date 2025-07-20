@@ -31,7 +31,7 @@ export class LoyaltyController {
    */
   async getUserLoyaltyStatus(req: Request, res: Response) {
     try {
-      const userId = req.user.id;
+      const userId = req.user.userId;
       const status = await loyaltyService.getUserLoyaltyStatus(userId);
       
       if (!status) {
@@ -60,7 +60,7 @@ export class LoyaltyController {
    */
   async getPointsCalculation(req: Request, res: Response) {
     try {
-      const userId = req.user.id;
+      const userId = req.user.userId;
       const calculation = await loyaltyService.calculateUserPoints(userId);
       
       res.json({
@@ -82,7 +82,7 @@ export class LoyaltyController {
    */
   async getPointsHistory(req: Request, res: Response) {
     try {
-      const userId = req.user.id;
+      const userId = req.user.userId;
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
 
@@ -107,7 +107,7 @@ export class LoyaltyController {
    */
   async simulateStayEarning(req: Request, res: Response) {
     try {
-      const userId = req.user.id;
+      const userId = req.user.userId;
       const { amountSpent, stayId } = req.body;
 
       if (!amountSpent || amountSpent <= 0) {
