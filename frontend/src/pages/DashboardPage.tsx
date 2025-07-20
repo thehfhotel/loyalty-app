@@ -1,5 +1,5 @@
 import { useAuthStore } from '../store/authStore';
-import { FiUser, FiLogOut, FiSettings, FiToggleLeft } from 'react-icons/fi';
+import { FiUser, FiLogOut, FiToggleLeft } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { getUserDisplayName } from '../utils/userHelpers';
 import { useTranslation } from 'react-i18next';
