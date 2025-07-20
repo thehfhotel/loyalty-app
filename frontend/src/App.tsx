@@ -12,6 +12,7 @@ import FeatureTogglePage from './pages/admin/FeatureTogglePage';
 import FeatureDisabledPage from './components/FeatureDisabledPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import SessionManager from './components/auth/SessionManager';
+import DevTools from './components/dev/DevTools';
 import { useEffect, useState } from 'react';
 import { useFeatureToggle, FEATURE_KEYS } from './hooks/useFeatureToggle';
 
@@ -27,7 +28,10 @@ function App() {
     // Give Zustand persist time to rehydrate state from localStorage
     const timer = setTimeout(() => {
       setIsInitialized(true);
-      console.log('App initialized. Auth state:', { isAuthenticated, user: user?.email });
+      // Only log in development mode
+      if (import.meta.env?.DEV) {
+        console.log('App initialized. Auth state:', { isAuthenticated, user: user?.email });
+      }
     }, 100);
     
     return () => clearTimeout(timer);
@@ -46,7 +50,12 @@ function App() {
   }
 
   return (
-    <Router>
+    <Router
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <SessionManager />
       <Toaster 
         position="top-right"
@@ -121,6 +130,9 @@ function App() {
         {/* Default redirect */}
         <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} />} />
       </Routes>
+      
+      {/* Development tools - only shows in development mode */}
+      <DevTools />
     </Router>
   );
 }

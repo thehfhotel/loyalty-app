@@ -23,7 +23,7 @@ i18n
   .use(initReactI18next)
   // Initialize i18next
   .init({
-    debug: import.meta.env?.DEV || false,
+    debug: false, // Disable debug mode for cleaner console output
     fallbackLng: 'en',
     lng: 'th', // Default to Thai
     defaultNS,
