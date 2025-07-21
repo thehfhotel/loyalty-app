@@ -20,6 +20,12 @@ import LanguageProvider from './components/LanguageProvider';
 import DevTools from './components/dev/DevTools';
 import SurveyList from './pages/surveys/SurveyList';
 import TakeSurvey from './pages/surveys/TakeSurvey';
+import SurveyManagement from './pages/admin/SurveyManagement';
+import SurveyBuilder from './pages/admin/SurveyBuilder';
+import SurveyAnalytics from './pages/admin/SurveyAnalytics';
+import SurveyPreviewPage from './pages/admin/SurveyPreview';
+import SurveyTemplates from './pages/admin/SurveyTemplates';
+import SurveyInvitations from './pages/admin/SurveyInvitations';
 import { useEffect, useState } from 'react';
 import { useFeatureToggle, FEATURE_KEYS } from './hooks/useFeatureToggle';
 
@@ -195,6 +201,62 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin">
               <CouponManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/surveys"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <SurveyManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/surveys/create"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <SurveyBuilder />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/surveys/:id/edit"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <SurveyBuilder />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/surveys/:id/analytics"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <SurveyAnalytics />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/surveys/:id/preview"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <SurveyPreviewPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/surveys/templates"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <SurveyTemplates />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/surveys/:id/invitations"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <SurveyInvitations />
             </ProtectedRoute>
           }
         />

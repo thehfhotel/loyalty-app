@@ -3,6 +3,7 @@ import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
 import {
   Survey,
   SurveyResponse,
+  SurveyInvitation,
   CreateSurveyRequest,
   UpdateSurveyRequest,
   SubmitResponseRequest,
@@ -93,14 +94,29 @@ class SurveyService {
 
   async getSurveyAnalytics(surveyId: string): Promise<SurveyAnalytics> {
     const response = await surveyAxios.get(`/surveys/${surveyId}/analytics`);
-    return response.data.analytics;
+    return response.data;
   }
 
   async exportSurveyResponses(surveyId: string): Promise<Blob> {
     const response = await surveyAxios.get(`/surveys/${surveyId}/export`, {
       responseType: 'blob'
     });
-    return response.data.response;
+    return response.data;
+  }
+
+  // Survey Invitations Management
+  async getSurveyInvitations(surveyId: string): Promise<SurveyInvitation[]> {
+    const response = await surveyAxios.get(`/surveys/${surveyId}/invitations`);
+    return response.data.invitations;
+  }
+
+  async sendSurveyInvitations(surveyId: string): Promise<{ sent: number }> {
+    const response = await surveyAxios.post(`/surveys/${surveyId}/invitations/send`);
+    return response.data;
+  }
+
+  async resendInvitation(invitationId: string): Promise<void> {
+    await surveyAxios.post(`/surveys/invitations/${invitationId}/resend`);
   }
 
   // Utility methods

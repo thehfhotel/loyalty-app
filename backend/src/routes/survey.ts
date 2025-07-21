@@ -120,4 +120,20 @@ router.get('/:surveyId/export',
   surveyController.exportSurveyResponses
 );
 
+// Invitation routes (Admin)
+router.get('/:surveyId/invitations',
+  authenticate,
+  surveyController.getSurveyInvitations
+);
+
+router.post('/:surveyId/invitations/send',
+  authenticate,
+  surveyController.sendSurveyInvitations
+);
+
+router.post('/invitations/:invitationId/resend',
+  authenticate,
+  surveyController.resendInvitation
+);
+
 export default router;

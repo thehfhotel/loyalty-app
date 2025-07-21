@@ -438,19 +438,32 @@ export class SurveyService {
   }
 
   // Generate survey analytics
-  async getSurveyAnalytics(surveyId: string): Promise<SurveyAnalytics | null> {
+  async getSurveyAnalytics(surveyId: string): Promise<any | null> {
     const client = await getPool().connect();
     try {
       // Get survey details
       const survey = await this.getSurveyById(surveyId);
       if (!survey) return null;
 
+      // Get all responses
+      const responsesResult = await client.query(
+        `SELECT sr.*, u.email as user_email, up.first_name as user_first_name, up.last_name as user_last_name
+         FROM survey_responses sr
+         LEFT JOIN users u ON sr.user_id = u.id
+         LEFT JOIN user_profiles up ON sr.user_id = up.user_id
+         WHERE sr.survey_id = $1
+         ORDER BY sr.created_at DESC`,
+        [surveyId]
+      );
+
+      const responses = responsesResult.rows;
+
       // Get response statistics
       const statsResult = await client.query(
         `SELECT 
            COUNT(*) as total_responses,
            COUNT(*) FILTER (WHERE is_completed = true) as completed_responses,
-           AVG(EXTRACT(EPOCH FROM (completed_at - started_at))/60) as avg_completion_time
+           AVG(EXTRACT(EPOCH FROM (completed_at - started_at))) as avg_completion_time
          FROM survey_responses 
          WHERE survey_id = $1`,
         [surveyId]
@@ -461,27 +474,46 @@ export class SurveyService {
       const completedResponses = parseInt(stats.completed_responses);
       const completionRate = totalResponses > 0 ? (completedResponses / totalResponses) * 100 : 0;
 
-      // For now, assume invitations equal responses (can be enhanced later)
-      const totalInvitations = totalResponses;
-      const responseRate = totalInvitations > 0 ? (totalResponses / totalInvitations) * 100 : 0;
+      // Get responses by date
+      const responsesByDateResult = await client.query(
+        `SELECT 
+           DATE(created_at) as date,
+           COUNT(*) as count
+         FROM survey_responses
+         WHERE survey_id = $1
+         GROUP BY DATE(created_at)
+         ORDER BY date DESC
+         LIMIT 30`,
+        [surveyId]
+      );
+
+      const responsesByDate = responsesByDateResult.rows.map(row => ({
+        date: new Date(row.date).toLocaleDateString(),
+        count: parseInt(row.count)
+      })).reverse();
 
       // Generate question analytics
-      const questionAnalytics: QuestionAnalytics[] = [];
+      const questionAnalytics: any[] = [];
       
       for (const question of survey.questions) {
         const analytics = await this.getQuestionAnalytics(surveyId, question);
-        questionAnalytics.push(analytics);
+        questionAnalytics.push({
+          questionId: analytics.question_id,
+          question: analytics.question_text,
+          type: analytics.question_type,
+          responses: analytics.response_distribution || {},
+          averageRating: analytics.average_rating
+        });
       }
 
       return {
-        survey_id: surveyId,
-        title: survey.title,
-        total_invitations: totalInvitations,
-        total_responses: totalResponses,
-        completion_rate: completionRate,
-        average_completion_time: parseFloat(stats.avg_completion_time) || 0,
-        response_rate: responseRate,
-        question_analytics: questionAnalytics
+        survey,
+        responses,
+        totalResponses,
+        completionRate,
+        averageCompletionTime: parseFloat(stats.avg_completion_time) || 0,
+        responsesByDate,
+        questionAnalytics
       };
     } finally {
       client.release();
@@ -542,6 +574,85 @@ export class SurveyService {
         average_rating: averageRating,
         common_responses: commonResponses.length > 0 ? commonResponses : undefined
       };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get survey invitations
+  async getSurveyInvitations(surveyId: string): Promise<any[]> {
+    const client = await getPool().connect();
+    try {
+      const result = await client.query(
+        `SELECT si.*, u.email, up.first_name, up.last_name
+         FROM survey_invitations si
+         JOIN users u ON si.user_id = u.id
+         LEFT JOIN user_profiles up ON si.user_id = up.user_id
+         WHERE si.survey_id = $1
+         ORDER BY si.created_at DESC`,
+        [surveyId]
+      );
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Send survey invitations
+  async sendSurveyInvitations(surveyId: string): Promise<{ sent: number }> {
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Get survey details and target segment
+      const survey = await this.getSurveyById(surveyId);
+      if (!survey) {
+        throw new Error('Survey not found');
+      }
+
+      // Get all eligible users based on target segment
+      const eligibleUsers = await this.getEligibleUsers(survey.target_segment);
+      
+      let sent = 0;
+      
+      for (const user of eligibleUsers) {
+        // Check if user already has an invitation
+        const existingInvitation = await client.query(
+          'SELECT id FROM survey_invitations WHERE survey_id = $1 AND user_id = $2',
+          [surveyId, user.id]
+        );
+
+        if (existingInvitation.rows.length === 0) {
+          // Create invitation
+          await client.query(
+            `INSERT INTO survey_invitations (id, survey_id, user_id, status, created_at, updated_at)
+             VALUES (uuid_generate_v4(), $1, $2, 'sent', NOW(), NOW())`,
+            [surveyId, user.id]
+          );
+          sent++;
+        }
+      }
+
+      await client.query('COMMIT');
+      return { sent };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Resend invitation
+  async resendInvitation(invitationId: string): Promise<void> {
+    const client = await getPool().connect();
+    try {
+      await client.query(
+        `UPDATE survey_invitations 
+         SET status = 'sent', sent_at = NOW(), updated_at = NOW()
+         WHERE id = $1`,
+        [invitationId]
+      );
     } finally {
       client.release();
     }

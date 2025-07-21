@@ -113,22 +113,17 @@ export interface SurveyResponseListResponse {
 }
 
 export interface SurveyAnalytics {
-  survey_id: string;
-  title: string;
-  total_invitations: number;
-  total_responses: number;
-  completion_rate: number;
-  average_completion_time: number;
-  response_rate: number;
-  question_analytics: QuestionAnalytics[];
-}
-
-export interface QuestionAnalytics {
-  question_id: string;
-  question_text: string;
-  question_type: QuestionType;
-  total_responses: number;
-  response_distribution?: Record<string, number>;
-  average_rating?: number;
-  common_responses?: string[];
+  survey: Survey;
+  responses: SurveyResponse[];
+  totalResponses: number;
+  completionRate: number;
+  averageCompletionTime: number;
+  responsesByDate: { date: string; count: number }[];
+  questionAnalytics: {
+    questionId: string;
+    question: string;
+    type: string;
+    responses: Record<string, number>;
+    averageRating?: number;
+  }[];
 }

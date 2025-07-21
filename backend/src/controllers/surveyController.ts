@@ -248,7 +248,7 @@ export class SurveyController {
         return;
       }
 
-      res.json({ analytics });
+      res.json(analytics);
     } catch (error: any) {
       console.error('Error fetching survey analytics:', error);
       res.status(500).json({ message: 'Failed to fetch analytics', error: error.message });
@@ -322,6 +322,66 @@ export class SurveyController {
     } catch (error: any) {
       console.error('Error exporting survey responses:', error);
       res.status(500).json({ message: 'Failed to export responses', error: error.message });
+    }
+  }
+
+  // Get survey invitations (Admin only)
+  async getSurveyInvitations(req: Request, res: Response): Promise<void> {
+    try {
+      const { user } = req as any;
+      const { surveyId } = req.params;
+      
+      // Check if user is admin
+      if (!user || !['admin', 'super_admin'].includes(user.role)) {
+        res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+        return;
+      }
+
+      const invitations = await surveyService.getSurveyInvitations(surveyId);
+      res.json({ invitations });
+    } catch (error: any) {
+      console.error('Error fetching survey invitations:', error);
+      res.status(500).json({ message: 'Failed to fetch invitations', error: error.message });
+    }
+  }
+
+  // Send survey invitations (Admin only)
+  async sendSurveyInvitations(req: Request, res: Response): Promise<void> {
+    try {
+      const { user } = req as any;
+      const { surveyId } = req.params;
+      
+      // Check if user is admin
+      if (!user || !['admin', 'super_admin'].includes(user.role)) {
+        res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+        return;
+      }
+
+      const result = await surveyService.sendSurveyInvitations(surveyId);
+      res.json(result);
+    } catch (error: any) {
+      console.error('Error sending survey invitations:', error);
+      res.status(500).json({ message: 'Failed to send invitations', error: error.message });
+    }
+  }
+
+  // Resend invitation (Admin only)
+  async resendInvitation(req: Request, res: Response): Promise<void> {
+    try {
+      const { user } = req as any;
+      const { invitationId } = req.params;
+      
+      // Check if user is admin
+      if (!user || !['admin', 'super_admin'].includes(user.role)) {
+        res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+        return;
+      }
+
+      await surveyService.resendInvitation(invitationId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error resending invitation:', error);
+      res.status(500).json({ message: 'Failed to resend invitation', error: error.message });
     }
   }
 }

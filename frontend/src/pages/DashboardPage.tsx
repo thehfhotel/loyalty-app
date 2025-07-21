@@ -198,6 +198,34 @@ export default function DashboardPage() {
               </Link>
             )}
 
+            {/* Survey Management Card (Admin+ Only) */}
+            {isAdmin && (
+              <Link
+                to="/admin/surveys"
+                className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+              >
+                <div className="p-5">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <div className="h-6 w-6 bg-purple-500 rounded flex items-center justify-center">
+                        <span className="text-xs text-white font-bold">📊</span>
+                      </div>
+                    </div>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-sm font-medium text-gray-500 truncate">
+                          {t('dashboard.surveyManagement')}
+                        </dt>
+                        <dd className="mt-1 text-lg font-semibold text-gray-900">
+                          {t('dashboard.manageSurveysAdmin')}
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            )}
+
             {/* Feature Toggle Card (Super Admin Only) */}
             {isSuperAdmin && (
               <Link
