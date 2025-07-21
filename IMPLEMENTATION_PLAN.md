@@ -45,6 +45,7 @@ This document tracks the implementation progress of the Hotel Loyalty System MVP
 - **v2.0.1**: Bug fixes and comprehensive testing
 - **v2.1.0**: Automatic loyalty enrollment and admin management
 - **v2.2.0 - v2.4.1**: Digital coupon system with QR code generation and management
+- **v2.5.0**: Complete Survey & Feedback System with admin builder and customer experience
 - **Features**: 4-tier system (Bronze/Silver/Gold/Platinum), automatic progression, points earning/expiration
 - **Admin Tools**: Complete loyalty management interface with OAuth provider tracking
 - **Universal Enrollment**: 100% automatic user enrollment on login
@@ -58,6 +59,14 @@ This document tracks the implementation progress of the Hotel Loyalty System MVP
 - **UI Enhancements**: Separate modals for QR codes vs coupon details, consistent button positioning
 - **Localization**: Thai language support for coupon expiry dates and interface elements
 
+#### **Phase 4: Survey & Feedback System** ✅ **COMPLETE**
+- **v2.5.0**: Complete survey and feedback system implementation
+- **Features**: Customer survey experience, admin survey builder, comprehensive analytics
+- **Question Types**: Multiple choice, single choice, text, textarea, rating scales (1-5, 1-10), yes/no
+- **Admin Tools**: Visual survey builder, real-time preview, analytics dashboard, CSV export
+- **Customer Experience**: Progress tracking, auto-save, resume functionality, completion rewards
+- **System Integration**: Role-based access control, targeting system, performance analytics
+
 ### 🚧 **IN PROGRESS / PLANNED**
 
 #### **Backend Localization** 📋 **PENDING**
@@ -67,8 +76,8 @@ This document tracks the implementation progress of the Hotel Loyalty System MVP
 
 ---
 
-## Current Version: v2.4.1 - QR Code & UI Improvements Complete
-**Latest Milestone**: Complete QR code generation system, coupon management enhancements, and UI consistency improvements.
+## Current Version: v2.5.0 - Phase 4 Survey & Feedback System Complete
+**Latest Milestone**: Complete survey & feedback system with admin survey builder, customer survey experience, and comprehensive analytics.
 
 ## Technology Stack
 - **Frontend**: React with TypeScript, Vite, TailwindCSS, PWA capabilities
