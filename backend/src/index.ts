@@ -16,6 +16,7 @@ import oauthRoutes from './routes/oauth';
 import featureToggleRoutes from './routes/featureToggles';
 import loyaltyRoutes from './routes/loyalty';
 import couponRoutes from './routes/coupon';
+import surveyRoutes from './routes/survey';
 // import accountLinkingRoutes from './routes/accountLinking.minimal';
 // import { accountLinkingService } from './services/accountLinkingService';
 import { authenticate } from './middleware/auth';
@@ -73,6 +74,7 @@ app.use('/api/oauth', oauthRoutes);
 app.use('/api/feature-toggles', featureToggleRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/coupons', couponRoutes);
+app.use('/api/surveys', surveyRoutes);
 // Account linking routes (basic implementation for testing)
 app.get('/api/account-linking/health', authenticate, async (req, res) => {
   res.json({ success: true, message: 'Account linking API is available' });

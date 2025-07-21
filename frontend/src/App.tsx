@@ -18,6 +18,8 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import SessionManager from './components/auth/SessionManager';
 import LanguageProvider from './components/LanguageProvider';
 import DevTools from './components/dev/DevTools';
+import SurveyList from './pages/surveys/SurveyList';
+import TakeSurvey from './pages/surveys/TakeSurvey';
 import { useEffect, useState } from 'react';
 import { useFeatureToggle, FEATURE_KEYS } from './hooks/useFeatureToggle';
 
@@ -138,6 +140,22 @@ function App() {
           element={
             <ProtectedRoute>
               <CouponWallet />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/surveys"
+          element={
+            <ProtectedRoute>
+              <SurveyList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/surveys/:id/take"
+          element={
+            <ProtectedRoute>
+              <TakeSurvey />
             </ProtectedRoute>
           }
         />

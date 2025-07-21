@@ -1,0 +1,551 @@
+import { getPool } from '../config/database';
+import { 
+  Survey, 
+  SurveyResponse, 
+  SurveyInvitation,
+  CreateSurveyRequest,
+  UpdateSurveyRequest,
+  SubmitResponseRequest,
+  SurveyAnalytics,
+  QuestionAnalytics,
+  TargetSegment
+} from '../types/survey';
+
+export class SurveyService {
+  // Create a new survey
+  async createSurvey(data: CreateSurveyRequest, createdBy: string): Promise<Survey> {
+    const client = await getPool().connect();
+    try {
+      const result = await client.query(
+        `INSERT INTO surveys (title, description, questions, target_segment, scheduled_start, scheduled_end, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING *`,
+        [
+          data.title,
+          data.description,
+          JSON.stringify(data.questions),
+          JSON.stringify(data.target_segment || {}),
+          data.scheduled_start,
+          data.scheduled_end,
+          createdBy
+        ]
+      );
+
+      const survey = result.rows[0];
+      return {
+        ...survey,
+        questions: survey.questions,
+        target_segment: survey.target_segment
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get survey by ID
+  async getSurveyById(id: string): Promise<Survey | null> {
+    const client = await getPool().connect();
+    try {
+      const result = await client.query(
+        'SELECT * FROM surveys WHERE id = $1',
+        [id]
+      );
+
+      if (result.rows.length === 0) return null;
+
+      const survey = result.rows[0];
+      return {
+        ...survey,
+        questions: survey.questions,
+        target_segment: survey.target_segment
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get surveys with pagination and filtering
+  async getSurveys(
+    page = 1, 
+    limit = 10, 
+    status?: string,
+    createdBy?: string
+  ): Promise<{ surveys: Survey[]; total: number; totalPages: number }> {
+    const client = await getPool().connect();
+    try {
+      const offset = (page - 1) * limit;
+      let whereClause = '';
+      let queryParams: any[] = [limit, offset];
+      let paramIndex = 3;
+
+      const conditions: string[] = [];
+      if (status) {
+        conditions.push(`status = $${paramIndex}`);
+        queryParams.push(status);
+        paramIndex++;
+      }
+      if (createdBy) {
+        conditions.push(`created_by = $${paramIndex}`);
+        queryParams.push(createdBy);
+        paramIndex++;
+      }
+
+      if (conditions.length > 0) {
+        whereClause = `WHERE ${conditions.join(' AND ')}`;
+      }
+
+      // Get surveys
+      const surveysResult = await client.query(
+        `SELECT * FROM surveys ${whereClause} ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+        queryParams
+      );
+
+      // Get total count
+      const countResult = await client.query(
+        `SELECT COUNT(*) FROM surveys ${whereClause}`,
+        queryParams.slice(2)
+      );
+
+      const total = parseInt(countResult.rows[0].count);
+      const surveys = surveysResult.rows.map(row => ({
+        ...row,
+        questions: row.questions,
+        target_segment: row.target_segment
+      }));
+
+      return {
+        surveys,
+        total,
+        totalPages: Math.ceil(total / limit)
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Update survey
+  async updateSurvey(id: string, data: UpdateSurveyRequest): Promise<Survey | null> {
+    const client = await getPool().connect();
+    try {
+      const updateFields: string[] = [];
+      const values: any[] = [];
+      let paramIndex = 1;
+
+      if (data.title !== undefined) {
+        updateFields.push(`title = $${paramIndex}`);
+        values.push(data.title);
+        paramIndex++;
+      }
+      if (data.description !== undefined) {
+        updateFields.push(`description = $${paramIndex}`);
+        values.push(data.description);
+        paramIndex++;
+      }
+      if (data.questions !== undefined) {
+        updateFields.push(`questions = $${paramIndex}`);
+        values.push(JSON.stringify(data.questions));
+        paramIndex++;
+      }
+      if (data.target_segment !== undefined) {
+        updateFields.push(`target_segment = $${paramIndex}`);
+        values.push(JSON.stringify(data.target_segment));
+        paramIndex++;
+      }
+      if (data.status !== undefined) {
+        updateFields.push(`status = $${paramIndex}`);
+        values.push(data.status);
+        paramIndex++;
+      }
+      if (data.scheduled_start !== undefined) {
+        updateFields.push(`scheduled_start = $${paramIndex}`);
+        values.push(data.scheduled_start);
+        paramIndex++;
+      }
+      if (data.scheduled_end !== undefined) {
+        updateFields.push(`scheduled_end = $${paramIndex}`);
+        values.push(data.scheduled_end);
+        paramIndex++;
+      }
+
+      if (updateFields.length === 0) {
+        return await this.getSurveyById(id);
+      }
+
+      updateFields.push(`updated_at = NOW()`);
+      values.push(id);
+
+      const result = await client.query(
+        `UPDATE surveys SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+        values
+      );
+
+      if (result.rows.length === 0) return null;
+
+      const survey = result.rows[0];
+      return {
+        ...survey,
+        questions: survey.questions,
+        target_segment: survey.target_segment
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Delete survey
+  async deleteSurvey(id: string): Promise<boolean> {
+    const client = await getPool().connect();
+    try {
+      const result = await client.query('DELETE FROM surveys WHERE id = $1', [id]);
+      return result.rowCount > 0;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Submit or update survey response
+  async submitResponse(userId: string, data: SubmitResponseRequest): Promise<SurveyResponse> {
+    const client = await getPool().connect();
+    try {
+      // Calculate progress based on answered questions
+      const survey = await this.getSurveyById(data.survey_id);
+      if (!survey) {
+        throw new Error('Survey not found');
+      }
+
+      const totalQuestions = survey.questions.length;
+      const answeredQuestions = Object.keys(data.answers).length;
+      const progress = Math.round((answeredQuestions / totalQuestions) * 100);
+
+      // Try to update existing response first
+      const updateResult = await client.query(
+        `UPDATE survey_responses 
+         SET answers = $1, is_completed = $2, progress = $3, completed_at = $4, updated_at = NOW()
+         WHERE survey_id = $5 AND user_id = $6
+         RETURNING *`,
+        [
+          JSON.stringify(data.answers),
+          data.is_completed || false,
+          progress,
+          data.is_completed ? new Date().toISOString() : null,
+          data.survey_id,
+          userId
+        ]
+      );
+
+      if (updateResult.rows.length > 0) {
+        const response = updateResult.rows[0];
+        return {
+          ...response,
+          answers: response.answers
+        };
+      }
+
+      // Create new response if none exists
+      const insertResult = await client.query(
+        `INSERT INTO survey_responses (survey_id, user_id, answers, is_completed, progress, completed_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [
+          data.survey_id,
+          userId,
+          JSON.stringify(data.answers),
+          data.is_completed || false,
+          progress,
+          data.is_completed ? new Date().toISOString() : null
+        ]
+      );
+
+      const response = insertResult.rows[0];
+      return {
+        ...response,
+        answers: response.answers
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get user's response to a survey
+  async getUserResponse(userId: string, surveyId: string): Promise<SurveyResponse | null> {
+    const client = await getPool().connect();
+    try {
+      const result = await client.query(
+        'SELECT * FROM survey_responses WHERE user_id = $1 AND survey_id = $2',
+        [userId, surveyId]
+      );
+
+      if (result.rows.length === 0) return null;
+
+      const response = result.rows[0];
+      return {
+        ...response,
+        answers: response.answers
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get all responses for a survey
+  async getSurveyResponses(
+    surveyId: string, 
+    page = 1, 
+    limit = 10
+  ): Promise<{ responses: SurveyResponse[]; total: number; totalPages: number }> {
+    const client = await getPool().connect();
+    try {
+      const offset = (page - 1) * limit;
+
+      // Get responses
+      const responsesResult = await client.query(
+        `SELECT sr.*, u.email, up.first_name, up.last_name 
+         FROM survey_responses sr
+         JOIN users u ON sr.user_id = u.id
+         LEFT JOIN user_profiles up ON u.id = up.user_id
+         WHERE sr.survey_id = $1
+         ORDER BY sr.created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [surveyId, limit, offset]
+      );
+
+      // Get total count
+      const countResult = await client.query(
+        'SELECT COUNT(*) FROM survey_responses WHERE survey_id = $1',
+        [surveyId]
+      );
+
+      const total = parseInt(countResult.rows[0].count);
+      const responses = responsesResult.rows.map(row => ({
+        id: row.id,
+        survey_id: row.survey_id,
+        user_id: row.user_id,
+        answers: row.answers,
+        is_completed: row.is_completed,
+        progress: row.progress,
+        started_at: row.started_at,
+        completed_at: row.completed_at,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        user_email: row.email,
+        user_first_name: row.first_name,
+        user_last_name: row.last_name
+      }));
+
+      return {
+        responses,
+        total,
+        totalPages: Math.ceil(total / limit)
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get surveys available to a user (based on targeting)
+  async getAvailableSurveys(userId: string): Promise<Survey[]> {
+    const client = await getPool().connect();
+    try {
+      // Get user details for targeting
+      const userResult = await client.query(
+        `SELECT u.*, ul.tier_id, up.first_name, up.last_name
+         FROM users u
+         LEFT JOIN user_loyalty ul ON u.id = ul.user_id
+         LEFT JOIN user_profiles up ON u.id = up.user_id
+         WHERE u.id = $1`,
+        [userId]
+      );
+
+      if (userResult.rows.length === 0) return [];
+      const user = userResult.rows[0];
+
+      // Get active surveys
+      const surveysResult = await client.query(
+        `SELECT s.* FROM surveys s
+         WHERE s.status = 'active'
+         AND (s.scheduled_start IS NULL OR s.scheduled_start <= NOW())
+         AND (s.scheduled_end IS NULL OR s.scheduled_end >= NOW())
+         AND NOT EXISTS (
+           SELECT 1 FROM survey_responses sr 
+           WHERE sr.survey_id = s.id AND sr.user_id = $1 AND sr.is_completed = true
+         )
+         ORDER BY s.created_at DESC`,
+        [userId]
+      );
+
+      // Filter surveys based on targeting criteria
+      const availableSurveys: Survey[] = [];
+      
+      for (const surveyRow of surveysResult.rows) {
+        const survey = {
+          ...surveyRow,
+          questions: surveyRow.questions,
+          target_segment: surveyRow.target_segment
+        };
+
+        if (this.isUserTargeted(user, survey.target_segment)) {
+          availableSurveys.push(survey);
+        }
+      }
+
+      return availableSurveys;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Check if user matches targeting criteria
+  private isUserTargeted(user: any, targetSegment: TargetSegment): boolean {
+    // If no targeting criteria, include all users
+    if (!targetSegment || Object.keys(targetSegment).length === 0) {
+      return true;
+    }
+
+    // Check tier restrictions
+    if (targetSegment.tier_restrictions && targetSegment.tier_restrictions.length > 0) {
+      if (!targetSegment.tier_restrictions.includes(user.tier_id)) {
+        return false;
+      }
+    }
+
+    // Check registration date filters
+    if (targetSegment.registration_after) {
+      if (new Date(user.created_at) < new Date(targetSegment.registration_after)) {
+        return false;
+      }
+    }
+
+    if (targetSegment.registration_before) {
+      if (new Date(user.created_at) > new Date(targetSegment.registration_before)) {
+        return false;
+      }
+    }
+
+    // Check OAuth provider filters
+    if (targetSegment.oauth_providers && targetSegment.oauth_providers.length > 0) {
+      const userProvider = user.oauth_provider || 'email';
+      if (!targetSegment.oauth_providers.includes(userProvider)) {
+        return false;
+      }
+    }
+
+    // Check excluded users
+    if (targetSegment.exclude_users && targetSegment.exclude_users.includes(user.id)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  // Generate survey analytics
+  async getSurveyAnalytics(surveyId: string): Promise<SurveyAnalytics | null> {
+    const client = await getPool().connect();
+    try {
+      // Get survey details
+      const survey = await this.getSurveyById(surveyId);
+      if (!survey) return null;
+
+      // Get response statistics
+      const statsResult = await client.query(
+        `SELECT 
+           COUNT(*) as total_responses,
+           COUNT(*) FILTER (WHERE is_completed = true) as completed_responses,
+           AVG(EXTRACT(EPOCH FROM (completed_at - started_at))/60) as avg_completion_time
+         FROM survey_responses 
+         WHERE survey_id = $1`,
+        [surveyId]
+      );
+
+      const stats = statsResult.rows[0];
+      const totalResponses = parseInt(stats.total_responses);
+      const completedResponses = parseInt(stats.completed_responses);
+      const completionRate = totalResponses > 0 ? (completedResponses / totalResponses) * 100 : 0;
+
+      // For now, assume invitations equal responses (can be enhanced later)
+      const totalInvitations = totalResponses;
+      const responseRate = totalInvitations > 0 ? (totalResponses / totalInvitations) * 100 : 0;
+
+      // Generate question analytics
+      const questionAnalytics: QuestionAnalytics[] = [];
+      
+      for (const question of survey.questions) {
+        const analytics = await this.getQuestionAnalytics(surveyId, question);
+        questionAnalytics.push(analytics);
+      }
+
+      return {
+        survey_id: surveyId,
+        title: survey.title,
+        total_invitations: totalInvitations,
+        total_responses: totalResponses,
+        completion_rate: completionRate,
+        average_completion_time: parseFloat(stats.avg_completion_time) || 0,
+        response_rate: responseRate,
+        question_analytics: questionAnalytics
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Generate analytics for a specific question
+  private async getQuestionAnalytics(surveyId: string, question: any): Promise<QuestionAnalytics> {
+    const client = await getPool().connect();
+    try {
+      // Get all responses for this question
+      const result = await client.query(
+        `SELECT answers->$1 as answer 
+         FROM survey_responses 
+         WHERE survey_id = $2 AND answers ? $1`,
+        [question.id, surveyId]
+      );
+
+      const responses = result.rows.map(row => row.answer).filter(answer => answer !== null && answer !== undefined);
+      const totalResponses = responses.length;
+
+      let responseDistribution: Record<string, number> = {};
+      let averageRating: number | undefined;
+      let commonResponses: string[] = [];
+
+      if (totalResponses > 0) {
+        // Calculate response distribution for choice questions
+        if (question.type === 'multiple_choice' || question.type === 'single_choice' || question.type === 'yes_no') {
+          responseDistribution = responses.reduce((acc: Record<string, number>, response: any) => {
+            const key = Array.isArray(response) ? response.join(', ') : String(response);
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+          }, {});
+        }
+
+        // Calculate average for rating questions
+        if (question.type === 'rating_5' || question.type === 'rating_10') {
+          const numericResponses = responses.filter(r => typeof r === 'number').map(r => Number(r));
+          if (numericResponses.length > 0) {
+            averageRating = numericResponses.reduce((sum, rating) => sum + rating, 0) / numericResponses.length;
+          }
+        }
+
+        // Get common text responses
+        if (question.type === 'text' || question.type === 'textarea') {
+          const textResponses = responses.filter(r => typeof r === 'string' && r.trim().length > 0);
+          // Get most common words or phrases (simplified)
+          commonResponses = textResponses.slice(0, 5);
+        }
+      }
+
+      return {
+        question_id: question.id,
+        question_text: question.text,
+        question_type: question.type,
+        total_responses: totalResponses,
+        response_distribution: Object.keys(responseDistribution).length > 0 ? responseDistribution : undefined,
+        average_rating: averageRating,
+        common_responses: commonResponses.length > 0 ? commonResponses : undefined
+      };
+    } finally {
+      client.release();
+    }
+  }
+}
+
+export const surveyService = new SurveyService();
