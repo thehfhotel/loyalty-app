@@ -63,7 +63,7 @@ export class CouponService {
           data.termsAndConditions || null,
           data.type,
           data.value || null,
-          data.currency || 'USD',
+          data.currency || 'THB',
           data.minimumSpend || null,
           data.maximumDiscount || null,
           data.validFrom || new Date(),

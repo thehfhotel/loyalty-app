@@ -18,43 +18,24 @@ const CouponCard: React.FC<CouponCardProps> = ({
 }) => {
   const { t } = useTranslation();
 
-  const getCouponTypeIcon = (type: string) => {
-    switch (type) {
-      case 'percentage':
-        return '%';
-      case 'fixed_amount':
-        return '$';
-      case 'bogo':
-        return '2x';
-      case 'free_upgrade':
-        return '↗';
-      case 'free_service':
-        return '🎁';
-      default:
-        return '🎫';
-    }
-  };
+  const formatExpiryDate = (coupon: UserActiveCoupon): string | null => {
+    const expiryDate = couponService.getExpiryDate(coupon);
+    if (!expiryDate) return null;
 
-  const getCouponTypeColor = (type: string) => {
-    switch (type) {
-      case 'percentage':
-        return 'bg-blue-500';
-      case 'fixed_amount':
-        return 'bg-green-500';
-      case 'bogo':
-        return 'bg-purple-500';
-      case 'free_upgrade':
-        return 'bg-orange-500';
-      case 'free_service':
-        return 'bg-pink-500';
-      default:
-        return 'bg-gray-500';
-    }
+    const now = new Date();
+    const timeDiff = expiryDate.getTime() - now.getTime();
+    const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+
+    if (daysDiff < 0) return t('coupons.expired');
+    if (daysDiff === 0) return t('coupons.expiresToday');
+    if (daysDiff === 1) return t('coupons.expiresTomorrow');
+    if (daysDiff <= 7) return t('coupons.expiresInDays', { count: daysDiff });
+
+    return expiryDate.toLocaleDateString();
   };
 
   const isExpiring = couponService.isExpiringSoon(coupon);
-  const expiryText = couponService.formatExpiryDate(coupon);
-  const valueText = couponService.formatCouponValue(coupon);
+  const expiryText = formatExpiryDate(coupon);
   const minimumSpendText = couponService.formatMinimumSpend(coupon);
 
   return (
@@ -71,15 +52,7 @@ const CouponCard: React.FC<CouponCardProps> = ({
       )}
 
       <div className="p-4">
-        <div className="flex items-start space-x-3">
-          {/* Coupon Type Icon */}
-          <div className={`
-            flex-shrink-0 w-12 h-12 rounded-full ${getCouponTypeColor(coupon.type)}
-            flex items-center justify-center text-white font-bold text-lg
-          `}>
-            {getCouponTypeIcon(coupon.type)}
-          </div>
-
+        <div className="flex items-start">
           {/* Coupon Details */}
           <div className="flex-1 min-w-0">
             <h3 className="text-lg font-semibold text-gray-900 truncate">
@@ -98,10 +71,7 @@ const CouponCard: React.FC<CouponCardProps> = ({
 
             {/* Value and Conditions */}
             <div className="mt-3 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xl font-bold text-green-600">
-                  {valueText} {t('coupons.off')}
-                </span>
+              <div className="flex items-center justify-end">
                 {expiryText && (
                   <span className={`text-sm ${isExpiring ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
                     {expiryText}

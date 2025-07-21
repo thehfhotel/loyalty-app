@@ -70,6 +70,8 @@
     "manageLoyaltyAdmin": "Manage user points and tiers",
     "featureToggles": "Feature Toggles",
     "manageFeatures": "Manage system features",
+    "couponManagement": "Coupon Management",
+    "manageCouponsAdmin": "Create and manage coupons",
     "welcomeMessage": "Welcome to the Hotel Loyalty Program!",
     "welcomeDescription": "This is Phase 1 of our loyalty system. You can manage your profile and account settings. More features including loyalty points, coupons, and surveys will be available in upcoming phases."
   },
@@ -349,7 +351,22 @@
       "bogo": "Buy One Get One",
       "free_upgrade": "Free Upgrade",
       "free_service": "Free Service"
-    }
+    },
+    "scanToRedeem": "Scan to Redeem",
+    "oneTimeUse": "This coupon can only be used once",
+    "couponDetails": "Coupon Details",
+    "description": "Description",
+    "statuses": {
+      "available": "Available",
+      "used": "Used",
+      "expired": "Expired",
+      "cancelled": "Cancelled"
+    },
+    "status": "Status",
+    "expired": "Expired",
+    "expiresToday": "Expires today",
+    "expiresTomorrow": "Expires tomorrow",
+    "expiresInDays": "Expires in {{count}} days"
   },
   "dashboard": {
     "manageCoupons": "View & Use Coupons"
@@ -390,6 +407,8 @@
     "no": "No",
     "confirm": "Confirm",
     "optional": "Optional",
-    "processing": "Processing..."
+    "processing": "Processing...",
+    "close": "Close",
+    "important": "Important"
   }
 }
