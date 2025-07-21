@@ -689,6 +689,12 @@ export class CouponService {
       availableCount: number;
       latestAssignment: Date;
     }>;
+    summary: {
+      totalUsers: number;
+      totalAssigned: number;
+      totalUsed: number;
+      totalAvailable: number;
+    };
     total: number;
     page: number;
     limit: number;
@@ -707,6 +713,23 @@ export class CouponService {
     const total = countResult.count;
     const totalPages = Math.ceil(total / limit);
 
+    // Get overall summary statistics
+    const [summaryResult] = await query<{
+      totalUsers: number;
+      totalAssigned: number;
+      totalUsed: number;
+      totalAvailable: number;
+    }>(
+      `SELECT 
+         COUNT(DISTINCT uc.user_id) as "totalUsers",
+         COUNT(*) as "totalAssigned",
+         COUNT(*) FILTER (WHERE uc.status = 'used') as "totalUsed",
+         COUNT(*) FILTER (WHERE uc.status = 'available') as "totalAvailable"
+       FROM user_coupons uc
+       WHERE uc.coupon_id = $1`,
+      [couponId]
+    );
+
     // Get user assignments with aggregated statistics
     const assignments = await query<{
       userId: string;
@@ -720,8 +743,8 @@ export class CouponService {
     }>(
       `SELECT 
          u.id as "userId",
-         u.first_name as "firstName", 
-         u.last_name as "lastName",
+         COALESCE(up.first_name, '') as "firstName", 
+         COALESCE(up.last_name, '') as "lastName",
          u.email,
          COUNT(*) as "assignedCount",
          COUNT(*) FILTER (WHERE uc.status = 'used') as "usedCount",
@@ -729,8 +752,9 @@ export class CouponService {
          MAX(uc.created_at) as "latestAssignment"
        FROM user_coupons uc
        JOIN users u ON uc.user_id = u.id
+       LEFT JOIN user_profiles up ON u.id = up.user_id
        WHERE uc.coupon_id = $1
-       GROUP BY u.id, u.first_name, u.last_name, u.email
+       GROUP BY u.id, up.first_name, up.last_name, u.email
        ORDER BY MAX(uc.created_at) DESC
        LIMIT $2 OFFSET $3`,
       [couponId, limit, offset]
@@ -738,11 +762,33 @@ export class CouponService {
 
     return {
       assignments,
+      summary: summaryResult,
       total,
       page,
       limit,
       totalPages
     };
+  }
+
+  // Revoke all available coupons for a user and coupon
+  async revokeUserCouponsForCoupon(userId: string, couponId: string, revokedBy: string, reason?: string): Promise<number> {
+    const result = await query<{ id: string }>(
+      `UPDATE user_coupons 
+       SET status = 'revoked', 
+           redemption_details = COALESCE(redemption_details, '{}') || $3,
+           updated_at = NOW()
+       WHERE user_id = $1 AND coupon_id = $2 AND status = 'available'
+       RETURNING id`,
+      [userId, couponId, JSON.stringify({ revokedBy, reason, revokedAt: new Date() })]
+    );
+
+    const revokedCount = result.length;
+    
+    if (revokedCount > 0) {
+      logger.info(`Revoked ${revokedCount} coupons for user ${userId} and coupon ${couponId} by ${revokedBy}: ${reason || 'No reason provided'}`);
+    }
+    
+    return revokedCount;
   }
 
   // Revoke user coupon

@@ -499,6 +499,49 @@ export class CouponController {
     }
   }
 
+  // Revoke all user coupons for a specific coupon (Admin only)
+  async revokeUserCouponsForCoupon(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) {
+        throw new AppError(401, 'Authentication required');
+      }
+
+      // Check admin permissions
+      if (!['admin', 'super_admin'].includes(req.user?.role || '')) {
+        throw new AppError(403, 'Admin access required');
+      }
+
+      const { couponId, targetUserId } = req.params;
+      const { reason } = req.body;
+
+      const revokedCount = await couponService.revokeUserCouponsForCoupon(targetUserId, couponId, userId, reason);
+
+      if (revokedCount === 0) {
+        throw new AppError(404, 'No available coupons found for this user');
+      }
+
+      res.json({
+        success: true,
+        message: `Successfully revoked ${revokedCount} coupon${revokedCount > 1 ? 's' : ''}`,
+        data: { revokedCount }
+      });
+    } catch (error) {
+      logger.error('Error revoking user coupons for coupon:', error);
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({
+          success: false,
+          message: error.message
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: 'Internal server error'
+        });
+      }
+    }
+  }
+
   // Get coupon assignments (Admin only)
   async getCouponAssignments(req: Request, res: Response): Promise<void> {
     try {

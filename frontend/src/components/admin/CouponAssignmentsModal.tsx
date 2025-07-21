@@ -14,6 +14,13 @@ interface CouponAssignment {
   latestAssignment: Date;
 }
 
+interface CouponAssignmentSummary {
+  totalUsers: number;
+  totalAssigned: number;
+  totalUsed: number;
+  totalAvailable: number;
+}
+
 interface CouponAssignmentsModalProps {
   coupon: Coupon;
   onClose: () => void;
@@ -25,11 +32,20 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const [assignments, setAssignments] = useState<CouponAssignment[]>([]);
+  const [summary, setSummary] = useState<CouponAssignmentSummary>({
+    totalUsers: 0,
+    totalAssigned: 0,
+    totalUsed: 0,
+    totalAvailable: 0
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [userToRemove, setUserToRemove] = useState<CouponAssignment | null>(null);
   const limit = 10;
 
   const loadAssignments = async (pageNum: number = 1) => {
@@ -39,6 +55,7 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
       const result = await couponService.getCouponAssignments(coupon.id, pageNum, limit);
       
       setAssignments(result.assignments);
+      setSummary(result.summary);
       setPage(result.page);
       setTotalPages(result.totalPages);
       setTotal(result.total);
@@ -85,6 +102,41 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
         </span>
       );
     }
+  };
+
+  const handleRemoveClick = (assignment: CouponAssignment) => {
+    setUserToRemove(assignment);
+    setShowConfirmation(true);
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!userToRemove) return;
+
+    try {
+      setRemovingUserId(userToRemove.userId);
+      setShowConfirmation(false);
+      
+      await couponService.revokeUserCouponsForCoupon(
+        coupon.id, 
+        userToRemove.userId,
+        'Removed by admin from assignment management'
+      );
+      
+      // Reload assignments to reflect changes
+      await loadAssignments(page);
+      
+      setUserToRemove(null);
+    } catch (err: any) {
+      console.error('Error removing user coupons:', err);
+      setError(err.response?.data?.message || 'Failed to remove user coupons');
+    } finally {
+      setRemovingUserId(null);
+    }
+  };
+
+  const handleCancelRemove = () => {
+    setShowConfirmation(false);
+    setUserToRemove(null);
   };
 
   return (
@@ -137,24 +189,24 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
               <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
                   <div>
-                    <div className="text-2xl font-bold text-blue-600">{total}</div>
+                    <div className="text-2xl font-bold text-blue-600">{summary.totalUsers}</div>
                     <div className="text-sm text-gray-600">Total Users</div>
                   </div>
                   <div>
                     <div className="text-2xl font-bold text-green-600">
-                      {assignments.reduce((sum, a) => sum + a.assignedCount, 0)}
+                      {summary.totalAssigned}
                     </div>
                     <div className="text-sm text-gray-600">Total Assigned</div>
                   </div>
                   <div>
                     <div className="text-2xl font-bold text-gray-600">
-                      {assignments.reduce((sum, a) => sum + a.usedCount, 0)}
+                      {summary.totalUsed}
                     </div>
                     <div className="text-sm text-gray-600">Used</div>
                   </div>
                   <div>
                     <div className="text-2xl font-bold text-orange-600">
-                      {assignments.reduce((sum, a) => sum + a.availableCount, 0)}
+                      {summary.totalAvailable}
                     </div>
                     <div className="text-sm text-gray-600">Available</div>
                   </div>
@@ -186,6 +238,9 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Latest Assignment
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
                       </th>
                     </tr>
                   </thead>
@@ -223,6 +278,19 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {formatDate(assignment.latestAssignment)}
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {assignment.availableCount > 0 ? (
+                            <button
+                              onClick={() => handleRemoveClick(assignment)}
+                              disabled={removingUserId === assignment.userId}
+                              className="text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {removingUserId === assignment.userId ? 'Removing...' : 'Remove'}
+                            </button>
+                          ) : (
+                            <span className="text-gray-400">No coupons</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -259,6 +327,35 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
           </div>
         )}
       </div>
+
+      {/* Confirmation Dialog */}
+      {showConfirmation && userToRemove && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Confirm Coupon Removal
+            </h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to remove all available coupons from {userToRemove.firstName} {userToRemove.lastName}? 
+              This action will revoke {userToRemove.availableCount} coupon{userToRemove.availableCount > 1 ? 's' : ''} and cannot be undone.
+            </p>
+            <div className="flex space-x-3 justify-end">
+              <button
+                onClick={handleCancelRemove}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmRemove}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Remove Coupons
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

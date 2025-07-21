@@ -63,6 +63,10 @@ const revokeUserCouponSchema = z.object({
   reason: z.string().optional()
 });
 
+const revokeUserCouponsForCouponSchema = z.object({
+  reason: z.string().optional()
+});
+
 // Public routes (for QR code validation)
 router.get('/validate/:qrCode', couponController.validateCoupon);
 
@@ -85,6 +89,7 @@ router.delete('/:couponId', couponController.deleteCoupon);
 // Admin routes - Coupon assignment and management
 router.post('/assign', validateRequest(assignCouponSchema), couponController.assignCoupon);
 router.post('/user-coupons/:userCouponId/revoke', validateRequest(revokeUserCouponSchema), couponController.revokeUserCoupon);
+router.post('/:couponId/users/:targetUserId/revoke', validateRequest(revokeUserCouponsForCouponSchema), couponController.revokeUserCouponsForCoupon);
 
 // Admin routes - Analytics and reporting
 router.get('/analytics/stats', couponController.getCouponStats);

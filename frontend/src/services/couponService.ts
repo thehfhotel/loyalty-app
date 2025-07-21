@@ -171,6 +171,12 @@ export class CouponService {
       availableCount: number;
       latestAssignment: Date;
     }>;
+    summary: {
+      totalUsers: number;
+      totalAssigned: number;
+      totalUsed: number;
+      totalAvailable: number;
+    };
     total: number;
     page: number;
     limit: number;
@@ -283,6 +289,21 @@ export class CouponService {
     if (daysDiff <= 7) return `Expires in ${daysDiff} days`;
 
     return expiryDate.toLocaleDateString();
+  }
+
+  async revokeUserCouponsForCoupon(
+    couponId: string,
+    userId: string,
+    reason?: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    revokedCount: number;
+  }> {
+    const response = await api.post(`/coupons/${couponId}/users/${userId}/revoke`, {
+      reason
+    });
+    return response.data;
   }
 }
 
