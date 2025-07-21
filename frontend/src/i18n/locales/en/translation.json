@@ -292,6 +292,7 @@
       "status": "Status",
       "actions": "Actions",
       "assign": "Assign",
+      "viewAssignments": "View Assignments",
       "activate": "Activate",
       "deactivate": "Deactivate",
       "active": "Active",

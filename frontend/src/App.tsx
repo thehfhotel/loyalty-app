@@ -16,6 +16,7 @@ import LoyaltyDashboard from './pages/loyalty/LoyaltyDashboard';
 import CouponWallet from './pages/coupons/CouponWallet';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import SessionManager from './components/auth/SessionManager';
+import LanguageProvider from './components/LanguageProvider';
 import DevTools from './components/dev/DevTools';
 import { useEffect, useState } from 'react';
 import { useFeatureToggle, FEATURE_KEYS } from './hooks/useFeatureToggle';
@@ -70,23 +71,24 @@ function App() {
   }
 
   return (
-    <Router
-      future={{
-        v7_startTransition: true,
-        v7_relativeSplatPath: true,
-      }}
-    >
-      <SessionManager />
-      <Toaster 
-        position="top-right"
-        toastOptions={{
-          duration: 4000,
-          style: {
-            background: '#363636',
-            color: '#fff',
-          },
+    <LanguageProvider>
+      <Router
+        future={{
+          v7_startTransition: true,
+          v7_relativeSplatPath: true,
         }}
-      />
+      >
+        <SessionManager />
+        <Toaster 
+          position="top-right"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              background: '#363636',
+              color: '#fff',
+            },
+          }}
+        />
       <Routes>
         {/* Public routes */}
         <Route
@@ -183,9 +185,10 @@ function App() {
         <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} />} />
       </Routes>
       
-      {/* Development tools - only shows in development mode */}
-      <DevTools />
-    </Router>
+        {/* Development tools - only shows in development mode */}
+        <DevTools />
+      </Router>
+    </LanguageProvider>
   );
 }
 

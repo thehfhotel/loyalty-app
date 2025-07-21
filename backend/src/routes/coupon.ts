@@ -14,7 +14,7 @@ const createCouponSchema = z.object({
   termsAndConditions: z.string().optional(),
   type: z.enum(['percentage', 'fixed_amount', 'bogo', 'free_upgrade', 'free_service']),
   value: z.number().min(0).optional(),
-  currency: z.string().length(3).optional().default('USD'),
+  currency: z.string().length(3).optional().default('THB'),
   minimumSpend: z.number().min(0).optional(),
   maximumDiscount: z.number().min(0).optional(),
   validFrom: z.string().datetime().optional(),
@@ -90,5 +90,6 @@ router.post('/user-coupons/:userCouponId/revoke', validateRequest(revokeUserCoup
 router.get('/analytics/stats', couponController.getCouponStats);
 router.get('/analytics/data', couponController.getCouponAnalytics);
 router.get('/:couponId/redemptions', couponController.getCouponRedemptions);
+router.get('/:couponId/assignments', couponController.getCouponAssignments);
 
 export default router;

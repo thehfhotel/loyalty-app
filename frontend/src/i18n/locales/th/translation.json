@@ -306,6 +306,7 @@
       "status": "สถานะ",
       "actions": "การดำเนินการ",
       "assign": "มอบ",
+      "viewAssignments": "ดูการมอบคูปอง",
       "activate": "เปิดใช้งาน",
       "pause": "หยุดชั่วคราว",
       "remove": "ลบ",

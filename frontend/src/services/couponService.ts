@@ -156,13 +156,39 @@ export class CouponService {
     return response.data.data;
   }
 
+  async getCouponAssignments(
+    couponId: string,
+    page: number = 1,
+    limit: number = 20
+  ): Promise<{
+    assignments: Array<{
+      userId: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      assignedCount: number;
+      usedCount: number;
+      availableCount: number;
+      latestAssignment: Date;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const response = await api.get(`/coupons/${couponId}/assignments`, {
+      params: { page, limit }
+    });
+    return response.data.data;
+  }
+
   // Utility methods
   formatCouponValue(coupon: Coupon | UserActiveCoupon): string {
     switch (coupon.type) {
       case 'percentage':
         return `${coupon.value || 0}%`;
       case 'fixed_amount':
-        return `${coupon.currency}${coupon.value || 0}`;
+        return `฿${coupon.value || 0}`;
       case 'bogo':
         return 'Buy One Get One';
       case 'free_upgrade':
@@ -176,12 +202,12 @@ export class CouponService {
 
   formatMinimumSpend(coupon: Coupon | UserActiveCoupon): string | null {
     if (!coupon.minimumSpend) return null;
-    return `Min. spend ${coupon.currency}${coupon.minimumSpend}`;
+    return `Min. spend ฿${coupon.minimumSpend}`;
   }
 
   formatMaximumDiscount(coupon: Coupon | UserActiveCoupon): string | null {
     if (!coupon.maximumDiscount) return null;
-    return `Max. discount ${coupon.currency}${coupon.maximumDiscount}`;
+    return `Max. discount ฿${coupon.maximumDiscount}`;
   }
 
   calculateDiscount(
@@ -199,7 +225,7 @@ export class CouponService {
         discountAmount: 0,
         finalAmount: originalAmount,
         isValid: false,
-        errorMessage: `Minimum spend of ${coupon.currency}${coupon.minimumSpend} required`
+        errorMessage: `Minimum spend of ฿${coupon.minimumSpend} required`
       };
     }
 

@@ -289,18 +289,18 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-blue-700">{t('coupons.originalAmount')}:</span>
-                  <span className="font-medium">${parseFloat(originalAmount).toFixed(2)}</span>
+                  <span className="font-medium">฿{parseFloat(originalAmount).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-blue-700">{t('coupons.discount')}:</span>
                   <span className="font-medium text-green-600">
-                    -${discountPreview.discountAmount.toFixed(2)}
+                    -฿{discountPreview.discountAmount.toFixed(2)}
                   </span>
                 </div>
                 <div className="flex justify-between border-t border-blue-200 pt-1">
                   <span className="text-blue-900 font-medium">{t('coupons.finalAmount')}:</span>
                   <span className="font-bold text-blue-900">
-                    ${discountPreview.finalAmount.toFixed(2)}
+                    ฿{discountPreview.finalAmount.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -368,13 +368,13 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
                 <div className="flex justify-between">
                   <span>{t('coupons.discountApplied')}:</span>
                   <span className="font-medium">
-                    ${redemptionResult.discountAmount.toFixed(2)}
+                    ฿{redemptionResult.discountAmount.toFixed(2)}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>{t('coupons.customerPays')}:</span>
                   <span className="font-bold text-lg">
-                    ${redemptionResult.finalAmount.toFixed(2)}
+                    ฿{redemptionResult.finalAmount.toFixed(2)}
                   </span>
                 </div>
               </div>

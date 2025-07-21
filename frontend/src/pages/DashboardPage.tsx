@@ -160,10 +160,10 @@ export default function DashboardPage() {
                     <div className="ml-5 w-0 flex-1">
                       <dl>
                         <dt className="text-sm font-medium text-gray-500 truncate">
-                          Coupon Management
+                          {t('dashboard.couponManagement')}
                         </dt>
                         <dd className="mt-1 text-lg font-semibold text-gray-900">
-                          Create and manage coupons
+                          {t('dashboard.manageCouponsAdmin')}
                         </dd>
                       </dl>
                     </div>

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Coupon, CreateCouponRequest, CouponType, CouponStatus } from '../../types/coupon';
 import { couponService } from '../../services/couponService';
 import DashboardButton from '../../components/navigation/DashboardButton';
+import CouponAssignmentsModal from '../../components/admin/CouponAssignmentsModal';
 
 interface User {
   id: string;
@@ -19,6 +20,7 @@ const CouponManagement: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showAssignmentsModal, setShowAssignmentsModal] = useState(false);
   const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [users, setUsers] = useState<User[]>([]);
@@ -47,16 +49,31 @@ const CouponManagement: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      // Filter out expired coupons from admin view since they're considered "deleted"
-      const response = await couponService.getAdminCoupons(pageNum, 10, {
-        // Show active, draft, and paused coupons, but not expired ones
-        status: undefined // This will be handled by filtering the response
-      });
       
-      // Filter out expired coupons from the response
-      const activeCoupons = response.coupons.filter(coupon => coupon.status !== 'expired');
-      setCoupons(activeCoupons);
-      setTotalPages(response.totalPages);
+      // Get all non-expired coupons - let backend handle the filtering
+      // We need to make multiple calls to get different statuses since API doesn't support "NOT expired"
+      const [activeResponse, pausedResponse, draftResponse] = await Promise.all([
+        couponService.getAdminCoupons(1, 1000, { status: 'active' }),
+        couponService.getAdminCoupons(1, 1000, { status: 'paused' }),
+        couponService.getAdminCoupons(1, 1000, { status: 'draft' })
+      ]);
+      
+      // Combine all non-expired coupons
+      const allCoupons = [
+        ...activeResponse.coupons,
+        ...pausedResponse.coupons, 
+        ...draftResponse.coupons
+      ];
+      
+      // Implement client-side pagination for the filtered results
+      const itemsPerPage = 10;
+      const startIndex = (pageNum - 1) * itemsPerPage;
+      const endIndex = startIndex + itemsPerPage;
+      const paginatedCoupons = allCoupons.slice(startIndex, endIndex);
+      const calculatedTotalPages = Math.ceil(allCoupons.length / itemsPerPage);
+      
+      setCoupons(paginatedCoupons);
+      setTotalPages(calculatedTotalPages);
       setPage(pageNum);
     } catch (err: any) {
       console.error('Error loading coupons:', err);
@@ -155,16 +172,29 @@ const CouponManagement: React.FC = () => {
     
     try {
       setLoading(true);
-      await couponService.assignCouponToUsers({
+      setError(null);
+      
+      const response = await couponService.assignCouponToUsers({
         couponId: selectedCoupon.id,
         userIds: selectedUsers,
         assignedReason: 'Admin assignment'
       });
+      
+      // Show success message
+      const assignedCount = response?.length || selectedUsers.length;
+      alert(`Successfully assigned coupon "${selectedCoupon.name}" to ${assignedCount} user(s)`);
+      
       setShowAssignModal(false);
       setSelectedUsers([]);
       setSelectedCoupon(null);
+      
+      // Refresh the coupons list to update counts
+      await loadCoupons();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to assign coupons');
+      console.error('Assignment error:', err);
+      const errorMessage = err.response?.data?.message || err.message || 'Failed to assign coupons';
+      setError(errorMessage);
+      alert(`Error: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -187,7 +217,8 @@ const CouponManagement: React.FC = () => {
   };
 
   const confirmDeleteCoupon = async () => {
-    if (!selectedCoupon || deleteConfirmText !== 'DELETE') {
+    const deleteKeyword = t('admin.coupons.deleteKeyword');
+    if (!selectedCoupon || deleteConfirmText !== deleteKeyword) {
       return;
     }
 
@@ -229,9 +260,9 @@ const CouponManagement: React.FC = () => {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('th-TH', {
       style: 'currency',
-      currency: 'USD'
+      currency: 'THB'
     }).format(amount);
   };
 
@@ -311,28 +342,38 @@ const CouponManagement: React.FC = () => {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Coupon
+                    {t('admin.coupons.title_field')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Type & Value
+                    {t('admin.coupons.couponTypeAndValue')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Usage
+                    {t('admin.coupons.usage')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Validity
+                    {t('admin.coupons.validity')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
+                    {t('admin.coupons.status')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
+                    {t('admin.coupons.actions')}
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {coupons.map((coupon) => (
-                  <tr key={coupon.id} className="hover:bg-gray-50">
+                {coupons.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center">
+                      <div className="text-gray-500">
+                        <p className="text-lg font-medium">{t('admin.coupons.noCoupons')}</p>
+                        <p className="text-sm mt-1">{t('admin.coupons.noCouponsDescription')}</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  coupons.map((coupon) => (
+                    <tr key={coupon.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
                         <div className="text-sm font-medium text-gray-900">
@@ -354,7 +395,7 @@ const CouponManagement: React.FC = () => {
                       </div>
                       {(coupon.minimumSpend || 0) > 0 && (
                         <div className="text-sm text-gray-500">
-                          Min: {formatCurrency(coupon.minimumSpend || 0)}
+                          {t('admin.coupons.min')}: {formatCurrency(coupon.minimumSpend || 0)}
                         </div>
                       )}
                     </td>
@@ -363,7 +404,7 @@ const CouponManagement: React.FC = () => {
                         {coupon.usedCount || 0} / {coupon.usageLimit}
                       </div>
                       <div className="text-sm text-gray-500">
-                        Max {coupon.usageLimitPerUser} per user
+                        {t('admin.coupons.maxPerUser', { count: coupon.usageLimitPerUser })}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -371,7 +412,7 @@ const CouponManagement: React.FC = () => {
                         {new Date(coupon.validFrom).toLocaleDateString()}
                       </div>
                       <div className="text-sm text-gray-500">
-                        to {coupon.validUntil ? new Date(coupon.validUntil).toLocaleDateString() : 'No end date'}
+                        {t('admin.coupons.to')} {coupon.validUntil ? new Date(coupon.validUntil).toLocaleDateString() : t('common.noEndDate')}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -382,9 +423,9 @@ const CouponManagement: React.FC = () => {
                           ? 'bg-yellow-100 text-yellow-800'
                           : 'bg-red-100 text-red-800'
                       }`}>
-                        {coupon.status === 'active' ? 'Active' : 
-                         coupon.status === 'paused' ? 'Paused' : 
-                         coupon.status.charAt(0).toUpperCase() + coupon.status.slice(1)}
+                        {coupon.status === 'active' ? t('admin.coupons.active') : 
+                         coupon.status === 'paused' ? t('admin.coupons.paused') : 
+                         t(`admin.coupons.${coupon.status}`)}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -396,7 +437,16 @@ const CouponManagement: React.FC = () => {
                           }}
                           className="text-blue-600 hover:text-blue-900 text-left"
                         >
-                          Assign
+                          {t('admin.coupons.assign')}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedCoupon(coupon);
+                            setShowAssignmentsModal(true);
+                          }}
+                          className="text-purple-600 hover:text-purple-900 text-left"
+                        >
+                          {t('admin.coupons.viewAssignments')}
                         </button>
                         <button
                           onClick={() => handleToggleCouponStatus(coupon)}
@@ -406,19 +456,20 @@ const CouponManagement: React.FC = () => {
                               : 'text-green-600 hover:text-green-900'
                           }`}
                         >
-                          {coupon.status === 'active' ? 'Pause' : 'Activate'}
+                          {coupon.status === 'active' ? t('admin.coupons.pause') : t('admin.coupons.activate')}
                         </button>
                         <button
                           onClick={() => handleDeleteCoupon(coupon)}
                           className="text-red-600 hover:text-red-900 text-left"
-                          title="Permanently delete this coupon"
+                          title={t('admin.coupons.deleteTooltip')}
                         >
-                          Remove
+                          {t('admin.coupons.remove')}
                         </button>
                       </div>
                     </td>
                   </tr>
-                ))}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -428,7 +479,7 @@ const CouponManagement: React.FC = () => {
             <div className="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-gray-700">
-                  Page {page} of {totalPages}
+                  {t('admin.pagination.page')} {page} {t('admin.pagination.of')} {totalPages}
                 </div>
                 <div className="flex space-x-2">
                   <button
@@ -436,14 +487,14 @@ const CouponManagement: React.FC = () => {
                     disabled={page <= 1}
                     className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded disabled:opacity-50"
                   >
-                    Previous
+                    {t('common.previous')}
                   </button>
                   <button
                     onClick={() => loadCoupons(page + 1)}
                     disabled={page >= totalPages}
                     className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded disabled:opacity-50"
                   >
-                    Next
+                    {t('common.next')}
                   </button>
                 </div>
               </div>
@@ -458,7 +509,7 @@ const CouponManagement: React.FC = () => {
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-full overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold">Create New Coupon</h2>
+                <h2 className="text-xl font-semibold">{t('admin.coupons.createNewCoupon')}</h2>
                 <button
                   onClick={() => {
                     setShowCreateModal(false);
@@ -476,13 +527,13 @@ const CouponManagement: React.FC = () => {
                   <div className="flex">
                     <div className="text-red-400 mr-3">⚠️</div>
                     <div className="flex-1">
-                      <h3 className="text-red-800 font-medium text-sm">Error Creating Coupon</h3>
+                      <h3 className="text-red-800 font-medium text-sm">{t('admin.coupons.errorCreating')}</h3>
                       <p className="text-red-700 text-sm mt-1">{createModalError}</p>
                       <button
                         onClick={() => setCreateModalError(null)}
                         className="text-red-600 underline hover:text-red-800 text-xs mt-2"
                       >
-                        Dismiss
+                        {t('common.dismiss')}
                       </button>
                     </div>
                   </div>
@@ -493,28 +544,28 @@ const CouponManagement: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Code
+                      {t('admin.coupons.code')}
                     </label>
                     <input
                       type="text"
                       required
                       value={newCoupon.code}
                       onChange={(e) => setNewCoupon({...newCoupon, code: e.target.value.toUpperCase()})}
-                      placeholder="e.g. SUMMER20"
+                      placeholder={t('admin.coupons.codePlaceholder')}
                       className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Name
+                      {t('admin.coupons.name')}
                     </label>
                     <input
                       type="text"
                       required
                       value={newCoupon.name}
                       onChange={(e) => setNewCoupon({...newCoupon, name: e.target.value})}
-                      placeholder="e.g. Summer Sale 20% Off"
+                      placeholder={t('admin.coupons.namePlaceholder')}
                       className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -524,25 +575,25 @@ const CouponManagement: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Type
+                      {t('admin.coupons.type_field')}
                     </label>
                     <select
                       value={newCoupon.type}
                       onChange={(e) => setNewCoupon({...newCoupon, type: e.target.value as CouponType})}
                       className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="percentage">Percentage Discount</option>
-                      <option value="fixed_amount">Fixed Amount Off</option>
-                      <option value="bogo">Buy One Get One</option>
-                      <option value="free_upgrade">Free Upgrade</option>
-                      <option value="free_service">Free Service</option>
+                      <option value="percentage">{t('coupons.types.percentage')}</option>
+                      <option value="fixed_amount">{t('coupons.types.fixed_amount')}</option>
+                      <option value="bogo">{t('coupons.types.bogo')}</option>
+                      <option value="free_upgrade">{t('coupons.types.free_upgrade')}</option>
+                      <option value="free_service">{t('coupons.types.free_service')}</option>
                     </select>
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Description
+                    {t('admin.coupons.description_field')}
                   </label>
                   <textarea
                     value={newCoupon.description}
@@ -555,7 +606,7 @@ const CouponManagement: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      {newCoupon.type === 'percentage' ? 'Percentage' : 'Amount'}
+                      {newCoupon.type === 'percentage' ? t('admin.coupons.percentage') : t('admin.coupons.amount')}
                     </label>
                     <input
                       type="number"
@@ -570,7 +621,7 @@ const CouponManagement: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Minimum Spend
+                      {t('admin.coupons.minimumSpend')}
                     </label>
                     <input
                       type="number"
@@ -584,7 +635,7 @@ const CouponManagement: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Maximum Discount
+                      {t('admin.coupons.maximumDiscount')}
                     </label>
                     <input
                       type="number"
@@ -600,7 +651,7 @@ const CouponManagement: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Max Total Uses
+                      {t('admin.coupons.maxTotalUses')}
                     </label>
                     <input
                       type="number"
@@ -614,7 +665,7 @@ const CouponManagement: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Max Uses Per User
+                      {t('admin.coupons.maxUsesPerUser')}
                     </label>
                     <input
                       type="number"
@@ -630,7 +681,7 @@ const CouponManagement: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Valid From
+                      {t('admin.coupons.validFrom')}
                     </label>
                     <input
                       type="date"
@@ -643,7 +694,7 @@ const CouponManagement: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Valid Until
+                      {t('admin.coupons.validUntil')}
                     </label>
                     <input
                       type="date"
@@ -657,7 +708,7 @@ const CouponManagement: React.FC = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Terms and Conditions
+                    {t('admin.coupons.termsAndConditions')}
                   </label>
                   <textarea
                     value={newCoupon.termsAndConditions}
@@ -668,7 +719,7 @@ const CouponManagement: React.FC = () => {
                 </div>
 
                 <div className="text-sm text-gray-600">
-                  <p>Coupon will be created as active by default.</p>
+                  <p>{t('admin.coupons.activeImmediately')}</p>
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-4">
@@ -680,14 +731,14 @@ const CouponManagement: React.FC = () => {
                     }}
                     className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </button>
                   <button
                     type="submit"
                     disabled={loading}
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {loading ? 'Creating...' : 'Create Coupon'}
+                    {loading ? t('admin.coupons.creating') : t('admin.coupons.createCoupon')}
                   </button>
                 </div>
               </form>
@@ -702,7 +753,7 @@ const CouponManagement: React.FC = () => {
           <div className="bg-white rounded-lg max-w-md w-full max-h-full overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold">Assign Coupon</h2>
+                <h2 className="text-xl font-semibold">{t('admin.coupons.assignCoupon')}</h2>
                 <button
                   onClick={() => setShowAssignModal(false)}
                   className="text-gray-400 hover:text-gray-600"
@@ -744,14 +795,14 @@ const CouponManagement: React.FC = () => {
                   onClick={() => setShowAssignModal(false)}
                   className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleAssignCoupons}
                   disabled={loading || selectedUsers.length === 0}
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {loading ? 'Assigning...' : `Assign to ${selectedUsers.length} users`}
+                  {loading ? t('admin.coupons.assigning') : t('admin.coupons.assignToUsers', { count: selectedUsers.length })}
                 </button>
               </div>
             </div>
@@ -765,7 +816,7 @@ const CouponManagement: React.FC = () => {
           <div className="bg-white rounded-lg max-w-md w-full">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-red-600">Delete Coupon</h2>
+                <h2 className="text-xl font-semibold text-red-600">{t('admin.coupons.deleteCoupon')}</h2>
                 <button
                   onClick={() => {
                     setShowDeleteModal(false);
@@ -781,32 +832,32 @@ const CouponManagement: React.FC = () => {
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
                 <div className="flex items-center mb-2">
                   <span className="text-red-500 mr-2">⚠️</span>
-                  <span className="font-medium text-red-800">Warning: This action cannot be undone!</span>
+                  <span className="font-medium text-red-800">{t('admin.coupons.deleteWarning')}</span>
                 </div>
                 <div className="text-sm text-red-700">
-                  <p className="mb-2">You are about to permanently delete:</p>
+                  <p className="mb-2">{t('admin.coupons.deleteConfirmText')}:</p>
                   <p className="font-medium">"{selectedCoupon.name}" ({selectedCoupon.code})</p>
                 </div>
               </div>
 
               <div className="mb-4 p-3 bg-gray-50 rounded-md">
-                <p className="text-sm text-gray-700 mb-2">This will affect:</p>
+                <p className="text-sm text-gray-700 mb-2">{t('admin.coupons.deleteAffects')}:</p>
                 <ul className="text-sm text-gray-600 space-y-1">
-                  <li>• {selectedCoupon.usedCount || 0} existing redemptions</li>
-                  <li>• Users who currently have this coupon assigned</li>
-                  <li>• All related analytics and history</li>
+                  <li>• {t('admin.coupons.existingRedemptions', { count: selectedCoupon.usedCount || 0 })}</li>
+                  <li>• {t('admin.coupons.assignedUsers')}</li>
+                  <li>• {t('admin.coupons.analyticsHistory')}</li>
                 </ul>
               </div>
 
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Type <span className="font-bold text-red-600">DELETE</span> to confirm:
+                  {t('admin.coupons.typeToConfirm')} <span className="font-bold text-red-600">{t('admin.coupons.deleteKeyword')}</span> {t('admin.coupons.toConfirm')}:
                 </label>
                 <input
                   type="text"
                   value={deleteConfirmText}
                   onChange={(e) => setDeleteConfirmText(e.target.value)}
-                  placeholder="Type DELETE here"
+                  placeholder={t('admin.coupons.deletePlaceholder')}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
                 />
               </div>
@@ -820,19 +871,30 @@ const CouponManagement: React.FC = () => {
                   }}
                   className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={confirmDeleteCoupon}
-                  disabled={loading || deleteConfirmText !== 'DELETE'}
+                  disabled={loading || deleteConfirmText !== t('admin.coupons.deleteKeyword')}
                   className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loading ? 'Deleting...' : 'Delete Coupon'}
+                  {loading ? t('admin.coupons.deleting') : t('admin.coupons.deleteCoupon')}
                 </button>
               </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Coupon Assignments Modal */}
+      {showAssignmentsModal && selectedCoupon && (
+        <CouponAssignmentsModal
+          coupon={selectedCoupon}
+          onClose={() => {
+            setShowAssignmentsModal(false);
+            setSelectedCoupon(null);
+          }}
+        />
       )}
     </div>
   );

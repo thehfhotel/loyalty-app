@@ -499,6 +499,40 @@ export class CouponController {
     }
   }
 
+  // Get coupon assignments (Admin only)
+  async getCouponAssignments(req: Request, res: Response): Promise<void> {
+    try {
+      // Check admin permissions
+      if (!['admin', 'super_admin'].includes(req.user?.role || '')) {
+        throw new AppError(403, 'Admin access required');
+      }
+
+      const { couponId } = req.params;
+      const page = Math.max(1, parseInt(req.query.page as string) || 1);
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
+
+      const result = await couponService.getCouponAssignments(couponId, page, limit);
+
+      res.json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      logger.error('Error getting coupon assignments:', error);
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({
+          success: false,
+          message: error.message
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: 'Internal server error'
+        });
+      }
+    }
+  }
+
   // Validate coupon by QR code (for checking before redemption)
   async validateCoupon(req: Request, res: Response): Promise<void> {
     try {

@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { UserActiveCoupon } from '../../types/coupon';
 import { couponService } from '../../services/couponService';
 import CouponCard from '../../components/coupons/CouponCard';
-import QRCodeDisplay from '../../components/coupons/QRCodeDisplay';
+import QRCodeModal from '../../components/coupons/QRCodeModal';
+import CouponDetailsModal from '../../components/coupons/CouponDetailsModal';
 import DashboardButton from '../../components/navigation/DashboardButton';
 
 const CouponWallet: React.FC = () => {
@@ -13,6 +14,7 @@ const CouponWallet: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedCoupon, setSelectedCoupon] = useState<UserActiveCoupon | null>(null);
   const [showQRCode, setShowQRCode] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -48,11 +50,13 @@ const CouponWallet: React.FC = () => {
   const handleUseCoupon = (coupon: UserActiveCoupon) => {
     setSelectedCoupon(coupon);
     setShowQRCode(true);
+    setShowDetails(false);
   };
 
   const handleViewDetails = (coupon: UserActiveCoupon) => {
     setSelectedCoupon(coupon);
-    setShowQRCode(true);
+    setShowDetails(true);
+    setShowQRCode(false);
   };
 
   const handleLoadMore = () => {
@@ -223,10 +227,25 @@ const CouponWallet: React.FC = () => {
       {showQRCode && selectedCoupon && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="max-w-md w-full max-h-full overflow-y-auto">
-            <QRCodeDisplay
+            <QRCodeModal
               coupon={selectedCoupon}
               onClose={() => {
                 setShowQRCode(false);
+                setSelectedCoupon(null);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Coupon Details Modal */}
+      {showDetails && selectedCoupon && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="max-w-lg w-full max-h-full overflow-y-auto">
+            <CouponDetailsModal
+              coupon={selectedCoupon}
+              onClose={() => {
+                setShowDetails(false);
                 setSelectedCoupon(null);
               }}
             />

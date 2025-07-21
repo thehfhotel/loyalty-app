@@ -673,6 +673,78 @@ export class CouponService {
     return false;
   }
 
+  // Get coupon assignments (admin only)
+  async getCouponAssignments(
+    couponId: string,
+    page: number = 1,
+    limit: number = 20
+  ): Promise<{
+    assignments: Array<{
+      userId: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      assignedCount: number;
+      usedCount: number;
+      availableCount: number;
+      latestAssignment: Date;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const offset = (page - 1) * limit;
+
+    // Get total count of unique users assigned this coupon
+    const [countResult] = await query<{ count: number }>(
+      `SELECT COUNT(DISTINCT uc.user_id) as count 
+       FROM user_coupons uc
+       WHERE uc.coupon_id = $1`,
+      [couponId]
+    );
+
+    const total = countResult.count;
+    const totalPages = Math.ceil(total / limit);
+
+    // Get user assignments with aggregated statistics
+    const assignments = await query<{
+      userId: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      assignedCount: number;
+      usedCount: number;
+      availableCount: number;
+      latestAssignment: Date;
+    }>(
+      `SELECT 
+         u.id as "userId",
+         u.first_name as "firstName", 
+         u.last_name as "lastName",
+         u.email,
+         COUNT(*) as "assignedCount",
+         COUNT(*) FILTER (WHERE uc.status = 'used') as "usedCount",
+         COUNT(*) FILTER (WHERE uc.status = 'available') as "availableCount",
+         MAX(uc.created_at) as "latestAssignment"
+       FROM user_coupons uc
+       JOIN users u ON uc.user_id = u.id
+       WHERE uc.coupon_id = $1
+       GROUP BY u.id, u.first_name, u.last_name, u.email
+       ORDER BY MAX(uc.created_at) DESC
+       LIMIT $2 OFFSET $3`,
+      [couponId, limit, offset]
+    );
+
+    return {
+      assignments,
+      total,
+      page,
+      limit,
+      totalPages
+    };
+  }
+
   // Revoke user coupon
   async revokeUserCoupon(userCouponId: string, revokedBy: string, reason?: string): Promise<boolean> {
     const [result] = await query<{ updated: boolean }>(
