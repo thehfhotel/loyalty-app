@@ -1,6 +1,6 @@
 {
   "name": "loyalty-backend",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Hotel Loyalty System Backend",
   "main": "dist/index.js",
   "scripts": {
