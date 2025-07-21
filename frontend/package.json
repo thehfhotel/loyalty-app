@@ -1,6 +1,6 @@
 {
   "name": "loyalty-frontend",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Hotel Loyalty System Frontend",
   "type": "module",
   "scripts": {
@@ -12,12 +12,14 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.2",
+    "@types/qrcode": "^1.5.5",
     "axios": "^1.6.2",
     "clsx": "^2.0.0",
     "date-fns": "^2.30.0",
     "i18next": "^25.3.2",
     "i18next-browser-languagedetector": "^8.2.0",
     "i18next-http-backend": "^3.0.2",
+    "qrcode": "^1.5.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.48.2",

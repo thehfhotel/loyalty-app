@@ -1,6 +1,7 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { UserActiveCoupon } from '../../types/coupon';
 import { useTranslation } from 'react-i18next';
+import QRCode from 'qrcode';
 
 interface QRCodeModalProps {
   coupon: UserActiveCoupon;
@@ -15,32 +16,45 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const qrCodeRef = useRef<HTMLDivElement>(null);
+  const [qrCodeDataURL, setQrCodeDataURL] = useState<string>('');
+  const [isGeneratingQR, setIsGeneratingQR] = useState(true);
+
+  // Generate QR code when component mounts or coupon changes
+  useEffect(() => {
+    const generateQRCode = async () => {
+      try {
+        setIsGeneratingQR(true);
+        // Generate QR code with unique redemption ID for backend processing
+        const qrData = coupon.qrCode;
+        const dataURL = await QRCode.toDataURL(qrData, {
+          width: 256,
+          margin: 2,
+          color: {
+            dark: '#000000',
+            light: '#FFFFFF',
+          },
+          errorCorrectionLevel: 'M',
+        });
+        setQrCodeDataURL(dataURL);
+      } catch (error) {
+        console.error('Error generating QR code:', error);
+      } finally {
+        setIsGeneratingQR(false);
+      }
+    };
+
+    generateQRCode();
+  }, [coupon.qrCode]);
 
   const copyToClipboard = async () => {
     try {
-      await navigator.clipboard.writeText(coupon.qrCode);
-      alert(t('coupons.qrCodeCopied'));
+      await navigator.clipboard.writeText(coupon.code);
+      alert(t('coupons.couponCodeCopied', 'Coupon code copied!'));
     } catch (err) {
-      console.error('Failed to copy QR code:', err);
+      console.error('Failed to copy coupon code:', err);
     }
   };
 
-  const shareQRCode = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: coupon.name,
-          text: `Use this coupon: ${coupon.code}`,
-          url: window.location.href
-        });
-      } catch (err) {
-        console.error('Failed to share:', err);
-      }
-    } else {
-      // Fallback to copying
-      copyToClipboard();
-    }
-  };
 
   return (
     <div className={`bg-white rounded-lg shadow-lg ${className}`}>
@@ -66,25 +80,44 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
           <h4 className="text-xl font-bold text-gray-900 mb-2">
             {coupon.name}
           </h4>
-          <p className="text-lg text-gray-600 font-mono bg-gray-100 px-3 py-1 rounded">
-            {coupon.code}
-          </p>
         </div>
 
         {/* QR Code */}
-        <div className="flex justify-center mb-6" ref={qrCodeRef}>
-          <div className="bg-white p-6 rounded-lg shadow-inner border-2 border-gray-200">
+        <div className="flex flex-col items-center mb-6" ref={qrCodeRef}>
+          <div className="bg-white p-6 rounded-lg shadow-inner border-2 border-gray-200 mb-4">
             {/* QR Code Display */}
-            <div className="w-56 h-56 bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center rounded-lg">
-              <div className="text-center">
-                <div className="text-4xl mb-3">📱</div>
-                <div className="text-sm text-gray-600 mb-2 font-semibold">
-                  {t('coupons.scanToRedeem')}
+            <div className="w-64 h-64 flex items-center justify-center rounded-lg">
+              {isGeneratingQR ? (
+                <div className="text-center">
+                  <div className="text-4xl mb-3">⏳</div>
+                  <div className="text-sm text-gray-600 font-semibold">
+                    {t('coupons.generatingQR', 'Generating QR Code...')}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500 font-mono break-all px-2 bg-white rounded p-2">
-                  {coupon.qrCode}
+              ) : qrCodeDataURL ? (
+                <img 
+                  src={qrCodeDataURL} 
+                  alt={`QR Code for ${coupon.code}`}
+                  className="w-full h-full object-contain rounded-lg"
+                />
+              ) : (
+                <div className="text-center">
+                  <div className="text-4xl mb-3">❌</div>
+                  <div className="text-sm text-gray-600 font-semibold">
+                    {t('coupons.qrError', 'Error generating QR code')}
+                  </div>
                 </div>
-              </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Coupon Code underneath */}
+          <div className="text-center">
+            <div className="text-sm text-gray-600 mb-1 font-medium">
+              {t('coupons.couponCode', 'Coupon Code')}
+            </div>
+            <div className="text-lg font-mono bg-gray-100 px-4 py-2 rounded-lg border">
+              {coupon.code}
             </div>
           </div>
         </div>
@@ -119,20 +152,13 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex space-x-3">
+        <div className="flex justify-center">
           <button
             onClick={copyToClipboard}
-            className="flex-1 bg-gray-100 text-gray-700 py-3 px-4 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors flex items-center justify-center"
+            className="bg-gray-100 text-gray-700 py-3 px-6 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors flex items-center justify-center"
           >
             <span className="mr-2">📋</span>
             {t('coupons.copyCode')}
-          </button>
-          <button
-            onClick={shareQRCode}
-            className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center"
-          >
-            <span className="mr-2">📤</span>
-            {t('coupons.share')}
           </button>
         </div>
       </div>

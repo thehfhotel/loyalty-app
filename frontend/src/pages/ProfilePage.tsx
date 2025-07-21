@@ -169,12 +169,10 @@ export default function ProfilePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center">
-              <div className="mr-4">
-                <DashboardButton variant="outline" size="sm" />
-              </div>
               <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
             </div>
             <div className="flex items-center space-x-4">
+              <DashboardButton variant="outline" size="md" />
               <div className="flex items-center space-x-2">
                 <span className="text-sm text-gray-500">
                   Logged in as {getUserDisplayName(user)}

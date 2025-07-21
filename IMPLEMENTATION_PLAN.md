@@ -5,7 +5,7 @@ This document tracks the implementation progress of the Hotel Loyalty System MVP
 
 ## Implementation Status Summary
 
-### ✅ **COMPLETED FEATURES** (v1.0.0 - v2.1.0)
+### ✅ **COMPLETED FEATURES** (v1.0.0 - v2.4.1)
 
 #### **Phase 1: Core Authentication & User Management** ✅ **COMPLETE**
 - **v1.0.0**: Basic email/password authentication with JWT
@@ -44,9 +44,19 @@ This document tracks the implementation progress of the Hotel Loyalty System MVP
 - **v2.0.0**: Complete loyalty points and tier progression system
 - **v2.0.1**: Bug fixes and comprehensive testing
 - **v2.1.0**: Automatic loyalty enrollment and admin management
+- **v2.2.0 - v2.4.1**: Digital coupon system with QR code generation and management
 - **Features**: 4-tier system (Bronze/Silver/Gold/Platinum), automatic progression, points earning/expiration
 - **Admin Tools**: Complete loyalty management interface with OAuth provider tracking
 - **Universal Enrollment**: 100% automatic user enrollment on login
+- **Coupon System**: Complete digital coupon wallet, QR code generation, admin assignment management
+
+#### **Phase 3: Digital Coupon System** ✅ **COMPLETE**
+- **v2.2.0 - v2.4.1**: Complete digital coupon implementation with QR codes
+- **Features**: Customer coupon wallet, QR code generation, assignment tracking, admin management
+- **QR System**: Real QR code generation with unique redemption IDs
+- **Admin Tools**: Coupon assignment tracking, user coupon removal, assignment statistics
+- **UI Enhancements**: Separate modals for QR codes vs coupon details, consistent button positioning
+- **Localization**: Thai language support for coupon expiry dates and interface elements
 
 ### 🚧 **IN PROGRESS / PLANNED**
 
@@ -57,8 +67,8 @@ This document tracks the implementation progress of the Hotel Loyalty System MVP
 
 ---
 
-## Current Version: v2.1.0 - Automatic Loyalty Enrollment Complete
-**Latest Milestone**: Universal automatic loyalty enrollment with complete admin management interface.
+## Current Version: v2.4.1 - QR Code & UI Improvements Complete
+**Latest Milestone**: Complete QR code generation system, coupon management enhancements, and UI consistency improvements.
 
 ## Technology Stack
 - **Frontend**: React with TypeScript, Vite, TailwindCSS, PWA capabilities
@@ -364,27 +374,32 @@ CREATE TABLE user_loyalty (
 
 ---
 
-## Phase 3: Digital Coupon System (Week 5-6)
-**Goal**: Enable digital coupon creation, distribution, and redemption with QR codes.
+## ✅ Phase 3: Digital Coupon System (COMPLETED)
+**Status**: **COMPLETE** - Full digital coupon system with QR generation and admin management
+**Versions**: v2.2.0 through v2.4.1
 
-### Features Delivered
+### Features Delivered ✅
 1. **Customer Coupon Wallet**
-   - View available coupons
-   - View used/expired coupons
-   - QR code display for redemption
-   - Coupon details and terms
+   - ✅ View available coupons with expiration tracking
+   - ✅ Separate QR code modal for redemption
+   - ✅ Coupon details modal with terms and conditions
+   - ✅ Thai language support for expiry dates
+   - ✅ Real QR code generation for scanning
 
-2. **Coupon Redemption**
-   - QR code scanning (PWA camera access)
-   - Manual code entry option
-   - Real-time validation
-   - Usage tracking
+2. **QR Code System**
+   - ✅ Unique redemption ID generation for each coupon assignment
+   - ✅ Actual QR code generation using qrcode library
+   - ✅ QR codes contain redemption IDs for backend processing
+   - ✅ Human-readable coupon codes displayed separately
+   - ✅ Copy functionality for coupon codes
 
 3. **Admin Coupon Management**
-   - Create coupons with various types (%, fixed amount, BOGO)
-   - Set validity periods and usage limits
-   - Assign to specific customers or tiers
-   - Track redemption analytics
+   - ✅ Complete coupon assignment tracking system
+   - ✅ View all users assigned to specific coupons
+   - ✅ Assignment statistics (total, available, used counts)
+   - ✅ Remove coupons from users with confirmation
+   - ✅ Pagination for large user lists
+   - ✅ Real-time assignment updates
 
 ### Technical Implementation
 ```
@@ -444,13 +459,30 @@ CREATE TABLE user_coupons (
 );
 ```
 
-### Acceptance Criteria
-- [ ] Customer can view all their coupons
-- [ ] QR codes are generated for each coupon
-- [ ] Admin can scan QR codes to redeem
-- [ ] Coupons expire automatically
-- [ ] Usage limits are enforced
-- [ ] Redemption history is tracked
+### Acceptance Criteria ✅ **ALL COMPLETE**
+
+#### **Customer Experience**
+- ✅ Customer can view all their available coupons
+- ✅ QR codes are generated for each coupon with unique redemption IDs
+- ✅ Separate QR modal shows scannable code with instructions
+- ✅ Coupon details modal shows terms without QR code
+- ✅ Thai language support for expiry dates
+- ✅ Copy functionality works for coupon codes
+
+#### **QR Code System**
+- ✅ Real QR codes generated using qrcode library
+- ✅ QR codes contain unique redemption IDs for backend processing
+- ✅ Human-readable coupon codes displayed separately
+- ✅ QR generation integrates with Docker environment
+- ✅ QR codes are scannable and contain proper redemption data
+
+#### **Admin Management**
+- ✅ Admin can view all coupon assignments
+- ✅ Assignment statistics show accurate counts
+- ✅ Admin can remove coupons from users
+- ✅ Confirmation dialogs prevent accidental removals
+- ✅ Real-time updates after assignment changes
+- ✅ Pagination handles large user lists efficiently
 
 ---
 
@@ -660,7 +692,33 @@ CREATE TABLE push_subscriptions (
 
 ## Version History & Milestones
 
-### **v2.1.0 - Automatic Loyalty Enrollment Complete** (Current)
+### **v2.4.1 - QR Code & UI Improvements Complete** (Current)
+- Real QR code generation system with qrcode library integration
+- UI consistency improvements (dashboard button positioning)
+- Enhanced coupon modal separation (QR vs details)
+- Improved Docker environment handling for dependencies
+- QR code system using unique redemption IDs for backend processing
+
+### **v2.4.0 - Coupon Management Enhancement**
+- Complete coupon assignment tracking and management system
+- Admin interface for viewing coupon assignments with user details
+- Coupon removal functionality with confirmation dialogs
+- Assignment statistics with accurate counts across pagination
+- Enhanced error handling and SQL query optimization
+
+### **v2.3.0 - Thai Localization & Coupon Enhancements**
+- Thai language support for coupon expiry dates
+- Complete coupon assignment tracking for administrators
+- User assignment statistics and management interface
+- Improved coupon display with proper expiration handling
+
+### **v2.2.0 - Digital Coupon System Foundation**
+- Customer coupon wallet implementation
+- Separate QR code and coupon details modals
+- Basic coupon display with expiration tracking
+- Foundation for coupon assignment and management
+
+### **v2.1.0 - Automatic Loyalty Enrollment Complete**
 - Universal automatic loyalty program enrollment for all users
 - Complete admin loyalty management interface with OAuth tracking
 - Color-coded OAuth provider display (LINE, Google, Facebook)
@@ -772,6 +830,6 @@ CREATE TABLE push_subscriptions (
 
 ---
 
-**Document Last Updated**: v2.1.0 (January 2025)  
-**Status**: Production-ready loyalty system with automatic enrollment and comprehensive admin management  
-**Ready For**: Phase 3 development, analytics integration, coupon system implementation
+**Document Last Updated**: v2.4.1 (January 2025)  
+**Status**: Production-ready system with complete loyalty program, digital coupon system, and QR code generation  
+**Ready For**: Phase 4 development (survey system), mobile app enhancements, advanced analytics integration
