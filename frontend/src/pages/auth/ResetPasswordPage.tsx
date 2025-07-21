@@ -88,6 +88,7 @@ export default function ResetPasswordPage() {
                   </div>
                   <input
                     {...resetForm.register('password')}
+                    id="password"
                     type="password"
                     className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                     placeholder="••••••••"
@@ -110,6 +111,7 @@ export default function ResetPasswordPage() {
                   </div>
                   <input
                     {...resetForm.register('confirmPassword')}
+                    id="confirmPassword"
                     type="password"
                     className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                     placeholder="••••••••"
@@ -182,6 +184,7 @@ export default function ResetPasswordPage() {
                 </div>
                 <input
                   {...requestForm.register('email')}
+                  id="email"
                   type="email"
                   autoComplete="email"
                   className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"

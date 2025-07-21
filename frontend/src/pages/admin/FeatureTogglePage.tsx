@@ -4,6 +4,7 @@ import { FiToggleLeft, FiToggleRight, FiClock, FiUser, FiInfo, FiRefreshCw, FiAl
 import { featureToggleService, FeatureToggle, FeatureToggleAudit } from '../../services/featureToggleService';
 import { useAuthStore } from '../../store/authStore';
 import { clearFeatureCache } from '../../hooks/useFeatureToggle';
+import DashboardButton from '../../components/navigation/DashboardButton';
 
 export default function FeatureTogglePage() {
   const [features, setFeatures] = useState<FeatureToggle[]>([]);
@@ -108,14 +109,17 @@ export default function FeatureTogglePage() {
                 Manage feature flags and system configurations
               </p>
             </div>
-            <button
-              onClick={loadFeatures}
-              disabled={loading}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
-            >
-              <FiRefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
+            <div className="flex items-center space-x-3">
+              <DashboardButton variant="outline" size="md" />
+              <button
+                onClick={loadFeatures}
+                disabled={loading}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+              >
+                <FiRefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -129,6 +133,24 @@ export default function FeatureTogglePage() {
                 <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
                   Feature Toggles
                 </h3>
+                
+                {/* Shared reason input */}
+                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                  <label htmlFor="toggle-reason" className="block text-sm font-medium text-gray-700 mb-2">
+                    Reason for changes:
+                  </label>
+                  <input
+                    type="text"
+                    id="toggle-reason"
+                    value={toggleReason}
+                    onChange={(e) => setToggleReason(e.target.value)}
+                    placeholder="Enter reason for toggle changes..."
+                    className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    This reason will be recorded for any feature toggle changes you make.
+                  </p>
+                </div>
                 
                 {loading ? (
                   <div className="text-center py-8">
@@ -194,20 +216,6 @@ export default function FeatureTogglePage() {
                               <FiInfo className="h-4 w-4" />
                             </button>
                           </div>
-                        </div>
-                        
-                        <div className="mt-3">
-                          <label htmlFor={`reason-${feature.id}`} className="block text-xs font-medium text-gray-700">
-                            Reason for change:
-                          </label>
-                          <input
-                            type="text"
-                            id={`reason-${feature.id}`}
-                            value={toggleReason}
-                            onChange={(e) => setToggleReason(e.target.value)}
-                            placeholder="Enter reason for toggle change..."
-                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                          />
                         </div>
                       </div>
                     ))}

@@ -258,5 +258,10 @@
         "expireFailed": "ทำให้คะแนนหมดอายุไม่สำเร็จ"
       }
     }
+  },
+  "navigation": {
+    "dashboard": "แดชบอร์ด",
+    "backToDashboard": "กลับไปแดชบอร์ด",
+    "home": "หน้าแรก"
   }
 }

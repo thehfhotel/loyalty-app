@@ -75,6 +75,7 @@ export default function RegisterPage() {
                   </div>
                   <input
                     {...registerField('firstName')}
+                    id="firstName"
                     type="text"
                     className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                     placeholder="John"
@@ -94,6 +95,7 @@ export default function RegisterPage() {
                   </div>
                   <input
                     {...registerField('lastName')}
+                    id="lastName"
                     type="text"
                     className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                     placeholder="Doe"
@@ -115,6 +117,7 @@ export default function RegisterPage() {
                 </div>
                 <input
                   {...registerField('email')}
+                  id="email"
                   type="email"
                   autoComplete="email"
                   className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
@@ -136,6 +139,7 @@ export default function RegisterPage() {
                 </div>
                 <input
                   {...registerField('phone')}
+                  id="phone"
                   type="tel"
                   className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                   placeholder="+1 (555) 123-4567"
@@ -156,6 +160,7 @@ export default function RegisterPage() {
                 </div>
                 <input
                   {...registerField('password')}
+                  id="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="new-password"
                   className="appearance-none block w-full px-3 py-2 pl-10 pr-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
@@ -188,6 +193,7 @@ export default function RegisterPage() {
                 </div>
                 <input
                   {...registerField('confirmPassword')}
+                  id="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
                   autoComplete="new-password"
                   className="appearance-none block w-full px-3 py-2 pl-10 pr-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"

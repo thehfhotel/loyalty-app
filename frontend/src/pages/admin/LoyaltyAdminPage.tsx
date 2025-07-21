@@ -17,6 +17,7 @@ import {
   AdminUserLoyalty, 
   PointsTransaction 
 } from '../../services/loyaltyService';
+import DashboardButton from '../../components/navigation/DashboardButton';
 
 interface PointsAdjustmentModal {
   isOpen: boolean;
@@ -173,6 +174,8 @@ export default function LoyaltyAdminPage() {
             </div>
             
             <div className="mt-4 sm:mt-0 flex space-x-3">
+              <DashboardButton variant="outline" size="md" />
+              
               <button
                 onClick={handleExpirePoints}
                 disabled={isLoadingAction}

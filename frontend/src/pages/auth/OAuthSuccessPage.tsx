@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import toast from 'react-hot-toast';
+import { notify } from '../../utils/notificationManager';
 
 export default function OAuthSuccessPage() {
   const navigate = useNavigate();
@@ -16,13 +16,13 @@ export default function OAuthSuccessPage() {
       const error = searchParams.get('error');
 
       if (error) {
-        toast.error('Social login failed. Please try again.');
+        notify.error('Social login failed. Please try again.');
         navigate('/login');
         return;
       }
 
       if (!token || !refreshToken) {
-        toast.error('Invalid authentication response. Please try again.');
+        notify.error('Invalid authentication response. Please try again.');
         navigate('/login');
         return;
       }
@@ -56,22 +56,22 @@ export default function OAuthSuccessPage() {
 
         // Show success message
         if (isNewUser) {
-          toast.success('Welcome! Your account has been created successfully.');
+          notify.success('Welcome! Your account has been created successfully.');
         } else {
-          toast.success('Welcome back!');
+          notify.success('Welcome back!');
         }
 
         // Redirect to dashboard
         navigate('/dashboard');
       } catch (error) {
         console.error('OAuth success handling error:', error);
-        toast.error('Authentication failed. Please try again.');
+        notify.error('Authentication failed. Please try again.');
         navigate('/login');
       }
     };
 
     handleOAuthSuccess();
-  }, [searchParams, navigate, setTokens]);
+  }, [searchParams, navigate]); // Removed setTokens to prevent re-runs
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">

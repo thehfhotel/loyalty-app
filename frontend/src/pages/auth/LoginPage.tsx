@@ -8,7 +8,7 @@ import { FiMail, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
 import GoogleLoginButton from '../../components/auth/GoogleLoginButton';
 import LineLoginButton from '../../components/auth/LineLoginButton';
 import FacebookLoginButton from '../../components/auth/FacebookLoginButton';
-import toast from 'react-hot-toast';
+import { notify } from '../../utils/notificationManager';
 import { useFeatureToggle, FEATURE_KEYS } from '../../hooks/useFeatureToggle';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
@@ -37,15 +37,15 @@ export default function LoginPage() {
   useEffect(() => {
     const error = searchParams.get('error');
     if (error === 'google_not_configured') {
-      toast.error('Google login is not configured. Please use email login.');
+      notify.error('Google login is not configured. Please use email login.');
     } else if (error === 'facebook_not_configured') {
-      toast.error('Facebook login is not configured. Please use email login.');
+      notify.error('Facebook login is not configured. Please use email login.');
     } else if (error === 'line_not_configured') {
-      toast.error('LINE login is not configured. Please use email login.');
+      notify.error('LINE login is not configured. Please use email login.');
     } else if (error === 'oauth_failed') {
-      toast.error('Social login failed. Please try again.');
+      notify.error('Social login failed. Please try again.');
     } else if (error === 'oauth_error') {
-      toast.error('An error occurred during social login. Please try again.');
+      notify.error('An error occurred during social login. Please try again.');
     }
   }, [searchParams]);
 
@@ -107,6 +107,7 @@ export default function LoginPage() {
                 </div>
                 <input
                   {...register('email')}
+                  id="email"
                   type="email"
                   autoComplete="email"
                   className="appearance-none rounded-none relative block w-full px-3 py-2 pl-10 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
@@ -127,6 +128,7 @@ export default function LoginPage() {
                 </div>
                 <input
                   {...register('password')}
+                  id="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
                   className="appearance-none rounded-none relative block w-full px-3 py-2 pl-10 pr-10 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"

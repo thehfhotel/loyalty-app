@@ -23,7 +23,7 @@ export const userService = {
     return response.data.profile;
   },
 
-  async uploadAvatar(file: File): Promise<{ avatarUrl: string }> {
+  async uploadAvatar(file: File): Promise<{ data: { avatarUrl: string } }> {
     const formData = new FormData();
     formData.append('avatar', file);
     

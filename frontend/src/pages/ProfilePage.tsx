@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { userService, UserProfile } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
-import toast from 'react-hot-toast';
-import { FiUser, FiPhone, FiCalendar, FiArrowLeft, FiCamera, FiLink } from 'react-icons/fi';
+import { notify } from '../utils/notificationManager';
+import { FiUser, FiPhone, FiCalendar, FiCamera, FiLink } from 'react-icons/fi';
 import { getUserDisplayName, getOAuthProviderName, isOAuthUser } from '../utils/userHelpers';
 import { useFeatureToggle, FEATURE_KEYS } from '../hooks/useFeatureToggle';
+import DashboardButton from '../components/navigation/DashboardButton';
 
 const profileSchema = z.object({
   firstName: z.string().min(1, 'First name is required'),
@@ -25,6 +26,8 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Check if account linking feature is enabled
   const isAccountLinkingEnabled = useFeatureToggle(FEATURE_KEYS.ACCOUNT_LINKING);
@@ -55,7 +58,7 @@ export default function ProfilePage() {
           : '',
       });
     } catch (error: any) {
-      toast.error('Failed to load profile');
+      notify.error('Failed to load profile');
       console.error('Profile load error:', error);
     } finally {
       setIsLoading(false);
@@ -72,11 +75,79 @@ export default function ProfilePage() {
         dateOfBirth: data.dateOfBirth || undefined,
       });
       setProfile(updatedProfile);
-      toast.success('Profile updated successfully');
+      notify.success('Profile updated successfully');
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to update profile');
+      notify.error(error.response?.data?.error || 'Failed to update profile');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      notify.error('Please upload a valid image file (JPEG, PNG, GIF, or WebP)');
+      return;
+    }
+
+    // Validate file size (5MB)
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      notify.error('File size must be less than 5MB');
+      return;
+    }
+
+    setUploadingAvatar(true);
+
+    try {
+      const response = await userService.uploadAvatar(file);
+      
+      // Update local profile state immediately for instant display
+      if (profile && response.data?.avatarUrl) {
+        setProfile({
+          ...profile,
+          avatarUrl: response.data.avatarUrl
+        });
+      }
+      
+      notify.success('Profile photo updated successfully');
+    } catch (error: any) {
+      notify.error(error.response?.data?.error || 'Failed to upload profile photo');
+    } finally {
+      setUploadingAvatar(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleDeleteAvatar = async () => {
+    if (!confirm('Are you sure you want to remove your profile photo?')) {
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      await userService.deleteAvatar();
+      
+      // Update local profile state
+      if (profile) {
+        setProfile({
+          ...profile,
+          avatarUrl: undefined
+        });
+      }
+      
+      notify.success('Profile photo removed successfully');
+    } catch (error: any) {
+      notify.error(error.response?.data?.error || 'Failed to remove profile photo');
+    } finally {
+      setUploadingAvatar(false);
     }
   };
 
@@ -98,12 +169,9 @@ export default function ProfilePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center">
-              <Link
-                to="/dashboard"
-                className="mr-4 text-gray-400 hover:text-gray-600"
-              >
-                <FiArrowLeft className="h-6 w-6" />
-              </Link>
+              <div className="mr-4">
+                <DashboardButton variant="outline" size="sm" />
+              </div>
               <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
             </div>
             <div className="flex items-center space-x-4">
@@ -148,10 +216,12 @@ export default function ProfilePage() {
             {/* Profile Picture Section */}
             <div className="flex items-center mb-8">
               <div className="relative">
-                <div className="h-20 w-20 rounded-full bg-gray-300 flex items-center justify-center">
-                  {profile?.avatarUrl ? (
+                <div className="h-20 w-20 rounded-full bg-gray-300 flex items-center justify-center overflow-hidden">
+                  {uploadingAvatar ? (
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                  ) : profile?.avatarUrl ? (
                     <img
-                      src={profile.avatarUrl}
+                      src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:4000'}${profile.avatarUrl}?t=${Date.now()}`}
                       alt="Profile"
                       className="h-20 w-20 rounded-full object-cover"
                     />
@@ -159,9 +229,21 @@ export default function ProfilePage() {
                     <FiUser className="h-8 w-8 text-gray-600" />
                   )}
                 </div>
-                <button className="absolute bottom-0 right-0 bg-primary-600 text-white rounded-full p-1 hover:bg-primary-700">
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingAvatar}
+                  className="absolute bottom-0 right-0 bg-primary-600 text-white rounded-full p-1 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Upload profile photo"
+                >
                   <FiCamera className="h-4 w-4" />
                 </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  className="hidden"
+                />
               </div>
               <div className="ml-6">
                 <div className="flex items-center space-x-3">
@@ -182,7 +264,25 @@ export default function ProfilePage() {
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-gray-500">
+                <div className="flex items-center space-x-2 mt-2">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingAvatar}
+                    className="text-sm text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                  >
+                    {profile?.avatarUrl ? 'Change Photo' : 'Upload Photo'}
+                  </button>
+                  {profile?.avatarUrl && (
+                    <button
+                      onClick={handleDeleteAvatar}
+                      disabled={uploadingAvatar}
+                      className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50"
+                    >
+                      Remove Photo
+                    </button>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500 mt-2">
                   Member since {profile ? new Date(profile.createdAt).toLocaleDateString() : '...'}
                 </p>
               </div>
@@ -201,6 +301,7 @@ export default function ProfilePage() {
                     </div>
                     <input
                       {...register('firstName')}
+                      id="firstName"
                       type="text"
                       className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                       placeholder="John"
@@ -221,6 +322,7 @@ export default function ProfilePage() {
                     </div>
                     <input
                       {...register('lastName')}
+                      id="lastName"
                       type="text"
                       className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                       placeholder="Doe"
@@ -242,6 +344,7 @@ export default function ProfilePage() {
                   </div>
                   <input
                     {...register('phone')}
+                    id="phone"
                     type="tel"
                     className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                     placeholder="+1 (555) 123-4567"
@@ -262,6 +365,7 @@ export default function ProfilePage() {
                   </div>
                   <input
                     {...register('dateOfBirth')}
+                    id="dateOfBirth"
                     type="date"
                     className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                   />

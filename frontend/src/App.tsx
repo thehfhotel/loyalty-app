@@ -10,8 +10,10 @@ import ProfilePage from './pages/ProfilePage';
 import AccountLinkingPage from './pages/AccountLinkingPage';
 import FeatureTogglePage from './pages/admin/FeatureTogglePage';
 import LoyaltyAdminPage from './pages/admin/LoyaltyAdminPage';
+import CouponManagement from './pages/admin/CouponManagement';
 import FeatureDisabledPage from './components/FeatureDisabledPage';
 import LoyaltyDashboard from './pages/loyalty/LoyaltyDashboard';
+import CouponWallet from './pages/coupons/CouponWallet';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import SessionManager from './components/auth/SessionManager';
 import DevTools from './components/dev/DevTools';
@@ -130,6 +132,14 @@ function App() {
           }
         />
         <Route
+          path="/coupons"
+          element={
+            <ProtectedRoute>
+              <CouponWallet />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/account-linking"
           element={
             <ProtectedRoute>
@@ -157,6 +167,14 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin">
               <LoyaltyAdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/coupons"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <CouponManagement />
             </ProtectedRoute>
           }
         />

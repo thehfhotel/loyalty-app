@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import { useAuthStore } from '../store/authStore';
-import toast from 'react-hot-toast';
+import { notify } from './notificationManager';
 
 // Track if we've already shown the session expired message
 let sessionExpiredShown = false;
@@ -20,23 +20,43 @@ export function setupAxiosInterceptors() {
           return Promise.reject(error);
         }
 
-        // Clear auth state
-        authStore.clearAuth();
-        
-        // Show session expired message only once
-        if (!sessionExpiredShown) {
-          sessionExpiredShown = true;
-          toast.error('Your session has expired. Please log in again.');
+        // Try to refresh token first
+        try {
+          await authStore.refreshToken();
           
-          // Reset the flag after 5 seconds
-          setTimeout(() => {
-            sessionExpiredShown = false;
-          }, 5000);
+          // If refresh successful, retry the original request
+          const originalRequest = error.config;
+          if (originalRequest) {
+            // Update the Authorization header with the new token
+            const newToken = useAuthStore.getState().accessToken;
+            if (newToken) {
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+              return axios.request(originalRequest);
+            }
+          }
+        } catch (refreshError) {
+          console.error('Token refresh failed:', refreshError);
+          
+          // Clear auth state if refresh fails
+          authStore.clearAuth();
+          
+          // Show session expired message only once
+          if (!sessionExpiredShown) {
+            sessionExpiredShown = true;
+            notify.error('Your session has expired. Please log in again.', {
+              id: 'session-expired'
+            });
+            
+            // Reset the flag after 5 seconds
+            setTimeout(() => {
+              sessionExpiredShown = false;
+            }, 5000);
+          }
+          
+          // Redirect to login with return URL
+          const returnUrl = currentPath + window.location.search;
+          window.location.href = `/login?returnUrl=${encodeURIComponent(returnUrl)}`;
         }
-        
-        // Redirect to login with return URL
-        const returnUrl = currentPath + window.location.search;
-        window.location.href = `/login?returnUrl=${encodeURIComponent(returnUrl)}`;
       }
       
       return Promise.reject(error);

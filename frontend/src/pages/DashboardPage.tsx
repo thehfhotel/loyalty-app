@@ -92,12 +92,17 @@ export default function DashboardPage() {
               </div>
             </Link>
 
-            {/* Coupons Card (Placeholder for Phase 3) */}
-            <div className="bg-white overflow-hidden shadow rounded-lg opacity-50 cursor-not-allowed">
+            {/* Coupons Card */}
+            <Link
+              to="/coupons"
+              className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+            >
               <div className="p-5">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <div className="h-6 w-6 bg-green-500 rounded"></div>
+                    <div className="h-6 w-6 bg-green-500 rounded flex items-center justify-center">
+                      <span className="text-xs text-white font-bold">🎫</span>
+                    </div>
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
@@ -105,13 +110,13 @@ export default function DashboardPage() {
                         {t('dashboard.myCoupons')}
                       </dt>
                       <dd className="mt-1 text-lg font-semibold text-gray-900">
-                        {t('dashboard.comingSoon', { phase: '3' })}
+                        {t('dashboard.manageCoupons')}
                       </dd>
                     </dl>
                   </div>
                 </div>
               </div>
-            </div>
+            </Link>
 
             {/* Loyalty Management Card (Admin+ Only) */}
             {isAdmin && (
@@ -131,6 +136,34 @@ export default function DashboardPage() {
                         </dt>
                         <dd className="mt-1 text-lg font-semibold text-gray-900">
                           {t('dashboard.manageLoyaltyAdmin')}
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            )}
+
+            {/* Coupon Management Card (Admin+ Only) */}
+            {isAdmin && (
+              <Link
+                to="/admin/coupons"
+                className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+              >
+                <div className="p-5">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <div className="h-6 w-6 bg-yellow-500 rounded flex items-center justify-center">
+                        <span className="text-xs text-white font-bold">🎫</span>
+                      </div>
+                    </div>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-sm font-medium text-gray-500 truncate">
+                          Coupon Management
+                        </dt>
+                        <dd className="mt-1 text-lg font-semibold text-gray-900">
+                          Create and manage coupons
                         </dd>
                       </dl>
                     </div>

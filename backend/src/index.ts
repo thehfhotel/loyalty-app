@@ -15,6 +15,7 @@ import userRoutes from './routes/user';
 import oauthRoutes from './routes/oauth';
 import featureToggleRoutes from './routes/featureToggles';
 import loyaltyRoutes from './routes/loyalty';
+import couponRoutes from './routes/coupon';
 // import accountLinkingRoutes from './routes/accountLinking.minimal';
 // import { accountLinkingService } from './services/accountLinkingService';
 import { authenticate } from './middleware/auth';
@@ -30,13 +31,18 @@ const httpServer = createServer(app);
 const PORT = process.env.PORT || 4000;
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" } // Allow images to be served cross-origin
+}));
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true,
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files for uploaded avatars
+app.use('/uploads', express.static('uploads'));
 
 // Session middleware for OAuth
 app.use(session({
@@ -66,6 +72,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/oauth', oauthRoutes);
 app.use('/api/feature-toggles', featureToggleRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
+app.use('/api/coupons', couponRoutes);
 // Account linking routes (basic implementation for testing)
 app.get('/api/account-linking/health', authenticate, async (req, res) => {
   res.json({ success: true, message: 'Account linking API is available' });

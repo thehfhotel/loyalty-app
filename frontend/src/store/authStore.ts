@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authService } from '../services/authService';
-import toast from 'react-hot-toast';
+import { notify } from '../utils/notificationManager';
 
 interface User {
   id: string;
@@ -56,10 +56,10 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             isLoading: false,
           });
-          toast.success('Welcome back!');
+          notify.success('Welcome back!');
         } catch (error: any) {
           set({ isLoading: false });
-          toast.error(error.message || 'Login failed');
+          notify.error(error.message || 'Login failed');
           throw error;
         }
       },
@@ -75,10 +75,10 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             isLoading: false,
           });
-          toast.success('Account created successfully!');
+          notify.success('Account created successfully!');
         } catch (error: any) {
           set({ isLoading: false });
-          toast.error(error.message || 'Registration failed');
+          notify.error(error.message || 'Registration failed');
           throw error;
         }
       },
@@ -93,7 +93,7 @@ export const useAuthStore = create<AuthState>()(
           console.error('Logout error:', error);
         } finally {
           get().clearAuth();
-          toast.success('Logged out successfully');
+          notify.success('Logged out successfully');
         }
       },
 

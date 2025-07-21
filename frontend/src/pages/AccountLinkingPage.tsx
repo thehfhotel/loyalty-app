@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -13,7 +12,6 @@ import { useAuthStore } from '../store/authStore';
 import { getUserDisplayName, getOAuthProviderName } from '../utils/userHelpers';
 import toast from 'react-hot-toast';
 import { 
-  FiArrowLeft, 
   FiLink, 
   FiMinusCircle, 
   FiMail, 
@@ -22,6 +20,7 @@ import {
   FiClock,
   FiUser
 } from 'react-icons/fi';
+import DashboardButton from '../components/navigation/DashboardButton';
 
 const linkRequestSchema = z.object({
   targetEmail: z.string().email('Invalid email address'),
@@ -146,12 +145,7 @@ export default function AccountLinkingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center space-x-4">
-              <Link
-                to="/profile"
-                className="inline-flex items-center text-gray-500 hover:text-gray-700"
-              >
-                <FiArrowLeft className="h-6 w-6" />
-              </Link>
+              <DashboardButton variant="outline" size="sm" />
               <h1 className="text-3xl font-bold text-gray-900">Account Linking</h1>
             </div>
           </div>
@@ -182,6 +176,7 @@ export default function AccountLinkingPage() {
                     </div>
                     <input
                       {...register('targetEmail')}
+                      id="targetEmail"
                       type="email"
                       className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                       placeholder="Enter email address to link"
@@ -198,6 +193,7 @@ export default function AccountLinkingPage() {
                   </label>
                   <textarea
                     {...register('message')}
+                    id="message"
                     rows={3}
                     className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     placeholder="Add a message to explain why you want to link these accounts"

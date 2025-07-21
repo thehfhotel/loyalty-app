@@ -13,6 +13,7 @@ import PointsBalance from '../../components/loyalty/PointsBalance';
 import TierStatus from '../../components/loyalty/TierStatus';
 import TransactionList from '../../components/loyalty/TransactionList';
 import { useAuthStore } from '../../store/authStore';
+import DashboardButton from '../../components/navigation/DashboardButton';
 
 export default function LoyaltyDashboard() {
   const { t } = useTranslation();
@@ -133,12 +134,17 @@ export default function LoyaltyDashboard() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            {t('loyalty.dashboard.title')}
-          </h1>
-          <p className="mt-2 text-gray-600">
-            {t('loyalty.dashboard.welcome')}
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                {t('loyalty.dashboard.title')}
+              </h1>
+              <p className="mt-2 text-gray-600">
+                {t('loyalty.dashboard.welcome')}
+              </p>
+            </div>
+            <DashboardButton variant="outline" size="md" />
+          </div>
         </div>
 
         {/* Demo Simulator Button */}

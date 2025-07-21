@@ -1,9 +1,11 @@
 {
   "adminEmails": [
-    "winut.hf@gmail.com"
+    "winut.hf@gmail.com",
+    "test@example.com"
   ],
   "superAdminEmails": [
-    "winut.hf@gmail.com"
+    "winut.hf@gmail.com",
+    "test@example.com"
   ],
   "description": "Email addresses that should automatically receive admin or super_admin role upon login. If email is in both lists, super_admin takes precedence."
 }
