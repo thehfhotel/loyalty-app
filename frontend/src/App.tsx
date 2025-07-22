@@ -26,6 +26,7 @@ import SurveyAnalytics from './pages/admin/SurveyAnalytics';
 import SurveyPreviewPage from './pages/admin/SurveyPreview';
 import SurveyTemplates from './pages/admin/SurveyTemplates';
 import SurveyInvitations from './pages/admin/SurveyInvitations';
+import ThaiSurveyDebug from './pages/admin/ThaiSurveyDebug';
 import { useEffect, useState } from 'react';
 import { useFeatureToggle, FEATURE_KEYS } from './hooks/useFeatureToggle';
 
@@ -257,6 +258,14 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin">
               <SurveyInvitations />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/surveys/debug/thai"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <ThaiSurveyDebug />
             </ProtectedRoute>
           }
         />

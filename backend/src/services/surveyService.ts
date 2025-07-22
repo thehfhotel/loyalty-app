@@ -775,6 +775,61 @@ export class SurveyService {
       client.release();
     }
   }
+
+  // Get eligible users for a target segment
+  private async getEligibleUsers(targetSegment: TargetSegment): Promise<any[]> {
+    const client = await getPool().connect();
+    try {
+      let query = `
+        SELECT u.*, ul.tier_id, up.first_name, up.last_name
+        FROM users u
+        LEFT JOIN user_loyalty ul ON u.id = ul.user_id
+        LEFT JOIN user_profiles up ON u.id = up.user_id
+        WHERE u.role NOT IN ('admin', 'super_admin')
+      `;
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      // Add tier restrictions
+      if (targetSegment.tier_restrictions && targetSegment.tier_restrictions.length > 0) {
+        query += ` AND ul.tier_id = ANY($${paramIndex})`;
+        params.push(targetSegment.tier_restrictions);
+        paramIndex++;
+      }
+
+      // Add registration date filters
+      if (targetSegment.registration_after) {
+        query += ` AND u.created_at >= $${paramIndex}`;
+        params.push(targetSegment.registration_after);
+        paramIndex++;
+      }
+
+      if (targetSegment.registration_before) {
+        query += ` AND u.created_at <= $${paramIndex}`;
+        params.push(targetSegment.registration_before);
+        paramIndex++;
+      }
+
+      // Add OAuth provider filters
+      if (targetSegment.oauth_providers && targetSegment.oauth_providers.length > 0) {
+        query += ` AND (u.oauth_provider = ANY($${paramIndex}) OR (u.oauth_provider IS NULL AND $${paramIndex} @> ARRAY['email']))`;
+        params.push(targetSegment.oauth_providers);
+        paramIndex++;
+      }
+
+      // Exclude specific users
+      if (targetSegment.exclude_users && targetSegment.exclude_users.length > 0) {
+        query += ` AND u.id != ALL($${paramIndex})`;
+        params.push(targetSegment.exclude_users);
+        paramIndex++;
+      }
+
+      const result = await client.query(query, params);
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
 }
 
 export const surveyService = new SurveyService();

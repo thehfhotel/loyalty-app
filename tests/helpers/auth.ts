@@ -18,3 +18,12 @@ export async function login(page: Page, email = 'test@example.com', password = '
   
   return page;
 }
+
+export async function loginAsAdmin(page: Page) {
+  return await login(page, 'winut.hf@gmail.com', 'Kick2you@ss');
+}
+
+export const authHelpers = {
+  login,
+  loginAsAdmin
+};

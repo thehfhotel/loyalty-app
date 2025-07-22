@@ -132,6 +132,29 @@ const SurveyBuilder: React.FC = () => {
       return;
     }
 
+    // Validate that all questions have text
+    const emptyQuestions = survey.questions.filter(q => !q.text || q.text.trim() === '');
+    if (emptyQuestions.length > 0) {
+      toast.error('Please fill in the question text for all questions');
+      return;
+    }
+
+    // Validate that choice questions have options with text
+    const choiceQuestions = survey.questions.filter(q => 
+      ['multiple_choice', 'single_choice'].includes(q.type)
+    );
+    for (const question of choiceQuestions) {
+      if (!question.options || question.options.length === 0) {
+        toast.error('Choice questions must have at least one option');
+        return;
+      }
+      const emptyOptions = question.options.filter(opt => !opt.text || opt.text.trim() === '');
+      if (emptyOptions.length > 0) {
+        toast.error('Please fill in text for all question options');
+        return;
+      }
+    }
+
     try {
       setSaving(true);
       
@@ -144,6 +167,33 @@ const SurveyBuilder: React.FC = () => {
         ...(status && { status })
       };
 
+      // Log the exact data being sent for debugging
+      console.log('=== SURVEY CREATION DEBUG ===');
+      console.log('Survey Data:', JSON.stringify(surveyData, null, 2));
+      console.log('Title encoding:', {
+        title: surveyData.title,
+        titleLength: surveyData.title.length,
+        titleBytes: new TextEncoder().encode(surveyData.title).length
+      });
+      console.log('Description encoding:', {
+        description: surveyData.description,
+        descriptionLength: surveyData.description?.length || 0,
+        descriptionBytes: surveyData.description ? new TextEncoder().encode(surveyData.description).length : 0
+      });
+      console.log('Questions data:', surveyData.questions.map(q => ({
+        id: q.id,
+        text: q.text,
+        textLength: q.text.length,
+        textBytes: new TextEncoder().encode(q.text).length,
+        type: q.type,
+        options: q.options?.map(opt => ({
+          text: opt.text,
+          textLength: opt.text.length,
+          textBytes: new TextEncoder().encode(opt.text).length
+        }))
+      })));
+      console.log('=============================');
+
       if (isEditing && id) {
         await surveyService.updateSurvey(id, { ...surveyData, status: status || survey.status });
         toast.success('Survey updated successfully');
@@ -153,8 +203,28 @@ const SurveyBuilder: React.FC = () => {
         navigate(`/admin/surveys/${newSurvey.id}/edit`);
       }
     } catch (err: any) {
-      console.error('Error saving survey:', err);
-      toast.error(err.response?.data?.message || 'Failed to save survey');
+      console.error('=== SURVEY CREATION ERROR ===');
+      console.error('Full error object:', err);
+      console.error('Error response:', err.response);
+      console.error('Error response data:', err.response?.data);
+      console.error('Error response status:', err.response?.status);
+      console.error('Error response headers:', err.response?.headers);
+      console.error('Error message:', err.message);
+      console.error('=============================');
+      
+      // Show detailed error information
+      const errorMessage = err.response?.data?.message || err.message || 'Failed to save survey';
+      const errorDetails = err.response?.data?.details || err.response?.data?.error || 'Unknown error';
+      
+      toast.error(`${errorMessage}\n\nDetails: ${errorDetails}`);
+      
+      // Also show validation errors if available
+      if (err.response?.data?.validationErrors) {
+        console.error('Validation errors:', err.response.data.validationErrors);
+        err.response.data.validationErrors.forEach((error: any, index: number) => {
+          console.error(`Validation Error ${index + 1}:`, error);
+        });
+      }
     } finally {
       setSaving(false);
     }

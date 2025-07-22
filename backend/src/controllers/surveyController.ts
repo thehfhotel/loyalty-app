@@ -16,17 +16,159 @@ export class SurveyController {
 
       const surveyData: CreateSurveyRequest = req.body;
       
-      // Validate required fields
-      if (!surveyData.title || !surveyData.questions || surveyData.questions.length === 0) {
-        res.status(400).json({ message: 'Title and questions are required.' });
+      // Enhanced logging for debugging Thai language issues
+      console.log('=== BACKEND SURVEY CREATION DEBUG ===');
+      console.log('User:', { id: user.id, role: user.role });
+      console.log('Raw request body:', JSON.stringify(req.body, null, 2));
+      console.log('Survey data validation:');
+      console.log('- Title:', {
+        value: surveyData.title,
+        type: typeof surveyData.title,
+        length: surveyData.title?.length,
+        bytes: surveyData.title ? Buffer.from(surveyData.title, 'utf8').length : 0,
+        encoding: surveyData.title ? 'UTF-8' : 'N/A'
+      });
+      console.log('- Description:', {
+        value: surveyData.description,
+        type: typeof surveyData.description,
+        length: surveyData.description?.length,
+        bytes: surveyData.description ? Buffer.from(surveyData.description, 'utf8').length : 0
+      });
+      console.log('- Questions count:', surveyData.questions?.length);
+      if (surveyData.questions) {
+        surveyData.questions.forEach((q, index) => {
+          console.log(`- Question ${index + 1}:`, {
+            id: q.id,
+            text: q.text,
+            textLength: q.text?.length,
+            textBytes: q.text ? Buffer.from(q.text, 'utf8').length : 0,
+            type: q.type,
+            required: q.required,
+            optionsCount: q.options?.length
+          });
+          if (q.options) {
+            q.options.forEach((opt, optIndex) => {
+              console.log(`  - Option ${optIndex + 1}:`, {
+                id: opt.id,
+                text: opt.text,
+                textLength: opt.text?.length,
+                textBytes: opt.text ? Buffer.from(opt.text, 'utf8').length : 0,
+                value: opt.value
+              });
+            });
+          }
+        });
+      }
+      console.log('- Access type:', surveyData.access_type);
+      console.log('- Target segment:', surveyData.target_segment);
+      console.log('=====================================');
+      
+      // Comprehensive validation
+      const validationErrors = [];
+      
+      if (!surveyData.title) {
+        validationErrors.push({ field: 'title', message: 'Title is required', value: surveyData.title });
+      } else if (typeof surveyData.title !== 'string') {
+        validationErrors.push({ field: 'title', message: 'Title must be a string', value: surveyData.title, type: typeof surveyData.title });
+      } else if (surveyData.title.trim().length === 0) {
+        validationErrors.push({ field: 'title', message: 'Title cannot be empty', value: surveyData.title });
+      }
+      
+      if (!surveyData.questions) {
+        validationErrors.push({ field: 'questions', message: 'Questions are required', value: surveyData.questions });
+      } else if (!Array.isArray(surveyData.questions)) {
+        validationErrors.push({ field: 'questions', message: 'Questions must be an array', value: surveyData.questions, type: typeof surveyData.questions });
+      } else if (surveyData.questions.length === 0) {
+        validationErrors.push({ field: 'questions', message: 'At least one question is required', value: surveyData.questions });
+      } else {
+        // Validate each question
+        surveyData.questions.forEach((question, index) => {
+          if (!question.id) {
+            validationErrors.push({ field: `questions[${index}].id`, message: 'Question ID is required', value: question.id });
+          }
+          if (!question.text) {
+            validationErrors.push({ field: `questions[${index}].text`, message: 'Question text is required', value: question.text });
+          } else if (typeof question.text !== 'string') {
+            validationErrors.push({ field: `questions[${index}].text`, message: 'Question text must be a string', value: question.text, type: typeof question.text });
+          }
+          if (!question.type) {
+            validationErrors.push({ field: `questions[${index}].type`, message: 'Question type is required', value: question.type });
+          }
+          if (question.required === undefined || question.required === null) {
+            validationErrors.push({ field: `questions[${index}].required`, message: 'Question required field must be specified', value: question.required });
+          }
+          if (typeof question.order !== 'number') {
+            validationErrors.push({ field: `questions[${index}].order`, message: 'Question order must be a number', value: question.order, type: typeof question.order });
+          }
+          
+          // Validate options for choice questions
+          if (['single_choice', 'multiple_choice'].includes(question.type)) {
+            if (!question.options || !Array.isArray(question.options)) {
+              validationErrors.push({ field: `questions[${index}].options`, message: 'Options are required for choice questions', value: question.options });
+            } else if (question.options.length === 0) {
+              validationErrors.push({ field: `questions[${index}].options`, message: 'At least one option is required for choice questions', value: question.options });
+            } else {
+              question.options.forEach((option, optIndex) => {
+                if (!option.id) {
+                  validationErrors.push({ field: `questions[${index}].options[${optIndex}].id`, message: 'Option ID is required', value: option.id });
+                }
+                if (!option.text) {
+                  validationErrors.push({ field: `questions[${index}].options[${optIndex}].text`, message: 'Option text is required', value: option.text });
+                } else if (typeof option.text !== 'string') {
+                  validationErrors.push({ field: `questions[${index}].options[${optIndex}].text`, message: 'Option text must be a string', value: option.text, type: typeof option.text });
+                }
+                if (option.value === undefined || option.value === null) {
+                  validationErrors.push({ field: `questions[${index}].options[${optIndex}].value`, message: 'Option value is required', value: option.value });
+                }
+              });
+            }
+          }
+        });
+      }
+      
+      if (!surveyData.access_type) {
+        validationErrors.push({ field: 'access_type', message: 'Access type is required', value: surveyData.access_type });
+      } else if (!['public', 'invite_only'].includes(surveyData.access_type)) {
+        validationErrors.push({ field: 'access_type', message: 'Access type must be "public" or "invite_only"', value: surveyData.access_type });
+      }
+      
+      if (validationErrors.length > 0) {
+        console.error('Validation errors found:', validationErrors);
+        res.status(400).json({ 
+          message: 'Validation failed', 
+          validationErrors,
+          details: `Found ${validationErrors.length} validation error(s)`,
+          receivedData: {
+            title: surveyData.title,
+            titleType: typeof surveyData.title,
+            questionsCount: surveyData.questions?.length,
+            questionsType: typeof surveyData.questions,
+            accessType: surveyData.access_type
+          }
+        });
         return;
       }
 
       const survey = await surveyService.createSurvey(surveyData, user.id);
       res.status(201).json({ survey });
     } catch (error: any) {
-      console.error('Error creating survey:', error);
-      res.status(500).json({ message: 'Failed to create survey', error: error.message });
+      console.error('=== BACKEND SURVEY CREATION ERROR ===');
+      console.error('Error type:', error.constructor.name);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+      if (error.code) console.error('Error code:', error.code);
+      if (error.constraint) console.error('DB constraint:', error.constraint);
+      if (error.detail) console.error('DB detail:', error.detail);
+      if (error.hint) console.error('DB hint:', error.hint);
+      console.error('=====================================');
+      
+      res.status(500).json({ 
+        message: 'Failed to create survey', 
+        error: error.message,
+        details: error.detail || error.hint || 'Internal server error',
+        errorCode: error.code,
+        constraint: error.constraint
+      });
     }
   }
 
@@ -107,6 +249,13 @@ export class SurveyController {
       }
 
       const updateData: UpdateSurveyRequest = req.body;
+      
+      // Enhanced logging for update operations too
+      console.log('=== BACKEND SURVEY UPDATE DEBUG ===');
+      console.log('Survey ID:', id);
+      console.log('Update data:', JSON.stringify(updateData, null, 2));
+      console.log('===================================');
+      
       const survey = await surveyService.updateSurvey(id, updateData);
       
       if (!survey) {
