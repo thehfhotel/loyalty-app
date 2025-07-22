@@ -9,10 +9,14 @@ import {
   FiClock,
   FiCheckCircle,
   FiAlertCircle,
-  FiFilter
+  FiFilter,
+  FiSearch,
+  FiUserPlus,
+  FiX
 } from 'react-icons/fi';
 import { Survey, SurveyInvitation } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
+import { User, userService } from '../../services/userService';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import toast from 'react-hot-toast';
 
@@ -40,6 +44,12 @@ const SurveyInvitations: React.FC = () => {
   const [sending, setSending] = useState(false);
   const [selectedTier, setSelectedTier] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [showUserSelection, setShowUserSelection] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [userSearch, setUserSearch] = useState('');
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [sendingToUsers, setSendingToUsers] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -105,6 +115,80 @@ const SurveyInvitations: React.FC = () => {
       toast.error('Failed to resend invitation');
     }
   };
+
+  const loadUsers = async () => {
+    try {
+      setLoadingUsers(true);
+      const result = await userService.getAllUsers(1, 100, userSearch);
+      const customerUsers = result.users.filter(user => user.role === 'customer');
+      setUsers(customerUsers);
+    } catch (err: any) {
+      console.error('Error loading users:', err);
+      toast.error('Failed to load users');
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleShowUserSelection = () => {
+    setShowUserSelection(true);
+    if (users.length === 0) {
+      loadUsers();
+    }
+  };
+
+  const handleUserSelectionToggle = (userId: string) => {
+    const newSelection = new Set(selectedUsers);
+    if (newSelection.has(userId)) {
+      newSelection.delete(userId);
+    } else {
+      newSelection.add(userId);
+    }
+    setSelectedUsers(newSelection);
+  };
+
+  const handleSendToSelectedUsers = async () => {
+    if (selectedUsers.size === 0) {
+      toast.error('Please select at least one user');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to send invitations to ${selectedUsers.size} selected users?`)) {
+      return;
+    }
+
+    try {
+      setSendingToUsers(true);
+      const userIdsArray = Array.from(selectedUsers);
+      
+      const result = await surveyService.sendSurveyInvitationsToUsers(id!, userIdsArray);
+      
+      if (result.sent === 0) {
+        toast.error(`No invitations were sent. Users may not match targeting criteria or already have invitations.`);
+      } else {
+        toast.success(`Successfully sent ${result.sent} invitations`);
+      }
+      
+      setShowUserSelection(false);
+      setSelectedUsers(new Set());
+      loadData();
+    } catch (err: any) {
+      console.error('Error sending invitations to users:', err);
+      toast.error(err.response?.data?.message || 'Failed to send invitations');
+    } finally {
+      setSendingToUsers(false);
+    }
+  };
+
+  // Debounced user search
+  useEffect(() => {
+    if (showUserSelection) {
+      const timer = setTimeout(() => {
+        loadUsers();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [userSearch, showUserSelection]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -248,12 +332,20 @@ const SurveyInvitations: React.FC = () => {
             </div>
             <div className="flex items-center space-x-4">
               <button
+                onClick={handleShowUserSelection}
+                disabled={survey.status !== 'active'}
+                className="inline-flex items-center px-4 py-2 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-white hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FiUserPlus className="mr-2 h-4 w-4" />
+                Select Users
+              </button>
+              <button
                 onClick={handleSendInvitations}
                 disabled={sending || survey.status !== 'active'}
                 className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FiSend className="mr-2 h-4 w-4" />
-                {sending ? 'Sending...' : 'Send Invitations'}
+                {sending ? 'Sending...' : 'Send to All Eligible'}
               </button>
               <DashboardButton variant="outline" size="md" />
             </div>
@@ -411,6 +503,109 @@ const SurveyInvitations: React.FC = () => {
           </div>
         </div>
       </main>
+
+      {/* User Selection Modal */}
+      {showUserSelection && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900">Select Users to Invite</h3>
+              <button
+                onClick={() => setShowUserSelection(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="mb-4">
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                <input
+                  type="text"
+                  placeholder="Search users by email or name..."
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Selected count */}
+            {selectedUsers.size > 0 && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <p className="text-sm text-blue-800">
+                  {selectedUsers.size} user{selectedUsers.size === 1 ? '' : 's'} selected
+                </p>
+              </div>
+            )}
+
+            {/* Users list */}
+            <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-md">
+              {loadingUsers ? (
+                <div className="flex justify-center items-center p-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                  <span className="ml-3 text-gray-600">Loading users...</span>
+                </div>
+              ) : users.length > 0 ? (
+                <div className="divide-y divide-gray-200">
+                  {users.map((user) => (
+                    <div key={user.id} className="flex items-center p-4 hover:bg-gray-50">
+                      <input
+                        type="checkbox"
+                        checked={selectedUsers.has(user.id)}
+                        onChange={() => handleUserSelectionToggle(user.id)}
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <div className="ml-3 flex-1">
+                        <div className="flex items-center">
+                          <p className="text-sm font-medium text-gray-900">
+                            {user.firstName} {user.lastName}
+                          </p>
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                            {user.role}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-500">{user.email}</p>
+                        <p className="text-xs text-gray-400">
+                          Joined: {new Date(user.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8 text-center text-gray-500">
+                  <FiUsers className="mx-auto h-12 w-12 mb-4" />
+                  <p>No users found</p>
+                  {userSearch && (
+                    <p className="text-sm mt-1">Try adjusting your search terms</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => setShowUserSelection(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendToSelectedUsers}
+                disabled={selectedUsers.size === 0 || sendingToUsers}
+                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FiSend className="mr-2 h-4 w-4" />
+                {sendingToUsers ? 'Sending...' : `Send Invitations (${selectedUsers.size})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -749,6 +749,69 @@ export class SurveyService {
     }
   }
 
+  // Send survey invitations to specific users
+  async sendSurveyInvitationsToUsers(surveyId: string, userIds: string[]): Promise<{ sent: number }> {
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Get survey details
+      const survey = await this.getSurveyById(surveyId);
+      if (!survey) {
+        throw new Error('Survey not found');
+      }
+
+      let sent = 0;
+      
+      for (const userId of userIds) {
+        // Check if user exists and is eligible
+        const userResult = await client.query(
+          `SELECT u.*, ul.tier_id, up.first_name, up.last_name
+           FROM users u
+           LEFT JOIN user_loyalty ul ON u.id = ul.user_id
+           LEFT JOIN user_profiles up ON u.id = up.user_id
+           WHERE u.id = $1 AND u.role NOT IN ('admin', 'super_admin')`,
+          [userId]
+        );
+
+        if (userResult.rows.length === 0) {
+          continue; // Skip invalid or admin users
+        }
+
+        const user = userResult.rows[0];
+
+        // Check if user matches targeting criteria
+        if (!this.isUserTargeted(user, survey.target_segment)) {
+          continue; // Skip users who don't match targeting
+        }
+
+        // Check if user already has an invitation
+        const existingInvitation = await client.query(
+          'SELECT id FROM survey_invitations WHERE survey_id = $1 AND user_id = $2',
+          [surveyId, userId]
+        );
+
+        if (existingInvitation.rows.length === 0) {
+          // Create invitation
+          await client.query(
+            `INSERT INTO survey_invitations (id, survey_id, user_id, status, created_at, updated_at)
+             VALUES (uuid_generate_v4(), $1, $2, 'sent', NOW(), NOW())`,
+            [surveyId, userId]
+          );
+          sent++;
+        }
+      }
+
+      await client.query('COMMIT');
+      return { sent };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   // Resend invitation
   async resendInvitation(invitationId: string): Promise<void> {
     const client = await getPool().connect();

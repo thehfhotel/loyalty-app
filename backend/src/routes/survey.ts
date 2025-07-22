@@ -143,6 +143,11 @@ router.post('/:surveyId/invitations/send',
   surveyController.sendSurveyInvitations
 );
 
+router.post('/:surveyId/invitations/send-to-users',
+  authenticate,
+  surveyController.sendSurveyInvitationsToUsers
+);
+
 router.post('/invitations/:invitationId/resend',
   authenticate,
   surveyController.resendInvitation

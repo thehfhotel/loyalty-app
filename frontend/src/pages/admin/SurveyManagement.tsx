@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { FiPlus, FiEdit, FiTrash2, FiEye, FiBarChart, FiDownload, FiUsers, FiFileText, FiMail } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiTrash2, FiEye, FiBarChart, FiDownload, FiUsers, FiFileText, FiMail, FiGlobe, FiLock } from 'react-icons/fi';
 import { Survey } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 import DashboardButton from '../../components/navigation/DashboardButton';
@@ -78,6 +78,32 @@ const SurveyManagement: React.FC = () => {
       case 'completed': return 'bg-blue-100 text-blue-800';
       case 'archived': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getAccessTypeColor = (accessType: string) => {
+    switch (accessType) {
+      case 'public': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'invite_only': return 'bg-purple-50 text-purple-700 border-purple-200';
+      default: return 'bg-gray-50 text-gray-700 border-gray-200';
+    }
+  };
+
+  const getAccessTypeLabel = (accessType: string) => {
+    switch (accessType) {
+      case 'public': return (
+        <>
+          <FiGlobe className="mr-1 h-3 w-3" />
+          Public
+        </>
+      );
+      case 'invite_only': return (
+        <>
+          <FiLock className="mr-1 h-3 w-3" />
+          Invite Only
+        </>
+      );
+      default: return 'Unknown';
     }
   };
 
@@ -178,6 +204,9 @@ const SurveyManagement: React.FC = () => {
                               </p>
                               <span className={`ml-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(survey.status)}`}>
                                 {survey.status}
+                              </span>
+                              <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${getAccessTypeColor(survey.access_type)}`}>
+                                {getAccessTypeLabel(survey.access_type)}
                               </span>
                             </div>
                             {survey.description && (

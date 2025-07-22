@@ -513,6 +513,33 @@ export class SurveyController {
     }
   }
 
+  // Send survey invitations to specific users (Admin only)
+  async sendSurveyInvitationsToUsers(req: Request, res: Response): Promise<void> {
+    try {
+      const { user } = req as any;
+      const { surveyId } = req.params;
+      const { userIds } = req.body;
+      
+      // Check if user is admin
+      if (!user || !['admin', 'super_admin'].includes(user.role)) {
+        res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+        return;
+      }
+
+      // Validate userIds
+      if (!Array.isArray(userIds) || userIds.length === 0) {
+        res.status(400).json({ message: 'userIds must be a non-empty array' });
+        return;
+      }
+
+      const result = await surveyService.sendSurveyInvitationsToUsers(surveyId, userIds);
+      res.json(result);
+    } catch (error: any) {
+      logger.error('Error sending survey invitations to users:', error);
+      res.status(500).json({ message: 'Failed to send invitations', error: error.message });
+    }
+  }
+
   // Resend invitation (Admin only)
   async resendInvitation(req: Request, res: Response): Promise<void> {
     try {

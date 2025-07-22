@@ -125,6 +125,13 @@ class SurveyService {
     return response.data;
   }
 
+  async sendSurveyInvitationsToUsers(surveyId: string, userIds: string[]): Promise<{ sent: number }> {
+    const response = await surveyAxios.post(`/surveys/${surveyId}/invitations/send-to-users`, {
+      userIds
+    });
+    return response.data;
+  }
+
   async resendInvitation(invitationId: string): Promise<void> {
     await surveyAxios.post(`/surveys/invitations/${invitationId}/resend`);
   }

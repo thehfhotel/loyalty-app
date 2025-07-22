@@ -12,6 +12,19 @@ export interface UserProfile {
   updatedAt: string;
 }
 
+export interface User {
+  id: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  emailVerified: boolean;
+  createdAt: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  avatarUrl?: string;
+}
+
 export const userService = {
   async getProfile(): Promise<UserProfile> {
     const response = await api.get('/users/profile');
@@ -37,5 +50,28 @@ export const userService = {
 
   async deleteAvatar(): Promise<void> {
     await api.delete('/users/avatar');
+  },
+
+  // Admin functions
+  async getAllUsers(page: number = 1, limit: number = 50, search: string = ''): Promise<{
+    users: User[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      pages: number;
+    };
+  }> {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+      ...(search && { search })
+    });
+    
+    const response = await api.get(`/users/admin/users?${params}`);
+    return {
+      users: response.data.data,
+      pagination: response.data.pagination
+    };
   },
 };

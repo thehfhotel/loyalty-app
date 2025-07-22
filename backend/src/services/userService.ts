@@ -4,7 +4,7 @@ import { UserProfile } from '../types/auth';
 import { ProfileUpdate } from '../types/user';
 
 interface UserWithProfile {
-  userId: string;
+  id: string;
   email: string;
   role: string;
   isActive: boolean;
@@ -129,7 +129,7 @@ export class UserService {
 
     const users = await query<UserWithProfile>(
       `SELECT 
-        u.id AS "userId",
+        u.id,
         u.email,
         u.role,
         u.is_active AS "isActive",
@@ -155,7 +155,7 @@ export class UserService {
   async getUserById(userId: string): Promise<UserWithProfile> {
     const [user] = await query<UserWithProfile>(
       `SELECT 
-        u.id AS "userId",
+        u.id,
         u.email,
         u.role,
         u.is_active AS "isActive",
