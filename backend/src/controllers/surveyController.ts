@@ -34,11 +34,24 @@ export class SurveyController {
   async getSurvey(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const { user } = req as any;
+      
       const survey = await surveyService.getSurveyById(id);
       
       if (!survey) {
         res.status(404).json({ message: 'Survey not found' });
         return;
+      }
+
+      // For non-admin users, check access permissions
+      if (user && !['admin', 'super_admin'].includes(user.role)) {
+        const hasAccess = await surveyService.canUserAccessSurvey(user.id, id);
+        if (!hasAccess) {
+          res.status(403).json({ 
+            message: 'Access denied. You do not have permission to access this survey.' 
+          });
+          return;
+        }
       }
 
       res.json({ survey });
@@ -152,6 +165,15 @@ export class SurveyController {
         return;
       }
 
+      // Check if user has access to this survey
+      const hasAccess = await surveyService.canUserAccessSurvey(user.id, responseData.survey_id);
+      if (!hasAccess) {
+        res.status(403).json({ 
+          message: 'Access denied. You do not have permission to respond to this survey.' 
+        });
+        return;
+      }
+
       const response = await surveyService.submitResponse(user.id, responseData);
       res.json({ response });
     } catch (error: any) {
@@ -226,6 +248,42 @@ export class SurveyController {
     } catch (error: any) {
       console.error('Error fetching available surveys:', error);
       res.status(500).json({ message: 'Failed to fetch surveys', error: error.message });
+    }
+  }
+
+  // Get public surveys available to current user
+  async getPublicSurveys(req: Request, res: Response): Promise<void> {
+    try {
+      const { user } = req as any;
+      
+      if (!user) {
+        res.status(401).json({ message: 'Authentication required' });
+        return;
+      }
+
+      const surveys = await surveyService.getPublicSurveys(user.id);
+      res.json({ surveys });
+    } catch (error: any) {
+      console.error('Error fetching public surveys:', error);
+      res.status(500).json({ message: 'Failed to fetch public surveys', error: error.message });
+    }
+  }
+
+  // Get invited surveys available to current user
+  async getInvitedSurveys(req: Request, res: Response): Promise<void> {
+    try {
+      const { user } = req as any;
+      
+      if (!user) {
+        res.status(401).json({ message: 'Authentication required' });
+        return;
+      }
+
+      const surveys = await surveyService.getInvitedSurveys(user.id);
+      res.json({ surveys });
+    } catch (error: any) {
+      console.error('Error fetching invited surveys:', error);
+      res.status(500).json({ message: 'Failed to fetch invited surveys', error: error.message });
     }
   }
 

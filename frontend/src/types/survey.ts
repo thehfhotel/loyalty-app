@@ -1,5 +1,6 @@
 export type QuestionType = 'multiple_choice' | 'single_choice' | 'text' | 'textarea' | 'rating_5' | 'rating_10' | 'yes_no';
 export type SurveyStatus = 'draft' | 'active' | 'paused' | 'completed' | 'archived';
+export type SurveyAccessType = 'invite_only' | 'public';
 export type InvitationStatus = 'pending' | 'sent' | 'viewed' | 'started' | 'completed' | 'expired';
 
 export interface QuestionOption {
@@ -37,6 +38,7 @@ export interface Survey {
   questions: SurveyQuestion[];
   target_segment: TargetSegment;
   status: SurveyStatus;
+  access_type: SurveyAccessType;
   scheduled_start?: string;
   scheduled_end?: string;
   created_by?: string;
@@ -78,6 +80,7 @@ export interface CreateSurveyRequest {
   description?: string;
   questions: SurveyQuestion[];
   target_segment?: TargetSegment;
+  access_type: SurveyAccessType;
   scheduled_start?: string;
   scheduled_end?: string;
 }

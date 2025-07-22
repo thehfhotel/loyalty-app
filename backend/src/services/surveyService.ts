@@ -17,14 +17,15 @@ export class SurveyService {
     const client = await getPool().connect();
     try {
       const result = await client.query(
-        `INSERT INTO surveys (title, description, questions, target_segment, scheduled_start, scheduled_end, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO surveys (title, description, questions, target_segment, access_type, scheduled_start, scheduled_end, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING *`,
         [
           data.title,
           data.description,
           JSON.stringify(data.questions),
           JSON.stringify(data.target_segment || {}),
+          data.access_type,
           data.scheduled_start,
           data.scheduled_end,
           createdBy
@@ -154,6 +155,11 @@ export class SurveyService {
       if (data.status !== undefined) {
         updateFields.push(`status = $${paramIndex}`);
         values.push(data.status);
+        paramIndex++;
+      }
+      if (data.access_type !== undefined) {
+        updateFields.push(`access_type = $${paramIndex}`);
+        values.push(data.access_type);
         paramIndex++;
       }
       if (data.scheduled_start !== undefined) {
@@ -342,8 +348,8 @@ export class SurveyService {
     }
   }
 
-  // Get surveys available to a user (based on targeting)
-  async getAvailableSurveys(userId: string): Promise<Survey[]> {
+  // Get public surveys available to all users
+  async getPublicSurveys(userId: string): Promise<Survey[]> {
     const client = await getPool().connect();
     try {
       // Get user details for targeting
@@ -359,10 +365,11 @@ export class SurveyService {
       if (userResult.rows.length === 0) return [];
       const user = userResult.rows[0];
 
-      // Get active surveys
+      // Get active public surveys
       const surveysResult = await client.query(
         `SELECT s.* FROM surveys s
          WHERE s.status = 'active'
+         AND s.access_type = 'public'
          AND (s.scheduled_start IS NULL OR s.scheduled_start <= NOW())
          AND (s.scheduled_end IS NULL OR s.scheduled_end >= NOW())
          AND NOT EXISTS (
@@ -389,6 +396,117 @@ export class SurveyService {
       }
 
       return availableSurveys;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get invite-only surveys available to a user (through invitations)
+  async getInvitedSurveys(userId: string): Promise<Survey[]> {
+    const client = await getPool().connect();
+    try {
+      // Get active invite-only surveys where user has been invited
+      const surveysResult = await client.query(
+        `SELECT DISTINCT s.* FROM surveys s
+         INNER JOIN survey_invitations si ON s.id = si.survey_id
+         WHERE s.status = 'active'
+         AND s.access_type = 'invite_only'
+         AND si.user_id = $1
+         AND si.status IN ('sent', 'viewed', 'started')
+         AND (s.scheduled_start IS NULL OR s.scheduled_start <= NOW())
+         AND (s.scheduled_end IS NULL OR s.scheduled_end >= NOW())
+         AND NOT EXISTS (
+           SELECT 1 FROM survey_responses sr 
+           WHERE sr.survey_id = s.id AND sr.user_id = $1 AND sr.is_completed = true
+         )
+         ORDER BY s.created_at DESC`,
+        [userId]
+      );
+
+      return surveysResult.rows.map(surveyRow => ({
+        ...surveyRow,
+        questions: surveyRow.questions,
+        target_segment: surveyRow.target_segment
+      }));
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get all surveys available to a user (both public and invited)
+  async getAvailableSurveys(userId: string): Promise<Survey[]> {
+    const [publicSurveys, invitedSurveys] = await Promise.all([
+      this.getPublicSurveys(userId),
+      this.getInvitedSurveys(userId)
+    ]);
+
+    // Combine and deduplicate surveys
+    const surveyMap = new Map();
+    [...publicSurveys, ...invitedSurveys].forEach(survey => {
+      surveyMap.set(survey.id, survey);
+    });
+
+    return Array.from(surveyMap.values()).sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }
+
+  // Check if user has access to a specific survey
+  async canUserAccessSurvey(userId: string, surveyId: string): Promise<boolean> {
+    const client = await getPool().connect();
+    try {
+      // Get survey details
+      const survey = await this.getSurveyById(surveyId);
+      if (!survey) return false;
+
+      // Check survey status
+      if (survey.status !== 'active') return false;
+
+      // Check if survey is within scheduled timeframe
+      if (survey.scheduled_start && new Date(survey.scheduled_start) > new Date()) {
+        return false;
+      }
+      if (survey.scheduled_end && new Date(survey.scheduled_end) < new Date()) {
+        return false;
+      }
+
+      // Check if user has already completed the survey
+      const existingResponse = await client.query(
+        'SELECT id FROM survey_responses WHERE survey_id = $1 AND user_id = $2 AND is_completed = true',
+        [surveyId, userId]
+      );
+      if (existingResponse.rows.length > 0) return false;
+
+      // For public surveys, check targeting criteria
+      if (survey.access_type === 'public') {
+        // Get user details for targeting
+        const userResult = await client.query(
+          `SELECT u.*, ul.tier_id, up.first_name, up.last_name
+           FROM users u
+           LEFT JOIN user_loyalty ul ON u.id = ul.user_id
+           LEFT JOIN user_profiles up ON u.id = up.user_id
+           WHERE u.id = $1`,
+          [userId]
+        );
+
+        if (userResult.rows.length === 0) return false;
+        const user = userResult.rows[0];
+
+        return this.isUserTargeted(user, survey.target_segment);
+      }
+
+      // For invite-only surveys, check if user has a valid invitation
+      if (survey.access_type === 'invite_only') {
+        const invitationResult = await client.query(
+          `SELECT id FROM survey_invitations 
+           WHERE survey_id = $1 AND user_id = $2 AND status IN ('sent', 'viewed', 'started')`,
+          [surveyId, userId]
+        );
+
+        return invitationResult.rows.length > 0;
+      }
+
+      return false;
     } finally {
       client.release();
     }

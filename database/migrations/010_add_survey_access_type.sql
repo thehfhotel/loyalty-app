@@ -1,0 +1,19 @@
+-- Add access_type column to surveys table
+-- This column determines whether a survey is public or invite-only
+
+ALTER TABLE surveys ADD COLUMN access_type VARCHAR(20) NOT NULL DEFAULT 'public';
+
+-- Add check constraint to ensure valid access types
+ALTER TABLE surveys ADD CONSTRAINT surveys_access_type_check 
+    CHECK (access_type IN ('public', 'invite_only'));
+
+-- Update existing surveys to be public by default
+UPDATE surveys SET access_type = 'public' WHERE access_type IS NULL;
+
+-- Add index for better query performance
+CREATE INDEX idx_surveys_access_type ON surveys(access_type);
+
+-- Add composite index for common query patterns
+CREATE INDEX idx_surveys_status_access_type ON surveys(status, access_type);
+
+COMMENT ON COLUMN surveys.access_type IS 'Determines survey accessibility: public (all users) or invite_only (specific invitations required)';

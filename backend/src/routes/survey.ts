@@ -38,6 +38,7 @@ const createSurveySchema = z.object({
   description: z.string().optional(),
   questions: z.array(questionSchema).min(1),
   target_segment: targetSegmentSchema.optional(),
+  access_type: z.enum(['invite_only', 'public']),
   scheduled_start: z.string().datetime().optional(),
   scheduled_end: z.string().datetime().optional()
 });
@@ -48,6 +49,7 @@ const updateSurveySchema = z.object({
   questions: z.array(questionSchema).optional(),
   target_segment: targetSegmentSchema.optional(),
   status: z.enum(['draft', 'active', 'paused', 'completed', 'archived']).optional(),
+  access_type: z.enum(['invite_only', 'public']).optional(),
   scheduled_start: z.string().datetime().optional(),
   scheduled_end: z.string().datetime().optional()
 });
@@ -107,6 +109,16 @@ router.get('/:surveyId/responses',
 router.get('/available/user', 
   authenticate, 
   surveyController.getAvailableSurveys
+);
+
+router.get('/public/user', 
+  authenticate, 
+  surveyController.getPublicSurveys
+);
+
+router.get('/invited/user', 
+  authenticate, 
+  surveyController.getInvitedSurveys
 );
 
 // Analytics routes (Admin)

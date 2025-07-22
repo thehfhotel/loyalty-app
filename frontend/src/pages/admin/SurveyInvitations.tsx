@@ -161,6 +161,73 @@ const SurveyInvitations: React.FC = () => {
     );
   }
 
+  // Show message for public surveys (invitations not needed)
+  if (survey.access_type === 'public') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header className="bg-white shadow">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center py-6">
+              <div className="flex items-center">
+                <Link
+                  to="/admin/surveys"
+                  className="mr-4 text-gray-400 hover:text-gray-600"
+                >
+                  <FiArrowLeft className="h-6 w-6" />
+                </Link>
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900">Survey Invitations</h1>
+                  <p className="text-sm text-gray-600 mt-1">{survey.title}</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-4">
+                <DashboardButton variant="outline" size="md" />
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Content */}
+        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+          <div className="px-4 py-6 sm:px-0">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center">
+              <FiUsers className="mx-auto h-12 w-12 text-blue-600 mb-4" />
+              <h3 className="text-lg font-medium text-blue-900 mb-2">
+                This is a Public Survey
+              </h3>
+              <p className="text-blue-800 mb-4">
+                Public surveys are automatically available to all users in the app. 
+                No invitations are needed - users can find and take this survey directly 
+                from their "Take Survey" menu.
+              </p>
+              <div className="space-y-2 text-sm text-blue-700">
+                <p><strong>Survey Type:</strong> Public</p>
+                <p><strong>Status:</strong> {survey.status}</p>
+                <p><strong>Questions:</strong> {survey.questions.length}</p>
+                <p><strong>Availability:</strong> All users can access this survey</p>
+              </div>
+              <div className="mt-6 space-x-4">
+                <Link
+                  to={`/admin/surveys/${survey.id}/analytics`}
+                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                >
+                  View Analytics
+                </Link>
+                <Link
+                  to={`/admin/surveys/${survey.id}/edit`}
+                  className="inline-flex items-center px-4 py-2 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-white hover:bg-blue-50"
+                >
+                  Edit Survey
+                </Link>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}

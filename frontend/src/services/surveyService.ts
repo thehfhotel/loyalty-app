@@ -63,6 +63,16 @@ class SurveyService {
     return response.data.surveys;
   }
 
+  async getPublicSurveys(): Promise<Survey[]> {
+    const response = await surveyAxios.get('/surveys/public/user');
+    return response.data.surveys;
+  }
+
+  async getInvitedSurveys(): Promise<Survey[]> {
+    const response = await surveyAxios.get('/surveys/invited/user');
+    return response.data.surveys;
+  }
+
   async submitResponse(data: SubmitResponseRequest): Promise<SurveyResponse> {
     const response = await surveyAxios.post('/surveys/responses', data);
     return response.data.response;

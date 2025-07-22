@@ -21,7 +21,8 @@ const SurveyBuilder: React.FC = () => {
     description: '',
     questions: [],
     target_segment: {},
-    status: 'draft'
+    status: 'draft',
+    access_type: 'public'
   });
   
   const [loading, setLoading] = useState(false);
@@ -40,7 +41,8 @@ const SurveyBuilder: React.FC = () => {
         description: template.description,
         questions: template.questions,
         target_segment: {},
-        status: 'draft'
+        status: 'draft',
+        access_type: 'public'
       });
     }
   }, [id, isEditing, location.state]);
@@ -249,6 +251,27 @@ const SurveyBuilder: React.FC = () => {
                     <option value="completed">Completed</option>
                     <option value="archived">Archived</option>
                   </select>
+                </div>
+
+                <div>
+                  <label htmlFor="access_type" className="block text-sm font-medium text-gray-700">
+                    Access Type *
+                  </label>
+                  <select
+                    id="access_type"
+                    value={survey.access_type || 'public'}
+                    onChange={(e) => handleSurveyChange('access_type', e.target.value)}
+                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  >
+                    <option value="public">Public - Available to all users in the app</option>
+                    <option value="invite_only">Invite Only - Specific users must be invited</option>
+                  </select>
+                  <p className="mt-2 text-sm text-gray-500">
+                    {survey.access_type === 'public' 
+                      ? 'Public surveys appear in the user\'s "Take Survey" menu and are accessible to all users.'
+                      : 'Invite-only surveys are only visible to users who receive specific invitations from administrators.'
+                    }
+                  </p>
                 </div>
               </div>
             </div>
