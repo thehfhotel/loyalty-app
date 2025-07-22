@@ -27,7 +27,7 @@ router.get('/profile', async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
-    const profile = await userService.getProfile(req.user.userId);
+    const profile = await userService.getProfile(req.user.id);
     res.json({ profile });
   } catch (error) {
     next(error);
@@ -43,7 +43,7 @@ router.put(
       if (!req.user) {
         return res.status(401).json({ error: 'Not authenticated' });
       }
-      const profile = await userService.updateProfile(req.user.userId, req.body);
+      const profile = await userService.updateProfile(req.user.id, req.body);
       res.json({ profile });
     } catch (error) {
       next(error);
@@ -64,7 +64,7 @@ router.post('/avatar', uploadAvatar, async (req, res, next) => {
 
     try {
       // Get current user profile to delete old avatar if exists
-      const currentProfile = await userService.getProfile(req.user.userId);
+      const currentProfile = await userService.getProfile(req.user.id);
       
       // Process and save new avatar
       const avatarPath = await ImageProcessor.processAvatar(
@@ -73,7 +73,7 @@ router.post('/avatar', uploadAvatar, async (req, res, next) => {
       );
 
       // Update user profile with new avatar URL
-      await userService.updateAvatar(req.user.userId, avatarPath);
+      await userService.updateAvatar(req.user.id, avatarPath);
 
       // Delete old avatar file if it exists
       if (currentProfile?.avatarUrl && !currentProfile.avatarUrl.includes('http')) {
@@ -81,7 +81,7 @@ router.post('/avatar', uploadAvatar, async (req, res, next) => {
       }
 
       // Get updated profile
-      const updatedProfile = await userService.getProfile(req.user.userId);
+      const updatedProfile = await userService.getProfile(req.user.id);
 
       res.json({
         success: true,
@@ -106,10 +106,10 @@ router.delete('/avatar', async (req, res, next) => {
     }
 
     // Get current profile to delete avatar file
-    const currentProfile = await userService.getProfile(req.user.userId);
+    const currentProfile = await userService.getProfile(req.user.id);
     
     // Delete from database
-    await userService.deleteAvatar(req.user.userId);
+    await userService.deleteAvatar(req.user.id);
     
     // Delete file if it exists and is not an external URL
     if (currentProfile?.avatarUrl && !currentProfile.avatarUrl.includes('http')) {
@@ -218,7 +218,7 @@ router.delete('/admin/users/:userId', requireAdmin, async (req, res, next) => {
     }
 
     // Prevent self-deletion
-    if (req.params.userId === req.user.userId) {
+    if (req.params.userId === req.user.id) {
       return res.status(400).json({ error: 'Cannot delete your own account' });
     }
 

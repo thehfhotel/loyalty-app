@@ -64,7 +64,7 @@ app.use(passport.session());
 app.use(requestLogger);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
@@ -77,23 +77,23 @@ app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/surveys', surveyRoutes);
 // Account linking routes (basic implementation for testing)
-app.get('/api/account-linking/health', authenticate, async (req, res) => {
+app.get('/api/account-linking/health', authenticate, async (_req, res) => {
   res.json({ success: true, message: 'Account linking API is available' });
 });
 
-app.get('/api/account-linking/requests', authenticate, async (req, res) => {
+app.get('/api/account-linking/requests', authenticate, async (_req, res) => {
   res.json({ success: true, data: { sent: [], received: [] } });
 });
 
-app.get('/api/account-linking/linked-accounts', authenticate, async (req, res) => {
+app.get('/api/account-linking/linked-accounts', authenticate, async (_req, res) => {
   res.json({ success: true, data: [] });
 });
 
-app.post('/api/account-linking/request', authenticate, async (req, res) => {
+app.post('/api/account-linking/request', authenticate, async (_req, res) => {
   res.status(201).json({ success: true, message: 'Account linking feature coming soon' });
 });
 
-app.get('/api/account-linking/status/:email', authenticate, async (req, res) => {
+app.get('/api/account-linking/status/:email', authenticate, async (_req, res) => {
   res.json({ success: true, data: { canLink: true, targetExists: false } });
 });
 
@@ -101,7 +101,7 @@ app.get('/api/account-linking/status/:email', authenticate, async (req, res) => 
 app.use(errorHandler);
 
 // 404 handler
-app.use((req, res) => {
+app.use((_req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 

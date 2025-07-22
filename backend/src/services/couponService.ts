@@ -17,8 +17,8 @@ import {
   CouponAnalyticsResponse,
   CouponStatsResponse,
   CouponType,
-  CouponStatus,
-  UserCouponStatus
+  CouponStatus
+  // UserCouponStatus
 } from '../types/coupon';
 
 export class CouponService {

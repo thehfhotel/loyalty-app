@@ -103,7 +103,7 @@ export class SurveyController {
         return;
       }
 
-      const survey = await surveyService.createSurvey(surveyData, user.userId);
+      const survey = await surveyService.createSurvey(surveyData, user.id);
       res.status(201).json({ survey });
     } catch (error: any) {
       
@@ -132,7 +132,7 @@ export class SurveyController {
 
       // For non-admin users, check access permissions
       if (user && !['admin', 'super_admin'].includes(user.role)) {
-        const hasAccess = await surveyService.canUserAccessSurvey(user.userId, id);
+        const hasAccess = await surveyService.canUserAccessSurvey(user.id, id);
         if (!hasAccess) {
           res.status(403).json({ 
             message: 'Access denied. You do not have permission to access this survey.' 
@@ -256,7 +256,7 @@ export class SurveyController {
       }
 
       // Check if user has access to this survey
-      const hasAccess = await surveyService.canUserAccessSurvey(user.userId, responseData.survey_id);
+      const hasAccess = await surveyService.canUserAccessSurvey(user.id, responseData.survey_id);
       if (!hasAccess) {
         res.status(403).json({ 
           message: 'Access denied. You do not have permission to respond to this survey.' 
@@ -264,7 +264,7 @@ export class SurveyController {
         return;
       }
 
-      const response = await surveyService.submitResponse(user.userId, responseData);
+      const response = await surveyService.submitResponse(user.id, responseData);
       res.json({ response });
     } catch (error: any) {
       logger.error('Error submitting response:', error);
@@ -283,7 +283,7 @@ export class SurveyController {
         return;
       }
 
-      const response = await surveyService.getUserResponse(user.userId, surveyId);
+      const response = await surveyService.getUserResponse(user.id, surveyId);
       res.json({ response });
     } catch (error: any) {
       logger.error('Error fetching user response:', error);
@@ -333,7 +333,7 @@ export class SurveyController {
         return;
       }
 
-      const surveys = await surveyService.getAvailableSurveys(user.userId);
+      const surveys = await surveyService.getAvailableSurveys(user.id);
       res.json({ surveys });
     } catch (error: any) {
       logger.error('Error fetching available surveys:', error);
@@ -351,7 +351,7 @@ export class SurveyController {
         return;
       }
 
-      const surveys = await surveyService.getPublicSurveys(user.userId);
+      const surveys = await surveyService.getPublicSurveys(user.id);
       res.json({ surveys });
     } catch (error: any) {
       logger.error('Error fetching public surveys:', error);
@@ -369,7 +369,7 @@ export class SurveyController {
         return;
       }
 
-      const surveys = await surveyService.getInvitedSurveys(user.userId);
+      const surveys = await surveyService.getInvitedSurveys(user.id);
       res.json({ surveys });
     } catch (error: any) {
       logger.error('Error fetching invited surveys:', error);

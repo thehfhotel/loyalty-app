@@ -113,7 +113,7 @@ router.get('/:featureKey', authenticate, requireSuperAdmin, async (req, res) => 
 router.post('/toggle', authenticate, requireSuperAdmin, validateRequest(toggleFeatureSchema), async (req, res) => {
   try {
     const { featureKey, isEnabled, reason } = req.body;
-    const userId = req.user.userId;
+    const userId = req.user.id;
     const ipAddress = req.ip;
     const userAgent = req.get('User-Agent');
 
@@ -147,7 +147,7 @@ router.post('/toggle', authenticate, requireSuperAdmin, validateRequest(toggleFe
 router.post('/', authenticate, requireSuperAdmin, validateRequest(createFeatureSchema), async (req, res) => {
   try {
     const { featureKey, featureName, description, isEnabled } = req.body;
-    const userId = req.user.userId;
+    const userId = req.user.id;
 
     const newFeature = await featureToggleService.createFeatureToggle(
       featureKey,

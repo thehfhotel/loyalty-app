@@ -9,7 +9,7 @@ export class LoyaltyController {
    * GET /api/loyalty/tiers
    * Get all available loyalty tiers
    */
-  async getTiers(req: Request, res: Response) {
+  async getTiers(_req: Request, res: Response) {
     try {
       const tiers = await loyaltyService.getAllTiers();
       res.json({
@@ -29,9 +29,16 @@ export class LoyaltyController {
    * GET /api/loyalty/status
    * Get current user's loyalty status
    */
-  async getUserLoyaltyStatus(req: Request, res: Response) {
+  async getUserLoyaltyStatus(req: Request, res: Response): Promise<Response | void> {
     try {
-      const userId = req.user.userId;
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+
+      const userId = req.user.id;
       const status = await loyaltyService.getUserLoyaltyStatus(userId);
       
       if (!status) {
@@ -58,9 +65,16 @@ export class LoyaltyController {
    * GET /api/loyalty/points/calculation
    * Get detailed points calculation including expiring points
    */
-  async getPointsCalculation(req: Request, res: Response) {
+  async getPointsCalculation(req: Request, res: Response): Promise<Response | void> {
     try {
-      const userId = req.user.userId;
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+
+      const userId = req.user.id;
       const calculation = await loyaltyService.calculateUserPoints(userId);
       
       res.json({
@@ -80,9 +94,16 @@ export class LoyaltyController {
    * GET /api/loyalty/history
    * Get user's points transaction history
    */
-  async getPointsHistory(req: Request, res: Response) {
+  async getPointsHistory(req: Request, res: Response): Promise<Response | void> {
     try {
-      const userId = req.user.userId;
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+
+      const userId = req.user.id;
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
 
@@ -105,9 +126,16 @@ export class LoyaltyController {
    * POST /api/loyalty/simulate-stay
    * Simulate earning points for a hotel stay (for demo purposes)
    */
-  async simulateStayEarning(req: Request, res: Response) {
+  async simulateStayEarning(req: Request, res: Response): Promise<Response | void> {
     try {
-      const userId = req.user.userId;
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+
+      const userId = req.user.id;
       const { amountSpent, stayId } = req.body;
 
       if (!amountSpent || amountSpent <= 0) {
@@ -136,9 +164,10 @@ export class LoyaltyController {
       });
     } catch (error) {
       logger.error('Error in simulateStayEarning:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to earn points for stay';
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to earn points for stay'
+        message: errorMessage
       });
     }
   }
@@ -178,8 +207,15 @@ export class LoyaltyController {
    * POST /api/loyalty/admin/award-points
    * Award points to a user (admin only)
    */
-  async awardPoints(req: Request, res: Response) {
+  async awardPoints(req: Request, res: Response): Promise<Response | void> {
     try {
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+
       const adminUserId = req.user.id;
       const { userId, points, description, referenceId } = req.body;
 
@@ -220,9 +256,10 @@ export class LoyaltyController {
       });
     } catch (error) {
       logger.error('Error in awardPoints:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to award points';
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to award points'
+        message: errorMessage
       });
     }
   }
@@ -231,8 +268,15 @@ export class LoyaltyController {
    * POST /api/loyalty/admin/deduct-points
    * Deduct points from a user (admin only)
    */
-  async deductPoints(req: Request, res: Response) {
+  async deductPoints(req: Request, res: Response): Promise<Response | void> {
     try {
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+
       const adminUserId = req.user.id;
       const { userId, points, reason } = req.body;
 
@@ -273,9 +317,10 @@ export class LoyaltyController {
       });
     } catch (error) {
       logger.error('Error in deductPoints:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to deduct points';
       res.status(500).json({
         success: false,
-        message: error.message || 'Failed to deduct points'
+        message: errorMessage
       });
     }
   }
@@ -309,7 +354,7 @@ export class LoyaltyController {
    * GET /api/loyalty/admin/earning-rules
    * Get points earning rules (admin only)
    */
-  async getEarningRules(req: Request, res: Response) {
+  async getEarningRules(_req: Request, res: Response) {
     try {
       const rules = await loyaltyService.getPointsEarningRules();
       
@@ -330,7 +375,7 @@ export class LoyaltyController {
    * POST /api/loyalty/admin/expire-points
    * Manually trigger points expiration (admin only)
    */
-  async expirePoints(req: Request, res: Response) {
+  async expirePoints(_req: Request, res: Response) {
     try {
       const expiredCount = await loyaltyService.expireOldPoints();
       

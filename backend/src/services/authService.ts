@@ -2,9 +2,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { query, getClient } from '../config/database';
-import { getRedisClient } from '../config/redis';
+// import { getRedisClient } from '../config/redis'; // Unused
 import { AppError } from '../middleware/errorHandler';
-import { User, UserProfile, JWTPayload, AuthTokens } from '../types/auth';
+import { User, JWTPayload, AuthTokens } from '../types/auth';
 import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
@@ -171,7 +171,7 @@ export class AuthService {
         [refreshToken]
       );
 
-      if (!storedToken || storedToken.userId !== payload.userId) {
+      if (!storedToken || storedToken.userId !== payload.id) {
         throw new AppError(401, 'Invalid refresh token');
       }
 
@@ -179,7 +179,7 @@ export class AuthService {
       const [user] = await query<User>(
         `SELECT id, email, role, is_active AS "isActive" 
          FROM users WHERE id = $1`,
-        [payload.userId]
+        [payload.id]
       );
 
       if (!user || !user.isActive) {
@@ -277,7 +277,7 @@ export class AuthService {
 
   async generateTokens(user: User, client?: any): Promise<AuthTokens> {
     const payload: JWTPayload = {
-      userId: user.id,
+      id: user.id,
       email: user.email,
       role: user.role,
     };

@@ -15,7 +15,7 @@ export class CouponController {
   // Create new coupon (Admin only)
   async createCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.userId;
+      const userId = req.user?.id;
       if (!userId) {
         throw new AppError(401, 'Authentication required');
       }
@@ -73,7 +73,7 @@ export class CouponController {
   // Update coupon (Admin only)
   async updateCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.userId;
+      const userId = req.user?.id;
       if (!userId) {
         throw new AppError(401, 'Authentication required');
       }
@@ -204,7 +204,7 @@ export class CouponController {
   // Assign coupon to users (Admin only)
   async assignCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.userId;
+      const userId = req.user?.id;
       if (!userId) {
         throw new AppError(401, 'Authentication required');
       }
@@ -259,7 +259,7 @@ export class CouponController {
         throw new AppError(400, 'QR code and valid original amount are required');
       }
 
-      const redeemedBy = req.user?.userId;
+      const redeemedBy = req.user?.id;
       const result = await couponService.redeemCoupon(data, redeemedBy);
 
       const statusCode = result.success ? 200 : 400;
@@ -287,7 +287,7 @@ export class CouponController {
   // Get user's active coupons
   async getUserCoupons(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.userId;
+      const userId = req.user?.id;
       if (!userId) {
         throw new AppError(401, 'Authentication required');
       }
@@ -420,7 +420,7 @@ export class CouponController {
   // Delete coupon (Admin only)
   async deleteCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.userId;
+      const userId = req.user?.id;
       if (!userId) {
         throw new AppError(401, 'Authentication required');
       }
@@ -460,7 +460,7 @@ export class CouponController {
   // Revoke user coupon (Admin only)
   async revokeUserCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.userId;
+      const userId = req.user?.id;
       if (!userId) {
         throw new AppError(401, 'Authentication required');
       }
@@ -502,7 +502,7 @@ export class CouponController {
   // Revoke all user coupons for a specific coupon (Admin only)
   async revokeUserCouponsForCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.userId;
+      const userId = req.user?.id;
       if (!userId) {
         throw new AppError(401, 'Authentication required');
       }
@@ -612,7 +612,7 @@ export class CouponController {
           currency: userCoupon.currency,
           minimumSpend: userCoupon.minimumSpend,
           maximumDiscount: userCoupon.maximumDiscount,
-          validUntil: userCoupon.validUntil
+          validUntil: userCoupon.effectiveExpiry
         } : null,
         message: isValid ? 'Coupon is valid' : 'Coupon is not available for use'
       });

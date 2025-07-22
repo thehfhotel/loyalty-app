@@ -172,7 +172,7 @@ router.get('/me', async (req, res) => {
        FROM users u
        LEFT JOIN user_profiles p ON u.id = p.user_id
        WHERE u.id = $1`,
-      [payload.userId]
+      [payload.id]
     );
 
     if (!user) {

@@ -3,23 +3,11 @@ import { AuthService } from '../services/authService';
 import { AppError } from './errorHandler';
 import { UserRole } from '../types/auth';
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        userId: string;
-        email: string;
-        role: UserRole;
-      };
-    }
-  }
-}
-
 const authService = new AuthService();
 
 export async function authenticate(
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ) {
   try {
@@ -39,7 +27,7 @@ export async function authenticate(
 }
 
 export function authorize(...allowedRoles: UserRole[]) {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) {
       return next(new AppError(401, 'Not authenticated'));
     }

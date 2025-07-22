@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { accountLinkingService } from '../services/accountLinkingService';
-import { authenticateToken } from '../middleware/auth';
+import { authenticate } from '../middleware/auth';
 import { validateRequest } from '../middleware/validateRequest';
 import { logger } from '../utils/logger';
 import { query } from '../config/database';

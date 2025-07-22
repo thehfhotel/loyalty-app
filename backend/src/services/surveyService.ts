@@ -2,11 +2,11 @@ import { getPool } from '../config/database';
 import { 
   Survey, 
   SurveyResponse, 
-  SurveyInvitation,
+  // SurveyInvitation,
   CreateSurveyRequest,
   UpdateSurveyRequest,
   SubmitResponseRequest,
-  SurveyAnalytics,
+  // SurveyAnalytics,
   QuestionAnalytics,
   TargetSegment
 } from '../types/survey';
@@ -204,7 +204,7 @@ export class SurveyService {
     const client = await getPool().connect();
     try {
       const result = await client.query('DELETE FROM surveys WHERE id = $1', [id]);
-      return result.rowCount > 0;
+      return (result.rowCount || 0) > 0;
     } finally {
       client.release();
     }

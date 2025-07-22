@@ -17,9 +17,8 @@ export function errorHandler(
   err: Error,
   req: Request,
   res: Response,
-  next: NextFunction
-) {
-  let error = err;
+  _next: NextFunction
+): Response | void {
 
   if (err instanceof ZodError) {
     const errorMessage = err.errors.map((e) => ({

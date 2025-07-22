@@ -7,7 +7,7 @@ import { AppError } from '../middleware/errorHandler';
 const storage = multer.memoryStorage(); // Store in memory for processing
 
 // File filter for images only
-const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+const fileFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   // Allowed file types
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
   

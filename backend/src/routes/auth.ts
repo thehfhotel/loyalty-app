@@ -58,7 +58,7 @@ router.post('/logout', authenticate, async (req, res, next) => {
   try {
     const { refreshToken } = req.body;
     if (refreshToken && req.user) {
-      await authService.logout(req.user.userId, refreshToken);
+      await authService.logout(req.user.id, refreshToken);
     }
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
