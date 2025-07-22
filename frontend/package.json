@@ -1,6 +1,6 @@
 {
   "name": "loyalty-frontend",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "description": "Hotel Loyalty System Frontend",
   "type": "module",
   "scripts": {
