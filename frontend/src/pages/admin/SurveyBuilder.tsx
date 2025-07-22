@@ -140,6 +140,7 @@ const SurveyBuilder: React.FC = () => {
         description: survey.description,
         questions: survey.questions,
         target_segment: survey.target_segment,
+        access_type: survey.access_type,
         ...(status && { status })
       };
 
