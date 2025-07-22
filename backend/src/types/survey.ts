@@ -78,6 +78,7 @@ export interface CreateSurveyRequest {
   questions: SurveyQuestion[];
   target_segment?: TargetSegment;
   access_type: SurveyAccessType;
+  status?: SurveyStatus;
   scheduled_start?: string;
   scheduled_end?: string;
 }

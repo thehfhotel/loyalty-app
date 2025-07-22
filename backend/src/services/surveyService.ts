@@ -17,8 +17,8 @@ export class SurveyService {
     const client = await getPool().connect();
     try {
       const result = await client.query(
-        `INSERT INTO surveys (title, description, questions, target_segment, access_type, scheduled_start, scheduled_end, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO surveys (title, description, questions, target_segment, access_type, status, scheduled_start, scheduled_end, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING *`,
         [
           data.title,
@@ -26,6 +26,7 @@ export class SurveyService {
           JSON.stringify(data.questions),
           JSON.stringify(data.target_segment || {}),
           data.access_type,
+          data.status || 'draft',
           data.scheduled_start,
           data.scheduled_end,
           createdBy
