@@ -4,7 +4,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { 
   accountLinkingService, 
-  AccountLinkRequest, 
   LinkedUserInfo,
   LinkRequestsResponse 
 } from '../services/accountLinkingService';
@@ -46,7 +45,6 @@ export default function AccountLinkingPage() {
     resolver: zodResolver(linkRequestSchema)
   });
 
-  const targetEmail = watch('targetEmail');
 
   useEffect(() => {
     loadData();

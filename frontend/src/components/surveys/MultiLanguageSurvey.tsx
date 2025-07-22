@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { FiGlobe } from 'react-icons/fi';
 import { SurveyQuestion } from '../../types/survey';
 
-interface MultiLanguageQuestion extends Omit<SurveyQuestion, 'text' | 'description'> {
+interface MultiLanguageQuestion extends Omit<SurveyQuestion, 'text' | 'description' | 'options'> {
   text: Record<string, string>;
   description?: Record<string, string>;
   options?: Array<{

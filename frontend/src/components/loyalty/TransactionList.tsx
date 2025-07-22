@@ -17,7 +17,7 @@ export default function TransactionList({
 }: TransactionListProps) {
   const { t } = useTranslation();
 
-  const getTransactionIcon = (type: string, points: number) => {
+  const getTransactionIcon = (points: number) => {
     if (points > 0) {
       return <FiPlus className="w-4 h-4 text-green-600" />;
     } else {
@@ -25,7 +25,7 @@ export default function TransactionList({
     }
   };
 
-  const getTransactionColor = (type: string, points: number) => {
+  const getTransactionColor = (points: number) => {
     if (points > 0) {
       return 'text-green-600';
     } else {
@@ -100,7 +100,7 @@ export default function TransactionList({
                 w-10 h-10 rounded-lg flex items-center justify-center
                 ${transaction.points > 0 ? 'bg-green-50' : 'bg-red-50'}
               `}>
-                {getTransactionIcon(transaction.type, transaction.points)}
+                {getTransactionIcon(transaction.points)}
               </div>
 
               {/* Transaction Details */}
@@ -109,7 +109,7 @@ export default function TransactionList({
                   <p className="font-medium text-gray-900 truncate">
                     {transaction.description || formatTransactionType(transaction.type)}
                   </p>
-                  <p className={`font-semibold ${getTransactionColor(transaction.type, transaction.points)}`}>
+                  <p className={`font-semibold ${getTransactionColor(transaction.points)}`}>
                     {transaction.points > 0 ? '+' : ''}{transaction.points.toLocaleString()}
                   </p>
                 </div>

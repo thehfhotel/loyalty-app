@@ -8,7 +8,6 @@ import {
   FiCheckCircle, 
   FiClock,
   FiBarChart,
-  FiPieChart,
   FiTrendingUp
 } from 'react-icons/fi';
 import { Survey, SurveyResponse } from '../../types/survey';
@@ -62,7 +61,7 @@ interface AnalyticsData {
 
 const SurveyAnalytics: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { t } = useTranslation();
+  const { } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +140,7 @@ const SurveyAnalytics: React.FC = () => {
     };
   };
 
-  const getQuestionChartData = (question: any): ChartData<'bar' | 'pie'> => {
+  const getQuestionChartData = (question: any, chartType: 'bar' | 'pie' = 'bar'): ChartData<'bar'> | ChartData<'pie'> => {
     const labels = Object.keys(question.responses);
     const data = Object.values(question.responses) as number[];
     
@@ -311,13 +310,13 @@ const SurveyAnalytics: React.FC = () => {
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="h-64">
                       <Bar 
-                        data={getQuestionChartData(question)} 
+                        data={getQuestionChartData(question, 'bar') as ChartData<'bar'>} 
                         options={getChartOptions('Response Distribution')}
                       />
                     </div>
                     <div className="h-64">
                       <Pie 
-                        data={getQuestionChartData(question)} 
+                        data={getQuestionChartData(question, 'pie') as ChartData<'pie'>} 
                         options={getChartOptions('Response Percentage')}
                       />
                     </div>
@@ -328,7 +327,7 @@ const SurveyAnalytics: React.FC = () => {
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="h-64">
                       <Bar 
-                        data={getQuestionChartData(question)} 
+                        data={getQuestionChartData(question, 'bar') as ChartData<'bar'>} 
                         options={getChartOptions('Rating Distribution')}
                       />
                     </div>
@@ -349,7 +348,7 @@ const SurveyAnalytics: React.FC = () => {
                 {question.type === 'yes_no' && (
                   <div className="h-64 max-w-md mx-auto">
                     <Pie 
-                      data={getQuestionChartData(question)} 
+                      data={getQuestionChartData(question, 'pie') as ChartData<'pie'>} 
                       options={getChartOptions('Yes/No Distribution')}
                     />
                   </div>

@@ -30,7 +30,7 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
   coupon,
   onClose
 }) => {
-  const { t } = useTranslation();
+  const { } = useTranslation();
   const [assignments, setAssignments] = useState<CouponAssignment[]>([]);
   const [summary, setSummary] = useState<CouponAssignmentSummary>({
     totalUsers: 0,

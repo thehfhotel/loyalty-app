@@ -12,7 +12,7 @@ let cachePromise: Promise<Record<string, boolean>> | null = null;
  */
 export function useFeatureToggle(featureKey: string): boolean {
   const [isEnabled, setIsEnabled] = useState(featureCache[featureKey] || false);
-  const [isLoading, setIsLoading] = useState(!featureCache.hasOwnProperty(featureKey));
+  const [, setIsLoading] = useState(!featureCache.hasOwnProperty(featureKey));
 
   useEffect(() => {
     const checkFeature = async () => {
@@ -67,7 +67,7 @@ export function useFeatureToggle(featureKey: string): boolean {
  */
 export function useFeatureToggles(featureKeys: string[]): Record<string, boolean> {
   const [features, setFeatures] = useState<Record<string, boolean>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [, setIsLoading] = useState(true);
 
   useEffect(() => {
     const checkFeatures = async () => {

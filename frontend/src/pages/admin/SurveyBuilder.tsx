@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 // Fixed JSX warning - cache refresh trigger
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { FiPlus, FiTrash2, FiMove, FiSave, FiEye } from 'react-icons/fi';
-import { Survey, SurveyQuestion, CreateSurveyRequest, QuestionType } from '../../types/survey';
+import { FiPlus, FiSave, FiEye } from 'react-icons/fi';
+import { Survey, SurveyQuestion, CreateSurveyRequest, QuestionType, SurveyAccessType, SurveyStatus } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import QuestionEditor from '../../components/surveys/QuestionEditor';
@@ -187,7 +187,6 @@ const SurveyBuilder: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [validationState, setValidationState] = useState<SurveyValidationResult>({
     emptyQuestions: [],
     emptyOptions: [],
@@ -394,7 +393,7 @@ const SurveyBuilder: React.FC = () => {
         description: survey.description,
         questions: survey.questions,
         target_segment: survey.target_segment,
-        access_type: survey.access_type,
+        access_type: survey.access_type || 'public' as SurveyAccessType,
         ...(status && { status })
       };
 
@@ -409,7 +408,7 @@ const SurveyBuilder: React.FC = () => {
       }
 
       if (isEditing && id) {
-        await surveyService.updateSurvey(id, { ...surveyData, status: status || survey.status });
+        await surveyService.updateSurvey(id, { ...surveyData, status: (status || survey.status) as SurveyStatus });
         toast.success('Survey updated successfully');
       } else {
         const newSurvey = await surveyService.createSurvey(surveyData);

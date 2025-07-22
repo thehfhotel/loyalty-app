@@ -84,7 +84,9 @@
     "surveys": "แบบสำรวจ",
     "takeSurveys": "ทำแบบสำรวจ",
     "surveyManagement": "จัดการแบบสำรวจ",
-    "manageSurveysAdmin": "สร้างและจัดการแบบสำรวจ"
+    "manageSurveysAdmin": "สร้างและจัดการแบบสำรวจ",
+    "userManagement": "จัดการผู้ใช้",
+    "manageUsersAdmin": "จัดการบัญชีผู้ใช้ บทบาท และการเข้าถึงระบบ"
   },
   "profile": {
     "title": "ข้อมูลส่วนตัว",
@@ -582,5 +584,56 @@
         "noInvitations": "ยังไม่ได้ส่งคำเชิญ"
       }
     }
+  },
+  "userManagement": {
+    "title": "จัดการผู้ใช้",
+    "totalUsers": "ผู้ใช้ทั้งหมด",
+    "activeUsers": "ผู้ใช้ที่ใช้งาน",
+    "administrators": "ผู้ดูแลระบบ",
+    "recentJoins": "สมาชิกใหม่",
+    "searchPlaceholder": "ค้นหาผู้ใช้ด้วยชื่อหรืออีเมล...",
+    "user": "ผู้ใช้",
+    "email": "อีเมล",
+    "role": "บทบาท",
+    "status": "สถานะ",
+    "joined": "วันที่สมัคร",
+    "actions": "การดำเนินการ",
+    "noNameProvided": "ไม่ได้ระบุชื่อ",
+    "customer": "ลูกค้า",
+    "admin": "ผู้ดูแลระบบ",
+    "superAdmin": "ผู้ดูแลระบบสูงสุด",
+    "active": "ใช้งาน",
+    "inactive": "ไม่ใช้งาน",
+    "viewDetails": "ดูรายละเอียด",
+    "activate": "เปิดใช้งาน",
+    "deactivate": "ปิดใช้งาน",
+    "deleteUser": "ลบผู้ใช้",
+    "userDetails": "รายละเอียดผู้ใช้",
+    "name": "ชื่อ",
+    "phone": "โทรศัพท์",
+    "notProvided": "ไม่ได้ระบุ",
+    "emailVerified": "ยืนยันอีเมลแล้ว",
+    "yes": "ใช่",
+    "no": "ไม่",
+    "close": "ปิด",
+    "delete": "ลบ",
+    "cancel": "ยกเลิก",
+    "pagination": "หน้า {{current}} จาก {{total}}",
+    "previous": "ก่อนหน้า",
+    "next": "ถัดไป",
+    "search": "ค้นหา",
+    "messages": {
+      "fetchUsersFailed": "ไม่สามารถโหลดข้อมูลผู้ใช้",
+      "fetchStatsFailed": "ไม่สามารถโหลดสถิติผู้ใช้",
+      "userActivated": "เปิดใช้งานผู้ใช้สำเร็จ",
+      "userDeactivated": "ปิดใช้งานผู้ใช้สำเร็จ",
+      "updateStatusFailed": "ไม่สามารถอัปเดตสถานะผู้ใช้",
+      "roleUpdated": "อัปเดตบทบาทผู้ใช้สำเร็จ",
+      "updateRoleFailed": "ไม่สามารถอัปเดตบทบาทผู้ใช้",
+      "userDeleted": "ลบผู้ใช้สำเร็จ",
+      "deleteFailed": "ไม่สามารถลบผู้ใช้",
+      "fetchDetailsFailed": "ไม่สามารถโหลดรายละเอียดผู้ใช้"
+    },
+    "confirmDelete": "คุณแน่ใจหรือว่าต้องการลบ {{name}}? การดำเนินการนี้ไม่สามารถย้อนกลับได้"
   }
 }

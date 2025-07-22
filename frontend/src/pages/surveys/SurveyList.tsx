@@ -104,7 +104,7 @@ const SurveyList: React.FC = () => {
 
         <div className="flex space-x-3">
           <Link
-            to={`/surveys/${survey.id}`}
+            to={`/surveys/${survey.id}/take`}
             className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors text-center"
           >
             {t('surveys.takeSurvey', 'Take Survey')}

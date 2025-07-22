@@ -192,7 +192,7 @@ export default function ProfilePage() {
                   }`}>
                     {user.role === 'super_admin' ? 'Super Admin' : 
                      user.role === 'admin' ? 'Admin' : 
-                     user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                     'Staff'}
                   </span>
                 )}
               </div>
@@ -258,7 +258,7 @@ export default function ProfilePage() {
                     }`}>
                       {user.role === 'super_admin' ? 'Super Admin' : 
                        user.role === 'admin' ? 'Admin' : 
-                       user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                       'Staff'}
                     </span>
                   )}
                 </div>

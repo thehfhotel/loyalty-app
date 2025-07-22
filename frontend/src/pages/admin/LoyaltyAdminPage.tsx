@@ -2,14 +2,12 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
   FiUsers, 
-  FiDollarSign, 
   FiAward, 
   FiPlus, 
   FiMinus, 
   FiRefreshCw,
   FiSearch,
-  FiCalendar,
-  FiSettings
+  FiCalendar
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { 

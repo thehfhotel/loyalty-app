@@ -5,7 +5,7 @@ interface FacebookLoginButtonProps {
   onFailure?: () => void;
 }
 
-export default function FacebookLoginButton({ onSuccess, onFailure }: FacebookLoginButtonProps) {
+export default function FacebookLoginButton({ }: FacebookLoginButtonProps) {
   const handleFacebookClick = () => {
     // Redirect to backend OAuth endpoint
     window.location.href = 'http://localhost:4000/api/oauth/facebook';

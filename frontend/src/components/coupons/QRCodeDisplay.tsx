@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { UserActiveCoupon } from '../../types/coupon';
 import { useTranslation } from 'react-i18next';
+import toast from 'react-hot-toast';
 
 interface QRCodeDisplayProps {
   coupon: UserActiveCoupon;
@@ -38,13 +39,11 @@ const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
     return canvas.toDataURL();
   };
 
-  const qrCodeDataURL = generateQRCodeDataURL(coupon.qrCode);
 
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(coupon.qrCode);
-      // You might want to show a toast notification here
-      alert(t('coupons.qrCodeCopied'));
+      toast.success(t('coupons.qrCodeCopied'));
     } catch (err) {
       console.error('Failed to copy QR code:', err);
     }

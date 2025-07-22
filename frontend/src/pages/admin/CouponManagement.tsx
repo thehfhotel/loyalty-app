@@ -4,6 +4,7 @@ import { Coupon, CreateCouponRequest, CouponType, CouponStatus } from '../../typ
 import { couponService } from '../../services/couponService';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import CouponAssignmentsModal from '../../components/admin/CouponAssignmentsModal';
+import toast from 'react-hot-toast';
 
 interface User {
   id: string;
@@ -182,7 +183,7 @@ const CouponManagement: React.FC = () => {
       
       // Show success message
       const assignedCount = response?.length || selectedUsers.length;
-      alert(`Successfully assigned coupon "${selectedCoupon.name}" to ${assignedCount} user(s)`);
+      toast.success(`Successfully assigned coupon "${selectedCoupon.name}" to ${assignedCount} user(s)`);
       
       setShowAssignModal(false);
       setSelectedUsers([]);
@@ -194,7 +195,7 @@ const CouponManagement: React.FC = () => {
       console.error('Assignment error:', err);
       const errorMessage = err.response?.data?.message || err.message || 'Failed to assign coupons';
       setError(errorMessage);
-      alert(`Error: ${errorMessage}`);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }

@@ -20,6 +20,7 @@ import LanguageProvider from './components/LanguageProvider';
 import DevTools from './components/dev/DevTools';
 import SurveyList from './pages/surveys/SurveyList';
 import TakeSurvey from './pages/surveys/TakeSurvey';
+import SurveyDetailsPage from './pages/surveys/SurveyDetailsPage';
 import SurveyManagement from './pages/admin/SurveyManagement';
 import SurveyBuilder from './pages/admin/SurveyBuilder';
 import SurveyAnalytics from './pages/admin/SurveyAnalytics';
@@ -27,12 +28,12 @@ import SurveyPreviewPage from './pages/admin/SurveyPreview';
 import SurveyTemplates from './pages/admin/SurveyTemplates';
 import SurveyInvitations from './pages/admin/SurveyInvitations';
 import ThaiSurveyDebug from './pages/admin/ThaiSurveyDebug';
+import UserManagement from './pages/admin/UserManagement';
 import { useEffect, useState } from 'react';
 import { useFeatureToggle, FEATURE_KEYS } from './hooks/useFeatureToggle';
 
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const user = useAuthStore((state) => state.user);
   const [isInitialized, setIsInitialized] = useState(false);
   
   // Check feature toggles
@@ -189,6 +190,14 @@ function App() {
           }
         />
         <Route
+          path="/surveys/:id/details"
+          element={
+            <ProtectedRoute>
+              <SurveyDetailsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/account-linking"
           element={
             <ProtectedRoute>
@@ -224,6 +233,14 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin">
               <CouponManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/users"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <UserManagement />
             </ProtectedRoute>
           }
         />

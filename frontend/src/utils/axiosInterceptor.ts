@@ -1,4 +1,4 @@
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/authStore';
 import { notify } from './notificationManager';
 
@@ -27,7 +27,7 @@ export function setupAxiosInterceptors() {
             await authStore.refreshAuth();
             
             // If refresh successful, retry the original request
-            const originalRequest = error.config;
+            const originalRequest = error.config as any;
             if (originalRequest && !originalRequest._retry) {
               originalRequest._retry = true; // Prevent infinite retry loops
               // Update the Authorization header with the new token
@@ -72,9 +72,9 @@ export function setupAxiosInterceptors() {
 }
 
 // Helper function to add auth token to axios instances
-export function addAuthTokenInterceptor(axiosInstance: any) {
+export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
   axiosInstance.interceptors.request.use(
-    (config: any) => {
+    (config: InternalAxiosRequestConfig) => {
       // Try to get token from auth store first, then fallback to localStorage
       const authStore = useAuthStore.getState();
       let token = authStore.accessToken;
@@ -110,7 +110,7 @@ export function addAuthTokenInterceptor(axiosInstance: any) {
       
       return config;
     },
-    (error: any) => {
+    (error: AxiosError) => {
       return Promise.reject(error);
     }
   );

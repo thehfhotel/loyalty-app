@@ -3,7 +3,7 @@ interface LineLoginButtonProps {
   onFailure?: () => void;
 }
 
-export default function LineLoginButton({ onSuccess, onFailure }: LineLoginButtonProps) {
+export default function LineLoginButton({ }: LineLoginButtonProps) {
   const handleLineClick = () => {
     // Redirect to backend OAuth endpoint
     window.location.href = `${import.meta.env.VITE_API_URL}/oauth/line`;

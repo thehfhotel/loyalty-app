@@ -1,5 +1,5 @@
 import { useAuthStore } from '../store/authStore';
-import { FiUser, FiLogOut, FiToggleLeft, FiAward } from 'react-icons/fi';
+import { FiUser, FiLogOut, FiToggleLeft, FiAward, FiUsers } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { getUserDisplayName } from '../utils/userHelpers';
 import { useTranslation } from 'react-i18next';
@@ -218,6 +218,32 @@ export default function DashboardPage() {
                         </dt>
                         <dd className="mt-1 text-sm font-medium text-gray-500">
                           {t('dashboard.manageSurveysAdmin')}
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            )}
+
+            {/* User Management Card (Admin+ Only) */}
+            {isAdmin && (
+              <Link
+                to="/admin/users"
+                className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+              >
+                <div className="p-5">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <FiUsers className="h-6 w-6 text-blue-600" />
+                    </div>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-lg font-semibold text-gray-900 truncate">
+                          {t('dashboard.userManagement')}
+                        </dt>
+                        <dd className="mt-1 text-sm font-medium text-gray-500">
+                          {t('dashboard.manageUsersAdmin')}
                         </dd>
                       </dl>
                     </div>
