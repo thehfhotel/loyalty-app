@@ -3,6 +3,19 @@ import { AppError } from '../middleware/errorHandler';
 import { UserProfile } from '../types/auth';
 import { ProfileUpdate } from '../types/user';
 
+interface UserWithProfile {
+  userId: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  emailVerified: boolean;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  createdAt: string;
+  lastLogin?: string;
+}
+
 export class UserService {
   async getProfile(userId: string): Promise<UserProfile> {
     const [profile] = await query<UserProfile>(
@@ -99,5 +112,116 @@ export class UserService {
       'UPDATE user_profiles SET avatar_url = NULL WHERE user_id = $1',
       [userId]
     );
+  }
+
+  // Admin-only methods
+  async getAllUsers(page = 1, limit = 10, search = ''): Promise<{ users: UserWithProfile[], total: number }> {
+    const offset = (page - 1) * limit;
+    const searchCondition = search ? `WHERE u.email ILIKE $3 OR up.first_name ILIKE $3 OR up.last_name ILIKE $3` : '';
+    const searchParam = search ? [`%${search}%`] : [];
+
+    const [totalResult] = await query<{ count: string }>(
+      `SELECT COUNT(*) FROM users u 
+       LEFT JOIN user_profiles up ON u.id = up.user_id 
+       ${searchCondition}`,
+      searchParam
+    );
+
+    const users = await query<UserWithProfile>(
+      `SELECT 
+        u.id AS "userId",
+        u.email,
+        u.role,
+        u.is_active AS "isActive",
+        u.email_verified AS "emailVerified",
+        u.created_at AS "createdAt",
+        up.first_name AS "firstName",
+        up.last_name AS "lastName",
+        up.phone
+      FROM users u
+      LEFT JOIN user_profiles up ON u.id = up.user_id
+      ${searchCondition}
+      ORDER BY u.created_at DESC
+      LIMIT $1 OFFSET $2`,
+      [limit, offset, ...searchParam]
+    );
+
+    return {
+      users,
+      total: parseInt(totalResult.count)
+    };
+  }
+
+  async getUserById(userId: string): Promise<UserWithProfile> {
+    const [user] = await query<UserWithProfile>(
+      `SELECT 
+        u.id AS "userId",
+        u.email,
+        u.role,
+        u.is_active AS "isActive",
+        u.email_verified AS "emailVerified",
+        u.created_at AS "createdAt",
+        up.first_name AS "firstName",
+        up.last_name AS "lastName",
+        up.phone,
+        up.avatar_url AS "avatarUrl"
+      FROM users u
+      LEFT JOIN user_profiles up ON u.id = up.user_id
+      WHERE u.id = $1`,
+      [userId]
+    );
+
+    if (!user) {
+      throw new AppError(404, 'User not found');
+    }
+
+    return user;
+  }
+
+  async updateUserStatus(userId: string, isActive: boolean): Promise<void> {
+    await query(
+      'UPDATE users SET is_active = $1 WHERE id = $2',
+      [isActive, userId]
+    );
+  }
+
+  async updateUserRole(userId: string, role: string): Promise<void> {
+    const validRoles = ['customer', 'admin', 'super_admin'];
+    if (!validRoles.includes(role)) {
+      throw new AppError(400, 'Invalid role specified');
+    }
+
+    await query(
+      'UPDATE users SET role = $1 WHERE id = $2',
+      [role, userId]
+    );
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    // Note: This will cascade delete user_profiles and other related data
+    await query('DELETE FROM users WHERE id = $1', [userId]);
+  }
+
+  async getUserStats(): Promise<{ total: number, active: number, admins: number, recentlyJoined: number }> {
+    const [stats] = await query<{
+      total: string,
+      active: string,
+      admins: string,
+      recentlyJoined: string
+    }>(
+      `SELECT 
+        COUNT(*) as total,
+        COUNT(CASE WHEN is_active = true THEN 1 END) as active,
+        COUNT(CASE WHEN role IN ('admin', 'super_admin') THEN 1 END) as admins,
+        COUNT(CASE WHEN created_at >= NOW() - INTERVAL '30 days' THEN 1 END) as recently_joined
+      FROM users`
+    );
+
+    return {
+      total: parseInt(stats.total),
+      active: parseInt(stats.active),
+      admins: parseInt(stats.admins),
+      recentlyJoined: parseInt(stats.recentlyJoined)
+    };
   }
 }
