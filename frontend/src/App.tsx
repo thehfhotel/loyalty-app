@@ -40,27 +40,49 @@ function App() {
 
   useEffect(() => {
     const initializeAuth = async () => {
-      // Give Zustand persist time to rehydrate state from localStorage
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Check if we have tokens and validate them
-      const checkAuthStatus = useAuthStore.getState().checkAuthStatus;
       try {
-        await checkAuthStatus();
+        // Give Zustand persist more time to rehydrate state from localStorage
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // Get current auth state after rehydration
+        const authStore = useAuthStore.getState();
+        
+        // If we have stored auth data, validate it
+        if (authStore.accessToken && authStore.refreshToken) {
+          try {
+            const isValid = await authStore.checkAuthStatus();
+            if (!isValid) {
+              console.warn('Stored auth tokens are invalid, clearing auth state');
+              authStore.clearAuth();
+            }
+          } catch (error) {
+            console.warn('Auth validation failed during initialization:', error);
+            // Clear potentially corrupted auth state
+            authStore.clearAuth();
+          }
+        } else if (authStore.isAuthenticated) {
+          // If marked as authenticated but missing tokens, clear state
+          console.warn('Auth state inconsistent (authenticated but missing tokens), clearing');
+          authStore.clearAuth();
+        }
+        
+        // Only log in development mode
+        if (import.meta.env?.DEV) {
+          const finalState = useAuthStore.getState();
+          console.log('App initialized. Final auth state:', { 
+            isAuthenticated: finalState.isAuthenticated, 
+            user: finalState.user?.email,
+            hasAccessToken: !!finalState.accessToken,
+            hasRefreshToken: !!finalState.refreshToken
+          });
+        }
       } catch (error) {
-        // Auth check failed, but we'll continue - user will be redirected to login if needed
-        console.warn('Auth validation failed during initialization:', error);
-      }
-      
-      setIsInitialized(true);
-      
-      // Only log in development mode
-      if (import.meta.env?.DEV) {
-        const currentState = useAuthStore.getState();
-        console.log('App initialized. Auth state:', { 
-          isAuthenticated: currentState.isAuthenticated, 
-          user: currentState.user?.email 
-        });
+        console.error('Critical error during auth initialization:', error);
+        // Clear auth state on any critical error
+        useAuthStore.getState().clearAuth();
+      } finally {
+        // Always mark as initialized, even if auth checks failed
+        setIsInitialized(true);
       }
     };
     

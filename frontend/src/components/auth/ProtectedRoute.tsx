@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -15,10 +15,42 @@ export default function ProtectedRoute({
 }: ProtectedRouteProps) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const user = useAuthStore((state) => state.user);
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const isLoading = useAuthStore((state) => state.isLoading);
+  const checkAuthStatus = useAuthStore((state) => state.checkAuthStatus);
   const location = useLocation();
 
+  // Verify authentication on mount and when tokens change
+  useEffect(() => {
+    const verifyAuth = async () => {
+      // Only check if we think we're authenticated but don't have valid data
+      if (isAuthenticated && (!user || !accessToken)) {
+        try {
+          await checkAuthStatus();
+        } catch (error) {
+          console.warn('Auth verification failed in ProtectedRoute:', error);
+          // Auth state will be cleared by checkAuthStatus on failure
+        }
+      }
+    };
+
+    verifyAuth();
+  }, [isAuthenticated, user, accessToken, checkAuthStatus]);
+
+  // Show loading while auth is being verified
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <p className="mt-4 text-gray-600">Verifying authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
   // Not authenticated - redirect to login with return URL
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user || !accessToken) {
     // Save the attempted location for redirect after login
     const returnUrl = location.pathname + location.search;
     return <Navigate to={`${redirectTo}?returnUrl=${encodeURIComponent(returnUrl)}`} replace />;

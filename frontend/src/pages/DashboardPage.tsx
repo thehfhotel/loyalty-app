@@ -54,10 +54,10 @@ export default function DashboardPage() {
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
+                      <dt className="text-lg font-semibold text-gray-900 truncate">
                         {t('dashboard.myProfile')}
                       </dt>
-                      <dd className="mt-1 text-lg font-semibold text-gray-900">
+                      <dd className="mt-1 text-sm font-medium text-gray-500">
                         {t('dashboard.manageProfile')}
                       </dd>
                     </dl>
@@ -80,10 +80,10 @@ export default function DashboardPage() {
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
+                      <dt className="text-lg font-semibold text-gray-900 truncate">
                         {t('dashboard.loyaltyPoints')}
                       </dt>
-                      <dd className="mt-1 text-lg font-semibold text-gray-900">
+                      <dd className="mt-1 text-sm font-medium text-gray-500">
                         {t('dashboard.manageLoyalty')}
                       </dd>
                     </dl>
@@ -106,10 +106,10 @@ export default function DashboardPage() {
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
+                      <dt className="text-lg font-semibold text-gray-900 truncate">
                         {t('dashboard.myCoupons')}
                       </dt>
-                      <dd className="mt-1 text-lg font-semibold text-gray-900">
+                      <dd className="mt-1 text-sm font-medium text-gray-500">
                         {t('dashboard.manageCoupons')}
                       </dd>
                     </dl>
@@ -132,10 +132,10 @@ export default function DashboardPage() {
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
+                      <dt className="text-lg font-semibold text-gray-900 truncate">
                         {t('dashboard.surveys')}
                       </dt>
-                      <dd className="mt-1 text-lg font-semibold text-gray-900">
+                      <dd className="mt-1 text-sm font-medium text-gray-500">
                         {t('dashboard.takeSurveys')}
                       </dd>
                     </dl>
@@ -157,10 +157,10 @@ export default function DashboardPage() {
                     </div>
                     <div className="ml-5 w-0 flex-1">
                       <dl>
-                        <dt className="text-sm font-medium text-gray-500 truncate">
+                        <dt className="text-lg font-semibold text-gray-900 truncate">
                           {t('dashboard.loyaltyManagement')}
                         </dt>
-                        <dd className="mt-1 text-lg font-semibold text-gray-900">
+                        <dd className="mt-1 text-sm font-medium text-gray-500">
                           {t('dashboard.manageLoyaltyAdmin')}
                         </dd>
                       </dl>
@@ -185,10 +185,10 @@ export default function DashboardPage() {
                     </div>
                     <div className="ml-5 w-0 flex-1">
                       <dl>
-                        <dt className="text-sm font-medium text-gray-500 truncate">
+                        <dt className="text-lg font-semibold text-gray-900 truncate">
                           {t('dashboard.couponManagement')}
                         </dt>
-                        <dd className="mt-1 text-lg font-semibold text-gray-900">
+                        <dd className="mt-1 text-sm font-medium text-gray-500">
                           {t('dashboard.manageCouponsAdmin')}
                         </dd>
                       </dl>
@@ -213,10 +213,10 @@ export default function DashboardPage() {
                     </div>
                     <div className="ml-5 w-0 flex-1">
                       <dl>
-                        <dt className="text-sm font-medium text-gray-500 truncate">
+                        <dt className="text-lg font-semibold text-gray-900 truncate">
                           {t('dashboard.surveyManagement')}
                         </dt>
-                        <dd className="mt-1 text-lg font-semibold text-gray-900">
+                        <dd className="mt-1 text-sm font-medium text-gray-500">
                           {t('dashboard.manageSurveysAdmin')}
                         </dd>
                       </dl>
@@ -239,10 +239,10 @@ export default function DashboardPage() {
                     </div>
                     <div className="ml-5 w-0 flex-1">
                       <dl>
-                        <dt className="text-sm font-medium text-gray-500 truncate">
+                        <dt className="text-lg font-semibold text-gray-900 truncate">
                           {t('dashboard.featureToggles')}
                         </dt>
-                        <dd className="mt-1 text-lg font-semibold text-gray-900">
+                        <dd className="mt-1 text-sm font-medium text-gray-500">
                           {t('dashboard.manageFeatures')}
                         </dd>
                       </dl>

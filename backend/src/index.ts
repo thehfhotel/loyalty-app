@@ -10,6 +10,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 import { connectDatabase } from './config/database';
 import { connectRedis } from './config/redis';
+import { seedSurveys } from './utils/seedDatabase';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
 import oauthRoutes from './routes/oauth';
@@ -111,8 +112,14 @@ async function startServer() {
     await connectDatabase();
     await connectRedis();
 
+    // Seed database with sample surveys only in development
+    if (process.env.NODE_ENV === 'development') {
+      await seedSurveys();
+    }
+
     httpServer.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
+      logger.info('Backend server initialized with survey data');
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

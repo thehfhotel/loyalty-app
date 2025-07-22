@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { surveyService } from '../services/surveyService';
 import { CreateSurveyRequest, UpdateSurveyRequest, SubmitResponseRequest } from '../types/survey';
+import { logger } from '../utils/logger';
 
 export class SurveyController {
   // Create a new survey (Admin only)
@@ -16,52 +17,6 @@ export class SurveyController {
 
       const surveyData: CreateSurveyRequest = req.body;
       
-      // Enhanced logging for debugging Thai language issues
-      console.log('=== BACKEND SURVEY CREATION DEBUG ===');
-      console.log('User:', { id: user.id, role: user.role });
-      console.log('Raw request body:', JSON.stringify(req.body, null, 2));
-      console.log('Survey data validation:');
-      console.log('- Title:', {
-        value: surveyData.title,
-        type: typeof surveyData.title,
-        length: surveyData.title?.length,
-        bytes: surveyData.title ? Buffer.from(surveyData.title, 'utf8').length : 0,
-        encoding: surveyData.title ? 'UTF-8' : 'N/A'
-      });
-      console.log('- Description:', {
-        value: surveyData.description,
-        type: typeof surveyData.description,
-        length: surveyData.description?.length,
-        bytes: surveyData.description ? Buffer.from(surveyData.description, 'utf8').length : 0
-      });
-      console.log('- Questions count:', surveyData.questions?.length);
-      if (surveyData.questions) {
-        surveyData.questions.forEach((q, index) => {
-          console.log(`- Question ${index + 1}:`, {
-            id: q.id,
-            text: q.text,
-            textLength: q.text?.length,
-            textBytes: q.text ? Buffer.from(q.text, 'utf8').length : 0,
-            type: q.type,
-            required: q.required,
-            optionsCount: q.options?.length
-          });
-          if (q.options) {
-            q.options.forEach((opt, optIndex) => {
-              console.log(`  - Option ${optIndex + 1}:`, {
-                id: opt.id,
-                text: opt.text,
-                textLength: opt.text?.length,
-                textBytes: opt.text ? Buffer.from(opt.text, 'utf8').length : 0,
-                value: opt.value
-              });
-            });
-          }
-        });
-      }
-      console.log('- Access type:', surveyData.access_type);
-      console.log('- Target segment:', surveyData.target_segment);
-      console.log('=====================================');
       
       // Comprehensive validation
       const validationErrors = [];
@@ -133,7 +88,6 @@ export class SurveyController {
       }
       
       if (validationErrors.length > 0) {
-        console.error('Validation errors found:', validationErrors);
         res.status(400).json({ 
           message: 'Validation failed', 
           validationErrors,
@@ -152,15 +106,6 @@ export class SurveyController {
       const survey = await surveyService.createSurvey(surveyData, user.id);
       res.status(201).json({ survey });
     } catch (error: any) {
-      console.error('=== BACKEND SURVEY CREATION ERROR ===');
-      console.error('Error type:', error.constructor.name);
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
-      if (error.code) console.error('Error code:', error.code);
-      if (error.constraint) console.error('DB constraint:', error.constraint);
-      if (error.detail) console.error('DB detail:', error.detail);
-      if (error.hint) console.error('DB hint:', error.hint);
-      console.error('=====================================');
       
       res.status(500).json({ 
         message: 'Failed to create survey', 
@@ -198,7 +143,7 @@ export class SurveyController {
 
       res.json({ survey });
     } catch (error: any) {
-      console.error('Error fetching survey:', error);
+      logger.error('Error fetching survey:', error);
       res.status(500).json({ message: 'Failed to fetch survey', error: error.message });
     }
   }
@@ -231,7 +176,7 @@ export class SurveyController {
         }
       });
     } catch (error: any) {
-      console.error('Error fetching surveys:', error);
+      logger.error('Error fetching surveys:', error);
       res.status(500).json({ message: 'Failed to fetch surveys', error: error.message });
     }
   }
@@ -251,10 +196,6 @@ export class SurveyController {
       const updateData: UpdateSurveyRequest = req.body;
       
       // Enhanced logging for update operations too
-      console.log('=== BACKEND SURVEY UPDATE DEBUG ===');
-      console.log('Survey ID:', id);
-      console.log('Update data:', JSON.stringify(updateData, null, 2));
-      console.log('===================================');
       
       const survey = await surveyService.updateSurvey(id, updateData);
       
@@ -265,7 +206,7 @@ export class SurveyController {
 
       res.json({ survey });
     } catch (error: any) {
-      console.error('Error updating survey:', error);
+      logger.error('Error updating survey:', error);
       res.status(500).json({ message: 'Failed to update survey', error: error.message });
     }
   }
@@ -291,7 +232,7 @@ export class SurveyController {
 
       res.json({ message: 'Survey deleted successfully' });
     } catch (error: any) {
-      console.error('Error deleting survey:', error);
+      logger.error('Error deleting survey:', error);
       res.status(500).json({ message: 'Failed to delete survey', error: error.message });
     }
   }
@@ -326,7 +267,7 @@ export class SurveyController {
       const response = await surveyService.submitResponse(user.id, responseData);
       res.json({ response });
     } catch (error: any) {
-      console.error('Error submitting response:', error);
+      logger.error('Error submitting response:', error);
       res.status(500).json({ message: 'Failed to submit response', error: error.message });
     }
   }
@@ -345,7 +286,7 @@ export class SurveyController {
       const response = await surveyService.getUserResponse(user.id, surveyId);
       res.json({ response });
     } catch (error: any) {
-      console.error('Error fetching user response:', error);
+      logger.error('Error fetching user response:', error);
       res.status(500).json({ message: 'Failed to fetch response', error: error.message });
     }
   }
@@ -377,7 +318,7 @@ export class SurveyController {
         }
       });
     } catch (error: any) {
-      console.error('Error fetching survey responses:', error);
+      logger.error('Error fetching survey responses:', error);
       res.status(500).json({ message: 'Failed to fetch responses', error: error.message });
     }
   }
@@ -395,7 +336,7 @@ export class SurveyController {
       const surveys = await surveyService.getAvailableSurveys(user.id);
       res.json({ surveys });
     } catch (error: any) {
-      console.error('Error fetching available surveys:', error);
+      logger.error('Error fetching available surveys:', error);
       res.status(500).json({ message: 'Failed to fetch surveys', error: error.message });
     }
   }
@@ -413,7 +354,7 @@ export class SurveyController {
       const surveys = await surveyService.getPublicSurveys(user.id);
       res.json({ surveys });
     } catch (error: any) {
-      console.error('Error fetching public surveys:', error);
+      logger.error('Error fetching public surveys:', error);
       res.status(500).json({ message: 'Failed to fetch public surveys', error: error.message });
     }
   }
@@ -431,7 +372,7 @@ export class SurveyController {
       const surveys = await surveyService.getInvitedSurveys(user.id);
       res.json({ surveys });
     } catch (error: any) {
-      console.error('Error fetching invited surveys:', error);
+      logger.error('Error fetching invited surveys:', error);
       res.status(500).json({ message: 'Failed to fetch invited surveys', error: error.message });
     }
   }
@@ -457,7 +398,7 @@ export class SurveyController {
 
       res.json(analytics);
     } catch (error: any) {
-      console.error('Error fetching survey analytics:', error);
+      logger.error('Error fetching survey analytics:', error);
       res.status(500).json({ message: 'Failed to fetch analytics', error: error.message });
     }
   }
@@ -527,7 +468,7 @@ export class SurveyController {
       
       res.send(csvContent);
     } catch (error: any) {
-      console.error('Error exporting survey responses:', error);
+      logger.error('Error exporting survey responses:', error);
       res.status(500).json({ message: 'Failed to export responses', error: error.message });
     }
   }
@@ -547,7 +488,7 @@ export class SurveyController {
       const invitations = await surveyService.getSurveyInvitations(surveyId);
       res.json({ invitations });
     } catch (error: any) {
-      console.error('Error fetching survey invitations:', error);
+      logger.error('Error fetching survey invitations:', error);
       res.status(500).json({ message: 'Failed to fetch invitations', error: error.message });
     }
   }
@@ -567,7 +508,7 @@ export class SurveyController {
       const result = await surveyService.sendSurveyInvitations(surveyId);
       res.json(result);
     } catch (error: any) {
-      console.error('Error sending survey invitations:', error);
+      logger.error('Error sending survey invitations:', error);
       res.status(500).json({ message: 'Failed to send invitations', error: error.message });
     }
   }
@@ -587,7 +528,7 @@ export class SurveyController {
       await surveyService.resendInvitation(invitationId);
       res.json({ success: true });
     } catch (error: any) {
-      console.error('Error resending invitation:', error);
+      logger.error('Error resending invitation:', error);
       res.status(500).json({ message: 'Failed to resend invitation', error: error.message });
     }
   }

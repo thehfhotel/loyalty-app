@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+// Fixed JSX warning - cache refresh trigger
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { FiPlus, FiTrash2, FiMove, FiSave, FiEye } from 'react-icons/fi';
@@ -7,7 +8,165 @@ import { surveyService } from '../../services/surveyService';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import QuestionEditor from '../../components/surveys/QuestionEditor';
 import SurveyPreview from '../../components/surveys/SurveyPreview';
+import LanguageSwitcher from '../../components/LanguageSwitcher';
 import toast from 'react-hot-toast';
+
+// Validation utility types and functions
+interface QuestionValidationError {
+  id: string;
+  text: string;
+  error: string;
+  questionNumber: number;
+}
+
+interface SurveyValidationResult {
+  emptyQuestions: QuestionValidationError[];
+  emptyOptions: QuestionValidationError[];
+  isValid: boolean;
+}
+
+const validateSurveyQuestions = (questions: SurveyQuestion[]): SurveyValidationResult => {
+  const emptyQuestions: QuestionValidationError[] = [];
+  const emptyOptions: QuestionValidationError[] = [];
+
+  questions.forEach((question, index) => {
+    // Validate question text
+    const hasValidText = question.text && 
+                        typeof question.text === 'string' && 
+                        question.text.trim().length > 0;
+    
+    if (!hasValidText) {
+      emptyQuestions.push({
+        id: question.id,
+        text: question.text || '',
+        error: 'Question text is required',
+        questionNumber: index + 1
+      });
+    }
+
+    // Validate options for choice questions
+    if (['single_choice', 'multiple_choice'].includes(question.type) && question.options) {
+      question.options.forEach((option, optIndex) => {
+        const hasValidOptionText = option.text && 
+                                  typeof option.text === 'string' && 
+                                  option.text.trim().length > 0;
+        
+        if (!hasValidOptionText) {
+          emptyOptions.push({
+            id: `${question.id}_${option.id}`,
+            text: option.text || '',
+            error: `Option ${optIndex + 1} text is required`,
+            questionNumber: index + 1
+          });
+        }
+      });
+    }
+  });
+
+  return {
+    emptyQuestions,
+    emptyOptions,
+    isValid: emptyQuestions.length === 0 && emptyOptions.length === 0
+  };
+};
+
+const handleQuestionValidationErrors = (validationResult: SurveyValidationResult): void => {
+  const { emptyQuestions, emptyOptions } = validationResult;
+  
+  // Clear any previous highlights from both containers and fields
+  document.querySelectorAll('.validation-error-highlight').forEach(el => {
+    el.classList.remove('validation-error-highlight');
+  });
+  document.querySelectorAll('.validation-field-error').forEach(el => {
+    el.classList.remove('validation-field-error');
+  });
+  
+  if (emptyQuestions.length > 0) {
+    const questionNumbers = emptyQuestions.map(q => q.questionNumber).join(', ');
+    const message = emptyQuestions.length === 1 
+      ? `Question ${questionNumbers} needs your attention`
+      : `Questions ${questionNumbers} need your attention`;
+    
+    toast.error(message, {
+      duration: 6000,
+      icon: '👆'
+    });
+    
+    // Add red highlighting and focus to all empty questions
+    emptyQuestions.forEach((question, index) => {
+      const questionContainer = document.querySelector(`[data-question-id="${question.id}"]`);
+      const questionTextarea = document.querySelector(`[data-question-id="${question.id}"] textarea`);
+      
+      // Highlight the question container
+      if (questionContainer) {
+        questionContainer.classList.add('validation-error-highlight');
+      }
+      
+      // Also highlight the specific textarea field
+      if (questionTextarea) {
+        questionTextarea.classList.add('validation-field-error');
+        
+        // Focus and scroll to the first empty question
+        if (index === 0) {
+          questionTextarea.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center'
+          });
+          
+          // Add a slight delay to ensure smooth scroll completes before focus
+          setTimeout(() => {
+            (questionTextarea as HTMLElement).focus();
+            // Add pulsing effect to the field itself
+            questionTextarea.classList.add('animate-pulse');
+            setTimeout(() => {
+              questionTextarea.classList.remove('animate-pulse');
+            }, 2000);
+          }, 500);
+        }
+      }
+    });
+    
+    // Remove highlights after a delay
+    setTimeout(() => {
+      document.querySelectorAll('.validation-error-highlight').forEach(el => {
+        el.classList.remove('validation-error-highlight');
+      });
+      document.querySelectorAll('.validation-field-error').forEach(el => {
+        el.classList.remove('validation-field-error');
+      });
+    }, 8000);
+  }
+  
+  if (emptyOptions.length > 0) {
+    const message = emptyOptions.length === 1
+      ? 'Please fill in all option text fields'
+      : `Please fill in all option text fields (${emptyOptions.length} empty options found)`;
+    
+    toast.error(message, {
+      duration: 5000,
+      icon: '📋'
+    });
+    
+    // Highlight empty option fields
+    emptyOptions.forEach((option, index) => {
+      const optionInput = document.querySelector(`input[value="${option.text}"]`);
+      if (optionInput) {
+        optionInput.classList.add('validation-field-error');
+        
+        // Focus the first empty option if no empty questions
+        if (emptyQuestions.length === 0 && index === 0) {
+          optionInput.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center'
+          });
+          setTimeout(() => {
+            (optionInput as HTMLElement).focus();
+          }, 500);
+        }
+      }
+    });
+  }
+};
 
 const SurveyBuilder: React.FC = () => {
   const { t } = useTranslation();
@@ -29,6 +188,11 @@ const SurveyBuilder: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [validationState, setValidationState] = useState<SurveyValidationResult>({
+    emptyQuestions: [],
+    emptyOptions: [],
+    isValid: true
+  });
 
   useEffect(() => {
     if (isEditing) {
@@ -46,6 +210,90 @@ const SurveyBuilder: React.FC = () => {
       });
     }
   }, [id, isEditing, location.state]);
+
+  // Real-time validation check
+  useEffect(() => {
+    if (survey.questions && survey.questions.length > 0) {
+      const validation = validateSurveyQuestions(survey.questions);
+      setValidationState(validation);
+    } else {
+      setValidationState({ emptyQuestions: [], emptyOptions: [], isValid: true });
+    }
+  }, [survey.questions]);
+
+  // Inject validation error highlighting CSS
+  useEffect(() => {
+    const styleId = 'validation-highlighting-styles';
+    
+    // Check if styles already exist
+    if (document.getElementById(styleId)) {
+      return;
+    }
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      .validation-error-highlight {
+        border: 3px solid #ef4444 !important;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2) !important;
+        transition: all 0.3s ease-in-out !important;
+        animation: validation-pulse 0.5s ease-in-out !important;
+      }
+      
+      @keyframes validation-pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.02); }
+        100% { transform: scale(1); }
+      }
+      
+      .validation-error-highlight textarea {
+        border-color: #ef4444 !important;
+        background-color: #fef2f2 !important;
+      }
+      
+      .validation-field-error {
+        border: 2px solid #ef4444 !important;
+        background-color: #fef2f2 !important;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1) !important;
+        animation: field-error-pulse 0.6s ease-in-out !important;
+      }
+      
+      @keyframes field-error-pulse {
+        0% { 
+          transform: scale(1);
+          box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+        }
+        50% { 
+          transform: scale(1.01);
+          box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.2);
+        }
+        100% { 
+          transform: scale(1);
+          box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+        }
+      }
+      
+      .validation-field-error:focus {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.3) !important;
+        background-color: #ffffff !important;
+      }
+      
+      .validation-error-highlight:hover {
+        border-color: #dc2626 !important;
+      }
+    `;
+
+    document.head.appendChild(style);
+
+    // Cleanup function to remove styles when component unmounts
+    return () => {
+      const existingStyle = document.getElementById(styleId);
+      if (existingStyle) {
+        existingStyle.remove();
+      }
+    };
+  }, []);
 
   const loadSurvey = async () => {
     if (!id) return;
@@ -132,27 +380,10 @@ const SurveyBuilder: React.FC = () => {
       return;
     }
 
-    // Validate that all questions have text
-    const emptyQuestions = survey.questions.filter(q => !q.text || q.text.trim() === '');
-    if (emptyQuestions.length > 0) {
-      toast.error('Please fill in the question text for all questions');
+    // Enhanced validation using real-time validation state
+    if (!validationState.isValid) {
+      handleQuestionValidationErrors(validationState);
       return;
-    }
-
-    // Validate that choice questions have options with text
-    const choiceQuestions = survey.questions.filter(q => 
-      ['multiple_choice', 'single_choice'].includes(q.type)
-    );
-    for (const question of choiceQuestions) {
-      if (!question.options || question.options.length === 0) {
-        toast.error('Choice questions must have at least one option');
-        return;
-      }
-      const emptyOptions = question.options.filter(opt => !opt.text || opt.text.trim() === '');
-      if (emptyOptions.length > 0) {
-        toast.error('Please fill in text for all question options');
-        return;
-      }
     }
 
     try {
@@ -167,32 +398,15 @@ const SurveyBuilder: React.FC = () => {
         ...(status && { status })
       };
 
-      // Log the exact data being sent for debugging
-      console.log('=== SURVEY CREATION DEBUG ===');
-      console.log('Survey Data:', JSON.stringify(surveyData, null, 2));
-      console.log('Title encoding:', {
-        title: surveyData.title,
-        titleLength: surveyData.title.length,
-        titleBytes: new TextEncoder().encode(surveyData.title).length
-      });
-      console.log('Description encoding:', {
-        description: surveyData.description,
-        descriptionLength: surveyData.description?.length || 0,
-        descriptionBytes: surveyData.description ? new TextEncoder().encode(surveyData.description).length : 0
-      });
-      console.log('Questions data:', surveyData.questions.map(q => ({
-        id: q.id,
-        text: q.text,
-        textLength: q.text.length,
-        textBytes: new TextEncoder().encode(q.text).length,
-        type: q.type,
-        options: q.options?.map(opt => ({
-          text: opt.text,
-          textLength: opt.text.length,
-          textBytes: new TextEncoder().encode(opt.text).length
-        }))
-      })));
-      console.log('=============================');
+      // Debug logging for development (only in non-production environments)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📊 Survey submission:', {
+          title: surveyData.title,
+          questionCount: surveyData.questions.length,
+          hasThaiContent: /[\u0E00-\u0E7F]/.test(JSON.stringify(surveyData)),
+          accessType: surveyData.access_type
+        });
+      }
 
       if (isEditing && id) {
         await surveyService.updateSurvey(id, { ...surveyData, status: status || survey.status });
@@ -203,27 +417,40 @@ const SurveyBuilder: React.FC = () => {
         navigate(`/admin/surveys/${newSurvey.id}/edit`);
       }
     } catch (err: any) {
-      console.error('=== SURVEY CREATION ERROR ===');
-      console.error('Full error object:', err);
-      console.error('Error response:', err.response);
-      console.error('Error response data:', err.response?.data);
-      console.error('Error response status:', err.response?.status);
-      console.error('Error response headers:', err.response?.headers);
-      console.error('Error message:', err.message);
-      console.error('=============================');
-      
-      // Show detailed error information
+      // Enhanced error handling with graceful degradation
+      const isValidationError = err.response?.status === 400;
       const errorMessage = err.response?.data?.message || err.message || 'Failed to save survey';
-      const errorDetails = err.response?.data?.details || err.response?.data?.error || 'Unknown error';
       
-      toast.error(`${errorMessage}\n\nDetails: ${errorDetails}`);
-      
-      // Also show validation errors if available
-      if (err.response?.data?.validationErrors) {
-        console.error('Validation errors:', err.response.data.validationErrors);
-        err.response.data.validationErrors.forEach((error: any, index: number) => {
-          console.error(`Validation Error ${index + 1}:`, error);
+      if (isValidationError) {
+        // Handle backend validation errors gracefully
+        const backendErrors = err.response?.data?.validationErrors || [];
+        if (backendErrors.length > 0) {
+          const fieldErrors = backendErrors.map((error: any) => error.message || error.field).join(', ');
+          toast.error(`Validation failed: ${fieldErrors}`, {
+            duration: 6000,
+            icon: '⚠️'
+          });
+        } else {
+          toast.error(errorMessage, { duration: 5000, icon: '⚠️' });
+        }
+        
+        // Log only essential info for debugging
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Survey validation failed:', {
+            status: err.response?.status,
+            message: errorMessage,
+            validationErrors: backendErrors
+          });
+        }
+      } else {
+        // Handle network or server errors
+        toast.error(`Unable to save survey: ${errorMessage}`, {
+          duration: 7000,
+          icon: '🔌'
         });
+        
+        // Log full error details for non-validation errors
+        console.error('Survey save failed:', err);
       }
     } finally {
       setSaving(false);
@@ -262,6 +489,7 @@ const SurveyBuilder: React.FC = () => {
                 <FiEye className="mr-2 h-4 w-4" />
                 {showPreview ? 'Hide Preview' : 'Preview'}
               </button>
+              <LanguageSwitcher />
               <DashboardButton variant="outline" size="md" />
             </div>
           </div>
@@ -446,6 +674,23 @@ const SurveyBuilder: React.FC = () => {
                 </button>
                 
                 <div className="flex items-center space-x-3">
+                  {/* Validation Status Indicator */}
+                  {survey.questions && survey.questions.length > 0 && (
+                    <div className="flex items-center text-sm">
+                      {validationState.isValid ? (
+                        <span className="flex items-center text-green-600">
+                          <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                          Ready to save
+                        </span>
+                      ) : (
+                        <span className="flex items-center text-amber-600">
+                          <span className="w-2 h-2 bg-amber-500 rounded-full mr-2"></span>
+                          {validationState.emptyQuestions.length} field{validationState.emptyQuestions.length !== 1 ? 's' : ''} need attention (click publish to highlight)
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  
                   <button
                     onClick={() => saveSurvey('draft')}
                     disabled={saving}

@@ -95,6 +95,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
       onDragEnd={handleDragEnd}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      data-question-id={question.id}
     >
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center space-x-2">
@@ -129,9 +130,16 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
             value={question.text}
             onChange={(e) => onUpdate({ text: e.target.value })}
             rows={2}
-            className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            className={`block w-full rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
+              !question.text || question.text.trim() === '' 
+                ? 'border-red-300 focus:border-red-500 focus:ring-red-500' 
+                : 'border-gray-300'
+            }`}
             placeholder="Enter your question..."
           />
+          {(!question.text || question.text.trim() === '') && (
+            <p className="mt-1 text-sm text-red-600">This field is required</p>
+          )}
         </div>
 
         {/* Question Description */}

@@ -365,19 +365,15 @@ export class SurveyService {
       if (userResult.rows.length === 0) return [];
       const user = userResult.rows[0];
 
-      // Get active public surveys
+      // Get active public surveys (allow multiple submissions)
       const surveysResult = await client.query(
         `SELECT s.* FROM surveys s
          WHERE s.status = 'active'
          AND s.access_type = 'public'
          AND (s.scheduled_start IS NULL OR s.scheduled_start <= NOW())
          AND (s.scheduled_end IS NULL OR s.scheduled_end >= NOW())
-         AND NOT EXISTS (
-           SELECT 1 FROM survey_responses sr 
-           WHERE sr.survey_id = s.id AND sr.user_id = $1 AND sr.is_completed = true
-         )
          ORDER BY s.created_at DESC`,
-        [userId]
+        []
       );
 
       // Filter surveys based on targeting criteria
@@ -405,7 +401,7 @@ export class SurveyService {
   async getInvitedSurveys(userId: string): Promise<Survey[]> {
     const client = await getPool().connect();
     try {
-      // Get active invite-only surveys where user has been invited
+      // Get active invite-only surveys where user has been invited (allow multiple submissions)
       const surveysResult = await client.query(
         `SELECT DISTINCT s.* FROM surveys s
          INNER JOIN survey_invitations si ON s.id = si.survey_id
@@ -415,10 +411,6 @@ export class SurveyService {
          AND si.status IN ('sent', 'viewed', 'started')
          AND (s.scheduled_start IS NULL OR s.scheduled_start <= NOW())
          AND (s.scheduled_end IS NULL OR s.scheduled_end >= NOW())
-         AND NOT EXISTS (
-           SELECT 1 FROM survey_responses sr 
-           WHERE sr.survey_id = s.id AND sr.user_id = $1 AND sr.is_completed = true
-         )
          ORDER BY s.created_at DESC`,
         [userId]
       );
@@ -470,12 +462,7 @@ export class SurveyService {
         return false;
       }
 
-      // Check if user has already completed the survey
-      const existingResponse = await client.query(
-        'SELECT id FROM survey_responses WHERE survey_id = $1 AND user_id = $2 AND is_completed = true',
-        [surveyId, userId]
-      );
-      if (existingResponse.rows.length > 0) return false;
+      // Allow multiple survey submissions - removed completion check
 
       // For public surveys, check targeting criteria
       if (survey.access_type === 'public') {

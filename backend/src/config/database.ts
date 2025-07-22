@@ -4,22 +4,51 @@ import { logger } from '../utils/logger';
 let pool: Pool;
 
 export async function connectDatabase(): Promise<void> {
+  const databaseUrl = process.env.DATABASE_URL;
+  
+  if (!databaseUrl) {
+    const error = new Error('DATABASE_URL environment variable is required');
+    logger.error('Database configuration missing:', error);
+    throw error;
+  }
+
   try {
-    pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+    const config = {
+      connectionString: databaseUrl,
       max: 20,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-    });
+      connectionTimeoutMillis: 10000,
+      // Retry connection attempts
+      retryAttempts: 3,
+      retryDelay: 2000,
+    };
 
-    // Test the connection
-    await pool.query('SELECT NOW()');
-    logger.info('Database connected successfully');
+    pool = new Pool(config);
+    
+    // Test the connection with retry logic
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while (attempts < maxAttempts) {
+      try {
+        await pool.query('SELECT NOW()');
+        logger.info('Database connected successfully to PostgreSQL');
+        return;
+      } catch (error) {
+        attempts++;
+        if (attempts >= maxAttempts) {
+          throw error;
+        }
+        logger.warn(`Database connection attempt ${attempts} failed, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
   } catch (error) {
-    logger.error('Database connection failed:', error);
+    logger.error('Database connection failed after all attempts:', error);
     throw error;
   }
 }
+
 
 export function getPool(): Pool {
   if (!pool) {

@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { FiUsers, FiEye, FiCalendar } from 'react-icons/fi';
+import { FiUsers, FiEye, FiCalendar, FiRefreshCw } from 'react-icons/fi';
 import { Survey } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 import { useAuthStore } from '../../store/authStore';
+import { useAuthRedirect } from '../../hooks/useAuthRedirect';
 import DashboardButton from '../../components/navigation/DashboardButton';
+import LanguageSwitcher from '../../components/LanguageSwitcher';
 
 const SurveyList: React.FC = () => {
   const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
+  const { isAuthenticated } = useAuthRedirect(); // Additional auth check
   const [publicSurveys, setPublicSurveys] = useState<Survey[]>([]);
   const [invitedSurveys, setInvitedSurveys] = useState<Survey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,10 +20,19 @@ const SurveyList: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'public' | 'invited'>('public');
 
   useEffect(() => {
-    loadSurveys();
-  }, []);
+    // Only load surveys if authenticated
+    if (isAuthenticated) {
+      loadSurveys();
+    }
+  }, [isAuthenticated]);
 
   const loadSurveys = async () => {
+    // Don't attempt to load if not authenticated
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -135,6 +147,15 @@ const SurveyList: React.FC = () => {
               </h1>
             </div>
             <div className="flex items-center space-x-4">
+              <button
+                onClick={loadSurveys}
+                disabled={loading}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                <FiRefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+              <LanguageSwitcher />
               <DashboardButton variant="outline" size="md" />
             </div>
           </div>

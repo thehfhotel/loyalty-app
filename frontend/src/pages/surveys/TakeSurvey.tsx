@@ -6,6 +6,7 @@ import { surveyService } from '../../services/surveyService';
 import QuestionRenderer from '../../components/surveys/QuestionRenderer';
 import SurveyProgress from '../../components/surveys/SurveyProgress';
 import DashboardButton from '../../components/navigation/DashboardButton';
+import LanguageSwitcher from '../../components/LanguageSwitcher';
 
 const TakeSurvey: React.FC = () => {
   const { t } = useTranslation();
@@ -53,19 +54,10 @@ const TakeSurvey: React.FC = () => {
       setExistingResponse(responseData);
 
       if (responseData) {
-        setAnswers(responseData.answers || {});
-        setIsCompleted(responseData.is_completed);
-        
-        // If completed, show completion page
-        if (responseData.is_completed) {
-          setCurrentQuestion(surveyData.questions.length);
-        } else {
-          // Find first unanswered question
-          const firstUnanswered = surveyData.questions.findIndex(
-            q => !(responseData.answers && responseData.answers[q.id])
-          );
-          setCurrentQuestion(firstUnanswered >= 0 ? firstUnanswered : 0);
-        }
+        // Allow retaking surveys - always start fresh for multiple submissions
+        setAnswers({});
+        setIsCompleted(false);
+        setCurrentQuestion(0);
       }
     } catch (err: any) {
       console.error('Error loading survey:', err);
@@ -223,6 +215,7 @@ const TakeSurvey: React.FC = () => {
               <h1 className="text-2xl font-bold text-gray-900">{survey.title}</h1>
             </div>
             <div className="flex items-center space-x-4">
+              <LanguageSwitcher />
               <DashboardButton variant="outline" size="md" />
               <button
                 onClick={exitSurvey}

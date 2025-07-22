@@ -1,9 +1,5 @@
 {
   "type": "module",
-  "devDependencies": {
-    "@playwright/test": "^1.54.1",
-    "playwright": "^1.54.1"
-  },
   "dependencies": {
     "canvas": "^3.1.2",
     "cors": "^2.8.5",
