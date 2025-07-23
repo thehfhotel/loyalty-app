@@ -32,7 +32,9 @@
     "important": "Important",
     "viewAll": "View All",
     "showMore": "Show More",
-    "showLess": "Show Less"
+    "showLess": "Show Less",
+    "dismiss": "Dismiss",
+    "noEndDate": "No end date"
   },
   "auth": {
     "signIn": "Welcome back! Sign in to your account",
@@ -318,9 +320,38 @@
       "deactivate": "Deactivate",
       "active": "Active",
       "inactive": "Inactive",
+      "paused": "Paused",
+      "draft": "Draft",
+      "expired": "Expired",
       "min": "Min",
       "maxPerUser": "Max {{count}} per user",
-      "to": "to"
+      "to": "to",
+      "pause": "Pause",
+      "remove": "Delete",
+      "deleteTooltip": "Permanently delete this coupon",
+      "noCoupons": "No Coupons Available",
+      "noCouponsDescription": "Create your first coupon to start offering discounts to customers",
+      "code": "Coupon Code",
+      "name": "Coupon Name",
+      "codePlaceholder": "Enter unique coupon code (e.g., SAVE20)",
+      "namePlaceholder": "Enter display name for customers",
+      "errorCreating": "Error Creating Coupon",
+      "deleteCoupon": "Delete Coupon",
+      "deleteWarning": "Permanent Deletion Warning",
+      "deleteConfirmText": "You are about to permanently delete this coupon",
+      "deleteAffects": "This action will affect",
+      "existingRedemptions": "{{count}} existing redemptions",
+      "assignedUsers": "All users with assigned coupons",
+      "analyticsHistory": "Historical analytics data",
+      "typeToConfirm": "Type",
+      "deleteKeyword": "DELETE",
+      "toConfirm": "to confirm",
+      "deletePlaceholder": "Type DELETE to confirm deletion",
+      "deleting": "Deleting..."
+    },
+    "pagination": {
+      "page": "Page",
+      "of": "of"
     }
   },
   "coupons": {

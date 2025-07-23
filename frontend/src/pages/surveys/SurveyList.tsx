@@ -57,52 +57,54 @@ const SurveyList: React.FC = () => {
   const renderSurveyCard = (survey: Survey) => (
     <div
       key={survey.id}
-      className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200"
+      className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 flex flex-col h-full"
     >
-      <div className="p-6">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <div className="flex items-center space-x-2 mb-2">
-              <h3 className="text-xl font-semibold text-gray-900">
-                {survey.title}
-              </h3>
-              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                survey.access_type === 'public' 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-blue-100 text-blue-800'
-              }`}>
-                {survey.access_type === 'public' ? (
-                  <>
-                    <FiUsers className="mr-1 h-3 w-3" />
-                    Public
-                  </>
-                ) : (
-                  <>
-                    <FiEye className="mr-1 h-3 w-3" />
-                    Invited
-                  </>
-                )}
-              </span>
+      <div className="p-6 flex flex-col h-full">
+        <div className="flex-1">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center space-x-2 mb-2">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {survey.title}
+                </h3>
+                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                  survey.access_type === 'public' 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-blue-100 text-blue-800'
+                }`}>
+                  {survey.access_type === 'public' ? (
+                    <>
+                      <FiUsers className="mr-1 h-3 w-3" />
+                      Public
+                    </>
+                  ) : (
+                    <>
+                      <FiEye className="mr-1 h-3 w-3" />
+                      Invited
+                    </>
+                  )}
+                </span>
+              </div>
+              {survey.description && (
+                <p className="text-gray-600 text-sm mb-4 line-clamp-3">
+                  {survey.description}
+                </p>
+              )}
             </div>
-            {survey.description && (
-              <p className="text-gray-600 text-sm mb-4 line-clamp-3">
-                {survey.description}
-              </p>
-            )}
+          </div>
+
+          <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
+            <span>
+              {survey.questions.length} {t('surveys.questions', 'questions')}
+            </span>
+            <span className="flex items-center">
+              <FiCalendar className="mr-1 h-3 w-3" />
+              {formatDate(survey.created_at)}
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
-          <span>
-            {survey.questions.length} {t('surveys.questions', 'questions')}
-          </span>
-          <span className="flex items-center">
-            <FiCalendar className="mr-1 h-3 w-3" />
-            {formatDate(survey.created_at)}
-          </span>
-        </div>
-
-        <div className="flex space-x-3">
+        <div className="flex space-x-3 mt-auto">
           <Link
             to={`/surveys/${survey.id}/take`}
             className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors text-center"
