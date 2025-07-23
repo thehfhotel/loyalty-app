@@ -5,6 +5,7 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 // Import translations directly
 import enTranslations from './locales/en/translation.json';
 import thTranslations from './locales/th/translation.json';
+import zhCNTranslations from './locales/zh-CN/translation.json';
 
 export const defaultNS = 'translation';
 export const resources = {
@@ -13,6 +14,9 @@ export const resources = {
   },
   th: {
     translation: thTranslations,
+  },
+  'zh-CN': {
+    translation: zhCNTranslations,
   },
 } as const;
 

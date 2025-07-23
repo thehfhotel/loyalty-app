@@ -5,6 +5,7 @@ import { FiGlobe, FiCheck } from 'react-icons/fi';
 const languages = [
   { code: 'en', name: 'English', flag: '🇬🇧' },
   { code: 'th', name: 'ไทย', flag: '🇹🇭' },
+  { code: 'zh-CN', name: '中文(简体)', flag: '🇨🇳' },
 ];
 
 export default function LanguageSwitcher() {

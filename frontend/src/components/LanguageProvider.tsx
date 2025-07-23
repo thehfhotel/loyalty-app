@@ -15,7 +15,8 @@ export default function LanguageProvider({ children }: LanguageProviderProps) {
     // Update document title based on language
     const titleMap: Record<string, string> = {
       en: 'Hotel Loyalty App',
-      th: 'แอปสะสมคะแนนโรงแรม'
+      th: 'แอปสะสมคะแนนโรงแรม',
+      'zh-CN': '酒店会员积分系统'
     };
     
     document.title = titleMap[i18n.language] || titleMap.en;
