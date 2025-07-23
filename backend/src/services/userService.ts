@@ -101,10 +101,17 @@ export class UserService {
   }
 
   async updateAvatar(userId: string, avatarUrl: string): Promise<void> {
-    await query(
-      'UPDATE user_profiles SET avatar_url = $1 WHERE user_id = $2',
+    const result = await query(
+      'UPDATE user_profiles SET avatar_url = $1, updated_at = NOW() WHERE user_id = $2',
       [avatarUrl, userId]
     );
+    
+    if (result.rowCount === 0) {
+      throw new AppError(404, 'User profile not found - cannot update avatar');
+    }
+    
+    // Log successful avatar update
+    console.log(`✅ Avatar updated for user ${userId}: ${avatarUrl} (${result.rowCount} rows affected)`);
   }
 
   async deleteAvatar(userId: string): Promise<void> {

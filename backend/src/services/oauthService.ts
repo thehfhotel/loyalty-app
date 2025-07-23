@@ -68,7 +68,7 @@ export class OAuthService {
         clientID: googleClientId,
         clientSecret: googleClientSecret,
         callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4000/api/oauth/google/callback'
-      }, async (accessToken: string, refreshToken: string, profile: GoogleProfile, done: any) => {
+      }, async (_accessToken: string, _refreshToken: string, profile: GoogleProfile, done: any) => {
         try {
           const result = await this.handleGoogleAuth(profile);
           return done(null, result);
@@ -93,7 +93,7 @@ export class OAuthService {
         clientSecret: facebookAppSecret,
         callbackURL: process.env.FACEBOOK_CALLBACK_URL || 'http://localhost:4000/api/auth/facebook/callback',
         profileFields: ['id', 'displayName', 'name', 'emails', 'photos']
-      }, async (accessToken: string, refreshToken: string, profile: FacebookProfile, done: any) => {
+      }, async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
         try {
           const result = await this.handleFacebookAuth(profile);
           return done(null, result);
@@ -117,7 +117,7 @@ export class OAuthService {
         channelID: lineChannelId,
         channelSecret: lineChannelSecret,
         callbackURL: process.env.LINE_CALLBACK_URL || 'http://localhost:4000/api/oauth/line/callback'
-      }, async (accessToken: string, refreshToken: string, profile: LineProfile, done: any) => {
+      }, async (_accessToken: string, _refreshToken: string, profile: LineProfile, done: any) => {
         try {
           const result = await this.handleLineAuth(profile);
           return done(null, result);
@@ -177,11 +177,16 @@ export class OAuthService {
       const avatarUrl = profile.photos?.[0]?.value;
 
       if (firstName || lastName || avatarUrl) {
+        // Only update avatar_url if there's no existing local avatar (doesn't start with /storage/)
         await query(
           `UPDATE user_profiles 
            SET first_name = COALESCE(NULLIF($2, ''), first_name),
                last_name = COALESCE(NULLIF($3, ''), last_name),
-               avatar_url = COALESCE(NULLIF($4, ''), avatar_url),
+               avatar_url = CASE 
+                 WHEN avatar_url IS NULL OR NOT avatar_url LIKE '/storage/%' 
+                 THEN COALESCE(NULLIF($4, ''), avatar_url)
+                 ELSE avatar_url 
+               END,
                updated_at = NOW()
            WHERE user_id = $1`,
           [user.id, firstName, lastName, avatarUrl]
@@ -333,11 +338,16 @@ export class OAuthService {
       const avatarUrl = profile.photos?.[0]?.value;
 
       if (firstName || lastName || avatarUrl) {
+        // Only update avatar_url if there's no existing local avatar (doesn't start with /storage/)
         await query(
           `UPDATE user_profiles 
            SET first_name = COALESCE(NULLIF($2, ''), first_name),
                last_name = COALESCE(NULLIF($3, ''), last_name),
-               avatar_url = COALESCE(NULLIF($4, ''), avatar_url),
+               avatar_url = CASE 
+                 WHEN avatar_url IS NULL OR NOT avatar_url LIKE '/storage/%' 
+                 THEN COALESCE(NULLIF($4, ''), avatar_url)
+                 ELSE avatar_url 
+               END,
                updated_at = NOW()
            WHERE user_id = $1`,
           [user.id, firstName, lastName, avatarUrl]
@@ -454,11 +464,16 @@ export class OAuthService {
       const avatarUrl = profile.pictureUrl;
 
       if (firstName || lastName || avatarUrl) {
+        // Only update avatar_url if there's no existing local avatar (doesn't start with /storage/)
         await query(
           `UPDATE user_profiles 
            SET first_name = COALESCE(NULLIF($2, ''), first_name),
                last_name = COALESCE(NULLIF($3, ''), last_name),
-               avatar_url = COALESCE(NULLIF($4, ''), avatar_url),
+               avatar_url = CASE 
+                 WHEN avatar_url IS NULL OR NOT avatar_url LIKE '/storage/%' 
+                 THEN COALESCE(NULLIF($4, ''), avatar_url)
+                 ELSE avatar_url 
+               END,
                updated_at = NOW()
            WHERE user_id = $1`,
           [user.id, firstName, lastName, avatarUrl]

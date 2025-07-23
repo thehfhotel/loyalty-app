@@ -28,9 +28,9 @@ router.get('/profile', async (req, res, next) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
     const profile = await userService.getProfile(req.user.id);
-    res.json({ profile });
+    return res.json({ profile });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -62,28 +62,32 @@ router.post('/avatar', uploadAvatar, async (req, res, next) => {
       throw new AppError(400, 'No file uploaded');
     }
 
+    console.log(`🔄 Processing avatar upload for user ${req.user.id} (${req.user.email})`);
+    console.log(`   File: ${req.file.originalname}, Size: ${req.file.size} bytes`);
+
     try {
-      // Get current user profile to delete old avatar if exists
+      // Get current avatar URL before update (for logging)
       const currentProfile = await userService.getProfile(req.user.id);
-      
-      // Process and save new avatar
-      const avatarPath = await ImageProcessor.processAvatar(
+      console.log(`   Current avatar: ${currentProfile?.avatarUrl || 'None'}`);
+
+      // Process and save new avatar (automatically deletes old one)
+      const avatarUrl = await ImageProcessor.processAvatar(
         req.file.buffer,
-        req.file.originalname
+        req.file.originalname,
+        req.user.id
       );
 
-      // Update user profile with new avatar URL
-      await userService.updateAvatar(req.user.id, avatarPath);
+      console.log(`   New local avatar URL: ${avatarUrl}`);
 
-      // Delete old avatar file if it exists
-      if (currentProfile?.avatarUrl && !currentProfile.avatarUrl.includes('http')) {
-        await ImageProcessor.deleteAvatar(currentProfile.avatarUrl);
-      }
+      // Update user profile with new avatar URL
+      await userService.updateAvatar(req.user.id, avatarUrl);
 
       // Get updated profile
       const updatedProfile = await userService.getProfile(req.user.id);
 
-      res.json({
+      console.log(`✅ Avatar upload completed. Final avatar URL: ${updatedProfile?.avatarUrl}`);
+
+      return res.json({
         success: true,
         message: 'Avatar uploaded successfully',
         data: {
@@ -91,10 +95,11 @@ router.post('/avatar', uploadAvatar, async (req, res, next) => {
         }
       });
     } catch (error) {
+      console.error(`❌ Avatar upload failed for user ${req.user.id}:`, error);
       handleMulterError(error);
     }
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -105,16 +110,11 @@ router.delete('/avatar', async (req, res, next) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    // Get current profile to delete avatar file
-    const currentProfile = await userService.getProfile(req.user.id);
+    // Delete avatar file using simplified API
+    await ImageProcessor.deleteUserAvatar(req.user.id);
     
     // Delete from database
     await userService.deleteAvatar(req.user.id);
-    
-    // Delete file if it exists and is not an external URL
-    if (currentProfile?.avatarUrl && !currentProfile.avatarUrl.includes('http')) {
-      await ImageProcessor.deleteAvatar(currentProfile.avatarUrl);
-    }
 
     res.json({ 
       success: true,
@@ -151,7 +151,7 @@ router.get('/admin/users', requireAdmin, async (req, res, next) => {
 });
 
 // Get user statistics
-router.get('/admin/stats', requireAdmin, async (req, res, next) => {
+router.get('/admin/stats', requireAdmin, async (_req, res, next) => {
   try {
     const stats = await userService.getUserStats();
     res.json({ success: true, data: stats });
