@@ -34,7 +34,8 @@
     "showMore": "Show More",
     "showLess": "Show Less",
     "dismiss": "Dismiss",
-    "noEndDate": "No end date"
+    "noEndDate": "No end date",
+    "saving": "Saving..."
   },
   "auth": {
     "signIn": "Welcome back! Sign in to your account",
@@ -110,7 +111,25 @@
     "admin": "Admin",
     "superAdmin": "Super Admin",
     "loggedInAs": "Logged in as {{email}}",
-    "via": "via {{provider}}"
+    "via": "via {{provider}}",
+    "loading": "Loading profile...",
+    "uploadPhotoTitle": "Upload profile photo",
+    "changePhoto": "Change Photo",
+    "removePhoto": "Remove Photo",
+    "confirmRemovePhoto": "Are you sure you want to remove your profile photo?",
+    "photoUpdated": "Profile photo updated successfully",
+    "photoRemoved": "Profile photo removed successfully",
+    "photoUploadError": "Failed to upload profile photo",
+    "photoRemoveError": "Failed to remove profile photo",
+    "profileLoadError": "Failed to load profile",
+    "profileUpdateError": "Failed to update profile",
+    "profileUpdated": "Profile updated successfully",
+    "invalidImageType": "Please upload a valid image file (JPEG, PNG, GIF, or WebP)",
+    "fileTooLarge": "File size must be less than 5MB",
+    "firstNamePlaceholder": "John",
+    "lastNamePlaceholder": "Doe",
+    "phonePlaceholder": "+1 (555) 123-4567",
+    "accountLinkingDescription2": "Link multiple accounts together to access your data from different login methods."
   },
   "accountLinking": {
     "title": "Account Linking",
@@ -563,7 +582,11 @@
         "noInvitations": "No invitations have been sent for this survey",
         "inviteByEmail": "Invite by Email Address",
         "bulkInvite": "Bulk Invite",
-        "trackingStatus": "Track Invitation Status"
+        "trackingStatus": "Track Invitation Status",
+        "publicSurveyTitle": "This is a Public Survey",
+        "publicSurveyDescription": "Public surveys are automatically available to all users in the app. No invitations are needed - users can find and take this survey directly from their \"Take Survey\" menu.",
+        "publicSurveyType": "Public",
+        "surveyType": "Survey Type"
       }
     }
   },

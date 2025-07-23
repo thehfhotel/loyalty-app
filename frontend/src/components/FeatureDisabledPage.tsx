@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { FiAlertCircle, FiArrowLeft } from 'react-icons/fi';
 
 interface FeatureDisabledPageProps {
@@ -10,10 +11,11 @@ interface FeatureDisabledPageProps {
 
 export default function FeatureDisabledPage({
   featureName,
-  description = 'This feature is currently disabled by the system administrator.',
+  description,
   backLink = '/dashboard',
-  backLinkText = 'Back to Dashboard'
+  backLinkText
 }: FeatureDisabledPageProps) {
+  const { t } = useTranslation();
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
@@ -21,13 +23,13 @@ export default function FeatureDisabledPage({
           <div className="text-center">
             <FiAlertCircle className="mx-auto h-12 w-12 text-orange-500" />
             <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
-              Feature Unavailable
+              {t('featureDisabled.title')}
             </h2>
             <p className="mt-2 text-lg text-gray-600">
               {featureName}
             </p>
             <p className="mt-4 text-sm text-gray-500">
-              {description}
+              {description || t('featureDisabled.description')}
             </p>
           </div>
           
@@ -37,7 +39,7 @@ export default function FeatureDisabledPage({
               className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
             >
               <FiArrowLeft className="mr-2 h-4 w-4" />
-              {backLinkText}
+              {backLinkText || t('featureDisabled.backToDashboard')}
             </Link>
           </div>
         </div>

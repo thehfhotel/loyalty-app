@@ -31,7 +31,8 @@
     "dismiss": "ปิด",
     "noEndDate": "ไม่มีวันสิ้นสุด",
     "close": "ปิด",
-    "important": "สำคัญ"
+    "important": "สำคัญ",
+    "saving": "กำลังบันทึก..."
   },
   "auth": {
     "signIn": "เข้าสู่ระบบบัญชีของคุณ",
@@ -107,7 +108,25 @@
     "admin": "ผู้ดูแลระบบ",
     "superAdmin": "ผู้ดูแลระบบสูงสุด",
     "loggedInAs": "เข้าสู่ระบบในชื่อ {{email}}",
-    "via": "ผ่าน {{provider}}"
+    "via": "ผ่าน {{provider}}",
+    "loading": "กำลังโหลดข้อมูล...",
+    "uploadPhotoTitle": "อัปโหลดรูปโปรไฟล์",
+    "changePhoto": "เปลี่ยนรูป",
+    "removePhoto": "ลบรูป",
+    "confirmRemovePhoto": "คุณแน่ใจหรือไม่ว่าต้องการลบรูปโปรไฟล์ของคุณ?",
+    "photoUpdated": "อัปเดตรูปโปรไฟล์สำเร็จ",
+    "photoRemoved": "ลบรูปโปรไฟล์สำเร็จ",
+    "photoUploadError": "อัปโหลดรูปโปรไฟล์ไม่สำเร็จ",
+    "photoRemoveError": "ลบรูปโปรไฟล์ไม่สำเร็จ",
+    "profileLoadError": "โหลดข้อมูลโปรไฟล์ไม่สำเร็จ",
+    "profileUpdateError": "อัปเดตข้อมูลโปรไฟล์ไม่สำเร็จ",
+    "profileUpdated": "อัปเดตข้อมูลโปรไฟล์สำเร็จ",
+    "invalidImageType": "กรุณาอัปโหลดไฟล์รูปภาพที่ถูกต้อง (JPEG, PNG, GIF หรือ WebP)",
+    "fileTooLarge": "ขนาดไฟล์ต้องไม่เกิน 5MB",
+    "firstNamePlaceholder": "ชื่อ",
+    "lastNamePlaceholder": "นามสกุล",
+    "phonePlaceholder": "+66 (0) 12-345-6789",
+    "accountLinkingDescription2": "เชื่อมโยงหลายบัญชีเข้าด้วยกันเพื่อเข้าถึงข้อมูลของคุณจากวิธีการเข้าสู่ระบบที่แตกต่างกัน"
   },
   "accountLinking": {
     "title": "การเชื่อมโยงบัญชี",
@@ -581,7 +600,11 @@
         "inviteUsers": "เชิญผู้ใช้",
         "selectUsers": "เลือกผู้ใช้",
         "invitationsSent": "ส่งคำเชิญไปยัง {{count}} ผู้ใช้",
-        "noInvitations": "ยังไม่ได้ส่งคำเชิญ"
+        "noInvitations": "ยังไม่ได้ส่งคำเชิญ",
+        "publicSurveyTitle": "นี่คือแบบสำรวจสาธารณะ",
+        "publicSurveyDescription": "แบบสำรวจสาธารณะสามารถใช้งานได้อัตโนมัติสำหรับผู้ใช้ทุกคนในแอป ไม่จำเป็นต้องมีคำเชิญ - ผู้ใช้สามารถค้นหาและทำแบบสำรวจนี้ได้โดยตรงจากเมนู \"ทำแบบสำรวจ\" ของตน",
+        "publicSurveyType": "สาธารณะ",
+        "surveyType": "ประเภทแบบสำรวจ"
       }
     }
   },

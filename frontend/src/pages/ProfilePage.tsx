@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useTranslation } from 'react-i18next';
 import { userService, UserProfile } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
@@ -21,8 +22,10 @@ const profileSchema = z.object({
 type ProfileFormData = z.infer<typeof profileSchema>;
 
 export default function ProfilePage() {
+  const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const updateUser = useAuthStore((state) => state.updateUser);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -58,7 +61,7 @@ export default function ProfilePage() {
           : '',
       });
     } catch (error: any) {
-      notify.error('Failed to load profile');
+      notify.error(t('profile.profileLoadError'));
       console.error('Profile load error:', error);
     } finally {
       setIsLoading(false);
@@ -75,9 +78,9 @@ export default function ProfilePage() {
         dateOfBirth: data.dateOfBirth || undefined,
       });
       setProfile(updatedProfile);
-      notify.success('Profile updated successfully');
+      notify.success(t('profile.profileUpdated'));
     } catch (error: any) {
-      notify.error(error.response?.data?.error || 'Failed to update profile');
+      notify.error(error.response?.data?.error || t('profile.profileUpdateError'));
     } finally {
       setIsSaving(false);
     }
@@ -90,14 +93,14 @@ export default function ProfilePage() {
     // Validate file type
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
-      notify.error('Please upload a valid image file (JPEG, PNG, GIF, or WebP)');
+      notify.error(t('profile.invalidImageType'));
       return;
     }
 
     // Validate file size (5MB)
     const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
-      notify.error('File size must be less than 5MB');
+      notify.error(t('profile.fileTooLarge'));
       return;
     }
 
@@ -112,11 +115,14 @@ export default function ProfilePage() {
           ...profile,
           avatarUrl: response.data.avatarUrl
         });
+        
+        // Update auth store to persist avatar across restarts
+        updateUser({ avatarUrl: response.data.avatarUrl });
       }
       
-      notify.success('Profile photo updated successfully');
+      notify.success(t('profile.photoUpdated'));
     } catch (error: any) {
-      notify.error(error.response?.data?.error || 'Failed to upload profile photo');
+      notify.error(error.response?.data?.error || t('profile.photoUploadError'));
     } finally {
       setUploadingAvatar(false);
       // Reset file input
@@ -127,7 +133,7 @@ export default function ProfilePage() {
   };
 
   const handleDeleteAvatar = async () => {
-    if (!confirm('Are you sure you want to remove your profile photo?')) {
+    if (!confirm(t('profile.confirmRemovePhoto'))) {
       return;
     }
 
@@ -141,11 +147,14 @@ export default function ProfilePage() {
           ...profile,
           avatarUrl: undefined
         });
+        
+        // Update auth store to persist removal across restarts
+        updateUser({ avatarUrl: undefined });
       }
       
-      notify.success('Profile photo removed successfully');
+      notify.success(t('profile.photoRemoved'));
     } catch (error: any) {
-      notify.error(error.response?.data?.error || 'Failed to remove profile photo');
+      notify.error(error.response?.data?.error || t('profile.photoRemoveError'));
     } finally {
       setUploadingAvatar(false);
     }
@@ -156,7 +165,7 @@ export default function ProfilePage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
-          <p className="mt-4 text-gray-600">Loading profile...</p>
+          <p className="mt-4 text-gray-600">{t('profile.loading')}</p>
         </div>
       </div>
     );
@@ -169,16 +178,16 @@ export default function ProfilePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center">
-              <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
+              <h1 className="text-3xl font-bold text-gray-900">{t('profile.title')}</h1>
             </div>
             <div className="flex items-center space-x-4">
               <DashboardButton variant="outline" size="md" />
               <div className="flex items-center space-x-2">
                 <span className="text-sm text-gray-500">
-                  Logged in as {getUserDisplayName(user)}
+                  {t('profile.loggedInAs', { email: getUserDisplayName(user) })}
                   {isOAuthUser(user) && (
                     <span className="ml-1 text-xs text-gray-400">
-                      via {getOAuthProviderName(user)}
+                      {t('profile.via', { provider: getOAuthProviderName(user) })}
                     </span>
                   )}
                 </span>
@@ -190,9 +199,9 @@ export default function ProfilePage() {
                       ? 'bg-blue-100 text-blue-800'
                       : 'bg-gray-100 text-gray-800'
                   }`}>
-                    {user.role === 'super_admin' ? 'Super Admin' : 
-                     user.role === 'admin' ? 'Admin' : 
-                     'Staff'}
+                    {user.role === 'super_admin' ? t('profile.superAdmin') : 
+                     user.role === 'admin' ? t('profile.admin') : 
+                     t('profile.staff')}
                   </span>
                 )}
               </div>
@@ -200,7 +209,7 @@ export default function ProfilePage() {
                 onClick={logout}
                 className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
               >
-                Logout
+                {t('common.logout')}
               </button>
             </div>
           </div>
@@ -231,7 +240,7 @@ export default function ProfilePage() {
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadingAvatar}
                   className="absolute bottom-0 right-0 bg-primary-600 text-white rounded-full p-1 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Upload profile photo"
+                  title={t('profile.uploadPhotoTitle')}
                 >
                   <FiCamera className="h-4 w-4" />
                 </button>
@@ -256,9 +265,9 @@ export default function ProfilePage() {
                         ? 'bg-blue-100 text-blue-800'
                         : 'bg-gray-100 text-gray-800'
                     }`}>
-                      {user.role === 'super_admin' ? 'Super Admin' : 
-                       user.role === 'admin' ? 'Admin' : 
-                       'Staff'}
+                      {user.role === 'super_admin' ? t('profile.superAdmin') : 
+                       user.role === 'admin' ? t('profile.admin') : 
+                       t('profile.staff')}
                     </span>
                   )}
                 </div>
@@ -268,7 +277,7 @@ export default function ProfilePage() {
                     disabled={uploadingAvatar}
                     className="text-sm text-primary-600 hover:text-primary-700 disabled:opacity-50"
                   >
-                    {profile?.avatarUrl ? 'Change Photo' : 'Upload Photo'}
+                    {profile?.avatarUrl ? t('profile.changePhoto') : t('profile.uploadPhoto')}
                   </button>
                   {profile?.avatarUrl && (
                     <button
@@ -276,12 +285,12 @@ export default function ProfilePage() {
                       disabled={uploadingAvatar}
                       className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50"
                     >
-                      Remove Photo
+                      {t('profile.removePhoto')}
                     </button>
                   )}
                 </div>
                 <p className="text-sm text-gray-500 mt-2">
-                  Member since {profile ? new Date(profile.createdAt).toLocaleDateString() : '...'}
+                  {t('profile.memberSince')} {profile ? new Date(profile.createdAt).toLocaleDateString() : '...'}
                 </p>
               </div>
             </div>
@@ -291,7 +300,7 @@ export default function ProfilePage() {
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 <div>
                   <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
-                    First Name
+                    {t('auth.firstName')}
                   </label>
                   <div className="mt-1 relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -302,7 +311,7 @@ export default function ProfilePage() {
                       id="firstName"
                       type="text"
                       className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                      placeholder="John"
+                      placeholder={t('profile.firstNamePlaceholder')}
                     />
                   </div>
                   {errors.firstName && (
@@ -312,7 +321,7 @@ export default function ProfilePage() {
 
                 <div>
                   <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
-                    Last Name
+                    {t('auth.lastName')}
                   </label>
                   <div className="mt-1 relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -323,7 +332,7 @@ export default function ProfilePage() {
                       id="lastName"
                       type="text"
                       className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                      placeholder="Doe"
+                      placeholder={t('profile.lastNamePlaceholder')}
                     />
                   </div>
                   {errors.lastName && (
@@ -334,7 +343,7 @@ export default function ProfilePage() {
 
               <div>
                 <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
-                  Phone Number
+                  {t('auth.phone')}
                 </label>
                 <div className="mt-1 relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -345,7 +354,7 @@ export default function ProfilePage() {
                     id="phone"
                     type="tel"
                     className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                    placeholder="+1 (555) 123-4567"
+                    placeholder={t('profile.phonePlaceholder')}
                   />
                 </div>
                 {errors.phone && (
@@ -355,7 +364,7 @@ export default function ProfilePage() {
 
               <div>
                 <label htmlFor="dateOfBirth" className="block text-sm font-medium text-gray-700">
-                  Date of Birth
+                  {t('profile.dateOfBirth')}
                 </label>
                 <div className="mt-1 relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -378,14 +387,14 @@ export default function ProfilePage() {
                   to="/dashboard"
                   className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Link>
                 <button
                   type="submit"
                   disabled={isSaving}
                   className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isSaving ? 'Saving...' : 'Save Changes'}
+                  {isSaving ? t('common.saving') : t('common.save')}
                 </button>
               </div>
             </form>
@@ -397,17 +406,17 @@ export default function ProfilePage() {
           <div className="mt-6 bg-white shadow rounded-lg">
             <div className="px-4 py-5 sm:p-6">
               <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                Account Linking
+                {t('profile.accountLinking')}
               </h3>
               <p className="text-sm text-gray-600 mb-6">
-                Link multiple accounts together to access your data from different login methods.
+                {t('profile.accountLinkingDescription2')}
               </p>
               <Link
                 to="/account-linking"
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 <FiLink className="mr-2 h-4 w-4" />
-                Manage Account Links
+                {t('profile.manageAccountLinks')}
               </Link>
             </div>
           </div>

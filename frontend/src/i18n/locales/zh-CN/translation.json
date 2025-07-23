@@ -34,7 +34,8 @@
     "showMore": "显示更多",
     "showLess": "显示更少",
     "dismiss": "忽略",
-    "noEndDate": "无截止日期"
+    "noEndDate": "无截止日期",
+    "saving": "保存中..."
   },
   "auth": {
     "signIn": "欢迎回来！请登录您的账户",
@@ -110,7 +111,25 @@
     "admin": "管理员",
     "superAdmin": "超级管理员",
     "loggedInAs": "当前登录：{{email}}",
-    "via": "通过 {{provider}}"
+    "via": "通过 {{provider}}",
+    "loading": "加载个人资料中...",
+    "uploadPhotoTitle": "上传头像",
+    "changePhoto": "更换头像",
+    "removePhoto": "删除头像",
+    "confirmRemovePhoto": "您确定要删除头像吗？",
+    "photoUpdated": "头像更新成功",
+    "photoRemoved": "头像删除成功",
+    "photoUploadError": "头像上传失败",
+    "photoRemoveError": "头像删除失败",
+    "profileLoadError": "加载个人资料失败",
+    "profileUpdateError": "更新个人资料失败",
+    "profileUpdated": "个人资料更新成功",
+    "invalidImageType": "请上传有效的图片文件（JPEG、PNG、GIF 或 WebP）",
+    "fileTooLarge": "文件大小不能超过 5MB",
+    "firstNamePlaceholder": "张",
+    "lastNamePlaceholder": "三",
+    "phonePlaceholder": "+86 138-0013-8000",
+    "accountLinkingDescription2": "关联多个账户以通过不同的登录方式访问您的数据"
   },
   "accountLinking": {
     "title": "账户关联",
@@ -564,7 +583,11 @@
         "noInvitations": "此调研尚未发送邀请",
         "inviteByEmail": "通过邮箱地址邀请",
         "bulkInvite": "批量邀请",
-        "trackingStatus": "跟踪邀请状态"
+        "trackingStatus": "跟踪邀请状态",
+        "publicSurveyTitle": "这是公开调研",
+        "publicSurveyDescription": "公开调研对应用中的所有用户自动可用。无需邀请 - 用户可以直接从他们的\"参与调研\"菜单中找到并参与此调研。",
+        "publicSurveyType": "公开",
+        "surveyType": "调研类型"
       }
     }
   },

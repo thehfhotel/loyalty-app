@@ -278,15 +278,13 @@ const SurveyInvitations: React.FC = () => {
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center">
               <FiUsers className="mx-auto h-12 w-12 text-blue-600 mb-4" />
               <h3 className="text-lg font-medium text-blue-900 mb-2">
-                This is a Public Survey
+                {t('surveys.admin.invitations.publicSurveyTitle')}
               </h3>
               <p className="text-blue-800 mb-4">
-                Public surveys are automatically available to all users in the app. 
-                No invitations are needed - users can find and take this survey directly 
-                from their "Take Survey" menu.
+                {t('surveys.admin.invitations.publicSurveyDescription')}
               </p>
               <div className="space-y-2 text-sm text-blue-700">
-                <p><strong>Survey Type:</strong> Public</p>
+                <p><strong>{t('surveys.admin.invitations.surveyType')}:</strong> {t('surveys.admin.invitations.publicSurveyType')}</p>
                 <p><strong>Status:</strong> {survey.status}</p>
                 <p><strong>Questions:</strong> {survey.questions.length}</p>
                 <p><strong>Availability:</strong> All users can access this survey</p>

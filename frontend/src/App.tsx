@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from './store/authStore';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
@@ -33,6 +34,7 @@ import { useEffect, useState } from 'react';
 import { useFeatureToggle, FEATURE_KEYS } from './hooks/useFeatureToggle';
 
 function App() {
+  const { t } = useTranslation();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [isInitialized, setIsInitialized] = useState(false);
   
@@ -205,8 +207,7 @@ function App() {
                 <AccountLinkingPage />
               ) : (
                 <FeatureDisabledPage
-                  featureName="Account Linking"
-                  description="Account linking is currently disabled by the system administrator. Please contact support if you need this feature enabled."
+                  featureName={t('profile.accountLinking')}
                 />
               )}
             </ProtectedRoute>
