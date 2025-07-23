@@ -190,7 +190,7 @@ const SurveyList: React.FC = () => {
               >
                 <div className="flex items-center">
                   <FiUsers className="mr-2 h-4 w-4" />
-                  Public Surveys ({publicSurveys.length})
+                  {t('surveys.tabs.public')} {t('surveys.title')} ({publicSurveys.length})
                 </div>
               </button>
               <button
@@ -203,7 +203,7 @@ const SurveyList: React.FC = () => {
               >
                 <div className="flex items-center">
                   <FiEye className="mr-2 h-4 w-4" />
-                  Invited Surveys ({invitedSurveys.length})
+                  {t('surveys.tabs.invited')} {t('surveys.title')} ({invitedSurveys.length})
                 </div>
               </button>
             </nav>

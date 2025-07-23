@@ -35,7 +35,10 @@
     "showLess": "显示更少",
     "dismiss": "忽略",
     "noEndDate": "无截止日期",
-    "saving": "保存中..."
+    "saving": "保存中...",
+    "active": "激活",
+    "inactive": "未激活",
+    "remove": "移除"
   },
   "auth": {
     "signIn": "欢迎回来！请登录您的账户",
@@ -439,7 +442,34 @@
     "expired": "已过期",
     "expiresToday": "今天过期",
     "expiresTomorrow": "明天过期",
-    "expiresInDays": "{{count}} 天后过期"
+    "expiresInDays": "{{count}} 天后过期",
+    "coupon": "优惠券",
+    "freeUpgrade": "免费升级",
+    "freeService": "免费服务",
+    "couponCodeCopied": "优惠券代码已复制！",
+    "generatingQR": "生成二维码中...",
+    "qrError": "生成二维码失败",
+    "couponCode": "优惠券代码"
+  },
+  "errors": {
+    "failedToLoadCoupons": "无法加载您的优惠券。请尝试刷新页面。",
+    "validationFailed": "无法验证此优惠券。请检查代码并重试。",
+    "redemptionFailed": "目前无法使用此优惠券。如果问题仍然存在，请联系客服。",
+    "notFound": "页面未找到",
+    "notFoundDescription": "您查找的页面不存在或已被移动。",
+    "unauthorized": "访问被拒绝",
+    "unauthorizedDescription": "您无权访问此页面。请使用适当的凭据登录。",
+    "forbidden": "禁止访问",
+    "serverError": "出现问题",
+    "serverErrorDescription": "我们遇到了技术问题。我们的团队已经收到通知。",
+    "networkError": "连接问题",
+    "networkErrorDescription": "请检查您的网络连接并重试。",
+    "unknownError": "意外错误",
+    "unknownErrorDescription": "发生了意外情况。请重试或联系客服如果问题仍然存在。",
+    "tryAgain": "重试",
+    "goHome": "返回仪表板",
+    "contactSupport": "联系客服",
+    "error": "发生错误"
   },
   "navigation": {
     "dashboard": "仪表板",
@@ -462,6 +492,7 @@
   "surveys": {
     "title": "客户调研",
     "subtitle": "通过分享您的反馈帮助我们改进 - 您可以随时重新参与调研！",
+    "untitled": "无标题调研",
     "loading": "加载可用调研中...",
     "noSurveys": "暂无调研",
     "noPublicSurveys": "目前没有可用的调研。有新调研时我们会通知您！",
@@ -477,6 +508,10 @@
     "saving": "保存您的回答中...",
     "backToList": "← 返回所有调研",
     "notFound": "未找到调研",
+    "of": "的",
+    "progressSaved": "进度已保存",
+    "enterAnswer": "请输入您的答案",
+    "unknownQuestionType": "未知题型",
     "timeEstimate": "预估时间：{{minutes}} 分钟",
     "responseCount": "目前已有 {{count}} 份回答",
     "errors": {
@@ -504,6 +539,27 @@
       "rating_5": "五星评分",
       "rating_10": "十分制评分",
       "yes_no": "是/否"
+    },
+    "rewardHistory": {
+      "title": "调研奖励历史",
+      "description": "跟踪完成此调研时自动发放的所有优惠券",
+      "searchPlaceholder": "按用户、邮箱或优惠券搜索...",
+      "noRewardsAwarded": "暂未发放任何奖励",
+      "noRewardsMatch": "没有奖励匹配您的搜索",
+      "couponsWillAppear": "用户完成调研后优惠券将显示在这里",
+      "tryAdjustingSearch": "请尝试调整搜索条件",
+      "viewDetails": "查看详情",
+      "awarded": "已发放",
+      "page": "第",
+      "of": "页，共",
+      "previous": "上一页",
+      "next": "下一页"
+    },
+    "tabs": {
+      "public": "公开",
+      "invited": "受邀",
+      "publicDescription": "对所有用户开放的调研",
+      "invitedDescription": "您被特别邀请参与的调研"
     },
     "admin": {
       "title": "调研管理控制台",
@@ -588,6 +644,40 @@
         "publicSurveyDescription": "公开调研对应用中的所有用户自动可用。无需邀请 - 用户可以直接从他们的\"参与调研\"菜单中找到并参与此调研。",
         "publicSurveyType": "公开",
         "surveyType": "调研类型"
+      },
+      "couponAssignment": {
+        "title": "调研奖励",
+        "description": "分配用户完成此调研时自动获得的优惠券",
+        "assignCoupon": "分配优惠券奖励",
+        "editAssignment": "编辑优惠券分配",
+        "selectCoupon": "选择要分配的优惠券",
+        "noAvailableCoupons": "没有可分配的活跃优惠券",
+        "rewardCondition": "奖励条件",
+        "alwaysOnCompletion": "用户完成调研时（100%回答）将自动获得优惠券。",
+        "awardedOnCompletion": "完成后获得",
+        "maxAwards": "最大奖励数量",
+        "unlimited": "无限制",
+        "maxAwardsHelp": "留空表示无限奖励，或设置总奖励上限",
+        "customExpiry": "自定义过期时间（天）",
+        "useCouponExpiry": "使用优惠券的过期日期",
+        "customExpiryHelp": "从奖励日期开始用自定义时长覆盖优惠券的过期时间",
+        "reason": "分配原因",
+        "reasonPlaceholder": "为什么要将此优惠券分配给此调研？",
+        "assign": "分配优惠券",
+        "update": "更新分配",
+        "remove": "移除分配",
+        "awarded": "已奖励",
+        "completed": "已完成",
+        "noAssignments": "未分配优惠券奖励",
+        "noAssignmentsHelp": "分配优惠券以自动奖励完成此调研的用户",
+        "confirmRemove": "您确定要移除此优惠券分配吗？用户将不再因完成调研而获得此奖励。",
+        "loadError": "加载优惠券分配失败",
+        "assignSuccess": "优惠券已成功分配给调研",
+        "assignError": "分配优惠券给调研失败",
+        "updateSuccess": "优惠券分配更新成功",
+        "updateError": "更新优惠券分配失败",
+        "removeSuccess": "优惠券分配移除成功",
+        "removeError": "移除优惠券分配失败"
       }
     }
   },

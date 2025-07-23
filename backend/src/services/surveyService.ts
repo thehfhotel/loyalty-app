@@ -8,7 +8,12 @@ import {
   SubmitResponseRequest,
   // SurveyAnalytics,
   QuestionAnalytics,
-  TargetSegment
+  TargetSegment,
+  SurveyCouponAssignment,
+  SurveyRewardHistory,
+  AssignCouponToSurveyRequest,
+  UpdateSurveyCouponAssignmentRequest,
+  SurveyCouponAssignmentListResponse
 } from '../types/survey';
 
 export class SurveyService {
@@ -877,6 +882,362 @@ export class SurveyService {
 
       const result = await client.query(query, params);
       return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  // ===== Survey Coupon Assignment Methods =====
+
+  // Assign coupon to survey (always awarded on completion)
+  async assignCouponToSurvey(data: AssignCouponToSurveyRequest, assignedBy: string): Promise<SurveyCouponAssignment> {
+    const client = await getPool().connect();
+    try {
+      const result = await client.query(
+        `SELECT assign_coupon_to_survey($1, $2, $3, $4, $5, $6) as assignment_id`,
+        [
+          data.survey_id,
+          data.coupon_id,
+          assignedBy,
+          data.max_awards || null,
+          data.custom_expiry_days || null,
+          data.assigned_reason || 'Survey completion reward'
+        ]
+      );
+
+      const assignmentId = result.rows[0].assignment_id;
+
+      // Get the created assignment
+      const assignmentResult = await client.query(
+        `SELECT * FROM survey_coupon_assignments WHERE id = $1`,
+        [assignmentId]
+      );
+
+      const assignment = assignmentResult.rows[0];
+      return {
+        id: assignment.id,
+        survey_id: assignment.survey_id,
+        coupon_id: assignment.coupon_id,
+        is_active: assignment.is_active,
+        max_awards: assignment.max_awards,
+        awarded_count: assignment.awarded_count,
+        assigned_by: assignment.assigned_by,
+        assigned_reason: assignment.assigned_reason,
+        custom_expiry_days: assignment.custom_expiry_days,
+        created_at: assignment.created_at,
+        updated_at: assignment.updated_at
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get survey coupon assignments with details
+  async getSurveyCouponAssignments(
+    surveyId: string,
+    page = 1,
+    limit = 20
+  ): Promise<SurveyCouponAssignmentListResponse> {
+    const client = await getPool().connect();
+    try {
+      const offset = (page - 1) * limit;
+
+      // Get total count
+      const countResult = await client.query(
+        'SELECT COUNT(*) FROM survey_coupon_details WHERE survey_id = $1',
+        [surveyId]
+      );
+
+      const total = parseInt(countResult.rows[0].count);
+
+      // Get assignments
+      const assignmentsResult = await client.query(
+        `SELECT * FROM survey_coupon_details 
+         WHERE survey_id = $1 
+         ORDER BY assigned_at DESC 
+         LIMIT $2 OFFSET $3`,
+        [surveyId, limit, offset]
+      );
+
+      const assignments = assignmentsResult.rows.map(row => ({
+        assignment_id: row.assignment_id,
+        survey_id: row.survey_id,
+        survey_title: row.survey_title,
+        survey_status: row.survey_status,
+        coupon_id: row.coupon_id,
+        coupon_code: row.coupon_code,
+        coupon_name: row.coupon_name,
+        coupon_type: row.coupon_type,
+        coupon_value: row.coupon_value,
+        coupon_currency: row.coupon_currency,
+        coupon_status: row.coupon_status,
+        is_active: row.is_active,
+        award_condition: row.award_condition,
+        max_awards: row.max_awards,
+        awarded_count: row.awarded_count,
+        custom_expiry_days: row.custom_expiry_days,
+        assigned_reason: row.assigned_reason,
+        assigned_by: row.assigned_by,
+        assigned_by_email: row.assigned_by_email,
+        assigned_at: row.assigned_at,
+        updated_at: row.updated_at
+      }));
+
+      return {
+        assignments,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Update survey coupon assignment
+  async updateSurveyCouponAssignment(
+    surveyId: string,
+    couponId: string,
+    data: UpdateSurveyCouponAssignmentRequest
+  ): Promise<SurveyCouponAssignment | null> {
+    const client = await getPool().connect();
+    try {
+      const updateFields: string[] = [];
+      const values: any[] = [surveyId, couponId];
+      let paramIndex = 3;
+
+      // Note: award_condition is no longer needed - coupons always awarded on completion
+      if (data.max_awards !== undefined) {
+        updateFields.push(`max_awards = $${paramIndex}`);
+        values.push(data.max_awards);
+        paramIndex++;
+      }
+      if (data.custom_expiry_days !== undefined) {
+        updateFields.push(`custom_expiry_days = $${paramIndex}`);
+        values.push(data.custom_expiry_days);
+        paramIndex++;
+      }
+      if (data.assigned_reason !== undefined) {
+        updateFields.push(`assigned_reason = $${paramIndex}`);
+        values.push(data.assigned_reason);
+        paramIndex++;
+      }
+      if (data.is_active !== undefined) {
+        updateFields.push(`is_active = $${paramIndex}`);
+        values.push(data.is_active);
+        paramIndex++;
+      }
+
+      if (updateFields.length === 0) {
+        // No updates, just return current assignment
+        const result = await client.query(
+          'SELECT * FROM survey_coupon_assignments WHERE survey_id = $1 AND coupon_id = $2',
+          [surveyId, couponId]
+        );
+        return result.rows.length > 0 ? result.rows[0] : null;
+      }
+
+      updateFields.push('updated_at = NOW()');
+
+      const result = await client.query(
+        `UPDATE survey_coupon_assignments 
+         SET ${updateFields.join(', ')} 
+         WHERE survey_id = $1 AND coupon_id = $2 
+         RETURNING *`,
+        values
+      );
+
+      if (result.rows.length === 0) return null;
+
+      const assignment = result.rows[0];
+      return {
+        id: assignment.id,
+        survey_id: assignment.survey_id,
+        coupon_id: assignment.coupon_id,
+        is_active: assignment.is_active,
+        max_awards: assignment.max_awards,
+        awarded_count: assignment.awarded_count,
+        assigned_by: assignment.assigned_by,
+        assigned_reason: assignment.assigned_reason,
+        custom_expiry_days: assignment.custom_expiry_days,
+        created_at: assignment.created_at,
+        updated_at: assignment.updated_at
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Remove coupon assignment from survey
+  async removeCouponFromSurvey(surveyId: string, couponId: string, removedBy: string): Promise<boolean> {
+    const client = await getPool().connect();
+    try {
+      const result = await client.query(
+        'SELECT remove_coupon_from_survey($1, $2, $3) as removed',
+        [surveyId, couponId, removedBy]
+      );
+
+      return result.rows[0].removed;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get survey reward history
+  async getSurveyRewardHistory(
+    surveyId: string,
+    page = 1,
+    limit = 20
+  ): Promise<{ rewards: SurveyRewardHistory[]; total: number; totalPages: number }> {
+    const client = await getPool().connect();
+    try {
+      const offset = (page - 1) * limit;
+
+      // Get total count
+      const countResult = await client.query(
+        `SELECT COUNT(*) FROM survey_reward_history srh
+         JOIN survey_coupon_assignments sca ON srh.survey_coupon_assignment_id = sca.id
+         WHERE sca.survey_id = $1`,
+        [surveyId]
+      );
+
+      const total = parseInt(countResult.rows[0].count);
+
+      // Get reward history
+      const rewardsResult = await client.query(
+        `SELECT srh.*, u.email as user_email, up.first_name, up.last_name,
+                c.code as coupon_code, c.name as coupon_name
+         FROM survey_reward_history srh
+         JOIN survey_coupon_assignments sca ON srh.survey_coupon_assignment_id = sca.id
+         JOIN users u ON srh.user_id = u.id
+         LEFT JOIN user_profiles up ON u.id = up.user_id
+         JOIN coupons c ON sca.coupon_id = c.id
+         WHERE sca.survey_id = $1
+         ORDER BY srh.awarded_at DESC
+         LIMIT $2 OFFSET $3`,
+        [surveyId, limit, offset]
+      );
+
+      const rewards = rewardsResult.rows.map(row => ({
+        id: row.id,
+        survey_coupon_assignment_id: row.survey_coupon_assignment_id,
+        survey_response_id: row.survey_response_id,
+        user_coupon_id: row.user_coupon_id,
+        user_id: row.user_id,
+        awarded_at: row.awarded_at,
+        award_condition_met: row.award_condition_met,
+        metadata: row.metadata,
+        created_at: row.created_at,
+        // Additional fields for display
+        user_email: row.user_email,
+        user_name: [row.first_name, row.last_name].filter(Boolean).join(' ') || '',
+        coupon_code: row.coupon_code,
+        coupon_name: row.coupon_name
+      }));
+
+      return {
+        rewards,
+        total,
+        totalPages: Math.ceil(total / limit)
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get all coupon assignments across surveys (admin overview)
+  async getAllSurveyCouponAssignments(
+    page = 1,
+    limit = 20,
+    filters: {
+      survey_id?: string;
+      coupon_id?: string;
+      is_active?: boolean;
+      assigned_by?: string;
+    } = {}
+  ): Promise<SurveyCouponAssignmentListResponse> {
+    const client = await getPool().connect();
+    try {
+      const offset = (page - 1) * limit;
+      const whereConditions: string[] = [];
+      const whereValues: any[] = [];
+      let paramIndex = 1;
+
+      if (filters.survey_id) {
+        whereConditions.push(`survey_id = $${paramIndex}`);
+        whereValues.push(filters.survey_id);
+        paramIndex++;
+      }
+
+      if (filters.coupon_id) {
+        whereConditions.push(`coupon_id = $${paramIndex}`);
+        whereValues.push(filters.coupon_id);
+        paramIndex++;
+      }
+
+      if (filters.is_active !== undefined) {
+        whereConditions.push(`is_active = $${paramIndex}`);
+        whereValues.push(filters.is_active);
+        paramIndex++;
+      }
+
+      if (filters.assigned_by) {
+        whereConditions.push(`assigned_by = $${paramIndex}`);
+        whereValues.push(filters.assigned_by);
+        paramIndex++;
+      }
+
+      const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+      // Get total count
+      const countResult = await client.query(
+        `SELECT COUNT(*) FROM survey_coupon_details ${whereClause}`,
+        whereValues
+      );
+
+      const total = parseInt(countResult.rows[0].count);
+
+      // Get assignments
+      const assignmentsResult = await client.query(
+        `SELECT * FROM survey_coupon_details 
+         ${whereClause}
+         ORDER BY assigned_at DESC 
+         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+        [...whereValues, limit, offset]
+      );
+
+      const assignments = assignmentsResult.rows.map(row => ({
+        assignment_id: row.assignment_id,
+        survey_id: row.survey_id,
+        survey_title: row.survey_title,
+        survey_status: row.survey_status,
+        coupon_id: row.coupon_id,
+        coupon_code: row.coupon_code,
+        coupon_name: row.coupon_name,
+        coupon_type: row.coupon_type,
+        coupon_value: row.coupon_value,
+        coupon_currency: row.coupon_currency,
+        coupon_status: row.coupon_status,
+        is_active: row.is_active,
+        award_condition: row.award_condition,
+        max_awards: row.max_awards,
+        awarded_count: row.awarded_count,
+        custom_expiry_days: row.custom_expiry_days,
+        assigned_reason: row.assigned_reason,
+        assigned_by: row.assigned_by,
+        assigned_by_email: row.assigned_by_email,
+        assigned_at: row.assigned_at,
+        updated_at: row.updated_at
+      }));
+
+      return {
+        assignments,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      };
     } finally {
       client.release();
     }

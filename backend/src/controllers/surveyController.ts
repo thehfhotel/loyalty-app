@@ -1,6 +1,12 @@
 import { Request, Response } from 'express';
 import { surveyService } from '../services/surveyService';
-import { CreateSurveyRequest, UpdateSurveyRequest, SubmitResponseRequest } from '../types/survey';
+import { 
+  CreateSurveyRequest, 
+  UpdateSurveyRequest, 
+  SubmitResponseRequest,
+  AssignCouponToSurveyRequest,
+  UpdateSurveyCouponAssignmentRequest 
+} from '../types/survey';
 import { logger } from '../utils/logger';
 
 export class SurveyController {
@@ -557,6 +563,198 @@ export class SurveyController {
     } catch (error: any) {
       logger.error('Error resending invitation:', error);
       res.status(500).json({ message: 'Failed to resend invitation', error: error.message });
+    }
+  }
+
+  // ===== Survey Coupon Assignment Controllers =====
+
+  // Assign coupon to survey (Admin only)
+  async assignCouponToSurvey(req: Request, res: Response): Promise<void> {
+    try {
+      const { user } = req as any;
+      
+      // Check if user is admin
+      if (!user || !['admin', 'super_admin'].includes(user.role)) {
+        res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+        return;
+      }
+
+      const assignmentData: AssignCouponToSurveyRequest = req.body;
+
+      // Validate required fields
+      if (!assignmentData.survey_id) {
+        res.status(400).json({ message: 'Survey ID is required' });
+        return;
+      }
+
+      if (!assignmentData.coupon_id) {
+        res.status(400).json({ message: 'Coupon ID is required' });
+        return;
+      }
+
+      // Note: Coupons are always awarded on survey completion
+
+      // Validate numeric fields if provided
+      if (assignmentData.max_awards !== undefined && assignmentData.max_awards < 1) {
+        res.status(400).json({ message: 'Max awards must be a positive number' });
+        return;
+      }
+
+      if (assignmentData.custom_expiry_days !== undefined && assignmentData.custom_expiry_days < 1) {
+        res.status(400).json({ message: 'Custom expiry days must be a positive number' });
+        return;
+      }
+
+      const assignment = await surveyService.assignCouponToSurvey(assignmentData, user.id);
+      res.status(201).json({ assignment });
+    } catch (error: any) {
+      logger.error('Error assigning coupon to survey:', error);
+      if (error.message.includes('not found')) {
+        res.status(404).json({ message: error.message });
+      } else if (error.message.includes('not active')) {
+        res.status(400).json({ message: error.message });
+      } else {
+        res.status(500).json({ message: 'Failed to assign coupon', error: error.message });
+      }
+    }
+  }
+
+  // Get survey coupon assignments (Admin only)
+  async getSurveyCouponAssignments(req: Request, res: Response): Promise<void> {
+    try {
+      const { user } = req as any;
+      const { surveyId } = req.params;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      
+      // Check if user is admin
+      if (!user || !['admin', 'super_admin'].includes(user.role)) {
+        res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+        return;
+      }
+
+      const result = await surveyService.getSurveyCouponAssignments(surveyId, page, limit);
+      res.json(result);
+    } catch (error: any) {
+      logger.error('Error fetching survey coupon assignments:', error);
+      res.status(500).json({ message: 'Failed to fetch assignments', error: error.message });
+    }
+  }
+
+  // Update survey coupon assignment (Admin only)
+  async updateSurveyCouponAssignment(req: Request, res: Response): Promise<void> {
+    try {
+      const { user } = req as any;
+      const { surveyId, couponId } = req.params;
+      
+      // Check if user is admin
+      if (!user || !['admin', 'super_admin'].includes(user.role)) {
+        res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+        return;
+      }
+
+      const updateData: UpdateSurveyCouponAssignmentRequest = req.body;
+
+      // Note: Coupons are always awarded on survey completion
+
+      // Validate numeric fields if provided
+      if (updateData.max_awards !== undefined && updateData.max_awards < 1) {
+        res.status(400).json({ message: 'Max awards must be a positive number' });
+        return;
+      }
+
+      if (updateData.custom_expiry_days !== undefined && updateData.custom_expiry_days < 1) {
+        res.status(400).json({ message: 'Custom expiry days must be a positive number' });
+        return;
+      }
+
+      const assignment = await surveyService.updateSurveyCouponAssignment(surveyId, couponId, updateData);
+      
+      if (!assignment) {
+        res.status(404).json({ message: 'Assignment not found' });
+        return;
+      }
+
+      res.json({ assignment });
+    } catch (error: any) {
+      logger.error('Error updating survey coupon assignment:', error);
+      res.status(500).json({ message: 'Failed to update assignment', error: error.message });
+    }
+  }
+
+  // Remove coupon assignment from survey (Admin only)
+  async removeCouponFromSurvey(req: Request, res: Response): Promise<void> {
+    try {
+      const { user } = req as any;
+      const { surveyId, couponId } = req.params;
+      
+      // Check if user is admin
+      if (!user || !['admin', 'super_admin'].includes(user.role)) {
+        res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+        return;
+      }
+
+      const removed = await surveyService.removeCouponFromSurvey(surveyId, couponId, user.id);
+      
+      if (!removed) {
+        res.status(404).json({ message: 'Assignment not found or already inactive' });
+        return;
+      }
+
+      res.json({ message: 'Coupon assignment removed successfully' });
+    } catch (error: any) {
+      logger.error('Error removing coupon from survey:', error);
+      res.status(500).json({ message: 'Failed to remove assignment', error: error.message });
+    }
+  }
+
+  // Get survey reward history (Admin only)
+  async getSurveyRewardHistory(req: Request, res: Response): Promise<void> {
+    try {
+      const { user } = req as any;
+      const { surveyId } = req.params;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      
+      // Check if user is admin
+      if (!user || !['admin', 'super_admin'].includes(user.role)) {
+        res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+        return;
+      }
+
+      const result = await surveyService.getSurveyRewardHistory(surveyId, page, limit);
+      res.json(result);
+    } catch (error: any) {
+      logger.error('Error fetching survey reward history:', error);
+      res.status(500).json({ message: 'Failed to fetch reward history', error: error.message });
+    }
+  }
+
+  // Get all survey coupon assignments (Admin overview)
+  async getAllSurveyCouponAssignments(req: Request, res: Response): Promise<void> {
+    try {
+      const { user } = req as any;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      
+      // Check if user is admin
+      if (!user || !['admin', 'super_admin'].includes(user.role)) {
+        res.status(403).json({ message: 'Access denied. Admin privileges required.' });
+        return;
+      }
+
+      const filters = {
+        survey_id: req.query.survey_id as string,
+        coupon_id: req.query.coupon_id as string,
+        is_active: req.query.is_active === 'true' ? true : req.query.is_active === 'false' ? false : undefined,
+        assigned_by: req.query.assigned_by as string
+      };
+
+      const result = await surveyService.getAllSurveyCouponAssignments(page, limit, filters);
+      res.json(result);
+    } catch (error: any) {
+      logger.error('Error fetching all survey coupon assignments:', error);
+      res.status(500).json({ message: 'Failed to fetch assignments', error: error.message });
     }
   }
 }

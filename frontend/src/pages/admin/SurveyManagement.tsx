@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { FiPlus, FiEdit, FiTrash2, FiEye, FiBarChart, FiDownload, FiUsers, FiFileText, FiMail, FiGlobe, FiLock } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiTrash2, FiEye, FiBarChart, FiDownload, FiUsers, FiFileText, FiMail, FiGlobe, FiLock, FiGift } from 'react-icons/fi';
 import { Survey } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 import DashboardButton from '../../components/navigation/DashboardButton';
+import SurveyCouponAssignments from '../../components/surveys/SurveyCouponAssignments';
 import toast from 'react-hot-toast';
 
 const SurveyManagement: React.FC = () => {
@@ -15,6 +16,7 @@ const SurveyManagement: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [selectedSurveyForCoupons, setSelectedSurveyForCoupons] = useState<Survey | null>(null);
 
   useEffect(() => {
     loadSurveys();
@@ -251,6 +253,14 @@ const SurveyManagement: React.FC = () => {
                           </Link>
                           
                           <button
+                            onClick={() => setSelectedSurveyForCoupons(survey)}
+                            className="p-2 text-gray-400 hover:text-orange-600"
+                            title="Manage survey rewards"
+                          >
+                            <FiGift className="h-4 w-4" />
+                          </button>
+                          
+                          <button
                             onClick={() => handleExportResponses(survey.id, survey.title)}
                             className="p-2 text-gray-400 hover:text-green-600"
                             title="Export responses"
@@ -345,6 +355,33 @@ const SurveyManagement: React.FC = () => {
           )}
         </div>
       </main>
+
+      {/* Survey Coupon Assignment Modal */}
+      {selectedSurveyForCoupons && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-6xl shadow-lg rounded-md bg-white">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-gray-900">
+                {t('surveys.admin.couponAssignment.title')} - {selectedSurveyForCoupons.title || t('surveys.untitled')}
+              </h3>
+              <button
+                onClick={() => setSelectedSurveyForCoupons(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <SurveyCouponAssignments
+              surveyId={selectedSurveyForCoupons.id}
+              surveyTitle={selectedSurveyForCoupons.title}
+              surveyStatus={selectedSurveyForCoupons.status}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

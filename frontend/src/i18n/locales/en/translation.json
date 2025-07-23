@@ -35,7 +35,10 @@
     "showLess": "Show Less",
     "dismiss": "Dismiss",
     "noEndDate": "No end date",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "active": "Active",
+    "inactive": "Inactive",
+    "remove": "Remove"
   },
   "auth": {
     "signIn": "Welcome back! Sign in to your account",
@@ -438,7 +441,14 @@
     "expired": "Expired",
     "expiresToday": "Expires today",
     "expiresTomorrow": "Expires tomorrow",
-    "expiresInDays": "Expires in {{count}} days"
+    "expiresInDays": "Expires in {{count}} days",
+    "coupon": "Coupon",
+    "freeUpgrade": "Free Upgrade",
+    "freeService": "Free Service",
+    "couponCodeCopied": "Coupon code copied to clipboard!",
+    "generatingQR": "Generating QR code...",
+    "qrError": "Failed to generate QR code",
+    "couponCode": "Coupon Code"
   },
   "navigation": {
     "dashboard": "Dashboard",
@@ -456,11 +466,27 @@
   "errors": {
     "failedToLoadCoupons": "Unable to load your coupons. Please try refreshing the page.",
     "validationFailed": "This coupon couldn't be validated. Please check the code and try again.",
-    "redemptionFailed": "Unable to redeem this coupon right now. Please contact support if the problem continues."
+    "redemptionFailed": "Unable to redeem this coupon right now. Please contact support if the problem continues.",
+    "notFound": "Page Not Found",
+    "notFoundDescription": "The page you're looking for doesn't exist or has been moved.",
+    "unauthorized": "Access Denied",
+    "unauthorizedDescription": "You don't have permission to access this page. Please sign in with appropriate credentials.",
+    "forbidden": "Access Forbidden",
+    "serverError": "Something Went Wrong",
+    "serverErrorDescription": "We're experiencing technical difficulties. Our team has been notified.",
+    "networkError": "Connection Problem",
+    "networkErrorDescription": "Please check your internet connection and try again.",
+    "unknownError": "Unexpected Error",
+    "unknownErrorDescription": "Something unexpected happened. Please try again or contact support if the problem persists.",
+    "tryAgain": "Try Again",
+    "goHome": "Return to Dashboard",
+    "contactSupport": "Contact Support",
+    "error": "Error occurred"
   },
   "surveys": {
     "title": "Customer Surveys",
     "subtitle": "Help us improve by sharing your feedback - you can retake surveys anytime!",
+    "untitled": "Untitled Survey",
     "loading": "Loading available surveys...",
     "noSurveys": "No surveys available",
     "noPublicSurveys": "No surveys are currently available. We'll notify you when new surveys become available!",
@@ -491,6 +517,10 @@
       "nextSteps": "We may follow up with additional questions based on your responses",
       "thankYou": "Thank you for being part of our loyalty community!"
     },
+    "of": "of",
+    "progressSaved": "Progress saved",
+    "enterAnswer": "Enter your answer",
+    "unknownQuestionType": "Unknown question type",
     "progress": {
       "question": "Question {{current}} of {{total}}",
       "percent": "{{percent}}% Complete"
@@ -503,6 +533,27 @@
       "rating_5": "5-Star Rating",
       "rating_10": "10-Point Scale",
       "yes_no": "Yes/No"
+    },
+    "rewardHistory": {
+      "title": "Survey Reward History",
+      "description": "Track all coupons automatically awarded for completing this survey",
+      "searchPlaceholder": "Search by user, email, or coupon...",
+      "noRewardsAwarded": "No rewards have been awarded yet",
+      "noRewardsMatch": "No rewards match your search",
+      "couponsWillAppear": "Coupons will appear here once users complete the survey",
+      "tryAdjustingSearch": "Try adjusting your search terms",
+      "viewDetails": "View Details",
+      "awarded": "Awarded",
+      "page": "Page",
+      "of": "of",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "tabs": {
+      "public": "Public",
+      "invited": "Invited",
+      "publicDescription": "Surveys available to all users",
+      "invitedDescription": "Surveys you've been specifically invited to"
     },
     "admin": {
       "title": "Survey Management Console",
@@ -587,6 +638,40 @@
         "publicSurveyDescription": "Public surveys are automatically available to all users in the app. No invitations are needed - users can find and take this survey directly from their \"Take Survey\" menu.",
         "publicSurveyType": "Public",
         "surveyType": "Survey Type"
+      },
+      "couponAssignment": {
+        "title": "Survey Rewards",
+        "description": "Assign coupons that users will automatically receive when they complete this survey",
+        "assignCoupon": "Assign Coupon Reward",
+        "editAssignment": "Edit Coupon Assignment",
+        "selectCoupon": "Select a coupon to assign",
+        "noAvailableCoupons": "No active coupons available to assign",
+        "rewardCondition": "Reward Condition",
+        "alwaysOnCompletion": "Coupons will be automatically awarded when users complete the survey (100% answered).",
+        "awardedOnCompletion": "Awarded on completion",
+        "maxAwards": "Maximum Awards",
+        "unlimited": "Unlimited",
+        "maxAwardsHelp": "Leave blank for unlimited awards, or set a cap on total rewards",
+        "customExpiry": "Custom Expiry (Days)",
+        "useCouponExpiry": "Use coupon's expiry date",
+        "customExpiryHelp": "Override the coupon's expiry with a custom duration from award date",
+        "reason": "Assignment Reason",
+        "reasonPlaceholder": "Why are you assigning this coupon to this survey?",
+        "assign": "Assign Coupon",
+        "update": "Update Assignment",
+        "remove": "Remove Assignment",
+        "awarded": "Awarded",
+        "completed": "Completed",
+        "noAssignments": "No coupon rewards assigned",
+        "noAssignmentsHelp": "Assign coupons to automatically reward users who complete this survey",
+        "confirmRemove": "Are you sure you want to remove this coupon assignment? Users will no longer receive this reward for completing the survey.",
+        "loadError": "Failed to load coupon assignments",
+        "assignSuccess": "Coupon assigned to survey successfully",
+        "assignError": "Failed to assign coupon to survey",
+        "updateSuccess": "Coupon assignment updated successfully",
+        "updateError": "Failed to update coupon assignment",
+        "removeSuccess": "Coupon assignment removed successfully",
+        "removeError": "Failed to remove coupon assignment"
       }
     }
   },

@@ -34,6 +34,7 @@ interface AuthState {
   setTokens: (accessToken: string, refreshToken: string) => void;
   clearAuth: () => void;
   checkAuthStatus: () => Promise<boolean>;
+  updateUser: (updates: Partial<User>) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -145,7 +146,10 @@ export const useAuthStore = create<AuthState>()(
           const response = await authService.getMe();
           
           // Update user info if it has changed
-          if (response.user.email !== state.user?.email) {
+          if (response.user.email !== state.user?.email || 
+              response.user.avatarUrl !== state.user?.avatarUrl ||
+              response.user.firstName !== state.user?.firstName ||
+              response.user.lastName !== state.user?.lastName) {
             set({ user: response.user });
           }
           
@@ -166,6 +170,18 @@ export const useAuthStore = create<AuthState>()(
           // No refresh token, clear auth
           get().clearAuth();
           return false;
+        }
+      },
+
+      updateUser: (updates: Partial<User>) => {
+        const currentUser = get().user;
+        if (currentUser) {
+          set({
+            user: {
+              ...currentUser,
+              ...updates
+            }
+          });
         }
       },
     }),

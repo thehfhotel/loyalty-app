@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
+import { Suspense } from 'react';
 import { useAuthStore } from './store/authStore';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
@@ -106,13 +107,14 @@ function App() {
 
   return (
     <LanguageProvider>
-      <Router
-        future={{
-          v7_startTransition: true,
-          v7_relativeSplatPath: true,
-        }}
-      >
-        <SessionManager />
+      <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+        <Router
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+          }}
+        >
+          <SessionManager />
         <Toaster 
           position="top-right"
           toastOptions={{
@@ -317,6 +319,7 @@ function App() {
         {/* Development tools - only shows in development mode */}
         <DevTools />
       </Router>
+      </Suspense>
     </LanguageProvider>
   );
 }

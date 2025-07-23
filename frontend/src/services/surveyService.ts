@@ -9,7 +9,12 @@ import {
   SubmitResponseRequest,
   SurveyListResponse,
   SurveyResponseListResponse,
-  SurveyAnalytics
+  SurveyAnalytics,
+  AssignCouponToSurveyRequest,
+  UpdateSurveyCouponAssignmentRequest,
+  SurveyCouponAssignmentListResponse,
+  SurveyRewardHistoryResponse,
+  SurveyCouponAssignment
 } from '../types/survey';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
@@ -134,6 +139,73 @@ class SurveyService {
 
   async resendInvitation(invitationId: string): Promise<void> {
     await surveyAxios.post(`/surveys/invitations/${invitationId}/resend`);
+  }
+
+  // Survey Coupon Assignment Management
+  async assignCouponToSurvey(data: AssignCouponToSurveyRequest): Promise<SurveyCouponAssignment> {
+    const response = await surveyAxios.post('/surveys/coupon-assignments', data);
+    return response.data.assignment;
+  }
+
+  async getSurveyCouponAssignments(
+    surveyId: string,
+    page = 1,
+    limit = 20
+  ): Promise<SurveyCouponAssignmentListResponse> {
+    const response = await surveyAxios.get(
+      `/surveys/${surveyId}/coupon-assignments?page=${page}&limit=${limit}`
+    );
+    return response.data;
+  }
+
+  async updateSurveyCouponAssignment(
+    surveyId: string,
+    couponId: string,
+    data: UpdateSurveyCouponAssignmentRequest
+  ): Promise<SurveyCouponAssignment> {
+    const response = await surveyAxios.put(
+      `/surveys/${surveyId}/coupon-assignments/${couponId}`,
+      data
+    );
+    return response.data.assignment;
+  }
+
+  async removeCouponFromSurvey(surveyId: string, couponId: string): Promise<void> {
+    await surveyAxios.delete(`/surveys/${surveyId}/coupon-assignments/${couponId}`);
+  }
+
+  async getSurveyRewardHistory(
+    surveyId: string,
+    page = 1,
+    limit = 20
+  ): Promise<SurveyRewardHistoryResponse> {
+    const response = await surveyAxios.get(
+      `/surveys/${surveyId}/reward-history?page=${page}&limit=${limit}`
+    );
+    return response.data;
+  }
+
+  async getAllSurveyCouponAssignments(
+    page = 1,
+    limit = 20,
+    filters: {
+      survey_id?: string;
+      coupon_id?: string;
+      is_active?: boolean;
+      assigned_by?: string;
+    } = {}
+  ): Promise<SurveyCouponAssignmentListResponse> {
+    const params = new URLSearchParams();
+    params.append('page', page.toString());
+    params.append('limit', limit.toString());
+    
+    if (filters.survey_id) params.append('survey_id', filters.survey_id);
+    if (filters.coupon_id) params.append('coupon_id', filters.coupon_id);
+    if (filters.is_active !== undefined) params.append('is_active', filters.is_active.toString());
+    if (filters.assigned_by) params.append('assigned_by', filters.assigned_by);
+
+    const response = await surveyAxios.get(`/surveys/admin/coupon-assignments?${params}`);
+    return response.data;
   }
 
   // Utility methods

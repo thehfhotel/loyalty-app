@@ -47,9 +47,9 @@ router.post('/refresh', async (req, res, next) => {
       return res.status(400).json({ error: 'Refresh token required' });
     }
     const tokens = await authService.refreshToken(refreshToken);
-    res.json({ tokens });
+    return res.json({ tokens });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -98,8 +98,14 @@ router.post(
 );
 
 // Get current user
-router.get('/me', authenticate, async (req, res) => {
-  res.json({ user: req.user });
+router.get('/me', authenticate, async (req, res, next) => {
+  try {
+    // Get complete user profile from database, not just JWT payload
+    const userProfile = await authService.getUserProfile(req.user!.id);
+    res.json({ user: userProfile });
+  } catch (error) {
+    next(error);
+  }
 });
 
 export default router;

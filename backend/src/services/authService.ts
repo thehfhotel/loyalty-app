@@ -66,7 +66,10 @@ export class AuthService {
       // Auto-enroll in loyalty program (after transaction commit)
       await loyaltyService.ensureUserLoyaltyEnrollment(user.id);
 
-      return { user, tokens };
+      // Get complete user profile including avatar (even though avatar will be null for new users)
+      const userProfile = await this.getUserProfile(user.id);
+      
+      return { user: userProfile, tokens };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -154,10 +157,10 @@ export class AuthService {
     // Auto-enroll in loyalty program (ensure enrollment on every login)
     await loyaltyService.ensureUserLoyaltyEnrollment(updatedUser.id);
 
-    // Remove password hash from response
-    const { passwordHash, ...userWithoutPassword } = updatedUser;
-
-    return { user: userWithoutPassword, tokens };
+    // Get complete user profile including avatar
+    const userProfile = await this.getUserProfile(updatedUser.id);
+    
+    return { user: userProfile, tokens };
   }
 
   async refreshToken(refreshToken: string): Promise<AuthTokens> {
@@ -333,5 +336,33 @@ export class AuthService {
     } catch (error) {
       throw new AppError(401, 'Invalid token');
     }
+  }
+
+  async getUserProfile(userId: string): Promise<User> {
+    const [user] = await query<User>(
+      `SELECT 
+        u.id,
+        u.email,
+        u.role,
+        u.is_active AS "isActive",
+        u.email_verified AS "emailVerified",
+        u.created_at AS "createdAt",
+        u.updated_at AS "updatedAt",
+        up.first_name AS "firstName",
+        up.last_name AS "lastName",
+        up.phone,
+        up.date_of_birth AS "dateOfBirth",
+        up.avatar_url AS "avatarUrl"
+       FROM users u
+       LEFT JOIN user_profiles up ON u.id = up.user_id
+       WHERE u.id = $1`,
+      [userId]
+    );
+
+    if (!user) {
+      throw new AppError(404, 'User not found');
+    }
+
+    return user;
   }
 }

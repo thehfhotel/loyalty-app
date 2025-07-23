@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import passport from 'passport';
-import { oauthService } from '../services/oauthService';
 import { logger } from '../utils/logger';
 import { featureToggleService } from '../services/featureToggleService';
 

@@ -11,6 +11,8 @@ import { requestLogger } from './middleware/requestLogger';
 import { connectDatabase } from './config/database';
 import { connectRedis } from './config/redis';
 import { seedSurveys } from './utils/seedDatabase';
+import { initializeStorage } from './config/storage';
+import { StorageService } from './services/storageService';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
 import oauthRoutes from './routes/oauth';
@@ -18,6 +20,7 @@ import featureToggleRoutes from './routes/featureToggles';
 import loyaltyRoutes from './routes/loyalty';
 import couponRoutes from './routes/coupon';
 import surveyRoutes from './routes/survey';
+import storageRoutes from './routes/storage';
 // import accountLinkingRoutes from './routes/accountLinking.minimal';
 // import { accountLinkingService } from './services/accountLinkingService';
 import { authenticate } from './middleware/auth';
@@ -43,8 +46,8 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files for uploaded avatars
-app.use('/uploads', express.static('uploads'));
+// Serve static files for avatars
+app.use('/storage', express.static('storage'));
 
 // Session middleware for OAuth
 app.use(session({
@@ -76,6 +79,7 @@ app.use('/api/feature-toggles', featureToggleRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/surveys', surveyRoutes);
+app.use('/api/storage', storageRoutes);
 // Account linking routes (basic implementation for testing)
 app.get('/api/account-linking/health', authenticate, async (_req, res) => {
   res.json({ success: true, message: 'Account linking API is available' });
@@ -112,6 +116,10 @@ async function startServer() {
     await connectDatabase();
     await connectRedis();
 
+    // Initialize storage directories and services
+    await initializeStorage();
+    StorageService.initialize();
+
     // Seed database with sample surveys only in development
     if (process.env.NODE_ENV === 'development') {
       await seedSurveys();
@@ -119,7 +127,7 @@ async function startServer() {
 
     httpServer.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
-      logger.info('Backend server initialized with survey data');
+      logger.info('Backend server initialized with storage and survey data');
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

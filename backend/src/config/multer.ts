@@ -2,6 +2,7 @@ import multer from 'multer';
 import path from 'path';
 import { Request } from 'express';
 import { AppError } from '../middleware/errorHandler';
+import { storageConfig } from './storage';
 
 // Configure storage
 const storage = multer.memoryStorage(); // Store in memory for processing
@@ -28,7 +29,7 @@ export const uploadAvatar = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
+    fileSize: storageConfig.maxFileSize, // Use configured file size limit
   }
 }).single('avatar');
 
@@ -36,7 +37,8 @@ export const uploadAvatar = multer({
 export const handleMulterError = (error: any) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
-      throw new AppError(400, 'File size too large. Maximum size is 5MB');
+      const maxSizeMB = Math.round(storageConfig.maxFileSize / (1024 * 1024));
+      throw new AppError(400, `File size too large. Maximum size is ${maxSizeMB}MB`);
     }
     throw new AppError(400, error.message);
   }

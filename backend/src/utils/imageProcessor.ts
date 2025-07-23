@@ -1,78 +1,190 @@
 import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs/promises';
-import crypto from 'crypto';
-
-interface ProcessImageOptions {
-  width?: number;
-  height?: number;
-  quality?: number;
-}
+import { logger } from './logger';
+import { storageConfig } from '../config/storage';
 
 export class ImageProcessor {
-  private static uploadDir = path.join(process.cwd(), 'uploads', 'avatars');
+  // Storage configuration - use config values
+  private static storageDir = path.join(storageConfig.baseDir, storageConfig.avatarsDir);
+  private static backupDir = storageConfig.backupDir;
+  
+  // Avatar configuration - use values from storage config
+  private static AVATAR_SIZE = storageConfig.avatarSize;
+  private static AVATAR_QUALITY = storageConfig.avatarQuality;
 
-  // Ensure upload directory exists
-  static async ensureUploadDir(): Promise<void> {
+  // Ensure directories exist
+  static async ensureDirectories(): Promise<void> {
     try {
-      await fs.access(this.uploadDir);
+      await fs.access(this.storageDir);
     } catch {
-      await fs.mkdir(this.uploadDir, { recursive: true });
+      await fs.mkdir(this.storageDir, { recursive: true });
+      logger.info(`Created avatar storage directory: ${this.storageDir}`);
+    }
+    
+    try {
+      await fs.access(this.backupDir);
+    } catch {
+      await fs.mkdir(this.backupDir, { recursive: true });
+      logger.info(`Created avatar backup directory: ${this.backupDir}`);
     }
   }
 
-  // Process and save avatar image
-  static async processAvatar(buffer: Buffer, originalName: string): Promise<string> {
-    await this.ensureUploadDir();
+  // Process and save avatar image (single version)
+  static async processAvatar(buffer: Buffer, originalName: string, userId: string): Promise<string> {
+    await this.ensureDirectories();
 
-    // Generate unique filename
-    const hash = crypto.randomBytes(16).toString('hex');
+    // Generate filename using user ID for easy management
     const ext = path.extname(originalName).toLowerCase() || '.jpg';
-    const filename = `avatar_${Date.now()}_${hash}${ext}`;
-    const filepath = path.join(this.uploadDir, filename);
+    const filename = `${userId}_avatar${ext}`;
+    const filepath = path.join(this.storageDir, filename);
+    
+    // Delete old avatar if exists
+    await this.deleteUserAvatar(userId);
 
-    // Process image: resize to 300x300, maintain aspect ratio, convert to JPEG
+    // Process image: resize to app display size, optimize for web
     await sharp(buffer)
-      .resize(300, 300, {
+      .resize(this.AVATAR_SIZE, this.AVATAR_SIZE, {
         fit: 'cover',
-        position: 'center'
+        position: 'center',
+        withoutEnlargement: true // Don't upscale small images
       })
-      .jpeg({ quality: 85 })
+      .jpeg({ 
+        quality: this.AVATAR_QUALITY,
+        progressive: true // Progressive JPEG for better loading
+      })
       .toFile(filepath);
 
-    // Return relative path for storage
-    return `/uploads/avatars/${filename}`;
+    logger.info(`Avatar saved for user ${userId}: ${filename}`);
+    
+    // Return URL path
+    return `/storage/avatars/${filename}`;
   }
 
-  // Delete avatar file
+  // Delete user's avatar
+  static async deleteUserAvatar(userId: string): Promise<void> {
+    // Check for common image extensions
+    const extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    
+    for (const ext of extensions) {
+      const filename = `${userId}_avatar${ext}`;
+      const filepath = path.join(this.storageDir, filename);
+      
+      try {
+        await fs.unlink(filepath);
+        logger.info(`Deleted old avatar for user ${userId}: ${filename}`);
+        break; // Stop after deleting the first match
+      } catch (error) {
+        // File doesn't exist, continue checking other extensions
+      }
+    }
+  }
+
+  // Delete avatar by path (for backwards compatibility)
   static async deleteAvatar(avatarPath: string): Promise<void> {
     if (!avatarPath) return;
 
     try {
-      // Extract filename from path
       const filename = path.basename(avatarPath);
-      const filepath = path.join(this.uploadDir, filename);
+      const filepath = path.join(this.storageDir, filename);
       
       await fs.unlink(filepath);
+      logger.info(`Deleted avatar: ${filename}`);
     } catch (error) {
-      // Log error but don't throw - file might already be deleted
-      console.error('Error deleting avatar file:', error);
+      logger.warn('Error deleting avatar file:', error);
     }
   }
 
-  // Generate thumbnail (optional, for future use)
-  static async generateThumbnail(
-    buffer: Buffer, 
-    options: ProcessImageOptions = {}
-  ): Promise<Buffer> {
-    const { width = 150, height = 150, quality = 80 } = options;
+  // Get storage statistics
+  static async getStorageStats(): Promise<{
+    totalFiles: number;
+    totalSize: number;
+    averageSize: number;
+  }> {
+    try {
+      const files = await fs.readdir(this.storageDir);
+      let totalSize = 0;
+      let fileCount = 0;
 
-    return sharp(buffer)
-      .resize(width, height, {
-        fit: 'cover',
-        position: 'center'
-      })
-      .jpeg({ quality })
-      .toBuffer();
+      for (const file of files) {
+        try {
+          const stats = await fs.stat(path.join(this.storageDir, file));
+          if (stats.isFile()) {
+            totalSize += stats.size;
+            fileCount++;
+          }
+        } catch (error) {
+          // Skip files that can't be accessed
+        }
+      }
+
+      return {
+        totalFiles: fileCount,
+        totalSize,
+        averageSize: fileCount > 0 ? Math.round(totalSize / fileCount) : 0
+      };
+    } catch (error) {
+      logger.error('Error getting storage stats:', error);
+      return { totalFiles: 0, totalSize: 0, averageSize: 0 };
+    }
+  }
+
+  // Simple backup solution
+  static async backupAvatars(): Promise<void> {
+    await this.ensureDirectories();
+    
+    const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const backupPath = path.join(this.backupDir, timestamp);
+    
+    try {
+      await fs.mkdir(backupPath, { recursive: true });
+      
+      const files = await fs.readdir(this.storageDir);
+      let copiedCount = 0;
+      
+      for (const file of files) {
+        const sourcePath = path.join(this.storageDir, file);
+        const destPath = path.join(backupPath, file);
+        
+        try {
+          await fs.copyFile(sourcePath, destPath);
+          copiedCount++;
+        } catch (error) {
+          logger.warn(`Failed to backup ${file}:`, error);
+        }
+      }
+      
+      logger.info(`Backup completed: ${copiedCount} files backed up to ${backupPath}`);
+      
+      // Clean old backups (keep last 7 days)
+      await this.cleanOldBackups();
+    } catch (error) {
+      logger.error('Backup failed:', error);
+      throw error;
+    }
+  }
+
+  // Clean backups older than 7 days
+  private static async cleanOldBackups(): Promise<void> {
+    try {
+      const backups = await fs.readdir(this.backupDir);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - 7);
+      
+      for (const backup of backups) {
+        try {
+          const backupDate = new Date(backup);
+          if (backupDate < cutoffDate) {
+            const backupPath = path.join(this.backupDir, backup);
+            await fs.rm(backupPath, { recursive: true, force: true });
+            logger.info(`Deleted old backup: ${backup}`);
+          }
+        } catch (error) {
+          // Skip invalid directory names
+        }
+      }
+    } catch (error) {
+      logger.warn('Error cleaning old backups:', error);
+    }
   }
 }

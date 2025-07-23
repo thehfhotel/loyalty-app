@@ -9,7 +9,7 @@ import { query } from '../config/database';
 const router = Router();
 
 // All routes require authentication
-router.use(authenticateToken);
+router.use(authenticate);
 
 // Validation schemas
 const createLinkRequestSchema = z.object({
@@ -276,7 +276,7 @@ router.get('/status/:email', async (req, res) => {
 
   } catch (error: any) {
     logger.error('Check link status error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error.message || 'Failed to check link status'
     });

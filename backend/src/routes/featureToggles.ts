@@ -4,7 +4,6 @@ import { featureToggleService } from '../services/featureToggleService';
 import { authenticate } from '../middleware/auth';
 import { validateRequest } from '../middleware/validateRequest';
 import { logger } from '../utils/logger';
-import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
 
@@ -39,7 +38,7 @@ function requireSuperAdmin(req: any, res: any, next: any) {
  * GET /api/feature-toggles/public
  * Get public feature flags (for client-side feature checking)
  */
-router.get('/public', async (req, res) => {
+router.get('/public', async (_req, res) => {
   try {
     const features = await featureToggleService.getPublicFeatures();
     
@@ -60,7 +59,7 @@ router.get('/public', async (req, res) => {
  * GET /api/feature-toggles
  * Get all feature toggles (admin only)
  */
-router.get('/', authenticate, requireSuperAdmin, async (req, res) => {
+router.get('/', authenticate, requireSuperAdmin, async (_req, res) => {
   try {
     const features = await featureToggleService.getAllFeatureToggles();
     
@@ -93,13 +92,13 @@ router.get('/:featureKey', authenticate, requireSuperAdmin, async (req, res) => 
       });
     }
     
-    res.json({
+    return res.json({
       success: true,
       data: feature
     });
   } catch (error: any) {
     logger.error('Get feature toggle error:', error);
-    res.status(error.statusCode || 500).json({
+    return res.status(error.statusCode || 500).json({
       success: false,
       error: error.message || 'Failed to get feature toggle'
     });
@@ -113,7 +112,14 @@ router.get('/:featureKey', authenticate, requireSuperAdmin, async (req, res) => 
 router.post('/toggle', authenticate, requireSuperAdmin, validateRequest(toggleFeatureSchema), async (req, res) => {
   try {
     const { featureKey, isEnabled, reason } = req.body;
-    const userId = req.user.id;
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User authentication required'
+      });
+    }
     const ipAddress = req.ip;
     const userAgent = req.get('User-Agent');
 
@@ -126,14 +132,14 @@ router.post('/toggle', authenticate, requireSuperAdmin, validateRequest(toggleFe
       userAgent
     );
     
-    res.json({
+    return res.json({
       success: true,
       data: updatedFeature,
       message: `Feature '${featureKey}' ${isEnabled ? 'enabled' : 'disabled'} successfully`
     });
   } catch (error: any) {
     logger.error('Toggle feature error:', error);
-    res.status(error.statusCode || 500).json({
+    return res.status(error.statusCode || 500).json({
       success: false,
       error: error.message || 'Failed to toggle feature'
     });
@@ -147,7 +153,14 @@ router.post('/toggle', authenticate, requireSuperAdmin, validateRequest(toggleFe
 router.post('/', authenticate, requireSuperAdmin, validateRequest(createFeatureSchema), async (req, res) => {
   try {
     const { featureKey, featureName, description, isEnabled } = req.body;
-    const userId = req.user.id;
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'User authentication required'
+      });
+    }
 
     const newFeature = await featureToggleService.createFeatureToggle(
       featureKey,
@@ -157,14 +170,14 @@ router.post('/', authenticate, requireSuperAdmin, validateRequest(createFeatureS
       userId
     );
     
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       data: newFeature,
       message: 'Feature toggle created successfully'
     });
   } catch (error: any) {
     logger.error('Create feature toggle error:', error);
-    res.status(error.statusCode || 500).json({
+    return res.status(error.statusCode || 500).json({
       success: false,
       error: error.message || 'Failed to create feature toggle'
     });

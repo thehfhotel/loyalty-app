@@ -131,3 +131,90 @@ export interface SurveyAnalytics {
     averageRating?: number;
   }[];
 }
+
+// Survey Coupon Assignment types
+// Note: Coupons are always awarded on survey completion
+
+export interface SurveyCouponAssignment {
+  id: string;
+  survey_id: string;
+  coupon_id: string;
+  is_active: boolean;
+  max_awards?: number;
+  awarded_count: number;
+  assigned_by?: string;
+  assigned_reason: string;
+  custom_expiry_days?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SurveyCouponDetails {
+  assignment_id: string;
+  survey_id: string;
+  survey_title: string;
+  survey_status: string;
+  coupon_id: string;
+  coupon_code: string;
+  coupon_name: string;
+  coupon_type: string;
+  coupon_value?: number;
+  coupon_currency: string;
+  coupon_status: string;
+  is_active: boolean;
+  max_awards?: number;
+  awarded_count: number;
+  custom_expiry_days?: number;
+  assigned_reason: string;
+  assigned_by?: string;
+  assigned_by_email?: string;
+  assigned_at: string;
+  updated_at: string;
+}
+
+export interface SurveyRewardHistory {
+  id: string;
+  survey_coupon_assignment_id: string;
+  survey_response_id: string;
+  user_coupon_id: string;
+  user_id: string;
+  awarded_at: string;
+  award_condition_met: string;
+  metadata: Record<string, any>;
+  created_at: string;
+  // Additional display fields
+  user_email?: string;
+  user_name?: string;
+  coupon_code?: string;
+  coupon_name?: string;
+}
+
+// API Request types for survey-coupon assignments
+export interface AssignCouponToSurveyRequest {
+  survey_id: string;
+  coupon_id: string;
+  max_awards?: number;
+  custom_expiry_days?: number;
+  assigned_reason?: string;
+}
+
+export interface UpdateSurveyCouponAssignmentRequest {
+  max_awards?: number;
+  custom_expiry_days?: number;
+  assigned_reason?: string;
+  is_active?: boolean;
+}
+
+export interface SurveyCouponAssignmentListResponse {
+  assignments: SurveyCouponDetails[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface SurveyRewardHistoryResponse {
+  rewards: SurveyRewardHistory[];
+  total: number;
+  totalPages: number;
+}

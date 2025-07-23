@@ -32,6 +32,8 @@ i18n
     lng: 'th', // Default to Thai
     defaultNS,
     ns: [defaultNS],
+    initImmediate: false, // Prevent immediate initialization
+    
     
     interpolation: {
       escapeValue: false, // React already escapes values

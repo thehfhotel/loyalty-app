@@ -60,6 +60,23 @@ const submitResponseSchema = z.object({
   is_completed: z.boolean().optional()
 });
 
+// Survey coupon assignment schemas
+// Note: Coupons are always awarded on survey completion
+const assignCouponToSurveySchema = z.object({
+  survey_id: z.string().uuid(),
+  coupon_id: z.string().uuid(),
+  max_awards: z.number().int().min(1).optional(),
+  custom_expiry_days: z.number().int().min(1).optional(),
+  assigned_reason: z.string().optional()
+});
+
+const updateSurveyCouponAssignmentSchema = z.object({
+  max_awards: z.number().int().min(1).optional(),
+  custom_expiry_days: z.number().int().min(1).optional(),
+  assigned_reason: z.string().optional(),
+  is_active: z.boolean().optional()
+});
+
 // Survey CRUD routes (Admin)
 router.post('/', 
   authenticate, 
@@ -151,6 +168,40 @@ router.post('/:surveyId/invitations/send-to-users',
 router.post('/invitations/:invitationId/resend',
   authenticate,
   surveyController.resendInvitation
+);
+
+// Survey coupon assignment routes (Admin)
+router.post('/coupon-assignments',
+  authenticate,
+  validateRequest(assignCouponToSurveySchema),
+  surveyController.assignCouponToSurvey
+);
+
+router.get('/:surveyId/coupon-assignments',
+  authenticate,
+  surveyController.getSurveyCouponAssignments
+);
+
+router.put('/:surveyId/coupon-assignments/:couponId',
+  authenticate,
+  validateRequest(updateSurveyCouponAssignmentSchema),
+  surveyController.updateSurveyCouponAssignment
+);
+
+router.delete('/:surveyId/coupon-assignments/:couponId',
+  authenticate,
+  surveyController.removeCouponFromSurvey
+);
+
+router.get('/:surveyId/reward-history',
+  authenticate,
+  surveyController.getSurveyRewardHistory
+);
+
+// Admin overview of all survey coupon assignments
+router.get('/admin/coupon-assignments',
+  authenticate,
+  surveyController.getAllSurveyCouponAssignments
 );
 
 export default router;
