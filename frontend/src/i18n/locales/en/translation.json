@@ -136,7 +136,11 @@
     "receptionId": "Reception ID",
     "copyReceptionId": "Copy reception ID", 
     "receptionIdCopied": "Reception ID copied successfully",
-    "receptionIdFormat": "8-digit ID starting with 269"
+    "receptionIdFormat": "8-digit ID starting with 269",
+    "personalInformation": "Personal Information",
+    "editSettings": "Edit Settings",
+    "editProfile": "Edit Profile",
+    "email": "Email"
   },
   "accountLinking": {
     "title": "Account Linking",
@@ -241,6 +245,7 @@
     "points": "points",
     "pointsToGo": "points to go",
     "currentTier": "Current Tier",
+    "progressToNextTier": "Progress to {{tier}}",
     "nextTierBenefits": "{{tier}} Benefits",
     "unlockBenefits": "Earn {{points}} more points to unlock",
     "topTierMessage": "Congratulations! You've achieved our highest membership tier!",

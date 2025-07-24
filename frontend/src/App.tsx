@@ -14,7 +14,6 @@ import FeatureTogglePage from './pages/admin/FeatureTogglePage';
 import LoyaltyAdminPage from './pages/admin/LoyaltyAdminPage';
 import CouponManagement from './pages/admin/CouponManagement';
 import FeatureDisabledPage from './components/FeatureDisabledPage';
-import LoyaltyDashboard from './pages/loyalty/LoyaltyDashboard';
 import CouponWallet from './pages/coupons/CouponWallet';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import SessionManager from './components/auth/SessionManager';
@@ -158,14 +157,6 @@ function App() {
           element={
             <ProtectedRoute>
               <ProfilePage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/loyalty"
-          element={
-            <ProtectedRoute>
-              <LoyaltyDashboard />
             </ProtectedRoute>
           }
         />

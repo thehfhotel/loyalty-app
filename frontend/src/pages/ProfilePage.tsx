@@ -4,13 +4,25 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
+import toast from 'react-hot-toast';
 import { userService, UserProfile } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
-import { FiUser, FiPhone, FiCalendar, FiCamera, FiLink, FiCopy } from 'react-icons/fi';
+import { FiUser, FiPhone, FiCalendar, FiCamera, FiLink, FiCopy, FiSettings, FiGift } from 'react-icons/fi';
 import { getUserDisplayName, getOAuthProviderName, isOAuthUser } from '../utils/userHelpers';
 import { useFeatureToggle, FEATURE_KEYS } from '../hooks/useFeatureToggle';
 import DashboardButton from '../components/navigation/DashboardButton';
+import { 
+  loyaltyService, 
+  UserLoyaltyStatus, 
+  Tier, 
+  PointsTransaction,
+  PointsCalculation
+} from '../services/loyaltyService';
+import PointsBalance from '../components/loyalty/PointsBalance';
+import TierStatus from '../components/loyalty/TierStatus';
+import TransactionList from '../components/loyalty/TransactionList';
+import SettingsModal from '../components/profile/SettingsModal';
 
 const profileSchema = z.object({
   firstName: z.string().min(1, 'First name is required'),
@@ -30,7 +42,15 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Loyalty data states
+  const [loyaltyStatus, setLoyaltyStatus] = useState<UserLoyaltyStatus | null>(null);
+  const [allTiers, setAllTiers] = useState<Tier[]>([]);
+  const [pointsCalculation, setPointsCalculation] = useState<PointsCalculation | null>(null);
+  const [transactions, setTransactions] = useState<PointsTransaction[]>([]);
+  const [loyaltyLoading, setLoyaltyLoading] = useState(true);
   
   // Check if account linking feature is enabled
   const isAccountLinkingEnabled = useFeatureToggle(FEATURE_KEYS.ACCOUNT_LINKING);
@@ -46,6 +66,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     loadProfile();
+    loadLoyaltyData();
   }, []);
 
   const loadProfile = async () => {
@@ -68,6 +89,30 @@ export default function ProfilePage() {
     }
   };
 
+  const loadLoyaltyData = async () => {
+    try {
+      setLoyaltyLoading(true);
+      
+      // Load all loyalty data in parallel
+      const [statusResult, tiersResult, calculationResult, historyResult] = await Promise.all([
+        loyaltyService.getUserLoyaltyStatus(),
+        loyaltyService.getTiers(),
+        loyaltyService.getPointsCalculation(),
+        loyaltyService.getPointsHistory(10, 0)
+      ]);
+
+      setLoyaltyStatus(statusResult);
+      setAllTiers(tiersResult);
+      setPointsCalculation(calculationResult);
+      setTransactions(historyResult.transactions);
+    } catch (error) {
+      console.error('Error loading loyalty data:', error);
+      toast.error(t('errors.networkError'));
+    } finally {
+      setLoyaltyLoading(false);
+    }
+  };
+
   const onSubmit = async (data: ProfileFormData) => {
     setIsSaving(true);
     try {
@@ -79,6 +124,7 @@ export default function ProfilePage() {
       });
       setProfile(updatedProfile);
       notify.success(t('profile.profileUpdated'));
+      setShowSettingsModal(false);
     } catch (error: any) {
       notify.error(error.response?.data?.error || t('profile.profileUpdateError'));
     } finally {
@@ -160,7 +206,7 @@ export default function ProfilePage() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || loyaltyLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -217,16 +263,83 @@ export default function ProfilePage() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-3xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="bg-white shadow rounded-lg">
+      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        {/* Membership Tier Display */}
+        {loyaltyStatus && (
+          <div className="mb-6 bg-white shadow rounded-lg border-l-4" style={{ borderLeftColor: loyaltyStatus.tier_color }}>
+            <div className="px-4 py-5 sm:p-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="p-3 rounded-lg" style={{ backgroundColor: `${loyaltyStatus.tier_color}20` }}>
+                    <FiGift className="w-8 h-8" style={{ color: loyaltyStatus.tier_color }} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">
+                      {loyaltyStatus.tier_name} {t('loyalty.member')}
+                    </h2>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {t('loyalty.currentTier')} • {loyaltyStatus.current_points.toLocaleString()} {t('loyalty.availablePoints')}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold" style={{ color: loyaltyStatus.tier_color }}>
+                    {loyaltyStatus.current_points.toLocaleString()}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {t('loyalty.points')}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Progress to next tier */}
+              {loyaltyStatus.next_tier_name && loyaltyStatus.progress_percentage !== null && (
+                <div className="mt-4">
+                  <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
+                    <span>
+                      {t('loyalty.progressToNextTier', { tier: loyaltyStatus.next_tier_name })}
+                    </span>
+                    <span>
+                      {loyaltyStatus.points_to_next_tier?.toLocaleString()} {t('loyalty.pointsToGo')}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className="h-2 rounded-full transition-all duration-300"
+                      style={{ 
+                        width: `${loyaltyStatus.progress_percentage}%`,
+                        backgroundColor: loyaltyStatus.tier_color
+                      }}
+                    ></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Profile Information Section */}
+        <div className="mb-6 bg-white shadow rounded-lg">
           <div className="px-4 py-5 sm:p-6">
-            {/* Profile Picture Section */}
-            <div className="flex items-center mb-8">
-              <div className="relative">
+            {/* Profile Header with Settings Button */}
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-900">
+                {t('profile.personalInformation')}
+              </h2>
+              <button
+                onClick={() => setShowSettingsModal(true)}
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+              >
+                <FiSettings className="mr-2 h-4 w-4" />
+                {t('profile.editSettings')}
+              </button>
+            </div>
+
+            {/* Profile Display */}
+            <div className="flex items-start space-x-6">
+              <div className="flex-shrink-0">
                 <div className="h-20 w-20 rounded-full bg-gray-300 flex items-center justify-center overflow-hidden">
-                  {uploadingAvatar ? (
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-                  ) : profile?.avatarUrl ? (
+                  {profile?.avatarUrl ? (
                     <img
                       src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:4000'}${profile.avatarUrl}?t=${Date.now()}`}
                       alt="Profile"
@@ -236,24 +349,10 @@ export default function ProfilePage() {
                     <FiUser className="h-8 w-8 text-gray-600" />
                   )}
                 </div>
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingAvatar}
-                  className="absolute bottom-0 right-0 bg-primary-600 text-white rounded-full p-1 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={t('profile.uploadPhotoTitle')}
-                >
-                  <FiCamera className="h-4 w-4" />
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarUpload}
-                  className="hidden"
-                />
               </div>
-              <div className="ml-6">
-                <div className="flex items-center space-x-3">
+              
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center space-x-3 mb-4">
                   <h3 className="text-lg font-medium text-gray-900">
                     {profile ? `${profile.firstName} ${profile.lastName}` : 'Loading...'}
                   </h3>
@@ -271,161 +370,103 @@ export default function ProfilePage() {
                     </span>
                   )}
                 </div>
-                <div className="flex items-center space-x-2 mt-2">
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingAvatar}
-                    className="text-sm text-primary-600 hover:text-primary-700 disabled:opacity-50"
-                  >
-                    {profile?.avatarUrl ? t('profile.changePhoto') : t('profile.uploadPhoto')}
-                  </button>
-                  {profile?.avatarUrl && (
-                    <button
-                      onClick={handleDeleteAvatar}
-                      disabled={uploadingAvatar}
-                      className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50"
-                    >
-                      {t('profile.removePhoto')}
-                    </button>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <dt className="font-medium text-gray-500">{t('profile.email')}</dt>
+                    <dd className="mt-1 text-gray-900">{user?.email}</dd>
+                  </div>
+                  
+                  {profile?.phone && (
+                    <div>
+                      <dt className="font-medium text-gray-500">{t('auth.phone')}</dt>
+                      <dd className="mt-1 text-gray-900">{profile.phone}</dd>
+                    </div>
                   )}
-                </div>
-                <div className="space-y-1 mt-2">
-                  <p className="text-sm text-gray-500">
-                    {t('profile.memberSince')} {profile ? new Date(profile.createdAt).toLocaleDateString() : '...'}
-                  </p>
+                  
+                  {profile?.dateOfBirth && (
+                    <div>
+                      <dt className="font-medium text-gray-500">{t('profile.dateOfBirth')}</dt>
+                      <dd className="mt-1 text-gray-900">
+                        {new Date(profile.dateOfBirth).toLocaleDateString()}
+                      </dd>
+                    </div>
+                  )}
+
+                  <div>
+                    <dt className="font-medium text-gray-500">{t('profile.memberSince')}</dt>
+                    <dd className="mt-1 text-gray-900">
+                      {profile ? new Date(profile.createdAt).toLocaleDateString() : '...'}
+                    </dd>
+                  </div>
+
                   {profile?.receptionId && (
-                    <div className="flex items-center space-x-2">
-                      <p className="text-sm text-gray-500">
-                        {t('profile.receptionId')}: 
-                        <span className="font-mono ml-1 bg-gray-100 px-2 py-1 rounded text-gray-800">
+                    <div>
+                      <dt className="font-medium text-gray-500">{t('profile.receptionId')}</dt>
+                      <dd className="mt-1 flex items-center space-x-2">
+                        <span className="font-mono bg-gray-100 px-2 py-1 rounded text-gray-800">
                           {profile.receptionId}
                         </span>
-                      </p>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(profile.receptionId!);
-                          notify.success(t('profile.receptionIdCopied'));
-                        }}
-                        className="text-gray-400 hover:text-gray-600 p-1"
-                        title={t('profile.copyReceptionId')}
-                      >
-                        <FiCopy className="h-3 w-3" />
-                      </button>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(profile.receptionId!);
+                            notify.success(t('profile.receptionIdCopied'));
+                          }}
+                          className="text-gray-400 hover:text-gray-600 p-1"
+                          title={t('profile.copyReceptionId')}
+                        >
+                          <FiCopy className="h-3 w-3" />
+                        </button>
+                      </dd>
                     </div>
                   )}
                 </div>
               </div>
             </div>
-
-            {/* Profile Form */}
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
-                    {t('auth.firstName')}
-                  </label>
-                  <div className="mt-1 relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <FiUser className="h-5 w-5 text-gray-400" />
-                    </div>
-                    <input
-                      {...register('firstName')}
-                      id="firstName"
-                      type="text"
-                      className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                      placeholder={t('profile.firstNamePlaceholder')}
-                    />
-                  </div>
-                  {errors.firstName && (
-                    <p className="mt-1 text-sm text-red-600">{errors.firstName.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
-                    {t('auth.lastName')}
-                  </label>
-                  <div className="mt-1 relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <FiUser className="h-5 w-5 text-gray-400" />
-                    </div>
-                    <input
-                      {...register('lastName')}
-                      id="lastName"
-                      type="text"
-                      className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                      placeholder={t('profile.lastNamePlaceholder')}
-                    />
-                  </div>
-                  {errors.lastName && (
-                    <p className="mt-1 text-sm text-red-600">{errors.lastName.message}</p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="phone" className="block text-sm font-medium text-gray-700">
-                  {t('auth.phone')}
-                </label>
-                <div className="mt-1 relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <FiPhone className="h-5 w-5 text-gray-400" />
-                  </div>
-                  <input
-                    {...register('phone')}
-                    id="phone"
-                    type="tel"
-                    className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                    placeholder={t('profile.phonePlaceholder')}
-                  />
-                </div>
-                {errors.phone && (
-                  <p className="mt-1 text-sm text-red-600">{errors.phone.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="dateOfBirth" className="block text-sm font-medium text-gray-700">
-                  {t('profile.dateOfBirth')}
-                </label>
-                <div className="mt-1 relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <FiCalendar className="h-5 w-5 text-gray-400" />
-                  </div>
-                  <input
-                    {...register('dateOfBirth')}
-                    id="dateOfBirth"
-                    type="date"
-                    className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                  />
-                </div>
-                {errors.dateOfBirth && (
-                  <p className="mt-1 text-sm text-red-600">{errors.dateOfBirth.message}</p>
-                )}
-              </div>
-
-              <div className="flex justify-end space-x-3">
-                <Link
-                  to="/dashboard"
-                  className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                >
-                  {t('common.cancel')}
-                </Link>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSaving ? t('common.saving') : t('common.save')}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
 
+        {/* Loyalty Information Section */}
+        {loyaltyStatus && pointsCalculation && (
+          <div className="mb-6">
+            <div className="flex items-center space-x-2 mb-4">
+              <FiGift className="h-6 w-6 text-primary-600" />
+              <h2 className="text-xl font-semibold text-gray-900">
+                {t('loyalty.dashboard.title')}
+              </h2>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Column - Points & Transactions */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Points Balance */}
+                <PointsBalance
+                  loyaltyStatus={loyaltyStatus}
+                  expiringPoints={pointsCalculation.expiring_points}
+                  nextExpiryDate={pointsCalculation.next_expiry_date}
+                />
+
+                {/* Transaction History */}
+                <TransactionList
+                  transactions={transactions}
+                  isLoading={false}
+                />
+              </div>
+
+              {/* Right Column - Tier Status */}
+              <div className="space-y-6">
+                <TierStatus
+                  loyaltyStatus={loyaltyStatus}
+                  allTiers={allTiers}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Account Linking Section - Only show if feature is enabled */}
         {isAccountLinkingEnabled && (
-          <div className="mt-6 bg-white shadow rounded-lg">
+          <div className="bg-white shadow rounded-lg">
             <div className="px-4 py-5 sm:p-6">
               <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
                 {t('profile.accountLinking')}
@@ -443,6 +484,18 @@ export default function ProfilePage() {
             </div>
           </div>
         )}
+
+        {/* Settings Modal */}
+        <SettingsModal
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+          profile={profile}
+          onSubmit={onSubmit}
+          isSaving={isSaving}
+          onAvatarUpload={handleAvatarUpload}
+          onDeleteAvatar={handleDeleteAvatar}
+          uploadingAvatar={uploadingAvatar}
+        />
       </main>
     </div>
   );

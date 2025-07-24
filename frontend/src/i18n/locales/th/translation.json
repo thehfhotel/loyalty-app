@@ -133,7 +133,11 @@
     "receptionId": "รหัสต้อนรับ",
     "copyReceptionId": "คัดลอกรหัสต้อนรับ",
     "receptionIdCopied": "คัดลอกรหัสต้อนรับสำเร็จ",
-    "receptionIdFormat": "รหัส 8 หลักเริ่มต้นด้วย 269"
+    "receptionIdFormat": "รหัส 8 หลักเริ่มต้นด้วย 269",
+    "personalInformation": "ข้อมูลส่วนบุคคล",
+    "editSettings": "แก้ไขการตั้งค่า",
+    "editProfile": "แก้ไขโปรไฟล์",
+    "email": "อีเมล"
   },
   "accountLinking": {
     "title": "การเชื่อมโยงบัญชี",
@@ -235,6 +239,7 @@
     "points": "คะแนน",
     "pointsToGo": "คะแนนที่เหลือ",
     "currentTier": "ระดับปัจจุบัน",
+    "progressToNextTier": "ความก้าวหน้าสู่ระดับ {{tier}}",
     "nextTierBenefits": "สิทธิประโยชน์ระดับ {{tier}}",
     "unlockBenefits": "เก็บคะแนนอีก {{points}} คะแนนเพื่อปลดล็อก",
     "topTierMessage": "ยินดีด้วย! คุณได้เข้าถึงระดับสูงสุดแล้ว!",
