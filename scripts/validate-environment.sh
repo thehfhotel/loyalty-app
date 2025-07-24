@@ -1,8 +1,12 @@
 #!/bin/bash
 
 # Environment Validation Script for Loyalty App
-# Usage: ./scripts/validate-environment.sh
+# Usage: ./scripts/validate-environment.sh [build|runtime]
 # This script validates the production environment setup
+# 
+# Parameters:
+#   build   - Skip runtime checks (Redis, database connectivity)
+#   runtime - Full validation including service connectivity (default)
 
 set -e  # Exit on any error
 
@@ -16,6 +20,9 @@ NC='\033[0m' # No Color
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Validation context (build or runtime)
+VALIDATION_CONTEXT="${1:-runtime}"
 
 # Log function
 log() {
@@ -67,7 +74,7 @@ validate() {
 # Change to project root
 cd "$PROJECT_ROOT"
 
-log "${BLUE}🔍 Validating Loyalty App v3.x Production Environment${NC}"
+log "${BLUE}🔍 Validating Loyalty App v3.x Environment (${VALIDATION_CONTEXT} mode)${NC}"
 echo "================================================="
 
 # Check basic requirements
@@ -246,35 +253,43 @@ elif [[ -f ".env" ]]; then
     fi
 fi
 
-# Redis and session store validation
-log "📊 Redis and Session Store:"
-validate "Redis connectivity" "docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG" "Redis is not accessible (required for session store)" true
+# Runtime-only validations (skip during build phase)
+if [[ "$VALIDATION_CONTEXT" == "runtime" ]]; then
+    # Redis and session store validation
+    log "📊 Redis and Session Store:"
+    validate "Redis connectivity" "docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG" "Redis is not accessible (required for session store)" true
 
-if docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
-    # Check if session store is properly configured
-    SESSION_PREFIX_EXISTS=$(docker compose exec -T redis redis-cli KEYS "loyalty-app:*" 2>/dev/null | wc -l || echo "0")
-    if [ "$SESSION_PREFIX_EXISTS" -ge 0 ]; then
-        success "✅ Redis session store is configured with loyalty-app prefix"
+    if docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
+        # Check if session store is properly configured
+        SESSION_PREFIX_EXISTS=$(docker compose exec -T redis redis-cli KEYS "loyalty-app:*" 2>/dev/null | wc -l || echo "0")
+        if [ "$SESSION_PREFIX_EXISTS" -ge 0 ]; then
+            success "✅ Redis session store is configured with loyalty-app prefix"
+        fi
     fi
-fi
 
-# Network connectivity checks
-log "🌐 Network Connectivity:"
-validate "Internet connectivity" "curl -s --max-time 5 https://www.google.com > /dev/null" "No internet connectivity (may affect OAuth and external services)" true
-
-# Database schema validation
-log "💾 Database Schema:"
-if docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db >/dev/null 2>&1; then
-    TABLE_COUNT=$(docker compose exec -T postgres psql -U loyalty -d loyalty_db -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ' || echo "0")
-    if [ "$TABLE_COUNT" -gt 20 ]; then
-        success "✅ Consolidated database schema is applied (${TABLE_COUNT} tables)"
+    # Database schema validation
+    log "💾 Database Schema:"
+    if docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db >/dev/null 2>&1; then
+        TABLE_COUNT=$(docker compose exec -T postgres psql -U loyalty -d loyalty_db -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ' || echo "0")
+        if [ "$TABLE_COUNT" -gt 20 ]; then
+            success "✅ Consolidated database schema is applied (${TABLE_COUNT} tables)"
+        else
+            warning "Database schema may not be fully initialized (${TABLE_COUNT} tables)"
+            echo "Consider running: ./database/deploy-database.sh"
+        fi
     else
-        warning "Database schema may not be fully initialized (${TABLE_COUNT} tables)"
-        echo "Consider running: ./database/deploy-database.sh"
+        warning "Cannot validate database schema (database not accessible)"
     fi
 else
-    warning "Cannot validate database schema (database not accessible)"
+    log "📊 Runtime Checks:"
+    success "✅ Skipping Redis/Database connectivity (build mode)"
+    echo "   • Redis connectivity will be validated when services start"
+    echo "   • Database schema will be validated at runtime"
 fi
+
+# Network connectivity checks (always run)
+log "🌐 Network Connectivity:"
+validate "Internet connectivity" "curl -s --max-time 5 https://www.google.com > /dev/null" "No internet connectivity (may affect OAuth and external services)" true
 
 # Final validation summary
 echo
