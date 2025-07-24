@@ -91,8 +91,8 @@ echo "Compress: $COMPRESS_BACKUP"
 echo "================================================="
 
 # Check if we're in the right directory
-if [[ ! -f "docker compose.yml" ]]; then
-    error "docker compose.yml not found. Make sure you're running this from the project root."
+if [[ ! -f "docker-compose.yml" ]]; then
+    error "docker-compose.yml not found. Make sure you're running this from the project root."
     exit 1
 fi
 
@@ -147,8 +147,8 @@ if [[ "$BACKUP_TYPE" == "full" ]]; then
     mkdir -p "$BACKUP_PATH/config"
     
     # Copy configuration files (safely)
-    cp docker compose.yml "$BACKUP_PATH/config/" 2>/dev/null || true
-    cp docker compose.prod.yml "$BACKUP_PATH/config/" 2>/dev/null || true
+    cp docker-compose.yml "$BACKUP_PATH/config/" 2>/dev/null || true
+    cp docker-compose.prod.yml "$BACKUP_PATH/config/" 2>/dev/null || true
     cp nginx/nginx.conf "$BACKUP_PATH/config/" 2>/dev/null || true
     cp .env.production.example "$BACKUP_PATH/config/" 2>/dev/null || true
     

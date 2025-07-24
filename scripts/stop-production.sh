@@ -70,8 +70,8 @@ log "${RED}🛑 Stopping Loyalty App Production System${NC}"
 echo "================================================="
 
 # Check if we're in the right directory
-if [[ ! -f "docker compose.yml" ]]; then
-    error "docker compose.yml not found. Make sure you're running this from the project root."
+if [[ ! -f "docker-compose.yml" ]]; then
+    error "docker-compose.yml not found. Make sure you're running this from the project root."
     exit 1
 fi
 

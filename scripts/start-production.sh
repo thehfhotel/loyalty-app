@@ -41,8 +41,8 @@ log "${GREEN}🚀 Starting Loyalty App Production System${NC}"
 echo "================================================="
 
 # Check if we're in the right directory
-if [[ ! -f "docker compose.yml" ]]; then
-    error "docker compose.yml not found. Make sure you're running this from the project root."
+if [[ ! -f "docker-compose.yml" ]]; then
+    error "docker-compose.yml not found. Make sure you're running this from the project root."
     exit 1
 fi
 
@@ -129,15 +129,15 @@ success "✅ Port availability check completed"
 
 # Stop any existing containers
 log "🛑 Stopping any existing containers..."
-docker compose -f docker compose.yml -f docker compose.prod.yml --env-file "$ENV_FILE" down --remove-orphans 2>/dev/null || true
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file "$ENV_FILE" down --remove-orphans 2>/dev/null || true
 
 # Pull latest images
 log "📥 Pulling latest images..."
-docker compose -f docker compose.yml -f docker compose.prod.yml --env-file "$ENV_FILE" pull
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file "$ENV_FILE" pull
 
 # Build application images
 log "🔨 Building application images..."
-export COMPOSE_FILE=docker compose.yml:docker compose.prod.yml
+export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
 docker compose --env-file "$ENV_FILE" build --no-cache
 
 # Start the production system

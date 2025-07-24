@@ -76,8 +76,8 @@ log "${YELLOW}🔄 Restarting Loyalty App Production System${NC}"
 echo "================================================="
 
 # Check if we're in the right directory
-if [[ ! -f "docker compose.yml" ]]; then
-    error "docker compose.yml not found. Make sure you're running this from the project root."
+if [[ ! -f "docker-compose.yml" ]]; then
+    error "docker-compose.yml not found. Make sure you're running this from the project root."
     exit 1
 fi
 
@@ -147,7 +147,7 @@ sleep 2
 # Rebuild images if requested
 if [[ "$REBUILD_IMAGES" == "true" ]]; then
     log "🔨 Rebuilding application images..."
-    export COMPOSE_FILE=docker compose.yml:docker compose.prod.yml
+    export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
     docker compose --env-file "$ENV_FILE" build --no-cache
     
     # Clean up dangling images
@@ -161,7 +161,7 @@ if [[ -x "$SCRIPT_DIR/start-production.sh" ]]; then
     "$SCRIPT_DIR/start-production.sh"
 else
     # Fallback to basic start
-    export COMPOSE_FILE=docker compose.yml:docker compose.prod.yml
+    export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
     docker compose --env-file "$ENV_FILE" up -d
     
     # Basic health check

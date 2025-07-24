@@ -49,6 +49,21 @@ I have successfully modernized all scripts and documentation to use the current 
 
 ## 🔧 **Key Technical Changes**
 
+### **Important Distinction: Filenames vs Commands**
+```bash
+# ✅ CORRECT: Filename uses hyphens, command uses space
+docker compose -f docker-compose.yml up -d
+
+# ❌ INCORRECT: Don't change the filename
+docker compose -f docker compose.yml up -d
+```
+
+**Key Points**:
+- **Filenames**: `docker-compose.yml` and `docker-compose.prod.yml` (with hyphens - standard)
+- **Commands**: `docker compose` (with space - modern V2 plugin)
+- **File checks**: Scripts check for `docker-compose.yml` filename
+- **Usage**: All `-f` flags reference proper filenames with hyphens
+
 ### **1. Command Execution Updates**
 ```bash
 # Before: ❌ Legacy standalone binary
@@ -77,9 +92,10 @@ docker compose version
 - ✅ **Help documentation** reflects current best practices
 
 ### **4. File References**
-- ✅ **Docker Compose files** still named `docker-compose.yml` (standard)
-- ✅ **Usage comments** updated to show modern command syntax
-- ✅ **Documentation examples** use current commands
+- ✅ **Docker Compose files** still named `docker-compose.yml` (standard filename with hyphens)
+- ✅ **Command usage** modernized to `docker compose` (space between docker and compose)
+- ✅ **Script file checks** correctly reference `docker-compose.yml` filename
+- ✅ **Documentation examples** use current commands with proper filenames
 
 ## 🚀 **User Experience Improvements**
 

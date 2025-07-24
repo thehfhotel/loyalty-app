@@ -199,8 +199,8 @@ Internal Communication: All services communicate via container names
 - **`.env.production`**: Your actual production secrets (create this!)
 
 ### Docker Configuration
-- **`docker compose.yml`**: Base service definitions
-- **`docker compose.prod.yml`**: Production overrides
+- **`docker-compose.yml`**: Base service definitions
+- **`docker-compose.prod.yml`**: Production overrides
 
 ### Script Configuration
 All scripts automatically detect and use the correct configuration files.
