@@ -4,12 +4,13 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import passport from 'passport';
 import session from 'express-session';
+import RedisStore from 'connect-redis';
 import { createServer } from 'http';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 import { connectDatabase } from './config/database';
-import { connectRedis } from './config/redis';
+import { connectRedis, getRedisClient } from './config/redis';
 import { seedSurveys } from './utils/seedDatabase';
 import { initializeStorage } from './config/storage';
 import { StorageService } from './services/storageService';
@@ -50,20 +51,7 @@ app.use(express.urlencoded({ extended: true }));
 // Serve static files for avatars
 app.use('/storage', express.static('storage'));
 
-// Session middleware for OAuth
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-session-secret-change-in-production',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
-}));
-
-// Initialize Passport
-app.use(passport.initialize());
-app.use(passport.session());
+// Note: Session middleware and Passport are configured in startServer() after Redis connection
 
 app.use(requestLogger);
 
@@ -117,6 +105,32 @@ async function startServer() {
     // Connect to databases
     await connectDatabase();
     await connectRedis();
+    
+    // Configure session store after Redis connection
+    const redisClient = getRedisClient();
+    const redisStore = new RedisStore({
+      client: redisClient,
+      prefix: 'loyalty-app:sess:'
+    });
+    
+    // Update session configuration to use Redis store
+    app.use(session({
+      store: redisStore,
+      secret: process.env.SESSION_SECRET || 'your-session-secret-change-in-production',
+      resave: false,
+      saveUninitialized: false,
+      name: 'loyalty-session-id',
+      cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        sameSite: process.env.NODE_ENV === 'production' ? 'lax' : false
+      }
+    }));
+    
+    // Initialize Passport after session configuration
+    app.use(passport.initialize());
+    app.use(passport.session());
 
     // Initialize storage directories and services
     await initializeStorage();
