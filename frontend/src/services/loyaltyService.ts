@@ -51,7 +51,6 @@ export interface Tier {
 export interface UserLoyaltyStatus {
   user_id: string;
   current_points: number;
-  lifetime_points: number;
   total_nights?: number;
   tier_name: string;
   tier_color: string;

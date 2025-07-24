@@ -462,8 +462,6 @@ export default function ProfilePage() {
                 {/* Points Balance */}
                 <PointsBalance
                   loyaltyStatus={loyaltyStatus}
-                  expiringPoints={pointsCalculation.expiring_points}
-                  nextExpiryDate={pointsCalculation.next_expiry_date}
                 />
 
                 {/* Transaction History */}

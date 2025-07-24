@@ -4,24 +4,15 @@ import { FiStar, FiTrendingUp } from 'react-icons/fi';
 
 interface PointsBalanceProps {
   loyaltyStatus: UserLoyaltyStatus;
+  // Legacy props kept for compatibility but no longer used since points never expire
   expiringPoints?: number;
   nextExpiryDate?: string | null;
 }
 
 export default function PointsBalance({ 
-  loyaltyStatus, 
-  expiringPoints = 0, 
-  nextExpiryDate 
+  loyaltyStatus
 }: PointsBalanceProps) {
   const { t } = useTranslation();
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('th-TH', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6 border-l-4" 
@@ -50,35 +41,7 @@ export default function PointsBalance({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="bg-gray-50 rounded-lg p-3">
-          <div className="flex items-center space-x-2">
-            <FiTrendingUp className="w-4 h-4 text-green-600" />
-            <span className="text-sm font-medium text-gray-700">
-              {t('loyalty.lifetimePoints')}
-            </span>
-          </div>
-          <div className="text-xl font-semibold text-gray-900 mt-1">
-            {loyaltyStatus.lifetime_points.toLocaleString()}
-          </div>
-        </div>
-        
-        {expiringPoints > 0 && (
-          <div className="bg-yellow-50 rounded-lg p-3">
-            <div className="text-sm font-medium text-yellow-800">
-              {t('loyalty.expiringPoints')}
-            </div>
-            <div className="text-xl font-semibold text-yellow-900 mt-1">
-              {expiringPoints.toLocaleString()}
-            </div>
-            {nextExpiryDate && (
-              <div className="text-xs text-yellow-700 mt-1">
-                {t('loyalty.expiresOn')} {formatDate(nextExpiryDate)}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      {/* Points never expire - no expiration display needed */}
 
       {/* Tier Benefits Preview */}
       <div className="border-t pt-4">

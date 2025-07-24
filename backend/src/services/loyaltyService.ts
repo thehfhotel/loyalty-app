@@ -29,7 +29,6 @@ export interface PointsTransaction {
 export interface UserLoyaltyStatus {
   user_id: string;
   current_points: number;
-  lifetime_points: number;
   tier_name: string;
   tier_color: string;
   tier_benefits: any;
@@ -100,8 +99,8 @@ export class LoyaltyService {
       }
 
       const result = await getPool().query(
-        `INSERT INTO user_loyalty (user_id, current_points, lifetime_points, tier_id)
-         VALUES ($1, 0, 0, $2)
+        `INSERT INTO user_loyalty (user_id, current_points, tier_id)
+         VALUES ($1, 0, $2)
          ON CONFLICT (user_id) DO NOTHING
          RETURNING user_id`,
         [userId, bronzeTier.rows[0].id]
