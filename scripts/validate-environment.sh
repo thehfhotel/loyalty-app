@@ -122,6 +122,12 @@ if [[ -f ".env.production" ]]; then
         fi
     fi
     
+    # Environment debugging info for production
+    log "📋 Environment File Diagnostics:"
+    echo "   • Using file: .env.production"
+    echo "   • File size: $(wc -c < .env.production 2>/dev/null || echo "0") bytes"
+    echo "   • Variables count: $(grep -c '^[A-Z]' .env.production 2>/dev/null || echo "0")"
+    
 elif [[ -f ".env" ]]; then
     warning "⚠️  .env.production not found, using .env for development mode"
     success "✅ .env file exists (development mode)"
@@ -132,13 +138,19 @@ elif [[ -f ".env" ]]; then
     
     validate "JWT_SECRET" "test -n '$JWT_SECRET'" "JWT_SECRET is not set" true
     validate "SESSION_SECRET" "test -n '$SESSION_SECRET'" "SESSION_SECRET is not set" true
-    validate "LOYALTY_USERNAME" "test -n '$LOYALTY_USERNAME'" "LOYALTY_USERNAME is not set" true
+    validate "LOYALTY_USERNAME" "test -n '$LOYALTY_USERNAME'" "LOYALTY_USERNAME is not set ($LOYALTY_USERNAME)" true
     validate "LOYALTY_PASSWORD" "test -n '$LOYALTY_PASSWORD'" "LOYALTY_PASSWORD is not set" true
     
     # OAuth validation (warnings only for development)
     validate "Google OAuth Client ID" "test -n '$GOOGLE_CLIENT_ID'" "Google OAuth Client ID not configured" true
     validate "Facebook OAuth App ID" "test -n '$FACEBOOK_APP_ID'" "Facebook OAuth App ID not configured" true
     validate "LINE Channel ID" "test -n '$LINE_CHANNEL_ID'" "LINE Channel ID not configured" true
+    
+    # Environment debugging info
+    log "📋 Environment File Diagnostics:"
+    echo "   • Using file: .env"
+    echo "   • File size: $(wc -c < .env 2>/dev/null || echo "0") bytes"
+    echo "   • Variables count: $(grep -c '^[A-Z]' .env 2>/dev/null || echo "0")"
     
 else
     error "❌ No environment file found!"
