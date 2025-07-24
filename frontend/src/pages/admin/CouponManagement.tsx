@@ -301,16 +301,16 @@ const CouponManagement: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center space-x-3">
-              <DashboardButton variant="outline" size="md" />
               <button
                 onClick={() => {
                   setShowCreateModal(true);
                   setCreateModalError(null); // Clear any previous errors
                 }}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+                className="inline-flex items-center font-medium bg-blue-600 text-white px-4 py-2 text-sm rounded-md hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 {t('admin.coupons.createCoupon')}
               </button>
+              <DashboardButton variant="outline" size="md" />
             </div>
           </div>
         </div>

@@ -3,6 +3,7 @@ import { toast } from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import { FiUser, FiUsers, FiUserCheck, FiUserX, FiSearch, FiTrash2, FiEye } from 'react-icons/fi';
 import { userManagementService, User, UserStats } from '../../services/userManagementService';
+import DashboardButton from '../../components/navigation/DashboardButton';
 
 const UserManagement: React.FC = () => {
   const { t } = useTranslation();
@@ -152,9 +153,24 @@ const UserManagement: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">{t('userManagement.title')}</h1>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white shadow">
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center">
+              <FiUsers className="h-8 w-8 text-blue-600 mr-3" />
+              <h1 className="text-3xl font-bold text-gray-900">{t('userManagement.title')}</h1>
+            </div>
+            <div className="flex items-center space-x-4">
+              <DashboardButton variant="outline" size="md" />
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Content */}
+      <div className="max-w-6xl mx-auto p-4">
 
         {/* Statistics Cards */}
         {stats && (

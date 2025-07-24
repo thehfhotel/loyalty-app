@@ -111,11 +111,11 @@ const CouponWallet: React.FC = () => {
               <button
                 onClick={handleRefresh}
                 disabled={loading}
-                className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                className="inline-flex items-center font-medium border border-gray-300 bg-white text-gray-700 px-4 py-2 text-sm rounded-md hover:bg-gray-50 disabled:opacity-50 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 {loading ? t('common.loading') : t('common.refresh')}
               </button>
-              <DashboardButton variant="primary" size="md" />
+              <DashboardButton variant="outline" size="md" />
             </div>
           </div>
         </div>

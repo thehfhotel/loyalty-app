@@ -110,15 +110,15 @@ export default function FeatureTogglePage() {
               </p>
             </div>
             <div className="flex items-center space-x-3">
-              <DashboardButton variant="outline" size="md" />
               <button
                 onClick={loadFeatures}
                 disabled={loading}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+                className="inline-flex items-center font-medium border border-gray-300 bg-white text-gray-700 px-4 py-2 text-sm rounded-md hover:bg-gray-50 disabled:opacity-50 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 <FiRefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
               </button>
+              <DashboardButton variant="outline" size="md" />
             </div>
           </div>
         </div>

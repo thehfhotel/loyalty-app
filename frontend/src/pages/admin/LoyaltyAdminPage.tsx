@@ -172,8 +172,6 @@ export default function LoyaltyAdminPage() {
             </div>
             
             <div className="mt-4 sm:mt-0 flex space-x-3">
-              <DashboardButton variant="outline" size="md" />
-              
               <button
                 onClick={handleExpirePoints}
                 disabled={isLoadingAction}
@@ -186,11 +184,13 @@ export default function LoyaltyAdminPage() {
               <button
                 onClick={loadUsers}
                 disabled={isLoading}
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="inline-flex items-center font-medium border border-gray-300 bg-white text-gray-700 px-4 py-2 text-sm rounded-md hover:bg-gray-50 disabled:opacity-50 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 <FiRefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                 {t('admin.loyalty.refresh')}
               </button>
+              
+              <DashboardButton variant="outline" size="md" />
             </div>
           </div>
         </div>
