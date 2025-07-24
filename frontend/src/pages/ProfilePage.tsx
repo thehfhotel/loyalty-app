@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { userService, UserProfile } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
-import { FiUser, FiPhone, FiCalendar, FiCamera, FiLink } from 'react-icons/fi';
+import { FiUser, FiPhone, FiCalendar, FiCamera, FiLink, FiCopy } from 'react-icons/fi';
 import { getUserDisplayName, getOAuthProviderName, isOAuthUser } from '../utils/userHelpers';
 import { useFeatureToggle, FEATURE_KEYS } from '../hooks/useFeatureToggle';
 import DashboardButton from '../components/navigation/DashboardButton';
@@ -289,9 +289,31 @@ export default function ProfilePage() {
                     </button>
                   )}
                 </div>
-                <p className="text-sm text-gray-500 mt-2">
-                  {t('profile.memberSince')} {profile ? new Date(profile.createdAt).toLocaleDateString() : '...'}
-                </p>
+                <div className="space-y-1 mt-2">
+                  <p className="text-sm text-gray-500">
+                    {t('profile.memberSince')} {profile ? new Date(profile.createdAt).toLocaleDateString() : '...'}
+                  </p>
+                  {profile?.receptionId && (
+                    <div className="flex items-center space-x-2">
+                      <p className="text-sm text-gray-500">
+                        {t('profile.receptionId')}: 
+                        <span className="font-mono ml-1 bg-gray-100 px-2 py-1 rounded text-gray-800">
+                          {profile.receptionId}
+                        </span>
+                      </p>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(profile.receptionId!);
+                          notify.success(t('profile.receptionIdCopied'));
+                        }}
+                        className="text-gray-400 hover:text-gray-600 p-1"
+                        title={t('profile.copyReceptionId')}
+                      >
+                        <FiCopy className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

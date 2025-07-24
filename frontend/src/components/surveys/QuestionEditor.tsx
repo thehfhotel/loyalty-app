@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FiMove, FiTrash2, FiPlus, FiX } from 'react-icons/fi';
 import { SurveyQuestion, QuestionOption } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
@@ -20,6 +21,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
   onReorder,
   canMove
 }) => {
+  const { t } = useTranslation();
   const [isDragging, setIsDragging] = useState(false);
 
   const addOption = () => {
@@ -27,7 +29,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
     
     const newOption: QuestionOption = {
       id: surveyService.generateOptionId(),
-      text: `Option ${question.options.length + 1}`,
+      text: t('surveys.admin.questionEditor.newOptionText', { number: question.options.length + 1 }),
       value: `option${question.options.length + 1}`
     };
     
@@ -76,13 +78,13 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
 
   const getQuestionTypeLabel = (type: string) => {
     switch (type) {
-      case 'single_choice': return 'Single Choice';
-      case 'multiple_choice': return 'Multiple Choice';
-      case 'text': return 'Text Input';
-      case 'textarea': return 'Long Text';
-      case 'rating_5': return '5-Star Rating';
-      case 'rating_10': return '10-Point Scale';
-      case 'yes_no': return 'Yes/No';
+      case 'single_choice': return t('surveys.admin.questionEditor.questionTypes.singleChoice');
+      case 'multiple_choice': return t('surveys.admin.questionEditor.questionTypes.multipleChoice');
+      case 'text': return t('surveys.admin.questionEditor.questionTypes.text');
+      case 'textarea': return t('surveys.admin.questionEditor.questionTypes.textarea');
+      case 'rating_5': return t('surveys.admin.questionEditor.questionTypes.rating5');
+      case 'rating_10': return t('surveys.admin.questionEditor.questionTypes.rating10');
+      case 'yes_no': return t('surveys.admin.questionEditor.questionTypes.yesNo');
       default: return type;
     }
   };
@@ -105,7 +107,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
             </button>
           )}
           <span className="text-sm font-medium text-gray-900">
-            Question {question.order}
+            {t('surveys.admin.questionEditor.questionNumber', { number: question.order })}
           </span>
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
             {getQuestionTypeLabel(question.type)}
@@ -124,7 +126,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
         {/* Question Text */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Question Text *
+            {t('surveys.admin.questionEditor.questionText')}
           </label>
           <textarea
             value={question.text}
@@ -135,24 +137,24 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
                 ? 'border-red-300 focus:border-red-500 focus:ring-red-500' 
                 : 'border-gray-300'
             }`}
-            placeholder="Enter your question..."
+            placeholder={t('surveys.admin.questionEditor.questionTextPlaceholder')}
           />
           {(!question.text || question.text.trim() === '') && (
-            <p className="mt-1 text-sm text-red-600">This field is required</p>
+            <p className="mt-1 text-sm text-red-600">{t('surveys.admin.questionEditor.fieldRequired')}</p>
           )}
         </div>
 
         {/* Question Description */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Description (Optional)
+            {t('surveys.admin.questionEditor.description')}
           </label>
           <input
             type="text"
             value={question.description || ''}
             onChange={(e) => onUpdate({ description: e.target.value })}
             className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            placeholder="Additional context or instructions..."
+            placeholder={t('surveys.admin.questionEditor.descriptionPlaceholder')}
           />
         </div>
 
@@ -160,7 +162,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
         {(question.type === 'single_choice' || question.type === 'multiple_choice') && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Answer Options
+              {t('surveys.admin.questionEditor.answerOptions')}
             </label>
             <div className="space-y-2">
               {question.options?.map((option) => (
@@ -170,14 +172,14 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
                     value={option.text}
                     onChange={(e) => updateOption(option.id, 'text', e.target.value)}
                     className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    placeholder="Option text..."
+                    placeholder={t('surveys.admin.questionEditor.optionTextPlaceholder')}
                   />
                   <input
                     type="text"
                     value={option.value.toString()}
                     onChange={(e) => updateOption(option.id, 'value', e.target.value)}
                     className="w-24 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    placeholder="value"
+                    placeholder={t('surveys.admin.questionEditor.optionValuePlaceholder')}
                   />
                   {question.options && question.options.length > 2 && (
                     <button
@@ -194,7 +196,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
                 className="flex items-center text-sm text-blue-600 hover:text-blue-800"
               >
                 <FiPlus className="mr-1 h-4 w-4" />
-                Add Option
+                {t('surveys.admin.questionEditor.addOption')}
               </button>
             </div>
           </div>
@@ -205,7 +207,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Min Rating
+                {t('surveys.admin.questionEditor.minRating')}
               </label>
               <input
                 type="number"
@@ -218,7 +220,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Max Rating
+                {t('surveys.admin.questionEditor.maxRating')}
               </label>
               <input
                 type="number"
@@ -242,16 +244,16 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
           />
           <label htmlFor={`required-${question.id}`} className="ml-2 block text-sm text-gray-700">
-            Required question
+            {t('surveys.admin.questionEditor.requiredQuestion')}
           </label>
         </div>
 
         {/* Preview */}
         <div className="mt-4 p-3 bg-gray-50 rounded-md">
-          <p className="text-xs text-gray-500 mb-2 font-medium">Preview:</p>
+          <p className="text-xs text-gray-500 mb-2 font-medium">{t('surveys.admin.questionEditor.preview')}</p>
           <div className="text-sm">
             <p className="font-medium text-gray-900 mb-1">
-              {question.text || 'Question text will appear here...'}
+              {question.text || t('surveys.admin.questionEditor.previewPlaceholder')}
               {question.required && <span className="text-red-500 ml-1">*</span>}
             </p>
             {question.description && (
@@ -285,7 +287,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
                 type="text"
                 disabled
                 className="w-full border-gray-300 rounded text-sm"
-                placeholder="Text input"
+                placeholder={t('surveys.admin.questionEditor.textInputPlaceholder')}
               />
             )}
             
@@ -294,7 +296,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
                 disabled
                 rows={3}
                 className="w-full border-gray-300 rounded text-sm"
-                placeholder="Long text input"
+                placeholder={t('surveys.admin.questionEditor.longTextInputPlaceholder')}
               />
             )}
             
@@ -310,11 +312,11 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
               <div className="space-y-1">
                 <label className="flex items-center">
                   <input type="radio" name={`preview-${question.id}`} className="mr-2" />
-                  <span className="text-sm">Yes</span>
+                  <span className="text-sm">{t('common.yes')}</span>
                 </label>
                 <label className="flex items-center">
                   <input type="radio" name={`preview-${question.id}`} className="mr-2" />
-                  <span className="text-sm">No</span>
+                  <span className="text-sm">{t('common.no')}</span>
                 </label>
               </div>
             )}

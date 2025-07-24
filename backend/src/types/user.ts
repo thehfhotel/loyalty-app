@@ -17,3 +17,13 @@ export interface ProfileUpdate {
   dateOfBirth?: string;
   preferences?: Record<string, any>;
 }
+
+export interface UserReceptionInfo {
+  userId: string;
+  receptionId: string;
+  firstName?: string;
+  lastName?: string;
+  email: string;
+  phone?: string;
+  isActive: boolean;
+}

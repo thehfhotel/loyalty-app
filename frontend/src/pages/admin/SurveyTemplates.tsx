@@ -256,21 +256,20 @@ const SurveyTemplates: React.FC = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setTemplates(getPredefinedTemplates(t));
-    loadCustomTemplates();
+    try {
+      setTemplates(getPredefinedTemplates(t));
+      loadCustomTemplates();
+    } catch (error) {
+      console.error('Error initializing templates:', error);
+      toast.error('Failed to load survey templates');
+    }
   }, [t]);
 
-  const loadCustomTemplates = async () => {
-    try {
-      setLoading(true);
-      // Load surveys that are marked as templates
-      const response = await surveyService.getSurveys(1, 100, 'template');
-      setCustomTemplates(response.surveys);
-    } catch (error) {
-      console.error('Error loading custom templates:', error);
-    } finally {
-      setLoading(false);
-    }
+  const loadCustomTemplates = () => {
+    // Custom templates functionality is disabled for now
+    // Templates are provided as predefined options only
+    setCustomTemplates([]);
+    setLoading(false);
   };
 
   const categories = [

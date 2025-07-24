@@ -129,7 +129,11 @@
     "firstNamePlaceholder": "ชื่อ",
     "lastNamePlaceholder": "นามสกุล",
     "phonePlaceholder": "+66 (0) 12-345-6789",
-    "accountLinkingDescription2": "เชื่อมโยงหลายบัญชีเข้าด้วยกันเพื่อเข้าถึงข้อมูลของคุณจากวิธีการเข้าสู่ระบบที่แตกต่างกัน"
+    "accountLinkingDescription2": "เชื่อมโยงหลายบัญชีเข้าด้วยกันเพื่อเข้าถึงข้อมูลของคุณจากวิธีการเข้าสู่ระบบที่แตกต่างกัน",
+    "receptionId": "รหัสต้อนรับ",
+    "copyReceptionId": "คัดลอกรหัสต้อนรับ",
+    "receptionIdCopied": "คัดลอกรหัสต้อนรับสำเร็จ",
+    "receptionIdFormat": "รหัส 8 หลักเริ่มต้นด้วย 269"
   },
   "accountLinking": {
     "title": "การเชื่อมโยงบัญชี",
@@ -596,8 +600,88 @@
       "createSurvey": "สร้างแบบสำรวจ",
       "editSurvey": "แก้ไขแบบสำรวจ",
       "deleteSurvey": "ลบแบบสำรวจ",
-      "surveyBuilder": "ตัวสร้างแบบสำรวจ",
-      "basicInfo": "ข้อมูลพื้นฐาน",
+      "surveyBuilder": {
+        "pageTitle": {
+          "create": "สร้างแบบสำรวจ",
+          "edit": "แก้ไขแบบสำรวจ"
+        },
+        "loading": "กำลังโหลดแบบสำรวจ...",
+        "preview": "ดูตัวอย่าง",
+        "hidePreview": "ซ่อนตัวอย่าง",
+        "cancel": "ยกเลิก"
+      },
+      "basicInfo": {
+        "title": "ข้อมูลพื้นฐาน",
+        "surveyTitle": "ชื่อแบบสำรวจ *",
+        "surveyTitlePlaceholder": "ใส่ชื่อแบบสำรวจ...",
+        "description": "คำอธิบาย",
+        "descriptionPlaceholder": "อธิบายวัตถุประสงค์ของแบบสำรวจนี้...",
+        "status": "สถานะ",
+        "statusOptions": {
+          "draft": "แบบร่าง",
+          "active": "ใช้งาน",
+          "paused": "หยุดชั่วคราว",
+          "completed": "เสร็จสิ้น",
+          "archived": "จัดเก็บ"
+        },
+        "accessType": "ประเภทการเข้าถึง *",
+        "accessTypeOptions": {
+          "public": "สาธารณะ - เปิดให้ผู้ใช้ทุกคนในแอป",
+          "inviteOnly": "เชิญเท่านั้น - ต้องเชิญผู้ใช้เฉพาะ"
+        },
+        "accessTypeDescriptions": {
+          "public": "แบบสำรวจสาธารณะจะปรากฏในเมนู \"ทำแบบสำรวจ\" ของผู้ใช้และสามารถเข้าถึงได้โดยผู้ใช้ทุกคน",
+          "inviteOnly": "แบบสำรวจแบบเชิญเท่านั้นจะมองเห็นได้เฉพาะผู้ใช้ที่ได้รับคำเชิญเฉพาะจากผู้ดูแลระบบ"
+        }
+      },
+      "questions": {
+        "title": "คำถาม",
+        "count": "{{count}} คำถาม",
+        "noQuestions": "ยังไม่มีคำถาม โปรดใช้ปุ่มด้านล่างเพื่อเพิ่มคำถามแรกของคุณ",
+        "addQuestion": "เพิ่มคำถาม",
+        "questionTypes": {
+          "singleChoice": "ตัวเลือกเดี่ยว",
+          "multipleChoice": "ตัวเลือกหลายตัว",
+          "text": "ข้อความสั้น",
+          "textarea": "ข้อความยาว",
+          "rating5": "คะแนน 5 ดาว",
+          "rating10": "คะแนน 10 ระดับ",
+          "yesNo": "ใช่/ไม่ใช่"
+        },
+        "defaultOptions": {
+          "option1": "ตัวเลือก 1",
+          "option2": "ตัวเลือก 2"
+        }
+      },
+      "questionEditor": {
+        "questionNumber": "คำถาม {{number}}",
+        "questionText": "ข้อความคำถาม *",
+        "questionTextPlaceholder": "ใส่คำถามของคุณ...",
+        "fieldRequired": "ฟิลด์นี้จำเป็นต้องกรอก",
+        "description": "คำอธิบาย (ไม่บังคับ)",
+        "descriptionPlaceholder": "ข้อมูลเพิ่มเติมหรือคำแนะนำ...",
+        "answerOptions": "ตัวเลือกคำตอบ",
+        "optionTextPlaceholder": "ข้อความตัวเลือก...",
+        "optionValuePlaceholder": "ค่า",
+        "addOption": "เพิ่มตัวเลือก",
+        "newOptionText": "ตัวเลือก {{number}}",
+        "minRating": "คะแนนต่ำสุด",
+        "maxRating": "คะแนนสูงสุด",
+        "requiredQuestion": "คำถามที่ต้องตอบ",
+        "preview": "ตัวอย่าง:",
+        "previewPlaceholder": "ข้อความคำถามจะแสดงที่นี่...",
+        "textInputPlaceholder": "การใส่ข้อความ",
+        "longTextInputPlaceholder": "การใส่ข้อความยาว",
+        "questionTypes": {
+          "singleChoice": "ตัวเลือกเดี่ยว",
+          "multipleChoice": "ตัวเลือกหลายตัว",
+          "text": "ข้อความสั้น",
+          "textarea": "ข้อความยาว",
+          "rating5": "คะแนน 5 ดาว",
+          "rating10": "คะแนน 10 ระดับ",
+          "yesNo": "ใช่/ไม่ใช่"
+        }
+      },
       "surveyTitle": "ชื่อแบบสำรวจ",
       "surveyTitlePlaceholder": "ใส่ชื่อที่ชัดเจนและอธิบายเนื้อหาของแบบสำรวจนี้",
       "description": "คำอธิบาย",
@@ -640,11 +724,28 @@
         "deleted": "ลบแบบสำรวจสำเร็จ",
         "published": "เผยแพร่แบบสำรวจสำเร็จ"
       },
+      "messages": {
+        "loadError": "ไม่สามารถโหลดแบบสำรวจได้",
+        "createSuccess": "สร้างแบบสำรวจสำเร็จแล้ว",
+        "updateSuccess": "อัปเดตแบบสำรวจสำเร็จแล้ว",
+        "saveError": "ไม่สามารถบันทึกแบบสำรวจได้",
+        "validationFailed": "การตรวจสอบล้มเหลว: {{errors}}",
+        "networkError": "ไม่สามารถบันทึกแบบสำรวจ: {{message}}"
+      },
       "validation": {
         "titleRequired": "ชื่อแบบสำรวจจำเป็นต้องระบุ",
         "questionRequired": "ข้อความคำถามจำเป็นต้องระบุ",
         "optionRequired": "ข้อความตัวเลือกจำเป็นต้องระบุ",
-        "minOneQuestion": "ต้องมีอย่างน้อยหนึ่งคำถาม"
+        "minOneQuestion": "ต้องมีอย่างน้อยหนึ่งคำถาม",
+        "readyToSave": "พร้อมบันทึก",
+        "needsAttention": "{{count}} ฟิลด์ต้องการความสนใจ (คลิกเผยแพร่เพื่อไฮไลท์)",
+        "needsAttentionPlural": "{{count}} ฟิลด์ต้องการความสนใจ (คลิกเผยแพร่เพื่อไฮไลท์)",
+        "emptyQuestion": "กรุณากรอกข้อความคำถามทั้งหมด (คำถามที่ {{questionNumbers}} ว่าง)",
+        "emptyQuestionPlural": "กรุณากรอกข้อความคำถามทั้งหมด (คำถามที่ {{questionNumbers}} ว่าง)",
+        "emptyOptions": "กรุณากรอกข้อความตัวเลือกทั้งหมด",
+        "emptyOptionsCount": "กรุณากรอกข้อความตัวเลือกทั้งหมด (พบตัวเลือกว่าง {{count}} รายการ)",
+        "questionTextRequired": "ต้องกรอกข้อความคำถาม",
+        "titleAndQuestionRequired": "กรุณาใส่ชื่อและอย่างน้อยหนึ่งคำถาม"
       },
       "analytics": {
         "title": "การวิเคราะห์แบบสำรวจ",

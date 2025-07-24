@@ -8,6 +8,7 @@ import { User, JWTPayload, AuthTokens } from '../types/auth';
 import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
+import { receptionIdService } from './receptionIdService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret';
@@ -40,6 +41,9 @@ export class AuthService {
       // Hash password
       const passwordHash = await bcrypt.hash(data.password, 10);
 
+      // Generate unique reception ID
+      const receptionId = await receptionIdService.generateUniqueReceptionId();
+
       // Create user
       const [user] = await client.query<User>(
         `INSERT INTO users (email, password_hash) 
@@ -48,12 +52,14 @@ export class AuthService {
         [data.email, passwordHash]
       ).then(res => res.rows);
 
-      // Create user profile
+      // Create user profile with reception ID
       await client.query(
-        `INSERT INTO user_profiles (user_id, first_name, last_name, phone) 
-         VALUES ($1, $2, $3, $4)`,
-        [user.id, data.firstName, data.lastName, data.phone]
+        `INSERT INTO user_profiles (user_id, first_name, last_name, phone, reception_id) 
+         VALUES ($1, $2, $3, $4, $5)`,
+        [user.id, data.firstName, data.lastName, data.phone, receptionId]
       );
+
+      logger.info(`User registered with reception ID: ${receptionId} (email: ${data.email})`);
 
       // Generate tokens (pass client for transaction)
       const tokens = await this.generateTokens(user, client);
@@ -352,7 +358,8 @@ export class AuthService {
         up.last_name AS "lastName",
         up.phone,
         up.date_of_birth AS "dateOfBirth",
-        up.avatar_url AS "avatarUrl"
+        up.avatar_url AS "avatarUrl",
+        up.reception_id AS "receptionId"
        FROM users u
        LEFT JOIN user_profiles up ON u.id = up.user_id
        WHERE u.id = $1`,

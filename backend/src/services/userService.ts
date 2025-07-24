@@ -12,6 +12,7 @@ interface UserWithProfile {
   firstName?: string;
   lastName?: string;
   phone?: string;
+  receptionId?: string;
   createdAt: string;
   lastLogin?: string;
 }
@@ -27,6 +28,7 @@ export class UserService {
         date_of_birth AS "dateOfBirth",
         preferences,
         avatar_url AS "avatarUrl",
+        reception_id AS "receptionId",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM user_profiles
@@ -88,6 +90,7 @@ export class UserService {
         date_of_birth AS "dateOfBirth",
         preferences,
         avatar_url AS "avatarUrl",
+        reception_id AS "receptionId",
         created_at AS "createdAt",
         updated_at AS "updatedAt"`,
       values
@@ -144,7 +147,8 @@ export class UserService {
         u.created_at AS "createdAt",
         up.first_name AS "firstName",
         up.last_name AS "lastName",
-        up.phone
+        up.phone,
+        up.reception_id AS "receptionId"
       FROM users u
       LEFT JOIN user_profiles up ON u.id = up.user_id
       ${searchCondition}
@@ -171,7 +175,8 @@ export class UserService {
         up.first_name AS "firstName",
         up.last_name AS "lastName",
         up.phone,
-        up.avatar_url AS "avatarUrl"
+        up.avatar_url AS "avatarUrl",
+        up.reception_id AS "receptionId"
       FROM users u
       LEFT JOIN user_profiles up ON u.id = up.user_id
       WHERE u.id = $1`,

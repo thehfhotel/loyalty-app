@@ -38,14 +38,29 @@ class SurveyService {
     status?: string,
     createdBy?: string
   ): Promise<SurveyListResponse> {
-    const params = new URLSearchParams();
-    params.append('page', page.toString());
-    params.append('limit', limit.toString());
-    if (status) params.append('status', status);
-    if (createdBy) params.append('created_by', createdBy);
+    try {
+      // Validate status parameter against known valid statuses
+      const validStatuses = ['draft', 'active', 'paused', 'completed', 'archived'];
+      if (status && !validStatuses.includes(status)) {
+        console.warn(`Invalid survey status '${status}'. Valid statuses:`, validStatuses);
+        throw new Error(`Invalid survey status: ${status}`);
+      }
 
-    const response = await surveyAxios.get(`/surveys?${params}`);
-    return response.data;
+      const params = new URLSearchParams();
+      params.append('page', page.toString());
+      params.append('limit', limit.toString());
+      if (status) params.append('status', status);
+      if (createdBy) params.append('created_by', createdBy);
+
+      const response = await surveyAxios.get(`/surveys?${params}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error in getSurveys:', error);
+      if (error.response) {
+        console.error('Response error:', error.response.status, error.response.data);
+      }
+      throw error;
+    }
   }
 
   async getSurveyById(id: string): Promise<Survey> {

@@ -33,6 +33,12 @@ export interface User {
   emailVerified: boolean;
   createdAt: Date;
   updatedAt: Date;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  dateOfBirth?: Date;
+  avatarUrl?: string;
+  receptionId?: string;
 }
 
 export interface UserProfile {
@@ -43,6 +49,7 @@ export interface UserProfile {
   dateOfBirth?: Date;
   preferences: Record<string, any>;
   avatarUrl?: string;
+  receptionId?: string;
   createdAt: Date;
   updatedAt: Date;
 }

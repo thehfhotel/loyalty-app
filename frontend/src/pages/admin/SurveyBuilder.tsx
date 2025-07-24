@@ -25,7 +25,7 @@ interface SurveyValidationResult {
   isValid: boolean;
 }
 
-const validateSurveyQuestions = (questions: SurveyQuestion[]): SurveyValidationResult => {
+const validateSurveyQuestions = (questions: SurveyQuestion[], t: any): SurveyValidationResult => {
   const emptyQuestions: QuestionValidationError[] = [];
   const emptyOptions: QuestionValidationError[] = [];
 
@@ -39,7 +39,7 @@ const validateSurveyQuestions = (questions: SurveyQuestion[]): SurveyValidationR
       emptyQuestions.push({
         id: question.id,
         text: question.text || '',
-        error: 'Question text is required',
+        error: t('surveys.admin.validation.questionTextRequired'),
         questionNumber: index + 1
       });
     }
@@ -213,12 +213,12 @@ const SurveyBuilder: React.FC = () => {
   // Real-time validation check
   useEffect(() => {
     if (survey.questions && survey.questions.length > 0) {
-      const validation = validateSurveyQuestions(survey.questions);
+      const validation = validateSurveyQuestions(survey.questions, t);
       setValidationState(validation);
     } else {
       setValidationState({ emptyQuestions: [], emptyOptions: [], isValid: true });
     }
-  }, [survey.questions]);
+  }, [survey.questions, t]);
 
   // Inject validation error highlighting CSS
   useEffect(() => {
@@ -303,7 +303,7 @@ const SurveyBuilder: React.FC = () => {
       setSurvey(surveyData);
     } catch (err: any) {
       console.error('Error loading survey:', err);
-      toast.error('Failed to load survey');
+      toast.error(t('surveys.admin.messages.loadError'));
       navigate('/admin/surveys');
     } finally {
       setLoading(false);
@@ -326,8 +326,8 @@ const SurveyBuilder: React.FC = () => {
       order: (survey.questions?.length || 0) + 1,
       ...(type === 'multiple_choice' || type === 'single_choice' ? {
         options: [
-          { id: surveyService.generateOptionId(), text: 'Option 1', value: 'option1' },
-          { id: surveyService.generateOptionId(), text: 'Option 2', value: 'option2' }
+          { id: surveyService.generateOptionId(), text: t('surveys.admin.questions.defaultOptions.option1'), value: 'option1' },
+          { id: surveyService.generateOptionId(), text: t('surveys.admin.questions.defaultOptions.option2'), value: 'option2' }
         ]
       } : {}),
       ...(type === 'rating_5' ? { min_rating: 1, max_rating: 5 } : {}),
@@ -375,7 +375,7 @@ const SurveyBuilder: React.FC = () => {
 
   const saveSurvey = async (status?: string) => {
     if (!survey.title || !survey.questions?.length) {
-      toast.error('Please provide a title and at least one question');
+      toast.error(t('surveys.admin.validation.titleAndQuestionRequired'));
       return;
     }
 
@@ -409,10 +409,10 @@ const SurveyBuilder: React.FC = () => {
 
       if (isEditing && id) {
         await surveyService.updateSurvey(id, { ...surveyData, status: (status || survey.status) as SurveyStatus });
-        toast.success('Survey updated successfully');
+        toast.success(t('surveys.admin.messages.updateSuccess'));
       } else {
         const newSurvey = await surveyService.createSurvey(surveyData);
-        toast.success('Survey created successfully');
+        toast.success(t('surveys.admin.messages.createSuccess'));
         navigate(`/admin/surveys/${newSurvey.id}/edit`);
       }
     } catch (err: any) {
@@ -425,7 +425,7 @@ const SurveyBuilder: React.FC = () => {
         const backendErrors = err.response?.data?.validationErrors || [];
         if (backendErrors.length > 0) {
           const fieldErrors = backendErrors.map((error: any) => error.message || error.field).join(', ');
-          toast.error(`Validation failed: ${fieldErrors}`, {
+          toast.error(t('surveys.admin.messages.validationFailed', { errors: fieldErrors }), {
             duration: 6000,
             icon: '⚠️'
           });
@@ -443,7 +443,7 @@ const SurveyBuilder: React.FC = () => {
         }
       } else {
         // Handle network or server errors
-        toast.error(`Unable to save survey: ${errorMessage}`, {
+        toast.error(t('surveys.admin.messages.networkError', { message: errorMessage }), {
           duration: 7000,
           icon: '🔌'
         });
@@ -462,7 +462,7 @@ const SurveyBuilder: React.FC = () => {
         <div className="max-w-4xl mx-auto p-4">
           <div className="flex justify-center items-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-            <span className="ml-3 text-gray-600">Loading survey...</span>
+            <span className="ml-3 text-gray-600">{t('surveys.admin.surveyBuilder.loading')}</span>
           </div>
         </div>
       </div>
@@ -477,7 +477,7 @@ const SurveyBuilder: React.FC = () => {
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center">
               <h1 className="text-2xl font-bold text-gray-900">
-                {isEditing ? 'Edit Survey' : 'Create Survey'}
+                {isEditing ? t('surveys.admin.surveyBuilder.pageTitle.edit') : t('surveys.admin.surveyBuilder.pageTitle.create')}
               </h1>
             </div>
             <div className="flex items-center space-x-4">
@@ -486,7 +486,7 @@ const SurveyBuilder: React.FC = () => {
                 className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 <FiEye className="mr-2 h-4 w-4" />
-                {showPreview ? 'Hide Preview' : 'Preview'}
+                {showPreview ? t('surveys.admin.surveyBuilder.hidePreview') : t('surveys.admin.surveyBuilder.preview')}
               </button>
               <LanguageSwitcher />
               <DashboardButton variant="outline" size="md" />
@@ -502,12 +502,12 @@ const SurveyBuilder: React.FC = () => {
           <div className="space-y-6">
             {/* Basic Information */}
             <div className="bg-white shadow rounded-lg p-6">
-              <h2 className="text-lg font-medium text-gray-900 mb-4">Basic Information</h2>
+              <h2 className="text-lg font-medium text-gray-900 mb-4">{t('surveys.admin.basicInfo.title')}</h2>
               
               <div className="space-y-4">
                 <div>
                   <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-                    Survey Title *
+                    {t('surveys.admin.basicInfo.surveyTitle')}
                   </label>
                   <input
                     type="text"
@@ -515,13 +515,13 @@ const SurveyBuilder: React.FC = () => {
                     value={survey.title || ''}
                     onChange={(e) => handleSurveyChange('title', e.target.value)}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    placeholder="Enter survey title..."
+                    placeholder={t('surveys.admin.basicInfo.surveyTitlePlaceholder')}
                   />
                 </div>
 
                 <div>
                   <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-                    Description
+                    {t('surveys.admin.basicInfo.description')}
                   </label>
                   <textarea
                     id="description"
@@ -529,13 +529,13 @@ const SurveyBuilder: React.FC = () => {
                     value={survey.description || ''}
                     onChange={(e) => handleSurveyChange('description', e.target.value)}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    placeholder="Describe the purpose of this survey..."
+                    placeholder={t('surveys.admin.basicInfo.descriptionPlaceholder')}
                   />
                 </div>
 
                 <div>
                   <label htmlFor="status" className="block text-sm font-medium text-gray-700">
-                    Status
+                    {t('surveys.admin.basicInfo.status')}
                   </label>
                   <select
                     id="status"
@@ -543,17 +543,17 @@ const SurveyBuilder: React.FC = () => {
                     onChange={(e) => handleSurveyChange('status', e.target.value)}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   >
-                    <option value="draft">Draft</option>
-                    <option value="active">Active</option>
-                    <option value="paused">Paused</option>
-                    <option value="completed">Completed</option>
-                    <option value="archived">Archived</option>
+                    <option value="draft">{t('surveys.admin.basicInfo.statusOptions.draft')}</option>
+                    <option value="active">{t('surveys.admin.basicInfo.statusOptions.active')}</option>
+                    <option value="paused">{t('surveys.admin.basicInfo.statusOptions.paused')}</option>
+                    <option value="completed">{t('surveys.admin.basicInfo.statusOptions.completed')}</option>
+                    <option value="archived">{t('surveys.admin.basicInfo.statusOptions.archived')}</option>
                   </select>
                 </div>
 
                 <div>
                   <label htmlFor="access_type" className="block text-sm font-medium text-gray-700">
-                    Access Type *
+                    {t('surveys.admin.basicInfo.accessType')}
                   </label>
                   <select
                     id="access_type"
@@ -561,13 +561,13 @@ const SurveyBuilder: React.FC = () => {
                     onChange={(e) => handleSurveyChange('access_type', e.target.value)}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   >
-                    <option value="public">Public - Available to all users in the app</option>
-                    <option value="invite_only">Invite Only - Specific users must be invited</option>
+                    <option value="public">{t('surveys.admin.basicInfo.accessTypeOptions.public')}</option>
+                    <option value="invite_only">{t('surveys.admin.basicInfo.accessTypeOptions.inviteOnly')}</option>
                   </select>
                   <p className="mt-2 text-sm text-gray-500">
                     {survey.access_type === 'public' 
-                      ? 'Public surveys appear in the user\'s "Take Survey" menu and are accessible to all users.'
-                      : 'Invite-only surveys are only visible to users who receive specific invitations from administrators.'
+                      ? t('surveys.admin.basicInfo.accessTypeDescriptions.public')
+                      : t('surveys.admin.basicInfo.accessTypeDescriptions.inviteOnly')
                     }
                   </p>
                 </div>
@@ -577,10 +577,10 @@ const SurveyBuilder: React.FC = () => {
             {/* Questions */}
             <div className="bg-white shadow rounded-lg p-6">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-medium text-gray-900">Questions</h2>
+                <h2 className="text-lg font-medium text-gray-900">{t('surveys.admin.questions.title')}</h2>
                 <div className="flex items-center space-x-2">
                   <span className="text-sm text-gray-500">
-                    {survey.questions?.length || 0} questions
+                    {t('surveys.admin.questions.count', { count: survey.questions?.length || 0 })}
                   </span>
                 </div>
               </div>
@@ -600,63 +600,63 @@ const SurveyBuilder: React.FC = () => {
 
                 {survey.questions?.length === 0 && (
                   <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg">
-                    <p className="text-gray-500 mb-4">No questions added yet</p>
+                    <p className="text-gray-500 mb-4">{t('surveys.admin.questions.noQuestions')}</p>
                   </div>
                 )}
               </div>
 
               {/* Add Question Buttons */}
               <div className="mt-6 pt-6 border-t border-gray-200">
-                <h3 className="text-sm font-medium text-gray-700 mb-3">Add Question</h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">{t('surveys.admin.questions.addQuestion')}</h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <button
                     onClick={() => addQuestion('single_choice')}
                     className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                   >
                     <FiPlus className="mr-2 h-4 w-4" />
-                    Single Choice
+                    {t('surveys.admin.questions.questionTypes.singleChoice')}
                   </button>
                   <button
                     onClick={() => addQuestion('multiple_choice')}
                     className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                   >
                     <FiPlus className="mr-2 h-4 w-4" />
-                    Multiple Choice
+                    {t('surveys.admin.questions.questionTypes.multipleChoice')}
                   </button>
                   <button
                     onClick={() => addQuestion('text')}
                     className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                   >
                     <FiPlus className="mr-2 h-4 w-4" />
-                    Text Input
+                    {t('surveys.admin.questions.questionTypes.text')}
                   </button>
                   <button
                     onClick={() => addQuestion('textarea')}
                     className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                   >
                     <FiPlus className="mr-2 h-4 w-4" />
-                    Long Text
+                    {t('surveys.admin.questions.questionTypes.textarea')}
                   </button>
                   <button
                     onClick={() => addQuestion('rating_5')}
                     className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                   >
                     <FiPlus className="mr-2 h-4 w-4" />
-                    5-Star Rating
+                    {t('surveys.admin.questions.questionTypes.rating5')}
                   </button>
                   <button
                     onClick={() => addQuestion('rating_10')}
                     className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                   >
                     <FiPlus className="mr-2 h-4 w-4" />
-                    10-Point Scale
+                    {t('surveys.admin.questions.questionTypes.rating10')}
                   </button>
                   <button
                     onClick={() => addQuestion('yes_no')}
                     className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                   >
                     <FiPlus className="mr-2 h-4 w-4" />
-                    Yes/No
+                    {t('surveys.admin.questions.questionTypes.yesNo')}
                   </button>
                 </div>
               </div>
@@ -669,7 +669,7 @@ const SurveyBuilder: React.FC = () => {
                   onClick={() => navigate('/admin/surveys')}
                   className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                 >
-                  Cancel
+                  {t('surveys.admin.surveyBuilder.cancel')}
                 </button>
                 
                 <div className="flex items-center space-x-3">
@@ -679,12 +679,15 @@ const SurveyBuilder: React.FC = () => {
                       {validationState.isValid ? (
                         <span className="flex items-center text-green-600">
                           <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                          Ready to save
+                          {t('surveys.admin.validation.readyToSave')}
                         </span>
                       ) : (
                         <span className="flex items-center text-amber-600">
                           <span className="w-2 h-2 bg-amber-500 rounded-full mr-2"></span>
-                          {validationState.emptyQuestions.length} field{validationState.emptyQuestions.length !== 1 ? 's' : ''} need attention (click publish to highlight)
+                          {validationState.emptyQuestions.length === 1 
+                            ? t('surveys.admin.validation.needsAttention', { count: validationState.emptyQuestions.length })
+                            : t('surveys.admin.validation.needsAttentionPlural', { count: validationState.emptyQuestions.length })
+                          }
                         </span>
                       )}
                     </div>
@@ -696,7 +699,7 @@ const SurveyBuilder: React.FC = () => {
                     className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
                   >
                     <FiSave className="mr-2 h-4 w-4" />
-                    Save Draft
+                    {t('surveys.admin.saveDraft')}
                   </button>
                   
                   <button
@@ -705,7 +708,7 @@ const SurveyBuilder: React.FC = () => {
                     className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
                   >
                     {saving && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>}
-                    {isEditing ? 'Update & Publish' : 'Create & Publish'}
+                    {isEditing ? t('surveys.admin.updateAndPublish') : t('surveys.admin.createAndPublish')}
                   </button>
                 </div>
               </div>

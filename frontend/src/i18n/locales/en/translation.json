@@ -132,7 +132,11 @@
     "firstNamePlaceholder": "John",
     "lastNamePlaceholder": "Doe",
     "phonePlaceholder": "+1 (555) 123-4567",
-    "accountLinkingDescription2": "Link multiple accounts together to access your data from different login methods."
+    "accountLinkingDescription2": "Link multiple accounts together to access your data from different login methods.",
+    "receptionId": "Reception ID",
+    "copyReceptionId": "Copy reception ID", 
+    "receptionIdCopied": "Reception ID copied successfully",
+    "receptionIdFormat": "8-digit ID starting with 269"
   },
   "accountLinking": {
     "title": "Account Linking",
@@ -561,8 +565,40 @@
       "createSurvey": "Create New Survey",
       "editSurvey": "Edit Survey",
       "deleteSurvey": "Delete Survey",
-      "surveyBuilder": "Survey Builder",
-      "basicInfo": "Survey Information",
+      "surveyBuilder": {
+        "pageTitle": {
+          "create": "Create Survey",
+          "edit": "Edit Survey"
+        },
+        "loading": "Loading survey...",
+        "preview": "Preview",
+        "hidePreview": "Hide Preview",
+        "cancel": "Cancel"
+      },
+      "basicInfo": {
+        "title": "Basic Information",
+        "surveyTitle": "Survey Title *",
+        "surveyTitlePlaceholder": "Enter survey title...",
+        "description": "Description",
+        "descriptionPlaceholder": "Describe the purpose of this survey...",
+        "status": "Status",
+        "statusOptions": {
+          "draft": "Draft",
+          "active": "Active",
+          "paused": "Paused",
+          "completed": "Completed",
+          "archived": "Archived"
+        },
+        "accessType": "Access Type *",
+        "accessTypeOptions": {
+          "public": "Public - Available to all users in the app",
+          "inviteOnly": "Invite Only - Specific users must be invited"
+        },
+        "accessTypeDescriptions": {
+          "public": "Public surveys appear in the user's \"Take Survey\" menu and are accessible to all users.",
+          "inviteOnly": "Invite-only surveys are only visible to users who receive specific invitations from administrators."
+        }
+      },
       "surveyTitle": "Survey Title",
       "surveyTitlePlaceholder": "Enter a clear, descriptive title that explains what this survey is about",
       "description": "Survey Description",
@@ -573,10 +609,29 @@
       "inviteOnly": "Private Survey - Invitation required",
       "publicDescription": "Public surveys are visible to all users in their survey dashboard and can be completed by anyone with access to the app.",
       "inviteOnlyDescription": "Private surveys are only accessible to users who receive a direct invitation link from administrators. Perfect for targeted feedback collection.",
+      "questions": {
+        "title": "Questions",
+        "count": "{{count}} questions",
+        "noQuestions": "No questions added yet",
+        "addQuestion": "Add Question",
+        "questionTypes": {
+          "singleChoice": "Single Choice",
+          "multipleChoice": "Multiple Choice",
+          "text": "Text Input",
+          "textarea": "Long Text",
+          "rating5": "5-Star Rating",
+          "rating10": "10-Point Scale",
+          "yesNo": "Yes/No"
+        },
+        "defaultOptions": {
+          "option1": "Option 1",
+          "option2": "Option 2"
+        }
+      },
       "addQuestion": "+ Add New Question",
-      "saveDraft": "Save as Draft",
-      "createAndPublish": "Create & Publish Survey",
-      "updateAndPublish": "Update & Publish Changes",
+      "saveDraft": "Save Draft",
+      "createAndPublish": "Create & Publish",
+      "updateAndPublish": "Update & Publish",
       "preview": "Preview Survey",
       "hidePreview": "Close Preview",
       "validationStatus": "✓ Survey is ready to publish",
@@ -605,11 +660,28 @@
         "deleted": "Survey deleted successfully",
         "published": "Survey published successfully"
       },
+      "messages": {
+        "loadError": "Failed to load survey",
+        "createSuccess": "Survey created successfully",
+        "updateSuccess": "Survey updated successfully",
+        "saveError": "Failed to save survey",
+        "validationFailed": "Validation failed: {{errors}}",
+        "networkError": "Unable to save survey: {{message}}"
+      },
       "validation": {
         "titleRequired": "Please enter a survey title",
         "questionRequired": "Please enter the question text",
         "optionRequired": "Please fill in all answer options",
-        "minOneQuestion": "Your survey needs at least one question"
+        "minOneQuestion": "Your survey needs at least one question",
+        "readyToSave": "Ready to save",
+        "needsAttention": "{{count}} field needs attention (click publish to highlight)",
+        "needsAttentionPlural": "{{count}} fields need attention (click publish to highlight)",
+        "emptyQuestion": "Please fill in all question text fields ({{questionNumbers}} empty)",
+        "emptyQuestionPlural": "Please fill in all question text fields (Questions {{questionNumbers}} are empty)",
+        "emptyOptions": "Please fill in all option text fields",
+        "emptyOptionsCount": "Please fill in all option text fields ({{count}} empty options found)",
+        "questionTextRequired": "Question text is required",
+        "titleAndQuestionRequired": "Please provide a title and at least one question"
       },
       "analytics": {
         "title": "Survey Analytics & Insights",
