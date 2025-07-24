@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Coupon, CreateCouponRequest, CouponType, CouponStatus } from '../../types/coupon';
 import { couponService } from '../../services/couponService';
+import { loyaltyService } from '../../services/loyaltyService';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import CouponAssignmentsModal from '../../components/admin/CouponAssignmentsModal';
 import toast from 'react-hot-toast';
@@ -86,39 +87,18 @@ const CouponManagement: React.FC = () => {
 
   const loadUsers = async () => {
     try {
-      const authStorage = localStorage.getItem('auth-storage');
-      let token = '';
+      // Use the loyalty service instead of direct fetch to avoid hardcoded URLs
+      const response = await loyaltyService.getAllUsersLoyaltyStatus(100, 0);
+      const usersData = response.users || [];
       
-      if (authStorage) {
-        try {
-          const parsedAuth = JSON.parse(authStorage);
-          token = parsedAuth.state?.accessToken || '';
-        } catch (error) {
-          console.error('Error parsing auth storage:', error);
-        }
-      }
-      
-      const response = await fetch('http://localhost:4000/api/loyalty/admin/users?limit=100', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        const usersData = data.data?.users || [];
-        // Transform the loyalty service response to our User interface
-        const transformedUsers = usersData.map((user: any) => ({
-          id: user.user_id,
-          email: user.email,
-          firstName: user.first_name,
-          lastName: user.last_name
-        }));
-        setUsers(transformedUsers);
-      } else {
-        console.error('Failed to load users:', response.status, response.statusText);
-      }
+      // Transform the loyalty service response to our User interface
+      const transformedUsers = usersData.map((user: any) => ({
+        id: user.user_id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name
+      }));
+      setUsers(transformedUsers);
     } catch (err) {
       console.error('Error loading users:', err);
     }

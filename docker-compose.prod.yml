@@ -1,0 +1,33 @@
+# Production Docker Compose Override
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  backend:
+    environment:
+      NODE_ENV: production
+    volumes: []  # Remove development volumes for production
+    command: npm start  # Use production start command
+    restart: unless-stopped
+
+  frontend:
+    environment:
+      NODE_ENV: production
+    volumes: []  # Remove development volumes for production
+    command: npm run build && npm run preview  # Build and serve for production
+    restart: unless-stopped
+
+  postgres:
+    restart: unless-stopped
+    # Remove port mapping for production security (only accessible from containers)
+    ports: []
+
+  redis:
+    restart: unless-stopped
+    # Remove port mapping for production security (only accessible from containers)
+    ports: []
+
+  nginx:
+    restart: unless-stopped
+    # Only expose port 3000 for Cloudflare Zero Trust tunnel
+    ports:
+      - "3000:80"

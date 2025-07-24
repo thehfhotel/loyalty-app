@@ -7,8 +7,9 @@ interface FacebookLoginButtonProps {
 
 export default function FacebookLoginButton({ }: FacebookLoginButtonProps) {
   const handleFacebookClick = () => {
-    // Redirect to backend OAuth endpoint
-    window.location.href = 'http://localhost:4000/api/oauth/facebook';
+    // Redirect to backend OAuth endpoint using environment variable
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+    window.location.href = `${apiUrl}/oauth/facebook`;
   };
 
   return (
