@@ -7,13 +7,15 @@ interface TransactionListProps {
   isLoading?: boolean;
   showLoadMore?: boolean;
   onLoadMore?: () => void;
+  showAdminInfo?: boolean; // New prop to control admin info visibility
 }
 
 export default function TransactionList({ 
   transactions, 
   isLoading = false, 
   showLoadMore = false, 
-  onLoadMore 
+  onLoadMore,
+  showAdminInfo = false // Default to false - don't show admin info unless explicitly requested
 }: TransactionListProps) {
   const { t } = useTranslation();
 
@@ -33,9 +35,58 @@ export default function TransactionList({
     }
   };
 
+  const sanitizeDescription = (description: string | null) => {
+    if (!description) return null;
+    
+    // Remove any text that mentions spending amounts or THB
+    const lowercaseDesc = description.toLowerCase();
+    if (lowercaseDesc.includes('thb') || 
+        lowercaseDesc.includes('baht') || 
+        lowercaseDesc.includes('฿') ||
+        /\d+\s*(baht|thb)/i.test(description) ||
+        /spent.*\d+/i.test(description)) {
+      return null; // Hide descriptions containing spending amounts
+    }
+    
+    return description;
+  };
+
+  const getPointsFocusedDescription = (transaction: PointsTransaction) => {
+    // Always focus on points gained/lost rather than any spending amounts
+    const points = Math.abs(transaction.points);
+    
+    if (transaction.points > 0) {
+      // Positive points - focus on earning
+      switch (transaction.type) {
+        case 'earned_stay':
+        case 'stay_earning':
+          return `${t('loyalty.transactionTypes.earnedStay')}`;
+        case 'earned_bonus':
+          return `${t('loyalty.transactionTypes.earnedBonus')}`;
+        case 'admin_award':
+          return `${t('loyalty.transactionTypes.adminAward')}`;
+        default:
+          return `${t('loyalty.pointsEarned')}`;
+      }
+    } else {
+      // Negative points - focus on usage/deduction
+      switch (transaction.type) {
+        case 'redeemed':
+          return `${t('loyalty.transactionTypes.redeemed')}`;
+        case 'expired':
+          return `${t('loyalty.transactionTypes.expired')}`;
+        case 'admin_deduction':
+          return `${t('loyalty.transactionTypes.adminDeduction')}`;
+        default:
+          return `${t('loyalty.pointsDeducted')}`;
+      }
+    }
+  };
+
   const formatTransactionType = (type: string) => {
     const typeMap: { [key: string]: string } = {
       'earned_stay': t('loyalty.transactionTypes.earnedStay'),
+      'stay_earning': t('loyalty.transactionTypes.earnedStay'),
       'earned_bonus': t('loyalty.transactionTypes.earnedBonus'),
       'redeemed': t('loyalty.transactionTypes.redeemed'),
       'expired': t('loyalty.transactionTypes.expired'),
@@ -107,10 +158,10 @@ export default function TransactionList({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
                   <p className="font-medium text-gray-900 truncate">
-                    {transaction.description || formatTransactionType(transaction.type)}
+                    {getPointsFocusedDescription(transaction)}
                   </p>
                   <p className={`font-semibold ${getTransactionColor(transaction.points)}`}>
-                    {transaction.points > 0 ? '+' : ''}{transaction.points.toLocaleString()}
+                    {transaction.points > 0 ? '+' : ''}{transaction.points.toLocaleString()} {t('loyalty.points')}
                   </p>
                 </div>
                 
@@ -119,7 +170,7 @@ export default function TransactionList({
                     {formatDate(transaction.created_at)}
                   </p>
                   
-                  {transaction.admin_email && (
+                  {showAdminInfo && transaction.admin_email && (
                     <div className="flex items-center space-x-1 text-xs text-gray-500">
                       <FiUser className="w-3 h-3" />
                       <span>{transaction.admin_email}</span>
@@ -133,7 +184,7 @@ export default function TransactionList({
                   )}
                 </div>
 
-                {transaction.admin_reason && (
+                {transaction.admin_reason && !transaction.admin_reason.toLowerCase().includes('thb') && !transaction.admin_reason.toLowerCase().includes('baht') && !transaction.admin_reason.toLowerCase().includes('฿') && (
                   <p className="text-xs text-gray-500 mt-1 italic">
                     {transaction.admin_reason}
                   </p>

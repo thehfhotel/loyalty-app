@@ -7,7 +7,8 @@ import {
   FiMinus, 
   FiRefreshCw,
   FiSearch,
-  FiDollarSign
+  FiDollarSign,
+  FiUser
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { 
@@ -439,9 +440,6 @@ export default function LoyaltyAdminPage() {
                             <div className="text-sm text-gray-900">
                               {user.current_points.toLocaleString()}
                             </div>
-                            <div className="text-xs text-gray-500">
-                              {t('admin.loyalty.lifetimePoints')}: {user.lifetime_points.toLocaleString()}
-                            </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                             <button
@@ -541,15 +539,9 @@ export default function LoyaltyAdminPage() {
                     <div className="text-sm font-mono text-gray-900">{selectedUser.reception_id || 'Not assigned'}</div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-xs text-gray-500">{t('admin.loyalty.currentPoints')}</div>
-                      <div className="text-lg font-semibold">{selectedUser.current_points.toLocaleString()}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500">{t('admin.loyalty.lifetimePoints')}</div>
-                      <div className="text-lg font-semibold">{selectedUser.lifetime_points.toLocaleString()}</div>
-                    </div>
+                  <div>
+                    <div className="text-xs text-gray-500">{t('admin.loyalty.currentPoints')}</div>
+                    <div className="text-lg font-semibold">{selectedUser.current_points.toLocaleString()}</div>
                   </div>
                   
                   <div>
@@ -571,23 +563,46 @@ export default function LoyaltyAdminPage() {
                   <h4 className="text-sm font-medium text-gray-900 mb-3">
                     {t('admin.loyalty.recentTransactions')}
                   </h4>
-                  <div className="max-h-64 overflow-y-auto space-y-2">
+                  <div className="max-h-64 overflow-y-auto space-y-3">
                     {userTransactions.length === 0 ? (
                       <div className="text-sm text-gray-500">
                         {t('admin.loyalty.noTransactions')}
                       </div>
                     ) : (
                       userTransactions.slice(0, 10).map((transaction) => (
-                        <div key={transaction.id} className="flex justify-between text-sm">
-                          <div>
-                            <div className={transaction.points > 0 ? 'text-green-600' : 'text-red-600'}>
-                              {transaction.points > 0 ? '+' : ''}{transaction.points}
+                        <div key={transaction.id} className="flex justify-between items-start text-sm border-b border-gray-100 pb-2 last:border-b-0">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2">
+                              <div className={transaction.points > 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                                {transaction.points > 0 ? '+' : ''}{transaction.points.toLocaleString()} pts
+                              </div>
+                              <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                                {transaction.type}
+                              </div>
                             </div>
-                            <div className="text-xs text-gray-500">{transaction.type}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-xs text-gray-500">
-                              {new Date(transaction.created_at).toLocaleDateString()}
+                            <div className="mt-1 space-y-1">
+                              <div className="text-xs text-gray-600">
+                                {new Date(transaction.created_at).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </div>
+                              {transaction.admin_email && (
+                                <div className="flex items-center space-x-1 text-xs text-blue-600">
+                                  <FiUser className="w-3 h-3" />
+                                  <span title={`Adjusted by ${transaction.admin_email}`}>
+                                    Admin: {transaction.admin_email}
+                                  </span>
+                                </div>
+                              )}
+                              {transaction.admin_reason && (
+                                <div className="text-xs text-gray-500 italic">
+                                  "{transaction.admin_reason}"
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>

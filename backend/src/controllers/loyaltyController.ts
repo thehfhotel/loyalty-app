@@ -240,7 +240,7 @@ export class LoyaltyController {
         description || 'Points awarded by admin',
         referenceId,
         adminUserId,
-        description
+        `Points awarded by admin user ${adminUserId}` // adminReason
       );
 
       // Get updated loyalty status
