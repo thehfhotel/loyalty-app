@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://loyalty.saichon.com/sitemap.xml
