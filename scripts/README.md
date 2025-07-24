@@ -6,9 +6,11 @@ This directory contains comprehensive scripts for managing the Loyalty App produ
 
 ### First Time Setup
 1. **Validate Environment**: `./scripts/validate-environment.sh`
-2. **Start Production**: `./scripts/start-production.sh`
+2. **Build Images**: `./scripts/build-production.sh`
+3. **Start Production**: `./scripts/start-production.sh`
 
 ### Daily Operations
+- **Build**: `./scripts/build-production.sh` (after code changes)
 - **Start**: `./scripts/start-production.sh`
 - **Stop**: `./scripts/stop-production.sh`
 - **Restart**: `./scripts/restart-production.sh`
@@ -16,7 +18,28 @@ This directory contains comprehensive scripts for managing the Loyalty App produ
 
 ## 📋 Available Scripts
 
-### 1. `validate-environment.sh`
+### 1. `build-production.sh`
+**Purpose**: Builds Docker images for production deployment (separate from starting)
+
+```bash
+./scripts/build-production.sh
+```
+
+**What it does**:
+- 🔍 Validates Docker availability
+- 🧹 Cleans up old images
+- 🔨 Builds backend and frontend images
+- 📋 Lists built images for verification
+
+**Requirements**:
+- Docker daemon running
+- `.env.production` file (uses .env.example as fallback)
+
+**Output**: Built application images ready for deployment
+
+---
+
+### 2. `validate-environment.sh`
 **Purpose**: Validates that your production environment is properly configured
 
 ```bash
@@ -38,8 +61,8 @@ This directory contains comprehensive scripts for managing the Loyalty App produ
 
 ---
 
-### 2. `start-production.sh`
-**Purpose**: Starts the complete production system with health checks
+### 3. `start-production.sh`
+**Purpose**: Starts the complete production system using pre-built images
 
 ```bash
 ./scripts/start-production.sh
@@ -48,17 +71,21 @@ This directory contains comprehensive scripts for managing the Loyalty App produ
 **What it does**:
 - 🔍 Pre-flight system checks
 - 🛑 Stops any existing containers
-- 📥 Pulls and builds latest images
+- 📥 Pulls latest base images (postgres, redis, nginx)
+- ✅ Checks for pre-built application images
 - 🚀 Starts all services in production mode
-- 🏥 Performs comprehensive health checks
+- 🏥 Performs comprehensive health checks via nginx proxy
 - 📊 Shows system status and resource usage
 
 **Requirements**:
+- Pre-built application images (run `build-production.sh` first)
 - `.env.production` file must exist
 - All ports must be available
 - Docker daemon must be running
 
-**Output**: Service status, access URLs, and management commands
+**Output**: Service status, nginx proxy access URLs, and management commands
+
+**Note**: Now uses pre-built images for faster deployment. Run `build-production.sh` separately when code changes.
 
 ---
 

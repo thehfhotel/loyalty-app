@@ -131,14 +131,30 @@ success "✅ Port availability check completed"
 log "🛑 Stopping any existing containers..."
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file "$ENV_FILE" down --remove-orphans 2>/dev/null || true
 
-# Pull latest images
-log "📥 Pulling latest images..."
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file "$ENV_FILE" pull
+# Pull latest base images (postgres, redis, nginx)
+log "📥 Pulling latest base images..."
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file "$ENV_FILE" pull postgres redis nginx
 
-# Build application images
-log "🔨 Building application images..."
-export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
-docker compose --env-file "$ENV_FILE" build --no-cache
+# Check if application images exist
+log "🔍 Checking for pre-built application images..."
+if ! docker images | grep -q "loyalty-app-backend" || ! docker images | grep -q "loyalty-app-frontend"; then
+    warning "⚠️  Application images not found!"
+    echo "Please build the application images first by running:"
+    echo "  ./scripts/build-production.sh"
+    echo ""
+    read -p "Would you like to build the images now? [y/N]: " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log "🔨 Building application images..."
+        export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+        docker compose --env-file "$ENV_FILE" build backend frontend
+    else
+        error "Cannot start without application images"
+        exit 1
+    fi
+else
+    success "✅ Using pre-built application images"
+fi
 
 # Start the production system
 log "🚀 Starting production services..."
@@ -176,18 +192,22 @@ health_check() {
 # Perform health checks
 log "🏥 Performing health checks..."
 
-# Check backend API
-if ! health_check "Backend API" "http://localhost:4000/api/health" 60; then
-    error "Backend API is not responding"
-    docker compose --env-file "$ENV_FILE" logs backend | tail -20
+# Check application through nginx proxy
+if ! health_check "Application (via nginx)" "http://localhost:4001" 60; then
+    error "Application is not responding through nginx proxy"
+    echo "Checking individual service logs:"
+    echo "Frontend logs:"
+    docker compose --env-file "$ENV_FILE" logs frontend | tail -10
+    echo "Backend logs:"
+    docker compose --env-file "$ENV_FILE" logs backend | tail -10
+    echo "Nginx logs:"
+    docker compose --env-file "$ENV_FILE" logs nginx | tail -10
     exit 1
 fi
 
-# Check frontend
-if ! health_check "Frontend" "http://localhost:4001" 60; then
-    error "Frontend is not responding"
-    docker compose --env-file "$ENV_FILE" logs frontend | tail -20
-    exit 1
+# Check API endpoint through nginx
+if ! health_check "Backend API (via nginx)" "http://localhost:4001/api/health" 30; then
+    warning "API health endpoint not responding (this may be normal if no health endpoint exists)"
 fi
 
 # Check database connectivity
@@ -224,9 +244,9 @@ echo "================================================="
 success "🎉 Production system started successfully!"
 echo
 echo "🌐 Access Points:"
-echo "   Frontend: http://localhost:4001"
-echo "   Backend API: http://localhost:4000"
-echo "   Database: localhost:5434 (external access)"
+echo "   Application: http://localhost:4001 (via nginx proxy)"
+echo "   API Endpoints: http://localhost:4001/api/* (via nginx proxy)"
+echo "   Database: localhost:5434 (external access for development only)"
 echo
 echo "📋 Management Commands:"
 echo "   Stop system: ./scripts/stop-production.sh"

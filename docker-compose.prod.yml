@@ -8,6 +8,7 @@ services:
     volumes: []  # Remove development volumes for production
     command: npm start  # Use production start command
     restart: unless-stopped
+    ports: []  # Remove port mapping - nginx will handle routing
 
   frontend:
     environment:
@@ -15,6 +16,7 @@ services:
     volumes: []  # Remove development volumes for production
     command: npm run build && npm run preview  # Build and serve for production
     restart: unless-stopped
+    ports: []  # Remove port mapping - nginx will handle routing
 
   postgres:
     restart: unless-stopped
