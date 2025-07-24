@@ -37,7 +37,7 @@ This guide explains how to set up LINE OAuth for the Loyalty App.
 2. Note down your **Channel ID** and **Channel secret**
 3. Go to the "LINE Login" tab
 4. Add callback URLs:
-   - Development: `http://localhost:4000/api/oauth/line/callback`
+   - Development: `http://localhost:4001/api/oauth/line/callback`
    - Production: `https://yourdomain.com/api/oauth/line/callback`
 5. Configure scopes (permissions):
    - Select "profile" scope to get user's display name and profile image

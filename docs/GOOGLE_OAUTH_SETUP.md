@@ -49,7 +49,7 @@ This guide explains how to set up Google OAuth for the Loyalty App.
      ```
    - Authorized redirect URIs:
      ```
-     http://localhost:4000/api/oauth/google/callback
+     http://localhost:4001/api/oauth/google/callback
      ```
 5. Click "Create"
 6. Copy your Client ID and Client Secret

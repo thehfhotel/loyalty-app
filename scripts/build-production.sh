@@ -59,7 +59,7 @@ log "${BLUE}🧹 Cleaning up old images...${NC}"
 docker image prune -f > /dev/null 2>&1 || true
 
 log "${BLUE}🔨 Building backend image...${NC}"
-docker compose -f docker-compose.production.yml $ENV_FILE build backend
+docker compose -f docker-compose.yml -f docker-compose.prod.yml $ENV_FILE build backend
 
 if [ $? -ne 0 ]; then
     log "${RED}❌ Backend build failed${NC}"
@@ -69,7 +69,7 @@ fi
 log "${GREEN}✅ Backend image built successfully${NC}"
 
 log "${BLUE}🔨 Building frontend image...${NC}"
-docker compose -f docker-compose.production.yml $ENV_FILE build frontend
+docker compose -f docker-compose.yml -f docker-compose.prod.yml $ENV_FILE build frontend
 
 if [ $? -ne 0 ]; then
     log "${RED}❌ Frontend build failed${NC}"

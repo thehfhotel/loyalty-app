@@ -103,10 +103,24 @@ if [[ -f ".env.production" ]]; then
     validate "LOYALTY_USERNAME" "test -n '$LOYALTY_USERNAME'" "LOYALTY_USERNAME is not set"
     validate "LOYALTY_PASSWORD" "test -n '$LOYALTY_PASSWORD'" "LOYALTY_PASSWORD is not set"
     
-    # OAuth validation
+    # OAuth validation (with HTTPS callback URL checks for production)
     validate "Google OAuth Client ID" "test -n '$GOOGLE_CLIENT_ID' && test '$GOOGLE_CLIENT_ID' != 'your-google-client-id-from-console'" "Google OAuth Client ID not configured" true
     validate "Facebook OAuth App ID" "test -n '$FACEBOOK_APP_ID' && test '$FACEBOOK_APP_ID' != 'your-facebook-app-id'" "Facebook OAuth App ID not configured" true
     validate "LINE Channel ID" "test -n '$LINE_CHANNEL_ID' && test '$LINE_CHANNEL_ID' != 'your-line-channel-id'" "LINE Channel ID not configured" true
+    
+    # Production-specific URL validations
+    if [[ "$NODE_ENV" == "production" ]]; then
+        validate "FRONTEND_URL HTTPS" "echo '$FRONTEND_URL' | grep -q '^https://'" "FRONTEND_URL must use HTTPS in production"
+        validate "No localhost in FRONTEND_URL" "! echo '$FRONTEND_URL' | grep -q 'localhost'" "FRONTEND_URL cannot contain localhost in production"
+        
+        if [[ -n "$GOOGLE_CALLBACK_URL" ]]; then
+            validate "Google callback HTTPS" "echo '$GOOGLE_CALLBACK_URL' | grep -q '^https://'" "GOOGLE_CALLBACK_URL must use HTTPS in production"
+        fi
+        
+        if [[ -n "$LINE_CALLBACK_URL" ]]; then
+            validate "LINE callback HTTPS" "echo '$LINE_CALLBACK_URL' | grep -q '^https://'" "LINE_CALLBACK_URL must use HTTPS in production"
+        fi
+    fi
     
 else
     error "❌ .env.production file not found!"

@@ -31,7 +31,7 @@ This guide explains how to set up Facebook OAuth for the Loyalty App.
 1. Go to Facebook Login → Settings
 2. Add these Valid OAuth Redirect URIs:
    ```
-   http://localhost:4000/api/oauth/facebook/callback
+   http://localhost:4001/api/oauth/facebook/callback
    ```
 3. Set Client OAuth Login to "Yes"
 4. Set Web OAuth Login to "Yes"
@@ -46,7 +46,7 @@ This guide explains how to set up Facebook OAuth for the Loyalty App.
 environment:
   FACEBOOK_APP_ID: your-actual-facebook-app-id
   FACEBOOK_APP_SECRET: your-actual-facebook-app-secret
-  FACEBOOK_CALLBACK_URL: http://localhost:4000/api/oauth/facebook/callback
+  FACEBOOK_CALLBACK_URL: http://localhost:4001/api/oauth/facebook/callback
 ```
 
 ## Environment Variables
@@ -59,7 +59,7 @@ backend:
     # ... other variables
     FACEBOOK_APP_ID: your-facebook-app-id-here
     FACEBOOK_APP_SECRET: your-facebook-app-secret-here
-    FACEBOOK_CALLBACK_URL: http://localhost:4000/api/oauth/facebook/callback
+    FACEBOOK_CALLBACK_URL: http://localhost:4001/api/oauth/facebook/callback
     FRONTEND_URL: http://localhost:4001
     SESSION_SECRET: your-session-secret-change-in-production
 ```

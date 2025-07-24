@@ -9,10 +9,16 @@ We have replaced the migration-based approach with a single consolidated schema 
 ### Files Overview
 
 - **`consolidated_schema.sql`** - Complete database schema (replaces 23 migrations)
-- **`init-consolidated.sh`** - Interactive initialization script
+- **`deploy-database.sh`** - ⭐ **Recommended deployment script** (interactive, safe)
+- **`zzz-init-consolidated.sh`** - Docker container initialization script
+- **`init-consolidated.sh`** - Simple initialization script
 - **`init-db.sh`** - Original migration-based script (deprecated)
-- **`migrations/`** - Original migration files (for reference only)
+- **`migrations/archive/`** - ⚠️ **Archived migration files** (reference only, DO NOT USE)
 - **`seeds/`** - Optional seed data
+
+### ⚠️ Important: Migration Files Archived
+
+All individual migration files have been **moved to `migrations/archive/`** to prevent confusion. These files are **for reference only** and should not be used for database initialization. Always use the consolidated schema approach.
 
 ## Database Structure
 
@@ -42,17 +48,27 @@ Comprehensive indexing for optimal query performance across all tables.
 
 ## Quick Start
 
-### Using Consolidated Schema (Recommended)
+### Using Deployment Script (Recommended)
 
 ```bash
-# Initialize new database
-./init-consolidated.sh
+# Deploy to fresh database
+./deploy-database.sh
 
-# Force reinitialization
-./init-consolidated.sh --force
+# Force redeploy with backup
+./deploy-database.sh --force --backup
 
-# With backup
-./init-consolidated.sh --force --backup
+# Deploy with seed data
+./deploy-database.sh --seed
+
+# Full deployment with all options
+./deploy-database.sh --force --backup --seed
+```
+
+### Using Docker Init (Alternative)
+
+```bash
+# Docker container initialization
+./zzz-init-consolidated.sh
 ```
 
 ### Using Docker

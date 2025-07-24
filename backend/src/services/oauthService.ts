@@ -67,7 +67,7 @@ export class OAuthService {
       passport.use(new GoogleStrategy({
         clientID: googleClientId,
         clientSecret: googleClientSecret,
-        callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4000/api/oauth/google/callback'
+        callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4001/api/oauth/google/callback'
       }, async (_accessToken: string, _refreshToken: string, profile: GoogleProfile, done: any) => {
         try {
           const result = await this.handleGoogleAuth(profile);
@@ -91,7 +91,7 @@ export class OAuthService {
       passport.use(new FacebookStrategy({
         clientID: facebookAppId,
         clientSecret: facebookAppSecret,
-        callbackURL: process.env.FACEBOOK_CALLBACK_URL || 'http://localhost:4000/api/auth/facebook/callback',
+        callbackURL: process.env.FACEBOOK_CALLBACK_URL || 'http://localhost:4001/api/oauth/facebook/callback',
         profileFields: ['id', 'displayName', 'name', 'emails', 'photos']
       }, async (_accessToken: string, _refreshToken: string, profile: any, done: any) => {
         try {
@@ -116,7 +116,7 @@ export class OAuthService {
       passport.use(new LineStrategy({
         channelID: lineChannelId,
         channelSecret: lineChannelSecret,
-        callbackURL: process.env.LINE_CALLBACK_URL || 'http://localhost:4000/api/oauth/line/callback'
+        callbackURL: process.env.LINE_CALLBACK_URL || 'http://localhost:4001/api/oauth/line/callback'
       }, async (_accessToken: string, _refreshToken: string, profile: LineProfile, done: any) => {
         try {
           const result = await this.handleLineAuth(profile);

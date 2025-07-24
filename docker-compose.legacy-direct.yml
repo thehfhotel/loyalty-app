@@ -8,10 +8,11 @@ services:
       POSTGRES_DB: loyalty_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/consolidated_schema.sql:/docker-entrypoint-initdb.d/consolidated_schema.sql
+      - ./database/migrations:/docker-entrypoint-initdb.d
       - ./database/seeds:/docker-entrypoint-initdb.d/seeds
-      - ./database/init-consolidated.sh:/docker-entrypoint-initdb.d/zzz-init-consolidated.sh
-    restart: unless-stopped
+      - ./database/init-db.sh:/docker-entrypoint-initdb.d/zzz-init-db.sh
+    ports:
+      - "5434:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
       interval: 10s
@@ -21,7 +22,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: loyalty_redis
-    restart: unless-stopped
+    ports:
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -34,7 +36,7 @@ services:
       dockerfile: Dockerfile
     container_name: loyalty_backend
     environment:
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: ${BACKEND_PORT:-4000}
       DATABASE_URL: postgresql://loyalty:loyalty_pass@postgres:5432/loyalty_db
       REDIS_URL: redis://redis:6379
@@ -53,13 +55,17 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:4001}
       LOYALTY_USERNAME: ${LOYALTY_USERNAME}
       LOYALTY_PASSWORD: ${LOYALTY_PASSWORD}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    ports:
+      - "4000:4000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: npm start
-    restart: unless-stopped
+    command: npm run dev
 
   frontend:
     build:
@@ -67,24 +73,27 @@ services:
       dockerfile: Dockerfile
     container_name: loyalty_frontend
     environment:
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-development}
       VITE_API_URL: ${BACKEND_URL:-http://localhost:4000/api}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "4001:3000"
     depends_on:
       - backend
-    command: sh -c "npm run build && npm run preview -- --host 0.0.0.0"
-    restart: unless-stopped
+    command: npm run dev
 
   nginx:
     image: nginx:alpine
     container_name: loyalty_nginx
     ports:
-      - "4001:80"
+      - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - frontend
       - backend
-    restart: unless-stopped
 
 volumes:
   postgres_data:
