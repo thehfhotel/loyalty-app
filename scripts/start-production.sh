@@ -1,8 +1,9 @@
 #!/bin/bash
 
-# Production Start Script for Loyalty App
+# Production Start Script for Loyalty App v3.x
 # Usage: ./scripts/start-production.sh
-# This script starts the entire production system with health checks
+# Starts production system with consolidated database, Redis sessions, and OAuth support
+# Supports both localhost development and Cloudflare tunnel production
 
 set -e  # Exit on any error
 
@@ -46,14 +47,17 @@ if [[ ! -f "docker-compose.yml" ]]; then
     exit 1
 fi
 
-# Determine which environment file to use
+# Determine which environment and compose files to use
 ENV_FILE=""
+COMPOSE_FILES=""
 if [[ -f ".env.production" ]]; then
     ENV_FILE=".env.production"
+    COMPOSE_FILES="-f docker-compose.yml -f docker-compose.prod.yml"
     success "✅ Using production environment: .env.production"
 elif [[ -f ".env" ]]; then
     warning "⚠️  .env.production not found, using .env for development mode"
     ENV_FILE=".env"
+    COMPOSE_FILES="-f docker-compose.yml"
     echo "For production deployment, create .env.production:"
     echo "cp .env.production.example .env.production"
     echo "Then edit .env.production with your production settings."
@@ -129,35 +133,39 @@ success "✅ Port availability check completed"
 
 # Stop any existing containers
 log "🛑 Stopping any existing containers..."
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file "$ENV_FILE" down --remove-orphans 2>/dev/null || true
+docker compose $COMPOSE_FILES --env-file "$ENV_FILE" down --remove-orphans 2>/dev/null || true
 
 # Pull latest base images (postgres, redis, nginx)
 log "📥 Pulling latest base images..."
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file "$ENV_FILE" pull postgres redis nginx
+docker compose $COMPOSE_FILES --env-file "$ENV_FILE" pull postgres redis nginx
 
-# Check if application images exist
-log "🔍 Checking for pre-built application images..."
-if ! docker images | grep -q "loyalty-app-backend" || ! docker images | grep -q "loyalty-app-frontend"; then
-    warning "⚠️  Application images not found!"
-    echo "Please build the application images first by running:"
-    echo "  ./scripts/build-production.sh"
-    echo ""
-    read -p "Would you like to build the images now? [y/N]: " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        log "🔨 Building application images..."
-        docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file "$ENV_FILE" build backend frontend
+# Check if application images exist (only required for production mode)
+if [[ "$COMPOSE_FILES" == *"docker-compose.prod.yml"* ]]; then
+    log "🔍 Checking for pre-built application images (production mode)..."
+    if ! docker images | grep -q "loyalty-app-backend" || ! docker images | grep -q "loyalty-app-frontend"; then
+        warning "⚠️  Production images not found!"
+        echo "Please build the application images first by running:"
+        echo "  ./scripts/build-production.sh"
+        echo ""
+        read -p "Would you like to build the images now? [y/N]: " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            log "🔨 Building production images..."
+            docker compose $COMPOSE_FILES --env-file "$ENV_FILE" build backend frontend
+        else
+            error "Cannot start production mode without application images"
+            exit 1
+        fi
     else
-        error "Cannot start without application images"
-        exit 1
+        success "✅ Using pre-built production images"
     fi
 else
-    success "✅ Using pre-built application images"
+    success "✅ Development mode: Images will be built on-the-fly"
 fi
 
 # Start the production system
 log "🚀 Starting production services..."
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file "$ENV_FILE" up -d
+docker compose $COMPOSE_FILES --env-file "$ENV_FILE" up -d
 
 # Wait for services to start
 log "⏳ Waiting for services to initialize..."
@@ -196,11 +204,11 @@ if ! health_check "Application (via nginx)" "http://localhost:4001" 60; then
     error "Application is not responding through nginx proxy"
     echo "Checking individual service logs:"
     echo "Frontend logs:"
-    docker compose --env-file "$ENV_FILE" logs frontend | tail -10
+    docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs frontend | tail -10
     echo "Backend logs:"
-    docker compose --env-file "$ENV_FILE" logs backend | tail -10
+    docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs backend | tail -10
     echo "Nginx logs:"
-    docker compose --env-file "$ENV_FILE" logs nginx | tail -10
+    docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs nginx | tail -10
     exit 1
 fi
 
@@ -209,29 +217,48 @@ if ! health_check "Backend API (via nginx)" "http://localhost:4001/api/health" 3
     warning "API health endpoint not responding (this may be normal if no health endpoint exists)"
 fi
 
-# Check database connectivity
-log "🔍 Checking database connectivity..."
-if docker compose --env-file "$ENV_FILE" exec -T postgres pg_isready -U loyalty -d loyalty_db >/dev/null 2>&1; then
+# Check database connectivity and schema
+log "🔍 Checking database connectivity and schema..."
+if docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T postgres pg_isready -U loyalty -d loyalty_db >/dev/null 2>&1; then
     success "✅ Database is ready"
+    
+    # Check if consolidated schema is applied
+    log "🔍 Verifying consolidated database schema..."
+    TABLE_COUNT=$(docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T postgres psql -U loyalty -d loyalty_db -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ' || echo "0")
+    if [ "$TABLE_COUNT" -gt 20 ]; then
+        success "✅ Consolidated database schema is applied (${TABLE_COUNT} tables)"
+    else
+        warning "⚠️  Database schema may not be fully initialized (${TABLE_COUNT} tables found)"
+        echo "Consider running: ./database/deploy-database.sh"
+    fi
 else
     error "❌ Database connection failed"
-    docker compose --env-file "$ENV_FILE" logs postgres | tail -20
+    docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs postgres | tail -20
     exit 1
 fi
 
-# Check Redis connectivity
-log "🔍 Checking Redis connectivity..."
-if docker compose --env-file "$ENV_FILE" exec -T redis redis-cli ping | grep -q PONG; then
+# Check Redis connectivity and session store
+log "🔍 Checking Redis connectivity and session store..."
+if docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T redis redis-cli ping | grep -q PONG; then
     success "✅ Redis is ready"
+    
+    # Test Redis session store configuration
+    log "🔍 Testing Redis session store..."
+    SESSION_COUNT=$(docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T redis redis-cli KEYS "loyalty-app:sess:*" | wc -l || echo "0")
+    if [ "$SESSION_COUNT" -ge 0 ]; then
+        success "✅ Redis session store is configured (${SESSION_COUNT} active sessions)"
+    else
+        warning "⚠️  Redis session store test inconclusive"
+    fi
 else
     error "❌ Redis connection failed"
-    docker compose --env-file "$ENV_FILE" logs redis | tail -20
+    docker compose $COMPOSE_FILES --env-file "$ENV_FILE" logs redis | tail -20
     exit 1
 fi
 
 # Display service status
 log "📊 Service Status:"
-docker compose --env-file "$ENV_FILE" ps
+docker compose $COMPOSE_FILES --env-file "$ENV_FILE" ps
 
 # Show resource usage
 log "💻 Resource Usage:"
@@ -245,22 +272,33 @@ echo
 echo "🌐 Access Points:"
 echo "   Application: http://localhost:4001 (via nginx proxy)"
 echo "   API Endpoints: http://localhost:4001/api/* (via nginx proxy)"
+echo "   OAuth Endpoints: http://localhost:4001/api/oauth/* (Google, LINE)"
+echo "   Health Check: http://localhost:4001/api/health"
 echo "   Database: localhost:5434 (external access for development only)"
+echo "   Redis: localhost:6379 (sessions and caching)"
 echo
 echo "📋 Management Commands:"
 echo "   Stop system: ./scripts/stop-production.sh"
 echo "   Restart system: ./scripts/restart-production.sh"
-echo "   View logs: docker compose logs -f [service]"
-echo "   Check status: docker compose ps"
+echo "   View logs: docker compose $COMPOSE_FILES --env-file $ENV_FILE logs -f [service]"
+echo "   Check status: docker compose $COMPOSE_FILES --env-file $ENV_FILE ps"
 echo
 echo "📁 Log Files Location:"
-echo "   View logs: docker compose logs [service]"
-echo "   Follow logs: docker compose logs -f"
+echo "   View logs: docker compose $COMPOSE_FILES --env-file $ENV_FILE logs [service]"
+echo "   Follow logs: docker compose $COMPOSE_FILES --env-file $ENV_FILE logs -f"
 echo
 warning "🔒 Security Reminder:"
 echo "   - Ensure your .env.production file is secure"
-echo "   - Keep your OAuth secrets confidential"
+echo "   - Keep your OAuth secrets confidential (Google, LINE)"
+echo "   - Redis session store eliminates memory leaks"
 echo "   - Monitor system resources and logs"
+echo "   - Configure Cloudflare tunnel for production"
 echo "   - Set up proper firewall rules"
+echo
+log "${BLUE}✨ New Features Active:${NC}"
+echo "   • Redis-based sessions (scalable, no memory leaks)"
+echo "   • Consolidated database schema (23 migrations → 1 schema)"
+echo "   • Dual environment OAuth (localhost + production)"
+echo "   • Enhanced security and validation"
 echo
 echo "================================================="
