@@ -672,6 +672,154 @@
         "updateError": "Failed to update coupon assignment",
         "removeSuccess": "Coupon assignment removed successfully",
         "removeError": "Failed to remove coupon assignment"
+      },
+      "templates": {
+        "title": "Survey Templates",
+        "subtitle": "Start with a pre-built template or create your own",
+        "backToSurveys": "Back to Surveys",
+        "allTemplates": "All Templates",
+        "categories": {
+          "feedback": "Feedback",
+          "loyalty": "Loyalty", 
+          "events": "Events",
+          "quick": "Quick",
+          "custom": "Custom"
+        },
+        "startFromScratch": "Start from Scratch",
+        "createCustomSurvey": "Create a custom survey with your own questions",
+        "useTemplate": "Use Template",
+        "popularityText": "{{percent}}% use this",
+        "questionsCount": "{{count}} questions",
+        "customTemplatesTitle": "Your Custom Templates",
+        "noDescription": "No description",
+        "created": "Created {{date}}",
+        "edit": "Edit",
+        "deleteConfirm": "Are you sure you want to delete this template?",
+        "templateDeleted": "Template deleted successfully",
+        "deleteFailed": "Failed to delete template",
+        "predefinedTemplates": {
+          "satisfaction": {
+            "name": "Customer Satisfaction Survey",
+            "description": "Measure overall customer satisfaction with your services",
+            "questions": {
+              "q1": {
+                "text": "How satisfied are you with our service?",
+                "description": "Please rate your overall satisfaction"
+              },
+              "q2": {
+                "text": "How likely are you to recommend us to others?",
+                "options": {
+                  "veryLikely": "Very likely",
+                  "likely": "Likely", 
+                  "neutral": "Neutral",
+                  "unlikely": "Unlikely",
+                  "veryUnlikely": "Very unlikely"
+                }
+              },
+              "q3": {
+                "text": "What did you like most about your experience?"
+              },
+              "q4": {
+                "text": "What could we improve?"
+              }
+            }
+          },
+          "nps": {
+            "name": "Net Promoter Score (NPS)",
+            "description": "Measure customer loyalty and likelihood to recommend",
+            "questions": {
+              "q1": {
+                "text": "How likely are you to recommend our hotel to a friend or colleague?",
+                "description": "0 = Not at all likely, 10 = Extremely likely"
+              },
+              "q2": {
+                "text": "What is the primary reason for your score?"
+              },
+              "q3": {
+                "text": "Which aspect influenced your rating the most?",
+                "options": {
+                  "room": "Room quality",
+                  "staff": "Staff service",
+                  "location": "Location",
+                  "value": "Value for money",
+                  "amenities": "Amenities",
+                  "other": "Other"
+                }
+              }
+            }
+          },
+          "postStay": {
+            "name": "Post-Stay Feedback",
+            "description": "Gather detailed feedback after guest checkout",
+            "questions": {
+              "q1": {
+                "text": "How would you rate your overall stay?"
+              },
+              "q2": {
+                "text": "Which amenities did you use during your stay?",
+                "options": {
+                  "pool": "Swimming pool",
+                  "gym": "Gym/Fitness center",
+                  "spa": "Spa",
+                  "restaurant": "Restaurant", 
+                  "bar": "Bar",
+                  "business": "Business center",
+                  "concierge": "Concierge services"
+                }
+              },
+              "q3": {
+                "text": "Did you experience any issues during your stay?"
+              },
+              "q4": {
+                "text": "Please describe any issues you experienced"
+              },
+              "q5": {
+                "text": "Would you stay with us again?"
+              }
+            }
+          },
+          "eventFeedback": {
+            "name": "Event Feedback Survey",
+            "description": "Collect feedback from event or conference attendees",
+            "questions": {
+              "q1": {
+                "text": "How did you hear about this event?",
+                "options": {
+                  "email": "Email invitation",
+                  "social": "Social media",
+                  "website": "Website",
+                  "referral": "Word of mouth",
+                  "other": "Other"
+                }
+              },
+              "q2": {
+                "text": "How would you rate the event overall?"
+              },
+              "q3": {
+                "text": "How satisfied were you with the venue and facilities?"
+              },
+              "q4": {
+                "text": "Would you attend a similar event in the future?"
+              },
+              "q5": {
+                "text": "Any suggestions for future events?"
+              }
+            }
+          },
+          "quickPulse": {
+            "name": "Quick Pulse Check",
+            "description": "Short 2-3 question survey for quick feedback",
+            "questions": {
+              "q1": {
+                "text": "How was your experience today?"
+              },
+              "q2": {
+                "text": "What made it that way?",
+                "description": "Please share in a few words"
+              }
+            }
+          }
+        }
       }
     }
   },

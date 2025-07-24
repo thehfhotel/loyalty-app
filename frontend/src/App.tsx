@@ -115,17 +115,17 @@ function App() {
           }}
         >
           <SessionManager />
-        <Toaster 
-          position="top-right"
-          toastOptions={{
-            duration: 4000,
-            style: {
-              background: '#363636',
-              color: '#fff',
-            },
-          }}
-        />
-      <Routes>
+          <Toaster 
+            position="top-right"
+            toastOptions={{
+              duration: 4000,
+              style: {
+                background: '#363636',
+                color: '#fff',
+              },
+            }}
+          />
+          <Routes>
         {/* Public routes */}
         <Route
           path="/login"
@@ -314,11 +314,11 @@ function App() {
 
         {/* Default redirect */}
         <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} />} />
-      </Routes>
-      
-        {/* Development tools - only shows in development mode */}
-        <DevTools />
-      </Router>
+          </Routes>
+          
+          {/* Development tools - only shows in development mode */}
+          <DevTools />
+        </Router>
       </Suspense>
     </LanguageProvider>
   );

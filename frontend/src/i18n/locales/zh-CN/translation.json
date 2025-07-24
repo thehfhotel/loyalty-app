@@ -678,6 +678,154 @@
         "updateError": "更新优惠券分配失败",
         "removeSuccess": "优惠券分配移除成功",
         "removeError": "移除优惠券分配失败"
+      },
+      "templates": {
+        "title": "调研模板",
+        "subtitle": "从预制模板开始或创建自己的模板",
+        "backToSurveys": "返回调研",
+        "allTemplates": "所有模板",
+        "categories": {
+          "feedback": "反馈",
+          "loyalty": "忠诚度", 
+          "events": "活动",
+          "quick": "快速",
+          "custom": "自定义"
+        },
+        "startFromScratch": "从头开始",
+        "createCustomSurvey": "创建包含您自己问题的自定义调研",
+        "useTemplate": "使用模板",
+        "popularityText": "{{percent}}% 的人使用此模板",
+        "questionsCount": "{{count}} 个问题",
+        "customTemplatesTitle": "您的自定义模板",
+        "noDescription": "无描述",
+        "created": "创建于 {{date}}",
+        "edit": "编辑",
+        "deleteConfirm": "确定要删除此模板吗？",
+        "templateDeleted": "模板删除成功",
+        "deleteFailed": "删除模板失败",
+        "predefinedTemplates": {
+          "satisfaction": {
+            "name": "客户满意度调研",
+            "description": "测量客户对您服务的整体满意度",
+            "questions": {
+              "q1": {
+                "text": "您对我们的服务满意度如何？",
+                "description": "请评价您的总体满意度"
+              },
+              "q2": {
+                "text": "您向他人推荐我们的可能性有多大？",
+                "options": {
+                  "veryLikely": "很可能",
+                  "likely": "可能", 
+                  "neutral": "中性",
+                  "unlikely": "不太可能",
+                  "veryUnlikely": "完全不可能"
+                }
+              },
+              "q3": {
+                "text": "您最喜欢您体验中的哪一点？"
+              },
+              "q4": {
+                "text": "我们可以改进什么？"
+              }
+            }
+          },
+          "nps": {
+            "name": "净推荐值 (NPS)",
+            "description": "测量客户忠诚度和推荐可能性",
+            "questions": {
+              "q1": {
+                "text": "您向朋友或同事推荐我们酒店的可能性有多大？",
+                "description": "0 = 完全不可能，10 = 极其可能"
+              },
+              "q2": {
+                "text": "您给出此评分的主要原因是什么？"
+              },
+              "q3": {
+                "text": "哪个方面对您的评分影响最大？",
+                "options": {
+                  "room": "房间质量",
+                  "staff": "员工服务",
+                  "location": "位置",
+                  "value": "性价比",
+                  "amenities": "设施",
+                  "other": "其他"
+                }
+              }
+            }
+          },
+          "postStay": {
+            "name": "住后反馈",
+            "description": "在客人退房后收集详细反馈",
+            "questions": {
+              "q1": {
+                "text": "您如何评价您的整体住宿体验？"
+              },
+              "q2": {
+                "text": "您在住宿期间使用了哪些设施？",
+                "options": {
+                  "pool": "游泳池",
+                  "gym": "健身房/健身中心",
+                  "spa": "水疗中心",
+                  "restaurant": "餐厅", 
+                  "bar": "酒吧",
+                  "business": "商务中心",
+                  "concierge": "礼宾服务"
+                }
+              },
+              "q3": {
+                "text": "您在住宿期间遇到任何问题吗？"
+              },
+              "q4": {
+                "text": "请描述您遇到的任何问题"
+              },
+              "q5": {
+                "text": "您会再次选择我们吗？"
+              }
+            }
+          },
+          "eventFeedback": {
+            "name": "活动反馈调研",
+            "description": "收集活动或会议参与者的反馈",
+            "questions": {
+              "q1": {
+                "text": "您是如何了解到这个活动的？",
+                "options": {
+                  "email": "邮件邀请",
+                  "social": "社交媒体",
+                  "website": "网站",
+                  "referral": "口碑推荐",
+                  "other": "其他"
+                }
+              },
+              "q2": {
+                "text": "您如何评价此次活动的整体水平？"
+              },
+              "q3": {
+                "text": "您对场地和设施的满意度如何？"
+              },
+              "q4": {
+                "text": "您会参加类似的未来活动吗？"
+              },
+              "q5": {
+                "text": "对未来活动有什么建议吗？"
+              }
+            }
+          },
+          "quickPulse": {
+            "name": "快速调研",
+            "description": "2-3个问题的短期快速反馈调研",
+            "questions": {
+              "q1": {
+                "text": "您今天的体验如何？"
+              },
+              "q2": {
+                "text": "是什么让您有这样的感受？",
+                "description": "请用几个词分享"
+              }
+            }
+          }
+        }
       }
     }
   },

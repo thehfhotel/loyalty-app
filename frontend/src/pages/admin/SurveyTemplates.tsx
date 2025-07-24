@@ -27,48 +27,48 @@ interface SurveyTemplate {
   popularity: number;
 }
 
-const predefinedTemplates: SurveyTemplate[] = [
+const getPredefinedTemplates = (t: any): SurveyTemplate[] => [
   {
     id: 'satisfaction',
-    name: 'Customer Satisfaction Survey',
-    description: 'Measure overall customer satisfaction with your services',
+    name: t('surveys.admin.templates.predefinedTemplates.satisfaction.name'),
+    description: t('surveys.admin.templates.predefinedTemplates.satisfaction.description'),
     icon: <FiStar className="h-8 w-8" />,
-    category: 'Feedback',
+    category: t('surveys.admin.templates.categories.feedback'),
     popularity: 95,
     questions: [
       {
         id: 'q1',
         type: 'rating_5',
-        text: 'How satisfied are you with our service?',
-        description: 'Please rate your overall satisfaction',
+        text: t('surveys.admin.templates.predefinedTemplates.satisfaction.questions.q1.text'),
+        description: t('surveys.admin.templates.predefinedTemplates.satisfaction.questions.q1.description'),
         required: true,
         order: 1
       },
       {
         id: 'q2',
         type: 'single_choice',
-        text: 'How likely are you to recommend us to others?',
+        text: t('surveys.admin.templates.predefinedTemplates.satisfaction.questions.q2.text'),
         required: true,
         options: [
-          { id: 'opt1', text: 'Very likely', value: 5 },
-          { id: 'opt2', text: 'Likely', value: 4 },
-          { id: 'opt3', text: 'Neutral', value: 3 },
-          { id: 'opt4', text: 'Unlikely', value: 2 },
-          { id: 'opt5', text: 'Very unlikely', value: 1 }
+          { id: 'opt1', text: t('surveys.admin.templates.predefinedTemplates.satisfaction.questions.q2.options.veryLikely'), value: 5 },
+          { id: 'opt2', text: t('surveys.admin.templates.predefinedTemplates.satisfaction.questions.q2.options.likely'), value: 4 },
+          { id: 'opt3', text: t('surveys.admin.templates.predefinedTemplates.satisfaction.questions.q2.options.neutral'), value: 3 },
+          { id: 'opt4', text: t('surveys.admin.templates.predefinedTemplates.satisfaction.questions.q2.options.unlikely'), value: 2 },
+          { id: 'opt5', text: t('surveys.admin.templates.predefinedTemplates.satisfaction.questions.q2.options.veryUnlikely'), value: 1 }
         ],
         order: 2
       },
       {
         id: 'q3',
         type: 'textarea',
-        text: 'What did you like most about your experience?',
+        text: t('surveys.admin.templates.predefinedTemplates.satisfaction.questions.q3.text'),
         required: false,
         order: 3
       },
       {
         id: 'q4',
         type: 'textarea',
-        text: 'What could we improve?',
+        text: t('surveys.admin.templates.predefinedTemplates.satisfaction.questions.q4.text'),
         required: false,
         order: 4
       }
@@ -76,39 +76,39 @@ const predefinedTemplates: SurveyTemplate[] = [
   },
   {
     id: 'nps',
-    name: 'Net Promoter Score (NPS)',
-    description: 'Measure customer loyalty and likelihood to recommend',
+    name: t('surveys.admin.templates.predefinedTemplates.nps.name'),
+    description: t('surveys.admin.templates.predefinedTemplates.nps.description'),
     icon: <FiUsers className="h-8 w-8" />,
-    category: 'Loyalty',
+    category: t('surveys.admin.templates.categories.loyalty'),
     popularity: 88,
     questions: [
       {
         id: 'q1',
         type: 'rating_10',
-        text: 'How likely are you to recommend our hotel to a friend or colleague?',
-        description: '0 = Not at all likely, 10 = Extremely likely',
+        text: t('surveys.admin.templates.predefinedTemplates.nps.questions.q1.text'),
+        description: t('surveys.admin.templates.predefinedTemplates.nps.questions.q1.description'),
         required: true,
         order: 1
       },
       {
         id: 'q2',
         type: 'textarea',
-        text: 'What is the primary reason for your score?',
+        text: t('surveys.admin.templates.predefinedTemplates.nps.questions.q2.text'),
         required: true,
         order: 2
       },
       {
         id: 'q3',
         type: 'single_choice',
-        text: 'Which aspect influenced your rating the most?',
+        text: t('surveys.admin.templates.predefinedTemplates.nps.questions.q3.text'),
         required: true,
         options: [
-          { id: 'opt1', text: 'Room quality', value: 'room' },
-          { id: 'opt2', text: 'Staff service', value: 'staff' },
-          { id: 'opt3', text: 'Location', value: 'location' },
-          { id: 'opt4', text: 'Value for money', value: 'value' },
-          { id: 'opt5', text: 'Amenities', value: 'amenities' },
-          { id: 'opt6', text: 'Other', value: 'other' }
+          { id: 'opt1', text: t('surveys.admin.templates.predefinedTemplates.nps.questions.q3.options.room'), value: 'room' },
+          { id: 'opt2', text: t('surveys.admin.templates.predefinedTemplates.nps.questions.q3.options.staff'), value: 'staff' },
+          { id: 'opt3', text: t('surveys.admin.templates.predefinedTemplates.nps.questions.q3.options.location'), value: 'location' },
+          { id: 'opt4', text: t('surveys.admin.templates.predefinedTemplates.nps.questions.q3.options.value'), value: 'value' },
+          { id: 'opt5', text: t('surveys.admin.templates.predefinedTemplates.nps.questions.q3.options.amenities'), value: 'amenities' },
+          { id: 'opt6', text: t('surveys.admin.templates.predefinedTemplates.nps.questions.q3.options.other'), value: 'other' }
         ],
         order: 3
       }
@@ -116,53 +116,53 @@ const predefinedTemplates: SurveyTemplate[] = [
   },
   {
     id: 'post-stay',
-    name: 'Post-Stay Feedback',
-    description: 'Gather detailed feedback after guest checkout',
+    name: t('surveys.admin.templates.predefinedTemplates.postStay.name'),
+    description: t('surveys.admin.templates.predefinedTemplates.postStay.description'),
     icon: <FiFileText className="h-8 w-8" />,
-    category: 'Feedback',
+    category: t('surveys.admin.templates.categories.feedback'),
     popularity: 82,
     questions: [
       {
         id: 'q1',
         type: 'rating_5',
-        text: 'How would you rate your overall stay?',
+        text: t('surveys.admin.templates.predefinedTemplates.postStay.questions.q1.text'),
         required: true,
         order: 1
       },
       {
         id: 'q2',
         type: 'multiple_choice',
-        text: 'Which amenities did you use during your stay?',
+        text: t('surveys.admin.templates.predefinedTemplates.postStay.questions.q2.text'),
         required: false,
         options: [
-          { id: 'opt1', text: 'Swimming pool', value: 'pool' },
-          { id: 'opt2', text: 'Gym/Fitness center', value: 'gym' },
-          { id: 'opt3', text: 'Spa', value: 'spa' },
-          { id: 'opt4', text: 'Restaurant', value: 'restaurant' },
-          { id: 'opt5', text: 'Bar', value: 'bar' },
-          { id: 'opt6', text: 'Business center', value: 'business' },
-          { id: 'opt7', text: 'Concierge services', value: 'concierge' }
+          { id: 'opt1', text: t('surveys.admin.templates.predefinedTemplates.postStay.questions.q2.options.pool'), value: 'pool' },
+          { id: 'opt2', text: t('surveys.admin.templates.predefinedTemplates.postStay.questions.q2.options.gym'), value: 'gym' },
+          { id: 'opt3', text: t('surveys.admin.templates.predefinedTemplates.postStay.questions.q2.options.spa'), value: 'spa' },
+          { id: 'opt4', text: t('surveys.admin.templates.predefinedTemplates.postStay.questions.q2.options.restaurant'), value: 'restaurant' },
+          { id: 'opt5', text: t('surveys.admin.templates.predefinedTemplates.postStay.questions.q2.options.bar'), value: 'bar' },
+          { id: 'opt6', text: t('surveys.admin.templates.predefinedTemplates.postStay.questions.q2.options.business'), value: 'business' },
+          { id: 'opt7', text: t('surveys.admin.templates.predefinedTemplates.postStay.questions.q2.options.concierge'), value: 'concierge' }
         ],
         order: 2
       },
       {
         id: 'q3',
         type: 'yes_no',
-        text: 'Did you experience any issues during your stay?',
+        text: t('surveys.admin.templates.predefinedTemplates.postStay.questions.q3.text'),
         required: true,
         order: 3
       },
       {
         id: 'q4',
         type: 'textarea',
-        text: 'Please describe any issues you experienced',
+        text: t('surveys.admin.templates.predefinedTemplates.postStay.questions.q4.text'),
         required: false,
         order: 4
       },
       {
         id: 'q5',
         type: 'yes_no',
-        text: 'Would you stay with us again?',
+        text: t('surveys.admin.templates.predefinedTemplates.postStay.questions.q5.text'),
         required: true,
         order: 5
       }
@@ -170,51 +170,51 @@ const predefinedTemplates: SurveyTemplate[] = [
   },
   {
     id: 'event-feedback',
-    name: 'Event Feedback Survey',
-    description: 'Collect feedback from event or conference attendees',
+    name: t('surveys.admin.templates.predefinedTemplates.eventFeedback.name'),
+    description: t('surveys.admin.templates.predefinedTemplates.eventFeedback.description'),
     icon: <FiUsers className="h-8 w-8" />,
-    category: 'Events',
+    category: t('surveys.admin.templates.categories.events'),
     popularity: 75,
     questions: [
       {
         id: 'q1',
         type: 'single_choice',
-        text: 'How did you hear about this event?',
+        text: t('surveys.admin.templates.predefinedTemplates.eventFeedback.questions.q1.text'),
         required: true,
         options: [
-          { id: 'opt1', text: 'Email invitation', value: 'email' },
-          { id: 'opt2', text: 'Social media', value: 'social' },
-          { id: 'opt3', text: 'Website', value: 'website' },
-          { id: 'opt4', text: 'Word of mouth', value: 'referral' },
-          { id: 'opt5', text: 'Other', value: 'other' }
+          { id: 'opt1', text: t('surveys.admin.templates.predefinedTemplates.eventFeedback.questions.q1.options.email'), value: 'email' },
+          { id: 'opt2', text: t('surveys.admin.templates.predefinedTemplates.eventFeedback.questions.q1.options.social'), value: 'social' },
+          { id: 'opt3', text: t('surveys.admin.templates.predefinedTemplates.eventFeedback.questions.q1.options.website'), value: 'website' },
+          { id: 'opt4', text: t('surveys.admin.templates.predefinedTemplates.eventFeedback.questions.q1.options.referral'), value: 'referral' },
+          { id: 'opt5', text: t('surveys.admin.templates.predefinedTemplates.eventFeedback.questions.q1.options.other'), value: 'other' }
         ],
         order: 1
       },
       {
         id: 'q2',
         type: 'rating_5',
-        text: 'How would you rate the event overall?',
+        text: t('surveys.admin.templates.predefinedTemplates.eventFeedback.questions.q2.text'),
         required: true,
         order: 2
       },
       {
         id: 'q3',
         type: 'rating_5',
-        text: 'How satisfied were you with the venue and facilities?',
+        text: t('surveys.admin.templates.predefinedTemplates.eventFeedback.questions.q3.text'),
         required: true,
         order: 3
       },
       {
         id: 'q4',
         type: 'yes_no',
-        text: 'Would you attend a similar event in the future?',
+        text: t('surveys.admin.templates.predefinedTemplates.eventFeedback.questions.q4.text'),
         required: true,
         order: 4
       },
       {
         id: 'q5',
         type: 'textarea',
-        text: 'Any suggestions for future events?',
+        text: t('surveys.admin.templates.predefinedTemplates.eventFeedback.questions.q5.text'),
         required: false,
         order: 5
       }
@@ -222,24 +222,24 @@ const predefinedTemplates: SurveyTemplate[] = [
   },
   {
     id: 'quick-pulse',
-    name: 'Quick Pulse Check',
-    description: 'Short 2-3 question survey for quick feedback',
+    name: t('surveys.admin.templates.predefinedTemplates.quickPulse.name'),
+    description: t('surveys.admin.templates.predefinedTemplates.quickPulse.description'),
     icon: <FiHelpCircle className="h-8 w-8" />,
-    category: 'Quick',
+    category: t('surveys.admin.templates.categories.quick'),
     popularity: 70,
     questions: [
       {
         id: 'q1',
         type: 'rating_5',
-        text: 'How was your experience today?',
+        text: t('surveys.admin.templates.predefinedTemplates.quickPulse.questions.q1.text'),
         required: true,
         order: 1
       },
       {
         id: 'q2',
         type: 'text',
-        text: 'What made it that way?',
-        description: 'Please share in a few words',
+        text: t('surveys.admin.templates.predefinedTemplates.quickPulse.questions.q2.text'),
+        description: t('surveys.admin.templates.predefinedTemplates.quickPulse.questions.q2.description'),
         required: false,
         order: 2
       }
@@ -250,14 +250,15 @@ const predefinedTemplates: SurveyTemplate[] = [
 const SurveyTemplates: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [templates, setTemplates] = useState<SurveyTemplate[]>(predefinedTemplates);
+  const [templates, setTemplates] = useState<SurveyTemplate[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [customTemplates, setCustomTemplates] = useState<Survey[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    setTemplates(getPredefinedTemplates(t));
     loadCustomTemplates();
-  }, []);
+  }, [t]);
 
   const loadCustomTemplates = async () => {
     try {
@@ -272,11 +273,18 @@ const SurveyTemplates: React.FC = () => {
     }
   };
 
-  const categories = ['all', 'Feedback', 'Loyalty', 'Events', 'Quick', 'Custom'];
+  const categories = [
+    { key: 'all', label: t('surveys.admin.templates.allTemplates') },
+    { key: 'Feedback', label: t('surveys.admin.templates.categories.feedback') },
+    { key: 'Loyalty', label: t('surveys.admin.templates.categories.loyalty') },
+    { key: 'Events', label: t('surveys.admin.templates.categories.events') },
+    { key: 'Quick', label: t('surveys.admin.templates.categories.quick') },
+    { key: 'Custom', label: t('surveys.admin.templates.categories.custom') }
+  ];
 
   const filteredTemplates = selectedCategory === 'all' 
     ? templates 
-    : templates.filter(t => t.category === selectedCategory);
+    : templates.filter(template => template.category === t(`surveys.admin.templates.categories.${selectedCategory.toLowerCase()}`));
 
   const handleUseTemplate = (template: SurveyTemplate) => {
     // Navigate to survey builder with template data
@@ -292,17 +300,17 @@ const SurveyTemplates: React.FC = () => {
   };
 
   const handleDeleteCustomTemplate = async (templateId: string) => {
-    if (!confirm('Are you sure you want to delete this template?')) {
+    if (!confirm(t('surveys.admin.templates.deleteConfirm'))) {
       return;
     }
 
     try {
       await surveyService.deleteSurvey(templateId);
-      toast.success('Template deleted successfully');
+      toast.success(t('surveys.admin.templates.templateDeleted'));
       loadCustomTemplates();
     } catch (error) {
       console.error('Error deleting template:', error);
-      toast.error('Failed to delete template');
+      toast.error(t('surveys.admin.templates.deleteFailed'));
     }
   };
 
@@ -313,9 +321,9 @@ const SurveyTemplates: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Survey Templates</h1>
+              <h1 className="text-3xl font-bold text-gray-900">{t('surveys.admin.templates.title')}</h1>
               <p className="text-sm text-gray-600 mt-1">
-                Start with a pre-built template or create your own
+                {t('surveys.admin.templates.subtitle')}
               </p>
             </div>
             <div className="flex items-center space-x-4">
@@ -323,7 +331,7 @@ const SurveyTemplates: React.FC = () => {
                 to="/admin/surveys"
                 className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
               >
-                Back to Surveys
+                {t('surveys.admin.templates.backToSurveys')}
               </Link>
               <DashboardButton variant="outline" size="md" />
             </div>
@@ -339,15 +347,15 @@ const SurveyTemplates: React.FC = () => {
             <div className="flex space-x-2 overflow-x-auto pb-2">
               {categories.map(category => (
                 <button
-                  key={category}
-                  onClick={() => setSelectedCategory(category)}
+                  key={category.key}
+                  onClick={() => setSelectedCategory(category.key)}
                   className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                    selectedCategory === category
+                    selectedCategory === category.key
                       ? 'bg-blue-600 text-white'
                       : 'bg-white text-gray-700 hover:bg-gray-100'
                   }`}
                 >
-                  {category === 'all' ? 'All Templates' : category}
+                  {category.label}
                 </button>
               ))}
             </div>
@@ -361,10 +369,10 @@ const SurveyTemplates: React.FC = () => {
             >
               <FiPlus className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Start from Scratch
+                {t('surveys.admin.templates.startFromScratch')}
               </h3>
               <p className="text-gray-600">
-                Create a custom survey with your own questions
+                {t('surveys.admin.templates.createCustomSurvey')}
               </p>
             </div>
           </div>
@@ -380,7 +388,7 @@ const SurveyTemplates: React.FC = () => {
                   <div className="flex items-start justify-between mb-4">
                     <div className="text-blue-600">{template.icon}</div>
                     <span className="text-xs text-gray-500">
-                      {template.popularity}% use this
+                      {t('surveys.admin.templates.popularityText', { percent: template.popularity })}
                     </span>
                   </div>
                   
@@ -393,7 +401,7 @@ const SurveyTemplates: React.FC = () => {
                   </p>
                   
                   <div className="flex items-center justify-between text-xs text-gray-500 mb-4">
-                    <span>{template.questions.length} questions</span>
+                    <span>{t('surveys.admin.templates.questionsCount', { count: template.questions.length })}</span>
                     <span className="bg-gray-100 px-2 py-1 rounded">
                       {template.category}
                     </span>
@@ -405,7 +413,7 @@ const SurveyTemplates: React.FC = () => {
                       className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
                     >
                       <FiCopy className="mr-2 h-4 w-4" />
-                      Use Template
+                      {t('surveys.admin.templates.useTemplate')}
                     </button>
                   </div>
                 </div>
@@ -417,7 +425,7 @@ const SurveyTemplates: React.FC = () => {
           {customTemplates.length > 0 && (
             <>
               <h2 className="text-xl font-semibold text-gray-900 mt-12 mb-6">
-                Your Custom Templates
+                {t('surveys.admin.templates.customTemplatesTitle')}
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {customTemplates.map(template => (
@@ -431,7 +439,7 @@ const SurveyTemplates: React.FC = () => {
                           <FiFileText className="h-8 w-8" />
                         </div>
                         <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
-                          Custom
+                          {t('surveys.admin.templates.categories.custom')}
                         </span>
                       </div>
                       
@@ -440,13 +448,13 @@ const SurveyTemplates: React.FC = () => {
                       </h3>
                       
                       <p className="text-sm text-gray-600 mb-4">
-                        {template.description || 'No description'}
+                        {template.description || t('surveys.admin.templates.noDescription')}
                       </p>
                       
                       <div className="flex items-center justify-between text-xs text-gray-500 mb-4">
                         <span>{template.questions.length} questions</span>
                         <span>
-                          Created {new Date(template.created_at).toLocaleDateString()}
+                          {t('surveys.admin.templates.created', { date: new Date(template.created_at).toLocaleDateString() })}
                         </span>
                       </div>
                       
@@ -456,7 +464,7 @@ const SurveyTemplates: React.FC = () => {
                           className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                         >
                           <FiEdit className="mr-2 h-4 w-4" />
-                          Edit
+                          {t('surveys.admin.templates.edit')}
                         </button>
                         <button
                           onClick={() => handleDeleteCustomTemplate(template.id)}
