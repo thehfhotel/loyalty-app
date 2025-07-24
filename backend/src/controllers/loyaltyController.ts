@@ -392,4 +392,69 @@ export class LoyaltyController {
       });
     }
   }
+
+  /**
+   * POST /api/loyalty/admin/award-spending-with-nights
+   * Award spending points with optional nights stayed (admin only)
+   */
+  async awardSpendingWithNights(req: Request, res: Response): Promise<Response | void> {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+
+      const { userId, amountSpent, nightsStayed, referenceId, description } = req.body;
+
+      if (!userId || !amountSpent) {
+        return res.status(400).json({
+          success: false,
+          message: 'User ID and amount spent are required'
+        });
+      }
+
+      if (amountSpent < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Amount spent must be non-negative'
+        });
+      }
+
+      if (nightsStayed !== undefined && nightsStayed < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Nights stayed must be non-negative'
+        });
+      }
+
+      const result = await loyaltyService.addStayNightsAndPoints(
+        userId,
+        nightsStayed || 0,
+        amountSpent,
+        referenceId,
+        description || 'Spending points with nights awarded by admin'
+      );
+
+      // Get updated loyalty status
+      const updatedStatus = await loyaltyService.getUserLoyaltyStatus(userId);
+
+      res.json({
+        success: true,
+        message: 'Spending points and nights awarded successfully',
+        data: {
+          ...result,
+          loyaltyStatus: updatedStatus
+        }
+      });
+    } catch (error) {
+      logger.error('Error in awardSpendingWithNights:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to award spending with nights';
+      res.status(500).json({
+        success: false,
+        message: errorMessage
+      });
+    }
+  }
 }

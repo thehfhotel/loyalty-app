@@ -38,7 +38,8 @@ api.interceptors.request.use(
 export interface Tier {
   id: string;
   name: string;
-  min_points: number;
+  min_points: number; // This will represent min_nights in the new system
+  min_nights?: number; // Explicit nights field for clarity
   benefits: {
     description: string;
     perks: string[];
@@ -51,6 +52,7 @@ export interface UserLoyaltyStatus {
   user_id: string;
   current_points: number;
   lifetime_points: number;
+  total_nights?: number;
   tier_name: string;
   tier_color: string;
   tier_benefits: {
@@ -62,6 +64,9 @@ export interface UserLoyaltyStatus {
   next_tier_points: number | null;
   next_tier_name: string | null;
   points_to_next_tier: number | null;
+  // New nights-based fields
+  next_tier_nights?: number | null;
+  nights_to_next_tier?: number | null;
 }
 
 export interface PointsTransaction {
@@ -96,6 +101,7 @@ export interface AdminUserLoyalty extends UserLoyaltyStatus {
   oauth_provider: string | null;
   oauth_provider_id: string | null;
   user_created_at: string;
+  reception_id?: string | null;
 }
 
 export interface AdminUsersResponse {
@@ -293,6 +299,37 @@ export class LoyaltyService {
     } catch (error) {
       console.error('Error expiring points:', error);
       throw new Error('Failed to expire points');
+    }
+  }
+
+  /**
+   * Award spending points with optional nights stayed (admin only)
+   */
+  async awardSpendingWithNights(
+    userId: string,
+    amountSpent: number,
+    nightsStayed: number,
+    referenceId?: string,
+    description?: string
+  ): Promise<{
+    transactionId: string;
+    pointsEarned: number;
+    newTotalNights: number;
+    newTierName: string;
+    loyaltyStatus: UserLoyaltyStatus;
+  }> {
+    try {
+      const response = await api.post('/loyalty/admin/award-spending-with-nights', {
+        userId,
+        amountSpent,
+        nightsStayed,
+        referenceId,
+        description
+      });
+      return response.data.data;
+    } catch (error) {
+      console.error('Error awarding spending with nights:', error);
+      throw new Error('Failed to award spending with nights');
     }
   }
 }

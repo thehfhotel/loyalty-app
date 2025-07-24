@@ -270,6 +270,7 @@ export class LoyaltyService {
           uti.*,
           up.first_name,
           up.last_name,
+          up.reception_id,
           u.email,
           u.oauth_provider,
           u.oauth_provider_id,
@@ -283,7 +284,7 @@ export class LoyaltyService {
       let paramIndex = 1;
 
       if (searchTerm) {
-        query += ` WHERE (u.email ILIKE $${paramIndex} OR up.first_name ILIKE $${paramIndex} OR up.last_name ILIKE $${paramIndex})`;
+        query += ` WHERE (u.email ILIKE $${paramIndex} OR up.first_name ILIKE $${paramIndex} OR up.last_name ILIKE $${paramIndex} OR u.id::text ILIKE $${paramIndex} OR up.reception_id ILIKE $${paramIndex})`;
         params.push(`%${searchTerm}%`);
         paramIndex++;
       }
@@ -303,7 +304,7 @@ export class LoyaltyService {
       
       const countParams: any[] = [];
       if (searchTerm) {
-        countQuery += ` WHERE (u.email ILIKE $1 OR up.first_name ILIKE $1 OR up.last_name ILIKE $1)`;
+        countQuery += ` WHERE (u.email ILIKE $1 OR up.first_name ILIKE $1 OR up.last_name ILIKE $1 OR u.id::text ILIKE $1 OR up.reception_id ILIKE $1)`;
         countParams.push(`%${searchTerm}%`);
       }
 
@@ -331,6 +332,44 @@ export class LoyaltyService {
     } catch (error) {
       logger.error('Error fetching points earning rules:', error);
       throw new Error('Failed to fetch points earning rules');
+    }
+  }
+
+  /**
+   * Add nights and points for a hotel stay
+   */
+  async addStayNightsAndPoints(
+    userId: string,
+    nights: number,
+    amountSpent: number,
+    referenceId?: string,
+    description?: string
+  ): Promise<{
+    transactionId: string;
+    pointsEarned: number;
+    newTotalNights: number;
+    newTierName: string;
+  }> {
+    try {
+      const result = await getPool().query(
+        'SELECT * FROM add_stay_nights_and_points($1, $2, $3, $4, $5)',
+        [userId, nights, amountSpent, referenceId, description]
+      );
+
+      if (result.rows.length === 0) {
+        throw new Error('Failed to process stay');
+      }
+
+      const row = result.rows[0];
+      return {
+        transactionId: row.transaction_id,
+        pointsEarned: row.points_earned,
+        newTotalNights: row.new_total_nights,
+        newTierName: row.new_tier_name
+      };
+    } catch (error) {
+      logger.error('Error adding stay nights and points:', error);
+      throw new Error('Failed to add stay nights and points');
     }
   }
 

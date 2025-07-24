@@ -46,6 +46,7 @@ export interface User {
   phone?: string;
   createdAt: string;
   avatarUrl?: string;
+  receptionId?: string;
 }
 
 export interface UserStats {

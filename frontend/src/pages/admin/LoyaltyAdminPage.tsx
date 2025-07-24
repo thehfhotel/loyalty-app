@@ -7,7 +7,7 @@ import {
   FiMinus, 
   FiRefreshCw,
   FiSearch,
-  FiCalendar
+  FiDollarSign
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { 
@@ -21,6 +21,10 @@ interface PointsAdjustmentModal {
   isOpen: boolean;
   user: AdminUserLoyalty | null;
   type: 'award' | 'deduct';
+}
+
+interface SpendingConsoleModal {
+  isOpen: boolean;
 }
 
 export default function LoyaltyAdminPage() {
@@ -45,6 +49,19 @@ export default function LoyaltyAdminPage() {
     description: '',
     referenceId: ''
   });
+  const [spendingModal, setSpendingModal] = useState<SpendingConsoleModal>({
+    isOpen: false
+  });
+  const [spendingForm, setSpendingForm] = useState({
+    userId: '',
+    spendingAmount: '',
+    nightsStayed: '',
+    checkinId: '',
+    userSearchTerm: '',
+    selectedUser: null as AdminUserLoyalty | null
+  });
+  const [userSearchResults, setUserSearchResults] = useState<AdminUserLoyalty[]>([]);
+  const [isSearchingUsers, setIsSearchingUsers] = useState(false);
 
   useEffect(() => {
     loadUsers();
@@ -132,21 +149,128 @@ export default function LoyaltyAdminPage() {
     }
   };
 
-  const handleExpirePoints = async () => {
-    if (!confirm(t('admin.loyalty.confirmExpire'))) return;
+  const openSpendingConsole = () => {
+    setSpendingModal({ isOpen: true });
+    setSpendingForm({
+      userId: '',
+      spendingAmount: '',
+      nightsStayed: '',
+      checkinId: '',
+      userSearchTerm: '',
+      selectedUser: null
+    });
+    setUserSearchResults([]);
+  };
+
+  const closeSpendingConsole = () => {
+    setSpendingModal({ isOpen: false });
+    setSpendingForm({
+      userId: '',
+      spendingAmount: '',
+      nightsStayed: '',
+      checkinId: '',
+      userSearchTerm: '',
+      selectedUser: null
+    });
+    setUserSearchResults([]);
+  };
+
+  const searchUsersForSpending = async (searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      setUserSearchResults([]);
+      return;
+    }
+
+    try {
+      setIsSearchingUsers(true);
+      const result = await loyaltyService.getAllUsersLoyaltyStatus(10, 0, searchTerm);
+      setUserSearchResults(result.users);
+    } catch (error) {
+      console.error('Failed to search users:', error);
+      toast.error('Failed to search users');
+    } finally {
+      setIsSearchingUsers(false);
+    }
+  };
+
+  const handleUserSearchChange = (value: string) => {
+    setSpendingForm({ ...spendingForm, userSearchTerm: value, selectedUser: null });
+    searchUsersForSpending(value);
+  };
+
+  const selectUserForSpending = (user: AdminUserLoyalty) => {
+    setSpendingForm({
+      ...spendingForm,
+      userId: user.user_id,
+      selectedUser: user,
+      userSearchTerm: user.first_name && user.last_name 
+        ? `${user.first_name} ${user.last_name}` 
+        : user.oauth_provider === 'line' && user.first_name
+        ? user.first_name
+        : user.email
+    });
+    setUserSearchResults([]);
+  };
+
+  const calculatePoints = (spending: number): number => {
+    return Math.floor(spending * 10); // 1 THB = 10 points
+  };
+
+  const handleSpendingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!spendingForm.selectedUser || !spendingForm.spendingAmount || !spendingForm.checkinId) return;
 
     try {
       setIsLoadingAction(true);
-      const result = await loyaltyService.expirePoints();
-      toast.success(t('admin.loyalty.success.pointsExpired', { count: result.expiredCount }));
+      const spendingAmount = parseFloat(spendingForm.spendingAmount);
+      const nightsStayed = parseInt(spendingForm.nightsStayed) || 0;
+      const pointsToAward = calculatePoints(spendingAmount);
+      
+      let description = `Spending points: ${spendingAmount} THB`;
+      if (nightsStayed > 0) {
+        description += `, ${nightsStayed} ${nightsStayed === 1 ? 'night' : 'nights'}`;
+      }
+      description += ` (Check-in: ${spendingForm.checkinId})`;
+      
+      // If nights are provided, use the new method that handles both nights and points
+      if (nightsStayed > 0) {
+        // We'll need to add a new service method for this
+        await loyaltyService.awardSpendingWithNights(
+          spendingForm.selectedUser.user_id,
+          spendingAmount,
+          nightsStayed,
+          spendingForm.checkinId,
+          description
+        );
+      } else {
+        // Regular points-only award
+        await loyaltyService.awardPoints(
+          spendingForm.selectedUser.user_id,
+          pointsToAward,
+          description,
+          spendingForm.checkinId
+        );
+      }
+      
+      let successMessage = `Awarded ${pointsToAward} points for ${spendingAmount} THB spending`;
+      if (nightsStayed > 0) {
+        successMessage += ` and ${nightsStayed} ${nightsStayed === 1 ? 'night' : 'nights'}`;
+      }
+      toast.success(successMessage);
+      
+      closeSpendingConsole();
       loadUsers();
+      if (selectedUser?.user_id === spendingForm.selectedUser.user_id) {
+        loadUserTransactions(spendingForm.selectedUser.user_id);
+      }
     } catch (error) {
-      toast.error(t('admin.loyalty.errors.expireFailed'));
-      console.error('Expire points failed:', error);
+      toast.error('Failed to award spending points');
+      console.error('Spending points operation failed:', error);
     } finally {
       setIsLoadingAction(false);
     }
   };
+
 
   const selectUser = (user: AdminUserLoyalty) => {
     setSelectedUser(user);
@@ -173,12 +297,11 @@ export default function LoyaltyAdminPage() {
             
             <div className="mt-4 sm:mt-0 flex space-x-3">
               <button
-                onClick={handleExpirePoints}
-                disabled={isLoadingAction}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onClick={openSpendingConsole}
+                className="inline-flex items-center font-medium border border-blue-300 bg-blue-50 text-blue-700 px-4 py-2 text-sm rounded-md hover:bg-blue-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
-                <FiCalendar className="w-4 h-4 mr-2" />
-                {t('admin.loyalty.expirePoints')}
+                <FiDollarSign className="w-4 h-4 mr-2" />
+                Award Spending Points
               </button>
               
               <button
@@ -237,6 +360,9 @@ export default function LoyaltyAdminPage() {
                         {t('admin.loyalty.table.tier')}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Reception ID
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         {t('admin.loyalty.table.points')}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -247,13 +373,13 @@ export default function LoyaltyAdminPage() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {isLoading ? (
                       <tr>
-                        <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
+                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
                           {t('common.loading')}
                         </td>
                       </tr>
                     ) : users.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
+                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
                           {t('admin.loyalty.noUsers')}
                         </td>
                       </tr>
@@ -271,10 +397,14 @@ export default function LoyaltyAdminPage() {
                               <div className="text-sm font-medium text-gray-900">
                                 {user.first_name && user.last_name 
                                   ? `${user.first_name} ${user.last_name}`
+                                  : user.oauth_provider === 'line' && user.first_name
+                                  ? user.first_name
                                   : user.email
                                 }
                               </div>
-                              <div className="text-sm text-gray-500">{user.email}</div>
+                              <div className="text-sm text-gray-500">
+                                {user.oauth_provider === 'line' && user.first_name ? 'LINE User' : user.email}
+                              </div>
                               {user.oauth_provider && (
                                 <div className="text-xs mt-1">
                                   <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
@@ -298,6 +428,11 @@ export default function LoyaltyAdminPage() {
                               }}
                             >
                               {user.tier_name}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-900 font-mono">
+                              {user.reception_id || '-'}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -379,10 +514,14 @@ export default function LoyaltyAdminPage() {
                     <div className="text-sm font-medium text-gray-900">
                       {selectedUser.first_name && selectedUser.last_name 
                         ? `${selectedUser.first_name} ${selectedUser.last_name}`
+                        : selectedUser.oauth_provider === 'line' && selectedUser.first_name
+                        ? selectedUser.first_name
                         : selectedUser.email
                       }
                     </div>
-                    <div className="text-sm text-gray-500">{selectedUser.email}</div>
+                    <div className="text-sm text-gray-500">
+                      {selectedUser.oauth_provider === 'line' && selectedUser.first_name ? 'LINE User' : selectedUser.email}
+                    </div>
                     {selectedUser.oauth_provider && (
                       <div className="text-xs mt-1">
                         <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
@@ -395,6 +534,11 @@ export default function LoyaltyAdminPage() {
                         </span>
                       </div>
                     )}
+                  </div>
+                  
+                  <div>
+                    <div className="text-xs text-gray-500">Reception ID</div>
+                    <div className="text-sm font-mono text-gray-900">{selectedUser.reception_id || 'Not assigned'}</div>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-4">
@@ -533,6 +677,176 @@ export default function LoyaltyAdminPage() {
                       ? t('admin.loyalty.awardPoints')
                       : t('admin.loyalty.deductPoints')
                   )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Spending Console Modal */}
+      {spendingModal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              <FiDollarSign className="w-5 h-5 inline mr-2" />
+              Award Spending Points
+            </h3>
+            
+            <form onSubmit={handleSpendingSubmit} className="space-y-4">
+              {/* User Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Select Customer
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={spendingForm.userSearchTerm}
+                    onChange={(e) => handleUserSearchChange(e.target.value)}
+                    placeholder="Search by name or email..."
+                    className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  />
+                  {isSearchingUsers && (
+                    <div className="absolute right-3 top-2.5">
+                      <FiRefreshCw className="w-4 h-4 animate-spin text-gray-400" />
+                    </div>
+                  )}
+                </div>
+                
+                {/* User Search Results */}
+                {userSearchResults.length > 0 && !spendingForm.selectedUser && (
+                  <div className="mt-1 max-h-40 overflow-y-auto border border-gray-200 rounded-md bg-white shadow-sm">
+                    {userSearchResults.map((user) => (
+                      <button
+                        key={user.user_id}
+                        type="button"
+                        onClick={() => selectUserForSpending(user)}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 focus:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="font-medium text-sm">
+                          {user.first_name && user.last_name 
+                            ? `${user.first_name} ${user.last_name}`
+                            : user.oauth_provider === 'line' && user.first_name
+                            ? user.first_name
+                            : user.email
+                          }
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {user.oauth_provider === 'line' && user.first_name ? 'LINE User' : user.email}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          {user.tier_name} • {user.current_points} points • Reception ID: {user.reception_id || 'N/A'}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Selected User Display */}
+                {spendingForm.selectedUser && (
+                  <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="font-medium text-sm text-blue-900">
+                          {spendingForm.selectedUser.first_name && spendingForm.selectedUser.last_name 
+                            ? `${spendingForm.selectedUser.first_name} ${spendingForm.selectedUser.last_name}`
+                            : spendingForm.selectedUser.oauth_provider === 'line' && spendingForm.selectedUser.first_name
+                            ? spendingForm.selectedUser.first_name
+                            : spendingForm.selectedUser.email
+                          }
+                        </div>
+                        <div className="text-xs text-blue-700">
+                          {spendingForm.selectedUser.oauth_provider === 'line' && spendingForm.selectedUser.first_name ? 'LINE User' : spendingForm.selectedUser.email}
+                        </div>
+                        <div className="text-xs text-blue-600">
+                          {spendingForm.selectedUser.tier_name} • {spendingForm.selectedUser.current_points} points
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSpendingForm({ ...spendingForm, selectedUser: null, userSearchTerm: '' })}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        Change
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Spending Amount */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Spending Amount (THB)
+                </label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={spendingForm.spendingAmount}
+                  onChange={(e) => setSpendingForm({ ...spendingForm, spendingAmount: e.target.value })}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="0.00"
+                  required
+                />
+                {spendingForm.spendingAmount && (
+                  <div className="mt-1 text-sm text-green-600">
+                    Points to award: {calculatePoints(parseFloat(spendingForm.spendingAmount) || 0)}
+                  </div>
+                )}
+              </div>
+
+              {/* Nights Stayed */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Nights Stayed (Optional)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={spendingForm.nightsStayed}
+                  onChange={(e) => setSpendingForm({ ...spendingForm, nightsStayed: e.target.value })}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="0"
+                />
+                {spendingForm.nightsStayed && parseInt(spendingForm.nightsStayed) > 0 && (
+                  <div className="mt-1 text-sm text-blue-600">
+                    Will add {spendingForm.nightsStayed} {parseInt(spendingForm.nightsStayed) === 1 ? 'night' : 'nights'} to user's total
+                  </div>
+                )}
+              </div>
+
+              {/* Check-in ID */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Check-in ID (Reference)
+                </label>
+                <input
+                  type="text"
+                  value={spendingForm.checkinId}
+                  onChange={(e) => setSpendingForm({ ...spendingForm, checkinId: e.target.value })}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="e.g., CHK-2024-001"
+                  required
+                />
+              </div>
+              
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={closeSpendingConsole}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoadingAction || !spendingForm.selectedUser || !spendingForm.spendingAmount || !spendingForm.checkinId}
+                  className="px-4 py-2 text-sm font-medium text-white rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isLoadingAction ? 'Processing...' : 'Award Points'}
                 </button>
               </div>
             </form>

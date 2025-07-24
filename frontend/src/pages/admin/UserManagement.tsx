@@ -246,6 +246,9 @@ const UserManagement: React.FC = () => {
                     {t('userManagement.user')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Reception ID
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('userManagement.email')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -289,6 +292,9 @@ const UserManagement: React.FC = () => {
                           </div>
                         </div>
                       </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
+                      {user.receptionId || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {user.email}
@@ -387,6 +393,10 @@ const UserManagement: React.FC = () => {
                         : t('userManagement.notProvided')
                       }
                     </span>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700">Reception ID: </span>
+                    <span className="text-gray-900 font-mono text-sm">{selectedUser.receptionId || 'Not assigned'}</span>
                   </div>
                   <div>
                     <span className="font-medium text-gray-700">{t('userManagement.email')}: </span>

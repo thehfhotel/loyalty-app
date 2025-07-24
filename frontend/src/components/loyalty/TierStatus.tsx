@@ -75,7 +75,7 @@ export default function TierStatus({ loyaltyStatus, allTiers }: TierStatusProps)
                   <span className={`text-sm ${
                     isCurrentTier ? 'text-gray-900' : 'text-gray-500'
                   }`}>
-                    {tier.min_points.toLocaleString()} {t('loyalty.points')}
+                    {tier.min_points === 0 ? t('loyalty.newMember') : `${tier.min_points}+ ${tier.min_points === 1 ? t('loyalty.night') : t('loyalty.nights')}`}
                   </span>
                 </div>
 
@@ -84,7 +84,10 @@ export default function TierStatus({ loyaltyStatus, allTiers }: TierStatusProps)
                   <div className="mt-2">
                     <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
                       <span>
-                        {loyaltyStatus.points_to_next_tier?.toLocaleString()} {t('loyalty.pointsToGo')}
+                        {loyaltyStatus.nights_to_next_tier !== undefined && loyaltyStatus.nights_to_next_tier !== null
+                          ? `${loyaltyStatus.nights_to_next_tier} ${loyaltyStatus.nights_to_next_tier === 1 ? t('loyalty.nightToGo') : t('loyalty.nightsToGo')}`
+                          : `${loyaltyStatus.points_to_next_tier?.toLocaleString()} ${t('loyalty.pointsToGo')}`
+                        }
                       </span>
                       <span>
                         {getProgressPercentage().toFixed(1)}%
@@ -127,7 +130,9 @@ export default function TierStatus({ loyaltyStatus, allTiers }: TierStatusProps)
             {t('loyalty.nextTierBenefits', { tier: loyaltyStatus.next_tier_name })}
           </div>
           <div className="text-xs text-gray-600">
-            {t('loyalty.unlockBenefits', { points: loyaltyStatus.points_to_next_tier?.toLocaleString() })}
+            {loyaltyStatus.nights_to_next_tier !== undefined && loyaltyStatus.nights_to_next_tier !== null
+              ? t('loyalty.unlockBenefitsNights', { nights: loyaltyStatus.nights_to_next_tier })
+              : t('loyalty.unlockBenefits', { points: loyaltyStatus.points_to_next_tier?.toLocaleString() })}
           </div>
         </div>
       )}

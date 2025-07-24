@@ -306,4 +306,70 @@ router.get('/admin/earning-rules', requireAdmin, loyaltyController.getEarningRul
  */
 router.post('/admin/expire-points', requireAdmin, loyaltyController.expirePoints.bind(loyaltyController));
 
+/**
+ * @swagger
+ * /api/loyalty/admin/award-spending-with-nights:
+ *   post:
+ *     summary: Award spending points with optional nights stayed (Admin only)
+ *     tags: [Loyalty Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - amountSpent
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: User ID to award points to
+ *               amountSpent:
+ *                 type: number
+ *                 minimum: 0
+ *                 description: Amount spent (in THB)
+ *               nightsStayed:
+ *                 type: integer
+ *                 minimum: 0
+ *                 description: Number of nights stayed (optional)
+ *               referenceId:
+ *                 type: string
+ *                 description: Reference ID for the transaction
+ *               description:
+ *                 type: string
+ *                 description: Description of the transaction
+ *     responses:
+ *       200:
+ *         description: Spending points and nights awarded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     transactionId:
+ *                       type: string
+ *                     pointsEarned:
+ *                       type: number
+ *                     newTotalNights:
+ *                       type: number
+ *                     newTierName:
+ *                       type: string
+ *                     loyaltyStatus:
+ *                       $ref: '#/components/schemas/UserLoyaltyStatus'
+ *       403:
+ *         description: Admin access required
+ */
+router.post('/admin/award-spending-with-nights', requireAdmin, loyaltyController.awardSpendingWithNights.bind(loyaltyController));
+
 export default router;
