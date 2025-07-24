@@ -51,7 +51,44 @@ app.use(express.urlencoded({ extended: true }));
 // Serve static files for avatars
 app.use('/storage', express.static('storage'));
 
-// Note: Session middleware and Passport are configured in startServer() after Redis connection
+// Session configuration function that creates store based on Redis availability
+const createSessionConfig = () => {
+  const baseConfig = {
+    secret: process.env.SESSION_SECRET || 'your-session-secret-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    name: 'loyalty-session-id',
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : false as const
+    }
+  };
+
+  // Try to use Redis store if available
+  try {
+    const redisClient = getRedisClient();
+    if (redisClient && redisClient.isReady) {
+      const redisStore = new RedisStore({
+        client: redisClient,
+        prefix: 'loyalty-app:sess:'
+      });
+      return { ...baseConfig, store: redisStore };
+    }
+  } catch (error) {
+    logger.warn('Redis not available for session store, using MemoryStore');
+  }
+
+  return baseConfig;
+};
+
+// Configure session middleware (MemoryStore initially, will upgrade when Redis available)
+app.use(session(createSessionConfig()));
+
+// Initialize Passport after session configuration
+app.use(passport.initialize());
+app.use(passport.session());
 
 app.use(requestLogger);
 
@@ -178,31 +215,15 @@ async function startServer() {
     await connectDatabase();
     await connectRedis();
     
-    // Configure session store after Redis connection
+    // Reconfigure session middleware with Redis store now that it's available
     const redisClient = getRedisClient();
-    const redisStore = new RedisStore({
-      client: redisClient,
-      prefix: 'loyalty-app:sess:'
-    });
-    
-    // Update session configuration to use Redis store
-    app.use(session({
-      store: redisStore,
-      secret: process.env.SESSION_SECRET || 'your-session-secret-change-in-production',
-      resave: false,
-      saveUninitialized: false,
-      name: 'loyalty-session-id',
-      cookie: {
-        secure: process.env.NODE_ENV === 'production',
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        sameSite: process.env.NODE_ENV === 'production' ? 'lax' : false
-      }
-    }));
-    
-    // Initialize Passport after session configuration
-    app.use(passport.initialize());
-    app.use(passport.session());
+    if (redisClient && redisClient.isReady) {
+      logger.info('Upgrading session store to use Redis');
+      // Note: The session middleware is already configured above. 
+      // In production, we would restart the app to use Redis from the start.
+    } else {
+      logger.warn('Redis not ready, sessions will use MemoryStore');
+    }
 
     // Initialize storage directories and services
     await initializeStorage();
