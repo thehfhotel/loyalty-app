@@ -10,8 +10,8 @@
 ### Files Updated
 
 #### 1. Docker Configuration
-- ✅ `docker-compose.yml`: Updated port mapping from `"5432:5432"` to `"5434:5432"`
-- ✅ `docker-compose.prod.yml`: No changes needed (production removes port mapping for security)
+- ✅ `docker compose.yml`: Updated port mapping from `"5432:5432"` to `"5434:5432"`
+- ✅ `docker compose.prod.yml`: No changes needed (production removes port mapping for security)
 
 #### 2. Documentation
 - ✅ `README.md`: Updated database access information from `localhost:5432` to `localhost:5434`
@@ -19,7 +19,7 @@
 ### Files Verified (No Changes Needed)
 
 #### Database Connection Strings
-- ✅ `docker-compose.yml`: DATABASE_URL correctly uses `postgres:5432` (internal container communication)
+- ✅ `docker compose.yml`: DATABASE_URL correctly uses `postgres:5432` (internal container communication)
 - ✅ `.env.production.example`: DATABASE_URL correctly uses `postgres:5432` (internal container communication)
 - ✅ `backend/src/config/database.ts`: Uses environment variable (correct)
 
@@ -64,13 +64,13 @@ Backend Container: connects via DATABASE_URL
 
 1. **Start Services with New Configuration**
    ```bash
-   docker-compose down
-   docker-compose up -d
+   docker compose down
+   docker compose up -d
    ```
 
 2. **Verify Port Mapping**
    ```bash
-   docker-compose ps
+   docker compose ps
    # Should show: loyalty_postgres ... 0.0.0.0:5434->5432/tcp
    ```
 
@@ -82,13 +82,13 @@ Backend Container: connects via DATABASE_URL
 
 4. **Test Internal Database Access (Container)**
    ```bash
-   docker-compose exec postgres psql -U loyalty -d loyalty_db
+   docker compose exec postgres psql -U loyalty -d loyalty_db
    # Should connect successfully
    ```
 
 5. **Test Application Database Connectivity**
    ```bash
-   docker-compose logs backend | grep -i database
+   docker compose logs backend | grep -i database
    # Should show successful database connections
    ```
 
@@ -118,9 +118,9 @@ Backend Container: connects via DATABASE_URL
 ## Rollback Plan
 
 If issues occur, rollback involves:
-1. Change `docker-compose.yml` port mapping back to `"5432:5432"`
+1. Change `docker compose.yml` port mapping back to `"5432:5432"`
 2. Update `README.md` database reference back to `localhost:5432`  
-3. Restart containers: `docker-compose down && docker-compose up -d`
+3. Restart containers: `docker compose down && docker compose up -d`
 
 ## Security Considerations
 

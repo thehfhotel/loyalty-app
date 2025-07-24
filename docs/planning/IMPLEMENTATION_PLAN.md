@@ -103,7 +103,7 @@ This document tracks the implementation progress of the Hotel Loyalty System MVP
 # Quick Start
 git clone <repository>
 cd loyalty-app
-docker-compose up -d
+docker compose up -d
 # Access at http://localhost:4001
 ```
 

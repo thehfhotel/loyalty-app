@@ -40,7 +40,7 @@ This guide explains how to set up Facebook OAuth for the Loyalty App.
 
 1. Go to Settings → Basic
 2. Copy your App ID and App Secret
-3. Update your environment variables in `docker-compose.yml`:
+3. Update your environment variables in `docker compose.yml`:
 
 ```yaml
 environment:
@@ -51,7 +51,7 @@ environment:
 
 ## Environment Variables
 
-Update the following environment variables in your `docker-compose.yml`:
+Update the following environment variables in your `docker compose.yml`:
 
 ```yaml
 backend:

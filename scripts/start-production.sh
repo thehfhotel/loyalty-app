@@ -41,17 +41,44 @@ log "${GREEN}🚀 Starting Loyalty App Production System${NC}"
 echo "================================================="
 
 # Check if we're in the right directory
-if [[ ! -f "docker-compose.yml" ]]; then
-    error "docker-compose.yml not found. Make sure you're running this from the project root."
+if [[ ! -f "docker compose.yml" ]]; then
+    error "docker compose.yml not found. Make sure you're running this from the project root."
     exit 1
 fi
 
-# Check if production environment file exists
-if [[ ! -f ".env.production" ]]; then
-    error "Production environment file not found!"
-    echo "Please create .env.production file by copying from .env.production.example"
+# Determine which environment file to use
+ENV_FILE=""
+if [[ -f ".env.production" ]]; then
+    ENV_FILE=".env.production"
+    success "✅ Using production environment: .env.production"
+elif [[ -f ".env" ]]; then
+    warning "⚠️  .env.production not found, using .env for development mode"
+    ENV_FILE=".env"
+    echo "For production deployment, create .env.production:"
     echo "cp .env.production.example .env.production"
     echo "Then edit .env.production with your production settings."
+    echo
+    read -p "Continue with .env file? [y/N]: " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+else
+    error "No environment file found!"
+    echo "Please create an environment file:"
+    echo
+    if [[ -f ".env.production.example" ]]; then
+        echo "For production:"
+        echo "  cp .env.production.example .env.production"
+        echo "  # Edit .env.production with your production settings"
+    fi
+    if [[ -f ".env.example" ]]; then
+        echo "For development:"
+        echo "  cp .env.example .env"
+        echo "  # Edit .env with your development settings"
+    fi
+    echo
+    echo "Then run this script again."
     exit 1
 fi
 
@@ -63,8 +90,8 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-if ! command -v docker-compose &> /dev/null; then
-    error "Docker Compose is not installed or not in PATH"
+if ! docker compose version &> /dev/null; then
+    error "Docker Compose plugin is not available (install Docker Compose V2)"
     exit 1
 fi
 
@@ -102,20 +129,20 @@ success "✅ Port availability check completed"
 
 # Stop any existing containers
 log "🛑 Stopping any existing containers..."
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+docker compose -f docker compose.yml -f docker compose.prod.yml --env-file "$ENV_FILE" down --remove-orphans 2>/dev/null || true
 
 # Pull latest images
 log "📥 Pulling latest images..."
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml pull
+docker compose -f docker compose.yml -f docker compose.prod.yml --env-file "$ENV_FILE" pull
 
 # Build application images
 log "🔨 Building application images..."
-export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
-docker-compose --env-file .env.production build --no-cache
+export COMPOSE_FILE=docker compose.yml:docker compose.prod.yml
+docker compose --env-file "$ENV_FILE" build --no-cache
 
 # Start the production system
 log "🚀 Starting production services..."
-docker-compose --env-file .env.production up -d
+docker compose --env-file "$ENV_FILE" up -d
 
 # Wait for services to start
 log "⏳ Waiting for services to initialize..."
@@ -152,40 +179,40 @@ log "🏥 Performing health checks..."
 # Check backend API
 if ! health_check "Backend API" "http://localhost:4000/api/health" 60; then
     error "Backend API is not responding"
-    docker-compose logs backend | tail -20
+    docker compose --env-file "$ENV_FILE" logs backend | tail -20
     exit 1
 fi
 
 # Check frontend
 if ! health_check "Frontend" "http://localhost:4001" 60; then
     error "Frontend is not responding"
-    docker-compose logs frontend | tail -20
+    docker compose --env-file "$ENV_FILE" logs frontend | tail -20
     exit 1
 fi
 
 # Check database connectivity
 log "🔍 Checking database connectivity..."
-if docker-compose exec -T postgres pg_isready -U loyalty -d loyalty_db >/dev/null 2>&1; then
+if docker compose --env-file "$ENV_FILE" exec -T postgres pg_isready -U loyalty -d loyalty_db >/dev/null 2>&1; then
     success "✅ Database is ready"
 else
     error "❌ Database connection failed"
-    docker-compose logs postgres | tail -20
+    docker compose --env-file "$ENV_FILE" logs postgres | tail -20
     exit 1
 fi
 
 # Check Redis connectivity
 log "🔍 Checking Redis connectivity..."
-if docker-compose exec -T redis redis-cli ping | grep -q PONG; then
+if docker compose --env-file "$ENV_FILE" exec -T redis redis-cli ping | grep -q PONG; then
     success "✅ Redis is ready"
 else
     error "❌ Redis connection failed"
-    docker-compose logs redis | tail -20
+    docker compose --env-file "$ENV_FILE" logs redis | tail -20
     exit 1
 fi
 
 # Display service status
 log "📊 Service Status:"
-docker-compose ps
+docker compose --env-file "$ENV_FILE" ps
 
 # Show resource usage
 log "💻 Resource Usage:"
@@ -204,12 +231,12 @@ echo
 echo "📋 Management Commands:"
 echo "   Stop system: ./scripts/stop-production.sh"
 echo "   Restart system: ./scripts/restart-production.sh"
-echo "   View logs: docker-compose logs -f [service]"
-echo "   Check status: docker-compose ps"
+echo "   View logs: docker compose logs -f [service]"
+echo "   Check status: docker compose ps"
 echo
 echo "📁 Log Files Location:"
-echo "   View logs: docker-compose logs [service]"
-echo "   Follow logs: docker-compose logs -f"
+echo "   View logs: docker compose logs [service]"
+echo "   Follow logs: docker compose logs -f"
 echo
 warning "🔒 Security Reminder:"
 echo "   - Ensure your .env.production file is secure"

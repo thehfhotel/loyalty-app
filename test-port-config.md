@@ -5,7 +5,7 @@
 ### Docker Configuration
 - **Host Port**: 4001 (external access)
 - **Container Port**: 3000 (internal frontend container)
-- **Port Mapping**: `4001:3000` in docker-compose.yml
+- **Port Mapping**: `4001:3000` in docker compose.yml
 
 ### Access Points
 - **Frontend**: http://localhost:4001 (from host machine)
@@ -16,14 +16,14 @@
 
 1. **Build and Start Services**
    ```bash
-   docker-compose down
-   docker-compose build frontend
-   docker-compose up -d
+   docker compose down
+   docker compose build frontend
+   docker compose up -d
    ```
 
 2. **Verify Port Mapping**
    ```bash
-   docker-compose ps
+   docker compose ps
    # Should show: loyalty_frontend ... 0.0.0.0:4001->3000/tcp
    ```
 
@@ -46,8 +46,8 @@
 ## Files Changed
 
 ### Configuration Files
-- ✅ `docker-compose.yml` - Updated port mapping and FRONTEND_URL default
-- ✅ `docker-compose.prod.yml` - Updated nginx port mapping
+- ✅ `docker compose.yml` - Updated port mapping and FRONTEND_URL default
+- ✅ `docker compose.prod.yml` - Updated nginx port mapping
 - ✅ `frontend/vite.config.ts` - Kept internal port as 3000
 - ✅ `frontend/Dockerfile` - Kept internal port as 3000
 - ✅ `.env.production.example` - Updated FRONTEND_PORT and Cloudflare tunnel config

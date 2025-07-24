@@ -40,7 +40,7 @@ cd loyalty-app
 
 2. Start the development environment:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 3. Access the application:
@@ -78,7 +78,7 @@ loyalty-app/
 ├── database/
 │   └── migrations/          # SQL migration files
 ├── nginx/                   # Reverse proxy config
-└── docker-compose.yml      # Development environment
+└── docker compose.yml      # Development environment
 ```
 
 ## API Endpoints

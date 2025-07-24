@@ -50,8 +50,8 @@ show_status() {
     echo -e "${BLUE}Production System Status${NC}"
     echo "========================"
     echo
-    if docker-compose ps -q | head -1 | grep -q .; then
-        docker-compose ps
+    if docker compose ps -q | head -1 | grep -q .; then
+        docker compose ps
         echo
         echo -e "${BLUE}Resource Usage:${NC}"
         docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
@@ -65,10 +65,10 @@ show_logs() {
     
     if [[ -n "$service" ]]; then
         echo -e "${BLUE}Logs for service: $service${NC}"
-        docker-compose logs -f "$service"
+        docker compose logs -f "$service"
     else
         echo -e "${BLUE}All system logs:${NC}"
-        docker-compose logs -f
+        docker compose logs -f
     fi
 }
 

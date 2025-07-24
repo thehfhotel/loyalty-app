@@ -90,27 +90,27 @@ LOYALTY_PASSWORD=your-secure-admin-password
 ### 3.1 Production Deployment
 ```bash
 # Use production environment
-export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+export COMPOSE_FILE=docker compose.yml:docker compose.prod.yml
 
 # Deploy with production settings
-docker-compose --env-file .env.production up -d
+docker compose --env-file .env.production up -d
 ```
 
 ### 3.2 Verify Containers
 ```bash
 # Check all containers are running
-docker-compose ps
+docker compose ps
 
 # Check logs
-docker-compose logs -f backend
-docker-compose logs -f frontend
+docker compose logs -f backend
+docker compose logs -f frontend
 ```
 
 ### 3.3 Run Database Migrations
 ```bash
 # Database migrations run automatically on first startup
 # Check backend logs to ensure migrations completed successfully
-docker-compose logs backend | grep migration
+docker compose logs backend | grep migration
 ```
 
 ## Step 4: Cloudflare Zero Trust Setup
@@ -190,7 +190,7 @@ curl http://localhost:4001/api/health
 ### 5.3 Database Verification
 ```bash
 # Connect to database
-docker-compose exec postgres psql -U loyalty -d loyalty_db
+docker compose exec postgres psql -U loyalty -d loyalty_db
 
 # Check tables
 \dt
@@ -205,7 +205,7 @@ SELECT COUNT(*) FROM user_loyalty;
 ### 6.1 Log Monitoring
 ```bash
 # Real-time logs
-docker-compose logs -f
+docker compose logs -f
 
 # Cloudflare tunnel logs
 sudo journalctl -u cloudflared -f
@@ -219,7 +219,7 @@ Cloudflare automatically provides SSL certificates for your domain. Ensure:
 ### 6.3 Backup Strategy
 ```bash
 # Database backup
-docker-compose exec postgres pg_dump -U loyalty loyalty_db > backup-$(date +%Y%m%d).sql
+docker compose exec postgres pg_dump -U loyalty loyalty_db > backup-$(date +%Y%m%d).sql
 
 # Environment backup (store securely)
 cp .env.production .env.production.backup
@@ -236,10 +236,10 @@ cp .env.production .env.production.backup
 **2. Database Connection Issues**
 ```bash
 # Check postgres container
-docker-compose logs postgres
+docker compose logs postgres
 
 # Verify database connectivity
-docker-compose exec backend node -e "console.log(process.env.DATABASE_URL)"
+docker compose exec backend node -e "console.log(process.env.DATABASE_URL)"
 ```
 
 **3. Cloudflare Tunnel Issues**
@@ -254,10 +254,10 @@ sudo systemctl restart cloudflared
 **4. Environment Variable Issues**
 ```bash
 # Check backend environment
-docker-compose exec backend env | grep -E "FRONTEND_URL|GOOGLE_|FACEBOOK_|LINE_"
+docker compose exec backend env | grep -E "FRONTEND_URL|GOOGLE_|FACEBOOK_|LINE_"
 
 # Check frontend environment
-docker-compose exec frontend env | grep VITE_API_URL
+docker compose exec frontend env | grep VITE_API_URL
 ```
 
 **5. Port Conflicts**
@@ -287,7 +287,7 @@ sudo netstat -tlnp | grep :4001
 ## Support
 
 For deployment issues:
-1. Check application logs: `docker-compose logs`
+1. Check application logs: `docker compose logs`
 2. Check Cloudflare tunnel logs: `sudo journalctl -u cloudflared`
 3. Verify environment configuration
 4. Test OAuth provider configurations

@@ -199,8 +199,8 @@ Internal Communication: All services communicate via container names
 - **`.env.production`**: Your actual production secrets (create this!)
 
 ### Docker Configuration
-- **`docker-compose.yml`**: Base service definitions
-- **`docker-compose.prod.yml`**: Production overrides
+- **`docker compose.yml`**: Base service definitions
+- **`docker compose.prod.yml`**: Production overrides
 
 ### Script Configuration
 All scripts automatically detect and use the correct configuration files.
@@ -237,13 +237,13 @@ cp .env.production.example .env.production
 ### Troubleshooting
 ```bash
 # Check system status
-docker-compose ps
+docker compose ps
 
 # View logs
-docker-compose logs -f [service]
+docker compose logs -f [service]
 
 # Restart specific service
-docker-compose restart [service]
+docker compose restart [service]
 
 # Full system restart
 ./scripts/restart-production.sh --force
@@ -256,7 +256,7 @@ docker-compose restart [service]
 
 # Restore from backup
 tar xzf backups/loyalty_backup_YYYYMMDD_HHMMSS.tar.gz
-docker-compose exec -T postgres psql -U loyalty -d loyalty_db < backup/database_*.sql
+docker compose exec -T postgres psql -U loyalty -d loyalty_db < backup/database_*.sql
 
 # Start system
 ./scripts/start-production.sh
@@ -323,7 +323,7 @@ sudo usermod -aG docker $USER
 ```
 
 ### Log Locations
-- **Container Logs**: `docker-compose logs [service]`
+- **Container Logs**: `docker compose logs [service]`
 - **System Logs**: `./backups/*/logs/`
 - **Error Logs**: Check individual service logs
 
@@ -340,26 +340,26 @@ sudo usermod -aG docker $USER
 ### Quick Commands Reference
 ```bash
 # System Status
-docker-compose ps
+docker compose ps
 docker stats --no-stream
 
 # View Logs
-docker-compose logs -f backend
-docker-compose logs -f frontend
+docker compose logs -f backend
+docker compose logs -f frontend
 
 # Database Access
-docker-compose exec postgres psql -U loyalty -d loyalty_db
+docker compose exec postgres psql -U loyalty -d loyalty_db
 
 # Manual Container Management
-docker-compose up -d [service]
-docker-compose restart [service]
-docker-compose stop [service]
+docker compose up -d [service]
+docker compose restart [service]
+docker compose stop [service]
 ```
 
 ### Health Check URLs
 - **Backend Health**: `curl http://localhost:4000/api/health`
 - **Frontend**: `curl http://localhost:4001`
-- **Database**: `docker-compose exec postgres pg_isready -U loyalty`
+- **Database**: `docker compose exec postgres pg_isready -U loyalty`
 
 ---
 

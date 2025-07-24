@@ -91,8 +91,8 @@ echo "Compress: $COMPRESS_BACKUP"
 echo "================================================="
 
 # Check if we're in the right directory
-if [[ ! -f "docker-compose.yml" ]]; then
-    error "docker-compose.yml not found. Make sure you're running this from the project root."
+if [[ ! -f "docker compose.yml" ]]; then
+    error "docker compose.yml not found. Make sure you're running this from the project root."
     exit 1
 fi
 
@@ -100,7 +100,7 @@ fi
 mkdir -p "$BACKUP_DIR"
 
 # Check if containers are running
-if ! docker-compose ps -q | head -1 | grep -q .; then
+if ! docker compose ps -q | head -1 | grep -q .; then
     warning "No containers appear to be running. Starting backup of volumes only."
 fi
 
@@ -114,9 +114,9 @@ log "📁 Created backup directory: $BACKUP_PATH"
 log "🗃️  Creating database backup..."
 DB_BACKUP_FILE="$BACKUP_PATH/database_${TIMESTAMP}.sql"
 
-if docker-compose ps postgres | grep -q "Up"; then
+if docker compose ps postgres | grep -q "Up"; then
     # Database is running - use pg_dump
-    if docker-compose exec -T postgres pg_dump -U loyalty loyalty_db > "$DB_BACKUP_FILE"; then
+    if docker compose exec -T postgres pg_dump -U loyalty loyalty_db > "$DB_BACKUP_FILE"; then
         success "✅ Database backup created: $(basename "$DB_BACKUP_FILE")"
         
         # Get database stats
@@ -147,8 +147,8 @@ if [[ "$BACKUP_TYPE" == "full" ]]; then
     mkdir -p "$BACKUP_PATH/config"
     
     # Copy configuration files (safely)
-    cp docker-compose.yml "$BACKUP_PATH/config/" 2>/dev/null || true
-    cp docker-compose.prod.yml "$BACKUP_PATH/config/" 2>/dev/null || true
+    cp docker compose.yml "$BACKUP_PATH/config/" 2>/dev/null || true
+    cp docker compose.prod.yml "$BACKUP_PATH/config/" 2>/dev/null || true
     cp nginx/nginx.conf "$BACKUP_PATH/config/" 2>/dev/null || true
     cp .env.production.example "$BACKUP_PATH/config/" 2>/dev/null || true
     
@@ -164,9 +164,9 @@ if [[ "$BACKUP_TYPE" == "full" ]]; then
     log "📄 Backing up application data volumes..."
     
     # Redis data backup (if running)
-    if docker-compose ps redis | grep -q "Up"; then
+    if docker compose ps redis | grep -q "Up"; then
         log "💾 Creating Redis backup..."
-        if docker-compose exec -T redis redis-cli --rdb - > "$BACKUP_PATH/redis_${TIMESTAMP}.rdb"; then
+        if docker compose exec -T redis redis-cli --rdb - > "$BACKUP_PATH/redis_${TIMESTAMP}.rdb"; then
             success "✅ Redis backup created"
         else
             warning "⚠️  Redis backup failed, but continuing"
@@ -180,13 +180,13 @@ if [[ "$BACKUP_TYPE" == "full" ]]; then
     fi
     
     # Log files backup (if containers are running)
-    if docker-compose ps -q | head -1 | grep -q .; then
+    if docker compose ps -q | head -1 | grep -q .; then
         log "📋 Collecting container logs..."
         mkdir -p "$BACKUP_PATH/logs"
         
         for service in backend frontend postgres redis nginx; do
-            if docker-compose ps "$service" | grep -q "Up"; then
-                docker-compose logs --no-color --timestamps "$service" > "$BACKUP_PATH/logs/${service}_${TIMESTAMP}.log" 2>/dev/null || true
+            if docker compose ps "$service" | grep -q "Up"; then
+                docker compose logs --no-color --timestamps "$service" > "$BACKUP_PATH/logs/${service}_${TIMESTAMP}.log" 2>/dev/null || true
             fi
         done
         success "✅ Container logs collected"
@@ -202,7 +202,7 @@ Backup Date: $(date)
 Backup Type: $BACKUP_TYPE
 System Info: $(uname -a)
 Docker Version: $(docker --version)
-Docker Compose Version: $(docker-compose --version)
+Docker Compose Version: $(docker compose --version)
 
 Contents:
 EOF
@@ -276,7 +276,7 @@ echo "   Total backups in directory: $BACKUP_COUNT"
 echo "   Backup directory: $BACKUP_DIR"
 echo
 echo "🔄 Restore Instructions:"
-echo "   Database: docker-compose exec -T postgres psql -U loyalty -d loyalty_db < database_*.sql"
+echo "   Database: docker compose exec -T postgres psql -U loyalty -d loyalty_db < database_*.sql"
 if [[ "$COMPRESS_BACKUP" == "true" ]]; then
     echo "   Extract: tar xzf ${BACKUP_NAME}.tar.gz"
 fi

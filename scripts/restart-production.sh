@@ -76,21 +76,33 @@ log "${YELLOW}🔄 Restarting Loyalty App Production System${NC}"
 echo "================================================="
 
 # Check if we're in the right directory
-if [[ ! -f "docker-compose.yml" ]]; then
-    error "docker-compose.yml not found. Make sure you're running this from the project root."
+if [[ ! -f "docker compose.yml" ]]; then
+    error "docker compose.yml not found. Make sure you're running this from the project root."
     exit 1
 fi
 
-# Check if production environment file exists
-if [[ ! -f ".env.production" ]]; then
-    error "Production environment file not found!"
-    echo "Please create .env.production file by copying from .env.production.example"
+# Determine which environment file to use
+ENV_FILE=""
+if [[ -f ".env.production" ]]; then
+    ENV_FILE=".env.production"
+    success "✅ Using production environment: .env.production"
+elif [[ -f ".env" ]]; then
+    warning "⚠️  .env.production not found, using .env for development mode"
+    ENV_FILE=".env"
+    echo "For production deployment, create .env.production:"
+    echo "cp .env.production.example .env.production"
+else
+    error "No environment file found!"
+    echo "Please create an environment file:"
+    if [[ -f ".env.production.example" ]]; then
+        echo "  cp .env.production.example .env.production"
+    fi
     exit 1
 fi
 
 # Show current status
 log "📊 Current system status:"
-docker-compose ps
+docker compose --env-file "$ENV_FILE" ps
 
 # Create backup if requested
 if [[ "$CREATE_BACKUP" == "true" ]]; then
@@ -98,7 +110,7 @@ if [[ "$CREATE_BACKUP" == "true" ]]; then
     timestamp=$(date +%Y%m%d_%H%M%S)
     backup_file="backup_before_restart_${timestamp}.sql"
     
-    if docker-compose exec -T postgres pg_dump -U loyalty loyalty_db > "$backup_file" 2>/dev/null; then
+    if docker compose --env-file "$ENV_FILE" exec -T postgres pg_dump -U loyalty loyalty_db > "$backup_file" 2>/dev/null; then
         success "✅ Database backup created: $backup_file"
     else
         warning "⚠️  Database backup failed"
@@ -123,9 +135,9 @@ if [[ -x "$SCRIPT_DIR/stop-production.sh" ]]; then
 else
     # Fallback to basic stop
     if [[ "$FORCE_RESTART" == "true" ]]; then
-        docker-compose kill
+        docker compose --env-file "$ENV_FILE" kill
     else
-        docker-compose down --remove-orphans
+        docker compose --env-file "$ENV_FILE" down --remove-orphans
     fi
 fi
 
@@ -135,8 +147,8 @@ sleep 2
 # Rebuild images if requested
 if [[ "$REBUILD_IMAGES" == "true" ]]; then
     log "🔨 Rebuilding application images..."
-    export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
-    docker-compose --env-file .env.production build --no-cache
+    export COMPOSE_FILE=docker compose.yml:docker compose.prod.yml
+    docker compose --env-file "$ENV_FILE" build --no-cache
     
     # Clean up dangling images
     log "🧹 Cleaning up old images..."
@@ -149,24 +161,24 @@ if [[ -x "$SCRIPT_DIR/start-production.sh" ]]; then
     "$SCRIPT_DIR/start-production.sh"
 else
     # Fallback to basic start
-    export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
-    docker-compose --env-file .env.production up -d
+    export COMPOSE_FILE=docker compose.yml:docker compose.prod.yml
+    docker compose --env-file "$ENV_FILE" up -d
     
     # Basic health check
     log "⏳ Waiting for services to start..."
     sleep 15
     
     # Check if services are running
-    if ! docker-compose ps | grep -q "Up"; then
+    if ! docker compose --env-file "$ENV_FILE" ps | grep -q "Up"; then
         error "❌ Services failed to start properly"
-        docker-compose logs --tail=20
+        docker compose --env-file "$ENV_FILE" logs --tail=20
         exit 1
     fi
 fi
 
 # Show final status
 log "📊 Final system status:"
-docker-compose ps
+docker compose --env-file "$ENV_FILE" ps
 
 # Show resource usage
 log "💻 Resource Usage:"
@@ -200,8 +212,8 @@ echo "   Backend API: http://localhost:4000"
 echo "   Database: localhost:5434 (external access)"
 echo
 echo "📋 Useful Commands:"
-echo "   Check logs: docker-compose logs -f [service]"
-echo "   Check status: docker-compose ps"
+echo "   Check logs: docker compose logs -f [service]"
+echo "   Check status: docker compose ps"
 echo "   Monitor resources: docker stats"
 echo "   Stop system: ./scripts/stop-production.sh"
 echo

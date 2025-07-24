@@ -80,7 +80,7 @@ JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-in-production
 SESSION_SECRET=your-super-secret-session-key-change-in-production
 ```
 
-The `docker-compose.yml` is configured to read these environment variables from your `.env` file automatically.
+The `docker compose.yml` is configured to read these environment variables from your `.env` file automatically.
 
 ## How It Works
 

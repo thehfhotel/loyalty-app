@@ -59,7 +59,7 @@ LINE_CHANNEL_ID=your-actual-line-channel-id
 LINE_CHANNEL_SECRET=your-actual-line-channel-secret
 ```
 
-The `docker-compose.yml` is configured to read these environment variables automatically.
+The `docker compose.yml` is configured to read these environment variables automatically.
 
 ## How It Works
 

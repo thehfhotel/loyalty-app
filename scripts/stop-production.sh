@@ -70,13 +70,13 @@ log "${RED}🛑 Stopping Loyalty App Production System${NC}"
 echo "================================================="
 
 # Check if we're in the right directory
-if [[ ! -f "docker-compose.yml" ]]; then
-    error "docker-compose.yml not found. Make sure you're running this from the project root."
+if [[ ! -f "docker compose.yml" ]]; then
+    error "docker compose.yml not found. Make sure you're running this from the project root."
     exit 1
 fi
 
 # Check if containers are running
-if ! docker-compose ps -q | head -1 | grep -q .; then
+if ! docker compose ps -q | head -1 | grep -q .; then
     warning "No containers appear to be running"
     success "✅ System is already stopped"
     exit 0
@@ -84,7 +84,7 @@ fi
 
 # Show current status
 log "📊 Current system status:"
-docker-compose ps
+docker compose ps
 
 # Warning for volume removal
 if [[ "$REMOVE_VOLUMES" == "true" ]]; then
@@ -110,7 +110,7 @@ if [[ "$REMOVE_VOLUMES" == "false" ]]; then
     timestamp=$(date +%Y%m%d_%H%M%S)
     backup_file="backup_before_stop_${timestamp}.sql"
     
-    if docker-compose exec -T postgres pg_dump -U loyalty loyalty_db > "$backup_file" 2>/dev/null; then
+    if docker compose exec -T postgres pg_dump -U loyalty loyalty_db > "$backup_file" 2>/dev/null; then
         success "✅ Database backup created: $backup_file"
     else
         warning "⚠️  Database backup failed, but continuing with shutdown"
@@ -120,25 +120,25 @@ fi
 # Graceful shutdown vs force stop
 if [[ "$FORCE_STOP" == "true" ]]; then
     log "⚡ Force stopping all services..."
-    docker-compose kill
+    docker compose kill
 else
     log "🕐 Initiating graceful shutdown..."
     
     # Stop services in reverse dependency order
     log "🛑 Stopping nginx proxy..."
-    docker-compose stop nginx || true
+    docker compose stop nginx || true
     
     log "🛑 Stopping frontend..."
-    docker-compose stop frontend || true
+    docker compose stop frontend || true
     
     log "🛑 Stopping backend..."
-    docker-compose stop backend || true
+    docker compose stop backend || true
     
     log "🛑 Stopping Redis..."
-    docker-compose stop redis || true
+    docker compose stop redis || true
     
     log "🛑 Stopping PostgreSQL..."
-    docker-compose stop postgres || true
+    docker compose stop postgres || true
     
     # Wait a moment for graceful shutdown
     sleep 3
@@ -147,10 +147,10 @@ fi
 # Remove containers
 log "🗑️  Removing containers..."
 if [[ "$REMOVE_VOLUMES" == "true" ]]; then
-    docker-compose down --volumes --remove-orphans
+    docker compose down --volumes --remove-orphans
     success "✅ Containers and volumes removed"
 else
-    docker-compose down --remove-orphans
+    docker compose down --remove-orphans
     success "✅ Containers removed"
 fi
 
@@ -164,12 +164,12 @@ docker image prune -f
 
 # Final status check
 log "📊 Final status check:"
-running_containers=$(docker-compose ps -q)
+running_containers=$(docker compose ps -q)
 if [[ -z "$running_containers" ]]; then
     success "✅ All containers stopped successfully"
 else
     warning "⚠️  Some containers may still be running:"
-    docker-compose ps
+    docker compose ps
 fi
 
 # Show disk space recovered

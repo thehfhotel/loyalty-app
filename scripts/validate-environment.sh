@@ -73,14 +73,14 @@ echo "================================================="
 # Check basic requirements
 log "🔧 System Requirements:"
 validate "Docker installation" "command -v docker" "Docker is not installed or not in PATH"
-validate "Docker Compose installation" "command -v docker-compose" "Docker Compose is not installed or not in PATH"
+validate "Docker Compose plugin" "docker compose version" "Docker Compose plugin is not available (install Docker Compose V2)"
 validate "curl installation" "command -v curl" "curl is not installed (needed for health checks)"
 validate "Docker daemon" "docker info" "Docker daemon is not running"
 
 # Check project structure
 log "📁 Project Structure:"
-validate "docker-compose.yml" "test -f docker-compose.yml" "docker-compose.yml not found"
-validate "docker-compose.prod.yml" "test -f docker-compose.prod.yml" "docker-compose.prod.yml not found"
+validate "docker compose.yml" "test -f docker compose.yml" "docker compose.yml not found"
+validate "docker compose.prod.yml" "test -f docker compose.prod.yml" "docker compose.prod.yml not found"
 validate "backend Dockerfile" "test -f backend/Dockerfile" "backend/Dockerfile not found"
 validate "frontend Dockerfile" "test -f frontend/Dockerfile" "frontend/Dockerfile not found"
 validate "nginx configuration" "test -f nginx/nginx.conf" "nginx/nginx.conf not found"
