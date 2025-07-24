@@ -1,6 +1,6 @@
-# Production Management Scripts
+# Production Management Scripts v3.x
 
-This directory contains comprehensive scripts for managing the Loyalty App production system. These scripts provide a simple, reliable way to start, stop, restart, validate, and backup your production deployment.
+This directory contains comprehensive scripts for managing the Loyalty App v3.x production system with Redis sessions, consolidated database schema, and dual-environment OAuth support. These scripts provide a simple, reliable way to start, stop, restart, validate, and backup your production deployment.
 
 ## 🚀 Quick Start
 
@@ -18,18 +18,20 @@ This directory contains comprehensive scripts for managing the Loyalty App produ
 
 ## 📋 Available Scripts
 
-### 1. `build-production.sh`
-**Purpose**: Builds Docker images for production deployment (separate from starting)
+### 1. `build-production.sh` ⭐ Updated
+**Purpose**: Builds Docker images for v3.x production deployment with latest features
 
 ```bash
 ./scripts/build-production.sh
 ```
 
 **What it does**:
-- 🔍 Validates Docker availability
-- 🧹 Cleans up old images
-- 🔨 Builds backend and frontend images
+- 🔍 Runs environment validation before building
+- 🧹 Cleans up old images to free space
+- 🔨 Builds backend and frontend images with v3.x features
+- 🧪 Tests image functionality
 - 📋 Lists built images for verification
+- ⭐ Shows v3.x feature summary
 
 **Requirements**:
 - Docker daemon running
@@ -39,8 +41,8 @@ This directory contains comprehensive scripts for managing the Loyalty App produ
 
 ---
 
-### 2. `validate-environment.sh`
-**Purpose**: Validates that your production environment is properly configured
+### 2. `validate-environment.sh` ⭐ Enhanced
+**Purpose**: Validates v3.x production environment with Redis sessions and consolidated schema
 
 ```bash
 ./scripts/validate-environment.sh
@@ -49,10 +51,12 @@ This directory contains comprehensive scripts for managing the Loyalty App produ
 **What it checks**:
 - ✅ System requirements (Docker, Docker Compose, curl)
 - ✅ Project structure and configuration files
-- ✅ Environment variables and secrets
+- ✅ Environment variables and secrets (including OAuth)
+- ✅ **NEW**: Redis connectivity and session store validation
+- ✅ **NEW**: Consolidated database schema verification
 - ✅ Port availability
 - ✅ Docker resources
-- ✅ Security configuration
+- ✅ Security configuration (enhanced for v3.x)
 - ✅ Network connectivity
 
 **Exit codes**:
@@ -61,8 +65,8 @@ This directory contains comprehensive scripts for managing the Loyalty App produ
 
 ---
 
-### 3. `start-production.sh`
-**Purpose**: Starts the complete production system using pre-built images
+### 3. `start-production.sh` ⭐ Enhanced
+**Purpose**: Starts v3.x production system with Redis sessions and enhanced health checks
 
 ```bash
 ./scripts/start-production.sh
@@ -74,8 +78,11 @@ This directory contains comprehensive scripts for managing the Loyalty App produ
 - 📥 Pulls latest base images (postgres, redis, nginx)
 - ✅ Checks for pre-built application images
 - 🚀 Starts all services in production mode
+- 🏥 **Enhanced**: Redis session store health checks
+- 🏥 **Enhanced**: Database schema validation
 - 🏥 Performs comprehensive health checks via nginx proxy
 - 📊 Shows system status and resource usage
+- ⭐ Displays v3.x features and OAuth endpoints
 
 **Requirements**:
 - Pre-built application images (run `build-production.sh` first)
@@ -196,26 +203,94 @@ This directory contains comprehensive scripts for managing the Loyalty App produ
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Production Architecture                      │
-├─────────────────────────────────────────────────────────────────┤
-│  Frontend (React)     │  Backend (Node.js)   │  Database (Pg)   │
-│  Port: 4001 (ext)     │  Port: 4000 (ext)    │  Port: 5434 (ext)│
-│  Port: 3000 (int)     │  Port: 4000 (int)    │  Port: 5432 (int)│
+│                 Loyalty App v3.x Architecture                   │
 ├─────────────────────────────────────────────────────────────────┤
 │                       Nginx Reverse Proxy                       │
-│                        Port: 80 (int)                          │
-├─────────────────────────────────────────────────────────────────┤
-│                      Redis Cache                                │
-│                   Port: 6379 (int only)                        │
+│                     Port: 4001 (external)                       │
+│                       Port: 80 (internal)                       │
+├─────────────────────────┬───────────────────┬───────────────────┤
+│    Frontend (React)     │ Backend (Node.js) │  Database (Pg)    │
+│    Port: 3000 (int)     │ Port: 4000 (int)  │ Port: 5432 (int)  │
+│    Vite dev server      │ Express + OAuth   │ Port: 5434 (ext)  │
+├─────────────────────────┴───────────────────┴───────────────────┤
+│                  Redis Session Store v3.x                       │
+│                   Port: 6379 (internal)                         │
+│           Session persistence • No memory leaks                 │
 └─────────────────────────────────────────────────────────────────┘
 
-External Access:
-• Frontend: http://localhost:4001
-• Backend API: http://localhost:4000  
-• Database: localhost:5434 (development only)
+🌐 External Access:
+• Application: http://localhost:4001 (nginx → frontend)
+• API Endpoints: http://localhost:4001/api/* (nginx → backend)
+• OAuth Endpoints: http://localhost:4001/api/oauth/* (Google, LINE, Facebook)
+• Database: localhost:5434 (development access only)
 
-Internal Communication: All services communicate via container names
+🔗 Internal Communication:
+• All services communicate via Docker container names
+• Nginx routes /api/* to backend:4000
+• Frontend proxies to nginx for unified access
+• Redis stores sessions with loyalty-app:sess: prefix
+
+🚀 v3.x Enhancements:
+• Redis session store replaces MemoryStore (production-ready)
+• Consolidated database schema (23 migrations → 1 schema file)
+• Dual environment OAuth support (localhost + Cloudflare tunnel)
+• Enhanced security and validation
 ```
+
+---
+
+## ⭐ Version 3.x Features
+
+### 🚀 Major Improvements
+
+**Redis Session Store**
+- ✅ **Production Ready**: Eliminates MemoryStore warning and memory leaks
+- ✅ **Horizontal Scaling**: Sessions persist across multiple server instances
+- ✅ **Session Persistence**: Sessions survive server restarts
+- ✅ **Enhanced Security**: Secure cookies, HttpOnly, SameSite protection
+
+**Consolidated Database Schema**
+- ✅ **Simplified Deployment**: Single schema file replaces 23 migration files
+- ✅ **Faster Setup**: One-command database initialization
+- ✅ **Version Control**: Clean schema tracking in `database/schema.sql`
+- ✅ **Deployment Guide**: Comprehensive guide in `DATABASE_DEPLOYMENT_GUIDE.md`
+
+**OAuth Dual Environment Support**
+- ✅ **Development**: Works with localhost:4001 for local development
+- ✅ **Production**: Compatible with Cloudflare tunnel domains
+- ✅ **Multi-Provider**: Google, LINE, and Facebook OAuth support
+- ✅ **Security**: Enhanced callback URL validation
+
+**Enhanced Scripts & Validation**
+- ✅ **Environment Validation**: Comprehensive pre-flight checks
+- ✅ **Health Monitoring**: Redis, database, and service health checks
+- ✅ **Resource Management**: Docker resource monitoring and optimization
+- ✅ **Security Checks**: Environment file permissions and security validation
+
+### 📋 Migration from v2.x
+
+If upgrading from a previous version:
+
+1. **Update Dependencies**:
+   ```bash
+   cd backend
+   npm install connect-redis@7.1.1 @types/connect-redis@0.0.23
+   ```
+
+2. **Deploy New Database Schema**:
+   ```bash
+   ./database/deploy-database.sh
+   ```
+
+3. **Update Environment Files**:
+   - Add Redis configuration to `.env.production`
+   - Verify OAuth callback URLs use port 4001
+
+4. **Rebuild and Restart**:
+   ```bash
+   ./scripts/build-production.sh
+   ./scripts/restart-production.sh
+   ```
 
 ---
 
