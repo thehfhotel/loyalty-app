@@ -7,7 +7,7 @@ This guide covers deploying the loyalty app to a production server using Docker 
 1. **Server Requirements**
    - Linux server with Docker and Docker Compose installed
    - Minimum 2GB RAM, 20GB storage
-   - Port 3000 available for Cloudflare tunnel
+   - Port 4001 available for Cloudflare tunnel
 
 2. **Cloudflare Requirements**
    - Domain registered with Cloudflare
@@ -146,7 +146,7 @@ credentials-file: /root/.cloudflared/<your-tunnel-id>.json
 
 ingress:
   - hostname: your-domain.com
-    service: http://localhost:3000
+    service: http://localhost:4001
   - service: http_status:404
 ```
 
@@ -174,10 +174,10 @@ sudo systemctl status cloudflared
 ### 5.1 Health Checks
 ```bash
 # Test local container access
-curl http://localhost:3000
+curl http://localhost:4001
 
 # Test backend API
-curl http://localhost:3000/api/health
+curl http://localhost:4001/api/health
 ```
 
 ### 5.2 External Access Testing
@@ -263,7 +263,7 @@ docker-compose exec frontend env | grep VITE_API_URL
 **5. Port Conflicts**
 ```bash
 # Check port usage
-sudo netstat -tlnp | grep :3000
+sudo netstat -tlnp | grep :4001
 
 # If port busy, stop conflicting service or change port
 ```
@@ -274,7 +274,7 @@ sudo netstat -tlnp | grep :3000
 2. **Database Access**: Database ports are not exposed externally in production
 3. **OAuth Secrets**: Store OAuth secrets securely
 4. **Admin Credentials**: Use strong admin passwords
-5. **Firewall**: Only port 3000 needs to be accessible to Cloudflare
+5. **Firewall**: Only port 4001 needs to be accessible to Cloudflare
 6. **SSL**: All traffic is encrypted via Cloudflare SSL
 
 ## Performance Optimization

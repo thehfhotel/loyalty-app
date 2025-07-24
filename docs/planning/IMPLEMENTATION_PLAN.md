@@ -104,7 +104,7 @@ This document tracks the implementation progress of the Hotel Loyalty System MVP
 git clone <repository>
 cd loyalty-app
 docker-compose up -d
-# Access at http://localhost:3000
+# Access at http://localhost:4001
 ```
 
 ---
@@ -236,7 +236,7 @@ CREATE TABLE user_profiles (
 - ✅ Language preference persists across sessions
 - ✅ All UI elements properly translated
 - ✅ TypeScript compilation succeeds without errors
-- ✅ Development server runs stably on localhost:3000
+- ✅ Development server runs stably on localhost:4001
 
 #### **Quality Metrics**
 - ✅ 650+ translation keys implemented

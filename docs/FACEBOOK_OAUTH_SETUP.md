@@ -24,7 +24,7 @@ This guide explains how to set up Facebook OAuth for the Loyalty App.
 1. In your Facebook App dashboard, click "Add Product"
 2. Find "Facebook Login" and click "Set Up"
 3. Choose "Web" as the platform
-4. Enter your site URL: `http://localhost:3000` (for development)
+4. Enter your site URL: `http://localhost:4001` (for development)
 
 ### Step 3: Configure OAuth Settings
 
@@ -60,7 +60,7 @@ backend:
     FACEBOOK_APP_ID: your-facebook-app-id-here
     FACEBOOK_APP_SECRET: your-facebook-app-secret-here
     FACEBOOK_CALLBACK_URL: http://localhost:4000/api/oauth/facebook/callback
-    FRONTEND_URL: http://localhost:3000
+    FRONTEND_URL: http://localhost:4001
     SESSION_SECRET: your-session-secret-change-in-production
 ```
 
@@ -111,7 +111,7 @@ To test Facebook OAuth:
 1. Set up a Facebook App (see steps above)
 2. Update environment variables with real Facebook credentials
 3. Restart the backend: `docker compose restart backend`
-4. Visit `http://localhost:3000/login`
+4. Visit `http://localhost:4001/login`
 5. Click "Continue with Facebook"
 6. Authorize the app on Facebook
 7. You should be redirected back and logged in

@@ -45,7 +45,7 @@ This guide explains how to set up Google OAuth for the Loyalty App.
    - Name: `Hotel Loyalty System Web Client`
    - Authorized JavaScript origins:
      ```
-     http://localhost:3000
+     http://localhost:4001
      ```
    - Authorized redirect URIs:
      ```
@@ -130,7 +130,7 @@ To test Google OAuth:
 1. Set up a Google Cloud Project (see steps above)
 2. Update environment variables with real Google credentials
 3. Restart the backend: `docker compose restart backend`
-4. Visit `http://localhost:3000/login`
+4. Visit `http://localhost:4001/login`
 5. Click "Continue with Google"
 6. Authorize the app on Google
 7. You should be redirected back and logged in

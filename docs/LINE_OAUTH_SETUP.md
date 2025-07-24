@@ -112,7 +112,7 @@ To test LINE OAuth:
 1. Set up a LINE Login channel (see steps above)
 2. Update environment variables with real LINE credentials
 3. Restart the backend: `docker compose restart backend`
-4. Visit `http://localhost:3000/login`
+4. Visit `http://localhost:4001/login`
 5. Click "Continue with LINE"
 6. Authorize the app on LINE
 7. You should be redirected back and logged in

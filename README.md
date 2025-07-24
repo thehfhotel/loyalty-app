@@ -44,9 +44,9 @@ docker-compose up -d
 ```
 
 3. Access the application:
-- Frontend: http://localhost:3000
+- Frontend: http://localhost:4001
 - Backend API: http://localhost:4000
-- Database: localhost:5432
+- Database: localhost:5434
 
 ### Default Admin Account
 - Email: `admin@hotel.com`
@@ -120,7 +120,7 @@ Database migrations run automatically on container startup via Docker.
 ## Testing
 
 ### Test User Registration
-1. Visit http://localhost:3000
+1. Visit http://localhost:4001
 2. Click "Create a new account"
 3. Fill in the registration form
 4. Verify login works with new account

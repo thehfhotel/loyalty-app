@@ -11,7 +11,7 @@ router.get('/google', (req, res, next) => {
   const googleClientId = process.env.GOOGLE_CLIENT_ID;
   
   if (!googleClientId || googleClientId === 'your-google-client-id') {
-    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=google_not_configured`);
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=google_not_configured`);
   }
   
   passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
@@ -24,13 +24,13 @@ router.get('/google/callback',
       const oauthResult = req.user as any;
       
       if (!oauthResult) {
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=oauth_failed`);
+        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_failed`);
       }
 
       const { user, tokens, isNewUser } = oauthResult;
 
       // Create success URL with tokens
-      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL || 'http://localhost:3000');
+      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL || 'http://localhost:4001');
       successUrl.searchParams.set('token', tokens.accessToken);
       successUrl.searchParams.set('refreshToken', tokens.refreshToken);
       successUrl.searchParams.set('isNewUser', isNewUser.toString());
@@ -40,7 +40,7 @@ router.get('/google/callback',
       res.redirect(successUrl.toString());
     } catch (error) {
       logger.error('Google OAuth callback error:', error);
-      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=oauth_error`);
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_error`);
     }
   }
 );
@@ -53,20 +53,20 @@ router.get('/facebook', async (req, res, next) => {
     
     if (!isFacebookOAuthEnabled) {
       logger.info('Facebook OAuth access denied - feature disabled');
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=facebook_not_configured`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=facebook_not_configured`);
     }
     
     // Check if Facebook strategy is configured
     const facebookAppId = process.env.FACEBOOK_APP_ID;
     
     if (!facebookAppId || facebookAppId === 'your-facebook-app-id') {
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=facebook_not_configured`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=facebook_not_configured`);
     }
     
     passport.authenticate('facebook', { scope: ['email'] })(req, res, next);
   } catch (error) {
     logger.error('Facebook OAuth feature check error:', error);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=facebook_not_configured`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=facebook_not_configured`);
   }
 });
 
@@ -79,19 +79,19 @@ router.get('/facebook/callback',
       
       if (!isFacebookOAuthEnabled) {
         logger.info('Facebook OAuth callback denied - feature disabled');
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=facebook_not_configured`);
+        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=facebook_not_configured`);
       }
       
       const oauthResult = req.user as any;
       
       if (!oauthResult) {
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=oauth_failed`);
+        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_failed`);
       }
 
       const { user, tokens, isNewUser } = oauthResult;
 
       // Create success URL with tokens
-      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL || 'http://localhost:3000');
+      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL || 'http://localhost:4001');
       successUrl.searchParams.set('token', tokens.accessToken);
       successUrl.searchParams.set('refreshToken', tokens.refreshToken);
       successUrl.searchParams.set('isNewUser', isNewUser.toString());
@@ -101,7 +101,7 @@ router.get('/facebook/callback',
       res.redirect(successUrl.toString());
     } catch (error) {
       logger.error('Facebook OAuth callback error:', error);
-      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=oauth_error`);
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_error`);
     }
   }
 );
@@ -112,7 +112,7 @@ router.get('/line', (req, res, next) => {
   const lineChannelId = process.env.LINE_CHANNEL_ID;
   
   if (!lineChannelId || lineChannelId === 'your-line-channel-id') {
-    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=line_not_configured`);
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=line_not_configured`);
   }
   
   passport.authenticate('line')(req, res, next);
@@ -125,13 +125,13 @@ router.get('/line/callback',
       const oauthResult = req.user as any;
       
       if (!oauthResult) {
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=oauth_failed`);
+        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_failed`);
       }
 
       const { user, tokens, isNewUser } = oauthResult;
 
       // Create success URL with tokens
-      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL || 'http://localhost:3000');
+      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL || 'http://localhost:4001');
       successUrl.searchParams.set('token', tokens.accessToken);
       successUrl.searchParams.set('refreshToken', tokens.refreshToken);
       successUrl.searchParams.set('isNewUser', isNewUser.toString());
@@ -141,7 +141,7 @@ router.get('/line/callback',
       res.redirect(successUrl.toString());
     } catch (error) {
       logger.error('LINE OAuth callback error:', error);
-      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=oauth_error`);
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_error`);
     }
   }
 );

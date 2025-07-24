@@ -28,6 +28,6 @@ services:
 
   nginx:
     restart: unless-stopped
-    # Only expose port 3000 for Cloudflare Zero Trust tunnel
+    # Only expose port 4001 for Cloudflare Zero Trust tunnel
     ports:
-      - "3000:80"
+      - "4001:80"
