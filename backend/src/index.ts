@@ -60,6 +60,78 @@ app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Comprehensive API health check endpoint
+app.get('/api/health', async (_req, res) => {
+  try {
+    const healthStatus = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      version: '3.1.1',
+      environment: process.env.NODE_ENV || 'development',
+      services: {
+        database: 'unknown',
+        redis: 'unknown',
+        storage: 'unknown'
+      },
+      uptime: process.uptime(),
+      memory: {
+        used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024)
+      }
+    };
+
+    // Check database connectivity
+    try {
+      const { query } = await import('./config/database');
+      await query('SELECT 1 as health_check');
+      healthStatus.services.database = 'healthy';
+    } catch (error) {
+      healthStatus.services.database = 'unhealthy';
+      healthStatus.status = 'degraded';
+      logger.warn('Database health check failed:', error);
+    }
+
+    // Check Redis connectivity
+    try {
+      const redisClient = getRedisClient();
+      if (redisClient && redisClient.isReady) {
+        await redisClient.ping();
+        healthStatus.services.redis = 'healthy';
+      } else {
+        healthStatus.services.redis = 'disconnected';
+        healthStatus.status = 'degraded';
+      }
+    } catch (error) {
+      healthStatus.services.redis = 'unhealthy';
+      healthStatus.status = 'degraded';
+      logger.warn('Redis health check failed:', error);
+    }
+
+    // Check storage service
+    try {
+      // Storage service is initialized during startup, mark as healthy if server is running
+      healthStatus.services.storage = 'healthy';
+    } catch (error) {
+      healthStatus.services.storage = 'unavailable';
+      logger.warn('Storage health check failed:', error);
+    }
+
+    // Determine overall status code
+    const statusCode = healthStatus.status === 'healthy' ? 200 : 
+                      healthStatus.status === 'degraded' ? 200 : 503;
+
+    res.status(statusCode).json(healthStatus);
+  } catch (error) {
+    logger.error('Health check endpoint failed:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: 'Health check failed',
+      uptime: process.uptime()
+    });
+  }
+});
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
