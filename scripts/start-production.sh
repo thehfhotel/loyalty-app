@@ -41,8 +41,8 @@ log "${GREEN}🚀 Starting Loyalty App Production System${NC}"
 echo "================================================="
 
 # Check if we're in the right directory
-if [[ ! -f "docker-compose.yml" ]]; then
-    error "docker-compose.yml not found. Make sure you're running this from the project root."
+if [[ ! -f "docker-compose.production.yml" ]]; then
+    error "docker-compose.production.yml not found. Make sure you're running this from the project root."
     exit 1
 fi
 
@@ -129,11 +129,11 @@ success "✅ Port availability check completed"
 
 # Stop any existing containers
 log "🛑 Stopping any existing containers..."
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file "$ENV_FILE" down --remove-orphans 2>/dev/null || true
+docker compose -f docker-compose.production.yml --env-file "$ENV_FILE" down --remove-orphans 2>/dev/null || true
 
 # Pull latest base images (postgres, redis, nginx)
 log "📥 Pulling latest base images..."
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file "$ENV_FILE" pull postgres redis nginx
+docker compose -f docker-compose.production.yml --env-file "$ENV_FILE" pull postgres redis nginx
 
 # Check if application images exist
 log "🔍 Checking for pre-built application images..."
@@ -146,8 +146,7 @@ if ! docker images | grep -q "loyalty-app-backend" || ! docker images | grep -q 
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         log "🔨 Building application images..."
-        export COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
-        docker compose --env-file "$ENV_FILE" build backend frontend
+        docker compose -f docker-compose.production.yml --env-file "$ENV_FILE" build backend frontend
     else
         error "Cannot start without application images"
         exit 1
@@ -158,7 +157,7 @@ fi
 
 # Start the production system
 log "🚀 Starting production services..."
-docker compose --env-file "$ENV_FILE" up -d
+docker compose -f docker-compose.production.yml --env-file "$ENV_FILE" up -d
 
 # Wait for services to start
 log "⏳ Waiting for services to initialize..."

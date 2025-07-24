@@ -137,7 +137,6 @@ SELECT
     pt.type,
     pt.description,
     pt.reference_id,
-    pt.nights_stayed,
     pt.admin_user_id,
     pt.admin_reason,
     pt.expires_at, -- Keep the column for reference but it will always be NULL
