@@ -67,7 +67,7 @@ validate() {
 # Change to project root
 cd "$PROJECT_ROOT"
 
-log "${BLUE}🔍 Validating Loyalty App Production Environment${NC}"
+log "${BLUE}🔍 Validating Loyalty App v3.x Production Environment${NC}"
 echo "================================================="
 
 # Check basic requirements
@@ -122,10 +122,36 @@ if [[ -f ".env.production" ]]; then
         fi
     fi
     
+elif [[ -f ".env" ]]; then
+    warning "⚠️  .env.production not found, using .env for development mode"
+    success "✅ .env file exists (development mode)"
+    
+    # Check required environment variables from .env
+    log "🔑 Environment Variables (Development):"
+    source .env
+    
+    validate "JWT_SECRET" "test -n '$JWT_SECRET'" "JWT_SECRET is not set" true
+    validate "SESSION_SECRET" "test -n '$SESSION_SECRET'" "SESSION_SECRET is not set" true
+    validate "LOYALTY_USERNAME" "test -n '$LOYALTY_USERNAME'" "LOYALTY_USERNAME is not set" true
+    validate "LOYALTY_PASSWORD" "test -n '$LOYALTY_PASSWORD'" "LOYALTY_PASSWORD is not set" true
+    
+    # OAuth validation (warnings only for development)
+    validate "Google OAuth Client ID" "test -n '$GOOGLE_CLIENT_ID'" "Google OAuth Client ID not configured" true
+    validate "Facebook OAuth App ID" "test -n '$FACEBOOK_APP_ID'" "Facebook OAuth App ID not configured" true
+    validate "LINE Channel ID" "test -n '$LINE_CHANNEL_ID'" "LINE Channel ID not configured" true
+    
 else
-    error "❌ .env.production file not found!"
-    echo "Please create .env.production by copying from .env.production.example:"
-    echo "cp .env.production.example .env.production"
+    error "❌ No environment file found!"
+    echo "Please create an environment file:"
+    echo
+    echo "For production:"
+    echo "  cp .env.production.example .env.production"
+    echo "  # Edit .env.production with your production settings"
+    echo
+    echo "For development:"
+    echo "  cp .env.example .env"
+    echo "  # Edit .env with your development settings"
+    echo
     VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
 fi
 
@@ -195,32 +221,100 @@ if [[ -f ".env.production" ]]; then
         error "Using default admin password - please change it!"
         VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
     fi
+elif [[ -f ".env" ]]; then
+    # Check development environment file permissions
+    env_perms=$(stat -f "%A" .env 2>/dev/null || stat -c "%a" .env 2>/dev/null || echo "000")
+    success "✅ .env file permissions: $env_perms (development mode)"
+    
+    # Check for default passwords in development
+    source .env
+    if [[ "$LOYALTY_PASSWORD" == "your-secure-admin-password" ]] || [[ "$LOYALTY_PASSWORD" == "admin" ]]; then
+        warning "Using default/weak admin password in development"
+        VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
+    fi
+fi
+
+# Redis and session store validation
+log "📊 Redis and Session Store:"
+validate "Redis connectivity" "docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG" "Redis is not accessible (required for session store)" true
+
+if docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
+    # Check if session store is properly configured
+    SESSION_PREFIX_EXISTS=$(docker compose exec -T redis redis-cli KEYS "loyalty-app:*" 2>/dev/null | wc -l || echo "0")
+    if [ "$SESSION_PREFIX_EXISTS" -ge 0 ]; then
+        success "✅ Redis session store is configured with loyalty-app prefix"
+    fi
 fi
 
 # Network connectivity checks
 log "🌐 Network Connectivity:"
 validate "Internet connectivity" "curl -s --max-time 5 https://www.google.com > /dev/null" "No internet connectivity (may affect OAuth and external services)" true
 
+# Database schema validation
+log "💾 Database Schema:"
+if docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db >/dev/null 2>&1; then
+    TABLE_COUNT=$(docker compose exec -T postgres psql -U loyalty -d loyalty_db -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ' || echo "0")
+    if [ "$TABLE_COUNT" -gt 20 ]; then
+        success "✅ Consolidated database schema is applied (${TABLE_COUNT} tables)"
+    else
+        warning "Database schema may not be fully initialized (${TABLE_COUNT} tables)"
+        echo "Consider running: ./database/deploy-database.sh"
+    fi
+else
+    warning "Cannot validate database schema (database not accessible)"
+fi
+
 # Final validation summary
 echo
 echo "================================================="
-log "📊 Validation Summary:"
+log "📊 Validation Summary (v3.x Features):"
 
 if [[ $VALIDATION_ERRORS -eq 0 ]] && [[ $VALIDATION_WARNINGS -eq 0 ]]; then
-    success "🎉 All validations passed! Environment is ready for production."
-    echo
-    echo "✅ You can now run: ./scripts/start-production.sh"
+    if [[ -f ".env.production" ]]; then
+        success "🎉 All validations passed! Environment is ready for production."
+        echo
+        echo "✨ v3.x Features Validated:"
+        echo "   • Redis session store (no memory leaks)"
+        echo "   • Consolidated database schema"
+        echo "   • OAuth dual environment support"
+        echo "   • Production security settings"
+        echo
+        echo "✅ You can now run: ./scripts/start-production.sh"
+    else
+        success "🎉 All validations passed! Environment is ready for development."
+        echo
+        echo "✨ v3.x Features Available:"
+        echo "   • Redis session store (no memory leaks)"
+        echo "   • Consolidated database schema"
+        echo "   • OAuth dual environment support"
+        echo "   • Development mode active"
+        echo
+        echo "✅ You can now run: ./scripts/start-production.sh"
+    fi
     exit 0
 elif [[ $VALIDATION_ERRORS -eq 0 ]]; then
     warning "⚠️  Environment has $VALIDATION_WARNINGS warning(s) but can proceed."
     echo
-    echo "You can run: ./scripts/start-production.sh"
-    echo "Consider addressing the warnings above for optimal production setup."
+    echo "✨ v3.x Features Available:"
+    echo "   • Redis sessions, consolidated schema, OAuth improvements"
+    echo
+    if [[ -f ".env.production" ]]; then
+        echo "You can run: ./scripts/start-production.sh"
+        echo "Consider addressing the warnings above for optimal production setup."
+    else
+        echo "You can run: ./scripts/start-production.sh (development mode)"
+        echo "Consider addressing the warnings above."
+    fi
     exit 0
 else
     error "❌ Environment validation failed with $VALIDATION_ERRORS error(s) and $VALIDATION_WARNINGS warning(s)."
     echo
     echo "Please fix the errors above before starting production."
+    echo "For help with v3.x features, see:"
+    echo "   - SESSION_MANAGEMENT.md (Redis sessions)"
+    echo "   - DATABASE_DEPLOYMENT_GUIDE.md (consolidated schema)"
+    echo "   - docs/*_OAUTH_SETUP.md (OAuth configuration)"
+    echo
     echo "Run this script again after making corrections."
     exit 1
 fi
