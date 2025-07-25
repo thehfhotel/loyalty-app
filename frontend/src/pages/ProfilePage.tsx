@@ -10,7 +10,6 @@ import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
 import { FiUser, FiPhone, FiCalendar, FiCamera, FiLink, FiCopy, FiSettings, FiGift } from 'react-icons/fi';
 import { getUserDisplayName, getOAuthProviderName, isOAuthUser } from '../utils/userHelpers';
-import { useFeatureToggle, FEATURE_KEYS } from '../hooks/useFeatureToggle';
 import DashboardButton from '../components/navigation/DashboardButton';
 import { 
   loyaltyService, 
@@ -51,8 +50,6 @@ export default function ProfilePage() {
   const [transactions, setTransactions] = useState<PointsTransaction[]>([]);
   const [loyaltyLoading, setLoyaltyLoading] = useState(true);
   
-  // Check if account linking feature is enabled
-  const isAccountLinkingEnabled = useFeatureToggle(FEATURE_KEYS.ACCOUNT_LINKING);
 
   const {
     register,
@@ -482,26 +479,6 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* Account Linking Section - Only show if feature is enabled */}
-        {isAccountLinkingEnabled && (
-          <div className="bg-white shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                {t('profile.accountLinking')}
-              </h3>
-              <p className="text-sm text-gray-600 mb-6">
-                {t('profile.accountLinkingDescription2')}
-              </p>
-              <Link
-                to="/account-linking"
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                <FiLink className="mr-2 h-4 w-4" />
-                {t('profile.manageAccountLinks')}
-              </Link>
-            </div>
-          </div>
-        )}
 
         {/* Settings Modal */}
         <SettingsModal

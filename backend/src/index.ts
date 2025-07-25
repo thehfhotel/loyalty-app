@@ -17,15 +17,11 @@ import { StorageService } from './services/storageService';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
 import oauthRoutes from './routes/oauth';
-import featureToggleRoutes from './routes/featureToggles';
 import loyaltyRoutes from './routes/loyalty';
 import couponRoutes from './routes/coupon';
 import surveyRoutes from './routes/survey';
 import storageRoutes from './routes/storage';
 import receptionRoutes from './routes/reception';
-// import accountLinkingRoutes from './routes/accountLinking.minimal';
-// import { accountLinkingService } from './services/accountLinkingService';
-import { authenticate } from './middleware/auth';
 // import { query } from './config/database';
 // Import and initialize OAuth service to register strategies
 import './services/oauthService';
@@ -246,32 +242,11 @@ app.get('/api/health', async (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/oauth', oauthRoutes);
-app.use('/api/feature-toggles', featureToggleRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/surveys', surveyRoutes);
 app.use('/api/storage', storageRoutes);
 app.use('/api/reception', receptionRoutes);
-// Account linking routes (basic implementation for testing)
-app.get('/api/account-linking/health', authenticate, async (_req, res) => {
-  res.json({ success: true, message: 'Account linking API is available' });
-});
-
-app.get('/api/account-linking/requests', authenticate, async (_req, res) => {
-  res.json({ success: true, data: { sent: [], received: [] } });
-});
-
-app.get('/api/account-linking/linked-accounts', authenticate, async (_req, res) => {
-  res.json({ success: true, data: [] });
-});
-
-app.post('/api/account-linking/request', authenticate, async (_req, res) => {
-  res.status(201).json({ success: true, message: 'Account linking feature coming soon' });
-});
-
-app.get('/api/account-linking/status/:email', authenticate, async (_req, res) => {
-  res.json({ success: true, data: { canLink: true, targetExists: false } });
-});
 
 // Error handling
 app.use(errorHandler);

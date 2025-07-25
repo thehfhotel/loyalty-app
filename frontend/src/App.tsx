@@ -9,11 +9,8 @@ import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import OAuthSuccessPage from './pages/auth/OAuthSuccessPage';
 import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
-import AccountLinkingPage from './pages/AccountLinkingPage';
-import FeatureTogglePage from './pages/admin/FeatureTogglePage';
 import LoyaltyAdminPage from './pages/admin/LoyaltyAdminPage';
 import CouponManagement from './pages/admin/CouponManagement';
-import FeatureDisabledPage from './components/FeatureDisabledPage';
 import CouponWallet from './pages/coupons/CouponWallet';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import SessionManager from './components/auth/SessionManager';
@@ -31,15 +28,12 @@ import SurveyInvitations from './pages/admin/SurveyInvitations';
 import ThaiSurveyDebug from './pages/admin/ThaiSurveyDebug';
 import UserManagement from './pages/admin/UserManagement';
 import { useEffect, useState } from 'react';
-import { useFeatureToggle, FEATURE_KEYS } from './hooks/useFeatureToggle';
 
 function App() {
   const { t } = useTranslation();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [isInitialized, setIsInitialized] = useState(false);
   
-  // Check feature toggles
-  const isAccountLinkingEnabled = useFeatureToggle(FEATURE_KEYS.ACCOUNT_LINKING);
 
   useEffect(() => {
     const initializeAuth = async () => {
@@ -189,28 +183,6 @@ function App() {
           element={
             <ProtectedRoute>
               <SurveyDetailsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/account-linking"
-          element={
-            <ProtectedRoute>
-              {isAccountLinkingEnabled ? (
-                <AccountLinkingPage />
-              ) : (
-                <FeatureDisabledPage
-                  featureName={t('profile.accountLinking')}
-                />
-              )}
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin/feature-toggles"
-          element={
-            <ProtectedRoute requiredRole="super_admin">
-              <FeatureTogglePage />
             </ProtectedRoute>
           }
         />

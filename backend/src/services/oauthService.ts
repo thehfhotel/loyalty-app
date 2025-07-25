@@ -8,7 +8,6 @@ import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
 import { receptionIdService } from './receptionIdService';
-// import { accountLinkingService } from './accountLinkingService';
 
 const authService = new AuthService();
 
@@ -216,8 +215,6 @@ export class OAuthService {
           [newOAuthUser.id, firstName, lastName, avatarUrl, receptionId]
         );
 
-        // Auto-link accounts (temporarily disabled)
-        // await accountLinkingService.autoLinkOAuthToEmail(newOAuthUser.id, email, 'google');
         
         user = newOAuthUser;
       } else {
