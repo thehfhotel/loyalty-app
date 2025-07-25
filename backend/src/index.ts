@@ -37,9 +37,28 @@ const app = express();
 const httpServer = createServer(app);
 const PORT = process.env.PORT || 4000;
 
+// Trust proxy headers (required for Cloudflare and other reverse proxies)
+app.set('trust proxy', true);
+
 // Middleware
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" } // Allow images to be served cross-origin
+  crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow images to be served cross-origin
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "https:", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'", "https:"],
+      fontSrc: ["'self'", "https:", "data:"],
+      objectSrc: ["'none'"],
+      frameSrc: ["'none'"],
+      // Allow OAuth redirects to external services
+      formAction: ["'self'", "https://accounts.google.com", "https://www.facebook.com", "https://access.line.me"],
+      // Allow navigation to OAuth providers
+      navigateTo: ["'self'", "https://accounts.google.com", "https://www.facebook.com", "https://access.line.me"]
+    }
+  }
 }));
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:4001',
@@ -52,17 +71,26 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/storage', express.static('storage'));
 
 // Session configuration function that creates store based on Redis availability
-const createSessionConfig = () => {
+const createSessionConfig = (req?: express.Request) => {
+  // Determine if connection is secure (works with proxies like Cloudflare)
+  const isSecure = process.env.NODE_ENV === 'production' && 
+    (req ? req.get('X-Forwarded-Proto') === 'https' : true);
+  
   const baseConfig = {
     secret: process.env.SESSION_SECRET || 'your-session-secret-change-in-production',
     resave: false,
     saveUninitialized: false,
     name: 'loyalty-session-id',
+    proxy: process.env.NODE_ENV === 'production', // Trust proxy
     cookie: {
-      secure: process.env.NODE_ENV === 'production',
+      secure: isSecure,
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : false as const
+      sameSite: 'lax' as const,
+      // Ensure cookies work with proxy
+      ...(process.env.NODE_ENV === 'production' && {
+        domain: process.env.COOKIE_DOMAIN || undefined // Allow setting specific domain if needed
+      })
     }
   };
 
@@ -83,8 +111,11 @@ const createSessionConfig = () => {
   return baseConfig;
 };
 
-// Configure session middleware (MemoryStore initially, will upgrade when Redis available)
-app.use(session(createSessionConfig()));
+// Configure session middleware with dynamic secure detection
+app.use((req, res, next) => {
+  const sessionConfig = createSessionConfig(req);
+  session(sessionConfig)(req, res, next);
+});
 
 // Initialize Passport after session configuration
 app.use(passport.initialize());
