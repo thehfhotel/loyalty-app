@@ -21,7 +21,7 @@ RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nodejs -u 1001
 
 # Create directories that need to be writable and set ownership
-RUN mkdir -p /app/storage /app/storage/backup /app/storage/avatars \
+RUN mkdir -p /app/storage /app/storage/backup /app/storage/avatars /app/logs \
     && chown -R nodejs:nodejs /app
 
 USER nodejs
