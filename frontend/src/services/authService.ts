@@ -22,14 +22,30 @@ api.interceptors.request.use(
         
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
+          console.log('[Auth Debug] Request interceptor adding token', {
+            url: config.url,
+            hasToken: true,
+            method: config.method
+          });
+        } else {
+          console.log('[Auth Debug] Request interceptor - no token found', {
+            url: config.url,
+            method: config.method
+          });
         }
       } catch (error) {
-        console.error('Error parsing auth storage:', error);
+        console.error('[Auth Debug] Error parsing auth storage:', error);
       }
+    } else {
+      console.log('[Auth Debug] Request interceptor - no auth storage', {
+        url: config.url,
+        method: config.method
+      });
     }
     return config;
   },
   (error) => {
+    console.error('[Auth Debug] Request interceptor error:', error);
     return Promise.reject(error);
   }
 );
@@ -75,7 +91,13 @@ api.interceptors.response.use(
 
 export const authService = {
   async login(email: string, password: string) {
+    console.log('[Auth Debug] Login attempt', { email });
     const response = await api.post('/auth/login', { email, password });
+    console.log('[Auth Debug] Login response', { 
+      success: response.data.success,
+      hasUser: !!response.data.user,
+      hasTokens: !!response.data.tokens
+    });
     return response.data;
   },
 
@@ -95,7 +117,12 @@ export const authService = {
   },
 
   async refreshToken(refreshToken: string) {
+    console.log('[Auth Debug] Token refresh attempt');
     const response = await api.post('/auth/refresh', { refreshToken });
+    console.log('[Auth Debug] Token refresh response', { 
+      success: !!response.data.tokens,
+      hasNewAccessToken: !!response.data.tokens?.accessToken
+    });
     return response.data;
   },
 

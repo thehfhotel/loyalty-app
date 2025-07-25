@@ -21,7 +21,7 @@ export const storageConfig: StorageConfig = {
   // Base paths - simple structure
   baseDir: process.env.STORAGE_PATH || path.join(process.cwd(), 'storage'),
   avatarsDir: 'avatars',
-  backupDir: process.env.BACKUP_PATH || path.join(process.cwd(), 'storage-backup'),
+  backupDir: process.env.BACKUP_PATH || path.join(process.cwd(), 'storage', 'backup'),
   
   // Storage limits
   maxFileSize: 5 * 1024 * 1024, // 5MB
@@ -60,9 +60,15 @@ export async function initializeStorage(): Promise<void> {
   for (const dir of directories) {
     try {
       await fs.access(dir);
+      logger.info(`Storage directory exists: ${dir}`);
     } catch {
-      await fs.mkdir(dir, { recursive: true });
-      logger.info(`Created storage directory: ${dir}`);
+      try {
+        await fs.mkdir(dir, { recursive: true });
+        logger.info(`Created storage directory: ${dir}`);
+      } catch (error) {
+        logger.warn(`Could not create storage directory ${dir}:`, error);
+        // Continue execution - directory creation is not critical
+      }
     }
   }
   

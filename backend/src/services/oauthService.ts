@@ -70,10 +70,16 @@ export class OAuthService {
         callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4001/api/oauth/google/callback'
       }, async (_accessToken: string, _refreshToken: string, profile: GoogleProfile, done: any) => {
         try {
+          logger.debug('[OAuth Service] Google profile received', {
+            id: profile.id,
+            displayName: profile.displayName,
+            email: profile.emails?.[0]?.value,
+            verified: profile.emails?.[0]?.verified
+          });
           const result = await this.handleGoogleAuth(profile);
           return done(null, result);
         } catch (error) {
-          logger.error('Google OAuth error:', error);
+          logger.error('[OAuth Service] Google OAuth error:', error);
           return done(error, null);
         }
       }));
@@ -119,10 +125,16 @@ export class OAuthService {
         callbackURL: process.env.LINE_CALLBACK_URL || 'http://localhost:4001/api/oauth/line/callback'
       }, async (_accessToken: string, _refreshToken: string, profile: LineProfile, done: any) => {
         try {
+          logger.debug('[OAuth Service] LINE profile received', {
+            id: profile.id,
+            displayName: profile.displayName,
+            pictureUrl: profile.pictureUrl,
+            statusMessage: profile.statusMessage
+          });
           const result = await this.handleLineAuth(profile);
           return done(null, result);
         } catch (error) {
-          logger.error('LINE OAuth error:', error);
+          logger.error('[OAuth Service] LINE OAuth error:', error);
           return done(error, null);
         }
       }));
@@ -152,7 +164,10 @@ export class OAuthService {
   private async handleGoogleAuth(profile: GoogleProfile): Promise<{ user: User; tokens: AuthTokens; isNewUser: boolean }> {
     const email = profile.emails?.[0]?.value;
     
+    logger.debug('[OAuth Service] Processing Google auth', { email, profileId: profile.id });
+    
     if (!email) {
+      logger.error('[OAuth Service] No email provided by Google');
       throw new Error('No email provided by Google');
     }
 
@@ -170,6 +185,7 @@ export class OAuthService {
     if (existingUser) {
       // Update existing user's profile if needed
       user = existingUser;
+      logger.debug('[OAuth Service] Existing Google user found', { userId: user.id, email: user.email });
       
       // Update Google-specific data if available
       const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || '';
@@ -435,12 +451,16 @@ export class OAuthService {
   private async handleLineAuth(profile: LineProfile): Promise<{ user: User; tokens: AuthTokens; isNewUser: boolean }> {
     const lineId = profile.id;
     
+    logger.debug('[OAuth Service] Processing LINE auth', { lineId, displayName: profile.displayName });
+    
     if (!lineId) {
+      logger.error('[OAuth Service] No LINE ID provided');
       throw new Error('No LINE ID provided');
     }
 
     // For LINE, we'll use a special email format since LINE doesn't provide email by default
     const lineEmail = `line_${lineId}@line.oauth`;
+    logger.debug('[OAuth Service] Using LINE email format', { lineEmail });
     
     // Check if user exists by LINE ID or LINE email
     const [existingUser] = await query<User>(
@@ -456,6 +476,7 @@ export class OAuthService {
     if (existingUser) {
       // Update existing user's profile if needed
       user = existingUser;
+      logger.debug('[OAuth Service] Existing LINE user found', { userId: user.id, email: user.email });
       
       // Update LINE-specific data if available
       const displayName = profile.displayName || '';

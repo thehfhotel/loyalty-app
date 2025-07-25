@@ -7,27 +7,58 @@ const router = Router();
 
 // Google OAuth routes
 router.get('/google', (req, res, next) => {
+  logger.debug('[OAuth] Google OAuth initiated', {
+    headers: req.headers,
+    protocol: req.protocol,
+    secure: req.secure,
+    ip: req.ip,
+    originalUrl: req.originalUrl,
+    host: req.get('host'),
+    forwardedProto: req.get('X-Forwarded-Proto'),
+    forwardedHost: req.get('X-Forwarded-Host')
+  });
+  
   // Check if Google strategy is configured
   const googleClientId = process.env.GOOGLE_CLIENT_ID;
   
   if (!googleClientId || googleClientId === 'your-google-client-id') {
+    logger.warn('[OAuth] Google OAuth not configured', { googleClientId });
     return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=google_not_configured`);
   }
   
+  logger.debug('[OAuth] Initiating Google OAuth with scopes', { scopes: ['profile', 'email'] });
   passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
 });
 
 router.get('/google/callback', 
+  (req, res, next) => {
+    logger.debug('[OAuth] Google OAuth callback received', {
+      query: req.query,
+      headers: req.headers,
+      cookies: req.cookies,
+      sessionID: req.sessionID,
+      session: req.session
+    });
+    next();
+  },
   passport.authenticate('google', { session: false }),
   async (req, res) => {
     try {
+      logger.debug('[OAuth] Google OAuth authenticated, processing result');
       const oauthResult = req.user as any;
       
       if (!oauthResult) {
+        logger.error('[OAuth] Google OAuth failed - no user data received');
         return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_failed`);
       }
 
       const { user, tokens, isNewUser } = oauthResult;
+      logger.debug('[OAuth] Google OAuth user data', {
+        userId: user.id,
+        email: user.email,
+        isNewUser,
+        provider: user.oauthProvider
+      });
 
       // Create success URL with tokens
       const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL || 'http://localhost:4001');
@@ -35,11 +66,12 @@ router.get('/google/callback',
       successUrl.searchParams.set('refreshToken', tokens.refreshToken);
       successUrl.searchParams.set('isNewUser', isNewUser.toString());
 
-      logger.info(`Google OAuth success for user ${user.email}, isNewUser: ${isNewUser}`);
+      logger.info(`[OAuth] Google OAuth success for user ${user.email}, isNewUser: ${isNewUser}`);
+      logger.debug('[OAuth] Redirecting to success URL', { successUrl: successUrl.toString() });
       
       res.redirect(successUrl.toString());
     } catch (error) {
-      logger.error('Google OAuth callback error:', error);
+      logger.error('[OAuth] Google OAuth callback error:', error);
       res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_error`);
     }
   }
@@ -108,27 +140,58 @@ router.get('/facebook/callback',
 
 // LINE OAuth routes
 router.get('/line', (req, res, next) => {
+  logger.debug('[OAuth] LINE OAuth initiated', {
+    headers: req.headers,
+    protocol: req.protocol,
+    secure: req.secure,
+    ip: req.ip,
+    originalUrl: req.originalUrl,
+    host: req.get('host'),
+    forwardedProto: req.get('X-Forwarded-Proto'),
+    forwardedHost: req.get('X-Forwarded-Host')
+  });
+  
   // Check if LINE strategy is configured
   const lineChannelId = process.env.LINE_CHANNEL_ID;
   
   if (!lineChannelId || lineChannelId === 'your-line-channel-id') {
+    logger.warn('[OAuth] LINE OAuth not configured', { lineChannelId });
     return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=line_not_configured`);
   }
   
+  logger.debug('[OAuth] Initiating LINE OAuth', { channelId: lineChannelId });
   passport.authenticate('line')(req, res, next);
 });
 
 router.get('/line/callback', 
+  (req, res, next) => {
+    logger.debug('[OAuth] LINE OAuth callback received', {
+      query: req.query,
+      headers: req.headers,
+      cookies: req.cookies,
+      sessionID: req.sessionID,
+      session: req.session
+    });
+    next();
+  },
   passport.authenticate('line', { session: false }),
   async (req, res) => {
     try {
+      logger.debug('[OAuth] LINE OAuth authenticated, processing result');
       const oauthResult = req.user as any;
       
       if (!oauthResult) {
+        logger.error('[OAuth] LINE OAuth failed - no user data received');
         return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_failed`);
       }
 
       const { user, tokens, isNewUser } = oauthResult;
+      logger.debug('[OAuth] LINE OAuth user data', {
+        userId: user.id,
+        email: user.email,
+        isNewUser,
+        provider: user.oauthProvider
+      });
 
       // Create success URL with tokens
       const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL || 'http://localhost:4001');
@@ -136,11 +199,12 @@ router.get('/line/callback',
       successUrl.searchParams.set('refreshToken', tokens.refreshToken);
       successUrl.searchParams.set('isNewUser', isNewUser.toString());
 
-      logger.info(`LINE OAuth success for user ${user.email}, isNewUser: ${isNewUser}`);
+      logger.info(`[OAuth] LINE OAuth success for user ${user.email}, isNewUser: ${isNewUser}`);
+      logger.debug('[OAuth] Redirecting to success URL', { successUrl: successUrl.toString() });
       
       res.redirect(successUrl.toString());
     } catch (error) {
-      logger.error('LINE OAuth callback error:', error);
+      logger.error('[OAuth] LINE OAuth callback error:', error);
       res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_error`);
     }
   }

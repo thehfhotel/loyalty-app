@@ -7,8 +7,14 @@ interface GoogleLoginButtonProps {
 
 export default function GoogleLoginButton({ }: GoogleLoginButtonProps) {
   const handleGoogleClick = () => {
+    const oauthUrl = `${import.meta.env.VITE_API_URL}/oauth/google`;
+    console.log('[OAuth Debug] Google login initiated', {
+      apiUrl: import.meta.env.VITE_API_URL,
+      oauthUrl,
+      timestamp: new Date().toISOString()
+    });
     // Redirect to backend OAuth endpoint
-    window.location.href = `${import.meta.env.VITE_API_URL}/oauth/google`;
+    window.location.href = oauthUrl;
   };
 
   return (

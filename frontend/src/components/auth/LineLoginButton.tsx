@@ -5,8 +5,14 @@ interface LineLoginButtonProps {
 
 export default function LineLoginButton({ }: LineLoginButtonProps) {
   const handleLineClick = () => {
+    const oauthUrl = `${import.meta.env.VITE_API_URL}/oauth/line`;
+    console.log('[OAuth Debug] LINE login initiated', {
+      apiUrl: import.meta.env.VITE_API_URL,
+      oauthUrl,
+      timestamp: new Date().toISOString()
+    });
     // Redirect to backend OAuth endpoint
-    window.location.href = `${import.meta.env.VITE_API_URL}/oauth/line`;
+    window.location.href = oauthUrl;
   };
 
   return (

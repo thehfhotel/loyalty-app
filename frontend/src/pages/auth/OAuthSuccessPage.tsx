@@ -15,28 +15,49 @@ export default function OAuthSuccessPage() {
       const isNewUser = searchParams.get('isNewUser') === 'true';
       const error = searchParams.get('error');
 
+      console.log('[OAuth Debug] OAuth success page loaded', {
+        hasToken: !!token,
+        hasRefreshToken: !!refreshToken,
+        isNewUser,
+        error,
+        currentUrl: window.location.href,
+        searchParams: Object.fromEntries(searchParams.entries()),
+        timestamp: new Date().toISOString()
+      });
+
       if (error) {
+        console.error('[OAuth Debug] OAuth error received', { error });
         notify.error('Social login failed. Please try again.');
         navigate('/login');
         return;
       }
 
       if (!token || !refreshToken) {
+        console.error('[OAuth Debug] Missing tokens', { token: !!token, refreshToken: !!refreshToken });
         notify.error('Invalid authentication response. Please try again.');
         navigate('/login');
         return;
       }
 
       try {
+        console.log('[OAuth Debug] Setting tokens in auth store');
         // Set tokens in auth store
         setTokens(token, refreshToken);
 
         // Get user data using the token
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/oauth/me`, {
+        const meUrl = `${import.meta.env.VITE_API_URL}/oauth/me`;
+        console.log('[OAuth Debug] Fetching user data', { meUrl });
+        
+        const response = await fetch(meUrl, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           }
+        });
+
+        console.log('[OAuth Debug] User data response', {
+          status: response.status,
+          ok: response.ok
         });
 
         if (!response.ok) {
@@ -44,6 +65,11 @@ export default function OAuthSuccessPage() {
         }
 
         const { user } = await response.json();
+        console.log('[OAuth Debug] User data received', { 
+          userId: user?.id,
+          email: user?.email,
+          role: user?.role 
+        });
 
         // Update auth store with user data
         useAuthStore.setState({
