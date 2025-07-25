@@ -8,6 +8,7 @@ import { User, AuthTokens } from '../types/auth';
 import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
+import { receptionIdService } from './receptionIdService';
 // import { accountLinkingService } from './accountLinkingService';
 
 const authService = new AuthService();
@@ -244,11 +245,14 @@ export class OAuthService {
           [`google_${profile.id}@google.oauth`, profile.id]
         );
 
-        // Create user profile
+        // Generate reception ID for new OAuth user
+        const receptionId = await receptionIdService.generateUniqueReceptionId();
+
+        // Create user profile with reception ID
         await query(
-          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url) 
-           VALUES ($1, $2, $3, $4)`,
-          [newOAuthUser.id, firstName, lastName, avatarUrl]
+          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, reception_id) 
+           VALUES ($1, $2, $3, $4, $5)`,
+          [newOAuthUser.id, firstName, lastName, avatarUrl, receptionId]
         );
 
         // Auto-link accounts (temporarily disabled)
@@ -272,11 +276,14 @@ export class OAuthService {
           [email, profile.id]
         );
 
-        // Create user profile
+        // Generate reception ID for new user
+        const receptionId = await receptionIdService.generateUniqueReceptionId();
+
+        // Create user profile with reception ID
         await query(
-          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url) 
-           VALUES ($1, $2, $3, $4)`,
-          [newUser.id, firstName, lastName, avatarUrl]
+          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, reception_id) 
+           VALUES ($1, $2, $3, $4, $5)`,
+          [newUser.id, firstName, lastName, avatarUrl, receptionId]
         );
 
         user = newUser;
@@ -395,11 +402,14 @@ export class OAuthService {
         [email]
       );
 
-      // Create user profile
+      // Generate reception ID for new Facebook user
+      const receptionId = await receptionIdService.generateUniqueReceptionId();
+
+      // Create user profile with reception ID
       await query(
-        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url) 
-         VALUES ($1, $2, $3, $4)`,
-        [newUser.id, firstName, lastName, avatarUrl]
+        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, reception_id) 
+         VALUES ($1, $2, $3, $4, $5)`,
+        [newUser.id, firstName, lastName, avatarUrl, receptionId]
       );
 
       user = newUser;
@@ -526,11 +536,14 @@ export class OAuthService {
 
       user = newUser;
 
-      // Create user profile
+      // Generate reception ID for new LINE user
+      const receptionId = await receptionIdService.generateUniqueReceptionId();
+
+      // Create user profile with reception ID
       await query(
-        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url) 
-         VALUES ($1, $2, $3, $4)`,
-        [user.id, firstName, lastName, avatarUrl]
+        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, reception_id) 
+         VALUES ($1, $2, $3, $4, $5)`,
+        [user.id, firstName, lastName, avatarUrl, receptionId]
       );
     }
 
