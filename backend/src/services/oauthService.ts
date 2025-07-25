@@ -52,7 +52,8 @@ export class OAuthService {
       passport.use(new GoogleStrategy({
         clientID: googleClientId,
         clientSecret: googleClientSecret,
-        callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4001/api/oauth/google/callback'
+        callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4001/api/oauth/google/callback',
+        passReqToCallback: false
       }, async (_accessToken: string, _refreshToken: string, profile: GoogleProfile, done: any) => {
         try {
           logger.debug('[OAuth Service] Google profile received', {

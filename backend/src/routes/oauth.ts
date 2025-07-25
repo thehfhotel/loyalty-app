@@ -1,15 +1,12 @@
 import { Router } from 'express';
 import passport from 'passport';
 import { logger } from '../utils/logger';
-import { featureToggleService } from '../services/featureToggleService';
-import { oauthDebugger } from '../utils/oauthDebugger';
 
 const router = Router();
 
 // Google OAuth routes
 router.get('/google', (req, res, next) => {
   try {
-    oauthDebugger.logInitiate('google', req);
     
     logger.debug('[OAuth] Google OAuth initiated', {
       headers: req.headers,
@@ -28,7 +25,6 @@ router.get('/google', (req, res, next) => {
     if (!googleClientId || googleClientId === 'your-google-client-id') {
       const error = `Google OAuth not configured - Client ID: ${googleClientId}`;
       logger.warn('[OAuth] ' + error);
-      oauthDebugger.logError('google', 'config_validation', new Error(error), req);
       return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=google_not_configured`);
     }
     
@@ -36,7 +32,6 @@ router.get('/google', (req, res, next) => {
     passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
   } catch (error) {
     logger.error('[OAuth] Google initiation error:', error);
-    oauthDebugger.logError('google', 'initiation', error as Error, req);
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_error`);
   }
 });
@@ -48,11 +43,9 @@ router.get('/google/callback',
       if (req.query.error) {
         const error = `Google OAuth error: ${req.query.error} - ${req.query.error_description || 'No description'}`;
         logger.error('[OAuth] ' + error);
-        oauthDebugger.logCallback('google', req, false, new Error(error));
         return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_provider_error`);
       }
 
-      oauthDebugger.logCallback('google', req, true);
       
       logger.debug('[OAuth] Google OAuth callback received', {
         query: req.query,
@@ -64,7 +57,6 @@ router.get('/google/callback',
       next();
     } catch (error) {
       logger.error('[OAuth] Google callback preprocessing error:', error);
-      oauthDebugger.logError('google', 'callback_preprocessing', error as Error, req);
       res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_error`);
     }
   },
@@ -73,19 +65,15 @@ router.get('/google/callback',
     passport.authenticate('google', { session: false }, (err, user, info) => {
       if (err) {
         logger.error('[OAuth] Google passport authentication error:', err);
-        oauthDebugger.logAuthentication('google', false, undefined, err, req);
         return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_auth_error`);
       }
       
       if (!user) {
-        const authError = new Error('No user returned from Google authentication');
         logger.error('[OAuth] Google authentication failed - no user:', info);
-        oauthDebugger.logAuthentication('google', false, undefined, authError, req);
         return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_no_user`);
       }
 
       req.user = user;
-      oauthDebugger.logAuthentication('google', true, user, undefined, req);
       next();
     })(req, res, next);
   },
@@ -95,9 +83,7 @@ router.get('/google/callback',
       const oauthResult = req.user as any;
       
       if (!oauthResult) {
-        const error = new Error('No OAuth result after authentication');
         logger.error('[OAuth] Google OAuth failed - no user data received');
-        oauthDebugger.logError('google', 'result_processing', error, req);
         return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_failed`);
       }
 
@@ -105,13 +91,10 @@ router.get('/google/callback',
       
       // Validate required data
       if (!user || !tokens || !tokens.accessToken) {
-        const error = new Error('Incomplete OAuth result data');
         logger.error('[OAuth] Incomplete OAuth result:', { hasUser: !!user, hasTokens: !!tokens, hasAccessToken: !!tokens?.accessToken });
-        oauthDebugger.logError('google', 'incomplete_data', error, req);
         return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_incomplete`);
       }
 
-      oauthDebugger.logTokenGeneration('google', true, tokens, undefined, req);
       
       logger.debug('[OAuth] Google OAuth user data', {
         userId: user.id,
@@ -129,11 +112,9 @@ router.get('/google/callback',
       logger.info(`[OAuth] Google OAuth success for user ${user.email}, isNewUser: ${isNewUser}`);
       logger.debug('[OAuth] Redirecting to success URL', { successUrl: successUrl.toString() });
       
-      oauthDebugger.logRedirect('google', true, successUrl.toString(), undefined, req);
       res.redirect(successUrl.toString());
     } catch (error) {
       logger.error('[OAuth] Google OAuth callback error:', error);
-      oauthDebugger.logError('google', 'callback_processing', error as Error, req);
       res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_error`);
     }
   }
@@ -166,7 +147,7 @@ router.get('/line', (req, res, next) => {
 });
 
 router.get('/line/callback', 
-  (req, res, next) => {
+  (req, _res, next) => {
     logger.debug('[OAuth] LINE OAuth callback received', {
       query: req.query,
       headers: req.headers,

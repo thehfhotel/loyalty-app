@@ -17,7 +17,6 @@ import { StorageService } from './services/storageService';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
 import oauthRoutes from './routes/oauth';
-import oauthDebugRoutes from './routes/oauthDebug';
 import featureToggleRoutes from './routes/featureToggles';
 import loyaltyRoutes from './routes/loyalty';
 import couponRoutes from './routes/coupon';
@@ -247,7 +246,6 @@ app.get('/api/health', async (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/oauth', oauthRoutes);
-app.use('/api/oauth-debug', oauthDebugRoutes);
 app.use('/api/feature-toggles', featureToggleRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/coupons', couponRoutes);
