@@ -42,7 +42,38 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" } // Allow images to be served cross-origin
 }));
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:4001',
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:4001',
+      'http://127.0.0.1:4001',
+      // Allow any IP address on port 4001 for local network access
+      /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:4001$/,
+      /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:4001$/,
+      /^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}:4001$/,
+    ];
+    
+    // If FRONTEND_URL is set, use it as the primary origin
+    if (process.env.FRONTEND_URL) {
+      allowedOrigins.unshift(process.env.FRONTEND_URL);
+    }
+    
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      if (typeof allowedOrigin === 'string') {
+        return origin === allowedOrigin;
+      } else {
+        return allowedOrigin.test(origin);
+      }
+    });
+    
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
 }));
 app.use(express.json());
