@@ -120,5 +120,4 @@ export function clearFeatureCache(): void {
  */
 export const FEATURE_KEYS = {
   ACCOUNT_LINKING: 'account_linking',
-  FACEBOOK_OAUTH: 'facebook_oauth',
 } as const;

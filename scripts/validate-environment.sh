@@ -112,7 +112,6 @@ if [[ -f ".env.production" ]]; then
     
     # OAuth validation (with HTTPS callback URL checks for production)
     validate "Google OAuth Client ID" "test -n '$GOOGLE_CLIENT_ID' && test '$GOOGLE_CLIENT_ID' != 'your-google-client-id-from-console'" "Google OAuth Client ID not configured" true
-    validate "Facebook OAuth App ID" "test -n '$FACEBOOK_APP_ID' && test '$FACEBOOK_APP_ID' != 'your-facebook-app-id'" "Facebook OAuth App ID not configured" true
     validate "LINE Channel ID" "test -n '$LINE_CHANNEL_ID' && test '$LINE_CHANNEL_ID' != 'your-line-channel-id'" "LINE Channel ID not configured" true
     
     # Production-specific URL validations
@@ -150,7 +149,6 @@ elif [[ -f ".env" ]]; then
     
     # OAuth validation (warnings only for development)
     validate "Google OAuth Client ID" "test -n '$GOOGLE_CLIENT_ID'" "Google OAuth Client ID not configured" true
-    validate "Facebook OAuth App ID" "test -n '$FACEBOOK_APP_ID'" "Facebook OAuth App ID not configured" true
     validate "LINE Channel ID" "test -n '$LINE_CHANNEL_ID'" "LINE Channel ID not configured" true
     
     # Environment debugging info

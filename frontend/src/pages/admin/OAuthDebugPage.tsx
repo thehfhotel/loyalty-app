@@ -193,7 +193,7 @@ const OAuthDebugPage: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        {['google', 'facebook', 'line'].map(provider => (
+        {['google', 'line'].map(provider => (
           <div key={provider} className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-medium text-gray-900 capitalize mb-4">{provider} OAuth</h3>
             <div className="space-y-4">
@@ -318,7 +318,6 @@ const OAuthDebugPage: React.FC = () => {
           >
             <option value="all">All Providers</option>
             <option value="google">Google</option>
-            <option value="facebook">Facebook</option>
             <option value="line">LINE</option>
           </select>
 

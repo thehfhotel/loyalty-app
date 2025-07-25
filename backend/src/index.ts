@@ -64,9 +64,9 @@ app.use((req, res, next) => {
           objectSrc: ["'none'"],
           frameSrc: ["'none'"],
           // Allow OAuth redirects to external services
-          formAction: ["'self'", "https://accounts.google.com", "https://www.facebook.com", "https://access.line.me"],
+          formAction: ["'self'", "https://accounts.google.com", "https://access.line.me"],
           // Allow navigation to OAuth providers
-          navigateTo: ["'self'", "https://accounts.google.com", "https://www.facebook.com", "https://access.line.me"]
+          navigateTo: ["'self'", "https://accounts.google.com", "https://access.line.me"]
         }
       }
     })(req, res, next);

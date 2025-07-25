@@ -71,8 +71,6 @@ GOOGLE_CLIENT_ID=your-actual-google-client-id
 GOOGLE_CLIENT_SECRET=your-actual-google-client-secret
 
 # Other OAuth providers (optional)
-FACEBOOK_APP_ID=your-facebook-app-id
-FACEBOOK_APP_SECRET=your-facebook-app-secret
 
 # Additional secrets (change in production)
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
@@ -180,13 +178,6 @@ For production deployment:
 - **GET** `/api/oauth/google/callback` - Handles Google OAuth callback
 - **GET** `/api/oauth/me` - Gets user info after OAuth success (requires Bearer token)
 
-## Facebook OAuth Migration
-
-Facebook OAuth has been replaced with Google OAuth:
-- Facebook login button is hidden from the UI
-- Facebook OAuth routes are kept for backward compatibility
-- New users will only see Google login option
-- Existing Facebook OAuth users can still use their accounts
 
 ## Security Considerations
 

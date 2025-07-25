@@ -7,7 +7,6 @@ import { useAuthStore } from '../../store/authStore';
 import { FiMail, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
 import GoogleLoginButton from '../../components/auth/GoogleLoginButton';
 import LineLoginButton from '../../components/auth/LineLoginButton';
-import FacebookLoginButton from '../../components/auth/FacebookLoginButton';
 import { notify } from '../../utils/notificationManager';
 import { useFeatureToggle, FEATURE_KEYS } from '../../hooks/useFeatureToggle';
 import { useTranslation } from 'react-i18next';
@@ -31,15 +30,11 @@ export default function LoginPage() {
   const isLoading = useAuthStore((state) => state.isLoading);
   const [showPassword, setShowPassword] = useState(false);
   
-  // Check if Facebook OAuth is enabled
-  const isFacebookOAuthEnabled = useFeatureToggle(FEATURE_KEYS.FACEBOOK_OAUTH);
 
   useEffect(() => {
     const error = searchParams.get('error');
     if (error === 'google_not_configured') {
       notify.error('Google login is not configured. Please use email login.');
-    } else if (error === 'facebook_not_configured') {
-      notify.error('Facebook login is not configured. Please use email login.');
     } else if (error === 'line_not_configured') {
       notify.error('LINE login is not configured. Please use email login.');
     } else if (error === 'oauth_failed') {
@@ -188,7 +183,6 @@ export default function LoginPage() {
           <div className="mt-6 space-y-3">
             <GoogleLoginButton />
             <LineLoginButton />
-            {isFacebookOAuthEnabled && <FacebookLoginButton />}
           </div>
         </div>
       </div>

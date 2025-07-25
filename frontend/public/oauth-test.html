@@ -35,7 +35,6 @@
             background-color: #0056b3;
         }
         .google-btn { background-color: #db4437; }
-        .facebook-btn { background-color: #4267B2; }
         .line-btn { background-color: #00c300; }
         .log-area {
             background-color: #f8f9fa;
@@ -85,9 +84,6 @@
             Test Google OAuth
         </a>
         
-        <a href="/api/oauth/facebook" class="test-button facebook-btn" onclick="logRedirect('facebook', this.href)">
-            Test Facebook OAuth
-        </a>
         
         <a href="/api/oauth/line" class="test-button line-btn" onclick="logRedirect('line', this.href)">
             Test LINE OAuth
@@ -102,9 +98,6 @@
             Fetch Google OAuth
         </button>
         
-        <button class="test-button facebook-btn" onclick="testFetchRedirect('facebook')">
-            Fetch Facebook OAuth
-        </button>
         
         <button class="test-button line-btn" onclick="testFetchRedirect('line')">
             Fetch LINE OAuth
@@ -119,9 +112,6 @@
             New Window Google
         </button>
         
-        <button class="test-button facebook-btn" onclick="testNewWindow('facebook')">
-            New Window Facebook
-        </button>
         
         <button class="test-button line-btn" onclick="testNewWindow('line')">
             New Window LINE
@@ -136,9 +126,6 @@
             JS Navigate Google
         </button>
         
-        <button class="test-button facebook-btn" onclick="testJSNavigation('facebook')">
-            JS Navigate Facebook
-        </button>
         
         <button class="test-button line-btn" onclick="testJSNavigation('line')">
             JS Navigate LINE

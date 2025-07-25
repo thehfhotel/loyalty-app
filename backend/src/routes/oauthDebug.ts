@@ -33,7 +33,7 @@ router.get('/logs/:provider', authenticate, requireRole(['admin', 'super_admin']
     const { provider } = req.params;
     const { limit } = req.query;
     
-    if (!['google', 'facebook', 'line'].includes(provider)) {
+    if (!['google', 'line'].includes(provider)) {
       return res.status(400).json({ error: 'Invalid provider' });
     }
 
@@ -76,7 +76,7 @@ router.post('/test/:provider', async (req, res) => {
   try {
     const { provider } = req.params;
     
-    if (!['google', 'facebook', 'line'].includes(provider)) {
+    if (!['google', 'line'].includes(provider)) {
       return res.status(400).json({ error: 'Invalid provider' });
     }
 
@@ -166,7 +166,7 @@ router.post('/simulate/:provider', authenticate, requireRole(['admin', 'super_ad
   try {
     const { provider } = req.params;
     
-    if (!['google', 'facebook', 'line'].includes(provider)) {
+    if (!['google', 'line'].includes(provider)) {
       return res.status(400).json({ error: 'Invalid provider' });
     }
 
