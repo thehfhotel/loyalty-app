@@ -58,6 +58,7 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
+      - ./logs/backend:/app/logs
     # Remove direct port mapping - only accessible via nginx
     depends_on:
       postgres:
@@ -77,6 +78,7 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - ./logs/frontend:/app/logs
     # Remove direct port mapping - only accessible via nginx
     depends_on:
       - backend
@@ -89,6 +91,7 @@ services:
       - "4001:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./logs/nginx:/var/log/nginx
     depends_on:
       - frontend
       - backend
