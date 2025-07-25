@@ -34,9 +34,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        navigateFallbackDenylist: [/^\/api\/oauth/],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/loyalty\.saichon\.com\/api\/.*/i,
+            urlPattern: /^https:\/\/loyalty\.saichon\.com\/api\/(?!oauth).*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',

@@ -39,3 +39,17 @@ export function authorize(...allowedRoles: UserRole[]) {
     next();
   };
 }
+
+export function requireRole(allowedRoles: UserRole[]) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return next(new AppError(401, 'Not authenticated'));
+    }
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return next(new AppError(403, 'Insufficient permissions'));
+    }
+
+    next();
+  };
+}

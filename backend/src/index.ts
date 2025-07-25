@@ -17,6 +17,7 @@ import { StorageService } from './services/storageService';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
 import oauthRoutes from './routes/oauth';
+import oauthDebugRoutes from './routes/oauthDebug';
 import featureToggleRoutes from './routes/featureToggles';
 import loyaltyRoutes from './routes/loyalty';
 import couponRoutes from './routes/coupon';
@@ -40,26 +41,37 @@ const PORT = process.env.PORT || 4000;
 // Trust proxy headers (required for Cloudflare and other reverse proxies)
 app.set('trust proxy', true);
 
-// Middleware
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow images to be served cross-origin
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "https:", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'", "https:"],
-      fontSrc: ["'self'", "https:", "data:"],
-      objectSrc: ["'none'"],
-      frameSrc: ["'none'"],
-      // Allow OAuth redirects to external services
-      formAction: ["'self'", "https://accounts.google.com", "https://www.facebook.com", "https://access.line.me"],
-      // Allow navigation to OAuth providers
-      navigateTo: ["'self'", "https://accounts.google.com", "https://www.facebook.com", "https://access.line.me"]
-    }
+// Middleware - Helmet with OAuth-friendly configuration
+app.use((req, res, next) => {
+  // Skip strict security headers for OAuth endpoints
+  if (req.path.startsWith('/api/oauth/')) {
+    helmet({
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+      crossOriginOpenerPolicy: false, // Disable COOP for OAuth redirects
+      contentSecurityPolicy: false, // Disable CSP for OAuth redirects
+    })(req, res, next);
+  } else {
+    helmet({
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "https:", "'unsafe-inline'"],
+          scriptSrc: ["'self'"],
+          imgSrc: ["'self'", "data:"],
+          connectSrc: ["'self'", "https:"],
+          fontSrc: ["'self'", "https:", "data:"],
+          objectSrc: ["'none'"],
+          frameSrc: ["'none'"],
+          // Allow OAuth redirects to external services
+          formAction: ["'self'", "https://accounts.google.com", "https://www.facebook.com", "https://access.line.me"],
+          // Allow navigation to OAuth providers
+          navigateTo: ["'self'", "https://accounts.google.com", "https://www.facebook.com", "https://access.line.me"]
+        }
+      }
+    })(req, res, next);
   }
-}));
+});
 app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -235,6 +247,7 @@ app.get('/api/health', async (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/oauth', oauthRoutes);
+app.use('/api/oauth-debug', oauthDebugRoutes);
 app.use('/api/feature-toggles', featureToggleRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/coupons', couponRoutes);

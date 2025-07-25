@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth Redirect Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-button {
+            display: inline-block;
+            padding: 12px 24px;
+            margin: 10px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .test-button:hover {
+            background-color: #0056b3;
+        }
+        .google-btn { background-color: #db4437; }
+        .facebook-btn { background-color: #4267B2; }
+        .line-btn { background-color: #00c300; }
+        .log-area {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 13px;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status.success { background-color: #d4edda; color: #155724; }
+        .status.error { background-color: #f8d7da; color: #721c24; }
+        .status.info { background-color: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h1>OAuth Redirect Test</h1>
+    
+    <div class="warning">
+        ⚠️ This test page bypasses React router and tests OAuth redirects directly.
+        Check browser console and network tab for detailed information.
+    </div>
+
+    <div class="test-section">
+        <h2>Direct OAuth Links (Same Tab)</h2>
+        <p>These links should redirect to OAuth providers in the same tab:</p>
+        
+        <a href="/api/oauth/google" class="test-button google-btn" onclick="logRedirect('google', this.href)">
+            Test Google OAuth
+        </a>
+        
+        <a href="/api/oauth/facebook" class="test-button facebook-btn" onclick="logRedirect('facebook', this.href)">
+            Test Facebook OAuth
+        </a>
+        
+        <a href="/api/oauth/line" class="test-button line-btn" onclick="logRedirect('line', this.href)">
+            Test LINE OAuth
+        </a>
+    </div>
+
+    <div class="test-section">
+        <h2>Fetch-based Tests (No Redirect)</h2>
+        <p>These buttons use fetch() to see the raw 302 responses:</p>
+        
+        <button class="test-button google-btn" onclick="testFetchRedirect('google')">
+            Fetch Google OAuth
+        </button>
+        
+        <button class="test-button facebook-btn" onclick="testFetchRedirect('facebook')">
+            Fetch Facebook OAuth
+        </button>
+        
+        <button class="test-button line-btn" onclick="testFetchRedirect('line')">
+            Fetch LINE OAuth
+        </button>
+    </div>
+
+    <div class="test-section">
+        <h2>New Window Tests</h2>
+        <p>These buttons open OAuth in new windows (popup approach):</p>
+        
+        <button class="test-button google-btn" onclick="testNewWindow('google')">
+            New Window Google
+        </button>
+        
+        <button class="test-button facebook-btn" onclick="testNewWindow('facebook')">
+            New Window Facebook
+        </button>
+        
+        <button class="test-button line-btn" onclick="testNewWindow('line')">
+            New Window LINE
+        </button>
+    </div>
+
+    <div class="test-section">
+        <h2>JavaScript Navigation Tests</h2>
+        <p>These buttons use JavaScript to navigate (like React Router):</p>
+        
+        <button class="test-button google-btn" onclick="testJSNavigation('google')">
+            JS Navigate Google
+        </button>
+        
+        <button class="test-button facebook-btn" onclick="testJSNavigation('facebook')">
+            JS Navigate Facebook
+        </button>
+        
+        <button class="test-button line-btn" onclick="testJSNavigation('line')">
+            JS Navigate LINE
+        </button>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Log</h2>
+        <div id="log" class="log-area">OAuth redirect test page loaded...\n</div>
+        <button class="test-button" onclick="clearLog()">Clear Log</button>
+        <button class="test-button" onclick="exportLog()">Export Log</button>
+    </div>
+
+    <script>
+        let logEntries = [];
+
+        function log(message, type = 'info') {
+            const logArea = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = `[${timestamp}] ${message}`;
+            
+            logEntries.push({ timestamp: new Date(), message, type });
+            logArea.textContent += entry + '\n';
+            logArea.scrollTop = logArea.scrollHeight;
+            
+            // Also log to console with type
+            const consoleMethod = type === 'error' ? 'error' : type === 'warn' ? 'warn' : 'log';
+            console[consoleMethod](`[OAuth Test] ${message}`);
+        }
+
+        function logRedirect(provider, href) {
+            log(`🔗 Direct link clicked: ${provider} -> ${href}`, 'info');
+            log(`Browser will attempt to navigate to OAuth URL...`, 'info');
+            
+            // Track navigation
+            setTimeout(() => {
+                if (window.location.href === href) {
+                    log(`❌ Navigation failed - still on same page`, 'error');
+                }
+            }, 100);
+        }
+
+        async function testFetchRedirect(provider) {
+            const url = `/api/oauth/${provider}`;
+            log(`🌐 Starting fetch test for ${provider}...`, 'info');
+            log(`URL: ${url}`, 'info');
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    redirect: 'manual', // Don't follow redirects automatically
+                    credentials: 'include'
+                });
+                
+                log(`📊 Response status: ${response.status} ${response.statusText}`, 'info');
+                log(`📊 Response type: ${response.type}`, 'info');
+                log(`📊 Response ok: ${response.ok}`, 'info');
+                log(`📊 Response redirected: ${response.redirected}`, 'info');
+                log(`📊 Response url: ${response.url}`, 'info');
+                
+                // Handle opaque redirect response (status 0, type 'opaqueredirect')
+                if (response.type === 'opaqueredirect') {
+                    log(`✅ Opaque redirect detected - OAuth redirect is working!`, 'info');
+                    log(`🔐 Browser security prevents reading redirect headers (this is normal)`, 'info');
+                    log(`✅ This means the OAuth endpoint is sending a redirect (good!)`, 'info');
+                    return;
+                }
+                
+                // Log response headers if accessible
+                log(`📋 Response headers:`, 'info');
+                let headerCount = 0;
+                for (const [key, value] of response.headers.entries()) {
+                    log(`  ${key}: ${value}`, 'info');
+                    headerCount++;
+                }
+                if (headerCount === 0) {
+                    log(`  (No headers accessible - normal for opaque responses)`, 'info');
+                }
+                
+                if (response.status === 302 || response.status === 301) {
+                    const location = response.headers.get('location');
+                    log(`✅ Standard redirect detected! Location: ${location}`, 'info');
+                    
+                    if (location) {
+                        log(`🎯 Would redirect to: ${location}`, 'info');
+                        // Show partial URL for privacy
+                        try {
+                            const redirectUrl = new URL(location);
+                            log(`🔍 Host: ${redirectUrl.host}`, 'info');
+                            log(`🔍 Path: ${redirectUrl.pathname}`, 'info');
+                        } catch (e) {
+                            log(`⚠️ Invalid URL in location header`, 'warn');
+                        }
+                    }
+                } else if (response.status === 0) {
+                    log(`ℹ️ Status 0 with opaque redirect means OAuth is working`, 'info');
+                } else {
+                    log(`❌ Unexpected status code: ${response.status}`, 'error');
+                    try {
+                        const text = await response.text();
+                        log(`📄 Response body: ${text.substring(0, 200)}...`, 'info');
+                    } catch (e) {
+                        log(`❌ Could not read response body`, 'error');
+                    }
+                }
+                
+            } catch (error) {
+                log(`❌ Fetch error: ${error.message}`, 'error');
+                log(`📊 Error details: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`, 'error');
+            }
+        }
+
+        function testNewWindow(provider) {
+            const url = `/api/oauth/${provider}`;
+            log(`🪟 Opening new window for ${provider}...`, 'info');
+            log(`URL: ${url}`, 'info');
+            
+            try {
+                const newWindow = window.open(url, `oauth_${provider}`, 'width=600,height=600,scrollbars=yes,resizable=yes');
+                
+                if (newWindow) {
+                    log(`✅ New window opened successfully`, 'info');
+                    
+                    // Monitor if window closes (indicates redirect happened)
+                    const checkWindow = setInterval(() => {
+                        try {
+                            if (newWindow.closed) {
+                                log(`🔄 OAuth window closed - redirect likely completed`, 'info');
+                                clearInterval(checkWindow);
+                            } else {
+                                // Try to access window URL (will throw if different origin)
+                                const windowUrl = newWindow.location.href;
+                                if (windowUrl && !windowUrl.includes(window.location.origin)) {
+                                    log(`🌐 Window navigated to external URL`, 'info');
+                                }
+                            }
+                        } catch (e) {
+                            // Cross-origin error means window navigated to OAuth provider
+                            log(`🌐 Window navigated to external provider (cross-origin)`, 'info');
+                            clearInterval(checkWindow);
+                        }
+                    }, 1000);
+                    
+                    // Stop checking after 2 minutes
+                    setTimeout(() => {
+                        clearInterval(checkWindow);
+                        if (!newWindow.closed) {
+                            log(`⏰ Window still open after 2 minutes`, 'warn');
+                        }
+                    }, 120000);
+                    
+                } else {
+                    log(`❌ Failed to open new window (popup blocked?)`, 'error');
+                }
+            } catch (error) {
+                log(`❌ New window error: ${error.message}`, 'error');
+            }
+        }
+
+        function testJSNavigation(provider) {
+            const url = `/api/oauth/${provider}`;
+            log(`🔄 Testing JavaScript navigation for ${provider}...`, 'info');
+            log(`URL: ${url}`, 'info');
+            
+            // Simulate what React Router might do
+            try {
+                log(`🚀 Using window.location.href = "${url}"`, 'info');
+                window.location.href = url;
+            } catch (error) {
+                log(`❌ JS navigation error: ${error.message}`, 'error');
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('log').textContent = 'OAuth redirect test page loaded...\n';
+            logEntries = [];
+            log('Log cleared', 'info');
+        }
+
+        function exportLog() {
+            const exportData = {
+                timestamp: new Date().toISOString(),
+                userAgent: navigator.userAgent,
+                url: window.location.href,
+                logs: logEntries
+            };
+            
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `oauth-test-log-${new Date().getTime()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            log('Log exported', 'info');
+        }
+
+        // Monitor page visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                log(`👁️ Page hidden (user switched tabs/windows)`, 'info');
+            } else {
+                log(`👁️ Page visible (user returned to this tab)`, 'info');
+            }
+        });
+
+        // Monitor navigation attempts
+        window.addEventListener('beforeunload', (event) => {
+            log(`🚪 Page attempting to unload/navigate away`, 'info');
+        });
+
+        // Check for service workers
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                log(`Found ${registrations.length} service worker(s)`, 'info');
+                registrations.forEach((reg, index) => {
+                    log(`SW ${index}: ${reg.scope} - State: ${reg.active?.state || 'inactive'}`, 'info');
+                });
+            });
+        }
+
+        // Initial logging
+        log(`🚀 OAuth test page loaded`, 'info');
+        log(`🔍 User Agent: ${navigator.userAgent}`, 'info');
+        log(`🌐 Location: ${window.location.href}`, 'info');
+        log(`🌐 Origin: ${window.location.origin}`, 'info');
+        log(`📱 Platform: ${navigator.platform}`, 'info');
+        log(`🔒 HTTPS: ${window.location.protocol === 'https:'}`, 'info');
+    </script>
+</body>
+</html>

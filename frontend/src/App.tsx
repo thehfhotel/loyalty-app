@@ -30,6 +30,7 @@ import SurveyTemplates from './pages/admin/SurveyTemplates';
 import SurveyInvitations from './pages/admin/SurveyInvitations';
 import ThaiSurveyDebug from './pages/admin/ThaiSurveyDebug';
 import UserManagement from './pages/admin/UserManagement';
+import OAuthDebugPage from './pages/admin/OAuthDebugPage';
 import { useEffect, useState } from 'react';
 import { useFeatureToggle, FEATURE_KEYS } from './hooks/useFeatureToggle';
 
@@ -237,6 +238,10 @@ function App() {
               <UserManagement />
             </ProtectedRoute>
           }
+        />
+        <Route
+          path="/admin/oauth-debug"
+          element={<OAuthDebugPage />}
         />
         <Route
           path="/admin/surveys"

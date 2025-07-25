@@ -145,6 +145,32 @@ export const authService = {
     const response = await api.get('/auth/me');
     return response.data;
   },
+
+  async apiCall(url: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', data?: any) {
+    try {
+      let response;
+      switch (method) {
+        case 'GET':
+          response = await api.get(url);
+          break;
+        case 'POST':
+          response = await api.post(url, data);
+          break;
+        case 'PUT':
+          response = await api.put(url, data);
+          break;
+        case 'DELETE':
+          response = await api.delete(url);
+          break;
+        default:
+          throw new Error(`Unsupported HTTP method: ${method}`);
+      }
+      return response.data;
+    } catch (error: any) {
+      console.error(`[Auth Debug] API call failed: ${method} ${url}`, error);
+      throw error;
+    }
+  },
 };
 
 export default api;
