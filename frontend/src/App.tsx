@@ -37,30 +37,72 @@ function App() {
 
   useEffect(() => {
     const initializeAuth = async () => {
+      // Set maximum timeout for initialization to prevent infinite loading
+      const initTimeout = setTimeout(() => {
+        console.warn('Auth initialization timeout - forcing app to load');
+        setIsInitialized(true);
+      }, 5000); // 5 second max timeout
+
       try {
-        // Give Zustand persist more time to rehydrate state from localStorage
+        // Give Zustand persist time to rehydrate state from localStorage
         await new Promise(resolve => setTimeout(resolve, 200));
         
         // Get current auth state after rehydration
         const authStore = useAuthStore.getState();
         
-        // If we have stored auth data, validate it
+        // Check for corrupted localStorage data and clear if needed
+        try {
+          const storedAuth = localStorage.getItem('auth-storage');
+          if (storedAuth) {
+            const parsed = JSON.parse(storedAuth);
+            // Validate structure - if malformed, clear it
+            if (!parsed.state || typeof parsed.state !== 'object') {
+              console.warn('Corrupted auth storage detected, clearing');
+              localStorage.removeItem('auth-storage');
+              authStore.clearAuth();
+              clearTimeout(initTimeout);
+              setIsInitialized(true);
+              return;
+            }
+          }
+        } catch (parseError) {
+          console.warn('Failed to parse auth storage, clearing:', parseError);
+          localStorage.removeItem('auth-storage');
+          authStore.clearAuth();
+          clearTimeout(initTimeout);
+          setIsInitialized(true);
+          return;
+        }
+        
+        // Quick consistency check - if inconsistent state, clear immediately
+        if (authStore.isAuthenticated && (!authStore.accessToken || !authStore.refreshToken)) {
+          console.warn('Auth state inconsistent (authenticated but missing tokens), clearing');
+          authStore.clearAuth();
+          clearTimeout(initTimeout);
+          setIsInitialized(true);
+          return;
+        }
+        
+        // If we have stored auth data, validate it with timeout
         if (authStore.accessToken && authStore.refreshToken) {
           try {
-            const isValid = await authStore.checkAuthStatus();
+            // Add timeout to auth validation to prevent hanging
+            const validationPromise = authStore.checkAuthStatus();
+            const timeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('Auth validation timeout')), 3000);
+            });
+            
+            const isValid = await Promise.race([validationPromise, timeoutPromise]);
+            
             if (!isValid) {
               console.warn('Stored auth tokens are invalid, clearing auth state');
               authStore.clearAuth();
             }
           } catch (error) {
-            console.warn('Auth validation failed during initialization:', error);
-            // Clear potentially corrupted auth state
+            console.warn('Auth validation failed during initialization:', error instanceof Error ? error.message : error);
+            // Clear potentially corrupted auth state on any error
             authStore.clearAuth();
           }
-        } else if (authStore.isAuthenticated) {
-          // If marked as authenticated but missing tokens, clear state
-          console.warn('Auth state inconsistent (authenticated but missing tokens), clearing');
-          authStore.clearAuth();
         }
         
         // Only log in development mode
@@ -78,7 +120,8 @@ function App() {
         // Clear auth state on any critical error
         useAuthStore.getState().clearAuth();
       } finally {
-        // Always mark as initialized, even if auth checks failed
+        // Always clear timeout and mark as initialized
+        clearTimeout(initTimeout);
         setIsInitialized(true);
       }
     };

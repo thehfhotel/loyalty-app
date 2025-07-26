@@ -50,6 +50,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
 
     \echo 'Running 023_update_reception_id_sequential_blocks.sql...'
     \i /docker-entrypoint-initdb.d/023_update_reception_id_sequential_blocks.sql
+
+    \echo 'Running 024_allow_null_email.sql...'
+    \i /docker-entrypoint-initdb.d/024_allow_null_email.sql
 EOSQL
 
 echo "Database migrations completed successfully"

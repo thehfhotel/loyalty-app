@@ -101,18 +101,37 @@ export const useAuthStore = create<AuthState>()(
       refreshAuth: async () => {
         const { refreshToken } = get();
         if (!refreshToken) {
+          console.warn('No refresh token available for refresh');
           get().clearAuth();
           return;
         }
 
         try {
+          // Add timeout to refresh request
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+          
           const response = await authService.refreshToken(refreshToken);
+          clearTimeout(timeoutId);
+          
           set({
             accessToken: response.tokens.accessToken,
             refreshToken: response.tokens.refreshToken,
           });
-        } catch (error) {
-          get().clearAuth();
+          
+          if (import.meta.env?.DEV) {
+            console.log('Token refresh successful');
+          }
+        } catch (error: any) {
+          console.warn('Token refresh failed:', error.message || error);
+          
+          // Only clear auth on explicit auth failures, not network issues
+          if (error.response?.status === 401 || error.response?.status === 403 || 
+              error.message?.includes('Invalid refresh token')) {
+            console.warn('Refresh token is invalid, clearing auth state');
+            get().clearAuth();
+          }
+          
           throw error;
         }
       },
@@ -142,8 +161,12 @@ export const useAuthStore = create<AuthState>()(
         }
 
         try {
-          // Try to verify the token by getting user info
+          // Try to verify the token by getting user info with timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+          
           const response = await authService.getMe();
+          clearTimeout(timeoutId);
           
           // Update user info if it has changed
           if (response.user.email !== state.user?.email || 
@@ -154,20 +177,33 @@ export const useAuthStore = create<AuthState>()(
           }
           
           return true;
-        } catch (error) {
+        } catch (error: any) {
+          // Handle network errors differently from auth errors
+          if (error.name === 'AbortError' || error.code === 'NETWORK_ERROR') {
+            console.warn('Network error during auth check, assuming valid for now:', error.message);
+            // On network errors, don't clear auth - user might be offline
+            return true;
+          }
+          
           // Token is invalid or expired, try to refresh
           if (state.refreshToken) {
             try {
               await get().refreshAuth();
               return true;
-            } catch (refreshError) {
-              // Refresh failed, clear auth
-              get().clearAuth();
+            } catch (refreshError: any) {
+              console.warn('Refresh token failed:', refreshError.message);
+              // Only clear auth on explicit 401/403 errors, not network issues
+              if (refreshError.response?.status === 401 || refreshError.response?.status === 403) {
+                get().clearAuth();
+                return false;
+              }
+              // For other errors (network, etc), keep auth state but return false
               return false;
             }
           }
           
-          // No refresh token, clear auth
+          // No refresh token available
+          console.warn('No refresh token available, clearing auth');
           get().clearAuth();
           return false;
         }

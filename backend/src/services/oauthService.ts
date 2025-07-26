@@ -54,7 +54,7 @@ export class OAuthService {
         clientSecret: googleClientSecret,
         callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4001/api/oauth/google/callback',
         passReqToCallback: false
-      }, async (_accessToken: string, _refreshToken: string, profile: GoogleProfile, done: any) => {
+      } as any, async (_accessToken: string, _refreshToken: string, profile: GoogleProfile, done: any) => {
         try {
           logger.debug('[OAuth Service] Google profile received', {
             id: profile.id,
@@ -309,8 +309,8 @@ export class OAuthService {
       throw new Error('No LINE ID provided');
     }
 
-    // Check if LINE provided an email address, otherwise use placeholder
-    const email = profile.email || `line_${lineId}@line.oauth`;
+    // Use LINE provided email if available, otherwise leave as NULL
+    const email = profile.email || null;
     const hasRealEmail = !!profile.email;
     
     logger.debug('[OAuth Service] LINE email handling', { 
@@ -319,13 +319,28 @@ export class OAuthService {
       hasRealEmail 
     });
     
-    // Check if user exists by email (if provided), LINE ID, or placeholder email
-    const [existingUser] = await query<User>(
-      `SELECT id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
-              created_at AS "createdAt", updated_at AS "updatedAt"
-       FROM users WHERE email = $1 OR oauth_provider_id = $2`,
-      [email, lineId]
-    );
+    // Check if user exists by LINE ID or email (if provided)
+    let existingUser: User | undefined;
+    
+    if (email) {
+      // If email is provided, check by both email and LINE ID
+      const [user] = await query<User>(
+        `SELECT id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                created_at AS "createdAt", updated_at AS "updatedAt"
+         FROM users WHERE email = $1 OR oauth_provider_id = $2`,
+        [email, lineId]
+      );
+      existingUser = user;
+    } else {
+      // If no email, only check by LINE ID
+      const [user] = await query<User>(
+        `SELECT id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                created_at AS "createdAt", updated_at AS "updatedAt"
+         FROM users WHERE oauth_provider_id = $1`,
+        [lineId]
+      );
+      existingUser = user;
+    }
 
     let user: User;
     let isNewUser = false;
@@ -335,8 +350,8 @@ export class OAuthService {
       user = existingUser;
       logger.debug('[OAuth Service] Existing LINE user found', { userId: user.id, email: user.email });
       
-      // If user previously had placeholder email but now LINE provides real email, update it
-      if (hasRealEmail && user.email.startsWith('line_') && user.email.endsWith('@line.oauth')) {
+      // If user previously had no email but now LINE provides real email, update it
+      if (hasRealEmail && !user.email) {
         logger.info(`[OAuth Service] Updating LINE user ${user.id} with real email: ${email}`);
         const [updatedUser] = await query<User>(
           `UPDATE users 
@@ -409,8 +424,8 @@ export class OAuthService {
       );
     }
 
-    // Check if user should have elevated role (won't apply to LINE users typically, but keeping consistent)
-    const requiredRole = adminConfigService.getRequiredRole(user.email);
+    // Check if user should have elevated role (only if email exists)
+    const requiredRole = user.email ? adminConfigService.getRequiredRole(user.email) : null;
     if (requiredRole && user.role === 'customer') {
       logger.info(`Upgrading LINE user ${user.email} to ${requiredRole} role based on admin config`);
       
