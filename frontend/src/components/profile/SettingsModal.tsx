@@ -12,7 +12,7 @@ import { extractEmojiFromUrl } from '../../utils/emojiUtils';
 
 const profileSchema = z.object({
   firstName: z.string().min(1, 'First name is required'),
-  lastName: z.string().min(1, 'Last name is required'),
+  lastName: z.string().optional(),
   phone: z.string().optional(),
   dateOfBirth: z.string().optional(),
 });

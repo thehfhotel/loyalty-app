@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getCuratedEmojiOptions, isValidEmojiAvatar, formatEmojiAvatar } from '../../utils/emojiUtils';
+import { getAllEmojiOptions, isValidEmojiAvatar, formatEmojiAvatar } from '../../utils/emojiUtils';
 
 interface EmojiSelectorProps {
   currentEmoji?: string | null;
@@ -15,7 +15,7 @@ export default function EmojiSelector({
   className = '' 
 }: EmojiSelectorProps) {
   const [selectedEmoji, setSelectedEmoji] = useState<string | null>(currentEmoji || null);
-  const emojiOptions = getCuratedEmojiOptions();
+  const emojiOptions = getAllEmojiOptions();
 
   const handleEmojiClick = (emoji: string) => {
     setSelectedEmoji(emoji);
@@ -50,24 +50,26 @@ export default function EmojiSelector({
       </div>
 
       {/* Emoji Options Grid */}
-      <div className="grid grid-cols-5 gap-3 mb-6">
-        {emojiOptions.map((emoji, index) => (
-          <button
-            key={index}
-            onClick={() => handleEmojiClick(emoji)}
-            className={`
-              w-12 h-12 rounded-lg border-2 flex items-center justify-center
-              text-2xl transition-all duration-200 hover:scale-110
-              ${selectedEmoji === emoji 
-                ? 'border-blue-500 bg-blue-50 shadow-md' 
-                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-              }
-            `}
-            title={`Select ${emoji} as profile picture`}
-          >
-            {emoji}
-          </button>
-        ))}
+      <div className="max-h-64 overflow-y-auto mb-6 border rounded-lg p-3 bg-gray-50">
+        <div className="grid grid-cols-8 gap-2">
+          {emojiOptions.map((emoji, index) => (
+            <button
+              key={index}
+              onClick={() => handleEmojiClick(emoji)}
+              className={`
+                w-8 h-8 rounded border flex items-center justify-center
+                text-lg transition-all duration-200 hover:scale-110
+                ${selectedEmoji === emoji 
+                  ? 'border-blue-500 bg-blue-100 shadow-sm' 
+                  : 'border-gray-200 hover:border-gray-300 hover:bg-white'
+                }
+              `}
+              title={`Select ${emoji} as profile picture`}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Action Buttons */}
@@ -104,33 +106,37 @@ export default function EmojiSelector({
   );
 }
 
-// Compact version for inline use
+// Compact version for inline use with all emojis in scrollable grid
 export function EmojiSelectorInline({ 
   currentEmoji, 
   onSelect,
   className = '' 
 }: Omit<EmojiSelectorProps, 'onCancel'>) {
-  const emojiOptions = getCuratedEmojiOptions();
+  const emojiOptions = getAllEmojiOptions();
 
   return (
-    <div className={`flex gap-2 ${className}`}>
-      {emojiOptions.map((emoji, index) => (
-        <button
-          key={index}
-          onClick={() => onSelect(emoji)}
-          className={`
-            w-10 h-10 rounded-lg border-2 flex items-center justify-center
-            text-xl transition-all duration-200 hover:scale-110
-            ${currentEmoji === emoji 
-              ? 'border-blue-500 bg-blue-50 shadow-md' 
-              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-            }
-          `}
-          title={`Select ${emoji} as profile picture`}
-        >
-          {emoji}
-        </button>
-      ))}
+    <div className={`${className}`}>
+      <div className="max-h-40 overflow-y-auto border rounded-lg p-2 bg-gray-50">
+        <div className="grid grid-cols-8 gap-1">
+          {emojiOptions.map((emoji, index) => (
+            <button
+              key={index}
+              onClick={() => onSelect(emoji)}
+              className={`
+                w-7 h-7 rounded border flex items-center justify-center
+                text-sm transition-all duration-200 hover:scale-110
+                ${currentEmoji === emoji 
+                  ? 'border-blue-500 bg-blue-100 shadow-sm' 
+                  : 'border-gray-200 hover:border-gray-300 hover:bg-white'
+                }
+              `}
+              title={`Select ${emoji} as profile picture`}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

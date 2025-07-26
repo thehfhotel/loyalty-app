@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const updateProfileSchema = z.object({
   firstName: z.string().min(1).optional(),
-  lastName: z.string().min(1).optional(),
+  lastName: z.string().optional(),
   phone: z.string().optional(),
   dateOfBirth: z.string().refine((date) => !isNaN(Date.parse(date)), {
     message: "Invalid date format"
