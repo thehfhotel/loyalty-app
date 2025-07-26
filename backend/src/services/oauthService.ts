@@ -33,6 +33,7 @@ interface LineProfile {
   displayName: string;
   pictureUrl?: string;
   statusMessage?: string;
+  email?: string; // LINE may provide email if user grants permission
 }
 
 export class OAuthService {
@@ -90,7 +91,9 @@ export class OAuthService {
             id: profile.id,
             displayName: profile.displayName,
             pictureUrl: profile.pictureUrl,
-            statusMessage: profile.statusMessage
+            statusMessage: profile.statusMessage,
+            email: profile.email,
+            hasEmail: !!profile.email
           });
           const result = await this.handleLineAuth(profile);
           return done(null, result);
@@ -295,23 +298,33 @@ export class OAuthService {
   private async handleLineAuth(profile: LineProfile): Promise<{ user: User; tokens: AuthTokens; isNewUser: boolean }> {
     const lineId = profile.id;
     
-    logger.debug('[OAuth Service] Processing LINE auth', { lineId, displayName: profile.displayName });
+    logger.debug('[OAuth Service] Processing LINE auth', { 
+      lineId, 
+      displayName: profile.displayName,
+      hasEmail: !!profile.email 
+    });
     
     if (!lineId) {
       logger.error('[OAuth Service] No LINE ID provided');
       throw new Error('No LINE ID provided');
     }
 
-    // For LINE, we'll use a special email format since LINE doesn't provide email by default
-    const lineEmail = `line_${lineId}@line.oauth`;
-    logger.debug('[OAuth Service] Using LINE email format', { lineEmail });
+    // Check if LINE provided an email address, otherwise use placeholder
+    const email = profile.email || `line_${lineId}@line.oauth`;
+    const hasRealEmail = !!profile.email;
     
-    // Check if user exists by LINE ID or LINE email
+    logger.debug('[OAuth Service] LINE email handling', { 
+      providedEmail: profile.email,
+      usingEmail: email,
+      hasRealEmail 
+    });
+    
+    // Check if user exists by email (if provided), LINE ID, or placeholder email
     const [existingUser] = await query<User>(
       `SELECT id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
               created_at AS "createdAt", updated_at AS "updatedAt"
        FROM users WHERE email = $1 OR oauth_provider_id = $2`,
-      [lineEmail, lineId]
+      [email, lineId]
     );
 
     let user: User;
@@ -321,6 +334,20 @@ export class OAuthService {
       // Update existing user's profile if needed
       user = existingUser;
       logger.debug('[OAuth Service] Existing LINE user found', { userId: user.id, email: user.email });
+      
+      // If user previously had placeholder email but now LINE provides real email, update it
+      if (hasRealEmail && user.email.startsWith('line_') && user.email.endsWith('@line.oauth')) {
+        logger.info(`[OAuth Service] Updating LINE user ${user.id} with real email: ${email}`);
+        const [updatedUser] = await query<User>(
+          `UPDATE users 
+           SET email = $1, email_verified = true, updated_at = NOW() 
+           WHERE id = $2
+           RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+                     created_at AS "createdAt", updated_at AS "updatedAt"`,
+          [email, user.id]
+        );
+        user = updatedUser;
+      }
       
       // Update LINE-specific data if available
       const displayName = profile.displayName || '';
@@ -359,13 +386,14 @@ export class OAuthService {
       const lastName = displayName.split(' ').slice(1).join(' ') || '';
       const avatarUrl = profile.pictureUrl;
 
-      // Create user account (no password needed for OAuth, email_verified false since we don't have real email)
+      // Create user account (no password needed for OAuth)
+      // Set email_verified based on whether we have a real email
       const [newUser] = await query<User>(
         `INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id) 
-         VALUES ($1, '', false, 'line', $2) 
+         VALUES ($1, '', $2, 'line', $3) 
          RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
                    created_at AS "createdAt", updated_at AS "updatedAt"`,
-        [lineEmail, lineId]
+        [email, hasRealEmail, lineId]
       );
 
       user = newUser;
