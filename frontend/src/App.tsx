@@ -277,6 +277,9 @@ function App() {
 
         {/* Default redirect */}
         <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} />} />
+        
+        {/* Catch-all route for unknown paths - redirect based on auth status */}
+        <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
           </Routes>
           
           {/* Development tools - only shows in development mode */}
