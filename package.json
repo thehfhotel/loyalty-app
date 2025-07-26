@@ -1,5 +1,5 @@
 {
-  "version": "3.6.0",
+  "version": "3.6.1",
   "type": "module",
   "dependencies": {
     "@playwright/test": "^1.54.1",

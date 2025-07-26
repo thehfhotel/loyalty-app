@@ -157,13 +157,13 @@ export class OAuthService {
       const avatarUrl = profile.photos?.[0]?.value;
 
       if (firstName || lastName || avatarUrl) {
-        // Only update avatar_url if there's no existing local avatar (doesn't start with /storage/)
+        // Only update avatar_url if there's no existing local avatar (doesn't start with /storage/ or emoji:)
         await query(
           `UPDATE user_profiles 
            SET first_name = COALESCE(NULLIF($2, ''), first_name),
                last_name = COALESCE(NULLIF($3, ''), last_name),
                avatar_url = CASE 
-                 WHEN avatar_url IS NULL OR NOT avatar_url LIKE '/storage/%' 
+                 WHEN avatar_url IS NULL OR (NOT avatar_url LIKE '/storage/%' AND NOT avatar_url LIKE 'emoji:%')
                  THEN COALESCE(NULLIF($4, ''), avatar_url)
                  ELSE avatar_url 
                END,
@@ -371,13 +371,29 @@ export class OAuthService {
       const avatarUrl = profile.pictureUrl;
 
       if (firstName || lastName || avatarUrl) {
-        // Only update avatar_url if there's no existing local avatar (doesn't start with /storage/)
+        // Check current avatar before updating
+        const [currentProfile] = await query<{avatarUrl?: string}>(
+          'SELECT avatar_url AS "avatarUrl" FROM user_profiles WHERE user_id = $1',
+          [user.id]
+        );
+        
+        logger.debug('[OAuth Service] LINE avatar preservation check', {
+          userId: user.id,
+          currentAvatar: currentProfile?.avatarUrl,
+          newLineAvatar: avatarUrl,
+          willPreserve: currentProfile?.avatarUrl && (
+            currentProfile.avatarUrl.startsWith('/storage/') || 
+            currentProfile.avatarUrl.startsWith('emoji:')
+          )
+        });
+        
+        // Only update avatar_url if there's no existing local avatar (doesn't start with /storage/ or emoji:)
         await query(
           `UPDATE user_profiles 
            SET first_name = COALESCE(NULLIF($2, ''), first_name),
                last_name = COALESCE(NULLIF($3, ''), last_name),
                avatar_url = CASE 
-                 WHEN avatar_url IS NULL OR NOT avatar_url LIKE '/storage/%' 
+                 WHEN avatar_url IS NULL OR (NOT avatar_url LIKE '/storage/%' AND NOT avatar_url LIKE 'emoji:%')
                  THEN COALESCE(NULLIF($4, ''), avatar_url)
                  ELSE avatar_url 
                END,

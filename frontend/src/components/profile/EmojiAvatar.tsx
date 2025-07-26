@@ -24,7 +24,7 @@ export default function EmojiAvatar({
     xl: 'w-20 h-20 text-4xl',
   };
 
-  // Handle non-emoji avatars (uploaded images)
+  // Handle non-emoji avatars (uploaded images and URLs)
   if (!isEmoji && avatarUrl && !avatarUrl.startsWith('emoji:')) {
     return (
       <div

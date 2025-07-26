@@ -81,7 +81,13 @@ export function formatEmojiAvatar(avatar: string | null | undefined, size: 'sm' 
   isEmoji: boolean;
   className: string;
 } {
-  const isEmoji = avatar && PROFILE_EMOJIS.includes(avatar);
+  // Extract emoji from URL format (emoji:😀) or use direct emoji
+  let actualEmoji = avatar;
+  if (avatar && avatar.startsWith('emoji:')) {
+    actualEmoji = avatar.replace('emoji:', '');
+  }
+  
+  const isEmoji = actualEmoji && PROFILE_EMOJIS.includes(actualEmoji);
   
   const sizeClasses = {
     sm: 'text-lg', // ~18px
@@ -91,7 +97,7 @@ export function formatEmojiAvatar(avatar: string | null | undefined, size: 'sm' 
   };
   
   return {
-    emoji: isEmoji ? avatar : '👤', // Default user icon
+    emoji: isEmoji ? actualEmoji : '👤', // Default user icon
     isEmoji: !!isEmoji,
     className: `${sizeClasses[size]} select-none`,
   };
