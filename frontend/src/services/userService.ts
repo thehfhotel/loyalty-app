@@ -50,6 +50,11 @@ export const userService = {
     return response.data;
   },
 
+  async updateEmojiAvatar(emoji: string): Promise<UserProfile> {
+    const response = await api.put('/users/avatar/emoji', { emoji });
+    return response.data.data.profile;
+  },
+
   async deleteAvatar(): Promise<void> {
     await api.delete('/users/avatar');
   },

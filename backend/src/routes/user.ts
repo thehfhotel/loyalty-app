@@ -103,6 +103,38 @@ router.post('/avatar', uploadAvatar, async (req, res, next) => {
   }
 });
 
+// Update emoji avatar
+router.put('/avatar/emoji', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const { emoji } = req.body;
+    
+    if (!emoji || typeof emoji !== 'string') {
+      return res.status(400).json({ error: 'Emoji is required' });
+    }
+
+    console.log(`🔄 Updating emoji avatar for user ${req.user.id} to: ${emoji}`);
+
+    // Update emoji avatar
+    const updatedProfile = await userService.updateEmojiAvatar(req.user.id, emoji);
+
+    console.log(`✅ Emoji avatar updated successfully for user ${req.user.id}`);
+
+    return res.json({
+      success: true,
+      message: 'Emoji avatar updated successfully',
+      data: {
+        profile: updatedProfile
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Delete avatar
 router.delete('/avatar', async (req, res, next) => {
   try {

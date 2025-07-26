@@ -22,6 +22,7 @@ import PointsBalance from '../components/loyalty/PointsBalance';
 import TierStatus from '../components/loyalty/TierStatus';
 import TransactionList from '../components/loyalty/TransactionList';
 import SettingsModal from '../components/profile/SettingsModal';
+import EmojiAvatar from '../components/profile/EmojiAvatar';
 
 const profileSchema = z.object({
   firstName: z.string().min(1, 'First name is required'),
@@ -355,17 +356,12 @@ export default function ProfilePage() {
             {/* Profile Display */}
             <div className="flex items-start space-x-6">
               <div className="flex-shrink-0">
-                <div className="h-20 w-20 rounded-full bg-gray-300 flex items-center justify-center overflow-hidden">
-                  {profile?.avatarUrl ? (
-                    <img
-                      src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:4000'}${profile.avatarUrl}?t=${Date.now()}`}
-                      alt="Profile"
-                      className="h-20 w-20 rounded-full object-cover"
-                    />
-                  ) : (
-                    <FiUser className="h-8 w-8 text-gray-600" />
-                  )}
-                </div>
+                <EmojiAvatar 
+                  avatarUrl={profile?.avatarUrl} 
+                  size="xl"
+                  onClick={() => setShowSettingsModal(true)}
+                  className="cursor-pointer"
+                />
               </div>
               
               <div className="flex-1 min-w-0">
@@ -490,6 +486,10 @@ export default function ProfilePage() {
           onAvatarUpload={handleAvatarUpload}
           onDeleteAvatar={handleDeleteAvatar}
           uploadingAvatar={uploadingAvatar}
+          onProfileUpdate={(updatedProfile) => {
+            setProfile(updatedProfile);
+            updateUser({ avatarUrl: updatedProfile.avatarUrl });
+          }}
         />
       </main>
     </div>

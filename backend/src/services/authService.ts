@@ -9,6 +9,7 @@ import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
 import { receptionIdService } from './receptionIdService';
+import { getRandomEmojiAvatar, generateEmojiAvatarUrl } from '../utils/emojiUtils';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret';
@@ -44,6 +45,10 @@ export class AuthService {
       // Generate unique reception ID
       const receptionId = await receptionIdService.generateUniqueReceptionId();
 
+      // Generate random emoji avatar for new user
+      const randomEmoji = getRandomEmojiAvatar();
+      const emojiAvatarUrl = generateEmojiAvatarUrl(randomEmoji);
+
       // Create user
       const [user] = await client.query<User>(
         `INSERT INTO users (email, password_hash) 
@@ -52,14 +57,14 @@ export class AuthService {
         [data.email, passwordHash]
       ).then(res => res.rows);
 
-      // Create user profile with reception ID
+      // Create user profile with reception ID and emoji avatar
       await client.query(
-        `INSERT INTO user_profiles (user_id, first_name, last_name, phone, reception_id) 
-         VALUES ($1, $2, $3, $4, $5)`,
-        [user.id, data.firstName, data.lastName, data.phone, receptionId]
+        `INSERT INTO user_profiles (user_id, first_name, last_name, phone, reception_id, avatar_url) 
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [user.id, data.firstName, data.lastName, data.phone, receptionId, emojiAvatarUrl]
       );
 
-      logger.info(`User registered with reception ID: ${receptionId} (email: ${data.email})`);
+      logger.info(`User registered with reception ID: ${receptionId}, emoji: ${randomEmoji} (email: ${data.email})`);
 
       // Generate tokens (pass client for transaction)
       const tokens = await this.generateTokens(user, client);

@@ -3,8 +3,12 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
-import { FiX, FiUser, FiPhone, FiCalendar, FiCamera } from 'react-icons/fi';
-import { UserProfile } from '../../services/userService';
+import { FiX, FiUser, FiPhone, FiCalendar, FiCamera, FiSmile } from 'react-icons/fi';
+import { UserProfile, userService } from '../../services/userService';
+import EmojiAvatar from './EmojiAvatar';
+import { EmojiSelectorInline } from './EmojiSelector';
+import { notify } from '../../utils/notificationManager';
+import { extractEmojiFromUrl } from '../../utils/emojiUtils';
 
 const profileSchema = z.object({
   firstName: z.string().min(1, 'First name is required'),
@@ -24,6 +28,7 @@ interface SettingsModalProps {
   onAvatarUpload: (event: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
   onDeleteAvatar: () => Promise<void>;
   uploadingAvatar: boolean;
+  onProfileUpdate?: (profile: UserProfile) => void;
 }
 
 export default function SettingsModal({
@@ -34,10 +39,13 @@ export default function SettingsModal({
   isSaving,
   onAvatarUpload,
   onDeleteAvatar,
-  uploadingAvatar
+  uploadingAvatar,
+  onProfileUpdate
 }: SettingsModalProps) {
   const { t } = useTranslation();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showEmojiSelector, setShowEmojiSelector] = React.useState(false);
+  const [updatingEmoji, setUpdatingEmoji] = React.useState(false);
 
   const {
     register,
@@ -70,6 +78,20 @@ export default function SettingsModal({
     }
   }, [profile, reset]);
 
+  const handleEmojiSelect = async (emoji: string) => {
+    setUpdatingEmoji(true);
+    try {
+      const updatedProfile = await userService.updateEmojiAvatar(emoji);
+      onProfileUpdate?.(updatedProfile);
+      setShowEmojiSelector(false);
+      notify.success('Profile picture updated!');
+    } catch (error: any) {
+      notify.error(error.response?.data?.error || 'Failed to update profile picture');
+    } finally {
+      setUpdatingEmoji(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -98,29 +120,59 @@ export default function SettingsModal({
             </div>
 
             {/* Profile Picture Section */}
-            <div className="flex items-center mb-6">
-              <div className="relative">
-                <div className="h-16 w-16 rounded-full bg-gray-300 flex items-center justify-center overflow-hidden">
-                  {uploadingAvatar ? (
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
-                  ) : profile?.avatarUrl ? (
-                    <img
-                      src={`${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:4000'}${profile.avatarUrl}?t=${Date.now()}`}
-                      alt="Profile"
-                      className="h-16 w-16 rounded-full object-cover"
-                    />
-                  ) : (
-                    <FiUser className="h-6 w-6 text-gray-600" />
+            <div className="mb-6">
+              <h4 className="text-md font-medium text-gray-900 mb-4">Profile Picture</h4>
+              
+              <div className="flex items-center space-x-4 mb-4">
+                <div className="relative">
+                  <EmojiAvatar 
+                    avatarUrl={profile?.avatarUrl} 
+                    size="lg" 
+                    className={updatingEmoji ? 'opacity-50' : ''}
+                  />
+                  {updatingEmoji && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
+                    </div>
                   )}
                 </div>
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingAvatar}
-                  className="absolute bottom-0 right-0 bg-primary-600 text-white rounded-full p-1 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={t('profile.uploadPhotoTitle')}
-                >
-                  <FiCamera className="h-3 w-3" />
-                </button>
+                
+                <div className="flex-1">
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    <button
+                      onClick={() => setShowEmojiSelector(!showEmojiSelector)}
+                      disabled={updatingEmoji}
+                      className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-primary-700 bg-primary-100 hover:bg-primary-200 disabled:opacity-50"
+                    >
+                      <FiSmile className="mr-1 h-4 w-4" />
+                      Choose Emoji
+                    </button>
+                    
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingAvatar || updatingEmoji}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      <FiCamera className="mr-1 h-4 w-4" />
+                      Upload Image
+                    </button>
+                    
+                    {profile?.avatarUrl && (
+                      <button
+                        onClick={onDeleteAvatar}
+                        disabled={uploadingAvatar || updatingEmoji}
+                        className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50 px-2 py-1"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  
+                  <p className="text-xs text-gray-500">
+                    Choose an emoji or upload your own image for your profile picture
+                  </p>
+                </div>
+
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -129,26 +181,25 @@ export default function SettingsModal({
                   className="hidden"
                 />
               </div>
-              <div className="ml-4">
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingAvatar}
-                    className="text-sm text-primary-600 hover:text-primary-700 disabled:opacity-50"
-                  >
-                    {profile?.avatarUrl ? t('profile.changePhoto') : t('profile.uploadPhoto')}
-                  </button>
-                  {profile?.avatarUrl && (
+
+              {/* Emoji Selector */}
+              {showEmojiSelector && (
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-medium text-gray-700">Select an emoji:</span>
                     <button
-                      onClick={onDeleteAvatar}
-                      disabled={uploadingAvatar}
-                      className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50"
+                      onClick={() => setShowEmojiSelector(false)}
+                      className="text-gray-400 hover:text-gray-600"
                     >
-                      {t('profile.removePhoto')}
+                      <FiX className="h-4 w-4" />
                     </button>
-                  )}
+                  </div>
+                  <EmojiSelectorInline
+                    currentEmoji={extractEmojiFromUrl(profile?.avatarUrl)}
+                    onSelect={handleEmojiSelect}
+                  />
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Form */}

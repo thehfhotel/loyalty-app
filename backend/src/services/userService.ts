@@ -2,6 +2,7 @@ import { query } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { UserProfile } from '../types/auth';
 import { ProfileUpdate } from '../types/user';
+import { validateEmojiAvatar, generateEmojiAvatarUrl } from '../utils/emojiUtils';
 
 interface UserWithProfile {
   userId: string;
@@ -115,6 +116,23 @@ export class UserService {
     
     // Log successful avatar update
     console.log(`✅ Avatar updated for user ${userId}: ${avatarUrl} (${result.rowCount} rows affected)`);
+  }
+
+  async updateEmojiAvatar(userId: string, emoji: string): Promise<UserProfile> {
+    // Validate emoji
+    const validation = validateEmojiAvatar(emoji);
+    if (!validation.isValid) {
+      throw new AppError(400, validation.error || 'Invalid emoji');
+    }
+
+    // Generate emoji avatar URL
+    const emojiAvatarUrl = generateEmojiAvatarUrl(emoji);
+    
+    // Update avatar
+    await this.updateAvatar(userId, emojiAvatarUrl);
+    
+    // Return updated profile
+    return this.getProfile(userId);
   }
 
   async deleteAvatar(userId: string): Promise<void> {
