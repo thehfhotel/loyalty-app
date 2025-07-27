@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Survey, SurveyResponse } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
+import { translationService } from '../../services/translationService';
 import QuestionRenderer from '../../components/surveys/QuestionRenderer';
 import SurveyProgress from '../../components/surveys/SurveyProgress';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
+import LanguageTabs from '../../components/translation/LanguageTabs';
+import { MultilingualSurvey, SupportedLanguage, TranslationStatus } from '../../types/multilingual';
 
 const TakeSurvey: React.FC = () => {
   const { t } = useTranslation();
@@ -14,6 +17,13 @@ const TakeSurvey: React.FC = () => {
   const navigate = useNavigate();
 
   const [survey, setSurvey] = useState<Survey | null>(null);
+  const [multilingualSurvey, setMultilingualSurvey] = useState<MultilingualSurvey | null>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('th');
+  const [translationStatus, setTranslationStatus] = useState<Record<SupportedLanguage, TranslationStatus>>({
+    th: 'original',
+    en: 'none',
+    'zh-CN': 'none'
+  });
   const [existingResponse, setExistingResponse] = useState<SurveyResponse | null>(null);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -23,11 +33,43 @@ const TakeSurvey: React.FC = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isCompleted, setIsCompleted] = useState(false);
 
+  // Get display content based on selected language
+  const getDisplayContent = () => {
+    if (!multilingualSurvey || selectedLanguage === multilingualSurvey.originalLanguage) {
+      return survey;
+    }
+
+    // Check if translations exist
+    if (!multilingualSurvey.translations || typeof multilingualSurvey.translations !== 'object') {
+      return survey;
+    }
+
+    const translation = multilingualSurvey.translations[selectedLanguage];
+    if (!translation) {
+      return survey;
+    }
+
+    return {
+      ...survey,
+      title: translation.title || survey?.title,
+      description: translation.description || survey?.description,
+      questions: translation.questions || survey?.questions
+    };
+  };
+
   useEffect(() => {
     if (id) {
       loadSurvey(id);
     }
   }, [id]);
+
+  // Track language changes
+  useEffect(() => {
+    // Language change effect - can add analytics tracking here if needed
+  }, [selectedLanguage, multilingualSurvey]);
+
+  // Get display content based on selected language (moved here to fix hooks order)
+  const displayContent = useMemo(() => getDisplayContent(), [multilingualSurvey, selectedLanguage, survey]);
 
   // Auto-save every 30 seconds
   useEffect(() => {
@@ -45,13 +87,45 @@ const TakeSurvey: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const [surveyData, responseData] = await Promise.all([
+      const [surveyData, responseData, translationsData] = await Promise.all([
         surveyService.getSurveyById(surveyId),
-        surveyService.getUserResponse(surveyId)
+        surveyService.getUserResponse(surveyId),
+        translationService.getSurveyTranslations(surveyId)
       ]);
 
       setSurvey(surveyData);
       setExistingResponse(responseData);
+
+      // Load translations if available
+      if (translationsData) {
+        const multilingualData: MultilingualSurvey = {
+          ...translationsData,
+          originalLanguage: translationsData.original_language || 'th',
+          availableLanguages: translationsData.available_languages || ['th'],
+          translationStatus: 'none',
+          translations: translationsData.translations || {}
+        };
+        
+        setMultilingualSurvey(multilingualData);
+        
+        // Update translation status
+        const newStatus: Record<SupportedLanguage, TranslationStatus> = {
+          th: 'original',
+          en: 'none',
+          'zh-CN': 'none'
+        };
+        
+        if (translationsData.translations && typeof translationsData.translations === 'object') {
+          Object.keys(translationsData.translations).forEach((lang) => {
+            if (lang !== translationsData.original_language) {
+              newStatus[lang as SupportedLanguage] = 'translated';
+            }
+          });
+        }
+        
+        setTranslationStatus(newStatus);
+        setSelectedLanguage(translationsData.original_language || 'th');
+      }
 
       if (responseData) {
         // Allow retaking surveys - always start fresh for multiple submissions
@@ -83,7 +157,8 @@ const TakeSurvey: React.FC = () => {
 
       if (isComplete && isCompletingNow) {
         setIsCompleted(true);
-        setCurrentQuestion(survey.questions.length);
+        const displayContent = getDisplayContent();
+        setCurrentQuestion(displayContent?.questions?.length || 0);
       }
     } catch (err: any) {
       console.error('Error saving progress:', err);
@@ -110,9 +185,12 @@ const TakeSurvey: React.FC = () => {
   };
 
   const validateCurrentQuestion = (): boolean => {
-    if (!survey || currentQuestion >= survey.questions.length) return true;
+    const displayContent = getDisplayContent();
+    if (!displayContent || currentQuestion >= (displayContent.questions?.length || 0)) return true;
 
-    const question = survey.questions[currentQuestion];
+    const question = displayContent.questions?.[currentQuestion];
+    if (!question) return true;
+    
     const answer = answers[question.id];
     
     if (!surveyService.validateAnswer(question, answer)) {
@@ -130,7 +208,8 @@ const TakeSurvey: React.FC = () => {
   const goToNext = () => {
     if (!validateCurrentQuestion()) return;
 
-    if (survey && currentQuestion < survey.questions.length - 1) {
+    const displayContent = getDisplayContent();
+    if (displayContent && currentQuestion < (displayContent.questions?.length || 0) - 1) {
       setCurrentQuestion(prev => prev + 1);
       saveProgress();
     } else {
@@ -201,9 +280,9 @@ const TakeSurvey: React.FC = () => {
     );
   }
 
-  const progress = surveyService.calculateProgress(answers, survey.questions.length);
-  const isLastQuestion = currentQuestion >= survey.questions.length - 1;
-  const isCompletionPage = currentQuestion >= survey.questions.length;
+  const progress = surveyService.calculateProgress(answers, displayContent?.questions?.length || 0);
+  const isLastQuestion = currentQuestion >= (displayContent?.questions?.length || 0) - 1;
+  const isCompletionPage = currentQuestion >= (displayContent?.questions?.length || 0);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -212,7 +291,10 @@ const TakeSurvey: React.FC = () => {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-gray-900">{survey.title}</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{displayContent?.title}</h1>
+              <span className="ml-4 px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                {selectedLanguage.toUpperCase()}
+              </span>
             </div>
             <div className="flex items-center space-x-4">
               <LanguageSwitcher />
@@ -225,6 +307,19 @@ const TakeSurvey: React.FC = () => {
               </button>
             </div>
           </div>
+          
+          {/* Language Tabs - show if we have multilingual survey data */}
+          {multilingualSurvey && (
+            <div className="border-t border-gray-200">
+              <div className="px-4 sm:px-6 lg:px-8">
+                <LanguageTabs
+                  languages={['th', 'en', 'zh-CN']}
+                  currentLanguage={selectedLanguage}
+                  onLanguageChange={setSelectedLanguage}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
@@ -234,18 +329,20 @@ const TakeSurvey: React.FC = () => {
           <>
             <SurveyProgress
               current={currentQuestion + 1}
-              total={survey.questions.length}
+              total={displayContent?.questions?.length || 0}
               progress={progress}
             />
 
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-              <QuestionRenderer
-                question={survey.questions[currentQuestion]}
-                answer={answers[survey.questions[currentQuestion].id]}
-                onAnswerChange={handleAnswerChange}
-                error={errors[survey.questions[currentQuestion].id]}
-              />
-            </div>
+            {displayContent?.questions && displayContent.questions[currentQuestion] && (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <QuestionRenderer
+                  question={displayContent.questions[currentQuestion]}
+                  answer={answers[displayContent.questions[currentQuestion].id]}
+                  onAnswerChange={handleAnswerChange}
+                  error={errors[displayContent.questions[currentQuestion].id]}
+                />
+              </div>
+            )}
 
             {/* Navigation */}
             <div className="flex justify-between items-center">
@@ -279,14 +376,14 @@ const TakeSurvey: React.FC = () => {
 
             {/* Question navigation dots */}
             <div className="flex justify-center mt-6 space-x-2">
-              {survey.questions.map((_, index) => (
+              {displayContent?.questions?.map((question, index) => (
                 <button
                   key={index}
                   onClick={() => goToQuestion(index)}
                   className={`w-3 h-3 rounded-full transition-colors ${
                     index === currentQuestion
                       ? 'bg-blue-600'
-                      : answers[survey.questions[index].id]
+                      : answers[question.id]
                       ? 'bg-green-400'
                       : 'bg-gray-300'
                   }`}

@@ -38,7 +38,35 @@
     "saving": "Saving...",
     "active": "Active",
     "inactive": "Inactive",
-    "remove": "Remove"
+    "remove": "Remove",
+    "create": "Create",
+    "pageOf": "Page {{current}} of {{total}}"
+  },
+  "translation": {
+    "languages": "Languages",
+    "translate": "Translate",
+    "retranslate": "Re-translate",
+    "translating": "Translating...",
+    "translationStarted": "Translation started successfully",
+    "translationCompleted": "Translation completed successfully",
+    "translationFailed": "Translation failed",
+    "selectTargetLanguages": "Select target languages",
+    "startTranslation": "Start Translation",
+    "original": "Original",
+    "translated": "Translated",
+    "pending": "Translating",
+    "error": "Error",
+    "switchTo": "Switch to",
+    "saveSurveyFirst": "Please save the survey first before translating",
+    "loading": "Loading translations...",
+    "failed": "Translation failed",
+    "statusLegend": "Translation Status",
+    "language": "language",
+    "originalDescription": "Source language content",
+    "translatedDescription": "Fully translated content",
+    "pendingDescription": "Translation in progress",
+    "errorDescription": "Translation failed",
+    "progress": "Progress"
   },
   "auth": {
     "signIn": "Welcome back! Sign in to your account",
@@ -541,6 +569,17 @@
       "required": "This question is required - please provide an answer",
       "invalid": "Please provide a valid answer for this question"
     },
+    "loading": "Loading survey...",
+    "description": "Description",
+    "preview": "Preview ({{count}} questions)",
+    "created": "Created",
+    "takeSurvey": "Take Survey",
+    "backToSurveys": "Back to Surveys",
+    "notFound": "Survey not found",
+    "accessType": {
+      "public": "Public",
+      "invited": "Invited"
+    },
     "completed": {
       "title": "Survey Completed Successfully!",
       "message": "Thank you for sharing your valuable feedback with us. Your responses help us improve our services and create better experiences for all our guests.",
@@ -549,13 +588,10 @@
       "thankYou": "Thank you for being part of our loyalty community!"
     },
     "of": "of",
+    "progress": "Progress",
     "progressSaved": "Progress saved",
     "enterAnswer": "Enter your answer",
     "unknownQuestionType": "Unknown question type",
-    "progress": {
-      "question": "Question {{current}} of {{total}}",
-      "percent": "{{percent}}% Complete"
-    },
     "types": {
       "single_choice": "Single Choice",
       "multiple_choice": "Multiple Choice",

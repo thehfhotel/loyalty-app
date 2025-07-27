@@ -12,6 +12,7 @@ interface User {
   email: string;
   firstName: string;
   lastName: string;
+  receptionId?: string | null;
 }
 
 const CouponManagement: React.FC = () => {
@@ -27,6 +28,7 @@ const CouponManagement: React.FC = () => {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [createModalError, setCreateModalError] = useState<string | null>(null);
@@ -96,7 +98,8 @@ const CouponManagement: React.FC = () => {
         id: user.user_id,
         email: user.email,
         firstName: user.first_name,
-        lastName: user.last_name
+        lastName: user.last_name,
+        receptionId: user.reception_id
       }));
       setUsers(transformedUsers);
     } catch (err) {
@@ -168,6 +171,7 @@ const CouponManagement: React.FC = () => {
       setShowAssignModal(false);
       setSelectedUsers([]);
       setSelectedCoupon(null);
+      setUserSearchTerm('');
       
       // Refresh the coupons list to update counts
       await loadCoupons();
@@ -731,12 +735,15 @@ const CouponManagement: React.FC = () => {
       {/* Assign Coupon Modal */}
       {showAssignModal && selectedCoupon && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full max-h-full overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-lg w-full max-h-full overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold">{t('admin.coupons.assignCoupon')}</h2>
                 <button
-                  onClick={() => setShowAssignModal(false)}
+                  onClick={() => {
+                    setShowAssignModal(false);
+                    setUserSearchTerm('');
+                  }}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   ✕
@@ -748,9 +755,36 @@ const CouponManagement: React.FC = () => {
                 <div className="text-sm text-gray-600">{selectedCoupon.code} - {selectedCoupon.description}</div>
               </div>
 
+              {/* Search Field */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Search Users (by name, email, or reception ID)
+                </label>
+                <input
+                  type="text"
+                  value={userSearchTerm}
+                  onChange={(e) => setUserSearchTerm(e.target.value)}
+                  placeholder="Search by name, email, or reception ID..."
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
               <div className="space-y-3 max-h-60 overflow-y-auto">
-                {users.map((user) => (
-                  <label key={user.id || user.email} className="flex items-center">
+                {users
+                  .filter(user => {
+                    if (!userSearchTerm) return true;
+                    const searchLower = userSearchTerm.toLowerCase();
+                    const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
+                    const email = (user.email || '').toLowerCase();
+                    const receptionId = (user.receptionId || '').toLowerCase();
+                    return (
+                      fullName.includes(searchLower) ||
+                      email.includes(searchLower) ||
+                      receptionId.includes(searchLower)
+                    );
+                  })
+                  .map((user) => (
+                  <label key={user.id || user.email} className="flex items-center p-2 hover:bg-gray-50 rounded-md cursor-pointer">
                     <input
                       type="checkbox"
                       checked={selectedUsers.includes(user.id)}
@@ -761,19 +795,49 @@ const CouponManagement: React.FC = () => {
                           setSelectedUsers(selectedUsers.filter(id => id !== user.id));
                         }
                       }}
-                      className="mr-3"
+                      className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
-                    <div>
-                      <div className="font-medium">{user.firstName} {user.lastName}</div>
-                      <div className="text-sm text-gray-600">{user.email}</div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium text-gray-900">{user.firstName || ''} {user.lastName || ''}</div>
+                        {user.receptionId && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            ID: {user.receptionId}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-600">{user.email || 'No email'}</div>
+                      {!user.receptionId && (
+                        <div className="text-xs text-gray-400">No reception ID</div>
+                      )}
                     </div>
                   </label>
                 ))}
+                {users.filter(user => {
+                  if (!userSearchTerm) return false;
+                  const searchLower = userSearchTerm.toLowerCase();
+                  const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
+                  const email = (user.email || '').toLowerCase();
+                  const receptionId = (user.receptionId || '').toLowerCase();
+                  return (
+                    fullName.includes(searchLower) ||
+                    email.includes(searchLower) ||
+                    receptionId.includes(searchLower)
+                  );
+                }).length === 0 && userSearchTerm && (
+                  <div className="text-center py-4 text-gray-500">
+                    <div className="text-sm">No users found matching "{userSearchTerm}"</div>
+                    <div className="text-xs mt-1">Try searching by name, email, or reception ID</div>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end space-x-3 pt-4 border-t">
                 <button
-                  onClick={() => setShowAssignModal(false)}
+                  onClick={() => {
+                    setShowAssignModal(false);
+                    setUserSearchTerm('');
+                  }}
                   className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
                 >
                   {t('common.cancel')}

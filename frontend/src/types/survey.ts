@@ -44,6 +44,8 @@ export interface Survey {
   created_by?: string;
   created_at: string;
   updated_at: string;
+  original_language?: string;
+  available_languages?: string[];
 }
 
 export interface SurveyResponse {
@@ -84,6 +86,8 @@ export interface CreateSurveyRequest {
   status?: SurveyStatus;
   scheduled_start?: string;
   scheduled_end?: string;
+  original_language?: string;
+  available_languages?: string[];
 }
 
 export interface UpdateSurveyRequest extends Partial<CreateSurveyRequest> {

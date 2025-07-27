@@ -35,7 +35,35 @@
     "saving": "กำลังบันทึก...",
     "active": "เปิดใช้งาน",
     "inactive": "ปิดใช้งาน",
-    "remove": "นำออก"
+    "remove": "นำออก",
+    "create": "สร้าง",
+    "pageOf": "หน้า {{current}} จาก {{total}}"
+  },
+  "translation": {
+    "languages": "ภาษา",
+    "translate": "แปลภาษา",
+    "retranslate": "แปลใหม่",
+    "translating": "กำลังแปล...",
+    "translationStarted": "เริ่มการแปลเรียบร้อยแล้ว",
+    "translationCompleted": "การแปลเสร็จสมบูรณ์",
+    "translationFailed": "การแปลล้มเหลว",
+    "selectTargetLanguages": "เลือกภาษาปลายทาง",
+    "startTranslation": "เริ่มแปล",
+    "original": "ต้นฉบับ",
+    "translated": "แปลแล้ว",
+    "pending": "กำลังแปล",
+    "error": "ข้อผิดพลาด",
+    "switchTo": "เปลี่ยนเป็น",
+    "saveSurveyFirst": "กรุณาบันทึกแบบสำรวจก่อนแปล",
+    "loading": "กำลังโหลดการแปล...",
+    "failed": "การแปลล้มเหลว",
+    "statusLegend": "สถานะการแปล",
+    "language": "ภาษา",
+    "originalDescription": "เนื้อหาภาษาต้นฉบับ",
+    "translatedDescription": "แปลเสร็จสมบูรณ์",
+    "pendingDescription": "กำลังดำเนินการแปล",
+    "errorDescription": "การแปลล้มเหลว",
+    "progress": "ความคืบหน้า"
   },
   "auth": {
     "signIn": "เข้าสู่ระบบบัญชีของคุณ",
@@ -569,6 +597,7 @@
     "backToList": "กลับไปรายการแบบสำรวจ",
     "notFound": "ไม่พบแบบสำรวจ",
     "of": "จาก",
+    "progress": "ความคืบหน้า",
     "progressSaved": "ความคืบหน้าถูกบันทึกแล้ว",
     "enterAnswer": "กรอกคำตอบของคุณ",
     "unknownQuestionType": "ประเภทคำถามไม่รู้จัก",
@@ -578,16 +607,23 @@
       "required": "คำถามนี้จำเป็นต้องตอบ",
       "invalid": "กรุณาให้คำตอบที่ถูกต้อง"
     },
+    "loading": "กำลังโหลดแบบสำรวจ...",
+    "description": "คำอธิบาย",
+    "preview": "ตัวอย่าง ({{count}} คำถาม)",
+    "created": "สร้างเมื่อ",
+    "takeSurvey": "ทำแบบสำรวจ",
+    "backToSurveys": "กลับไปแบบสำรวจ",
+    "notFound": "ไม่พบแบบสำรวจ",
+    "accessType": {
+      "public": "สาธารณะ",
+      "invited": "ได้รับเชิญ"
+    },
     "completed": {
       "title": "เสร็จสิ้นแบบสำรวจแล้ว!",
       "message": "ขอบคุณที่สละเวลาทำแบบสำรวจนี้ ความคิดเห็นของคุณมีคุณค่าสำหรับเรา",
       "saved": "คำตอบของคุณได้รับการบันทึกเรียบร้อยแล้ว",
       "nextSteps": "เราอาจติดตามด้วยคำถามเพิ่มเติมตามคำตอบของคุณ",
       "thankYou": "ขอบคุณที่เป็นส่วนหนึ่งของชุมชนสมาชิกของเรา!"
-    },
-    "progress": {
-      "question": "คำถามที่ {{current}} จาก {{total}}",
-      "percent": "เสร็จสิ้น {{percent}}%"
     },
     "types": {
       "single_choice": "เลือกคำตอบเดียว",

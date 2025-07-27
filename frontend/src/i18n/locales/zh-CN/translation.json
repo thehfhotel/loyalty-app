@@ -38,7 +38,35 @@
     "saving": "保存中...",
     "active": "激活",
     "inactive": "未激活",
-    "remove": "移除"
+    "remove": "移除",
+    "create": "创建",
+    "pageOf": "第 {{current}} 页，共 {{total}} 页"
+  },
+  "translation": {
+    "languages": "语言",
+    "translate": "翻译",
+    "retranslate": "重新翻译",
+    "translating": "翻译中...",
+    "translationStarted": "翻译已开始",
+    "translationCompleted": "翻译已完成",
+    "translationFailed": "翻译失败",
+    "selectTargetLanguages": "选择目标语言",
+    "startTranslation": "开始翻译",
+    "original": "原文",
+    "translated": "已翻译",
+    "pending": "翻译中",
+    "error": "错误",
+    "switchTo": "切换到",
+    "saveSurveyFirst": "请先保存调查问卷再进行翻译",
+    "loading": "加载翻译中...",
+    "failed": "翻译失败",
+    "statusLegend": "翻译状态",
+    "language": "语言",
+    "originalDescription": "原始语言内容",
+    "translatedDescription": "完全翻译内容",
+    "pendingDescription": "翻译进行中",
+    "errorDescription": "翻译失败",
+    "progress": "进度"
   },
   "auth": {
     "signIn": "欢迎回来！请登录您的账户",
@@ -525,6 +553,7 @@
     "backToList": "← 返回所有调研",
     "notFound": "未找到调研",
     "of": "的",
+    "progress": "进度",
     "progressSaved": "进度已保存",
     "enterAnswer": "请输入您的答案",
     "unknownQuestionType": "未知题型",
@@ -536,16 +565,23 @@
       "required": "此问题为必答题 - 请提供答案",
       "invalid": "请为此问题提供有效答案"
     },
+    "loading": "加载调研中...",
+    "description": "描述",
+    "preview": "预览 ({{count}} 个问题)",
+    "created": "创建于",
+    "takeSurvey": "开始调研",
+    "backToSurveys": "返回调研",
+    "notFound": "未找到调研",
+    "accessType": {
+      "public": "公开",
+      "invited": "受邀"
+    },
     "completed": {
       "title": "调研完成成功！",
       "message": "感谢您与我们分享宝贵的反馈。您的回答有助于我们改进服务，为所有客人创造更好的体验。",
       "saved": "您的回答已保存，我们的团队将进行审阅",
       "nextSteps": "我们可能会根据您的回答进行后续问题调研",
       "thankYou": "感谢您成为我们会员社区的一员！"
-    },
-    "progress": {
-      "question": "第 {{current}} 题，共 {{total}} 题",
-      "percent": "完成 {{percent}}%"
     },
     "types": {
       "single_choice": "单选题",

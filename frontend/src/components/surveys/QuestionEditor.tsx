@@ -11,6 +11,7 @@ interface QuestionEditorProps {
   onRemove: () => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
   canMove: boolean;
+  disabled?: boolean;
 }
 
 const QuestionEditor: React.FC<QuestionEditorProps> = ({
@@ -19,7 +20,8 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
   onUpdate,
   onRemove,
   onReorder,
-  canMove
+  canMove,
+  disabled = false
 }) => {
   const { t } = useTranslation();
   const [isDragging, setIsDragging] = useState(false);
@@ -116,7 +118,8 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
         
         <button
           onClick={onRemove}
-          className="p-1 text-gray-400 hover:text-red-600"
+          disabled={disabled}
+          className="p-1 text-gray-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <FiTrash2 className="h-4 w-4" />
         </button>
@@ -131,12 +134,13 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
           <textarea
             value={question.text}
             onChange={(e) => onUpdate({ text: e.target.value })}
+            disabled={disabled}
             rows={2}
             className={`block w-full rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
               !question.text || question.text.trim() === '' 
                 ? 'border-red-300 focus:border-red-500 focus:ring-red-500' 
                 : 'border-gray-300'
-            }`}
+            } ${disabled ? 'bg-gray-100' : ''}`}
             placeholder={t('surveys.admin.questionEditor.questionTextPlaceholder')}
           />
           {(!question.text || question.text.trim() === '') && (
@@ -153,7 +157,8 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
             type="text"
             value={question.description || ''}
             onChange={(e) => onUpdate({ description: e.target.value })}
-            className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            disabled={disabled}
+            className={`block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${disabled ? 'bg-gray-100' : ''}`}
             placeholder={t('surveys.admin.questionEditor.descriptionPlaceholder')}
           />
         </div>
@@ -171,20 +176,23 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
                     type="text"
                     value={option.text}
                     onChange={(e) => updateOption(option.id, 'text', e.target.value)}
-                    className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    disabled={disabled}
+                    className={`flex-1 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${disabled ? 'bg-gray-100' : ''}`}
                     placeholder={t('surveys.admin.questionEditor.optionTextPlaceholder')}
                   />
                   <input
                     type="text"
                     value={option.value.toString()}
                     onChange={(e) => updateOption(option.id, 'value', e.target.value)}
-                    className="w-24 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    disabled={disabled}
+                    className={`w-24 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${disabled ? 'bg-gray-100' : ''}`}
                     placeholder={t('surveys.admin.questionEditor.optionValuePlaceholder')}
                   />
                   {question.options && question.options.length > 2 && (
                     <button
                       onClick={() => removeOption(option.id)}
-                      className="p-1 text-gray-400 hover:text-red-600"
+                      disabled={disabled}
+                      className="p-1 text-gray-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <FiX className="h-4 w-4" />
                     </button>
@@ -193,7 +201,8 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
               ))}
               <button
                 onClick={addOption}
-                className="flex items-center text-sm text-blue-600 hover:text-blue-800"
+                disabled={disabled}
+                className="flex items-center text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FiPlus className="mr-1 h-4 w-4" />
                 {t('surveys.admin.questionEditor.addOption')}
@@ -213,9 +222,10 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
                 type="number"
                 value={question.min_rating || 1}
                 onChange={(e) => onUpdate({ min_rating: parseInt(e.target.value) })}
+                disabled={disabled}
                 min="1"
                 max={question.type === 'rating_5' ? 5 : 10}
-                className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                className={`block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${disabled ? 'bg-gray-100' : ''}`}
               />
             </div>
             <div>
@@ -226,9 +236,10 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
                 type="number"
                 value={question.max_rating || (question.type === 'rating_5' ? 5 : 10)}
                 onChange={(e) => onUpdate({ max_rating: parseInt(e.target.value) })}
+                disabled={disabled}
                 min="1"
                 max={question.type === 'rating_5' ? 5 : 10}
-                className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                className={`block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${disabled ? 'bg-gray-100' : ''}`}
               />
             </div>
           </div>
@@ -241,7 +252,8 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
             type="checkbox"
             checked={question.required}
             onChange={(e) => onUpdate({ required: e.target.checked })}
-            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+            disabled={disabled}
+            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
           />
           <label htmlFor={`required-${question.id}`} className="ml-2 block text-sm text-gray-700">
             {t('surveys.admin.questionEditor.requiredQuestion')}
