@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,6 +9,7 @@ import { userService, UserProfile } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
 import { FiUser, FiPhone, FiCalendar, FiCamera, FiLink, FiCopy, FiSettings, FiGift } from 'react-icons/fi';
+import EmailDisplay from '../components/common/EmailDisplay';
 import { getUserDisplayName, getOAuthProviderName, isOAuthUser } from '../utils/userHelpers';
 import DashboardButton from '../components/navigation/DashboardButton';
 import { 
@@ -25,6 +26,7 @@ import SettingsModal from '../components/profile/SettingsModal';
 import EmojiAvatar from '../components/profile/EmojiAvatar';
 
 const profileSchema = z.object({
+  email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
   firstName: z.string().min(1, 'First name is required'),
   lastName: z.string().optional(),
   phone: z.string().optional(),
@@ -35,6 +37,7 @@ type ProfileFormData = z.infer<typeof profileSchema>;
 
 export default function ProfilePage() {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const updateUser = useAuthStore((state) => state.updateUser);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -65,6 +68,16 @@ export default function ProfilePage() {
     loadProfile();
     loadLoyaltyData();
   }, []);
+
+  // Handle URL parameters to open settings modal
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'settings') {
+      setShowSettingsModal(true);
+      // Clean up URL parameter after opening modal
+      setSearchParams({});
+    }
+  }, [searchParams, setSearchParams]);
 
   const loadProfile = async () => {
     try {
@@ -113,6 +126,7 @@ export default function ProfilePage() {
   const onSubmit = async (data: ProfileFormData) => {
     setIsSaving(true);
     try {
+      // Update profile
       const updatedProfile = await userService.updateProfile({
         firstName: data.firstName,
         lastName: data.lastName,
@@ -120,6 +134,14 @@ export default function ProfilePage() {
         dateOfBirth: data.dateOfBirth || undefined,
       });
       setProfile(updatedProfile);
+      
+      // Update email if changed
+      if (data.email && data.email !== user?.email) {
+        await userService.updateEmail(data.email);
+        updateUser({ email: data.email });
+        notify.success(t('profile.emailUpdated'));
+      }
+      
       notify.success(t('profile.profileUpdated'));
       setShowSettingsModal(false);
     } catch (error: any) {
@@ -387,7 +409,13 @@ export default function ProfilePage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                   <div>
                     <dt className="font-medium text-gray-500">{t('profile.email')}</dt>
-                    <dd className="mt-1 text-gray-900">{user?.email}</dd>
+                    <dd className="mt-1">
+                      <EmailDisplay 
+                        email={user?.email} 
+                        linkToProfile={true}
+                        showIcon={false}
+                      />
+                    </dd>
                   </div>
                   
                   {profile?.phone && (

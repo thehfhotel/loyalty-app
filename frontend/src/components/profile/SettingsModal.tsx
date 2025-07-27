@@ -3,14 +3,16 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
-import { FiX, FiUser, FiPhone, FiCalendar, FiCamera, FiSmile } from 'react-icons/fi';
+import { FiX, FiUser, FiPhone, FiCalendar, FiCamera, FiSmile, FiMail } from 'react-icons/fi';
 import { UserProfile, userService } from '../../services/userService';
+import { useAuthStore } from '../../store/authStore';
 import EmojiAvatar from './EmojiAvatar';
 import { EmojiSelectorInline } from './EmojiSelector';
 import { notify } from '../../utils/notificationManager';
 import { extractEmojiFromUrl } from '../../utils/emojiUtils';
 
 const profileSchema = z.object({
+  email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
   firstName: z.string().min(1, 'First name is required'),
   lastName: z.string().optional(),
   phone: z.string().optional(),
@@ -43,6 +45,8 @@ export default function SettingsModal({
   onProfileUpdate
 }: SettingsModalProps) {
   const { t } = useTranslation();
+  const user = useAuthStore((state) => state.user);
+  const updateUser = useAuthStore((state) => state.updateUser);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showEmojiSelector, setShowEmojiSelector] = React.useState(false);
   const [updatingEmoji, setUpdatingEmoji] = React.useState(false);
@@ -55,6 +59,7 @@ export default function SettingsModal({
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
+      email: user?.email || '',
       firstName: profile?.firstName || '',
       lastName: profile?.lastName || '',
       phone: profile?.phone || '',
@@ -64,10 +69,11 @@ export default function SettingsModal({
     }
   });
 
-  // Reset form when profile changes
+  // Reset form when profile or user changes
   React.useEffect(() => {
     if (profile) {
       reset({
+        email: user?.email || '',
         firstName: profile.firstName,
         lastName: profile.lastName,
         phone: profile.phone || '',
@@ -76,7 +82,7 @@ export default function SettingsModal({
           : '',
       });
     }
-  }, [profile, reset]);
+  }, [profile, user, reset]);
 
   const handleEmojiSelect = async (emoji: string) => {
     setUpdatingEmoji(true);
@@ -204,6 +210,31 @@ export default function SettingsModal({
 
             {/* Form */}
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              {/* Email Field */}
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                  {t('profile.email')}
+                </label>
+                <div className="mt-1 relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <FiMail className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    {...register('email')}
+                    id="email"
+                    type="email"
+                    className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    placeholder={t('profile.emailPlaceholder')}
+                  />
+                </div>
+                {errors.email && (
+                  <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+                )}
+                <p className="mt-1 text-xs text-gray-500">
+                  {t('profile.emailHelpText')}
+                </p>
+              </div>
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">

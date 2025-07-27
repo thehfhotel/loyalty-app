@@ -68,7 +68,11 @@
     "invalidEmail": "邮箱地址格式无效",
     "passwordMinLength": "密码长度至少需要8个字符",
     "sessionExpired": "为了您的安全，会话已过期。请重新登录以继续。",
-    "sessionExpiringWarning": "您的会话将在5分钟后过期。点击任意位置以保持登录状态。"
+    "sessionExpiringWarning": "您的会话将在5分钟后过期。点击任意位置以保持登录状态。",
+    "signInWithGoogle": "使用 Google 登录",
+    "signInWithLine": "使用 LINE 登录",
+    "continueWithGoogle": "通过 Google 继续",
+    "continueWithLine": "通过 LINE 继续"
   },
   "dashboard": {
     "title": "会员积分仪表板",
@@ -132,7 +136,21 @@
     "firstNamePlaceholder": "张",
     "lastNamePlaceholder": "三",
     "phonePlaceholder": "+86 138-0013-8000",
-    "accountLinkingDescription2": "关联多个账户以通过不同的登录方式访问您的数据"
+    "accountLinkingDescription2": "关联多个账户以通过不同的登录方式访问您的数据",
+    "receptionId": "接待ID",
+    "copyReceptionId": "复制接待ID",
+    "receptionIdCopied": "接待ID复制成功",
+    "receptionIdFormat": "以269开头的8位ID",
+    "personalInformation": "个人信息",
+    "editSettings": "编辑设置",
+    "editProfile": "编辑资料",
+    "email": "邮箱",
+    "addEmailAddress": "添加邮箱地址",
+    "noEmailProvided": "未提供邮箱",
+    "emailPlaceholder": "请输入您的邮箱地址",
+    "emailHelpText": "用于通知和账户恢复",
+    "emailUpdated": "邮箱地址更新成功",
+    "stayed": "入住"
   },
   "accountLinking": {
     "title": "账户关联",

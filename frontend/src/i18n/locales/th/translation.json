@@ -65,7 +65,11 @@
     "invalidEmail": "รูปแบบอีเมลไม่ถูกต้อง",
     "passwordMinLength": "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร",
     "sessionExpired": "เซสชันของคุณหมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง",
-    "sessionExpiringWarning": "เซสชันของคุณจะหมดอายุใน 5 นาทีเนื่องจากไม่มีการใช้งาน"
+    "sessionExpiringWarning": "เซสชันของคุณจะหมดอายุใน 5 นาทีเนื่องจากไม่มีการใช้งาน",
+    "signInWithGoogle": "เข้าสู่ระบบด้วย Google",
+    "signInWithLine": "เข้าสู่ระบบด้วย LINE",
+    "continueWithGoogle": "ดำเนินการต่อด้วย Google",
+    "continueWithLine": "ดำเนินการต่อด้วย LINE"
   },
   "dashboard": {
     "title": "แดชบอร์ดโปรแกรมสะสมคะแนนโรงแรม",
@@ -138,7 +142,12 @@
     "personalInformation": "ข้อมูลส่วนบุคคล",
     "editSettings": "แก้ไขการตั้งค่า",
     "editProfile": "แก้ไขโปรไฟล์",
-    "email": "อีเมล"
+    "email": "อีเมล",
+    "addEmailAddress": "เพิ่มที่อยู่อีเมล",
+    "noEmailProvided": "ไม่ได้ระบุอีเมล",
+    "emailPlaceholder": "กรอกที่อยู่อีเมลของคุณ",
+    "emailHelpText": "ใช้สำหรับการแจ้งเตือนและการกู้คืนบัญชี",
+    "emailUpdated": "อัปเดตที่อยู่อีเมลสำเร็จ"
   },
   "accountLinking": {
     "title": "การเชื่อมโยงบัญชี",

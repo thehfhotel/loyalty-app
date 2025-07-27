@@ -142,6 +142,30 @@ export class UserService {
     );
   }
 
+  async updateUserEmail(userId: string, email: string): Promise<void> {
+    // Check if email is already in use by another user
+    const [existingUser] = await query<{id: string}>(
+      'SELECT id FROM users WHERE email = $1 AND id != $2',
+      [email, userId]
+    );
+
+    if (existingUser) {
+      throw new AppError(409, 'Email is already in use by another account');
+    }
+
+    // Update user email
+    const result = await query(
+      'UPDATE users SET email = $1, email_verified = false, updated_at = NOW() WHERE id = $2',
+      [email, userId]
+    );
+    
+    if (result.rowCount === 0) {
+      throw new AppError(404, 'User not found');
+    }
+    
+    console.log(`✅ Email updated for user ${userId}: ${email} (${result.rowCount} rows affected)`);
+  }
+
   // Admin-only methods
   async getAllUsers(page = 1, limit = 10, search = ''): Promise<{ users: UserWithProfile[], total: number }> {
     const offset = (page - 1) * limit;

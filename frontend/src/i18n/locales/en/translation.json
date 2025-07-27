@@ -68,7 +68,11 @@
     "invalidEmail": "Invalid email address",
     "passwordMinLength": "Password must be at least 8 characters",
     "sessionExpired": "For your security, your session has expired. Please sign in again to continue.",
-    "sessionExpiringWarning": "Your session will expire in 5 minutes. Click anywhere to stay signed in."
+    "sessionExpiringWarning": "Your session will expire in 5 minutes. Click anywhere to stay signed in.",
+    "signInWithGoogle": "Sign in with Google",
+    "signInWithLine": "Log in with LINE",
+    "continueWithGoogle": "Continue with Google",
+    "continueWithLine": "Continue with LINE"
   },
   "dashboard": {
     "title": "Loyalty Dashboard",
@@ -141,7 +145,12 @@
     "personalInformation": "Personal Information",
     "editSettings": "Edit Settings",
     "editProfile": "Edit Profile",
-    "email": "Email"
+    "email": "Email",
+    "addEmailAddress": "Add email address",
+    "noEmailProvided": "No email provided",
+    "emailPlaceholder": "Enter your email address",
+    "emailHelpText": "Used for notifications and account recovery",
+    "emailUpdated": "Email address updated successfully"
   },
   "accountLinking": {
     "title": "Account Linking",

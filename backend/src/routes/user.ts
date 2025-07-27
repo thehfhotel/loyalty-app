@@ -135,6 +135,35 @@ router.put('/avatar/emoji', async (req, res, next) => {
   }
 });
 
+// Update email
+router.put('/email', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const { email } = req.body;
+    
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    console.log(`🔄 Updating email for user ${req.user.id} to: ${email}`);
+
+    // Update user email
+    await userService.updateUserEmail(req.user.id, email);
+
+    console.log(`✅ Email updated successfully for user ${req.user.id}`);
+
+    return res.json({
+      success: true,
+      message: 'Email updated successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Delete avatar
 router.delete('/avatar', async (req, res, next) => {
   try {

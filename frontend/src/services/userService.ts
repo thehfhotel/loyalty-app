@@ -55,6 +55,10 @@ export const userService = {
     return response.data.data.profile;
   },
 
+  async updateEmail(email: string): Promise<void> {
+    await api.put('/users/email', { email });
+  },
+
   async deleteAvatar(): Promise<void> {
     await api.delete('/users/avatar');
   },
