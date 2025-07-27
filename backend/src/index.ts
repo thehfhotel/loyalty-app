@@ -22,6 +22,7 @@ import couponRoutes from './routes/coupon';
 import surveyRoutes from './routes/survey';
 import storageRoutes from './routes/storage';
 import receptionRoutes from './routes/reception';
+import translationRoutes from './routes/translation';
 // import { query } from './config/database';
 // Import and initialize OAuth service to register strategies
 import './services/oauthService';
@@ -247,6 +248,7 @@ app.use('/api/coupons', couponRoutes);
 app.use('/api/surveys', surveyRoutes);
 app.use('/api/storage', storageRoutes);
 app.use('/api/reception', receptionRoutes);
+app.use('/api/translation', translationRoutes);
 
 // Error handling
 app.use(errorHandler);

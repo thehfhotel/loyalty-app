@@ -22,8 +22,8 @@ export class SurveyService {
     const client = await getPool().connect();
     try {
       const result = await client.query(
-        `INSERT INTO surveys (title, description, questions, target_segment, access_type, status, scheduled_start, scheduled_end, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `INSERT INTO surveys (title, description, questions, target_segment, access_type, status, scheduled_start, scheduled_end, created_by, original_language, available_languages)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING *`,
         [
           data.title,
@@ -34,7 +34,9 @@ export class SurveyService {
           data.status || 'draft',
           data.scheduled_start,
           data.scheduled_end,
-          createdBy
+          createdBy,
+          (data as any).originalLanguage || 'th',
+          JSON.stringify([(data as any).originalLanguage || 'th'])
         ]
       );
 
@@ -65,6 +67,104 @@ export class SurveyService {
         ...survey,
         questions: survey.questions,
         target_segment: survey.target_segment
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get survey with translations for a specific language
+  async getSurveyWithTranslations(id: string, language?: string): Promise<Survey | null> {
+    const client = await getPool().connect();
+    try {
+      let survey: any;
+      
+      if (language && language !== 'th') {
+        // Try to get translated version first
+        const translationResult = await client.query(
+          'SELECT s.*, st.title as translated_title, st.description as translated_description, st.questions as translated_questions FROM surveys s LEFT JOIN survey_translations st ON s.id = st.survey_id AND st.language = $2 WHERE s.id = $1',
+          [id, language]
+        );
+        
+        if (translationResult.rows.length > 0) {
+          const row = translationResult.rows[0];
+          survey = {
+            ...row,
+            title: row.translated_title || row.title,
+            description: row.translated_description || row.description,
+            questions: row.translated_questions || row.questions
+          };
+        }
+      }
+      
+      if (!survey) {
+        // Fallback to original survey
+        const result = await client.query(
+          'SELECT * FROM surveys WHERE id = $1',
+          [id]
+        );
+        
+        if (result.rows.length === 0) return null;
+        survey = result.rows[0];
+      }
+
+      return {
+        ...survey,
+        questions: survey.questions,
+        target_segment: survey.target_segment
+      };
+    } finally {
+      client.release();
+    }
+  }
+
+  // Get all translations for a survey in multilingual format
+  async getAllSurveyTranslations(id: string): Promise<any> {
+    const client = await getPool().connect();
+    try {
+      // Get the original survey
+      const surveyResult = await client.query(
+        'SELECT * FROM surveys WHERE id = $1',
+        [id]
+      );
+      
+      if (surveyResult.rows.length === 0) return null;
+      
+      const originalSurvey = surveyResult.rows[0];
+      
+      // Get all translations for this survey
+      const translationsResult = await client.query(
+        'SELECT language, title, description, questions FROM survey_translations WHERE survey_id = $1',
+        [id]
+      );
+      
+      // Build the translations object
+      const translations: any = {};
+      const availableLanguages = ['th']; // Start with original language
+      
+      // Add original survey content
+      translations.th = {
+        title: originalSurvey.title,
+        description: originalSurvey.description,
+        questions: originalSurvey.questions
+      };
+      
+      // Add translated content
+      translationsResult.rows.forEach(translation => {
+        translations[translation.language] = {
+          title: translation.title,
+          description: translation.description,
+          questions: translation.questions
+        };
+        if (!availableLanguages.includes(translation.language)) {
+          availableLanguages.push(translation.language);
+        }
+      });
+      
+      return {
+        original_language: 'th',
+        available_languages: availableLanguages,
+        translations: translations
       };
     } finally {
       client.release();

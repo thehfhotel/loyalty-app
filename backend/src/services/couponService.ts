@@ -44,8 +44,9 @@ export class CouponService {
         `INSERT INTO coupons (
           code, name, description, terms_and_conditions, type, value, currency,
           minimum_spend, maximum_discount, valid_from, valid_until, usage_limit,
-          usage_limit_per_user, tier_restrictions, customer_segment, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          usage_limit_per_user, tier_restrictions, customer_segment, created_by,
+          original_language, available_languages
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         RETURNING 
           id, code, name, description, 
           terms_and_conditions as "termsAndConditions",
@@ -72,7 +73,9 @@ export class CouponService {
           data.usageLimitPerUser || 1,
           JSON.stringify(data.tierRestrictions || []),
           JSON.stringify(data.customerSegment || {}),
-          createdBy
+          createdBy,
+          (data as any).originalLanguage || 'th',
+          JSON.stringify([(data as any).originalLanguage || 'th'])
         ]
       ).then(res => res.rows);
 
@@ -211,6 +214,44 @@ export class CouponService {
     );
 
     return coupon || null;
+  }
+
+  // Get coupon with translations for a specific language
+  async getCouponWithTranslations(couponId: string, language?: string): Promise<Coupon | null> {
+    try {
+      let coupon: any;
+      
+      if (language && language !== 'th') {
+        // Try to get translated version first
+        const [translatedCoupon] = await query<any>(
+          `SELECT c.*, ct.name as translated_name, ct.description as translated_description, 
+           ct.terms_and_conditions as translated_terms_and_conditions 
+           FROM coupons c 
+           LEFT JOIN coupon_translations ct ON c.id = ct.coupon_id AND ct.language = $2 
+           WHERE c.id = $1`,
+          [couponId, language]
+        );
+        
+        if (translatedCoupon) {
+          coupon = {
+            ...translatedCoupon,
+            name: translatedCoupon.translated_name || translatedCoupon.name,
+            description: translatedCoupon.translated_description || translatedCoupon.description,
+            termsAndConditions: translatedCoupon.translated_terms_and_conditions || translatedCoupon.terms_and_conditions
+          };
+        }
+      }
+      
+      if (!coupon) {
+        // Fallback to original coupon
+        coupon = await this.getCouponById(couponId);
+      }
+
+      return coupon;
+    } catch (error) {
+      logger.error('Error getting coupon with translations:', error);
+      return null;
+    }
   }
 
   // Get coupon by code
