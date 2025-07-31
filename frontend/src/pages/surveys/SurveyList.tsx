@@ -107,13 +107,13 @@ const SurveyList: React.FC = () => {
         <div className="flex space-x-3 mt-auto">
           <Link
             to={`/surveys/${survey.id}/take`}
-            className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors text-center"
+            className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center"
           >
             {t('surveys.takeSurvey', 'Take Survey')}
           </Link>
           <Link
             to={`/surveys/${survey.id}/details`}
-            className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors text-center"
+            className="flex-1 bg-gray-100 text-gray-700 py-2 px-4 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors flex items-center justify-center"
           >
             {t('surveys.viewDetails', 'View Details')}
           </Link>
