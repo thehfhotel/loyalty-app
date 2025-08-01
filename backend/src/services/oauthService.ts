@@ -209,7 +209,7 @@ export class OAuthService {
         );
 
         // Generate reception ID for new OAuth user
-        const membershipId = await membershipIdService.generateUniqueReceptionId();
+        const membershipId = await membershipIdService.generateUniqueMembershipId();
 
         // Create user profile with reception ID
         await query(
@@ -238,7 +238,7 @@ export class OAuthService {
         );
 
         // Generate reception ID for new user
-        const membershipId = await membershipIdService.generateUniqueReceptionId();
+        const membershipId = await membershipIdService.generateUniqueMembershipId();
 
         // Create user profile with reception ID
         await query(
@@ -430,7 +430,7 @@ export class OAuthService {
       user = newUser;
 
       // Generate reception ID for new LINE user
-      const membershipId = await membershipIdService.generateUniqueReceptionId();
+      const membershipId = await membershipIdService.generateUniqueMembershipId();
 
       // Create user profile with reception ID
       await query(

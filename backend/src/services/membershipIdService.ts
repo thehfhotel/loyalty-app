@@ -23,8 +23,6 @@ export class MembershipIdService {
       
       // Calculate which block this user belongs to
       const blockNumber = Math.floor((userCount - 1) / this.BLOCK_SIZE);
-      const blockStart = blockNumber * this.BLOCK_SIZE + 1;
-      const blockEnd = (blockNumber + 1) * this.BLOCK_SIZE;
       
       // Generate random ID within the block with auto-advance fallback
       const membershipId = await this.generateIdWithFallback(blockNumber, userCount);
