@@ -250,7 +250,7 @@ class TranslationService {
    * Check if text needs translation
    */
   needsTranslation(text: string): boolean {
-    return text && text.trim().length > 0;
+    return !!(text && text.trim().length > 0);
   }
 
   /**

@@ -376,7 +376,7 @@ const TakeSurvey: React.FC = () => {
 
             {/* Question navigation dots */}
             <div className="flex justify-center mt-6 space-x-2">
-              {displayContent?.questions?.map((question, index) => (
+              {displayContent?.questions?.map((question: any, index: number) => (
                 <button
                   key={index}
                   onClick={() => goToQuestion(index)}
