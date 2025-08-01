@@ -476,8 +476,6 @@ export class SurveyService {
         `SELECT s.* FROM surveys s
          WHERE s.status = 'active'
          AND s.access_type = 'public'
-         AND (s.scheduled_start IS NULL OR s.scheduled_start <= NOW())
-         AND (s.scheduled_end IS NULL OR s.scheduled_end >= NOW())
          ORDER BY s.created_at DESC`,
         []
       );
@@ -515,8 +513,6 @@ export class SurveyService {
          AND s.access_type = 'invite_only'
          AND si.user_id = $1
          AND si.status IN ('sent', 'viewed', 'started')
-         AND (s.scheduled_start IS NULL OR s.scheduled_start <= NOW())
-         AND (s.scheduled_end IS NULL OR s.scheduled_end >= NOW())
          ORDER BY s.created_at DESC`,
         [userId]
       );
