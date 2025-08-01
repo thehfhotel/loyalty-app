@@ -1,6 +1,7 @@
 // Multi-language support types for surveys and coupons
 
 export type SupportedLanguage = 'th' | 'en' | 'zh-CN';
+export type TranslationStatus = 'none' | 'pending' | 'completed' | 'error' | 'original';
 
 export interface MultilingualText {
   th: string;
@@ -59,6 +60,7 @@ export interface MultilingualSurvey {
   availableLanguages: SupportedLanguage[];
   lastTranslated?: string;
   translationStatus: 'none' | 'pending' | 'completed' | 'error';
+  translations?: { [language: string]: any };
 }
 
 // Extended coupon types with multi-language support
