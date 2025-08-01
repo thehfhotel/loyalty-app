@@ -23,11 +23,13 @@ interface CouponAssignmentSummary {
 
 interface CouponAssignmentsModalProps {
   coupon: Coupon;
+  isOpen: boolean;
   onClose: () => void;
 }
 
 const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
   coupon,
+  isOpen,
   onClose
 }) => {
   const { } = useTranslation();

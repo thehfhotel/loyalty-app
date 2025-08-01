@@ -30,6 +30,10 @@ export interface Coupon {
   createdBy?: string;
   createdAt: string;
   updatedAt: string;
+  
+  // Multilingual support
+  originalLanguage?: import('./multilingual').SupportedLanguage;
+  availableLanguages?: import('./multilingual').SupportedLanguage[];
 }
 
 export interface UserCoupon {
@@ -99,6 +103,8 @@ export interface CreateCouponRequest {
   usageLimitPerUser?: number;
   tierRestrictions?: string[];
   customerSegment?: Record<string, any>;
+  // Multilingual support
+  originalLanguage?: import('./multilingual').SupportedLanguage;
 }
 
 export interface UpdateCouponRequest extends Partial<CreateCouponRequest> {

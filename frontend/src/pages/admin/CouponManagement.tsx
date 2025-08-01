@@ -935,6 +935,7 @@ const CouponManagement: React.FC = () => {
       {showAssignmentsModal && selectedCoupon && (
         <CouponAssignmentsModal
           coupon={selectedCoupon}
+          isOpen={true}
           onClose={() => {
             setShowAssignmentsModal(false);
             setSelectedCoupon(null);

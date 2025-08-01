@@ -73,6 +73,25 @@ export class CouponService {
     return response.data.data;
   }
 
+  // Alias for compatibility with existing code
+  async getCoupons(
+    page: number = 1,
+    limit: number = 20,
+    filters: {
+      status?: CouponStatus;
+      type?: CouponType;
+      search?: string;
+    } = {}
+  ): Promise<CouponListResponse> {
+    return this.getAdminCoupons(page, limit, filters);
+  }
+
+  // Multilingual support method
+  async getCouponWithTranslations(couponId: string): Promise<Coupon> {
+    const response = await api.get(`/coupons/${couponId}/translations`);
+    return response.data.data;
+  }
+
   // Admin coupon management
   async getAdminCoupons(
     page: number = 1,

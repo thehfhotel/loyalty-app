@@ -178,8 +178,8 @@ const SurveyBuilderWithTranslation: React.FC = () => {
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('th');
   const [translationStatus, setTranslationStatus] = useState<Record<SupportedLanguage, TranslationStatus>>({
     th: 'original',
-    en: 'none',
-    'zh-CN': 'none'
+    en: 'pending',
+    'zh-CN': 'pending'
   });
   const [isTranslating, setIsTranslating] = useState(false);
   const [justRefreshed, setJustRefreshed] = useState(false);
@@ -317,8 +317,8 @@ const SurveyBuilderWithTranslation: React.FC = () => {
         // Update translation status
         const newStatus: Record<SupportedLanguage, TranslationStatus> = {
           th: 'original',
-          en: 'none',
-          'zh-CN': 'none'
+          en: 'pending',
+          'zh-CN': 'pending'
         };
         
         // Check if translations exist in the response
@@ -385,7 +385,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
                 allCompleted = false;
                 // Update specific job languages to error
                 const errorStatus = { ...translationStatus };
-                job.target_languages?.forEach((lang: string) => {
+                job.targetLanguages?.forEach((lang: string) => {
                   errorStatus[lang as SupportedLanguage] = 'error';
                 });
                 setTranslationStatus(errorStatus);
@@ -640,7 +640,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
       if ((status || survey.status) === 'active' && surveyId) {
         try {
           setIsTranslating(true);
-          const targetLanguages: SupportedLanguage[] = ['en', 'zh-CN'].filter(lang => lang !== selectedLanguage);
+          const targetLanguages: SupportedLanguage[] = (['en', 'zh-CN'] as SupportedLanguage[]).filter(lang => lang !== selectedLanguage);
           
           if (targetLanguages.length > 0) {
             toast('Starting automatic translation to all languages...', {
@@ -896,11 +896,12 @@ const SurveyBuilderWithTranslation: React.FC = () => {
               </div>
 
               <div className="space-y-4">
-                {displayContent.questions?.map((question, index) => (
+                {displayContent.questions?.map((question: any, index: number) => (
                   <QuestionEditor
                     key={question.id}
                     question={question}
                     index={index}
+                    questionNumber={index + 1}
                     onUpdate={(updates) => updateQuestion(question.id, updates)}
                     onRemove={() => removeQuestion(question.id)}
                     onReorder={reorderQuestions}

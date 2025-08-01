@@ -72,7 +72,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
       
       if (survey) {
         // Initialize with existing data
-        const originalLang = survey.originalLanguage || 'th';
+        const originalLang = survey.original_language || 'th';
         
         setMultilingualData({
           title: { [originalLang]: survey.title },
@@ -80,13 +80,13 @@ const SurveyBuilderMultilingual: React.FC = () => {
           questions: { [originalLang]: survey.questions }
         });
         
-        setAvailableLanguages(survey.availableLanguages || [originalLang]);
+        setAvailableLanguages(survey.available_languages || [originalLang]);
         setCurrentLanguage(originalLang);
         setAccessType(survey.access_type);
         setStatus(survey.status);
         
         // Load translations if available
-        await loadTranslations(id, survey.availableLanguages || [originalLang]);
+        await loadTranslations(id, survey.available_languages || [originalLang]);
       }
     } catch (error) {
       console.error('Failed to load survey:', error);
@@ -306,7 +306,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
         questions,
         access_type: accessType,
         status,
-        originalLanguage: currentLanguage,
+        original_language: currentLanguage,
         autoTranslate: false
       };
 
@@ -499,9 +499,12 @@ const SurveyBuilderMultilingual: React.FC = () => {
                 <QuestionEditor
                   key={question.id}
                   question={question}
+                  index={index}
                   questionNumber={index + 1}
                   onUpdate={(updates) => updateQuestion(question.id, updates)}
-                  onDelete={() => deleteQuestion(question.id)}
+                  onRemove={() => deleteQuestion(question.id)}
+                  onReorder={(fromIndex, toIndex) => {}} 
+                  canMove={false}
                 />
               ))}
               
@@ -580,6 +583,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString()
                   }}
+                  onClose={() => setShowPreview(false)}
                 />
               </div>
             </div>

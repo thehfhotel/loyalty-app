@@ -7,6 +7,7 @@ import { surveyService } from '../../services/surveyService';
 interface QuestionEditorProps {
   question: SurveyQuestion;
   index: number;
+  questionNumber: number;
   onUpdate: (updates: Partial<SurveyQuestion>) => void;
   onRemove: () => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
@@ -17,6 +18,7 @@ interface QuestionEditorProps {
 const QuestionEditor: React.FC<QuestionEditorProps> = ({
   question,
   index,
+  questionNumber,
   onUpdate,
   onRemove,
   onReorder,

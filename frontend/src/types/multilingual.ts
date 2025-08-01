@@ -1,7 +1,7 @@
 // Multi-language support types for surveys and coupons
 
 export type SupportedLanguage = 'th' | 'en' | 'zh-CN';
-export type TranslationStatus = 'none' | 'pending' | 'completed' | 'error' | 'original';
+export type TranslationStatus = 'original' | 'translated' | 'pending' | 'error';
 
 export interface MultilingualText {
   th: string;
@@ -173,7 +173,10 @@ export interface LanguageTabsProps {
   languages: SupportedLanguage[];
   currentLanguage: SupportedLanguage;
   onLanguageChange: (language: SupportedLanguage) => void;
-  translationStatus: { [key in SupportedLanguage]?: 'original' | 'translated' | 'pending' | 'error' };
+  translationStatus?: { [key in SupportedLanguage]?: TranslationStatus };
+  isLoading?: boolean;
+  className?: string;
+  'aria-label'?: string;
 }
 
 export interface TranslationButtonProps {

@@ -207,6 +207,17 @@ export class LoyaltyService {
   }
 
   /**
+   * Get users for coupon assignment (admin only) - Alias for getAllUsersLoyaltyStatus
+   */
+  async getUsers(
+    limit: number = 50,
+    offset: number = 0,
+    searchTerm?: string
+  ): Promise<AdminUsersResponse> {
+    return this.getAllUsersLoyaltyStatus(limit, offset, searchTerm);
+  }
+
+  /**
    * Award points to a user (admin only)
    */
   async awardPoints(

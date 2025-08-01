@@ -68,6 +68,12 @@ class SurveyService {
     return response.data.survey;
   }
 
+  async getSurveyWithTranslations(id: string, language?: string): Promise<Survey> {
+    const params = language ? `?language=${language}` : '';
+    const response = await surveyAxios.get(`/surveys/${id}/translations${params}`);
+    return response.data.survey;
+  }
+
   async updateSurvey(id: string, data: UpdateSurveyRequest): Promise<Survey> {
     const response = await surveyAxios.put(`/surveys/${id}`, data);
     return response.data.survey;

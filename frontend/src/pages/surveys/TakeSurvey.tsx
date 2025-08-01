@@ -21,8 +21,8 @@ const TakeSurvey: React.FC = () => {
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('th');
   const [translationStatus, setTranslationStatus] = useState<Record<SupportedLanguage, TranslationStatus>>({
     th: 'original',
-    en: 'none',
-    'zh-CN': 'none'
+    en: 'pending',
+    'zh-CN': 'pending'
   });
   const [existingResponse, setExistingResponse] = useState<SurveyResponse | null>(null);
   const [answers, setAnswers] = useState<Record<string, any>>({});
@@ -111,8 +111,8 @@ const TakeSurvey: React.FC = () => {
         // Update translation status
         const newStatus: Record<SupportedLanguage, TranslationStatus> = {
           th: 'original',
-          en: 'none',
-          'zh-CN': 'none'
+          en: 'pending',
+          'zh-CN': 'pending'
         };
         
         if (translationsData.translations && typeof translationsData.translations === 'object') {
