@@ -12,7 +12,7 @@ interface User {
   email: string;
   firstName: string;
   lastName: string;
-  receptionId?: string | null;
+  membershipId?: string | null;
 }
 
 const CouponManagement: React.FC = () => {
@@ -99,7 +99,7 @@ const CouponManagement: React.FC = () => {
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
-        receptionId: user.reception_id
+        membershipId: user.membership_id
       }));
       setUsers(transformedUsers);
     } catch (err) {
@@ -758,13 +758,13 @@ const CouponManagement: React.FC = () => {
               {/* Search Field */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Search Users (by name, email, or reception ID)
+                  {t('admin.coupons.searchUsers')}
                 </label>
                 <input
                   type="text"
                   value={userSearchTerm}
                   onChange={(e) => setUserSearchTerm(e.target.value)}
-                  placeholder="Search by name, email, or reception ID..."
+                  placeholder={t('admin.coupons.searchPlaceholder')}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -776,11 +776,11 @@ const CouponManagement: React.FC = () => {
                     const searchLower = userSearchTerm.toLowerCase();
                     const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
                     const email = (user.email || '').toLowerCase();
-                    const receptionId = (user.receptionId || '').toLowerCase();
+                    const membershipId = (user.membershipId || '').toLowerCase();
                     return (
                       fullName.includes(searchLower) ||
                       email.includes(searchLower) ||
-                      receptionId.includes(searchLower)
+                      membershipId.includes(searchLower)
                     );
                   })
                   .map((user) => (
@@ -800,15 +800,15 @@ const CouponManagement: React.FC = () => {
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
                         <div className="font-medium text-gray-900">{user.firstName || ''} {user.lastName || ''}</div>
-                        {user.receptionId && (
+                        {user.membershipId && (
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            ID: {user.receptionId}
+                            ID: {user.membershipId}
                           </span>
                         )}
                       </div>
                       <div className="text-sm text-gray-600">{user.email || 'No email'}</div>
-                      {!user.receptionId && (
-                        <div className="text-xs text-gray-400">No reception ID</div>
+                      {!user.membershipId && (
+                        <div className="text-xs text-gray-400">{t('admin.coupons.noMembershipId')}</div>
                       )}
                     </div>
                   </label>
@@ -818,16 +818,16 @@ const CouponManagement: React.FC = () => {
                   const searchLower = userSearchTerm.toLowerCase();
                   const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
                   const email = (user.email || '').toLowerCase();
-                  const receptionId = (user.receptionId || '').toLowerCase();
+                  const membershipId = (user.membershipId || '').toLowerCase();
                   return (
                     fullName.includes(searchLower) ||
                     email.includes(searchLower) ||
-                    receptionId.includes(searchLower)
+                    membershipId.includes(searchLower)
                   );
                 }).length === 0 && userSearchTerm && (
                   <div className="text-center py-4 text-gray-500">
-                    <div className="text-sm">No users found matching "{userSearchTerm}"</div>
-                    <div className="text-xs mt-1">Try searching by name, email, or reception ID</div>
+                    <div className="text-sm">{t('admin.coupons.noUsersFound', { searchTerm: userSearchTerm })}</div>
+                    <div className="text-xs mt-1">{t('admin.coupons.searchHint')}</div>
                   </div>
                 )}
               </div>

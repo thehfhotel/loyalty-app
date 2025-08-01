@@ -7,7 +7,7 @@ import { User, AuthTokens } from '../types/auth';
 import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
-import { receptionIdService } from './receptionIdService';
+import { membershipIdService } from './membershipIdService';
 
 const authService = new AuthService();
 
@@ -209,13 +209,13 @@ export class OAuthService {
         );
 
         // Generate reception ID for new OAuth user
-        const receptionId = await receptionIdService.generateUniqueReceptionId();
+        const membershipId = await membershipIdService.generateUniqueReceptionId();
 
         // Create user profile with reception ID
         await query(
-          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, reception_id) 
+          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id) 
            VALUES ($1, $2, $3, $4, $5)`,
-          [newOAuthUser.id, firstName, lastName, avatarUrl, receptionId]
+          [newOAuthUser.id, firstName, lastName, avatarUrl, membershipId]
         );
 
         
@@ -238,13 +238,13 @@ export class OAuthService {
         );
 
         // Generate reception ID for new user
-        const receptionId = await receptionIdService.generateUniqueReceptionId();
+        const membershipId = await membershipIdService.generateUniqueReceptionId();
 
         // Create user profile with reception ID
         await query(
-          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, reception_id) 
+          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id) 
            VALUES ($1, $2, $3, $4, $5)`,
-          [newUser.id, firstName, lastName, avatarUrl, receptionId]
+          [newUser.id, firstName, lastName, avatarUrl, membershipId]
         );
 
         user = newUser;
@@ -430,13 +430,13 @@ export class OAuthService {
       user = newUser;
 
       // Generate reception ID for new LINE user
-      const receptionId = await receptionIdService.generateUniqueReceptionId();
+      const membershipId = await membershipIdService.generateUniqueReceptionId();
 
       // Create user profile with reception ID
       await query(
-        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, reception_id) 
+        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id) 
          VALUES ($1, $2, $3, $4, $5)`,
-        [user.id, firstName, lastName, avatarUrl, receptionId]
+        [user.id, firstName, lastName, avatarUrl, membershipId]
       );
     }
 

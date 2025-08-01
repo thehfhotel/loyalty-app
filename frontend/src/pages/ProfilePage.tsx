@@ -441,20 +441,20 @@ export default function ProfilePage() {
                     </dd>
                   </div>
 
-                  {profile?.receptionId && (
+                  {profile?.membershipId && (
                     <div>
-                      <dt className="font-medium text-gray-500">{t('profile.receptionId')}</dt>
+                      <dt className="font-medium text-gray-500">{t('profile.membershipId')}</dt>
                       <dd className="mt-1 flex items-center space-x-2">
                         <span className="font-mono bg-gray-100 px-2 py-1 rounded text-gray-800">
-                          {profile.receptionId}
+                          {profile.membershipId}
                         </span>
                         <button
                           onClick={() => {
-                            navigator.clipboard.writeText(profile.receptionId!);
-                            notify.success(t('profile.receptionIdCopied'));
+                            navigator.clipboard.writeText(profile.membershipId!);
+                            notify.success(t('profile.membershipIdCopied'));
                           }}
                           className="text-gray-400 hover:text-gray-600 p-1"
-                          title={t('profile.copyReceptionId')}
+                          title={t('profile.copyMembershipId')}
                         >
                           <FiCopy className="h-3 w-3" />
                         </button>

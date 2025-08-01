@@ -8,7 +8,7 @@ import { User, JWTPayload, AuthTokens } from '../types/auth';
 import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
-import { receptionIdService } from './receptionIdService';
+import { membershipIdService } from './membershipIdService';
 import { getRandomEmojiAvatar, generateEmojiAvatarUrl } from '../utils/emojiUtils';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
@@ -42,8 +42,8 @@ export class AuthService {
       // Hash password
       const passwordHash = await bcrypt.hash(data.password, 10);
 
-      // Generate unique reception ID
-      const receptionId = await receptionIdService.generateUniqueReceptionId();
+      // Generate unique membership ID
+      const membershipId = await membershipIdService.generateUniqueMembershipId();
 
       // Generate random emoji avatar for new user
       const randomEmoji = getRandomEmojiAvatar();
@@ -57,14 +57,14 @@ export class AuthService {
         [data.email, passwordHash]
       ).then(res => res.rows);
 
-      // Create user profile with reception ID and emoji avatar
+      // Create user profile with membership ID and emoji avatar
       await client.query(
-        `INSERT INTO user_profiles (user_id, first_name, last_name, phone, reception_id, avatar_url) 
+        `INSERT INTO user_profiles (user_id, first_name, last_name, phone, membership_id, avatar_url) 
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [user.id, data.firstName, data.lastName, data.phone, receptionId, emojiAvatarUrl]
+        [user.id, data.firstName, data.lastName, data.phone, membershipId, emojiAvatarUrl]
       );
 
-      logger.info(`User registered with reception ID: ${receptionId}, emoji: ${randomEmoji} (email: ${data.email})`);
+      logger.info(`User registered with membership ID: ${membershipId}, emoji: ${randomEmoji} (email: ${data.email})`);
 
       // Generate tokens (pass client for transaction)
       const tokens = await this.generateTokens(user, client);
@@ -364,7 +364,7 @@ export class AuthService {
         up.phone,
         up.date_of_birth AS "dateOfBirth",
         up.avatar_url AS "avatarUrl",
-        up.reception_id AS "receptionId"
+        up.membership_id AS "membershipId"
        FROM users u
        LEFT JOIN user_profiles up ON u.id = up.user_id
        WHERE u.id = $1`,

@@ -100,7 +100,7 @@ export interface AdminUserLoyalty extends UserLoyaltyStatus {
   oauth_provider: string | null;
   oauth_provider_id: string | null;
   user_created_at: string;
-  reception_id?: string | null;
+  membership_id?: string | null;
 }
 
 export interface AdminUsersResponse {

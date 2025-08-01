@@ -8,7 +8,7 @@ export interface UserProfile {
   dateOfBirth?: string;
   preferences: Record<string, any>;
   avatarUrl?: string;
-  receptionId?: string;
+  membershipId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -24,7 +24,7 @@ export interface User {
   lastName?: string;
   phone?: string;
   avatarUrl?: string;
-  receptionId?: string;
+  membershipId?: string;
 }
 
 export const userService = {
@@ -63,8 +63,8 @@ export const userService = {
     await api.delete('/users/avatar');
   },
 
-  async getMyReceptionId(): Promise<{ receptionId: string }> {
-    const response = await api.get('/reception/my-id');
+  async getMyMembershipId(): Promise<{ membershipId: string }> {
+    const response = await api.get('/membership/my-id');
     return response.data.data;
   },
 

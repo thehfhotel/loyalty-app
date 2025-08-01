@@ -361,7 +361,7 @@ export default function LoyaltyAdminPage() {
                         {t('admin.loyalty.table.tier')}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Reception ID
+                        {t('profile.membershipId')}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         {t('admin.loyalty.table.points')}
@@ -433,7 +433,7 @@ export default function LoyaltyAdminPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-gray-900 font-mono">
-                              {user.reception_id || '-'}
+                              {user.membership_id || '-'}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -535,8 +535,8 @@ export default function LoyaltyAdminPage() {
                   </div>
                   
                   <div>
-                    <div className="text-xs text-gray-500">Reception ID</div>
-                    <div className="text-sm font-mono text-gray-900">{selectedUser.reception_id || 'Not assigned'}</div>
+                    <div className="text-xs text-gray-500">{t('profile.membershipId')}</div>
+                    <div className="text-sm font-mono text-gray-900">{selectedUser.membership_id || t('admin.coupons.notAssigned')}</div>
                   </div>
                   
                   <div>
@@ -752,7 +752,7 @@ export default function LoyaltyAdminPage() {
                           {user.oauth_provider === 'line' && user.first_name ? 'LINE User' : user.email}
                         </div>
                         <div className="text-xs text-gray-400">
-                          {user.tier_name} • {user.current_points} points • Reception ID: {user.reception_id || 'N/A'}
+                          {user.tier_name} • {user.current_points} points • {t('profile.membershipId')}: {user.membership_id || 'N/A'}
                         </div>
                       </button>
                     ))}

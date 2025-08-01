@@ -38,7 +38,7 @@ export interface User {
   phone?: string;
   dateOfBirth?: Date;
   avatarUrl?: string;
-  receptionId?: string;
+  membershipId?: string;
 }
 
 export interface UserProfile {
@@ -49,7 +49,7 @@ export interface UserProfile {
   dateOfBirth?: Date;
   preferences: Record<string, any>;
   avatarUrl?: string;
-  receptionId?: string;
+  membershipId?: string;
   createdAt: Date;
   updatedAt: Date;
 }

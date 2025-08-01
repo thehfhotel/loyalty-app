@@ -18,9 +18,9 @@ export interface ProfileUpdate {
   preferences?: Record<string, any>;
 }
 
-export interface UserReceptionInfo {
+export interface UserMembershipInfo {
   userId: string;
-  receptionId: string;
+  membershipId: string;
   firstName?: string;
   lastName?: string;
   email: string;

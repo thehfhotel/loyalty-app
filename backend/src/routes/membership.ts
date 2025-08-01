@@ -1,30 +1,30 @@
 import express from 'express';
 import { z } from 'zod';
-import { receptionIdService } from '../services/receptionIdService';
+import { membershipIdService } from '../services/membershipIdService';
 import { authenticate, authorize } from '../middleware/auth';
 import { validateRequest } from '../middleware/validateRequest';
 import { AppError } from '../middleware/errorHandler';
 
 const router = express.Router();
 
-// Schema for reception ID lookup
-const receptionIdSchema = z.object({
-  receptionId: z.string().regex(/^269\d{5}$/, 'Reception ID must be 8 digits starting with 269')
+// Schema for membership ID lookup
+const membershipIdSchema = z.object({
+  membershipId: z.string().regex(/^269\d{5}$/, 'Membership ID must be 8 digits starting with 269')
 });
 
 /**
- * GET /api/reception/lookup/:receptionId
- * Look up user information by reception ID (for reception staff)
+ * GET /api/membership/lookup/:membershipId
+ * Look up user information by membership ID (for membership staff)
  */
-router.get('/lookup/:receptionId', 
+router.get('/lookup/:membershipId', 
   authenticate,
   authorize('admin', 'super_admin'),
-  validateRequest({ params: receptionIdSchema }),
+  validateRequest({ params: membershipIdSchema }),
   async (req, res, next) => {
     try {
-      const { receptionId } = req.params;
+      const { membershipId } = req.params;
       
-      const userInfo = await receptionIdService.getUserByReceptionId(receptionId);
+      const userInfo = await membershipIdService.getUserByMembershipId(membershipId);
       
       res.json({
         success: true,
@@ -37,15 +37,15 @@ router.get('/lookup/:receptionId',
 );
 
 /**
- * GET /api/reception/stats
- * Get reception ID statistics (admin only)
+ * GET /api/membership/stats
+ * Get membership ID statistics (admin only)
  */
 router.get('/stats',
   authenticate,
   authorize('admin', 'super_admin'),
   async (req, res, next) => {
     try {
-      const stats = await receptionIdService.getReceptionIdStats();
+      const stats = await membershipIdService.getMembershipIdStats();
       
       res.json({
         success: true,
@@ -58,8 +58,8 @@ router.get('/stats',
 );
 
 /**
- * POST /api/reception/regenerate/:userId
- * Regenerate reception ID for a user (super admin only)
+ * POST /api/membership/regenerate/:userId
+ * Regenerate membership ID for a user (super admin only)
  */
 router.post('/regenerate/:userId',
   authenticate,
@@ -72,15 +72,15 @@ router.post('/regenerate/:userId',
         throw new AppError(400, 'Valid user ID is required');
       }
       
-      const newReceptionId = await receptionIdService.regenerateReceptionId(userId);
+      const newMembershipId = await membershipIdService.regenerateMembershipId(userId);
       
       res.json({
         success: true,
         data: {
           userId,
-          newReceptionId
+          newMembershipId
         },
-        message: 'Reception ID regenerated successfully'
+        message: 'Membership ID regenerated successfully'
       });
     } catch (error) {
       next(error);
@@ -89,8 +89,8 @@ router.post('/regenerate/:userId',
 );
 
 /**
- * GET /api/reception/my-id
- * Get current user's reception ID
+ * GET /api/membership/my-id
+ * Get current user's membership ID
  */
 router.get('/my-id',
   authenticate,
@@ -98,12 +98,12 @@ router.get('/my-id',
     try {
       const userId = req.user!.id;
       
-      const receptionId = await receptionIdService.getReceptionIdByUserId(userId);
+      const membershipId = await membershipIdService.getMembershipIdByUserId(userId);
       
       res.json({
         success: true,
         data: {
-          receptionId
+          membershipId
         }
       });
     } catch (error) {

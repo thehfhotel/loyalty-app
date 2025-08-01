@@ -13,7 +13,7 @@ interface UserWithProfile {
   firstName?: string;
   lastName?: string;
   phone?: string;
-  receptionId?: string;
+  membershipId?: string;
   createdAt: string;
   lastLogin?: string;
 }
@@ -29,7 +29,7 @@ export class UserService {
         date_of_birth AS "dateOfBirth",
         preferences,
         avatar_url AS "avatarUrl",
-        reception_id AS "receptionId",
+        membership_id AS "membershipId",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM user_profiles
@@ -91,7 +91,7 @@ export class UserService {
         date_of_birth AS "dateOfBirth",
         preferences,
         avatar_url AS "avatarUrl",
-        reception_id AS "receptionId",
+        membership_id AS "membershipId",
         created_at AS "createdAt",
         updated_at AS "updatedAt"`,
       values
@@ -169,7 +169,7 @@ export class UserService {
   // Admin-only methods
   async getAllUsers(page = 1, limit = 10, search = ''): Promise<{ users: UserWithProfile[], total: number }> {
     const offset = (page - 1) * limit;
-    const searchCondition = search ? `WHERE u.email ILIKE $3 OR up.first_name ILIKE $3 OR up.last_name ILIKE $3 OR up.reception_id ILIKE $3` : '';
+    const searchCondition = search ? `WHERE u.email ILIKE $3 OR up.first_name ILIKE $3 OR up.last_name ILIKE $3 OR up.membership_id ILIKE $3` : '';
     const searchParam = search ? [`%${search}%`] : [];
 
     const [totalResult] = await query<{ count: string }>(
@@ -190,7 +190,7 @@ export class UserService {
         up.first_name AS "firstName",
         up.last_name AS "lastName",
         up.phone,
-        up.reception_id AS "receptionId"
+        up.membership_id AS "membershipId"
       FROM users u
       LEFT JOIN user_profiles up ON u.id = up.user_id
       ${searchCondition}
@@ -218,7 +218,7 @@ export class UserService {
         up.last_name AS "lastName",
         up.phone,
         up.avatar_url AS "avatarUrl",
-        up.reception_id AS "receptionId"
+        up.membership_id AS "membershipId"
       FROM users u
       LEFT JOIN user_profiles up ON u.id = up.user_id
       WHERE u.id = $1`,
