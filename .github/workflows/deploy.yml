@@ -56,12 +56,23 @@ jobs:
           # Clone to temporary directory first, then move (using GITHUB_TOKEN for auth)
           git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git "$TEMP_DIR"
           
-          # Ensure target is completely clean
+          # Ensure target is completely clean before move
           sudo rm -rf "$WORKSPACE_DIR" "$REPO_NAME" 2>/dev/null || true
           
-          # Move temp to final location
+          # Verify temp directory has content
+          echo "Temp directory contents:"
+          ls -la "$TEMP_DIR"
+          
+          # Move temp to final location (ensure clean move)
+          if [ -d "$WORKSPACE_DIR" ]; then
+            sudo rm -rf "$WORKSPACE_DIR"
+          fi
           mv "$TEMP_DIR" "$WORKSPACE_DIR"
           cd "$WORKSPACE_DIR"
+          
+          # Debug: Show current directory contents
+          echo "Workspace directory contents:"
+          ls -la .
           
           # Already at correct commit from clone, but ensure we're on the right SHA
           git checkout ${{ github.sha }} 2>/dev/null || echo "Already at target commit"
