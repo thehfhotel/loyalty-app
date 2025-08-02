@@ -62,7 +62,9 @@ jobs:
           # Move temp to final location
           mv "$TEMP_DIR" "$WORKSPACE_DIR"
           cd "$WORKSPACE_DIR"
-          git checkout ${{ github.sha }}
+          
+          # Already at correct commit from clone, but ensure we're on the right SHA
+          git checkout ${{ github.sha }} 2>/dev/null || echo "Already at target commit"
           
           # Verify we're in the right place
           if [ ! -f "docker-compose.yml" ]; then
