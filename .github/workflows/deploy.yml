@@ -14,34 +14,97 @@ jobs:
     environment: production  # Use production environment for secrets
     
     steps:
-      - name: Clean workspace
+      - name: Pre-checkout workspace cleanup
         run: |
-          # Enhanced cleanup with proper permissions and error handling
-          echo "🧹 Cleaning workspace..."
+          # Critical: Clean workspace BEFORE checkout to prevent permission errors
+          echo "🧹 Pre-checkout cleanup..."
+          
+          # Get the workspace directory path
+          WORKSPACE_DIR="${GITHUB_WORKSPACE:-$PWD}"
+          echo "Workspace directory: $WORKSPACE_DIR"
           
           # Stop any running containers first
           docker compose down --remove-orphans 2>/dev/null || true
           docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
           
-          # Fix permissions on Docker-created directories
-          sudo find . -name "logs" -type d -exec chmod -R 755 {} + 2>/dev/null || true
-          sudo find . -name "node_modules" -type d -exec chmod -R 755 {} + 2>/dev/null || true
+          # Navigate to workspace parent to avoid permission issues
+          cd "$(dirname "$WORKSPACE_DIR")" 2>/dev/null || cd /home/nut/actions-runner/_work/ || cd ~
           
-          # Remove problematic directories
-          sudo rm -rf logs/ node_modules/ .next/ dist/ build/ 2>/dev/null || true
+          # Fix permissions on the entire workspace directory
+          if [ -d "$WORKSPACE_DIR" ]; then
+            echo "Fixing permissions on workspace directory..."
+            sudo find "$WORKSPACE_DIR" -type d -exec chmod 755 {} + 2>/dev/null || true
+            sudo find "$WORKSPACE_DIR" -type f -exec chmod 644 {} + 2>/dev/null || true
+            
+            # Force remove the entire workspace directory
+            echo "Removing workspace directory..."
+            sudo rm -rf "$WORKSPACE_DIR" 2>/dev/null || true
+          fi
           
-          # Clean Docker resources
+          # Clean up any orphaned Docker resources
           docker system prune -f 2>/dev/null || true
           docker volume prune -f 2>/dev/null || true
           
-          echo "✅ Workspace cleanup completed"
+          # Ensure workspace parent directory exists and is writable
+          mkdir -p "$(dirname "$WORKSPACE_DIR")" 2>/dev/null || true
+          
+          echo "✅ Pre-checkout cleanup completed"
           
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # Updated to v4 for better error handling
         with:
-          clean: true
+          clean: false  # We already cleaned, don't let checkout clean again
           fetch-depth: 0
+        continue-on-error: true  # Allow fallback if checkout fails
+        id: checkout_attempt
+        
+      - name: Fallback checkout with forced cleanup
+        if: steps.checkout_attempt.outcome == 'failure'
+        run: |
+          echo "⚠️ Primary checkout failed, attempting fallback..."
+          
+          # Nuclear option: force remove everything with sudo
+          WORKSPACE_DIR="${GITHUB_WORKSPACE:-$PWD}"
+          cd "$(dirname "$WORKSPACE_DIR")" 2>/dev/null || cd /
+          
+          echo "Force removing workspace with sudo..."
+          sudo rm -rf "$WORKSPACE_DIR" 2>/dev/null || true
+          sudo mkdir -p "$WORKSPACE_DIR" 2>/dev/null || true
+          sudo chown -R $(whoami):$(whoami) "$WORKSPACE_DIR" 2>/dev/null || true
+          
+          cd "$WORKSPACE_DIR"
+          
+          # Manual git clone as fallback
+          echo "Manual git clone as fallback..."
+          git clone https://github.com/${{ github.repository }}.git . || exit 1
+          git checkout ${{ github.sha }} || exit 1
+          
+          echo "✅ Fallback checkout completed"
 
+      - name: Post-checkout validation and cleanup
+        run: |
+          echo "🔍 Post-checkout validation..."
+          
+          # Verify checkout succeeded
+          if [ ! -f "docker-compose.yml" ]; then
+            echo "❌ Checkout failed - docker-compose.yml not found"
+            exit 1
+          fi
+          
+          # Create necessary directories with proper permissions
+          mkdir -p backups logs 2>/dev/null || true
+          sudo chmod 755 backups logs 2>/dev/null || true
+          
+          # Ensure we can write to the workspace
+          if ! touch test-write-permission 2>/dev/null; then
+            echo "❌ Cannot write to workspace directory"
+            sudo chown -R $(whoami):$(whoami) . 2>/dev/null || true
+          else
+            rm -f test-write-permission
+          fi
+          
+          echo "✅ Post-checkout validation completed"
+          
       - name: Validate and set production environment variables
         run: |
           echo "🔧 Setting up production environment..."
