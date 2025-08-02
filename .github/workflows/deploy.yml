@@ -65,8 +65,11 @@ jobs:
           
           # Move temp to final location (ensure clean move)
           if [ -d "$WORKSPACE_DIR" ]; then
-            sudo rm -rf "$WORKSPACE_DIR"
+            echo "Removing existing workspace directory..."
+            rm -rf "$WORKSPACE_DIR" 2>/dev/null || sudo rm -rf "$WORKSPACE_DIR" || true
           fi
+          
+          echo "Moving temp directory to workspace..."
           mv "$TEMP_DIR" "$WORKSPACE_DIR"
           cd "$WORKSPACE_DIR"
           
