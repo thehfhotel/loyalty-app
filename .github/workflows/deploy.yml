@@ -356,7 +356,7 @@ jobs:
           failed_services=()
           
           # Check main application
-          if ! check_service_health "Application" "http://localhost:4001/health"; then
+          if ! check_service_health "Application" "http://localhost:4001/api/health"; then
             failed_services+=("Application")
           fi
           
@@ -437,12 +437,12 @@ jobs:
           
           echo "\n🌐 Service Endpoints:"
           echo "Main Application: https://loyalty.saichon.com"
-          echo "Health Check: https://loyalty.saichon.com/health"
+          echo "Health Check: https://loyalty.saichon.com/api/health"
           echo "Admin Panel: https://loyalty.saichon.com/admin"
           
           # Test final connectivity
           echo "\n🔍 Final Connectivity Test:"
-          if curl -f -s --max-time 10 "http://localhost:4001/health" > /dev/null; then
+          if curl -f -s --max-time 10 "http://localhost:4001/api/health" > /dev/null; then
             echo "✅ Application is responding"
           else
             echo "❌ Application is not responding"
