@@ -65,18 +65,52 @@ jobs:
           
           # Nuclear option: force remove everything with sudo
           WORKSPACE_DIR="${GITHUB_WORKSPACE:-$PWD}"
-          cd "$(dirname "$WORKSPACE_DIR")" 2>/dev/null || cd /
+          PARENT_DIR="$(dirname "$WORKSPACE_DIR")"
+          
+          echo "Current directory: $PWD"
+          echo "Workspace directory: $WORKSPACE_DIR"
+          echo "Parent directory: $PARENT_DIR"
+          
+          # Navigate to parent directory
+          cd "$PARENT_DIR" 2>/dev/null || cd /home/nut/actions-runner/_work/ || cd /
           
           echo "Force removing workspace with sudo..."
           sudo rm -rf "$WORKSPACE_DIR" 2>/dev/null || true
+          
+          # Wait a moment for filesystem sync
+          sleep 2
+          
+          # Verify directory is gone
+          if [ -d "$WORKSPACE_DIR" ]; then
+            echo "Directory still exists, using nuclear approach..."
+            sudo umount "$WORKSPACE_DIR" 2>/dev/null || true
+            sudo rm -rf "$WORKSPACE_DIR"/* 2>/dev/null || true
+            sudo rm -rf "$WORKSPACE_DIR"/.[!.]* 2>/dev/null || true
+            sudo rmdir "$WORKSPACE_DIR" 2>/dev/null || true
+          fi
+          
+          # Create fresh directory
           sudo mkdir -p "$WORKSPACE_DIR" 2>/dev/null || true
           sudo chown -R $(whoami):$(whoami) "$WORKSPACE_DIR" 2>/dev/null || true
           
           cd "$WORKSPACE_DIR"
           
+          # Verify directory is empty
+          if [ "$(ls -A . 2>/dev/null)" ]; then
+            echo "Directory not empty, force cleaning..."
+            rm -rf ./* .[!.]* 2>/dev/null || true
+          fi
+          
           # Manual git clone as fallback
           echo "Manual git clone as fallback..."
-          git clone https://github.com/${{ github.repository }}.git . || exit 1
+          if ! git clone https://github.com/${{ github.repository }}.git .; then
+            echo "Git clone to current directory failed, trying temp approach..."
+            cd ..
+            rm -rf "$(basename "$WORKSPACE_DIR")" 2>/dev/null || true
+            git clone https://github.com/${{ github.repository }}.git "$(basename "$WORKSPACE_DIR")"
+            cd "$WORKSPACE_DIR"
+          fi
+          
           git checkout ${{ github.sha }} || exit 1
           
           echo "✅ Fallback checkout completed"
