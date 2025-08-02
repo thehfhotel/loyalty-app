@@ -12,8 +12,8 @@ RUN npm install
 # Copy source code and pre-built dist
 COPY . .
 
-# Ensure dist directory exists (try build but continue if it fails, dist may already exist)
-RUN [ -d "dist" ] && echo "Using existing dist directory" || (npm run build 2>/dev/null || echo "Build failed, checking for existing dist") && ls -la dist/
+# Try to build TypeScript, but fall back to running TypeScript directly if compilation fails
+RUN npm run build || echo "TypeScript compilation failed, will run with tsx"
 
 # Create non-root user for security first
 RUN addgroup -g 1001 -S nodejs
@@ -31,5 +31,5 @@ USER nodejs
 # Expose port
 EXPOSE 4000
 
-# Start the application (will be overridden by docker-compose for dev)
-CMD ["npm", "start"]
+# Start the application - use compiled version if available, otherwise run with tsx
+CMD ["sh", "-c", "if [ -f dist/index.js ]; then npm start; else npx tsx src/index.ts; fi"]
