@@ -43,7 +43,6 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       SESSION_SECRET: ${SESSION_SECRET}
-      DISABLE_FILE_LOGGING: "true"
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost:4001/api/oauth/google/callback}
@@ -63,7 +62,7 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
-      - ./logs/backend:/app/logs
+      - backend_logs:/app/logs
     # Remove direct port mapping - only accessible via nginx
     depends_on:
       postgres:
@@ -103,3 +102,4 @@ services:
 
 volumes:
   postgres_data:
+  backend_logs:

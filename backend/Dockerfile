@@ -24,6 +24,9 @@ RUN adduser -S nodejs -u 1001
 RUN mkdir -p /app/storage /app/storage/backup /app/storage/avatars /app/logs \
     && chown -R nodejs:nodejs /app
 
+# Set proper permissions for logs directory specifically
+RUN chmod 755 /app/logs && chown nodejs:nodejs /app/logs
+
 USER nodejs
 
 # Expose port

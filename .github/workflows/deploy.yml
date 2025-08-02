@@ -11,6 +11,7 @@ env:
 jobs:
   deploy:
     runs-on: self-hosted  # Will run on your server
+    environment: production  # Use production environment for secrets
     
     steps:
       - name: Checkout code
@@ -26,10 +27,24 @@ jobs:
             cp .env.production .env
           fi
           
-          # Add secrets from GitHub (optional)
+          # Add secrets from GitHub production environment
           echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
+          echo "JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}" >> .env
+          echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> .env
           echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
           echo "REDIS_URL=${{ secrets.REDIS_URL }}" >> .env
+          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> .env
+          echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" >> .env
+          echo "FACEBOOK_APP_ID=${{ secrets.FACEBOOK_APP_ID }}" >> .env
+          echo "FACEBOOK_APP_SECRET=${{ secrets.FACEBOOK_APP_SECRET }}" >> .env
+          echo "LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}" >> .env
+          echo "LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}" >> .env
+          echo "AZURE_TRANSLATION_TEXT_URI=${{ secrets.AZURE_TRANSLATION_TEXT_URI }}" >> .env
+          echo "AZURE_TRANSLATION_KEY_1=${{ secrets.AZURE_TRANSLATION_KEY_1 }}" >> .env
+          echo "AZURE_TRANSLATION_KEY_2=${{ secrets.AZURE_TRANSLATION_KEY_2 }}" >> .env
+          echo "AZURE_TRANSLATION_REGION=${{ secrets.AZURE_TRANSLATION_REGION }}" >> .env
+          echo "LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}" >> .env
+          echo "LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}" >> .env
 
       - name: Stop existing containers
         run: |
