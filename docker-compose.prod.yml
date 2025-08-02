@@ -14,7 +14,7 @@ services:
       # Remove development volume mounts for production
       - backend_logs:/app/logs
       - backend_storage:/app/storage
-    command: npm start  # Use production start command
+    command: sh -c "if [ -f dist/index.js ]; then npm start; else npx tsx src/index.ts; fi"  # Use compiled version if available, otherwise run with tsx
     restart: unless-stopped
 
   frontend:
