@@ -26,43 +26,46 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Create environment file
+      - name: Set production environment variables
         run: |
-          # Copy production environment file
-          if [ -f .env.production ]; then
-            cp .env.production .env
-          fi
-          
-          # Add secrets from GitHub production environment
-          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
-          echo "JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}" >> .env
-          echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> .env
-          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> .env
-          echo "REDIS_URL=${{ secrets.REDIS_URL }}" >> .env
-          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> .env
-          echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" >> .env
-          echo "FACEBOOK_APP_ID=${{ secrets.FACEBOOK_APP_ID }}" >> .env
-          echo "FACEBOOK_APP_SECRET=${{ secrets.FACEBOOK_APP_SECRET }}" >> .env
-          echo "LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}" >> .env
-          echo "LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}" >> .env
-          echo "AZURE_TRANSLATION_TEXT_URI=${{ secrets.AZURE_TRANSLATION_TEXT_URI }}" >> .env
-          echo "AZURE_TRANSLATION_KEY_1=${{ secrets.AZURE_TRANSLATION_KEY_1 }}" >> .env
-          echo "AZURE_TRANSLATION_KEY_2=${{ secrets.AZURE_TRANSLATION_KEY_2 }}" >> .env
-          echo "AZURE_TRANSLATION_REGION=${{ secrets.AZURE_TRANSLATION_REGION }}" >> .env
-          echo "LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}" >> .env
-          echo "LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}" >> .env
+          # Export all secrets as environment variables for Docker Compose
+          # This eliminates the need for .env files in production
+          echo "NODE_ENV=production" >> $GITHUB_ENV
+          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> $GITHUB_ENV
+          echo "JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}" >> $GITHUB_ENV
+          echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> $GITHUB_ENV
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+          echo "REDIS_URL=${{ secrets.REDIS_URL }}" >> $GITHUB_ENV
+          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> $GITHUB_ENV
+          echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" >> $GITHUB_ENV
+          echo "GOOGLE_CALLBACK_URL=${{ secrets.GOOGLE_CALLBACK_URL }}" >> $GITHUB_ENV
+          echo "FACEBOOK_APP_ID=${{ secrets.FACEBOOK_APP_ID }}" >> $GITHUB_ENV
+          echo "FACEBOOK_APP_SECRET=${{ secrets.FACEBOOK_APP_SECRET }}" >> $GITHUB_ENV
+          echo "FACEBOOK_CALLBACK_URL=${{ secrets.FACEBOOK_CALLBACK_URL }}" >> $GITHUB_ENV
+          echo "LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}" >> $GITHUB_ENV
+          echo "LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}" >> $GITHUB_ENV
+          echo "LINE_CALLBACK_URL=${{ secrets.LINE_CALLBACK_URL }}" >> $GITHUB_ENV
+          echo "AZURE_TRANSLATION_TEXT_URI=${{ secrets.AZURE_TRANSLATION_TEXT_URI }}" >> $GITHUB_ENV
+          echo "AZURE_TRANSLATION_KEY_1=${{ secrets.AZURE_TRANSLATION_KEY_1 }}" >> $GITHUB_ENV
+          echo "AZURE_TRANSLATION_KEY_2=${{ secrets.AZURE_TRANSLATION_KEY_2 }}" >> $GITHUB_ENV
+          echo "AZURE_TRANSLATION_REGION=${{ secrets.AZURE_TRANSLATION_REGION }}" >> $GITHUB_ENV
+          echo "LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}" >> $GITHUB_ENV
+          echo "LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}" >> $GITHUB_ENV
+          echo "FRONTEND_URL=${{ secrets.FRONTEND_URL }}" >> $GITHUB_ENV
+          echo "BACKEND_URL=${{ secrets.BACKEND_URL }}" >> $GITHUB_ENV
+          echo "VITE_API_URL=${{ secrets.VITE_API_URL }}" >> $GITHUB_ENV
 
       - name: Stop existing containers
         run: |
           echo "🛑 Stopping existing containers..."
-          docker compose down || true
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml down || true
           sleep 5
 
       - name: Backup database
         run: |
           echo "💾 Backing up database..."
           timestamp=$(date +%Y%m%d_%H%M%S)
-          docker compose exec -T postgres pg_dump -U loyalty -d loyalty_db > backups/backup_${timestamp}.sql 2>/dev/null || true
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres pg_dump -U loyalty -d loyalty_db > backups/backup_${timestamp}.sql 2>/dev/null || true
           
           # Keep only last 5 backups
           ls -t backups/backup_*.sql 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
@@ -70,13 +73,13 @@ jobs:
       - name: Pull and build containers
         run: |
           echo "🔨 Building containers..."
-          docker compose pull
-          docker compose build --no-cache
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache
 
       - name: Start new containers
         run: |
           echo "🚀 Starting containers..."
-          docker compose up -d
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
           
           # Wait for containers to be healthy
           sleep 15
@@ -86,16 +89,16 @@ jobs:
           echo "📊 Running database migrations..."
           
           # Check if consolidated schema needs to be applied
-          if ! docker compose exec -T postgres psql -U loyalty -d loyalty_db -c "SELECT 1 FROM users LIMIT 1" &>/dev/null; then
+          if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres psql -U loyalty -d loyalty_db -c "SELECT 1 FROM users LIMIT 1" &>/dev/null; then
             echo "Applying consolidated schema..."
-            docker compose exec -T postgres psql -U loyalty -d loyalty_db -f /docker-entrypoint-initdb.d/consolidated_schema.sql
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres psql -U loyalty -d loyalty_db -f /docker-entrypoint-initdb.d/consolidated_schema.sql
           fi
           
           # Apply any new migrations
           for migration in database/migrations/*.sql; do
             if [ -f "$migration" ]; then
               echo "Applying migration: $(basename $migration)"
-              docker compose exec -T postgres psql -U loyalty -d loyalty_db -f "/docker-entrypoint-initdb.d/migrations/$(basename $migration)" 2>/dev/null || true
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres psql -U loyalty -d loyalty_db -f "/docker-entrypoint-initdb.d/migrations/$(basename $migration)" 2>/dev/null || true
             fi
           done
 
@@ -118,7 +121,7 @@ jobs:
           
           if [ $attempt -eq $max_attempts ]; then
             echo "❌ Backend health check failed!"
-            docker compose logs backend
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs backend
             exit 1
           fi
 
@@ -138,4 +141,4 @@ jobs:
           echo "Commit: ${{ github.sha }}"
           echo "Time: $(date)"
           echo "=============================="
-          docker compose ps
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml ps

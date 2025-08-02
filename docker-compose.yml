@@ -63,7 +63,6 @@ services:
       - ./backend:/app
       - /app/node_modules
       - backend_logs:/app/logs
-    # Remove direct port mapping - only accessible via nginx
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,8 +81,7 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-      - ./logs/frontend:/app/logs
-    # Remove direct port mapping - only accessible via nginx
+      - frontend_logs:/app/logs
     depends_on:
       - backend
     command: npm run dev
@@ -95,7 +93,7 @@ services:
       - "4001:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./logs/nginx:/var/log/nginx
+      - nginx_logs:/var/log/nginx
     depends_on:
       - frontend
       - backend
@@ -103,3 +101,6 @@ services:
 volumes:
   postgres_data:
   backend_logs:
+  backend_storage:
+  frontend_logs:
+  nginx_logs:

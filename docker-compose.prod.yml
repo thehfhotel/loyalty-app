@@ -1,33 +1,50 @@
-# Production Docker Compose Override
-# Use with: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Production docker-compose override
+# Used for production deployments via GitHub Actions
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# version: '3.8'  # Version is inherited from docker-compose.yml
 
 services:
   backend:
     environment:
       NODE_ENV: production
-    volumes: []  # Remove development volumes for production
-    command: npm run dev  # Temporary: Use dev command due to TypeScript errors
+      LOG_LEVEL: info
+      # All secrets will be injected via environment variables by GitHub Actions
+    volumes:
+      # Remove development volume mounts for production
+      - backend_logs:/app/logs
+      - backend_storage:/app/storage
+    command: npm start  # Use production start command
     restart: unless-stopped
 
   frontend:
     environment:
       NODE_ENV: production
-    volumes: []  # Remove development volumes for production
-    command: sh -c "npm run build && npm run preview -- --host 0.0.0.0"
+    volumes:
+      # Remove development volume mounts for production
+      - frontend_logs:/app/logs
+    command: npm run preview
     restart: unless-stopped
 
   postgres:
     restart: unless-stopped
-    # Remove port mapping for production security (only accessible from containers)
+    # Remove port exposure for production security
     ports: []
 
   redis:
     restart: unless-stopped
-    # Remove port mapping for production security (only accessible from containers)
+    # Remove port exposure for production security  
     ports: []
 
   nginx:
     restart: unless-stopped
-    # Production nginx uses same port 4001 for Cloudflare Zero Trust tunnel
-    ports:
-      - "4001:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_logs:/var/log/nginx
+
+# Add production-specific volumes
+volumes:
+  backend_logs:
+  backend_storage:
+  frontend_logs:
+  nginx_logs:
