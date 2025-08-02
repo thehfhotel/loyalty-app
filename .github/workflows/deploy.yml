@@ -14,108 +14,52 @@ jobs:
     environment: production  # Use production environment for secrets
     
     steps:
-      - name: Pre-checkout workspace cleanup
+      - name: Manual checkout with workspace cleanup
         run: |
-          # Critical: Clean workspace BEFORE checkout to prevent permission errors
-          echo "🧹 Pre-checkout cleanup..."
+          echo "🔧 Manual checkout with comprehensive cleanup..."
           
-          # Get the workspace directory path
+          # Get workspace path
           WORKSPACE_DIR="${GITHUB_WORKSPACE:-$PWD}"
-          echo "Workspace directory: $WORKSPACE_DIR"
+          PARENT_DIR="$(dirname "$WORKSPACE_DIR")"
+          REPO_NAME="$(basename "$WORKSPACE_DIR")"
           
-          # Stop any running containers first
+          echo "Workspace: $WORKSPACE_DIR"
+          echo "Parent: $PARENT_DIR"
+          echo "Repository: ${{ github.repository }}"
+          echo "Commit: ${{ github.sha }}"
+          
+          # Stop containers first
+          echo "Stopping containers..."
           docker compose down --remove-orphans 2>/dev/null || true
           docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
           
-          # Navigate to workspace parent to avoid permission issues
-          cd "$(dirname "$WORKSPACE_DIR")" 2>/dev/null || cd /home/nut/actions-runner/_work/ || cd ~
-          
-          # Fix permissions on the entire workspace directory
-          if [ -d "$WORKSPACE_DIR" ]; then
-            echo "Fixing permissions on workspace directory..."
-            sudo find "$WORKSPACE_DIR" -type d -exec chmod 755 {} + 2>/dev/null || true
-            sudo find "$WORKSPACE_DIR" -type f -exec chmod 644 {} + 2>/dev/null || true
-            
-            # Force remove the entire workspace directory
-            echo "Removing workspace directory..."
-            sudo rm -rf "$WORKSPACE_DIR" 2>/dev/null || true
-          fi
-          
-          # Clean up any orphaned Docker resources
-          docker system prune -f 2>/dev/null || true
-          docker volume prune -f 2>/dev/null || true
-          
-          # Ensure workspace parent directory exists and is writable
-          mkdir -p "$(dirname "$WORKSPACE_DIR")" 2>/dev/null || true
-          
-          echo "✅ Pre-checkout cleanup completed"
-          
-      - name: Checkout code
-        uses: actions/checkout@v4  # Updated to v4 for better error handling
-        with:
-          clean: false  # We already cleaned, don't let checkout clean again
-          fetch-depth: 0
-        continue-on-error: true  # Allow fallback if checkout fails
-        id: checkout_attempt
-        
-      - name: Fallback checkout with forced cleanup
-        if: steps.checkout_attempt.outcome == 'failure'
-        run: |
-          echo "⚠️ Primary checkout failed, attempting fallback..."
-          
-          # Nuclear option: force remove everything with sudo
-          WORKSPACE_DIR="${GITHUB_WORKSPACE:-$PWD}"
-          PARENT_DIR="$(dirname "$WORKSPACE_DIR")"
-          
-          echo "Current directory: $PWD"
-          echo "Workspace directory: $WORKSPACE_DIR"
-          echo "Parent directory: $PARENT_DIR"
-          
-          # Navigate to parent directory
+          # Navigate to parent and completely clean workspace
           cd "$PARENT_DIR" 2>/dev/null || cd /home/nut/actions-runner/_work/ || cd /
           
-          echo "Force removing workspace with sudo..."
+          echo "Nuclear cleanup of workspace..."
           sudo rm -rf "$WORKSPACE_DIR" 2>/dev/null || true
-          
-          # Wait a moment for filesystem sync
-          sleep 2
-          
-          # Verify directory is gone
-          if [ -d "$WORKSPACE_DIR" ]; then
-            echo "Directory still exists, using nuclear approach..."
-            sudo umount "$WORKSPACE_DIR" 2>/dev/null || true
-            sudo rm -rf "$WORKSPACE_DIR"/* 2>/dev/null || true
-            sudo rm -rf "$WORKSPACE_DIR"/.[!.]* 2>/dev/null || true
-            sudo rmdir "$WORKSPACE_DIR" 2>/dev/null || true
-          fi
-          
-          # Create fresh directory
           sudo mkdir -p "$WORKSPACE_DIR" 2>/dev/null || true
           sudo chown -R $(whoami):$(whoami) "$WORKSPACE_DIR" 2>/dev/null || true
           
-          cd "$WORKSPACE_DIR"
-          
-          # Verify directory is empty
-          if [ "$(ls -A . 2>/dev/null)" ]; then
-            echo "Directory not empty, force cleaning..."
-            rm -rf ./* .[!.]* 2>/dev/null || true
+          # Fresh git clone to new directory
+          echo "Fresh git clone..."
+          if [ -d "$REPO_NAME" ]; then
+            sudo rm -rf "$REPO_NAME" 2>/dev/null || true
           fi
           
-          # Manual git clone as fallback
-          echo "Manual git clone as fallback..."
-          if ! git clone https://github.com/${{ github.repository }}.git .; then
-            echo "Git clone to current directory failed, trying temp approach..."
-            cd ..
-            rm -rf "$(basename "$WORKSPACE_DIR")" 2>/dev/null || true
-            git clone https://github.com/${{ github.repository }}.git "$(basename "$WORKSPACE_DIR")"
-            cd "$WORKSPACE_DIR"
+          git clone https://github.com/${{ github.repository }}.git "$REPO_NAME"
+          cd "$REPO_NAME"
+          git checkout ${{ github.sha }}
+          
+          # Verify we're in the right place
+          if [ ! -f "docker-compose.yml" ]; then
+            echo "❌ Checkout verification failed - docker-compose.yml not found"
+            exit 1
           fi
           
-          git checkout ${{ github.sha }} || exit 1
-          
-          echo "✅ Fallback checkout completed"
+          echo "✅ Manual checkout completed successfully"
 
-      - name: Post-checkout validation and cleanup
+      - name: Workspace validation and setup
         run: |
           echo "🔍 Post-checkout validation..."
           
