@@ -1,5 +1,7 @@
 import winston from 'winston';
 import 'winston-daily-rotate-file';
+import fs from 'fs';
+import path from 'path';
 
 const logFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
@@ -20,6 +22,16 @@ const consoleFormat = winston.format.combine(
   })
 );
 
+// Ensure logs directory exists
+const logsDir = path.join(process.cwd(), 'logs');
+if (!fs.existsSync(logsDir)) {
+  try {
+    fs.mkdirSync(logsDir, { recursive: true });
+  } catch (error) {
+    console.warn('Could not create logs directory:', error);
+  }
+}
+
 // Create transports array
 const transports: winston.transport[] = [
   new winston.transports.Console({
@@ -27,41 +39,48 @@ const transports: winston.transport[] = [
   }),
 ];
 
-// Always write to file logs (for both development and production)
-// Error logs
-transports.push(
-  new winston.transports.DailyRotateFile({
-    filename: 'logs/error-%DATE%.log',
-    datePattern: 'YYYY-MM-DD',
-    level: 'error',
-    maxSize: '20m',
-    maxFiles: '14d',
-    format: logFormat,
-  })
-);
+// File logging - only add if enabled and we can create the logs directory
+const fileLoggingEnabled = process.env.DISABLE_FILE_LOGGING !== 'true';
+try {
+  if (fileLoggingEnabled && (fs.existsSync(logsDir) || fs.mkdirSync(logsDir, { recursive: true }))) {
+    // Error logs
+    transports.push(
+      new winston.transports.DailyRotateFile({
+        filename: path.join(logsDir, 'error-%DATE%.log'),
+        datePattern: 'YYYY-MM-DD',
+        level: 'error',
+        maxSize: '20m',
+        maxFiles: '14d',
+        format: logFormat,
+      })
+    );
 
-// Combined logs (all levels)
-transports.push(
-  new winston.transports.DailyRotateFile({
-    filename: 'logs/combined-%DATE%.log',
-    datePattern: 'YYYY-MM-DD',
-    maxSize: '20m',
-    maxFiles: '7d',
-    format: logFormat,
-  })
-);
+    // Combined logs (all levels)
+    transports.push(
+      new winston.transports.DailyRotateFile({
+        filename: path.join(logsDir, 'combined-%DATE%.log'),
+        datePattern: 'YYYY-MM-DD',
+        maxSize: '20m',
+        maxFiles: '7d',
+        format: logFormat,
+      })
+    );
 
-// Debug logs (only debug level)
-transports.push(
-  new winston.transports.DailyRotateFile({
-    filename: 'logs/debug-%DATE%.log',
-    datePattern: 'YYYY-MM-DD',
-    level: 'debug',
-    maxSize: '20m',
-    maxFiles: '3d',
-    format: logFormat,
-  })
-);
+    // Debug logs (only debug level)
+    transports.push(
+      new winston.transports.DailyRotateFile({
+        filename: path.join(logsDir, 'debug-%DATE%.log'),
+        datePattern: 'YYYY-MM-DD',
+        level: 'debug',
+        maxSize: '20m',
+        maxFiles: '3d',
+        format: logFormat,
+      })
+    );
+  }
+} catch (error) {
+  console.warn('File logging disabled - could not create logs directory:', error);
+}
 
 export const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
