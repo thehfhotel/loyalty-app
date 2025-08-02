@@ -349,7 +349,8 @@ const SurveyBuilderWithTranslation: React.FC = () => {
       // Get recent translation jobs for this survey
       const jobs = await translationService.getTranslationJobs();
       const surveyJobs = jobs.filter((job: any) => 
-        job.survey_id === id && 
+        job.entityId === id && 
+        job.entityType === 'survey' &&
         (job.status === 'pending' || job.status === 'processing')
       );
       

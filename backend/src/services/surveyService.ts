@@ -22,8 +22,8 @@ export class SurveyService {
     const client = await getPool().connect();
     try {
       const result = await client.query(
-        `INSERT INTO surveys (title, description, questions, target_segment, access_type, status, scheduled_start, scheduled_end, created_by, original_language, available_languages)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `INSERT INTO surveys (title, description, questions, target_segment, access_type, status, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *`,
         [
           data.title,
@@ -32,11 +32,7 @@ export class SurveyService {
           JSON.stringify(data.target_segment || {}),
           data.access_type,
           data.status || 'draft',
-          data.scheduled_start,
-          data.scheduled_end,
-          createdBy,
-          (data as any).originalLanguage || 'th',
-          JSON.stringify([(data as any).originalLanguage || 'th'])
+          createdBy
         ]
       );
 
@@ -268,16 +264,7 @@ export class SurveyService {
         values.push(data.access_type);
         paramIndex++;
       }
-      if (data.scheduled_start !== undefined) {
-        updateFields.push(`scheduled_start = $${paramIndex}`);
-        values.push(data.scheduled_start);
-        paramIndex++;
-      }
-      if (data.scheduled_end !== undefined) {
-        updateFields.push(`scheduled_end = $${paramIndex}`);
-        values.push(data.scheduled_end);
-        paramIndex++;
-      }
+      // Removed scheduled_start and scheduled_end - columns don't exist
 
       if (updateFields.length === 0) {
         return await this.getSurveyById(id);
@@ -556,13 +543,7 @@ export class SurveyService {
       // Check survey status
       if (survey.status !== 'active') return false;
 
-      // Check if survey is within scheduled timeframe
-      if (survey.scheduled_start && new Date(survey.scheduled_start) > new Date()) {
-        return false;
-      }
-      if (survey.scheduled_end && new Date(survey.scheduled_end) < new Date()) {
-        return false;
-      }
+      // Removed scheduled_start and scheduled_end checks - columns don't exist
 
       // Allow multiple survey submissions - removed completion check
 

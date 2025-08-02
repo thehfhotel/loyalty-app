@@ -142,7 +142,7 @@ class TranslationService {
   async getTranslationJobs(): Promise<TranslationJob[]> {
     try {
       const response = await api.get('/translation/jobs');
-      return response.data;
+      return response.data.jobs || [];
     } catch (error) {
       console.error('Translation jobs error:', error);
       throw error;
