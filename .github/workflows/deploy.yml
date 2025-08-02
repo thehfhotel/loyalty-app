@@ -53,8 +53,8 @@ jobs:
           TIMESTAMP=$(date +%s)
           TEMP_DIR="temp-${TIMESTAMP}"
           
-          # Clone to temporary directory first, then move
-          git clone https://github.com/${{ github.repository }}.git "$TEMP_DIR"
+          # Clone to temporary directory first, then move (using GITHUB_TOKEN for auth)
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git "$TEMP_DIR"
           
           # Ensure target is completely clean
           sudo rm -rf "$WORKSPACE_DIR" "$REPO_NAME" 2>/dev/null || true
