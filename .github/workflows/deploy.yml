@@ -16,9 +16,25 @@ jobs:
     steps:
       - name: Clean workspace
         run: |
-          # Clean any leftover files with permission issues
-          find . -name "logs" -type d -exec chmod -R 755 {} + 2>/dev/null || true
-          rm -rf logs/ 2>/dev/null || true
+          # Enhanced cleanup with proper permissions and error handling
+          echo "🧹 Cleaning workspace..."
+          
+          # Stop any running containers first
+          docker compose down --remove-orphans 2>/dev/null || true
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+          
+          # Fix permissions on Docker-created directories
+          sudo find . -name "logs" -type d -exec chmod -R 755 {} + 2>/dev/null || true
+          sudo find . -name "node_modules" -type d -exec chmod -R 755 {} + 2>/dev/null || true
+          
+          # Remove problematic directories
+          sudo rm -rf logs/ node_modules/ .next/ dist/ build/ 2>/dev/null || true
+          
+          # Clean Docker resources
+          docker system prune -f 2>/dev/null || true
+          docker volume prune -f 2>/dev/null || true
+          
+          echo "✅ Workspace cleanup completed"
           
       - name: Checkout code
         uses: actions/checkout@v3
@@ -26,63 +42,196 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Set production environment variables
+      - name: Validate and set production environment variables
         run: |
-          # Export all secrets as environment variables for Docker Compose
-          # This eliminates the need for .env files in production
+          echo "🔧 Setting up production environment..."
+          
+          # Validate critical secrets exist
+          missing_secrets=()
+          
+          if [ -z "${{ secrets.JWT_SECRET }}" ]; then missing_secrets+=("JWT_SECRET"); fi
+          if [ -z "${{ secrets.GOOGLE_CLIENT_ID }}" ]; then missing_secrets+=("GOOGLE_CLIENT_ID"); fi
+          if [ -z "${{ secrets.FRONTEND_URL }}" ]; then missing_secrets+=("FRONTEND_URL"); fi
+          if [ -z "${{ secrets.BACKEND_URL }}" ]; then missing_secrets+=("BACKEND_URL"); fi
+          if [ -z "${{ secrets.VITE_API_URL }}" ]; then missing_secrets+=("VITE_API_URL"); fi
+          
+          if [ ${#missing_secrets[@]} -ne 0 ]; then
+            echo "❌ Missing critical secrets: ${missing_secrets[*]}"
+            echo "Please configure these secrets in GitHub repository settings > Environments > production"
+            exit 1
+          fi
+          
+          # Export all environment variables
           echo "NODE_ENV=production" >> $GITHUB_ENV
+          echo "LOG_LEVEL=info" >> $GITHUB_ENV
+          echo "CORS_ORIGINS=https://loyalty.saichon.com" >> $GITHUB_ENV
+          
+          # Security secrets
           echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> $GITHUB_ENV
           echo "JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}" >> $GITHUB_ENV
           echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> $GITHUB_ENV
+          
+          # Database
           echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
           echo "REDIS_URL=${{ secrets.REDIS_URL }}" >> $GITHUB_ENV
+          
+          # URLs (fallback to variables if secrets don't exist yet)
+          echo "FRONTEND_URL=${{ secrets.FRONTEND_URL || vars.FRONTEND_URL }}" >> $GITHUB_ENV
+          echo "BACKEND_URL=${{ secrets.BACKEND_URL || vars.BACKEND_URL }}" >> $GITHUB_ENV
+          echo "VITE_API_URL=${{ secrets.VITE_API_URL || vars.BACKEND_URL }}" >> $GITHUB_ENV
+          
+          # OAuth
           echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> $GITHUB_ENV
           echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" >> $GITHUB_ENV
-          echo "GOOGLE_CALLBACK_URL=${{ secrets.GOOGLE_CALLBACK_URL }}" >> $GITHUB_ENV
+          echo "GOOGLE_CALLBACK_URL=${{ secrets.GOOGLE_CALLBACK_URL || vars.GOOGLE_CALLBACK_URL }}" >> $GITHUB_ENV
           echo "FACEBOOK_APP_ID=${{ secrets.FACEBOOK_APP_ID }}" >> $GITHUB_ENV
           echo "FACEBOOK_APP_SECRET=${{ secrets.FACEBOOK_APP_SECRET }}" >> $GITHUB_ENV
           echo "FACEBOOK_CALLBACK_URL=${{ secrets.FACEBOOK_CALLBACK_URL }}" >> $GITHUB_ENV
           echo "LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}" >> $GITHUB_ENV
           echo "LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}" >> $GITHUB_ENV
-          echo "LINE_CALLBACK_URL=${{ secrets.LINE_CALLBACK_URL }}" >> $GITHUB_ENV
+          echo "LINE_CALLBACK_URL=${{ secrets.LINE_CALLBACK_URL || vars.LINE_CALLBACK_URL }}" >> $GITHUB_ENV
+          
+          # Azure Translation
           echo "AZURE_TRANSLATION_TEXT_URI=${{ secrets.AZURE_TRANSLATION_TEXT_URI }}" >> $GITHUB_ENV
           echo "AZURE_TRANSLATION_KEY_1=${{ secrets.AZURE_TRANSLATION_KEY_1 }}" >> $GITHUB_ENV
           echo "AZURE_TRANSLATION_KEY_2=${{ secrets.AZURE_TRANSLATION_KEY_2 }}" >> $GITHUB_ENV
           echo "AZURE_TRANSLATION_REGION=${{ secrets.AZURE_TRANSLATION_REGION }}" >> $GITHUB_ENV
+          
+          # Admin credentials
           echo "LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}" >> $GITHUB_ENV
           echo "LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}" >> $GITHUB_ENV
-          echo "FRONTEND_URL=${{ secrets.FRONTEND_URL }}" >> $GITHUB_ENV
-          echo "BACKEND_URL=${{ secrets.BACKEND_URL }}" >> $GITHUB_ENV
-          echo "VITE_API_URL=${{ secrets.VITE_API_URL }}" >> $GITHUB_ENV
-
-      - name: Stop existing containers
-        run: |
-          echo "🛑 Stopping existing containers..."
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml down || true
-          sleep 5
-
-      - name: Backup database
-        run: |
-          echo "💾 Backing up database..."
-          timestamp=$(date +%Y%m%d_%H%M%S)
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres pg_dump -U loyalty -d loyalty_db > backups/backup_${timestamp}.sql 2>/dev/null || true
           
-          # Keep only last 5 backups
-          ls -t backups/backup_*.sql 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
+          echo "✅ Environment variables configured"
 
-      - name: Pull and build containers
+      - name: Stop existing containers with graceful shutdown
+        run: |
+          echo "🛑 Gracefully stopping existing containers..."
+          
+          # Check if containers are running
+          if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q | head -1 | grep -q .; then
+            echo "Containers found, initiating shutdown..."
+            
+            # Graceful shutdown with timeout
+            timeout 30s docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 10 || {
+              echo "⚠️ Graceful shutdown timed out, forcing stop..."
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 5 || true
+            }
+          else
+            echo "No containers running"
+          fi
+          
+          # Clean up any orphaned containers
+          docker compose down --remove-orphans 2>/dev/null || true
+          
+          sleep 3
+          echo "✅ Container shutdown completed"
+
+      - name: Create database backup with validation
+        run: |
+          echo "💾 Creating database backup..."
+          
+          # Create backups directory if it doesn't exist
+          mkdir -p backups
+          
+          # Only backup if database container exists and is accessible
+          if docker ps --format "table {{.Names}}" | grep -q postgres; then
+            timestamp=$(date +%Y%m%d_%H%M%S)
+            backup_file="backups/backup_${timestamp}.sql"
+            
+            echo "Creating backup: $backup_file"
+            if docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres pg_dump -U loyalty -d loyalty_db > "$backup_file" 2>/dev/null; then
+              # Validate backup file size
+              if [ -s "$backup_file" ]; then
+                echo "✅ Database backup created successfully ($(du -h "$backup_file" | cut -f1))"
+              else
+                echo "⚠️ Backup file is empty, removing it"
+                rm -f "$backup_file"
+              fi
+            else
+              echo "⚠️ Database backup failed - proceeding without backup"
+              rm -f "$backup_file" 2>/dev/null || true
+            fi
+            
+            # Cleanup old backups (keep last 7)
+            ls -t backups/backup_*.sql 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true
+          else
+            echo "ℹ️ No database container found - skipping backup"
+          fi
+
+      - name: Pull and build containers with error handling
         run: |
           echo "🔨 Building containers..."
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache
+          
+          # Validate docker-compose files exist
+          if [ ! -f "docker-compose.yml" ]; then
+            echo "❌ docker-compose.yml not found"
+            exit 1
+          fi
+          
+          if [ ! -f "docker-compose.prod.yml" ]; then
+            echo "❌ docker-compose.prod.yml not found"
+            exit 1
+          fi
+          
+          # Validate docker-compose configuration
+          echo "Validating Docker Compose configuration..."
+          if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null; then
+            echo "❌ Docker Compose configuration is invalid"
+            exit 1
+          fi
+          
+          echo "Pulling latest images..."
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml pull || {
+            echo "⚠️ Some images failed to pull, continuing with build..."
+          }
+          
+          echo "Building containers..."
+          if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache; then
+            echo "❌ Container build failed"
+            # Show build logs for debugging
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs
+            exit 1
+          fi
+          
+          echo "✅ Container build completed successfully"
 
-      - name: Start new containers
+      - name: Start containers with health monitoring
         run: |
           echo "🚀 Starting containers..."
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
           
-          # Wait for containers to be healthy
-          sleep 15
+          # Start containers in detached mode
+          if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d; then
+            echo "❌ Failed to start containers"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs
+            exit 1
+          fi
+          
+          echo "Waiting for containers to initialize..."
+          sleep 10
+          
+          # Monitor container health
+          echo "Checking container status..."
+          max_wait=60
+          waited=0
+          
+          while [ $waited -lt $max_wait ]; do
+            # Check if all containers are running
+            if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps --format="table {{.Name}}\t{{.State}}" | grep -v "running" | grep -q "exited\|dead\|restarting"; then
+              echo "⚠️ Some containers are not running properly:"
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+              sleep 5
+              waited=$((waited + 5))
+            else
+              echo "✅ All containers are running"
+              break
+            fi
+          done
+          
+          if [ $waited -ge $max_wait ]; then
+            echo "❌ Containers failed to start properly within ${max_wait}s"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50
+            exit 1
+          fi
 
       - name: Run database migrations
         run: |
@@ -102,43 +251,129 @@ jobs:
             fi
           done
 
-      - name: Health check
+      - name: Comprehensive health check and validation
         run: |
-          echo "🏥 Running health checks..."
-          max_attempts=30
-          attempt=0
+          echo "🏥 Running comprehensive health checks..."
           
-          while [ $attempt -lt $max_attempts ]; do
-            if curl -f http://localhost:4001/health 2>/dev/null; then
-              echo "✅ Backend is healthy!"
-              break
-            fi
+          # Function to check service health
+          check_service_health() {
+            local service=$1
+            local url=$2
+            local max_attempts=30
+            local attempt=0
             
-            attempt=$((attempt + 1))
-            echo "Waiting for backend... (attempt $attempt/$max_attempts)"
-            sleep 2
-          done
+            echo "Checking $service health at $url"
+            
+            while [ $attempt -lt $max_attempts ]; do
+              if curl -f -s --max-time 5 "$url" > /dev/null 2>&1; then
+                echo "✅ $service is healthy!"
+                return 0
+              fi
+              
+              attempt=$((attempt + 1))
+              echo "Waiting for $service... (attempt $attempt/$max_attempts)"
+              sleep 3
+            done
+            
+            echo "❌ $service health check failed!"
+            return 1
+          }
           
-          if [ $attempt -eq $max_attempts ]; then
-            echo "❌ Backend health check failed!"
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs backend
+          # Check application health
+          failed_services=()
+          
+          # Check main application
+          if ! check_service_health "Application" "http://localhost:4001/health"; then
+            failed_services+=("Application")
+          fi
+          
+          # Check if frontend is accessible
+          if ! check_service_health "Frontend" "http://localhost:4001/"; then
+            failed_services+=("Frontend")
+          fi
+          
+          # If health checks failed, show diagnostic information
+          if [ ${#failed_services[@]} -ne 0 ]; then
+            echo "❌ Health checks failed for: ${failed_services[*]}"
+            echo "\n📊 Diagnostic Information:"
+            
+            echo "\n🐳 Container Status:"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+            
+            echo "\n📋 Backend Logs (last 30 lines):"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=30 backend || true
+            
+            echo "\n📋 Nginx Logs (last 20 lines):"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=20 nginx || true
+            
+            echo "\n🔍 Port Status:"
+            netstat -tlnp | grep :4001 || echo "Port 4001 not listening"
+            
             exit 1
           fi
-
-      - name: Cleanup
-        run: |
-          echo "🧹 Cleaning up..."
-          docker image prune -f
-          docker volume prune -f
           
-      - name: Deployment summary
+          echo "✅ All health checks passed successfully!"
+
+      - name: Post-deployment cleanup and optimization
+        run: |
+          echo "🧹 Post-deployment cleanup..."
+          
+          # Clean up unused Docker resources
+          echo "Cleaning Docker images..."
+          docker image prune -f || true
+          
+          echo "Cleaning unused volumes (keeping data volumes)..."
+          # Only clean volumes that are not in use
+          docker volume prune -f || true
+          
+          echo "Cleaning build cache..."
+          docker builder prune -f || true
+          
+          echo "Cleaning networks..."
+          docker network prune -f || true
+          
+          # Show disk usage
+          echo "\n💾 Disk usage after cleanup:"
+          df -h . | head -2
+          
+          echo "✅ Cleanup completed"
+          
+      - name: Deployment summary and monitoring setup
         if: always()
         run: |
           echo "=============================="
-          echo "📋 Deployment Status"
+          echo "📋 Deployment Status Report"
           echo "=============================="
+          echo "Repository: ${{ github.repository }}"
           echo "Branch: ${{ github.ref_name }}"
           echo "Commit: ${{ github.sha }}"
-          echo "Time: $(date)"
+          echo "Commit Message: ${{ github.event.head_commit.message }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Timestamp: $(date -Iseconds)"
           echo "=============================="
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+          
+          echo "\n🐳 Container Status:"
+          if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps 2>/dev/null; then
+            echo "\n📊 Resource Usage:"
+            docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" || true
+          else
+            echo "❌ Could not retrieve container status"
+          fi
+          
+          echo "\n🌐 Service Endpoints:"
+          echo "Main Application: https://loyalty.saichon.com"
+          echo "Health Check: https://loyalty.saichon.com/health"
+          echo "Admin Panel: https://loyalty.saichon.com/admin"
+          
+          # Test final connectivity
+          echo "\n🔍 Final Connectivity Test:"
+          if curl -f -s --max-time 10 "http://localhost:4001/health" > /dev/null; then
+            echo "✅ Application is responding"
+          else
+            echo "❌ Application is not responding"
+          fi
+          
+          echo "\n✅ Deployment completed at $(date)"
+          echo "=============================="
