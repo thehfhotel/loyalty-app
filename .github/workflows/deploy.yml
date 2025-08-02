@@ -37,18 +37,31 @@ jobs:
           cd "$PARENT_DIR" 2>/dev/null || cd /home/nut/actions-runner/_work/ || cd /
           
           echo "Nuclear cleanup of workspace..."
-          sudo rm -rf "$WORKSPACE_DIR" 2>/dev/null || true
-          sudo mkdir -p "$WORKSPACE_DIR" 2>/dev/null || true
-          sudo chown -R $(whoami):$(whoami) "$WORKSPACE_DIR" 2>/dev/null || true
+          # Multiple attempts to ensure complete removal
+          for i in {1..5}; do
+            if [ ! -d "$WORKSPACE_DIR" ] && [ ! -d "$REPO_NAME" ]; then
+              break
+            fi
+            echo "Cleanup attempt $i..."
+            sudo rm -rf "$WORKSPACE_DIR" "$REPO_NAME" 2>/dev/null || true
+            sudo find . -maxdepth 1 -name "$REPO_NAME*" -type d -exec rm -rf {} + 2>/dev/null || true
+            sleep 1
+          done
           
-          # Fresh git clone to new directory
-          echo "Fresh git clone..."
-          if [ -d "$REPO_NAME" ]; then
-            sudo rm -rf "$REPO_NAME" 2>/dev/null || true
-          fi
+          # Create a completely fresh workspace
+          echo "Creating fresh workspace..."
+          TIMESTAMP=$(date +%s)
+          TEMP_DIR="temp-${TIMESTAMP}"
           
-          git clone https://github.com/${{ github.repository }}.git "$REPO_NAME"
-          cd "$REPO_NAME"
+          # Clone to temporary directory first, then move
+          git clone https://github.com/${{ github.repository }}.git "$TEMP_DIR"
+          
+          # Ensure target is completely clean
+          sudo rm -rf "$WORKSPACE_DIR" "$REPO_NAME" 2>/dev/null || true
+          
+          # Move temp to final location
+          mv "$TEMP_DIR" "$WORKSPACE_DIR"
+          cd "$WORKSPACE_DIR"
           git checkout ${{ github.sha }}
           
           # Verify we're in the right place
