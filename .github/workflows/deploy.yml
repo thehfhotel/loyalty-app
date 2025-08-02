@@ -63,14 +63,17 @@ jobs:
           echo "Temp directory contents:"
           ls -la "$TEMP_DIR"
           
-          # Move temp to final location (ensure clean move)
-          if [ -d "$WORKSPACE_DIR" ]; then
-            echo "Removing existing workspace directory..."
-            rm -rf "$WORKSPACE_DIR" 2>/dev/null || sudo rm -rf "$WORKSPACE_DIR" || true
-          fi
+          # Move temp contents to workspace (avoid nested directory issue)
+          echo "Preparing workspace directory..."
+          mkdir -p "$WORKSPACE_DIR"
           
-          echo "Moving temp directory to workspace..."
-          mv "$TEMP_DIR" "$WORKSPACE_DIR"
+          echo "Moving repository contents to workspace..."
+          # Move contents instead of directory to avoid nesting issues
+          mv "$TEMP_DIR"/* "$WORKSPACE_DIR"/ 2>/dev/null || true
+          mv "$TEMP_DIR"/.[!.]* "$WORKSPACE_DIR"/ 2>/dev/null || true
+          
+          # Clean up temp directory
+          rmdir "$TEMP_DIR" 2>/dev/null || true
           cd "$WORKSPACE_DIR"
           
           # Debug: Show current directory contents
