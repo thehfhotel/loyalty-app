@@ -28,25 +28,20 @@ jobs:
     steps:
       - name: "🧹 Workspace preparation"
         run: |
-          # Force clean the problematic directories before checkout
-          if [ -d "${{ github.workspace }}/frontend/dist" ]; then
-            sudo rm -rf ${{ github.workspace }}/frontend/dist || true
-          fi
-          if [ -d "${{ github.workspace }}/backend/dist" ]; then
-            sudo rm -rf ${{ github.workspace }}/backend/dist || true
-          fi
-          # Ensure the workspace is clean
-          if [ -d "${{ github.workspace }}/.git" ]; then
-            cd ${{ github.workspace }}
-            sudo git clean -xffd || true
-            sudo git reset --hard || true
-          fi
+          # Completely clean and reset the workspace to avoid permission issues
+          echo "Cleaning workspace at ${{ github.workspace }}"
+          # Force ownership change and removal
+          sudo chown -R $USER:$USER ${{ github.workspace }} 2>/dev/null || true
+          # Remove all contents including hidden files
+          cd ${{ github.workspace }}
+          sudo rm -rf * .[^.]* 2>/dev/null || true
+          # Ensure directory is empty
+          ls -la
       
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1  # Shallow clone for speed
-          clean: false  # Disable clean to avoid permission issues
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -122,25 +117,20 @@ jobs:
     steps:
       - name: "🧹 Workspace preparation"
         run: |
-          # Force clean the problematic directories before checkout
-          if [ -d "${{ github.workspace }}/frontend/dist" ]; then
-            sudo rm -rf ${{ github.workspace }}/frontend/dist || true
-          fi
-          if [ -d "${{ github.workspace }}/backend/dist" ]; then
-            sudo rm -rf ${{ github.workspace }}/backend/dist || true
-          fi
-          # Ensure the workspace is clean
-          if [ -d "${{ github.workspace }}/.git" ]; then
-            cd ${{ github.workspace }}
-            sudo git clean -xffd || true
-            sudo git reset --hard || true
-          fi
+          # Completely clean and reset the workspace to avoid permission issues
+          echo "Cleaning workspace at ${{ github.workspace }}"
+          # Force ownership change and removal
+          sudo chown -R $USER:$USER ${{ github.workspace }} 2>/dev/null || true
+          # Remove all contents including hidden files
+          cd ${{ github.workspace }}
+          sudo rm -rf * .[^.]* 2>/dev/null || true
+          # Ensure directory is empty
+          ls -la
       
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          clean: false  # Disable clean to avoid permission issues
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -231,25 +221,20 @@ jobs:
     steps:
       - name: "🧹 Workspace preparation"
         run: |
-          # Force clean the problematic directories before checkout
-          if [ -d "${{ github.workspace }}/frontend/dist" ]; then
-            sudo rm -rf ${{ github.workspace }}/frontend/dist || true
-          fi
-          if [ -d "${{ github.workspace }}/backend/dist" ]; then
-            sudo rm -rf ${{ github.workspace }}/backend/dist || true
-          fi
-          # Ensure the workspace is clean
-          if [ -d "${{ github.workspace }}/.git" ]; then
-            cd ${{ github.workspace }}
-            sudo git clean -xffd || true
-            sudo git reset --hard || true
-          fi
+          # Completely clean and reset the workspace to avoid permission issues
+          echo "Cleaning workspace at ${{ github.workspace }}"
+          # Force ownership change and removal
+          sudo chown -R $USER:$USER ${{ github.workspace }} 2>/dev/null || true
+          # Remove all contents including hidden files
+          cd ${{ github.workspace }}
+          sudo rm -rf * .[^.]* 2>/dev/null || true
+          # Ensure directory is empty
+          ls -la
       
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          clean: false  # Disable clean to avoid permission issues
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -320,25 +305,20 @@ jobs:
     steps:
       - name: "🧹 Workspace preparation"
         run: |
-          # Force clean the problematic directories before checkout
-          if [ -d "${{ github.workspace }}/frontend/dist" ]; then
-            sudo rm -rf ${{ github.workspace }}/frontend/dist || true
-          fi
-          if [ -d "${{ github.workspace }}/backend/dist" ]; then
-            sudo rm -rf ${{ github.workspace }}/backend/dist || true
-          fi
-          # Ensure the workspace is clean
-          if [ -d "${{ github.workspace }}/.git" ]; then
-            cd ${{ github.workspace }}
-            sudo git clean -xffd || true
-            sudo git reset --hard || true
-          fi
+          # Completely clean and reset the workspace to avoid permission issues
+          echo "Cleaning workspace at ${{ github.workspace }}"
+          # Force ownership change and removal
+          sudo chown -R $USER:$USER ${{ github.workspace }} 2>/dev/null || true
+          # Remove all contents including hidden files
+          cd ${{ github.workspace }}
+          sudo rm -rf * .[^.]* 2>/dev/null || true
+          # Ensure directory is empty
+          ls -la
       
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          clean: false  # Disable clean to avoid permission issues
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
