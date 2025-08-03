@@ -28,30 +28,43 @@ jobs:
     steps:
       - name: "🧹 Workspace preparation"
         run: |
-          # Completely clean and reset the workspace to avoid permission issues
+          # Clean workspace without sudo (self-hosted runner doesn't have passwordless sudo)
           echo "Cleaning workspace at ${{ github.workspace }}"
           
-          # First, handle the specific problematic directory
-          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
-            echo "Found frontend/dist/assets - removing with elevated permissions"
-            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
-            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
+          # Try to clean what we can as the current user
+          cd ${{ github.workspace }}
+          
+          # First attempt: regular removal
+          rm -rf frontend/dist backend/dist 2>/dev/null || true
+          rm -rf frontend/build backend/build 2>/dev/null || true
+          rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
+          
+          # If frontend/dist still exists with permission issues, try to work around it
+          if [ -d "frontend/dist" ]; then
+            echo "frontend/dist still exists - attempting workaround"
+            # Try to take ownership if possible (may fail without sudo)
+            chmod -R 777 frontend/dist 2>/dev/null || true
+            # Try again
+            rm -rf frontend/dist 2>/dev/null || true
           fi
           
-          # Then clean the entire workspace
-          echo "Cleaning entire workspace..."
-          cd ${{ github.workspace }}
-          # Force removal of all files and directories
-          sudo rm -rf ./* ./.[!.]* 2>&1 | grep -v "No such file" || true
+          # Clean git repository to reset state
+          if [ -d ".git" ]; then
+            git clean -xffd 2>/dev/null || true
+            git reset --hard 2>/dev/null || true
+          fi
           
-          # Verify workspace is clean
-          echo "Workspace contents after cleaning:"
+          echo "Workspace after cleanup attempt:"
           ls -la
       
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # Shallow clone for speed
+          fetch-depth: 1
+          clean: false  # Don't try to clean, we already did that
+          force: true  # Force checkout even if there are local changes  # Shallow clone for speed
+          clean: false  # Don't try to clean, we already did that
+          force: true  # Force checkout even if there are local changes
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -127,30 +140,41 @@ jobs:
     steps:
       - name: "🧹 Workspace preparation"
         run: |
-          # Completely clean and reset the workspace to avoid permission issues
+          # Clean workspace without sudo (self-hosted runner doesn't have passwordless sudo)
           echo "Cleaning workspace at ${{ github.workspace }}"
           
-          # First, handle the specific problematic directory
-          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
-            echo "Found frontend/dist/assets - removing with elevated permissions"
-            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
-            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
+          # Try to clean what we can as the current user
+          cd ${{ github.workspace }}
+          
+          # First attempt: regular removal
+          rm -rf frontend/dist backend/dist 2>/dev/null || true
+          rm -rf frontend/build backend/build 2>/dev/null || true
+          rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
+          
+          # If frontend/dist still exists with permission issues, try to work around it
+          if [ -d "frontend/dist" ]; then
+            echo "frontend/dist still exists - attempting workaround"
+            # Try to take ownership if possible (may fail without sudo)
+            chmod -R 777 frontend/dist 2>/dev/null || true
+            # Try again
+            rm -rf frontend/dist 2>/dev/null || true
           fi
           
-          # Then clean the entire workspace
-          echo "Cleaning entire workspace..."
-          cd ${{ github.workspace }}
-          # Force removal of all files and directories
-          sudo rm -rf ./* ./.[!.]* 2>&1 | grep -v "No such file" || true
+          # Clean git repository to reset state
+          if [ -d ".git" ]; then
+            git clean -xffd 2>/dev/null || true
+            git reset --hard 2>/dev/null || true
+          fi
           
-          # Verify workspace is clean
-          echo "Workspace contents after cleaning:"
+          echo "Workspace after cleanup attempt:"
           ls -la
       
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          clean: false  # Don't try to clean, we already did that
+          force: true  # Force checkout even if there are local changes
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -241,30 +265,41 @@ jobs:
     steps:
       - name: "🧹 Workspace preparation"
         run: |
-          # Completely clean and reset the workspace to avoid permission issues
+          # Clean workspace without sudo (self-hosted runner doesn't have passwordless sudo)
           echo "Cleaning workspace at ${{ github.workspace }}"
           
-          # First, handle the specific problematic directory
-          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
-            echo "Found frontend/dist/assets - removing with elevated permissions"
-            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
-            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
+          # Try to clean what we can as the current user
+          cd ${{ github.workspace }}
+          
+          # First attempt: regular removal
+          rm -rf frontend/dist backend/dist 2>/dev/null || true
+          rm -rf frontend/build backend/build 2>/dev/null || true
+          rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
+          
+          # If frontend/dist still exists with permission issues, try to work around it
+          if [ -d "frontend/dist" ]; then
+            echo "frontend/dist still exists - attempting workaround"
+            # Try to take ownership if possible (may fail without sudo)
+            chmod -R 777 frontend/dist 2>/dev/null || true
+            # Try again
+            rm -rf frontend/dist 2>/dev/null || true
           fi
           
-          # Then clean the entire workspace
-          echo "Cleaning entire workspace..."
-          cd ${{ github.workspace }}
-          # Force removal of all files and directories
-          sudo rm -rf ./* ./.[!.]* 2>&1 | grep -v "No such file" || true
+          # Clean git repository to reset state
+          if [ -d ".git" ]; then
+            git clean -xffd 2>/dev/null || true
+            git reset --hard 2>/dev/null || true
+          fi
           
-          # Verify workspace is clean
-          echo "Workspace contents after cleaning:"
+          echo "Workspace after cleanup attempt:"
           ls -la
       
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          clean: false  # Don't try to clean, we already did that
+          force: true  # Force checkout even if there are local changes
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -335,30 +370,41 @@ jobs:
     steps:
       - name: "🧹 Workspace preparation"
         run: |
-          # Completely clean and reset the workspace to avoid permission issues
+          # Clean workspace without sudo (self-hosted runner doesn't have passwordless sudo)
           echo "Cleaning workspace at ${{ github.workspace }}"
           
-          # First, handle the specific problematic directory
-          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
-            echo "Found frontend/dist/assets - removing with elevated permissions"
-            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
-            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
+          # Try to clean what we can as the current user
+          cd ${{ github.workspace }}
+          
+          # First attempt: regular removal
+          rm -rf frontend/dist backend/dist 2>/dev/null || true
+          rm -rf frontend/build backend/build 2>/dev/null || true
+          rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
+          
+          # If frontend/dist still exists with permission issues, try to work around it
+          if [ -d "frontend/dist" ]; then
+            echo "frontend/dist still exists - attempting workaround"
+            # Try to take ownership if possible (may fail without sudo)
+            chmod -R 777 frontend/dist 2>/dev/null || true
+            # Try again
+            rm -rf frontend/dist 2>/dev/null || true
           fi
           
-          # Then clean the entire workspace
-          echo "Cleaning entire workspace..."
-          cd ${{ github.workspace }}
-          # Force removal of all files and directories
-          sudo rm -rf ./* ./.[!.]* 2>&1 | grep -v "No such file" || true
+          # Clean git repository to reset state
+          if [ -d ".git" ]; then
+            git clean -xffd 2>/dev/null || true
+            git reset --hard 2>/dev/null || true
+          fi
           
-          # Verify workspace is clean
-          echo "Workspace contents after cleaning:"
+          echo "Workspace after cleanup attempt:"
           ls -la
       
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          clean: false  # Don't try to clean, we already did that
+          force: true  # Force checkout even if there are local changes
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
