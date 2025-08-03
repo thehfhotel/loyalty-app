@@ -376,15 +376,32 @@ jobs:
           sleep 3
           echo "✅ Container shutdown completed"
 
-      - name: Cache Node.js dependencies
+      - name: Cache Node.js dependencies and node_modules
         uses: actions/cache@v4
+        id: deps-cache
         with:
           path: |
             ~/.npm
-            /tmp/.npm-cache
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+            /home/nut/.npm-cache
+            /home/nut/loyalty-app/frontend/node_modules
+            /home/nut/loyalty-app/backend/node_modules
+          key: ${{ runner.os }}-deps-${{ hashFiles('frontend/package-lock.json', 'backend/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-node-
+            ${{ runner.os }}-deps-
+
+      - name: Cache status report
+        run: |
+          echo "📊 Cache Status Report"
+          echo "===================="
+          if [ "${{ steps.deps-cache.outputs.cache-hit }}" = "true" ]; then
+            echo "✅ Cache HIT - Dependencies restored from cache"
+            echo "Expected time savings: ~3-4 minutes"
+            echo "Expected data savings: ~1700 MB download"
+          else
+            echo "❌ Cache MISS - Will download dependencies"
+            echo "Cache key: ${{ runner.os }}-deps-${{ hashFiles('frontend/package-lock.json', 'backend/package-lock.json') }}"
+          fi
+          echo "===================="
 
       - name: Setup Node.js dependencies in parallel
         run: |
@@ -401,11 +418,15 @@ jobs:
             exit 1
           }
           
-          # Set up npm cache directory
-          export NPM_CONFIG_CACHE=/tmp/.npm-cache
-          mkdir -p /tmp/.npm-cache
+          # Create persistent cache directories on runner
+          mkdir -p /home/nut/.npm-cache /home/nut/.npm-global-cache
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R $(whoami):$(whoami) /home/nut/.npm-cache /home/nut/.npm-global-cache 2>/dev/null || true
           
-          # Function to setup dependencies for a service
+          # Set up npm cache directory (persistent location)
+          export NPM_CONFIG_CACHE=/home/nut/.npm-cache
+          mkdir -p /home/nut/.npm-cache
+          
+          # Function to setup dependencies for a service with intelligent caching
           setup_dependencies() {
             local service=$1
             local dir=$2
@@ -417,26 +438,36 @@ jobs:
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R $(whoami):$(whoami) . 2>/dev/null || true
             echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chmod -R 755 . 2>/dev/null || true
             
-            # Clean existing node_modules
-            if [ -d "node_modules" ]; then
-              echo "Cleaning existing $service node_modules..."
-              echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S rm -rf node_modules 2>/dev/null || true
+            # Check if node_modules exists and is valid
+            if [ -d "node_modules" ] && [ -f "node_modules/.package-lock.json" ]; then
+              echo "📦 Found cached $service node_modules, validating..."
+              
+              # Quick validation - check if key packages exist
+              if [ "$service" = "frontend" ] && [ -d "node_modules/react" ]; then
+                echo "✅ Frontend cache valid, skipping install"
+                return 0
+              elif [ "$service" = "backend" ] && [ -d "node_modules/@prisma" ]; then
+                echo "✅ Backend cache valid, skipping install"
+                return 0
+              else
+                echo "⚠️ Cache validation failed, reinstalling..."
+              fi
             fi
             
-            # Install dependencies with cache
+            # Install dependencies with optimized strategy
             if [ -f "package-lock.json" ]; then
               echo "Installing $service dependencies with npm ci..."
               if [ "$service" = "backend" ]; then
-                npm ci --include=dev --cache /tmp/.npm-cache
+                npm ci --include=dev --cache /home/nut/.npm-cache --prefer-offline
               else
-                npm ci --cache /tmp/.npm-cache
+                npm ci --cache /home/nut/.npm-cache --prefer-offline
               fi
             else
               echo "Installing $service dependencies with npm install..."
               if [ "$service" = "backend" ]; then
-                npm install --include=dev --cache /tmp/.npm-cache
+                npm install --include=dev --cache /home/nut/.npm-cache --prefer-offline
               else
-                npm install --cache /tmp/.npm-cache
+                npm install --cache /home/nut/.npm-cache --prefer-offline
               fi
             fi
             
