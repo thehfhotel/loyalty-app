@@ -81,7 +81,6 @@ export class PrismaUserService {
           user_loyalty: {
             create: {
               current_points: 0,
-              total_nights: 0,
             },
           },
         },
