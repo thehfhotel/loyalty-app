@@ -486,13 +486,13 @@ jobs:
           echo "Generating Prisma client..."
           npm run db:generate
           
-          # Deploy Prisma migrations
+          # Deploy Prisma migrations using container context
           echo "Deploying Prisma migrations..."
-          npm run db:migrate:deploy
+          docker compose -f ../docker-compose.yml -f ../docker-compose.prod.yml exec -T backend npm run db:migrate:deploy
           
-          # Test database connection
+          # Test database connection using container context
           echo "Testing database connection..."
-          npx tsx src/test-prisma.ts
+          docker compose -f ../docker-compose.yml -f ../docker-compose.prod.yml exec -T backend npx tsx src/test-prisma.ts
           
           echo "✅ Database migrations completed successfully"
 
