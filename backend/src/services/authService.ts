@@ -196,7 +196,7 @@ export class AuthService {
         [payload.id]
       );
 
-      if (!user || !user.isActive) {
+      if (!user?.isActive) {
         throw new AppError(401, 'User not found or inactive');
       }
 

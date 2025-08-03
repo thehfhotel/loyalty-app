@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { ZodError } from 'zod';
 import { logger } from '../utils/logger';
 
@@ -16,8 +16,7 @@ export class AppError extends Error {
 export function errorHandler(
   err: Error,
   req: Request,
-  res: Response,
-  _next: NextFunction
+  res: Response
 ): Response | void {
 
   if (err instanceof ZodError) {

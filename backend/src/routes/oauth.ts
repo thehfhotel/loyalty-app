@@ -90,7 +90,7 @@ router.get('/google/callback',
       const { user, tokens, isNewUser } = oauthResult;
       
       // Validate required data
-      if (!user || !tokens || !tokens.accessToken) {
+      if (!user || !tokens?.accessToken) {
         logger.error('[OAuth] Incomplete OAuth result:', { hasUser: !!user, hasTokens: !!tokens, hasAccessToken: !!tokens?.accessToken });
         return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_incomplete`);
       }
@@ -197,7 +197,7 @@ router.get('/line/callback',
 router.get('/me', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader?.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'No token provided' });
     }
 

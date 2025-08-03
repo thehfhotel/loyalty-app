@@ -48,9 +48,9 @@ export class SurveyService {
           data.title,
           data.description,
           JSON.stringify(normalizedQuestions),
-          JSON.stringify(data.target_segment || {}),
+          JSON.stringify(data.target_segment ?? {}),
           data.access_type,
-          data.status || 'draft',
+          data.status ?? 'draft',
           createdBy
         ]
       );
@@ -197,7 +197,7 @@ export class SurveyService {
     try {
       const offset = (page - 1) * limit;
       let whereClause = '';
-      let queryParams: any[] = [limit, offset];
+      const queryParams: any[] = [limit, offset];
       let paramIndex = 3;
 
       const conditions: string[] = [];
@@ -317,7 +317,7 @@ export class SurveyService {
     const client = await getPool().connect();
     try {
       const result = await client.query('DELETE FROM surveys WHERE id = $1', [id]);
-      return (result.rowCount || 0) > 0;
+      return (result.rowCount ?? 0) > 0;
     } finally {
       client.release();
     }
@@ -354,7 +354,7 @@ export class SurveyService {
           },
           data: {
             answers: data.answers,
-            is_completed: data.is_completed || false,
+            is_completed: data.is_completed ?? false,
             progress: progress,
             completed_at: data.is_completed ? new Date() : null,
             updated_at: new Date()
@@ -373,7 +373,7 @@ export class SurveyService {
           survey_id: data.survey_id,
           user_id: userId,
           answers: data.answers,
-          is_completed: data.is_completed || false,
+          is_completed: data.is_completed ?? false,
           progress: progress,
           completed_at: data.is_completed ? new Date() : null
         }
@@ -635,14 +635,14 @@ export class SurveyService {
 
     // Check OAuth provider filters
     if (targetSegment.oauth_providers && targetSegment.oauth_providers.length > 0) {
-      const userProvider = user.oauth_provider || 'email';
+      const userProvider = user.oauth_provider ?? 'email';
       if (!targetSegment.oauth_providers.includes(userProvider)) {
         return false;
       }
     }
 
     // Check excluded users
-    if (targetSegment.exclude_users && targetSegment.exclude_users.includes(user.id)) {
+    if (targetSegment.exclude_users?.includes(user.id)) {
       return false;
     }
 
@@ -713,7 +713,7 @@ export class SurveyService {
           questionId: analytics.question_id,
           question: analytics.question_text,
           type: analytics.question_type,
-          responses: analytics.response_distribution || {},
+          responses: analytics.response_distribution ?? {},
           averageRating: analytics.average_rating
         });
       }
@@ -1000,9 +1000,9 @@ export class SurveyService {
           data.survey_id,
           data.coupon_id,
           assignedBy,
-          data.max_awards || null,
-          data.custom_expiry_days || null,
-          data.assigned_reason || 'Survey completion reward'
+          data.max_awards ?? null,
+          data.custom_expiry_days ?? null,
+          data.assigned_reason ?? 'Survey completion reward'
         ]
       );
 
@@ -1232,7 +1232,7 @@ export class SurveyService {
         created_at: row.created_at,
         // Additional fields for display
         user_email: row.user_email,
-        user_name: [row.first_name, row.last_name].filter(Boolean).join(' ') || '',
+        user_name: [row.first_name, row.last_name].filter(Boolean).join(' ') ?? '',
         coupon_code: row.coupon_code,
         coupon_name: row.coupon_name
       }));

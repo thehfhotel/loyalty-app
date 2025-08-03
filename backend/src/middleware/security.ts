@@ -185,7 +185,7 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
 // File upload security middleware
 export const fileUploadSecurity = (req: Request, res: Response, next: NextFunction) => {
   // Check file size
-  const contentLength = parseInt(req.get('content-length') || '0', 10);
+  const contentLength = parseInt(req.get('content-length') ?? '0', 10);
   if (contentLength > securityConfig.maxFileSize) {
     return res.status(413).json({
       error: 'File too large',
@@ -208,8 +208,8 @@ export const securityMonitoring = (req: Request, _res: Response, next: NextFunct
   ];
   
   const fullUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
-  const userAgent = req.get('User-Agent') || '';
-  const body = JSON.stringify(req.body || {});
+  const userAgent = req.get('User-Agent') ?? '';
+  const body = JSON.stringify(req.body ?? {});
   
   const isSuspicious = suspiciousPatterns.some(pattern => 
     pattern.test(fullUrl) || pattern.test(userAgent) || pattern.test(body)

@@ -123,14 +123,18 @@ class TranslationService {
   /**
    * Translate using Google Translate (placeholder implementation)
    */
-  private async translateWithGoogle(_request: TranslationRequest): Promise<TranslationResponse> {
+  private async translateWithGoogle(request: TranslationRequest): Promise<TranslationResponse> {
+    // Placeholder implementation - parameters will be used when implemented
+    request; // Reference to avoid unused parameter warning
     throw new Error('Google Translate integration not implemented yet');
   }
 
   /**
    * Translate using LibreTranslate (placeholder implementation)
    */
-  private async translateWithLibreTranslate(_request: TranslationRequest): Promise<TranslationResponse> {
+  private async translateWithLibreTranslate(request: TranslationRequest): Promise<TranslationResponse> {
+    // Placeholder implementation - parameters will be used when implemented
+    request; // Reference to avoid unused parameter warning
     throw new Error('LibreTranslate integration not implemented yet');
   }
 
@@ -508,8 +512,8 @@ class TranslationService {
     const { page, limit, status, entityType, userId } = filters;
     const offset = (page - 1) * limit;
 
-    let whereConditions = [];
-    let values = [];
+    const whereConditions = [];
+    const values = [];
     let paramCount = 0;
 
     if (status) {

@@ -12,7 +12,7 @@ export async function authenticate(
 ) {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader?.startsWith('Bearer ')) {
       throw new AppError(401, 'No token provided');
     }
 

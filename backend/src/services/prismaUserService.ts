@@ -150,8 +150,8 @@ export class PrismaUserService {
     totalPages: number;
   }> {
     try {
-      const page = options.page || 1;
-      const limit = Math.min(options.limit || 10, 100); // Cap at 100
+      const page = options.page ?? 1;
+      const limit = Math.min(options.limit ?? 10, 100); // Cap at 100
       const offset = (page - 1) * limit;
 
       const where: Prisma.usersWhereInput = {};
@@ -207,12 +207,12 @@ export class PrismaUserService {
       orderBy: { id: 'desc' },
     });
 
-    let userCount = sequence?.current_user_count || 0;
+    let userCount = sequence?.current_user_count ?? 0;
     userCount++;
 
     // Update the sequence
     await db.membership_id_sequence.upsert({
-      where: { id: sequence?.id || 1 },
+      where: { id: sequence?.id ?? 1 },
       update: { current_user_count: userCount },
       create: { current_user_count: userCount },
     });

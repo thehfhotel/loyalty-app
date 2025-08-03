@@ -31,11 +31,11 @@ export class MembershipIdService {
     } catch (error: any) {
       logger.error('Error generating membership ID:', error);
       
-      if (error.message && error.message.includes('All available blocks exhausted')) {
+      if (error.message?.includes('All available blocks exhausted')) {
         throw new AppError(500, 'Membership ID system approaching capacity. All nearby blocks are full. Please contact system administrator.');
       }
       
-      if (error.message && error.message.includes('Block may be full')) {
+      if (error.message?.includes('Block may be full')) {
         throw new AppError(500, 'Current block is full. This indicates high registration volume in this block.');
       }
       

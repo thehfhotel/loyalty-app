@@ -68,7 +68,7 @@ router.post('/avatar', uploadAvatar, async (req, res, next) => {
     try {
       // Get current avatar URL before update (for logging)
       const currentProfile = await userService.getProfile(req.user.id);
-      console.log(`   Current avatar: ${currentProfile?.avatarUrl || 'None'}`);
+      console.log(`   Current avatar: ${currentProfile?.avatarUrl ?? 'None'}`);
 
       // Process and save new avatar (automatically deletes old one)
       const avatarUrl = await ImageProcessor.processAvatar(

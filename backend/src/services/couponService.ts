@@ -428,7 +428,7 @@ export class CouponService {
       await client.query('COMMIT');
 
       if (result.success) {
-        logger.info(`Coupon redeemed successfully: QR ${data.qrCode} by ${redeemedBy || 'system'}`);
+        logger.info(`Coupon redeemed successfully: QR ${data.qrCode} by ${redeemedBy ?? 'system'}`);
       } else {
         logger.warn(`Coupon redemption failed: QR ${data.qrCode} - ${result.message}`);
       }
@@ -826,7 +826,7 @@ export class CouponService {
     const revokedCount = result.length;
     
     if (revokedCount > 0) {
-      logger.info(`Revoked ${revokedCount} coupons for user ${userId} and coupon ${couponId} by ${revokedBy}: ${reason || 'No reason provided'}`);
+      logger.info(`Revoked ${revokedCount} coupons for user ${userId} and coupon ${couponId} by ${revokedBy}: ${reason ?? 'No reason provided'}`);
     }
     
     return revokedCount;
@@ -845,7 +845,7 @@ export class CouponService {
     );
 
     if (result) {
-      logger.info(`User coupon ${userCouponId} revoked by ${revokedBy}: ${reason || 'No reason provided'}`);
+      logger.info(`User coupon ${userCouponId} revoked by ${revokedBy}: ${reason ?? 'No reason provided'}`);
       return true;
     }
 

@@ -445,7 +445,7 @@ export class SurveyController {
           response.is_completed ? 'Yes' : 'No',
           `${response.progress}%`,
           response.started_at,
-          response.completed_at || ''
+          response.completed_at ?? ''
         ];
 
         // Add answer for each question

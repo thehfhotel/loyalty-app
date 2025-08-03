@@ -122,7 +122,7 @@ export class UserService {
     // Validate emoji
     const validation = validateEmojiAvatar(emoji);
     if (!validation.isValid) {
-      throw new AppError(400, validation.error || 'Invalid emoji');
+      throw new AppError(400, validation.error ?? 'Invalid emoji');
     }
 
     // Generate emoji avatar URL

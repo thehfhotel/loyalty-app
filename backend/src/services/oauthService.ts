@@ -84,7 +84,7 @@ export class OAuthService {
       passport.use(new LineStrategy({
         channelID: lineChannelId,
         channelSecret: lineChannelSecret,
-        callbackURL: process.env.LINE_CALLBACK_URL || 'http://localhost:4001/api/oauth/line/callback'
+        callbackURL: process.env.LINE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/line/callback'
       }, async (_accessToken: string, _refreshToken: string, profile: LineProfile, done: any) => {
         try {
           logger.debug('[OAuth Service] LINE profile received', {
@@ -118,7 +118,7 @@ export class OAuthService {
           'SELECT id, email, role, is_active AS "isActive" FROM users WHERE id = $1',
           [id]
         );
-        done(null, user || null);
+        done(null, user ?? null);
       } catch (error) {
         done(error, null);
       }
@@ -152,8 +152,8 @@ export class OAuthService {
       logger.debug('[OAuth Service] Existing Google user found', { userId: user.id, email: user.email });
       
       // Update Google-specific data if available
-      const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || '';
-      const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
+      const firstName = profile.name?.givenName ?? profile.displayName?.split(' ')[0] ?? '';
+      const lastName = profile.name?.familyName ?? profile.displayName?.split(' ').slice(1).join(' ') ?? '';
       const avatarUrl = profile.photos?.[0]?.value;
 
       if (firstName || lastName || avatarUrl) {
@@ -196,8 +196,8 @@ export class OAuthService {
         
         // Create new OAuth user
         isNewUser = true;
-        const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || '';
-        const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
+        const firstName = profile.name?.givenName ?? profile.displayName?.split(' ')[0] ?? '';
+        const lastName = profile.name?.familyName ?? profile.displayName?.split(' ').slice(1).join(' ') ?? '';
         const avatarUrl = profile.photos?.[0]?.value;
 
         const [newOAuthUser] = await query<User>(
@@ -224,8 +224,8 @@ export class OAuthService {
         // Create new user
         isNewUser = true;
         
-        const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || '';
-        const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
+        const firstName = profile.name?.givenName ?? profile.displayName?.split(' ')[0] ?? '';
+        const lastName = profile.name?.familyName ?? profile.displayName?.split(' ').slice(1).join(' ') ?? '';
         const avatarUrl = profile.photos?.[0]?.value;
 
         // Create user account (no password needed for OAuth)
@@ -310,7 +310,7 @@ export class OAuthService {
     }
 
     // Use LINE provided email if available, otherwise leave as NULL
-    const email = profile.email || null;
+    const email = profile.email ?? null;
     const hasRealEmail = !!profile.email;
     
     logger.debug('[OAuth Service] LINE email handling', { 
@@ -365,9 +365,9 @@ export class OAuthService {
       }
       
       // Update LINE-specific data if available
-      const displayName = profile.displayName || '';
-      const firstName = displayName.split(' ')[0] || '';
-      const lastName = displayName.split(' ').slice(1).join(' ') || '';
+      const displayName = profile.displayName ?? '';
+      const firstName = displayName.split(' ')[0] ?? '';
+      const lastName = displayName.split(' ').slice(1).join(' ') ?? '';
       const avatarUrl = profile.pictureUrl;
 
       if (firstName || lastName || avatarUrl) {
@@ -412,9 +412,9 @@ export class OAuthService {
       // Create new user for LINE
       isNewUser = true;
       
-      const displayName = profile.displayName || '';
-      const firstName = displayName.split(' ')[0] || '';
-      const lastName = displayName.split(' ').slice(1).join(' ') || '';
+      const displayName = profile.displayName ?? '';
+      const firstName = displayName.split(' ')[0] ?? '';
+      const lastName = displayName.split(' ').slice(1).join(' ') ?? '';
       const avatarUrl = profile.pictureUrl;
 
       // Create user account (no password needed for OAuth)
