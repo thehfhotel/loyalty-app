@@ -235,40 +235,145 @@ jobs:
           sleep 3
           echo "✅ Container shutdown completed"
 
-      - name: Create database backup with validation
+      - name: Intelligent database backup with retry logic
         run: |
-          echo "💾 Creating database backup..."
+          echo "💾 Creating intelligent database backup..."
           
           # Navigate to deployment directory
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
-          # Create backups directory if it doesn't exist
+          # Create backups directory with proper permissions
           mkdir -p backups
+          chmod 755 backups
           
-          # Only backup if database container exists and is accessible
-          if docker ps --format "table {{.Names}}" | grep -q postgres; then
-            timestamp=$(date +%Y%m%d_%H%M%S)
-            backup_file="backups/backup_${timestamp}.sql"
+          # Function to check if database is ready for backup
+          check_database_ready() {
+            local max_attempts=10
+            local attempt=0
+            
+            while [ $attempt -lt $max_attempts ]; do
+              # Check if postgres container exists and is running
+              if docker ps --format "{{.Names}}" | grep -q "loyalty_postgres"; then
+                # Check if database is ready to accept connections
+                if docker exec loyalty_postgres pg_isready -U loyalty -d loyalty_db >/dev/null 2>&1; then
+                  echo "✅ Database is ready for backup"
+                  return 0
+                fi
+              fi
+              
+              attempt=$((attempt + 1))
+              echo "Waiting for database... (attempt $attempt/$max_attempts)"
+              sleep 3
+            done
+            
+            echo "❌ Database not ready for backup after ${max_attempts} attempts"
+            return 1
+          }
+          
+          # Function to create backup with detailed error handling
+          create_backup() {
+            local timestamp=$(date +%Y%m%d_%H%M%S)
+            local backup_file="backups/backup_${timestamp}.sql"
+            local temp_file="backups/.backup_${timestamp}.tmp"
             
             echo "Creating backup: $backup_file"
-            if docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres pg_dump -U loyalty -d loyalty_db > "$backup_file" 2>/dev/null; then
-              # Validate backup file size
-              if [ -s "$backup_file" ]; then
-                echo "✅ Database backup created successfully ($(du -h "$backup_file" | cut -f1))"
+            
+            # Create backup with detailed error reporting
+            if docker exec loyalty_postgres pg_dump -U loyalty -d loyalty_db > "$temp_file" 2>&1; then
+              # Validate backup content
+              if [ -s "$temp_file" ] && head -5 "$temp_file" | grep -q "PostgreSQL database dump"; then
+                mv "$temp_file" "$backup_file"
+                local size=$(du -h "$backup_file" | cut -f1)
+                echo "✅ Database backup created successfully ($size)"
+                echo "Backup contains $(wc -l < "$backup_file") lines"
+                return 0
               else
-                echo "⚠️ Backup file is empty, removing it"
-                rm -f "$backup_file"
+                echo "❌ Backup validation failed - file is empty or corrupt"
+                cat "$temp_file" | head -10  # Show first 10 lines for debugging
+                rm -f "$temp_file"
+                return 1
               fi
             else
-              echo "⚠️ Database backup failed - proceeding without backup"
-              rm -f "$backup_file" 2>/dev/null || true
+              echo "❌ pg_dump command failed:"
+              cat "$temp_file" | head -10  # Show error output
+              rm -f "$temp_file"
+              return 1
+            fi
+          }
+          
+          # Main backup logic with retry
+          backup_success=false
+          max_backup_attempts=3
+          backup_attempt=0
+          
+          while [ $backup_attempt -lt $max_backup_attempts ] && [ "$backup_success" = false ]; do
+            backup_attempt=$((backup_attempt + 1))
+            echo "Backup attempt $backup_attempt/$max_backup_attempts"
+            
+            if check_database_ready; then
+              if create_backup; then
+                backup_success=true
+                break
+              fi
             fi
             
-            # Cleanup old backups (keep last 7)
-            ls -t backups/backup_*.sql 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true
+            if [ $backup_attempt -lt $max_backup_attempts ]; then
+              echo "Retrying backup in 5 seconds..."
+              sleep 5
+            fi
+          done
+          
+          if [ "$backup_success" = false ]; then
+            echo "⚠️ Primary backup attempts failed - trying alternative backup methods"
+            
+            # Try file-system level backup if database container has data volume
+            echo "Attempting volume-based backup as fallback..."
+            if docker volume ls | grep -q postgres_data; then
+              timestamp=$(date +%Y%m%d_%H%M%S)
+              volume_backup="backups/volume_backup_${timestamp}.tar.gz"
+              
+              if docker run --rm -v postgres_data:/data -v "$PWD/backups:/backup" alpine tar czf "/backup/volume_backup_${timestamp}.tar.gz" -C /data .; then
+                echo "✅ Volume backup created successfully: $volume_backup"
+                backup_success=true
+              else
+                echo "❌ Volume backup also failed"
+              fi
+            fi
+            
+            if [ "$backup_success" = false ]; then
+              echo "⚠️ All backup methods failed - proceeding without backup"
+              echo "This is not critical for deployment but should be investigated"
+              
+              # Show detailed diagnostics
+              echo "Container status:"
+              docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+              
+              echo "Available volumes:"
+              docker volume ls | grep -E "(postgres|loyalty)"
+              
+              # Try basic database connection test
+              if docker ps | grep -q loyalty_postgres; then
+                echo "Testing database connection..."
+                if docker exec loyalty_postgres psql -U loyalty -d loyalty_db -c "SELECT version();" 2>/dev/null; then
+                  echo "✅ Database connection works but backup failed"
+                else
+                  echo "❌ Database connection failed"
+                fi
+              else
+                echo "❌ PostgreSQL container not running"
+              fi
+            fi
+          fi
+          
+          # Cleanup old backups (keep last 10 for better history)
+          echo "Cleaning up old backups (keeping last 10)..."
+          if ls backups/backup_*.sql >/dev/null 2>&1; then
+            ls -t backups/backup_*.sql | tail -n +11 | xargs rm -f 2>/dev/null || true
+            echo "Backup cleanup completed. Current backups:"
+            ls -la backups/backup_*.sql 2>/dev/null | tail -5 || echo "No backups found"
           else
-            echo "ℹ️ No database container found - skipping backup"
+            echo "No existing backups found"
           fi
 
       - name: Cache Node.js dependencies
