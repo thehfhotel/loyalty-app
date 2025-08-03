@@ -1,4 +1,6 @@
 import { getPool } from '../config/database';
+import { db } from '../config/prisma';
+import { logger } from '../utils/logger';
 import { 
   Survey, 
   SurveyResponse, 
@@ -304,7 +306,6 @@ export class SurveyService {
 
   // Submit or update survey response
   async submitResponse(userId: string, data: SubmitResponseRequest): Promise<SurveyResponse> {
-    const client = await getPool().connect();
     try {
       // Calculate progress based on answered questions
       const survey = await this.getSurveyById(data.survey_id);
@@ -316,52 +317,56 @@ export class SurveyService {
       const answeredQuestions = Object.keys(data.answers).length;
       const progress = Math.round((answeredQuestions / totalQuestions) * 100);
 
-      // Try to update existing response first
-      const updateResult = await client.query(
-        `UPDATE survey_responses 
-         SET answers = $1, is_completed = $2, progress = $3, completed_at = $4, updated_at = NOW()
-         WHERE survey_id = $5 AND user_id = $6
-         RETURNING *`,
-        [
-          JSON.stringify(data.answers),
-          data.is_completed || false,
-          progress,
-          data.is_completed ? new Date().toISOString() : null,
-          data.survey_id,
-          userId
-        ]
-      );
+      // Try to update existing response first using Prisma
+      const existingResponse = await db.survey_responses.findUnique({
+        where: {
+          idx_survey_responses_unique: {
+            survey_id: data.survey_id,
+            user_id: userId
+          }
+        }
+      });
 
-      if (updateResult.rows.length > 0) {
-        const response = updateResult.rows[0];
+      if (existingResponse) {
+        // Update existing response
+        const updatedResponse = await db.survey_responses.update({
+          where: {
+            id: existingResponse.id
+          },
+          data: {
+            answers: data.answers,
+            is_completed: data.is_completed || false,
+            progress: progress,
+            completed_at: data.is_completed ? new Date() : null,
+            updated_at: new Date()
+          }
+        });
+
         return {
-          ...response,
-          answers: response.answers
+          ...updatedResponse,
+          answers: updatedResponse.answers
         };
       }
 
       // Create new response if none exists
-      const insertResult = await client.query(
-        `INSERT INTO survey_responses (survey_id, user_id, answers, is_completed, progress, completed_at)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *`,
-        [
-          data.survey_id,
-          userId,
-          JSON.stringify(data.answers),
-          data.is_completed || false,
-          progress,
-          data.is_completed ? new Date().toISOString() : null
-        ]
-      );
+      const newResponse = await db.survey_responses.create({
+        data: {
+          survey_id: data.survey_id,
+          user_id: userId,
+          answers: data.answers,
+          is_completed: data.is_completed || false,
+          progress: progress,
+          completed_at: data.is_completed ? new Date() : null
+        }
+      });
 
-      const response = insertResult.rows[0];
       return {
-        ...response,
-        answers: response.answers
+        ...newResponse,
+        answers: newResponse.answers
       };
-    } finally {
-      client.release();
+    } catch (error) {
+      logger.error('Error submitting survey response:', error);
+      throw error;
     }
   }
 
