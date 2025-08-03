@@ -263,6 +263,20 @@ jobs:
             echo "ℹ️ No database container found - skipping backup"
           fi
 
+      - name: Setup Node.js dependencies for frontend
+        run: |
+          echo "📦 Setting up frontend dependencies..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR/frontend"
+          
+          # Install frontend dependencies
+          echo "Installing frontend dependencies..."
+          npm ci
+          
+          echo "✅ Frontend dependencies installed successfully"
+
       - name: Pull and build containers with error handling
         run: |
           echo "🔨 Building containers..."
@@ -359,6 +373,28 @@ jobs:
             docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50
             exit 1
           fi
+
+      - name: Setup Node.js dependencies for backend
+        run: |
+          echo "📦 Setting up Node.js dependencies..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR/backend"
+          
+          # Check Node.js version
+          echo "Node.js version: $(node --version)"
+          echo "NPM version: $(npm --version)"
+          
+          # Install dependencies (including dev dependencies for Prisma CLI)
+          echo "Installing backend dependencies..."
+          npm ci --include=dev
+          
+          # Verify Prisma installation
+          echo "Verifying Prisma CLI installation..."
+          npx prisma --version
+          
+          echo "✅ Dependencies installed successfully"
 
       - name: Run database migrations
         run: |
