@@ -273,7 +273,7 @@ if [[ "$VALIDATION_CONTEXT" == "runtime" ]]; then
             success "✅ Consolidated database schema is applied (${TABLE_COUNT} tables)"
         else
             warning "Database schema may not be fully initialized (${TABLE_COUNT} tables)"
-            echo "Consider running: ./database/deploy-database.sh"
+            echo "Consider running: $PROJECT_ROOT/database/deploy-database.sh"
         fi
     else
         warning "Cannot validate database schema (database not accessible)"

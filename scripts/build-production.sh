@@ -69,8 +69,8 @@ log "${GREEN}✅ Docker availability check passed${NC}"
 
 # Run environment validation before building (build mode)
 log "${BLUE}🔍 Running environment validation...${NC}"
-if [ -f "./scripts/validate-environment.sh" ]; then
-    if ! ./scripts/validate-environment.sh build; then
+if [ -f "$SCRIPT_DIR/validate-environment.sh" ]; then
+    if ! "$SCRIPT_DIR/validate-environment.sh" build; then
         log "${RED}❌ Environment validation failed${NC}"
         exit 1
     fi

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:  # Allow manual trigger
 
 env:
-  DEPLOY_PATH: ~/loyalty-app  # Path on your server
+  DEPLOY_PATH: /opt/loyalty-app  # Path on your server
 
 jobs:
   deploy:
@@ -14,90 +14,75 @@ jobs:
     environment: production  # Use production environment for secrets
     
     steps:
-      - name: Manual checkout with workspace cleanup
+      - name: Clean workspace and checkout code
         run: |
-          echo "🔧 Manual checkout with comprehensive cleanup..."
+          echo "🔧 Preparing deployment workspace..."
           
           # Get workspace path
           WORKSPACE_DIR="${GITHUB_WORKSPACE:-$PWD}"
-          PARENT_DIR="$(dirname "$WORKSPACE_DIR")"
-          REPO_NAME="$(basename "$WORKSPACE_DIR")"
+          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          
+          # Validate deployment path (no tilde paths in production)
+          if [[ "$DEPLOY_DIR" == ~* ]]; then
+            echo "❌ Error: Tilde paths not allowed in production deployment"
+            echo "Current DEPLOY_DIR: $DEPLOY_DIR"
+            echo "Use absolute paths like /opt/loyalty-app instead"
+            exit 1
+          fi
           
           echo "Workspace: $WORKSPACE_DIR"
-          echo "Parent: $PARENT_DIR"
+          echo "Deploy Path: $DEPLOY_DIR"
           echo "Repository: ${{ github.repository }}"
           echo "Commit: ${{ github.sha }}"
           
           # Stop containers first
-          echo "Stopping containers..."
+          echo "Stopping existing containers..."
+          cd "$DEPLOY_DIR" 2>/dev/null || true
           docker compose down --remove-orphans 2>/dev/null || true
           docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
           
-          # Navigate to parent and completely clean workspace
-          cd "$PARENT_DIR" 2>/dev/null || cd /home/nut/actions-runner/_work/ || cd /
+          # Clean and prepare deployment directory
+          echo "Preparing deployment directory..."
+          sudo rm -rf "$DEPLOY_DIR" 2>/dev/null || true
+          mkdir -p "$DEPLOY_DIR"
           
-          echo "Nuclear cleanup of workspace..."
-          # Multiple attempts to ensure complete removal
-          for i in {1..5}; do
-            if [ ! -d "$WORKSPACE_DIR" ] && [ ! -d "$REPO_NAME" ]; then
-              break
-            fi
-            echo "Cleanup attempt $i..."
-            sudo rm -rf "$WORKSPACE_DIR" "$REPO_NAME" 2>/dev/null || true
-            sudo find . -maxdepth 1 -name "$REPO_NAME*" -type d -exec rm -rf {} + 2>/dev/null || true
-            sleep 1
-          done
+          # Clone fresh code to deployment directory
+          echo "Cloning repository..."
+          git clone --depth 1 --branch main --single-branch \
+            https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
+            "$DEPLOY_DIR"
           
-          # Create a completely fresh workspace
-          echo "Creating fresh workspace..."
-          TIMESTAMP=$(date +%s)
-          TEMP_DIR="temp-${TIMESTAMP}"
+          # Navigate to deployment directory
+          cd "$DEPLOY_DIR"
           
-          # Clone to temporary directory first, then move (using GITHUB_TOKEN for auth)
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git "$TEMP_DIR"
+          # Checkout specific commit
+          git fetch origin ${{ github.sha }}
+          git checkout ${{ github.sha }}
           
-          # Ensure target is completely clean before move
-          sudo rm -rf "$WORKSPACE_DIR" "$REPO_NAME" 2>/dev/null || true
-          
-          # Verify temp directory has content
-          echo "Temp directory contents:"
-          ls -la "$TEMP_DIR"
-          
-          # Move temp contents to workspace (avoid nested directory issue)
-          echo "Preparing workspace directory..."
-          mkdir -p "$WORKSPACE_DIR"
-          
-          echo "Moving repository contents to workspace..."
-          # Move contents instead of directory to avoid nesting issues
-          mv "$TEMP_DIR"/* "$WORKSPACE_DIR"/ 2>/dev/null || true
-          mv "$TEMP_DIR"/.[!.]* "$WORKSPACE_DIR"/ 2>/dev/null || true
-          
-          # Clean up temp directory
-          rmdir "$TEMP_DIR" 2>/dev/null || true
-          cd "$WORKSPACE_DIR"
-          
-          # Debug: Show current directory contents
-          echo "Workspace directory contents:"
-          ls -la .
-          
-          # Already at correct commit from clone, but ensure we're on the right SHA
-          git checkout ${{ github.sha }} 2>/dev/null || echo "Already at target commit"
-          
-          # Verify we're in the right place
-          if [ ! -f "docker-compose.yml" ]; then
-            echo "❌ Checkout verification failed - docker-compose.yml not found"
+          # Verify deployment
+          echo "Verifying deployment files..."
+          if [ ! -f "docker-compose.yml" ] || [ ! -f "docker-compose.prod.yml" ]; then
+            echo "❌ Critical deployment files missing"
+            ls -la
             exit 1
           fi
           
-          echo "✅ Manual checkout completed successfully"
+          echo "✅ Code checkout completed successfully"
+          echo "Current directory: $(pwd)"
+          echo "Files in deployment directory:"
+          ls -la
 
       - name: Workspace validation and setup
         run: |
           echo "🔍 Post-checkout validation..."
           
-          # Verify checkout succeeded
-          if [ ! -f "docker-compose.yml" ]; then
-            echo "❌ Checkout failed - docker-compose.yml not found"
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
+          # Verify critical files exist
+          if [ ! -f "docker-compose.yml" ] || [ ! -f "docker-compose.prod.yml" ]; then
+            echo "❌ Critical deployment files missing"
             exit 1
           fi
           
@@ -105,19 +90,27 @@ jobs:
           mkdir -p backups logs 2>/dev/null || true
           sudo chmod 755 backups logs 2>/dev/null || true
           
-          # Ensure we can write to the workspace
+          # Ensure proper ownership and permissions
+          sudo chown -R $(whoami):$(whoami) . 2>/dev/null || true
+          
+          # Test write permissions
           if ! touch test-write-permission 2>/dev/null; then
-            echo "❌ Cannot write to workspace directory"
-            sudo chown -R $(whoami):$(whoami) . 2>/dev/null || true
+            echo "❌ Cannot write to deployment directory"
+            exit 1
           else
             rm -f test-write-permission
           fi
           
-          echo "✅ Post-checkout validation completed"
+          echo "✅ Deployment validation completed"
+          echo "Working in: $(pwd)"
           
       - name: Validate and set production environment variables
         run: |
           echo "🔧 Setting up production environment..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          cd "$DEPLOY_DIR"
           
           # Validate critical secrets exist
           missing_secrets=()
@@ -180,6 +173,10 @@ jobs:
         run: |
           echo "🛑 Gracefully stopping existing containers..."
           
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
           # Check if containers are running
           if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q | head -1 | grep -q .; then
             echo "Containers found, initiating shutdown..."
@@ -202,6 +199,10 @@ jobs:
       - name: Create database backup with validation
         run: |
           echo "💾 Creating database backup..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          cd "$DEPLOY_DIR"
           
           # Create backups directory if it doesn't exist
           mkdir -p backups
@@ -234,6 +235,10 @@ jobs:
       - name: Pull and build containers with error handling
         run: |
           echo "🔨 Building containers..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          cd "$DEPLOY_DIR"
           
           # Validate docker-compose files exist
           if [ ! -f "docker-compose.yml" ]; then
@@ -271,6 +276,10 @@ jobs:
       - name: Start containers with health monitoring
         run: |
           echo "🚀 Starting containers..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          cd "$DEPLOY_DIR"
           
           # Start containers in detached mode
           if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d; then
@@ -310,6 +319,10 @@ jobs:
         run: |
           echo "📊 Running database migrations..."
           
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
           # Check if consolidated schema needs to be applied
           if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres psql -U loyalty -d loyalty_db -c "SELECT 1 FROM users LIMIT 1" &>/dev/null; then
             echo "Applying consolidated schema..."
@@ -327,6 +340,10 @@ jobs:
       - name: Comprehensive health check and validation
         run: |
           echo "🏥 Running comprehensive health checks..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          cd "$DEPLOY_DIR"
           
           # Function to check service health
           check_service_health() {
@@ -391,6 +408,10 @@ jobs:
         run: |
           echo "🧹 Post-deployment cleanup..."
           
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
           # Clean up unused Docker resources
           echo "Cleaning Docker images..."
           docker image prune -f || true
@@ -426,6 +447,10 @@ jobs:
           echo "Run ID: ${{ github.run_id }}"
           echo "Timestamp: $(date -Iseconds)"
           echo "=============================="
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          cd "$DEPLOY_DIR"
           
           echo "\n🐳 Container Status:"
           if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps 2>/dev/null; then

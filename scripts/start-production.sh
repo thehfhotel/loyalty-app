@@ -229,7 +229,7 @@ if docker compose $COMPOSE_FILES --env-file "$ENV_FILE" exec -T postgres pg_isre
         success "✅ Consolidated database schema is applied (${TABLE_COUNT} tables)"
     else
         warning "⚠️  Database schema may not be fully initialized (${TABLE_COUNT} tables found)"
-        echo "Consider running: ./database/deploy-database.sh"
+        echo "Consider running: $PROJECT_ROOT/database/deploy-database.sh"
     fi
 else
     error "❌ Database connection failed"

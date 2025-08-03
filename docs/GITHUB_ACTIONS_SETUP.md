@@ -25,8 +25,8 @@ SSH to your server and run:
 
 ```bash
 # 1. Clone/pull the repository
-git clone <your-repo-url> ~/loyalty-app
-cd ~/loyalty-app
+git clone <your-repo-url> /opt/loyalty-app
+cd /opt/loyalty-app
 
 # 2. Run the setup script
 bash scripts/setup-github-runner.sh
@@ -42,7 +42,7 @@ Follow the prompts:
 
 1. Check runner status on server:
    ```bash
-   sudo ~/actions-runner/svc.sh status
+   sudo ${HOME}/actions-runner/svc.sh status
    ```
 
 2. Check GitHub:
@@ -97,14 +97,14 @@ docs/
 ### Start/Stop Runner
 ```bash
 # On server
-~/start-runner.sh  # Start runner
-~/stop-runner.sh   # Stop runner
-~/runner-logs.sh   # View logs
+${HOME}/start-runner.sh  # Start runner
+${HOME}/stop-runner.sh   # Stop runner
+${HOME}/runner-logs.sh   # View logs
 ```
 
 ### Update Runner
 ```bash
-cd ~/actions-runner
+cd ${HOME}/actions-runner
 sudo ./svc.sh stop
 # Download new version and extract
 ./config.sh ...  # Reconfigure
@@ -115,8 +115,8 @@ sudo ./svc.sh start
 ### Troubleshooting
 
 **Runner not appearing in GitHub:**
-- Check runner service: `sudo ~/actions-runner/svc.sh status`
-- Check logs: `~/runner-logs.sh`
+- Check runner service: `sudo ${HOME}/actions-runner/svc.sh status`
+- Check logs: `${HOME}/runner-logs.sh`
 - Ensure token is valid (tokens expire after 1 hour if unused)
 
 **Deployment fails:**

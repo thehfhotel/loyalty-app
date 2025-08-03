@@ -226,7 +226,7 @@ main() {
     echo "   User: $DB_USER"
     echo ""
     echo "📋 Next Steps:"
-    echo "   Start application: ./scripts/start-production.sh"
+    echo "   Start application: $PROJECT_ROOT/scripts/start-production.sh"
     echo "   Connect to DB: docker compose exec postgres psql -U $DB_USER -d $DB_NAME"
     echo "   View tables: \\dt"
     echo "=============================================="

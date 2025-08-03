@@ -124,29 +124,29 @@ main() {
     log "📝 Creating helper scripts..."
     
     # Create start script
-    cat > ~/start-runner.sh << 'EOF'
+    cat > "${HOME}/start-runner.sh" << 'EOF'
 #!/bin/bash
-cd ~/actions-runner
+cd "${HOME}/actions-runner"
 sudo ./svc.sh start
 sudo ./svc.sh status
 EOF
-    chmod +x ~/start-runner.sh
+    chmod +x "${HOME}/start-runner.sh"
     
     # Create stop script
-    cat > ~/stop-runner.sh << 'EOF'
+    cat > "${HOME}/stop-runner.sh" << 'EOF'
 #!/bin/bash
-cd ~/actions-runner
+cd "${HOME}/actions-runner"
 sudo ./svc.sh stop
 EOF
-    chmod +x ~/stop-runner.sh
+    chmod +x "${HOME}/stop-runner.sh"
     
     # Create logs script
-    cat > ~/runner-logs.sh << 'EOF'
+    cat > "${HOME}/runner-logs.sh" << 'EOF'
 #!/bin/bash
-cd ~/actions-runner
+cd "${HOME}/actions-runner"
 tail -f _diag/Runner_*.log
 EOF
-    chmod +x ~/runner-logs.sh
+    chmod +x "${HOME}/runner-logs.sh"
     
     # Final instructions
     echo ""
@@ -159,10 +159,10 @@ EOF
     echo "   Status: Running as service"
     echo ""
     echo "🔧 Useful commands:"
-    echo "   Start runner: ~/start-runner.sh"
-    echo "   Stop runner: ~/stop-runner.sh"
-    echo "   View logs: ~/runner-logs.sh"
-    echo "   Check status: sudo ~/actions-runner/svc.sh status"
+    echo "   Start runner: ${HOME}/start-runner.sh"
+    echo "   Stop runner: ${HOME}/stop-runner.sh"
+    echo "   View logs: ${HOME}/runner-logs.sh"
+    echo "   Check status: sudo ${HOME}/actions-runner/svc.sh status"
     echo ""
     echo "📌 Next steps:"
     echo "1. Go to: https://github.com/${GITHUB_USER}/${REPO_NAME}/settings/actions/runners"
