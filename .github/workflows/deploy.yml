@@ -37,27 +37,58 @@ jobs:
           
           # Stop containers first
           echo "Stopping existing containers..."
-          cd "$DEPLOY_DIR" 2>/dev/null || true
-          docker compose down --remove-orphans 2>/dev/null || true
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+          if [ -d "$DEPLOY_DIR" ]; then
+            cd "$DEPLOY_DIR"
+            docker compose down --remove-orphans 2>/dev/null || true
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+          fi
           
-          # Clean and prepare deployment directory
-          echo "Preparing deployment directory..."
-          sudo rm -rf "$DEPLOY_DIR" 2>/dev/null || true
-          mkdir -p "$DEPLOY_DIR"
-          
-          # Clone fresh code to deployment directory
-          echo "Cloning repository..."
-          git clone --depth 1 --branch main --single-branch \
-            https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
-            "$DEPLOY_DIR"
-          
-          # Navigate to deployment directory
-          cd "$DEPLOY_DIR"
-          
-          # Checkout specific commit
-          git fetch origin ${{ github.sha }}
-          git checkout ${{ github.sha }}
+          # Smart deployment: pull if git repo exists, clone if not
+          if [ -d "$DEPLOY_DIR/.git" ]; then
+            echo "📥 Updating existing repository..."
+            cd "$DEPLOY_DIR"
+            
+            # Clean any local changes and reset to main
+            git clean -fd 2>/dev/null || true
+            git reset --hard HEAD 2>/dev/null || true
+            git checkout main 2>/dev/null || git checkout -b main 2>/dev/null || true
+            
+            # Update remote and pull latest changes
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+            git fetch --depth 1 origin main
+            git reset --hard origin/main
+            
+            # Checkout specific commit
+            git fetch origin ${{ github.sha }} --depth 1
+            git checkout ${{ github.sha }}
+            
+            echo "✅ Repository updated successfully"
+          else
+            echo "📦 Cloning repository (first deployment)..."
+            
+            # Ensure parent directory exists
+            mkdir -p "$(dirname "$DEPLOY_DIR")"
+            
+            # Remove any non-git content if directory exists but isn't a git repo
+            if [ -d "$DEPLOY_DIR" ]; then
+              echo "Cleaning non-git directory..."
+              rm -rf "$DEPLOY_DIR"/* 2>/dev/null || true
+              rm -rf "$DEPLOY_DIR"/.* 2>/dev/null || true
+            fi
+            
+            # Clone fresh repository
+            git clone --depth 1 --branch main --single-branch \
+              https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
+              "$DEPLOY_DIR"
+            
+            cd "$DEPLOY_DIR"
+            
+            # Checkout specific commit
+            git fetch origin ${{ github.sha }} --depth 1
+            git checkout ${{ github.sha }}
+            
+            echo "✅ Repository cloned successfully"
+          fi
           
           # Verify deployment
           echo "Verifying deployment files..."
@@ -258,6 +289,10 @@ jobs:
             exit 1
           fi
           
+          # Clean up old containers and images to free space
+          echo "Cleaning up old containers and images..."
+          docker system prune -f || true
+          
           echo "Pulling latest images..."
           docker compose -f docker-compose.yml -f docker-compose.prod.yml pull || {
             echo "⚠️ Some images failed to pull, continuing with build..."
@@ -267,7 +302,17 @@ jobs:
           if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache; then
             echo "❌ Container build failed"
             # Show build logs for debugging
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs
+            echo "📋 Build logs:"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100
+            
+            # Show disk space
+            echo "💾 Disk space:"
+            df -h
+            
+            # Show system resources
+            echo "🖥️ System resources:"
+            free -h
+            
             exit 1
           fi
           
@@ -317,25 +362,39 @@ jobs:
 
       - name: Run database migrations
         run: |
-          echo "📊 Running database migrations..."
+          echo "📊 Running database migrations with Prisma..."
           
           # Navigate to deployment directory
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
-          cd "$DEPLOY_DIR"
+          cd "$DEPLOY_DIR/backend"
           
-          # Check if consolidated schema needs to be applied
-          if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres psql -U loyalty -d loyalty_db -c "SELECT 1 FROM users LIMIT 1" &>/dev/null; then
-            echo "Applying consolidated schema..."
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres psql -U loyalty -d loyalty_db -f /docker-entrypoint-initdb.d/consolidated_schema.sql
-          fi
+          # Ensure Prisma client is generated
+          echo "Generating Prisma client..."
+          npm run db:generate
           
-          # Apply any new migrations
-          for migration in database/migrations/*.sql; do
-            if [ -f "$migration" ]; then
-              echo "Applying migration: $(basename $migration)"
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres psql -U loyalty -d loyalty_db -f "/docker-entrypoint-initdb.d/migrations/$(basename $migration)" 2>/dev/null || true
-            fi
-          done
+          # Test database connection
+          echo "Testing database connection..."
+          npx tsx src/test-prisma.ts || {
+            echo "⚠️ Database connection test failed, attempting to apply schema..."
+            
+            # If connection fails, apply consolidated schema as fallback
+            echo "Applying consolidated schema as fallback..."
+            docker compose -f ../docker-compose.yml -f ../docker-compose.prod.yml exec -T postgres psql -U loyalty -d loyalty_db -f /docker-entrypoint-initdb.d/consolidated_schema.sql
+            
+            # Test connection again
+            echo "Re-testing connection after schema application..."
+            npx tsx src/test-prisma.ts
+          }
+          
+          # Deploy Prisma migrations
+          echo "Deploying Prisma migrations..."
+          npm run db:migrate:deploy
+          
+          # Verify final state
+          echo "Verifying database state..."
+          npx tsx src/test-prisma.ts
+          
+          echo "✅ Database migrations completed successfully"
 
       - name: Comprehensive health check and validation
         run: |
