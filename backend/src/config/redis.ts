@@ -6,7 +6,7 @@ let redisClient: ReturnType<typeof createClient>;
 export async function connectRedis(): Promise<void> {
   try {
     redisClient = createClient({
-      url: process.env.REDIS_URL || 'redis://localhost:6379',
+      url: process.env.REDIS_URL ?? 'redis://localhost:6379',
     });
 
     redisClient.on('error', (err) => {

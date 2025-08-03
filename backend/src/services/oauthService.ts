@@ -52,7 +52,7 @@ export class OAuthService {
       passport.use(new GoogleStrategy({
         clientID: googleClientId,
         clientSecret: googleClientSecret,
-        callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4001/api/oauth/google/callback',
+        callbackURL: process.env.GOOGLE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/google/callback',
         passReqToCallback: false
       } as any, async (_accessToken: any, _refreshToken: any, profile: any, done: any) => {
         try {

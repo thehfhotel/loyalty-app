@@ -38,8 +38,8 @@ async function testPrismaConnection() {
       const sampleUser = usersWithProfiles[0];
       logger.info(`📋 Sample user: ${sampleUser.email} (ID: ${sampleUser.id})`);
       logger.info(`👤 Profile: ${sampleUser.user_profiles?.first_name} ${sampleUser.user_profiles?.last_name}`);
-      logger.info(`🏆 Current points: ${sampleUser.user_loyalty?.current_points || 0}`);
-      logger.info(`🎖️ Tier: ${sampleUser.user_loyalty?.tiers?.name || 'None'}`);
+      logger.info(`🏆 Current points: ${sampleUser.user_loyalty?.current_points ?? 0}`);
+      logger.info(`🎖️ Tier: ${sampleUser.user_loyalty?.tiers?.name ?? 'None'}`);
     }
 
     // Test enum values

@@ -76,7 +76,7 @@ export async function queryWithMeta<T>(text: string, params?: any[]): Promise<{ 
     const result = await pool.query(text, params);
     const duration = Date.now() - start;
     logger.debug('Executed query', { text, duration, rows: result.rowCount });
-    return { rows: result.rows, rowCount: result.rowCount || 0 };
+    return { rows: result.rows, rowCount: result.rowCount ?? 0 };
   } catch (error) {
     logger.error('Database query error:', { text, error });
     throw error;

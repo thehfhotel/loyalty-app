@@ -60,22 +60,22 @@ export class CouponService {
         [
           data.code,
           data.name,
-          data.description || null,
-          data.termsAndConditions || null,
+          data.description ?? null,
+          data.termsAndConditions ?? null,
           data.type,
-          data.value || null,
-          data.currency || 'THB',
-          data.minimumSpend || null,
-          data.maximumDiscount || null,
-          data.validFrom || new Date(),
-          data.validUntil || null,
-          data.usageLimit || null,
-          data.usageLimitPerUser || 1,
-          JSON.stringify(data.tierRestrictions || []),
-          JSON.stringify(data.customerSegment || {}),
+          data.value ?? null,
+          data.currency ?? 'THB',
+          data.minimumSpend ?? null,
+          data.maximumDiscount ?? null,
+          data.validFrom ?? new Date(),
+          data.validUntil ?? null,
+          data.usageLimit ?? null,
+          data.usageLimitPerUser ?? 1,
+          JSON.stringify(data.tierRestrictions ?? []),
+          JSON.stringify(data.customerSegment ?? {}),
           createdBy,
-          (data as any).originalLanguage || 'th',
-          JSON.stringify([(data as any).originalLanguage || 'th'])
+          (data as any).originalLanguage ?? 'th',
+          JSON.stringify([(data as any).originalLanguage ?? 'th'])
         ]
       ).then(res => res.rows);
 
@@ -213,7 +213,7 @@ export class CouponService {
       [couponId]
     );
 
-    return coupon || null;
+    return coupon ?? null;
   }
 
   // Get coupon with translations for a specific language
@@ -271,7 +271,7 @@ export class CouponService {
       [code]
     );
 
-    return coupon || null;
+    return coupon ?? null;
   }
 
   // List coupons with filtering and pagination
@@ -421,7 +421,7 @@ export class CouponService {
           redeemedBy,
           data.transactionReference,
           data.location,
-          JSON.stringify(data.metadata || {})
+          JSON.stringify(data.metadata ?? {})
         ]
       ).then(res => res.rows);
 
@@ -458,7 +458,7 @@ export class CouponService {
       [qrCode]
     );
 
-    return userCoupon || null;
+    return userCoupon ?? null;
   }
 
   // Get user's active coupons
@@ -684,7 +684,7 @@ export class CouponService {
 
   // Update daily analytics (typically run as a scheduled job)
   async updateDailyAnalytics(date?: Date): Promise<number> {
-    const analyticsDate = date || new Date();
+    const analyticsDate = date ?? new Date();
     
     const [result] = await query<{ update_coupon_analytics: number }>(
       'SELECT update_coupon_analytics($1) as update_coupon_analytics',

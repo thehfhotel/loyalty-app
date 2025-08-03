@@ -38,16 +38,16 @@ export interface TranslationJob {
 
 class TranslationService {
   private azureConfig = {
-    endpoint: process.env.AZURE_TRANSLATION_TEXT_URI || 'https://api.cognitive.microsofttranslator.com',
-    apiKey: process.env.AZURE_TRANSLATION_KEY_1 || process.env.AZURE_TRANSLATION_KEY_2,
-    region: process.env.AZURE_TRANSLATION_REGION || 'global'
+    endpoint: process.env.AZURE_TRANSLATION_TEXT_URI ?? 'https://api.cognitive.microsofttranslator.com',
+    apiKey: process.env.AZURE_TRANSLATION_KEY_1 ?? process.env.AZURE_TRANSLATION_KEY_2,
+    region: process.env.AZURE_TRANSLATION_REGION ?? 'global'
   };
 
   /**
    * Main translation method that routes to appropriate provider
    */
   async translateTexts(request: TranslationRequest): Promise<TranslationResponse> {
-    const provider = request.provider || 'azure';
+    const provider = request.provider ?? 'azure';
     
     switch (provider) {
       case 'azure':
@@ -240,7 +240,7 @@ class TranslationService {
       }
 
       // Questions and options
-      const questions = survey.questions || [];
+      const questions = survey.questions ?? [];
       questions.forEach((question: any, questionIndex: number) => {
         if (question.text) {
           textsToTranslate.push(question.text);
@@ -614,7 +614,7 @@ class TranslationService {
       'en': 'en',
       'zh-Hans': 'zh-CN'
     };
-    return mapping[azureLang] || 'en';
+    return mapping[azureLang] ?? 'en';
   }
 }
 

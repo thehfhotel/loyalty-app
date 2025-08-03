@@ -25,14 +25,14 @@ router.get('/google', (req, res, next) => {
     if (!googleClientId || googleClientId === 'your-google-client-id') {
       const error = `Google OAuth not configured - Client ID: ${googleClientId}`;
       logger.warn('[OAuth] ' + error);
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=google_not_configured`);
+      return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=google_not_configured`);
     }
     
     logger.debug('[OAuth] Initiating Google OAuth with scopes', { scopes: ['profile', 'email'] });
     passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
   } catch (error) {
     logger.error('[OAuth] Google initiation error:', error);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_error`);
+    res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`);
   }
 });
 
@@ -41,9 +41,9 @@ router.get('/google/callback',
     try {
       // Check for OAuth errors in callback
       if (req.query.error) {
-        const error = `Google OAuth error: ${req.query.error} - ${req.query.error_description || 'No description'}`;
+        const error = `Google OAuth error: ${req.query.error} - ${req.query.error_description ?? 'No description'}`;
         logger.error('[OAuth] ' + error);
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_provider_error`);
+        return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_provider_error`);
       }
 
       
@@ -57,7 +57,7 @@ router.get('/google/callback',
       next();
     } catch (error) {
       logger.error('[OAuth] Google callback preprocessing error:', error);
-      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_error`);
+      res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`);
     }
   },
   (req, res, next) => {
@@ -65,12 +65,12 @@ router.get('/google/callback',
     passport.authenticate('google', { session: false }, (err, user, info) => {
       if (err) {
         logger.error('[OAuth] Google passport authentication error:', err);
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_auth_error`);
+        return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_auth_error`);
       }
       
       if (!user) {
         logger.error('[OAuth] Google authentication failed - no user:', info);
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_no_user`);
+        return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_no_user`);
       }
 
       req.user = user;
@@ -84,7 +84,7 @@ router.get('/google/callback',
       
       if (!oauthResult) {
         logger.error('[OAuth] Google OAuth failed - no user data received');
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_failed`);
+        return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_failed`);
       }
 
       const { user, tokens, isNewUser } = oauthResult;
@@ -92,7 +92,7 @@ router.get('/google/callback',
       // Validate required data
       if (!user || !tokens || !tokens.accessToken) {
         logger.error('[OAuth] Incomplete OAuth result:', { hasUser: !!user, hasTokens: !!tokens, hasAccessToken: !!tokens?.accessToken });
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_incomplete`);
+        return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_incomplete`);
       }
 
       
@@ -104,7 +104,7 @@ router.get('/google/callback',
       });
 
       // Create success URL with tokens
-      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL || 'http://localhost:4001');
+      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL ?? 'http://localhost:4001');
       successUrl.searchParams.set('token', tokens.accessToken);
       successUrl.searchParams.set('refreshToken', tokens.refreshToken);
       successUrl.searchParams.set('isNewUser', isNewUser.toString());
@@ -115,7 +115,7 @@ router.get('/google/callback',
       res.redirect(successUrl.toString());
     } catch (error) {
       logger.error('[OAuth] Google OAuth callback error:', error);
-      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_error`);
+      res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`);
     }
   }
 );
@@ -139,7 +139,7 @@ router.get('/line', (req, res, next) => {
   
   if (!lineChannelId || lineChannelId === 'your-line-channel-id') {
     logger.warn('[OAuth] LINE OAuth not configured', { lineChannelId });
-    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=line_not_configured`);
+    return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=line_not_configured`);
   }
   
   logger.debug('[OAuth] Initiating LINE OAuth', { channelId: lineChannelId });
@@ -165,7 +165,7 @@ router.get('/line/callback',
       
       if (!oauthResult) {
         logger.error('[OAuth] LINE OAuth failed - no user data received');
-        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_failed`);
+        return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_failed`);
       }
 
       const { user, tokens, isNewUser } = oauthResult;
@@ -177,7 +177,7 @@ router.get('/line/callback',
       });
 
       // Create success URL with tokens
-      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL || 'http://localhost:4001');
+      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL ?? 'http://localhost:4001');
       successUrl.searchParams.set('token', tokens.accessToken);
       successUrl.searchParams.set('refreshToken', tokens.refreshToken);
       successUrl.searchParams.set('isNewUser', isNewUser.toString());
@@ -188,7 +188,7 @@ router.get('/line/callback',
       res.redirect(successUrl.toString());
     } catch (error) {
       logger.error('[OAuth] LINE OAuth callback error:', error);
-      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:4001'}/login?error=oauth_error`);
+      res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`);
     }
   }
 );

@@ -21,7 +21,7 @@ export class CouponController {
       }
 
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role || '')) {
+      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
@@ -79,7 +79,7 @@ export class CouponController {
       }
 
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role || '')) {
+      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
@@ -141,7 +141,7 @@ export class CouponController {
       }
 
       // Non-admin users can only see active coupons
-      if (!['admin', 'super_admin'].includes(req.user?.role || '') && coupon.status !== 'active') {
+      if (!['admin', 'super_admin'].includes(req.user?.role ?? '') && coupon.status !== 'active') {
         throw new AppError(404, 'Coupon not found');
       }
 
@@ -174,7 +174,7 @@ export class CouponController {
       const filters: any = {};
 
       // Admin users can filter by all fields
-      if (['admin', 'super_admin'].includes(req.user?.role || '')) {
+      if (['admin', 'super_admin'].includes(req.user?.role ?? '')) {
         if (req.query.status) filters.status = req.query.status;
         if (req.query.type) filters.type = req.query.type;
         if (req.query.search) filters.search = req.query.search;
@@ -210,7 +210,7 @@ export class CouponController {
       }
 
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role || '')) {
+      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
@@ -297,7 +297,7 @@ export class CouponController {
 
       // Admin can view any user's coupons
       let targetUserId = userId;
-      if (['admin', 'super_admin'].includes(req.user?.role || '') && req.query.userId) {
+      if (['admin', 'super_admin'].includes(req.user?.role ?? '') && req.query.userId) {
         targetUserId = req.query.userId as string;
       }
 
@@ -327,7 +327,7 @@ export class CouponController {
   async getCouponRedemptions(req: Request, res: Response): Promise<void> {
     try {
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role || '')) {
+      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
@@ -361,7 +361,7 @@ export class CouponController {
   async getCouponAnalytics(req: Request, res: Response): Promise<void> {
     try {
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role || '')) {
+      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
@@ -398,7 +398,7 @@ export class CouponController {
   async getCouponStats(req: Request, res: Response): Promise<void> {
     try {
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role || '')) {
+      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
@@ -426,7 +426,7 @@ export class CouponController {
       }
 
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role || '')) {
+      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
@@ -466,7 +466,7 @@ export class CouponController {
       }
 
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role || '')) {
+      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
@@ -508,7 +508,7 @@ export class CouponController {
       }
 
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role || '')) {
+      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
@@ -546,7 +546,7 @@ export class CouponController {
   async getCouponAssignments(req: Request, res: Response): Promise<void> {
     try {
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role || '')) {
+      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 

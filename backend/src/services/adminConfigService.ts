@@ -81,11 +81,11 @@ class AdminConfigService {
   }
 
   public getAdminEmails(): string[] {
-    return this.config?.adminEmails || [];
+    return this.config?.adminEmails ?? [];
   }
 
   public getSuperAdminEmails(): string[] {
-    return this.config?.superAdminEmails || [];
+    return this.config?.superAdminEmails ?? [];
   }
 
   public reloadConfig(): void {

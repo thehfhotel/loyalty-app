@@ -6,9 +6,12 @@
 import { v4 as uuidv4 } from 'uuid';
 
 // Mock data storage for tests
-let mockUsers: any[] = [];
-let mockTransactions: any[] = [];
-let mockCoupons: any[] = [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockUsers: any[] = [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockTransactions: any[] = [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockCoupons: any[] = [];
 
 // Mock Prisma client for testing
 export const testDb = {

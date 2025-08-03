@@ -19,9 +19,9 @@ export interface StorageConfig {
 
 export const storageConfig: StorageConfig = {
   // Base paths - simple structure
-  baseDir: process.env.STORAGE_PATH || path.join(process.cwd(), 'storage'),
+  baseDir: process.env.STORAGE_PATH ?? path.join(process.cwd(), 'storage'),
   avatarsDir: 'avatars',
-  backupDir: process.env.BACKUP_PATH || path.join(process.cwd(), 'storage', 'backup'),
+  backupDir: process.env.BACKUP_PATH ?? path.join(process.cwd(), 'storage', 'backup'),
   
   // Storage limits
   maxFileSize: 5 * 1024 * 1024, // 5MB

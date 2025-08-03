@@ -129,7 +129,7 @@ const createSessionConfig = (req?: express.Request) => {
     (req ? req.get('X-Forwarded-Proto') === 'https' : true);
   
   const baseConfig = {
-    secret: process.env.SESSION_SECRET || 'your-session-secret-change-in-production',
+    secret: process.env.SESSION_SECRET ?? 'your-session-secret-change-in-production',
     resave: false,
     saveUninitialized: false,
     name: 'loyalty-session-id',
@@ -141,7 +141,7 @@ const createSessionConfig = (req?: express.Request) => {
       sameSite: 'lax' as const,
       // Ensure cookies work with proxy
       ...(process.env.NODE_ENV === 'production' && {
-        domain: process.env.COOKIE_DOMAIN || undefined // Allow setting specific domain if needed
+        domain: process.env.COOKIE_DOMAIN ?? undefined // Allow setting specific domain if needed
       })
     }
   };
@@ -187,7 +187,7 @@ app.get('/api/health', async (_req, res) => {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       version: '3.1.1',
-      environment: process.env.NODE_ENV || 'development',
+      environment: process.env.NODE_ENV ?? 'development',
       services: {
         database: 'unknown',
         redis: 'unknown',

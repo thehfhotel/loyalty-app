@@ -11,8 +11,8 @@ import { loyaltyService } from './loyaltyService';
 import { membershipIdService } from './membershipIdService';
 import { getRandomEmojiAvatar, generateEmojiAvatarUrl } from '../utils/emojiUtils';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret';
+const JWT_SECRET = process.env.JWT_SECRET ?? 'your-secret-key';
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET ?? 'your-refresh-secret';
 const ACCESS_TOKEN_EXPIRE = '15m';
 const REFRESH_TOKEN_EXPIRE = '7d';
 
