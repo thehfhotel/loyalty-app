@@ -6,9 +6,25 @@ import passport from 'passport';
 import session from 'express-session';
 import RedisStore from 'connect-redis';
 import { createServer } from 'http';
+
+// Load environment variables first
+dotenv.config();
+
+// Import environment validation (will validate and exit if invalid)
+import { serverConfig, isProduction } from './config/environment';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
+import { 
+  securityHeaders, 
+  customSecurityHeaders, 
+  createRateLimiter, 
+  createApiRateLimiter, 
+  createAuthRateLimiter,
+  inputSanitization,
+  securityMonitoring,
+  productionSecurity
+} from './middleware/security';
 import { connectDatabase } from './config/database';
 import { connectRedis, getRedisClient } from './config/redis';
 import { seedSurveys } from './utils/seedDatabase';
@@ -23,21 +39,35 @@ import surveyRoutes from './routes/survey';
 import storageRoutes from './routes/storage';
 import membershipRoutes from './routes/membership';
 import translationRoutes from './routes/translation';
-// import { query } from './config/database';
 // Import and initialize OAuth service to register strategies
 import './services/oauthService';
 
-// Load environment variables
-dotenv.config();
-
 const app = express();
 const httpServer = createServer(app);
-const PORT = process.env.PORT || 4000;
+const PORT = serverConfig.port;
 
 // Trust proxy headers (required for Cloudflare and other reverse proxies)
 app.set('trust proxy', true);
 
-// Middleware - Helmet with OAuth-friendly configuration
+// Security middleware - Apply production security checks first
+if (isProduction()) {
+  app.use(productionSecurity);
+}
+
+// Security monitoring for all requests
+app.use(securityMonitoring);
+
+// Input sanitization middleware
+app.use(inputSanitization);
+
+// Custom security headers
+app.use(customSecurityHeaders);
+
+// Rate limiting middleware
+const generalRateLimit = createRateLimiter();
+app.use(generalRateLimit);
+
+// OAuth-friendly security headers configuration
 app.use((req, res, next) => {
   // Skip strict security headers for OAuth endpoints
   if (req.path.startsWith('/api/oauth/')) {
@@ -47,25 +77,8 @@ app.use((req, res, next) => {
       contentSecurityPolicy: false, // Disable CSP for OAuth redirects
     })(req, res, next);
   } else {
-    helmet({
-      crossOriginResourcePolicy: { policy: "cross-origin" },
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          styleSrc: ["'self'", "https:", "'unsafe-inline'"],
-          scriptSrc: ["'self'"],
-          imgSrc: ["'self'", "data:"],
-          connectSrc: ["'self'", "https:"],
-          fontSrc: ["'self'", "https:", "data:"],
-          objectSrc: ["'none'"],
-          frameSrc: ["'none'"],
-          // Allow OAuth redirects to external services
-          formAction: ["'self'", "https://accounts.google.com", "https://access.line.me"],
-          // Allow navigation to OAuth providers
-          navigateTo: ["'self'", "https://accounts.google.com", "https://access.line.me"]
-        }
-      }
-    })(req, res, next);
+    // Use our security headers middleware instead of inline helmet
+    securityHeaders(req, res, next);
   }
 });
 app.use(cors({
@@ -137,7 +150,7 @@ const createSessionConfig = (req?: express.Request) => {
   try {
     const redisClient = getRedisClient();
     if (redisClient && redisClient.isReady) {
-      const redisStore = new RedisStore({
+      const redisStore = new (RedisStore as any)({
         client: redisClient,
         prefix: 'loyalty-app:sess:'
       });
@@ -239,16 +252,22 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
-// API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/oauth', oauthRoutes);
-app.use('/api/loyalty', loyaltyRoutes);
-app.use('/api/coupons', couponRoutes);
-app.use('/api/surveys', surveyRoutes);
-app.use('/api/storage', storageRoutes);
-app.use('/api/membership', membershipRoutes);
-app.use('/api/translation', translationRoutes);
+// API Routes with specific rate limiting
+const apiRateLimit = createApiRateLimiter();
+const authRateLimit = createAuthRateLimiter();
+
+// Auth routes with strict rate limiting
+app.use('/api/auth', authRateLimit, authRoutes);
+
+// Other API routes with standard API rate limiting
+app.use('/api/users', apiRateLimit, userRoutes);
+app.use('/api/oauth', oauthRoutes); // OAuth routes don't need extra rate limiting
+app.use('/api/loyalty', apiRateLimit, loyaltyRoutes);
+app.use('/api/coupons', apiRateLimit, couponRoutes);
+app.use('/api/surveys', apiRateLimit, surveyRoutes);
+app.use('/api/storage', apiRateLimit, storageRoutes);
+app.use('/api/membership', apiRateLimit, membershipRoutes);
+app.use('/api/translation', apiRateLimit, translationRoutes);
 
 // Error handling
 app.use(errorHandler);
