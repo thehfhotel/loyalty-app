@@ -309,6 +309,52 @@ jobs:
           
           echo "✅ Frontend dependencies installed successfully"
 
+      - name: Setup Node.js dependencies for backend
+        run: |
+          echo "📦 Setting up backend dependencies..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR/backend"
+          
+          # Check Node.js version
+          echo "Node.js version: $(node --version)"
+          echo "NPM version: $(npm --version)"
+          
+          # Configure sudo authentication
+          echo "Configuring secure sudo access..."
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S echo "Sudo access configured" || {
+            echo "❌ Failed to authenticate with sudo"
+            exit 1
+          }
+          
+          # Fix permissions for Node.js installation
+          echo "Setting proper permissions for Node.js..."
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R $(whoami):$(whoami) .
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chmod -R 755 .
+          
+          # Clean any existing node_modules to avoid permission conflicts
+          if [ -d "node_modules" ]; then
+            echo "Cleaning existing node_modules..."
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S rm -rf node_modules
+          fi
+          
+          # Smart NPM installation - use ci if lockfile exists, install if not
+          echo "Installing backend dependencies..."
+          if [ -f "package-lock.json" ]; then
+            echo "Using npm ci with dev dependencies (lockfile found)..."
+            npm ci --include=dev
+          else
+            echo "Using npm install with dev dependencies (no lockfile found)..."
+            npm install --include=dev
+          fi
+          
+          # Verify Prisma installation
+          echo "Verifying Prisma CLI installation..."
+          npx prisma --version
+          
+          echo "✅ Backend dependencies installed successfully"
+
       - name: Pull and build containers with error handling
         run: |
           echo "🔨 Building containers..."
@@ -405,52 +451,6 @@ jobs:
             docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50
             exit 1
           fi
-
-      - name: Setup Node.js dependencies for backend
-        run: |
-          echo "📦 Setting up Node.js dependencies..."
-          
-          # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
-          cd "$DEPLOY_DIR/backend"
-          
-          # Check Node.js version
-          echo "Node.js version: $(node --version)"
-          echo "NPM version: $(npm --version)"
-          
-          # Configure sudo authentication
-          echo "Configuring secure sudo access..."
-          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S echo "Sudo access configured" || {
-            echo "❌ Failed to authenticate with sudo"
-            exit 1
-          }
-          
-          # Fix permissions for Node.js installation
-          echo "Setting proper permissions for Node.js..."
-          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R $(whoami):$(whoami) .
-          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chmod -R 755 .
-          
-          # Clean any existing node_modules to avoid permission conflicts
-          if [ -d "node_modules" ]; then
-            echo "Cleaning existing node_modules..."
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S rm -rf node_modules
-          fi
-          
-          # Smart NPM installation - use ci if lockfile exists, install if not
-          echo "Installing backend dependencies..."
-          if [ -f "package-lock.json" ]; then
-            echo "Using npm ci with dev dependencies (lockfile found)..."
-            npm ci --include=dev
-          else
-            echo "Using npm install with dev dependencies (no lockfile found)..."
-            npm install --include=dev
-          fi
-          
-          # Verify Prisma installation
-          echo "Verifying Prisma CLI installation..."
-          npx prisma --version
-          
-          echo "✅ Dependencies installed successfully"
 
       - name: Run database migrations
         run: |
