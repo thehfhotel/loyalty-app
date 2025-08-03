@@ -28,11 +28,15 @@ jobs:
     steps:
       - name: "🧹 Clean workspace"
         run: |
-          # Clean any leftover files from previous runs with proper permissions
-          if [ -d "${{ github.workspace }}" ]; then
-            sudo rm -rf "${{ github.workspace }}" || true
+          # Fix permission issues with dist/assets directory
+          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
+            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
+            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
           fi
-          mkdir -p "${{ github.workspace }}"
+          # Also try to fix permissions for the entire workspace
+          if [ -d "${{ github.workspace }}" ]; then
+            sudo chmod -R 777 "${{ github.workspace }}" || true
+          fi
           
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
@@ -113,11 +117,15 @@ jobs:
     steps:
       - name: "🧹 Clean workspace"
         run: |
-          # Clean any leftover files from previous runs with proper permissions
-          if [ -d "${{ github.workspace }}" ]; then
-            sudo rm -rf "${{ github.workspace }}" || true
+          # Fix permission issues with dist/assets directory
+          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
+            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
+            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
           fi
-          mkdir -p "${{ github.workspace }}"
+          # Also try to fix permissions for the entire workspace
+          if [ -d "${{ github.workspace }}" ]; then
+            sudo chmod -R 777 "${{ github.workspace }}" || true
+          fi
           
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
@@ -213,11 +221,15 @@ jobs:
     steps:
       - name: "🧹 Clean workspace"
         run: |
-          # Clean any leftover files from previous runs with proper permissions
-          if [ -d "${{ github.workspace }}" ]; then
-            sudo rm -rf "${{ github.workspace }}" || true
+          # Fix permission issues with dist/assets directory
+          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
+            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
+            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
           fi
-          mkdir -p "${{ github.workspace }}"
+          # Also try to fix permissions for the entire workspace
+          if [ -d "${{ github.workspace }}" ]; then
+            sudo chmod -R 777 "${{ github.workspace }}" || true
+          fi
           
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
@@ -293,11 +305,15 @@ jobs:
     steps:
       - name: "🧹 Clean workspace"
         run: |
-          # Clean any leftover files from previous runs with proper permissions
-          if [ -d "${{ github.workspace }}" ]; then
-            sudo rm -rf "${{ github.workspace }}" || true
+          # Fix permission issues with dist/assets directory
+          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
+            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
+            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
           fi
-          mkdir -p "${{ github.workspace }}"
+          # Also try to fix permissions for the entire workspace
+          if [ -d "${{ github.workspace }}" ]; then
+            sudo chmod -R 777 "${{ github.workspace }}" || true
+          fi
           
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
