@@ -302,7 +302,7 @@ jobs:
       - name: "🔧 Setup E2E environment"
         run: |
           # Start test containers with docker compose
-          docker compose -f docker compose.yml up -d postgres redis
+          docker compose -f docker-compose.yml up -d postgres redis
           
           # Wait for services to be ready
           timeout 60 bash -c 'until docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db; do sleep 2; done'
@@ -449,10 +449,10 @@ jobs:
           export COMPOSE_DOCKER_CLI_BUILD=1
           
           # Validate Docker Compose configuration
-          docker compose -f docker compose.yml -f docker compose.prod.yml config > /dev/null
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null
           
           # Build images (without starting services)
-          docker compose -f docker compose.yml -f docker compose.prod.yml build \
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml build \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
             --parallel
       
@@ -643,13 +643,13 @@ jobs:
           # Graceful shutdown of existing services
           if docker compose ps -q | head -1 | grep -q .; then
             echo "🛑 Graceful shutdown of existing services..."
-            timeout 30s docker compose -f docker compose.yml -f docker compose.prod.yml down --timeout 10 || \
-            docker compose -f docker compose.yml -f docker compose.prod.yml down --timeout 5
+            timeout 30s docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 10 || \
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 5
           fi
           
           # Build and start services
           echo "🏗️ Building and starting services..."
-          docker compose -f docker compose.yml -f docker compose.prod.yml up -d --build
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
           
           echo "✅ Services deployed"
       
