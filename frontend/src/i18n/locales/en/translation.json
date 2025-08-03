@@ -752,6 +752,35 @@
         "questionTextRequired": "Question text is required",
         "titleAndQuestionRequired": "Please provide a title and at least one question"
       },
+      "questionEditor": {
+        "questionNumber": "Question {{number}}",
+        "questionText": "Question Text",
+        "questionTextPlaceholder": "Enter your question here...",
+        "description": "Description (Optional)",
+        "descriptionPlaceholder": "Add additional context or instructions for this question...",
+        "fieldRequired": "This field is required",
+        "answerOptions": "Answer Options",
+        "optionTextPlaceholder": "Enter option text...",
+        "optionValuePlaceholder": "Value",
+        "newOptionText": "Option {{number}}",
+        "addOption": "+ Add Option",
+        "minRating": "Min Rating",
+        "maxRating": "Max Rating",
+        "requiredQuestion": "Required Question",
+        "preview": "Preview",
+        "previewPlaceholder": "(Question text will appear here)",
+        "textInputPlaceholder": "Type your answer here...",
+        "longTextInputPlaceholder": "Type your detailed answer here...",
+        "questionTypes": {
+          "singleChoice": "Single Choice",
+          "multipleChoice": "Multiple Choice",
+          "text": "Short Text",
+          "textarea": "Long Text",
+          "rating5": "5-Star Rating",
+          "rating10": "10-Point Scale",
+          "yesNo": "Yes/No"
+        }
+      },
       "analytics": {
         "title": "Survey Analytics & Insights",
         "overview": "Performance Overview",

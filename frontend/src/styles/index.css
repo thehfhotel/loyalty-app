@@ -10,6 +10,36 @@
     font-family: 'Noto Sans Thai', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
   }
   
+  /* DEBUG: Force radio button appearance */
+  input[type="radio"] {
+    appearance: auto !important;
+    -webkit-appearance: radio !important;
+    -moz-appearance: radio !important;
+    background-color: white !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 50% !important;
+    width: 1rem !important;
+    height: 1rem !important;
+    position: relative !important;
+  }
+  
+  input[type="radio"]:checked {
+    background-color: #3b82f6 !important;
+    border-color: #3b82f6 !important;
+  }
+  
+  input[type="radio"]:checked::before {
+    content: "" !important;
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: 6px !important;
+    height: 6px !important;
+    border-radius: 50% !important;
+    background-color: white !important;
+  }
+  
   /* Ensure proper line height for Thai text */
   html[lang="th"], 
   [lang="th"] {

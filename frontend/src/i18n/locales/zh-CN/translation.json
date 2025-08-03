@@ -757,6 +757,35 @@
         "removeSuccess": "优惠券分配移除成功",
         "removeError": "移除优惠券分配失败"
       },
+      "questionEditor": {
+        "questionNumber": "问题 {{number}}",
+        "questionText": "问题文本",
+        "questionTextPlaceholder": "在此输入您的问题...",
+        "description": "描述（可选）",
+        "descriptionPlaceholder": "为此问题添加额外的上下文或说明...",
+        "fieldRequired": "此字段为必填项",
+        "answerOptions": "答案选项",
+        "optionTextPlaceholder": "输入选项文本...",
+        "optionValuePlaceholder": "值",
+        "newOptionText": "选项 {{number}}",
+        "addOption": "+ 添加选项",
+        "minRating": "最低评分",
+        "maxRating": "最高评分",
+        "requiredQuestion": "必答问题",
+        "preview": "预览",
+        "previewPlaceholder": "（问题文本将显示在这里）",
+        "textInputPlaceholder": "在此输入您的答案...",
+        "longTextInputPlaceholder": "在此输入您的详细答案...",
+        "questionTypes": {
+          "singleChoice": "单选",
+          "multipleChoice": "多选",
+          "text": "简短文本",
+          "textarea": "长文本",
+          "rating5": "5星评分",
+          "rating10": "10分评分",
+          "yesNo": "是/否"
+        }
+      },
       "analytics": {
         "title": "调研分析与洞察",
         "overview": "性能概览",

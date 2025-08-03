@@ -554,8 +554,8 @@ const SurveyBuilderWithTranslation: React.FC = () => {
       order: (survey.questions?.length || 0) + 1,
       ...(type === 'multiple_choice' || type === 'single_choice' ? {
         options: [
-          { id: surveyService.generateOptionId(), text: t('surveys.admin.questions.defaultOptions.option1'), value: 'option1' },
-          { id: surveyService.generateOptionId(), text: t('surveys.admin.questions.defaultOptions.option2'), value: 'option2' }
+          { id: surveyService.generateOptionId(), text: t('surveys.admin.questions.defaultOptions.option1'), value: '1' },
+          { id: surveyService.generateOptionId(), text: t('surveys.admin.questions.defaultOptions.option2'), value: '2' }
         ]
       } : {}),
       ...(type === 'rating_5' ? { min_rating: 1, max_rating: 5 } : {}),

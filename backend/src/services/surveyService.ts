@@ -19,10 +19,27 @@ import {
 } from '../types/survey';
 
 export class SurveyService {
+  // Normalize question options to ensure consistent values
+  private normalizeQuestionOptions(questions: any[]): any[] {
+    return questions.map(question => {
+      if (question.options && Array.isArray(question.options)) {
+        // Re-index option values to be sequential numbers starting from 1
+        question.options = question.options.map((option: any, index: number) => ({
+          ...option,
+          value: (index + 1).toString() // Ensure values are sequential strings "1", "2", "3", etc.
+        }));
+      }
+      return question;
+    });
+  }
+
   // Create a new survey
   async createSurvey(data: CreateSurveyRequest, createdBy: string): Promise<Survey> {
     const client = await getPool().connect();
     try {
+      // Normalize question options before saving
+      const normalizedQuestions = this.normalizeQuestionOptions(data.questions);
+      
       const result = await client.query(
         `INSERT INTO surveys (title, description, questions, target_segment, access_type, status, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -30,7 +47,7 @@ export class SurveyService {
         [
           data.title,
           data.description,
-          JSON.stringify(data.questions),
+          JSON.stringify(normalizedQuestions),
           JSON.stringify(data.target_segment || {}),
           data.access_type,
           data.status || 'draft',
@@ -248,7 +265,9 @@ export class SurveyService {
       }
       if (data.questions !== undefined) {
         updateFields.push(`questions = $${paramIndex}`);
-        values.push(JSON.stringify(data.questions));
+        // Normalize question options before saving
+        const normalizedQuestions = this.normalizeQuestionOptions(data.questions);
+        values.push(JSON.stringify(normalizedQuestions));
         paramIndex++;
       }
       if (data.target_segment !== undefined) {
@@ -320,7 +339,7 @@ export class SurveyService {
       // Try to update existing response first using Prisma
       const existingResponse = await db.survey_responses.findUnique({
         where: {
-          idx_survey_responses_unique: {
+          survey_id_user_id: {
             survey_id: data.survey_id,
             user_id: userId
           }

@@ -34,7 +34,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
     const newOption: QuestionOption = {
       id: surveyService.generateOptionId(),
       text: t('surveys.admin.questionEditor.newOptionText', { number: question.options.length + 1 }),
-      value: `option${question.options.length + 1}`
+      value: (question.options.length + 1).toString() // Auto-generate sequential numeric value
     };
     
     onUpdate({
@@ -45,8 +45,13 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
   const updateOption = (optionId: string, field: 'text' | 'value', value: string) => {
     if (!question.options) return;
     
-    const updatedOptions = question.options.map(option =>
-      option.id === optionId ? { ...option, [field]: value } : option
+    // Only allow text updates from UI, value is auto-generated
+    if (field === 'value') return;
+    
+    const updatedOptions = question.options.map((option, index) =>
+      option.id === optionId 
+        ? { ...option, text: value, value: (index + 1).toString() } // Keep value as sequential number
+        : option
     );
     
     onUpdate({ options: updatedOptions });
@@ -55,7 +60,14 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
   const removeOption = (optionId: string) => {
     if (!question.options || question.options.length <= 2) return;
     
-    const filteredOptions = question.options.filter(option => option.id !== optionId);
+    // Re-index values when removing an option
+    const filteredOptions = question.options
+      .filter(option => option.id !== optionId)
+      .map((option, index) => ({
+        ...option,
+        value: (index + 1).toString() // Re-index values sequentially
+      }));
+    
     onUpdate({ options: filteredOptions });
   };
 
@@ -172,8 +184,9 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
               {t('surveys.admin.questionEditor.answerOptions')}
             </label>
             <div className="space-y-2">
-              {question.options?.map((option) => (
+              {question.options?.map((option, index) => (
                 <div key={option.id} className="flex items-center space-x-2">
+                  <span className="text-sm font-medium text-gray-500 w-6">{index + 1}.</span>
                   <input
                     type="text"
                     value={option.text}
@@ -181,14 +194,6 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
                     disabled={disabled}
                     className={`flex-1 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${disabled ? 'bg-gray-100' : ''}`}
                     placeholder={t('surveys.admin.questionEditor.optionTextPlaceholder')}
-                  />
-                  <input
-                    type="text"
-                    value={option.value.toString()}
-                    onChange={(e) => updateOption(option.id, 'value', e.target.value)}
-                    disabled={disabled}
-                    className={`w-24 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${disabled ? 'bg-gray-100' : ''}`}
-                    placeholder={t('surveys.admin.questionEditor.optionValuePlaceholder')}
                   />
                   {question.options && question.options.length > 2 && (
                     <button

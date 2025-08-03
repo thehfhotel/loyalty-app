@@ -26,19 +26,23 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
       case 'single_choice':
         return (
           <div className="space-y-3">
-            {question.options?.map((option) => (
-              <label key={option.id} className="flex items-center">
-                <input
-                  type="radio"
-                  name={`question_${question.id}`}
-                  value={option.value}
-                  checked={answer === option.value}
-                  onChange={(e) => handleAnswerChange(e.target.value)}
-                  className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                />
-                <span className="text-gray-700">{option.text}</span>
-              </label>
-            ))}
+            {question.options?.map((option) => {
+              // Convert both to strings for comparison to handle type mismatches
+              const isChecked = String(answer) === String(option.value);
+              return (
+                <label key={option.id} className="flex items-center cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors">
+                  <input
+                    type="radio"
+                    name={`question_${question.id}`}
+                    value={option.value}
+                    checked={isChecked}
+                    onChange={(e) => handleAnswerChange(e.target.value)}
+                    className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 focus:ring-2 border-gray-300"
+                  />
+                  <span className={`text-gray-700 select-none ${isChecked ? 'font-medium text-blue-700' : ''}`}>{option.text}</span>
+                </label>
+              );
+            })}
           </div>
         );
 
@@ -46,7 +50,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
         return (
           <div className="space-y-3">
             {question.options?.map((option) => (
-              <label key={option.id} className="flex items-center">
+              <label key={option.id} className="flex items-center cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors">
                 <input
                   type="checkbox"
                   checked={Array.isArray(answer) && answer.includes(option.value)}
@@ -58,9 +62,9 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
                       handleAnswerChange(currentAnswers.filter(a => a !== option.value));
                     }
                   }}
-                  className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 focus:ring-2 border-gray-300 rounded"
                 />
-                <span className="text-gray-700">{option.text}</span>
+                <span className={`text-gray-700 select-none ${Array.isArray(answer) && answer.includes(option.value) ? 'font-medium text-blue-700' : ''}`}>{option.text}</span>
               </label>
             ))}
           </div>
@@ -98,7 +102,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
                 type="button"
                 onClick={() => handleAnswerChange(rating)}
                 className={`w-10 h-10 rounded-full border-2 font-medium transition-colors ${
-                  answer === rating
+                  Number(answer) === rating
                     ? 'bg-blue-600 text-white border-blue-600'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-blue-300'
                 }`}
@@ -119,7 +123,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
                 type="button"
                 onClick={() => handleAnswerChange(rating)}
                 className={`w-12 h-10 rounded border-2 font-medium transition-colors ${
-                  answer === rating
+                  Number(answer) === rating
                     ? 'bg-blue-600 text-white border-blue-600'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-blue-300'
                 }`}
@@ -133,27 +137,27 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
       case 'yes_no':
         return (
           <div className="flex space-x-4">
-            <label className="flex items-center">
+            <label className="flex items-center cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors">
               <input
                 type="radio"
                 name={`question_${question.id}`}
                 value="yes"
-                checked={answer === 'yes'}
+                checked={String(answer) === 'yes'}
                 onChange={(e) => handleAnswerChange(e.target.value)}
-                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 focus:ring-2 border-gray-300"
               />
-              <span className="text-gray-700">{t('common.yes', 'Yes')}</span>
+              <span className={`text-gray-700 select-none ${String(answer) === 'yes' ? 'font-medium text-blue-700' : ''}`}>{t('common.yes', 'Yes')}</span>
             </label>
-            <label className="flex items-center">
+            <label className="flex items-center cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors">
               <input
                 type="radio"
                 name={`question_${question.id}`}
                 value="no"
-                checked={answer === 'no'}
+                checked={String(answer) === 'no'}
                 onChange={(e) => handleAnswerChange(e.target.value)}
-                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 focus:ring-2 border-gray-300"
               />
-              <span className="text-gray-700">{t('common.no', 'No')}</span>
+              <span className={`text-gray-700 select-none ${String(answer) === 'no' ? 'font-medium text-blue-700' : ''}`}>{t('common.no', 'No')}</span>
             </label>
           </div>
         );

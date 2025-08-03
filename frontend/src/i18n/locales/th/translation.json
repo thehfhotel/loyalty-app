@@ -816,6 +816,35 @@
         "questionTextRequired": "ต้องกรอกข้อความคำถาม",
         "titleAndQuestionRequired": "กรุณาใส่ชื่อและอย่างน้อยหนึ่งคำถาม"
       },
+      "questionEditor": {
+        "questionNumber": "คำถามที่ {{number}}",
+        "questionText": "ข้อความคำถาม",
+        "questionTextPlaceholder": "กรอกคำถามของคุณที่นี่...",
+        "description": "คำอธิบาย (ไม่บังคับ)",
+        "descriptionPlaceholder": "เพิ่มบริบทหรือคำแนะนำเพิ่มเติมสำหรับคำถามนี้...",
+        "fieldRequired": "ฟิลด์นี้จำเป็นต้องกรอก",
+        "answerOptions": "ตัวเลือกคำตอบ",
+        "optionTextPlaceholder": "กรอกข้อความตัวเลือก...",
+        "optionValuePlaceholder": "ค่า",
+        "newOptionText": "ตัวเลือกที่ {{number}}",
+        "addOption": "+ เพิ่มตัวเลือก",
+        "minRating": "คะแนนต่ำสุด",
+        "maxRating": "คะแนนสูงสุด",
+        "requiredQuestion": "คำถามบังคับ",
+        "preview": "ตัวอย่าง",
+        "previewPlaceholder": "(ข้อความคำถามจะแสดงที่นี่)",
+        "textInputPlaceholder": "พิมพ์คำตอบของคุณที่นี่...",
+        "longTextInputPlaceholder": "พิมพ์คำตอบแบบละเอียดของคุณที่นี่...",
+        "questionTypes": {
+          "singleChoice": "เลือกคำตอบเดียว",
+          "multipleChoice": "เลือกได้หลายคำตอบ",
+          "text": "ข้อความสั้น",
+          "textarea": "ข้อความยาว",
+          "rating5": "ให้คะแนน 5 ดาว",
+          "rating10": "ให้คะแนน 10 ระดับ",
+          "yesNo": "ใช่/ไม่ใช่"
+        }
+      },
       "analytics": {
         "title": "การวิเคราะห์แบบสำรวจ",
         "overview": "ภาพรวม",
