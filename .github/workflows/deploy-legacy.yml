@@ -1,9 +1,7 @@
-name: Deploy to Production
+name: Legacy Pipeline (Manual Backup/Rollback)
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:  # Manual trigger only - for emergency rollback
 
 env:
   DEPLOY_PATH: /home/nut/loyalty-app  # Path on your server
