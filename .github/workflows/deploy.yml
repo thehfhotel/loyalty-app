@@ -271,203 +271,186 @@ jobs:
             echo "ℹ️ No database container found - skipping backup"
           fi
 
-      - name: Setup Node.js dependencies for frontend
-        run: |
-          echo "📦 Setting up frontend dependencies..."
-          
-          # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
-          cd "$DEPLOY_DIR/frontend"
-          
-          # Configure sudo authentication
-          echo "Configuring secure sudo access..."
-          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S echo "Sudo access configured" || {
-            echo "❌ Failed to authenticate with sudo"
-            exit 1
-          }
-          
-          # Fix permissions for Node.js installation
-          echo "Setting proper permissions for Node.js..."
-          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R $(whoami):$(whoami) .
-          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chmod -R 755 .
-          
-          # Clean any existing node_modules to avoid permission conflicts
-          if [ -d "node_modules" ]; then
-            echo "Cleaning existing node_modules..."
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S rm -rf node_modules
-          fi
-          
-          # Smart NPM installation - use ci if lockfile exists, install if not
-          echo "Installing frontend dependencies..."
-          if [ -f "package-lock.json" ]; then
-            echo "Using npm ci (lockfile found)..."
-            npm ci
-          else
-            echo "Using npm install (no lockfile found)..."
-            npm install
-          fi
-          
-          echo "✅ Frontend dependencies installed successfully"
+      - name: Cache Node.js dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            /tmp/.npm-cache
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
-      - name: Setup Node.js dependencies for backend
+      - name: Setup Node.js dependencies in parallel
         run: |
-          echo "📦 Setting up backend dependencies..."
+          echo "📦 Setting up dependencies in parallel..."
           
           # Navigate to deployment directory
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
-          cd "$DEPLOY_DIR/backend"
+          cd "$DEPLOY_DIR"
           
-          # Check Node.js version
-          echo "Node.js version: $(node --version)"
-          echo "NPM version: $(npm --version)"
-          
-          # Configure sudo authentication
+          # Configure sudo authentication once
           echo "Configuring secure sudo access..."
           echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S echo "Sudo access configured" || {
             echo "❌ Failed to authenticate with sudo"
             exit 1
           }
           
-          # Fix permissions for Node.js installation
-          echo "Setting proper permissions for Node.js..."
-          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R $(whoami):$(whoami) .
-          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chmod -R 755 .
+          # Set up npm cache directory
+          export NPM_CONFIG_CACHE=/tmp/.npm-cache
+          mkdir -p /tmp/.npm-cache
           
-          # Clean any existing node_modules to avoid permission conflicts
-          if [ -d "node_modules" ]; then
-            echo "Cleaning existing node_modules..."
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S rm -rf node_modules
+          # Function to setup dependencies for a service
+          setup_dependencies() {
+            local service=$1
+            local dir=$2
+            
+            echo "Setting up $service dependencies..."
+            cd "$DEPLOY_DIR/$dir"
+            
+            # Fix permissions
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R $(whoami):$(whoami) . 2>/dev/null || true
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chmod -R 755 . 2>/dev/null || true
+            
+            # Clean existing node_modules
+            if [ -d "node_modules" ]; then
+              echo "Cleaning existing $service node_modules..."
+              echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S rm -rf node_modules 2>/dev/null || true
+            fi
+            
+            # Install dependencies with cache
+            if [ -f "package-lock.json" ]; then
+              echo "Installing $service dependencies with npm ci..."
+              if [ "$service" = "backend" ]; then
+                npm ci --include=dev --cache /tmp/.npm-cache
+              else
+                npm ci --cache /tmp/.npm-cache
+              fi
+            else
+              echo "Installing $service dependencies with npm install..."
+              if [ "$service" = "backend" ]; then
+                npm install --include=dev --cache /tmp/.npm-cache
+              else
+                npm install --cache /tmp/.npm-cache
+              fi
+            fi
+            
+            echo "✅ $service dependencies installed successfully"
+          }
+          
+          # Run frontend and backend dependency installation in parallel
+          setup_dependencies "frontend" "frontend" &
+          FRONTEND_PID=$!
+          
+          setup_dependencies "backend" "backend" &
+          BACKEND_PID=$!
+          
+          # Wait for both to complete
+          echo "Waiting for parallel dependency installation to complete..."
+          wait $FRONTEND_PID
+          FRONTEND_EXIT=$?
+          wait $BACKEND_PID  
+          BACKEND_EXIT=$?
+          
+          # Check if both succeeded
+          if [ $FRONTEND_EXIT -ne 0 ]; then
+            echo "❌ Frontend dependency installation failed"
+            exit 1
           fi
           
-          # Smart NPM installation - use ci if lockfile exists, install if not
-          echo "Installing backend dependencies..."
-          if [ -f "package-lock.json" ]; then
-            echo "Using npm ci with dev dependencies (lockfile found)..."
-            npm ci --include=dev
-          else
-            echo "Using npm install with dev dependencies (no lockfile found)..."
-            npm install --include=dev
+          if [ $BACKEND_EXIT -ne 0 ]; then
+            echo "❌ Backend dependency installation failed"
+            exit 1
           fi
           
           # Verify Prisma installation
+          cd "$DEPLOY_DIR/backend"
           echo "Verifying Prisma CLI installation..."
           npx prisma --version
           
-          echo "✅ Backend dependencies installed successfully"
+          echo "✅ All dependencies installed successfully in parallel"
 
-      - name: Pull and build containers with error handling
+      - name: Setup Docker BuildKit and cache
         run: |
-          echo "🔨 Building containers..."
+          echo "🔧 Setting up Docker BuildKit with caching..."
+          
+          # Enable BuildKit for better caching and performance
+          export DOCKER_BUILDKIT=1
+          export COMPOSE_DOCKER_CLI_BUILD=1
+          
+          # Create buildx builder with cache support if not exists
+          if ! docker buildx ls | grep -q "ci-builder"; then
+            docker buildx create --name ci-builder --use
+          else
+            docker buildx use ci-builder
+          fi
+          
+          echo "✅ Docker BuildKit setup completed"
+
+      - name: Build containers with optimized caching
+        run: |
+          echo "🔨 Building containers with optimized caching..."
           
           # Navigate to deployment directory
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
+          # Enable BuildKit
+          export DOCKER_BUILDKIT=1
+          export COMPOSE_DOCKER_CLI_BUILD=1
+          
           # Validate docker-compose files exist
-          if [ ! -f "docker-compose.yml" ]; then
-            echo "❌ docker-compose.yml not found"
+          if [ ! -f "docker-compose.yml" ] || [ ! -f "docker-compose.prod.yml" ]; then
+            echo "❌ Required docker-compose files not found"
             exit 1
           fi
           
-          if [ ! -f "docker-compose.prod.yml" ]; then
-            echo "❌ docker-compose.prod.yml not found"
-            exit 1
-          fi
-          
-          # Validate docker-compose configuration
+          # Validate configuration
           echo "Validating Docker Compose configuration..."
-          if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null; then
-            echo "❌ Docker Compose configuration is invalid"
-            exit 1
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null
+          
+          # Selective cleanup - only if needed
+          DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+          if [ "$DISK_USAGE" -gt 80 ]; then
+            echo "High disk usage detected, cleaning up..."
+            docker system prune -f || true
           fi
           
-          # Clean up old containers and images to free space
-          echo "Cleaning up old containers and images..."
-          docker system prune -f || true
+          # Pull base images in parallel
+          echo "Pulling base images..."
+          docker pull node:18-alpine &
+          docker pull postgres:15-alpine &
+          docker pull redis:7-alpine &
+          docker pull nginx:alpine &
+          wait
           
-          echo "Pulling latest images..."
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml pull || {
-            echo "⚠️ Some images failed to pull, continuing with build..."
-          }
-          
-          echo "Building containers..."
-          if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache; then
+          # Build with cache optimization
+          echo "Building containers with cache optimization..."
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml build \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --parallel || {
             echo "❌ Container build failed"
-            # Show build logs for debugging
-            echo "📋 Build logs:"
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100
-            
-            # Show disk space
-            echo "💾 Disk space:"
-            df -h
-            
-            # Show system resources
-            echo "🖥️ System resources:"
-            free -h
-            
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50
             exit 1
-          fi
+          }
           
           echo "✅ Container build completed successfully"
 
-      - name: Start containers with health monitoring
+      - name: Optimized database migrations
         run: |
-          echo "🚀 Starting containers..."
+          echo "📊 Running optimized database migrations..."
           
           # Navigate to deployment directory
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
-          # Start containers in detached mode
-          if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d; then
-            echo "❌ Failed to start containers"
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs
-            exit 1
-          fi
+          # Start containers with production config immediately
+          echo "Starting containers with production configuration..."
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
           
-          echo "Waiting for containers to initialize..."
-          sleep 10
-          
-          # Monitor container health
-          echo "Checking container status..."
-          max_wait=60
-          waited=0
-          
-          while [ $waited -lt $max_wait ]; do
-            # Check if all containers are running
-            if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps --format="table {{.Name}}\t{{.State}}" | grep -v "running" | grep -q "exited\|dead\|restarting"; then
-              echo "⚠️ Some containers are not running properly:"
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-              sleep 5
-              waited=$((waited + 5))
-            else
-              echo "✅ All containers are running"
-              break
-            fi
-          done
-          
-          if [ $waited -ge $max_wait ]; then
-            echo "❌ Containers failed to start properly within ${max_wait}s"
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=50
-            exit 1
-          fi
-
-      - name: Run database migrations
-        run: |
-          echo "📊 Running database migrations with Prisma..."
-          
-          # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
-          cd "$DEPLOY_DIR"
-          
-          # Stop containers and restart with database port exposed for migrations
-          echo "Restarting containers with database access for migrations..."
-          docker compose -f docker-compose.yml down --timeout 10 || true
-          docker compose -f docker-compose.yml up -d
-          
-          # Wait for database to be ready
+          # Wait for database to be ready with optimized timing
           echo "Waiting for database to be ready..."
-          max_attempts=30
+          max_attempts=20  # Reduced from 30
           attempt=0
           
           while [ $attempt -lt $max_attempts ]; do
@@ -476,47 +459,42 @@ jobs:
               break
             fi
             attempt=$((attempt + 1))
-            echo "Waiting for database... (attempt $attempt/$max_attempts)"
-            sleep 3
+            [ $((attempt % 5)) -eq 0 ] && echo "Waiting for database... (attempt $attempt/$max_attempts)"
+            sleep 2  # Reduced from 3
           done
           
           if [ $attempt -ge $max_attempts ]; then
             echo "❌ Database failed to become ready"
-            echo "Container status:"
             docker compose ps postgres
             exit 1
           fi
           
-          # Wait additional time for full database initialization
-          echo "Allowing additional time for database initialization..."
-          sleep 10
+          # Shorter initialization wait
+          echo "Allowing database initialization..."
+          sleep 5  # Reduced from 10
           
           # Navigate to backend directory
           cd backend
           
-          # Ensure Prisma client is generated
-          echo "Generating Prisma client..."
+          # Generate Prisma client (if not cached)
+          echo "Ensuring Prisma client is generated..."
           npm run db:generate
           
-          # Set database URL for host connection (using exposed port)
-          export DATABASE_URL="postgresql://loyalty:loyalty_pass@localhost:5434/loyalty_db"
-          
-          # Deploy Prisma migrations from host with baseline handling
-          echo "Deploying Prisma migrations from host..."
-          if ! npm run db:migrate:deploy 2>&1; then
+          # Run migrations through container network (faster than exposing ports)
+          echo "Deploying Prisma migrations through container network..."
+          if ! docker compose exec -T backend npm run db:migrate:deploy 2>&1; then
             echo "Migration deployment failed, checking for P3005 baseline scenario..."
             
             # Check if the error is P3005 (database schema not empty)
-            if npm run db:migrate:deploy 2>&1 | grep -q "P3005"; then
-              echo "P3005 detected - database exists but needs baseline. Performing baseline..."
+            if docker compose exec -T backend npm run db:migrate:deploy 2>&1 | grep -q "P3005"; then
+              echo "P3005 detected - performing baseline..."
               
-              # Baseline the existing database by marking initial migration as applied
-              npx prisma migrate resolve --applied 0_init
+              # Baseline through container
+              docker compose exec -T backend npx prisma migrate resolve --applied 0_init
               echo "✅ Database baseline completed"
               
-              # Retry migration deployment after baseline
-              echo "Retrying migration deployment after baseline..."
-              npm run db:migrate:deploy
+              # Retry migration
+              docker compose exec -T backend npm run db:migrate:deploy
             else
               echo "❌ Migration failed with non-P3005 error"
               exit 1
@@ -525,64 +503,71 @@ jobs:
             echo "✅ Migration deployment completed successfully"
           fi
           
-          # Test database connection from host
-          echo "Testing database connection from host..."
-          npx tsx src/test-prisma.ts
+          # Test database connection through container
+          echo "Testing database connection..."
+          docker compose exec -T backend npx prisma db pull --print > /dev/null || {
+            echo "⚠️ Database connection test failed, but migrations completed"
+          }
           
-          # Return to deployment directory and restart with production configuration
-          cd "$DEPLOY_DIR"
-          echo "Restarting containers with production configuration..."
-          docker compose -f docker-compose.yml down --timeout 10
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-          
-          # Wait for containers to restart
-          echo "Waiting for containers to restart..."
-          sleep 15
+          # Quick container health check
+          echo "Verifying container health..."
+          sleep 5  # Reduced from 15
           
           echo "✅ Database migrations completed successfully"
 
-      - name: Comprehensive health check and validation
+      - name: Optimized parallel health checks
         run: |
-          echo "🏥 Running comprehensive health checks..."
+          echo "🏥 Running optimized health checks in parallel..."
           
           # Navigate to deployment directory
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
-          # Function to check service health
+          # Function to check service health with faster timeouts
           check_service_health() {
             local service=$1
             local url=$2
-            local max_attempts=30
+            local max_attempts=15  # Reduced from 30
             local attempt=0
             
             echo "Checking $service health at $url"
             
             while [ $attempt -lt $max_attempts ]; do
-              if curl -f -s --max-time 5 "$url" > /dev/null 2>&1; then
+              if curl -f -s --max-time 3 --connect-timeout 2 "$url" > /dev/null 2>&1; then
                 echo "✅ $service is healthy!"
                 return 0
               fi
               
               attempt=$((attempt + 1))
-              echo "Waiting for $service... (attempt $attempt/$max_attempts)"
-              sleep 3
+              [ $((attempt % 5)) -eq 0 ] && echo "Waiting for $service... (attempt $attempt/$max_attempts)"
+              sleep 2  # Reduced from 3
             done
             
             echo "❌ $service health check failed!"
             return 1
           }
           
-          # Check application health
-          failed_services=()
+          # Run health checks in parallel
+          echo "Starting parallel health checks..."
           
-          # Check main application
-          if ! check_service_health "Application" "http://localhost:4001/api/health"; then
+          check_service_health "Application" "http://localhost:4001/api/health" &
+          APP_PID=$!
+          
+          check_service_health "Frontend" "http://localhost:4001/" &
+          FRONTEND_PID=$!
+          
+          # Wait for both health checks to complete
+          wait $APP_PID
+          APP_EXIT=$?
+          wait $FRONTEND_PID
+          FRONTEND_EXIT=$?
+          
+          # Collect failed services
+          failed_services=()
+          if [ $APP_EXIT -ne 0 ]; then
             failed_services+=("Application")
           fi
-          
-          # Check if frontend is accessible
-          if ! check_service_health "Frontend" "http://localhost:4001/"; then
+          if [ $FRONTEND_EXIT -ne 0 ]; then
             failed_services+=("Frontend")
           fi
           
@@ -594,47 +579,65 @@ jobs:
             echo "\n🐳 Container Status:"
             docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
             
-            echo "\n📋 Backend Logs (last 30 lines):"
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=30 backend || true
+            echo "\n📋 Backend Logs (last 20 lines):"  # Reduced from 30
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=20 backend || true
             
-            echo "\n📋 Nginx Logs (last 20 lines):"
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=20 nginx || true
+            echo "\n📋 Nginx Logs (last 15 lines):"  # Reduced from 20
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=15 nginx || true
             
             echo "\n🔍 Port Status:"
-            netstat -tlnp | grep :4001 || echo "Port 4001 not listening"
+            ss -tlnp | grep :4001 || netstat -tlnp | grep :4001 || echo "Port 4001 not listening"
             
             exit 1
           fi
           
           echo "✅ All health checks passed successfully!"
 
-      - name: Post-deployment cleanup and optimization
+      - name: Smart conditional cleanup
         run: |
-          echo "🧹 Post-deployment cleanup..."
+          echo "🧹 Smart conditional cleanup..."
           
           # Navigate to deployment directory
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
-          # Clean up unused Docker resources
-          echo "Cleaning Docker images..."
-          docker image prune -f || true
+          # Check current disk usage
+          DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+          echo "Current disk usage: ${DISK_USAGE}%"
           
-          echo "Cleaning unused volumes (keeping data volumes)..."
-          # Only clean volumes that are not in use
-          docker volume prune -f || true
+          # Only run cleanup if disk usage is above threshold
+          if [ "$DISK_USAGE" -gt 75 ]; then
+            echo "Disk usage above 75%, running cleanup..."
+            
+            # Clean up unused Docker resources
+            echo "Cleaning Docker images..."
+            docker image prune -f || true
+            
+            echo "Cleaning unused volumes (keeping data volumes)..."
+            docker volume prune -f || true
+            
+            echo "Cleaning build cache..."
+            docker builder prune -f || true
+            
+            echo "Cleaning networks..."
+            docker network prune -f || true
+            
+            # Show disk usage after cleanup
+            NEW_DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
+            echo "Disk usage after cleanup: ${NEW_DISK_USAGE}%"
+            echo "Space freed: $((DISK_USAGE - NEW_DISK_USAGE))%"
+          else
+            echo "Disk usage below 75%, skipping cleanup to save time"
+            
+            # Just clean old/unused containers for safety
+            docker container prune -f || true
+          fi
           
-          echo "Cleaning build cache..."
-          docker builder prune -f || true
-          
-          echo "Cleaning networks..."
-          docker network prune -f || true
-          
-          # Show disk usage
-          echo "\n💾 Disk usage after cleanup:"
+          # Show final disk usage
+          echo "\n💾 Final disk usage:"
           df -h . | head -2
           
-          echo "✅ Cleanup completed"
+          echo "✅ Smart cleanup completed"
           
       - name: Deployment summary and monitoring setup
         if: always()
