@@ -189,9 +189,9 @@ jobs:
           JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
           SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
         run: |
-          # Enable UUID extension in test database
+          # Enable UUID extension in test database using Docker
           echo "Enabling UUID extension in test database..."
-          PGPASSWORD=test_password psql -h localhost -p 5433 -U loyalty_test -d loyalty_test_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
+          docker exec postgres psql -U loyalty_test -d loyalty_test_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
           
           # Generate Prisma client for tests
           npm run db:generate
