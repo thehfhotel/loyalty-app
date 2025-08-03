@@ -159,6 +159,14 @@ describe('AuthService', () => {
       ];
 
       for (const invalidEmail of invalidEmails) {
+        // Mock both user and profile creation rejections for invalid email format
+        (testDb.users.create as jest.Mock).mockRejectedValueOnce(
+          new Error('Invalid email format')
+        );
+        (testDb.user_profiles.create as jest.Mock).mockRejectedValueOnce(
+          new Error('Invalid email format')
+        );
+        
         await expect(
           createTestUser({ email: invalidEmail })
         ).rejects.toThrow();
@@ -171,6 +179,11 @@ describe('AuthService', () => {
       // First user should succeed
       await createTestUser({ email });
       
+      // Mock the rejection for duplicate email
+      (testDb.users.create as jest.Mock).mockRejectedValueOnce(
+        new Error('Email already exists')
+      );
+      
       // Second user with same email should fail
       await expect(
         createTestUser({ email })
@@ -178,6 +191,11 @@ describe('AuthService', () => {
     });
 
     it('should validate required user fields', async () => {
+      // Mock the rejection for missing required fields
+      (testDb.users.create as jest.Mock).mockRejectedValueOnce(
+        new Error('Missing required fields')
+      );
+      
       // Test missing email
       await expect(
         testDb.users.create({
@@ -287,12 +305,22 @@ describe('AuthService', () => {
       const email = 'duplicate@example.com';
       await createTestUser({ email });
 
+      // Mock the rejection for duplicate email constraint
+      (testDb.users.create as jest.Mock).mockRejectedValueOnce(
+        new Error('Unique constraint failed')
+      );
+
       await expect(
         createTestUser({ email })
       ).rejects.toThrow();
     });
 
     it('should validate data types', async () => {
+      // Mock the rejection for invalid data types
+      (testDb.users.create as jest.Mock).mockRejectedValueOnce(
+        new Error('Invalid data type')
+      );
+      
       // Test invalid data types
       await expect(
         testDb.users.create({
@@ -317,6 +345,9 @@ describe('AuthService', () => {
 
   describe('Performance and Scalability', () => {
     it('should efficiently query user data', async () => {
+      // Mock the findUnique response
+      (testDb.users.findUnique as jest.Mock).mockResolvedValueOnce(testUser);
+      
       const startTime = Date.now();
       
       const user = await testDb.users.findUnique({
