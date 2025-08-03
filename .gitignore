@@ -24,6 +24,24 @@ logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Storage and uploads (user data)
+storage/
+backend/storage/
+frontend/storage/
+uploads/
+public/uploads/
+backend/uploads/
+*/storage/
+*/uploads/
+
+# Database backups and dumps
+*.sql.bak
+backup_*.sql
+*_backup.sql
+dump_*.sql
 
 # IDE
 .vscode/
@@ -31,22 +49,50 @@ yarn-error.log*
 *.swp
 *.swo
 .DS_Store
+*.sublime-*
 
 # Test coverage
 coverage/
 .nyc_output/
+.lcov
 
 # Temporary files
 tmp/
 temp/
 *.tmp
+*.temp
 
 # Database
 postgres_data/
-
-# Upload files
-uploads/
-public/uploads/
+redis_data/
+data/
 
 # OS files
 Thumbs.db
+.DS_Store
+ehthumbs.db
+Desktop.ini
+
+# Docker volumes
+docker-volumes/
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+*.cert
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Yarn Integrity file
+.yarn-integrity
