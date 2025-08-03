@@ -26,6 +26,14 @@ jobs:
       security-passed: ${{ steps.security-results.outputs.passed }}
     
     steps:
+      - name: "🧹 Clean workspace"
+        run: |
+          # Clean any leftover files from previous runs with proper permissions
+          if [ -d "${{ github.workspace }}" ]; then
+            sudo rm -rf "${{ github.workspace }}" || true
+          fi
+          mkdir -p "${{ github.workspace }}"
+          
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
@@ -103,6 +111,14 @@ jobs:
           - 6380:6379
     
     steps:
+      - name: "🧹 Clean workspace"
+        run: |
+          # Clean any leftover files from previous runs with proper permissions
+          if [ -d "${{ github.workspace }}" ]; then
+            sudo rm -rf "${{ github.workspace }}" || true
+          fi
+          mkdir -p "${{ github.workspace }}"
+          
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
@@ -195,6 +211,14 @@ jobs:
       e2e-passed: ${{ steps.e2e-results.outputs.passed }}
     
     steps:
+      - name: "🧹 Clean workspace"
+        run: |
+          # Clean any leftover files from previous runs with proper permissions
+          if [ -d "${{ github.workspace }}" ]; then
+            sudo rm -rf "${{ github.workspace }}" || true
+          fi
+          mkdir -p "${{ github.workspace }}"
+          
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
@@ -267,6 +291,14 @@ jobs:
       build-passed: ${{ steps.build-results.outputs.passed }}
     
     steps:
+      - name: "🧹 Clean workspace"
+        run: |
+          # Clean any leftover files from previous runs with proper permissions
+          if [ -d "${{ github.workspace }}" ]; then
+            sudo rm -rf "${{ github.workspace }}" || true
+          fi
+          mkdir -p "${{ github.workspace }}"
+          
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
