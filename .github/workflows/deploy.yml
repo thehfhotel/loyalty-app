@@ -261,16 +261,40 @@ jobs:
           echo "Files in deployment directory:"
           ls -la
 
+      - name: Verify package files for cache key generation
+        run: |
+          echo "🔍 Verifying package files for cache key generation..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
+          # Verify package files exist
+          if [ ! -f "frontend/package-lock.json" ]; then
+            echo "❌ frontend/package-lock.json not found"
+            exit 1
+          fi
+          
+          if [ ! -f "backend/package-lock.json" ]; then
+            echo "❌ backend/package-lock.json not found"
+            exit 1
+          fi
+          
+          echo "✅ Package files verified for cache key generation"
+          echo "Frontend package-lock hash: $(shasum frontend/package-lock.json | cut -d' ' -f1)"
+          echo "Backend package-lock hash: $(shasum backend/package-lock.json | cut -d' ' -f1)"
+
       - name: Cache Node.js dependencies and node_modules
         uses: actions/cache@v4
         id: deps-cache
+        working-directory: /home/nut/loyalty-app
         with:
           path: |
             ~/.npm
             /home/nut/.npm-cache
             /home/nut/loyalty-app/frontend/node_modules
             /home/nut/loyalty-app/backend/node_modules
-          key: ${{ runner.os }}-deps-${{ hashFiles('frontend/package-lock.json', 'backend/package-lock.json') }}
+          key: ${{ runner.os }}-deps-${{ hashFiles('/home/nut/loyalty-app/frontend/package-lock.json', '/home/nut/loyalty-app/backend/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-deps-
 
@@ -284,7 +308,7 @@ jobs:
             echo "Expected data savings: ~1700 MB download"
           else
             echo "❌ Cache MISS - Will download dependencies"
-            echo "Cache key: ${{ runner.os }}-deps-${{ hashFiles('frontend/package-lock.json', 'backend/package-lock.json') }}"
+            echo "Cache key: ${{ runner.os }}-deps-${{ hashFiles('/home/nut/loyalty-app/frontend/package-lock.json', '/home/nut/loyalty-app/backend/package-lock.json') }}"
           fi
           echo "===================="
 
