@@ -26,22 +26,18 @@ jobs:
       security-passed: ${{ steps.security-results.outputs.passed }}
     
     steps:
-      - name: "🧹 Clean workspace"
-        run: |
-          # Fix permission issues with dist/assets directory
-          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
-            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
-            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
-          fi
-          # Also try to fix permissions for the entire workspace
-          if [ -d "${{ github.workspace }}" ]; then
-            sudo chmod -R 777 "${{ github.workspace }}" || true
-          fi
-          
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1  # Shallow clone for speed
+          clean: false  # Don't clean, we'll handle artifacts manually
+      
+      - name: "🧹 Clean build artifacts"
+        run: |
+          # Clean any build artifacts that might cause issues
+          rm -rf frontend/dist backend/dist 2>/dev/null || true
+          rm -rf frontend/build backend/build 2>/dev/null || true
+          rm -rf frontend/.next backend/.next 2>/dev/null || true
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -115,22 +111,18 @@ jobs:
           - 6380:6379
     
     steps:
-      - name: "🧹 Clean workspace"
-        run: |
-          # Fix permission issues with dist/assets directory
-          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
-            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
-            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
-          fi
-          # Also try to fix permissions for the entire workspace
-          if [ -d "${{ github.workspace }}" ]; then
-            sudo chmod -R 777 "${{ github.workspace }}" || true
-          fi
-          
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          clean: false  # Don't clean, we'll handle artifacts manually
+      
+      - name: "🧹 Clean build artifacts"
+        run: |
+          # Clean any build artifacts that might cause issues
+          rm -rf frontend/dist backend/dist 2>/dev/null || true
+          rm -rf frontend/build backend/build 2>/dev/null || true
+          rm -rf frontend/.next backend/.next 2>/dev/null || true
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -219,22 +211,18 @@ jobs:
       e2e-passed: ${{ steps.e2e-results.outputs.passed }}
     
     steps:
-      - name: "🧹 Clean workspace"
-        run: |
-          # Fix permission issues with dist/assets directory
-          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
-            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
-            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
-          fi
-          # Also try to fix permissions for the entire workspace
-          if [ -d "${{ github.workspace }}" ]; then
-            sudo chmod -R 777 "${{ github.workspace }}" || true
-          fi
-          
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          clean: false  # Don't clean, we'll handle artifacts manually
+      
+      - name: "🧹 Clean build artifacts"
+        run: |
+          # Clean any build artifacts that might cause issues
+          rm -rf frontend/dist backend/dist 2>/dev/null || true
+          rm -rf frontend/build backend/build 2>/dev/null || true
+          rm -rf frontend/.next backend/.next 2>/dev/null || true
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -303,22 +291,18 @@ jobs:
       build-passed: ${{ steps.build-results.outputs.passed }}
     
     steps:
-      - name: "🧹 Clean workspace"
-        run: |
-          # Fix permission issues with dist/assets directory
-          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
-            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
-            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
-          fi
-          # Also try to fix permissions for the entire workspace
-          if [ -d "${{ github.workspace }}" ]; then
-            sudo chmod -R 777 "${{ github.workspace }}" || true
-          fi
-          
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          clean: false  # Don't clean, we'll handle artifacts manually
+      
+      - name: "🧹 Clean build artifacts"
+        run: |
+          # Clean any build artifacts that might cause issues
+          rm -rf frontend/dist backend/dist 2>/dev/null || true
+          rm -rf frontend/build backend/build 2>/dev/null || true
+          rm -rf frontend/.next backend/.next 2>/dev/null || true
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
