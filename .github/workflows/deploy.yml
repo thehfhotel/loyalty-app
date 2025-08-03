@@ -117,12 +117,19 @@ jobs:
             exit 1
           fi
           
+          # Configure sudo authentication for workspace setup
+          echo "Configuring secure sudo access..."
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S echo "Sudo access configured" || {
+            echo "❌ Failed to authenticate with sudo"
+            exit 1
+          }
+          
           # Create necessary directories with proper permissions
           mkdir -p backups logs 2>/dev/null || true
-          sudo chmod 755 backups logs 2>/dev/null || true
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chmod 755 backups logs 2>/dev/null || true
           
           # Ensure proper ownership and permissions
-          sudo chown -R $(whoami):$(whoami) . 2>/dev/null || true
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R $(whoami):$(whoami) . 2>/dev/null || true
           
           # Test write permissions
           if ! touch test-write-permission 2>/dev/null; then
@@ -151,6 +158,7 @@ jobs:
           if [ -z "${{ secrets.FRONTEND_URL }}" ]; then missing_secrets+=("FRONTEND_URL"); fi
           if [ -z "${{ secrets.BACKEND_URL }}" ]; then missing_secrets+=("BACKEND_URL"); fi
           if [ -z "${{ secrets.VITE_API_URL }}" ]; then missing_secrets+=("VITE_API_URL"); fi
+          if [ -z "${{ secrets.SUDO_PASSWORD }}" ]; then missing_secrets+=("SUDO_PASSWORD"); fi
           
           if [ ${#missing_secrets[@]} -ne 0 ]; then
             echo "❌ Missing critical secrets: ${missing_secrets[*]}"
@@ -271,15 +279,22 @@ jobs:
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR/frontend"
           
+          # Configure sudo authentication
+          echo "Configuring secure sudo access..."
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S echo "Sudo access configured" || {
+            echo "❌ Failed to authenticate with sudo"
+            exit 1
+          }
+          
           # Fix permissions for Node.js installation
           echo "Setting proper permissions for Node.js..."
-          sudo chown -R $(whoami):$(whoami) .
-          sudo chmod -R 755 .
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R $(whoami):$(whoami) .
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chmod -R 755 .
           
           # Clean any existing node_modules to avoid permission conflicts
           if [ -d "node_modules" ]; then
             echo "Cleaning existing node_modules..."
-            sudo rm -rf node_modules package-lock.json
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S rm -rf node_modules package-lock.json
           fi
           
           # Install frontend dependencies
@@ -397,15 +412,22 @@ jobs:
           echo "Node.js version: $(node --version)"
           echo "NPM version: $(npm --version)"
           
+          # Configure sudo authentication
+          echo "Configuring secure sudo access..."
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S echo "Sudo access configured" || {
+            echo "❌ Failed to authenticate with sudo"
+            exit 1
+          }
+          
           # Fix permissions for Node.js installation
           echo "Setting proper permissions for Node.js..."
-          sudo chown -R $(whoami):$(whoami) .
-          sudo chmod -R 755 .
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R $(whoami):$(whoami) .
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chmod -R 755 .
           
           # Clean any existing node_modules to avoid permission conflicts
           if [ -d "node_modules" ]; then
             echo "Cleaning existing node_modules..."
-            sudo rm -rf node_modules package-lock.json
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S rm -rf node_modules package-lock.json
           fi
           
           # Install dependencies (including dev dependencies for Prisma CLI)
