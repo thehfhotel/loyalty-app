@@ -9,211 +9,29 @@ env:
   DEPLOY_PATH: /home/nut/loyalty-app  # Path on your server
 
 jobs:
-  deploy:
-    runs-on: self-hosted  # Will run on your server
-    environment: production  # Use production environment for secrets
+  # Job 1: Database Backup (Independent - can run in parallel)
+  backup:
+    runs-on: self-hosted
+    environment: production
+    outputs:
+      backup-status: ${{ steps.backup-result.outputs.status }}
     
     steps:
-      - name: Clean workspace and checkout code
-        run: |
-          echo "🔧 Preparing deployment workspace..."
-          
-          # Get workspace path
-          WORKSPACE_DIR="${GITHUB_WORKSPACE:-$PWD}"
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
-          
-          # Validate deployment path (no tilde paths in production)
-          if [[ "$DEPLOY_DIR" == ~* ]]; then
-            echo "❌ Error: Tilde paths not allowed in production deployment"
-            echo "Current DEPLOY_DIR: $DEPLOY_DIR"
-            echo "Use absolute paths like /home/nut/loyalty-app instead"
-            exit 1
-          fi
-          
-          echo "Workspace: $WORKSPACE_DIR"
-          echo "Deploy Path: $DEPLOY_DIR"
-          echo "Repository: ${{ github.repository }}"
-          echo "Commit: ${{ github.sha }}"
-          
-          # Stop containers first
-          echo "Stopping existing containers..."
-          if [ -d "$DEPLOY_DIR" ]; then
-            cd "$DEPLOY_DIR"
-            docker compose down --remove-orphans 2>/dev/null || true
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
-          fi
-          
-          # Smart deployment: pull if git repo exists, clone if not
-          if [ -d "$DEPLOY_DIR/.git" ]; then
-            echo "📥 Updating existing repository..."
-            cd "$DEPLOY_DIR"
-            
-            # Clean any local changes and reset to main
-            git clean -fd 2>/dev/null || true
-            git reset --hard HEAD 2>/dev/null || true
-            git checkout main 2>/dev/null || git checkout -b main 2>/dev/null || true
-            
-            # Update remote and pull latest changes
-            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-            git fetch --depth 1 origin main
-            git reset --hard origin/main
-            
-            # Checkout specific commit
-            git fetch origin ${{ github.sha }} --depth 1
-            git checkout ${{ github.sha }}
-            
-            echo "✅ Repository updated successfully"
-          else
-            echo "📦 Cloning repository (first deployment)..."
-            
-            # Ensure parent directory exists
-            mkdir -p "$(dirname "$DEPLOY_DIR")"
-            
-            # Remove any non-git content if directory exists but isn't a git repo
-            if [ -d "$DEPLOY_DIR" ]; then
-              echo "Cleaning non-git directory..."
-              rm -rf "$DEPLOY_DIR"/* 2>/dev/null || true
-              rm -rf "$DEPLOY_DIR"/.* 2>/dev/null || true
-            fi
-            
-            # Clone fresh repository
-            git clone --depth 1 --branch main --single-branch \
-              https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
-              "$DEPLOY_DIR"
-            
-            cd "$DEPLOY_DIR"
-            
-            # Checkout specific commit
-            git fetch origin ${{ github.sha }} --depth 1
-            git checkout ${{ github.sha }}
-            
-            echo "✅ Repository cloned successfully"
-          fi
-          
-          # Verify deployment
-          echo "Verifying deployment files..."
-          if [ ! -f "docker-compose.yml" ] || [ ! -f "docker-compose.prod.yml" ]; then
-            echo "❌ Critical deployment files missing"
-            ls -la
-            exit 1
-          fi
-          
-          echo "✅ Code checkout completed successfully"
-          echo "Current directory: $(pwd)"
-          echo "Files in deployment directory:"
-          ls -la
-
-      - name: Workspace validation and setup
-        run: |
-          echo "🔍 Post-checkout validation..."
-          
-          # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
-          cd "$DEPLOY_DIR"
-          
-          # Verify critical files exist
-          if [ ! -f "docker-compose.yml" ] || [ ! -f "docker-compose.prod.yml" ]; then
-            echo "❌ Critical deployment files missing"
-            exit 1
-          fi
-          
-          # Configure sudo authentication for workspace setup
-          echo "Configuring secure sudo access..."
-          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S echo "Sudo access configured" || {
-            echo "❌ Failed to authenticate with sudo"
-            exit 1
-          }
-          
-          # Create necessary directories with proper permissions
-          mkdir -p backups logs 2>/dev/null || true
-          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chmod 755 backups logs 2>/dev/null || true
-          
-          # Ensure proper ownership and permissions
-          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R $(whoami):$(whoami) . 2>/dev/null || true
-          
-          # Test write permissions
-          if ! touch test-write-permission 2>/dev/null; then
-            echo "❌ Cannot write to deployment directory"
-            exit 1
-          else
-            rm -f test-write-permission
-          fi
-          
-          echo "✅ Deployment validation completed"
-          echo "Working in: $(pwd)"
-          
-      - name: Validate and set production environment variables
-        run: |
-          echo "🔧 Setting up production environment..."
-          
-          # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
-          cd "$DEPLOY_DIR"
-          
-          # Validate critical secrets exist
-          missing_secrets=()
-          
-          if [ -z "${{ secrets.JWT_SECRET }}" ]; then missing_secrets+=("JWT_SECRET"); fi
-          if [ -z "${{ secrets.GOOGLE_CLIENT_ID }}" ]; then missing_secrets+=("GOOGLE_CLIENT_ID"); fi
-          if [ -z "${{ secrets.FRONTEND_URL }}" ]; then missing_secrets+=("FRONTEND_URL"); fi
-          if [ -z "${{ secrets.BACKEND_URL }}" ]; then missing_secrets+=("BACKEND_URL"); fi
-          if [ -z "${{ secrets.VITE_API_URL }}" ]; then missing_secrets+=("VITE_API_URL"); fi
-          if [ -z "${{ secrets.SUDO_PASSWORD }}" ]; then missing_secrets+=("SUDO_PASSWORD"); fi
-          
-          if [ ${#missing_secrets[@]} -ne 0 ]; then
-            echo "❌ Missing critical secrets: ${missing_secrets[*]}"
-            echo "Please configure these secrets in GitHub repository settings > Environments > production"
-            exit 1
-          fi
-          
-          # Export all environment variables
-          echo "NODE_ENV=production" >> $GITHUB_ENV
-          echo "LOG_LEVEL=info" >> $GITHUB_ENV
-          echo "CORS_ORIGINS=https://loyalty.saichon.com" >> $GITHUB_ENV
-          
-          # Security secrets
-          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> $GITHUB_ENV
-          echo "JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}" >> $GITHUB_ENV
-          echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> $GITHUB_ENV
-          
-          # Database
-          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
-          echo "REDIS_URL=${{ secrets.REDIS_URL }}" >> $GITHUB_ENV
-          
-          # URLs (fallback to variables if secrets don't exist yet)
-          echo "FRONTEND_URL=${{ secrets.FRONTEND_URL || vars.FRONTEND_URL }}" >> $GITHUB_ENV
-          echo "BACKEND_URL=${{ secrets.BACKEND_URL || vars.BACKEND_URL }}" >> $GITHUB_ENV
-          echo "VITE_API_URL=${{ secrets.VITE_API_URL || vars.BACKEND_URL }}" >> $GITHUB_ENV
-          
-          # OAuth
-          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> $GITHUB_ENV
-          echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" >> $GITHUB_ENV
-          echo "GOOGLE_CALLBACK_URL=${{ secrets.GOOGLE_CALLBACK_URL || vars.GOOGLE_CALLBACK_URL }}" >> $GITHUB_ENV
-          echo "FACEBOOK_APP_ID=${{ secrets.FACEBOOK_APP_ID }}" >> $GITHUB_ENV
-          echo "FACEBOOK_APP_SECRET=${{ secrets.FACEBOOK_APP_SECRET }}" >> $GITHUB_ENV
-          echo "FACEBOOK_CALLBACK_URL=${{ secrets.FACEBOOK_CALLBACK_URL }}" >> $GITHUB_ENV
-          echo "LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}" >> $GITHUB_ENV
-          echo "LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}" >> $GITHUB_ENV
-          echo "LINE_CALLBACK_URL=${{ secrets.LINE_CALLBACK_URL || vars.LINE_CALLBACK_URL }}" >> $GITHUB_ENV
-          
-          # Azure Translation
-          echo "AZURE_TRANSLATION_TEXT_URI=${{ secrets.AZURE_TRANSLATION_TEXT_URI }}" >> $GITHUB_ENV
-          echo "AZURE_TRANSLATION_KEY_1=${{ secrets.AZURE_TRANSLATION_KEY_1 }}" >> $GITHUB_ENV
-          echo "AZURE_TRANSLATION_KEY_2=${{ secrets.AZURE_TRANSLATION_KEY_2 }}" >> $GITHUB_ENV
-          echo "AZURE_TRANSLATION_REGION=${{ secrets.AZURE_TRANSLATION_REGION }}" >> $GITHUB_ENV
-          
-          # Admin credentials
-          echo "LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}" >> $GITHUB_ENV
-          echo "LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}" >> $GITHUB_ENV
-          
-          echo "✅ Environment variables configured"
-
       - name: Intelligent database backup with retry logic
+        id: backup-result
         run: |
           echo "💾 Creating intelligent database backup..."
           
           # Navigate to deployment directory
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          
+          # Only run backup if deployment directory exists
+          if [ ! -d "$DEPLOY_DIR" ]; then
+            echo "⚠️ Deployment directory not found, skipping backup"
+            echo "status=skipped" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
           cd "$DEPLOY_DIR"
           
           # Create backups directory with proper permissions
@@ -320,7 +138,7 @@ jobs:
               
               # Show detailed diagnostics
               echo "Container status:"
-              docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+              docker ps --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"
               
               echo "Available volumes:"
               docker volume ls | grep -E "(postgres|loyalty)"
@@ -336,6 +154,9 @@ jobs:
               else
                 echo "❌ PostgreSQL container not running"
               fi
+              
+              echo "status=failed" >> $GITHUB_OUTPUT
+              exit 0  # Don't fail the workflow
             fi
           fi
           
@@ -348,33 +169,97 @@ jobs:
           else
             echo "No existing backups found"
           fi
+          
+          echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: Stop existing containers with graceful shutdown
+  # Job 2: Prepare Dependencies (Can run in parallel with backup)
+  prepare:
+    runs-on: self-hosted
+    environment: production
+    outputs:
+      cache-hit: ${{ steps.deps-cache.outputs.cache-hit }}
+    
+    steps:
+      - name: Clean workspace and checkout code
         run: |
-          echo "🛑 Gracefully stopping existing containers..."
+          echo "🔧 Preparing build workspace..."
           
-          # Navigate to deployment directory
+          # Get workspace path
+          WORKSPACE_DIR="${GITHUB_WORKSPACE:-$PWD}"
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
-          cd "$DEPLOY_DIR"
           
-          # Check if containers are running
-          if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q | head -1 | grep -q .; then
-            echo "Containers found, initiating shutdown..."
-            
-            # Graceful shutdown with timeout
-            timeout 30s docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 10 || {
-              echo "⚠️ Graceful shutdown timed out, forcing stop..."
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 5 || true
-            }
-          else
-            echo "No containers running"
+          # Validate deployment path (no tilde paths in production)
+          if [[ "$DEPLOY_DIR" == ~* ]]; then
+            echo "❌ Error: Tilde paths not allowed in production deployment"
+            echo "Current DEPLOY_DIR: $DEPLOY_DIR"
+            echo "Use absolute paths like /home/nut/loyalty-app instead"
+            exit 1
           fi
           
-          # Clean up any orphaned containers
-          docker compose down --remove-orphans 2>/dev/null || true
+          echo "Workspace: $WORKSPACE_DIR"
+          echo "Deploy Path: $DEPLOY_DIR"
+          echo "Repository: ${{ github.repository }}"
+          echo "Commit: ${{ github.sha }}"
           
-          sleep 3
-          echo "✅ Container shutdown completed"
+          # Smart deployment: pull if git repo exists, clone if not
+          if [ -d "$DEPLOY_DIR/.git" ]; then
+            echo "📥 Updating existing repository..."
+            cd "$DEPLOY_DIR"
+            
+            # Clean any local changes and reset to main
+            git clean -fd 2>/dev/null || true
+            git reset --hard HEAD 2>/dev/null || true
+            git checkout main 2>/dev/null || git checkout -b main 2>/dev/null || true
+            
+            # Update remote and pull latest changes
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+            git fetch --depth 1 origin main
+            git reset --hard origin/main
+            
+            # Checkout specific commit
+            git fetch origin ${{ github.sha }} --depth 1
+            git checkout ${{ github.sha }}
+            
+            echo "✅ Repository updated successfully"
+          else
+            echo "📦 Cloning repository (first deployment)..."
+            
+            # Ensure parent directory exists
+            mkdir -p "$(dirname "$DEPLOY_DIR")"
+            
+            # Remove any non-git content if directory exists but isn't a git repo
+            if [ -d "$DEPLOY_DIR" ]; then
+              echo "Cleaning non-git directory..."
+              rm -rf "$DEPLOY_DIR"/* 2>/dev/null || true
+              rm -rf "$DEPLOY_DIR"/.* 2>/dev/null || true
+            fi
+            
+            # Clone fresh repository
+            git clone --depth 1 --branch main --single-branch \
+              https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
+              "$DEPLOY_DIR"
+            
+            cd "$DEPLOY_DIR"
+            
+            # Checkout specific commit
+            git fetch origin ${{ github.sha }} --depth 1
+            git checkout ${{ github.sha }}
+            
+            echo "✅ Repository cloned successfully"
+          fi
+          
+          # Verify deployment
+          echo "Verifying deployment files..."
+          if [ ! -f "docker-compose.yml" ] || [ ! -f "docker-compose.prod.yml" ]; then
+            echo "❌ Critical deployment files missing"
+            ls -la
+            exit 1
+          fi
+          
+          echo "✅ Code checkout completed successfully"
+          echo "Current directory: $(pwd)"
+          echo "Files in deployment directory:"
+          ls -la
 
       - name: Cache Node.js dependencies and node_modules
         uses: actions/cache@v4
@@ -522,6 +407,145 @@ jobs:
           fi
           
           echo "✅ Docker BuildKit setup completed"
+
+  # Job 3: Core Deployment (Sequential - depends on backup and prepare)
+  deploy:
+    runs-on: self-hosted
+    environment: production
+    needs: [backup, prepare]
+    
+    steps:
+      - name: Workspace validation and setup
+        run: |
+          echo "🔍 Post-checkout validation..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
+          # Verify critical files exist
+          if [ ! -f "docker-compose.yml" ] || [ ! -f "docker-compose.prod.yml" ]; then
+            echo "❌ Critical deployment files missing"
+            exit 1
+          fi
+          
+          # Configure sudo authentication for workspace setup
+          echo "Configuring secure sudo access..."
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S echo "Sudo access configured" || {
+            echo "❌ Failed to authenticate with sudo"
+            exit 1
+          }
+          
+          # Create necessary directories with proper permissions
+          mkdir -p backups logs 2>/dev/null || true
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chmod 755 backups logs 2>/dev/null || true
+          
+          # Ensure proper ownership and permissions
+          echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S chown -R $(whoami):$(whoami) . 2>/dev/null || true
+          
+          # Test write permissions
+          if ! touch test-write-permission 2>/dev/null; then
+            echo "❌ Cannot write to deployment directory"
+            exit 1
+          else
+            rm -f test-write-permission
+          fi
+          
+          echo "✅ Deployment validation completed"
+          echo "Working in: $(pwd)"
+
+      - name: Validate and set production environment variables
+        run: |
+          echo "🔧 Setting up production environment..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
+          # Validate critical secrets exist
+          missing_secrets=()
+          
+          if [ -z "${{ secrets.JWT_SECRET }}" ]; then missing_secrets+=("JWT_SECRET"); fi
+          if [ -z "${{ secrets.GOOGLE_CLIENT_ID }}" ]; then missing_secrets+=("GOOGLE_CLIENT_ID"); fi
+          if [ -z "${{ secrets.FRONTEND_URL }}" ]; then missing_secrets+=("FRONTEND_URL"); fi
+          if [ -z "${{ secrets.BACKEND_URL }}" ]; then missing_secrets+=("BACKEND_URL"); fi
+          if [ -z "${{ secrets.VITE_API_URL }}" ]; then missing_secrets+=("VITE_API_URL"); fi
+          if [ -z "${{ secrets.SUDO_PASSWORD }}" ]; then missing_secrets+=("SUDO_PASSWORD"); fi
+          
+          if [ ${#missing_secrets[@]} -ne 0 ]; then
+            echo "❌ Missing critical secrets: ${missing_secrets[*]}"
+            echo "Please configure these secrets in GitHub repository settings > Environments > production"
+            exit 1
+          fi
+          
+          # Export all environment variables
+          echo "NODE_ENV=production" >> $GITHUB_ENV
+          echo "LOG_LEVEL=info" >> $GITHUB_ENV
+          echo "CORS_ORIGINS=https://loyalty.saichon.com" >> $GITHUB_ENV
+          
+          # Security secrets
+          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> $GITHUB_ENV
+          echo "JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}" >> $GITHUB_ENV
+          echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> $GITHUB_ENV
+          
+          # Database
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+          echo "REDIS_URL=${{ secrets.REDIS_URL }}" >> $GITHUB_ENV
+          
+          # URLs (fallback to variables if secrets don't exist yet)
+          echo "FRONTEND_URL=${{ secrets.FRONTEND_URL || vars.FRONTEND_URL }}" >> $GITHUB_ENV
+          echo "BACKEND_URL=${{ secrets.BACKEND_URL || vars.BACKEND_URL }}" >> $GITHUB_ENV
+          echo "VITE_API_URL=${{ secrets.VITE_API_URL || vars.BACKEND_URL }}" >> $GITHUB_ENV
+          
+          # OAuth
+          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> $GITHUB_ENV
+          echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" >> $GITHUB_ENV
+          echo "GOOGLE_CALLBACK_URL=${{ secrets.GOOGLE_CALLBACK_URL || vars.GOOGLE_CALLBACK_URL }}" >> $GITHUB_ENV
+          echo "FACEBOOK_APP_ID=${{ secrets.FACEBOOK_APP_ID }}" >> $GITHUB_ENV
+          echo "FACEBOOK_APP_SECRET=${{ secrets.FACEBOOK_APP_SECRET }}" >> $GITHUB_ENV
+          echo "FACEBOOK_CALLBACK_URL=${{ secrets.FACEBOOK_CALLBACK_URL }}" >> $GITHUB_ENV
+          echo "LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}" >> $GITHUB_ENV
+          echo "LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}" >> $GITHUB_ENV
+          echo "LINE_CALLBACK_URL=${{ secrets.LINE_CALLBACK_URL || vars.LINE_CALLBACK_URL }}" >> $GITHUB_ENV
+          
+          # Azure Translation
+          echo "AZURE_TRANSLATION_TEXT_URI=${{ secrets.AZURE_TRANSLATION_TEXT_URI }}" >> $GITHUB_ENV
+          echo "AZURE_TRANSLATION_KEY_1=${{ secrets.AZURE_TRANSLATION_KEY_1 }}" >> $GITHUB_ENV
+          echo "AZURE_TRANSLATION_KEY_2=${{ secrets.AZURE_TRANSLATION_KEY_2 }}" >> $GITHUB_ENV
+          echo "AZURE_TRANSLATION_REGION=${{ secrets.AZURE_TRANSLATION_REGION }}" >> $GITHUB_ENV
+          
+          # Admin credentials
+          echo "LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}" >> $GITHUB_ENV
+          echo "LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}" >> $GITHUB_ENV
+          
+          echo "✅ Environment variables configured"
+
+      - name: Stop existing containers with graceful shutdown
+        run: |
+          echo "🛑 Gracefully stopping existing containers..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
+          # Check if containers are running
+          if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q | head -1 | grep -q .; then
+            echo "Containers found, initiating shutdown..."
+            
+            # Graceful shutdown with timeout
+            timeout 30s docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 10 || {
+              echo "⚠️ Graceful shutdown timed out, forcing stop..."
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 5 || true
+            }
+          else
+            echo "No containers running"
+          fi
+          
+          # Clean up any orphaned containers
+          docker compose down --remove-orphans 2>/dev/null || true
+          
+          sleep 3
+          echo "✅ Container shutdown completed"
 
       - name: Build containers with optimized caching
         run: |
@@ -710,18 +734,18 @@ jobs:
           # If health checks failed, show diagnostic information
           if [ ${#failed_services[@]} -ne 0 ]; then
             echo "❌ Health checks failed for: ${failed_services[*]}"
-            echo "\n📊 Diagnostic Information:"
+            echo "\\n📊 Diagnostic Information:"
             
-            echo "\n🐳 Container Status:"
+            echo "\\n🐳 Container Status:"
             docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
             
-            echo "\n📋 Backend Logs (last 20 lines):"  # Reduced from 30
+            echo "\\n📋 Backend Logs (last 20 lines):"  # Reduced from 30
             docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=20 backend || true
             
-            echo "\n📋 Nginx Logs (last 15 lines):"  # Reduced from 20
+            echo "\\n📋 Nginx Logs (last 15 lines):"  # Reduced from 20
             docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=15 nginx || true
             
-            echo "\n🔍 Port Status:"
+            echo "\\n🔍 Port Status:"
             ss -tlnp | grep :4001 || netstat -tlnp | grep :4001 || echo "Port 4001 not listening"
             
             exit 1
@@ -729,6 +753,63 @@ jobs:
           
           echo "✅ All health checks passed successfully!"
 
+      - name: Deployment summary and monitoring setup
+        if: always()
+        run: |
+          echo "=============================="
+          echo "📋 Deployment Status Report"
+          echo "=============================="
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Commit Message: ${{ github.event.head_commit.message }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Timestamp: $(date -Iseconds)"
+          echo "=============================="
+          
+          # Job status reporting
+          echo "\\n📊 Job Status Summary:"
+          echo "Backup Job: ${{ needs.backup.outputs.backup-status || 'unknown' }}"
+          echo "Prepare Job: Cache Hit - ${{ needs.prepare.outputs.cache-hit }}"
+          echo "Deploy Job: ${{ job.status }}"
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
+          echo "\\n🐳 Container Status:"
+          if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps 2>/dev/null; then
+            echo "\\n📊 Resource Usage:"
+            docker stats --no-stream --format "table {{.Container}}\\t{{.CPUPerc}}\\t{{.MemUsage}}" || true
+          else
+            echo "❌ Could not retrieve container status"
+          fi
+          
+          echo "\\n🌐 Service Endpoints:"
+          echo "Main Application: https://loyalty.saichon.com"
+          echo "Health Check: https://loyalty.saichon.com/api/health"
+          echo "Admin Panel: https://loyalty.saichon.com/admin"
+          
+          # Test final connectivity
+          echo "\\n🔍 Final Connectivity Test:"
+          if curl -f -s --max-time 10 "http://localhost:4001/api/health" > /dev/null; then
+            echo "✅ Application is responding"
+          else
+            echo "❌ Application is not responding"
+          fi
+          
+          echo "\\n✅ Deployment completed at $(date)"
+          echo "=============================="
+
+  # Job 4: Cleanup (Optional - runs after successful deployment)
+  cleanup:
+    runs-on: self-hosted
+    needs: [deploy]
+    if: success()
+    
+    steps:
       - name: Smart conditional cleanup
         run: |
           echo "🧹 Smart conditional cleanup..."
@@ -770,51 +851,7 @@ jobs:
           fi
           
           # Show final disk usage
-          echo "\n💾 Final disk usage:"
+          echo "\\n💾 Final disk usage:"
           df -h . | head -2
           
           echo "✅ Smart cleanup completed"
-          
-      - name: Deployment summary and monitoring setup
-        if: always()
-        run: |
-          echo "=============================="
-          echo "📋 Deployment Status Report"
-          echo "=============================="
-          echo "Repository: ${{ github.repository }}"
-          echo "Branch: ${{ github.ref_name }}"
-          echo "Commit: ${{ github.sha }}"
-          echo "Commit Message: ${{ github.event.head_commit.message }}"
-          echo "Actor: ${{ github.actor }}"
-          echo "Workflow: ${{ github.workflow }}"
-          echo "Run ID: ${{ github.run_id }}"
-          echo "Timestamp: $(date -Iseconds)"
-          echo "=============================="
-          
-          # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
-          cd "$DEPLOY_DIR"
-          
-          echo "\n🐳 Container Status:"
-          if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps 2>/dev/null; then
-            echo "\n📊 Resource Usage:"
-            docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}" || true
-          else
-            echo "❌ Could not retrieve container status"
-          fi
-          
-          echo "\n🌐 Service Endpoints:"
-          echo "Main Application: https://loyalty.saichon.com"
-          echo "Health Check: https://loyalty.saichon.com/api/health"
-          echo "Admin Panel: https://loyalty.saichon.com/admin"
-          
-          # Test final connectivity
-          echo "\n🔍 Final Connectivity Test:"
-          if curl -f -s --max-time 10 "http://localhost:4001/api/health" > /dev/null; then
-            echo "✅ Application is responding"
-          else
-            echo "❌ Application is not responding"
-          fi
-          
-          echo "\n✅ Deployment completed at $(date)"
-          echo "=============================="
