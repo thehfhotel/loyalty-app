@@ -1,0 +1,609 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model account_link_requests {
+  id                                                   String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  requester_user_id                                    String                  @db.Uuid
+  target_email                                         String                  @db.VarChar(255)
+  target_user_id                                       String?                 @db.Uuid
+  request_type                                         String                  @db.VarChar(20)
+  status                                               String?                 @default("pending") @db.VarChar(20)
+  message                                              String?
+  created_at                                           DateTime?               @default(now()) @db.Timestamptz(6)
+  updated_at                                           DateTime?               @default(now()) @db.Timestamptz(6)
+  expires_at                                           DateTime?               @default(dbgenerated("(now() + '7 days'::interval)")) @db.Timestamptz(6)
+  users_account_link_requests_requester_user_idTousers users                   @relation("account_link_requests_requester_user_idTousers", fields: [requester_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_account_link_requests_target_user_idTousers    users?                  @relation("account_link_requests_target_user_idTousers", fields: [target_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  account_linking_audit                                account_linking_audit[]
+
+  @@index([expires_at], map: "idx_account_link_requests_expires")
+  @@index([requester_user_id], map: "idx_account_link_requests_requester")
+  @@index([status], map: "idx_account_link_requests_status")
+  @@index([target_user_id], map: "idx_account_link_requests_target")
+  @@index([target_email], map: "idx_account_link_requests_target_email")
+}
+
+model account_linking_audit {
+  id                                                String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                                           String                 @db.Uuid
+  action                                            String                 @db.VarChar(50)
+  target_email                                      String?                @db.VarChar(255)
+  target_user_id                                    String?                @db.Uuid
+  request_id                                        String?                @db.Uuid
+  details                                           Json?                  @default("{}")
+  ip_address                                        String?                @db.Inet
+  user_agent                                        String?
+  created_at                                        DateTime?              @default(now()) @db.Timestamptz(6)
+  account_link_requests                             account_link_requests? @relation(fields: [request_id], references: [id], onUpdate: NoAction)
+  users_account_linking_audit_target_user_idTousers users?                 @relation("account_linking_audit_target_user_idTousers", fields: [target_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_account_linking_audit_user_idTousers        users                  @relation("account_linking_audit_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_account_linking_audit_created")
+  @@index([user_id], map: "idx_account_linking_audit_user")
+}
+
+model coupon_analytics {
+  id                         String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  coupon_id                  String                   @db.Uuid
+  analytics_date             DateTime                 @db.Date
+  total_assigned             Int?                     @default(0)
+  total_used                 Int?                     @default(0)
+  total_expired              Int?                     @default(0)
+  total_revenue_impact       Decimal?                 @default(0.00) @db.Decimal(12, 2)
+  unique_users_assigned      Int?                     @default(0)
+  unique_users_redeemed      Int?                     @default(0)
+  average_time_to_redemption Unsupported("interval")?
+  conversion_rate            Decimal?                 @db.Decimal(5, 2)
+  created_at                 DateTime?                @default(now()) @db.Timestamptz(6)
+  coupons                    coupons                  @relation(fields: [coupon_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([coupon_id, analytics_date])
+  @@index([coupon_id], map: "idx_coupon_analytics_coupon_id")
+  @@index([analytics_date], map: "idx_coupon_analytics_date")
+}
+
+model coupon_redemptions {
+  id                    String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_coupon_id        String       @db.Uuid
+  original_amount       Decimal?     @db.Decimal(10, 2)
+  discount_amount       Decimal?     @db.Decimal(10, 2)
+  final_amount          Decimal?     @db.Decimal(10, 2)
+  currency              String?      @default("USD") @db.VarChar(3)
+  transaction_reference String?      @db.VarChar(255)
+  redemption_channel    String?      @default("mobile_app") @db.VarChar(50)
+  staff_member_id       String?      @db.Uuid
+  location              String?      @db.VarChar(255)
+  metadata              Json?        @default("{}")
+  created_at            DateTime?    @default(now()) @db.Timestamptz(6)
+  users                 users?       @relation(fields: [staff_member_id], references: [id], onUpdate: NoAction)
+  user_coupons          user_coupons @relation(fields: [user_coupon_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_coupon_redemptions_created_at")
+  @@index([transaction_reference], map: "idx_coupon_redemptions_transaction_ref")
+  @@index([user_coupon_id], map: "idx_coupon_redemptions_user_coupon_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model coupon_translations {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  coupon_id            String    @db.Uuid
+  language             String    @db.VarChar(10)
+  name                 String
+  description          String?
+  terms_and_conditions String?
+  created_at           DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime? @default(now()) @db.Timestamptz(6)
+  coupons              coupons   @relation(fields: [coupon_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([coupon_id, language])
+  @@index([coupon_id, language], map: "idx_coupon_translations_coupon_lang")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model coupons {
+  id                        String                      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  code                      String                      @unique @db.VarChar(20)
+  name                      String                      @db.VarChar(255)
+  description               String?
+  terms_and_conditions      String?
+  type                      coupon_type
+  value                     Decimal?                    @db.Decimal(10, 2)
+  currency                  String?                     @default("USD") @db.VarChar(3)
+  minimum_spend             Decimal?                    @db.Decimal(10, 2)
+  maximum_discount          Decimal?                    @db.Decimal(10, 2)
+  valid_from                DateTime?                   @default(now()) @db.Timestamptz(6)
+  valid_until               DateTime?                   @db.Timestamptz(6)
+  usage_limit               Int?
+  usage_limit_per_user      Int?                        @default(1)
+  used_count                Int?                        @default(0)
+  tier_restrictions         Json?                       @default("[]")
+  customer_segment          Json?                       @default("{}")
+  status                    coupon_status?              @default(draft)
+  created_by                String?                     @db.Uuid
+  created_at                DateTime?                   @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime?                   @default(now()) @db.Timestamptz(6)
+  original_language         String?                     @default("th") @db.VarChar(10)
+  available_languages       Json?                       @default("[\"th\"]")
+  last_translated           DateTime?                   @db.Timestamptz(6)
+  translation_status        String?                     @default("none") @db.VarChar(20)
+  coupon_analytics          coupon_analytics[]
+  coupon_translations       coupon_translations[]
+  users                     users?                      @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  survey_coupon_assignments survey_coupon_assignments[]
+  user_coupons              user_coupons[]
+
+  @@index([code], map: "idx_coupons_code")
+  @@index([created_by], map: "idx_coupons_created_by")
+  @@index([status], map: "idx_coupons_status")
+  @@index([type], map: "idx_coupons_type")
+  @@index([valid_from, valid_until], map: "idx_coupons_valid_dates")
+}
+
+model feature_toggle_audit {
+  id                String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  feature_toggle_id String          @db.Uuid
+  previous_state    Boolean?
+  new_state         Boolean
+  changed_by        String          @db.Uuid
+  changed_at        DateTime?       @default(now()) @db.Timestamptz(6)
+  reason            String?
+  ip_address        String?         @db.Inet
+  user_agent        String?
+  users             users           @relation(fields: [changed_by], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  feature_toggles   feature_toggles @relation(fields: [feature_toggle_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([changed_at], map: "idx_feature_toggle_audit_changed_at")
+  @@index([feature_toggle_id], map: "idx_feature_toggle_audit_feature_id")
+}
+
+model feature_toggles {
+  id                                      String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  feature_key                             String                 @unique @db.VarChar(100)
+  feature_name                            String                 @db.VarChar(255)
+  description                             String?
+  is_enabled                              Boolean                @default(false)
+  created_at                              DateTime?              @default(now()) @db.Timestamptz(6)
+  updated_at                              DateTime?              @default(now()) @db.Timestamptz(6)
+  created_by                              String?                @db.Uuid
+  updated_by                              String?                @db.Uuid
+  feature_toggle_audit                    feature_toggle_audit[]
+  users_feature_toggles_created_byTousers users?                 @relation("feature_toggles_created_byTousers", fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_feature_toggles_updated_byTousers users?                 @relation("feature_toggles_updated_byTousers", fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([is_enabled], map: "idx_feature_toggles_enabled")
+  @@index([feature_key], map: "idx_feature_toggles_key")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model linked_accounts {
+  id                                           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  primary_user_id                              String    @db.Uuid
+  linked_user_id                               String    @db.Uuid
+  linked_at                                    DateTime? @default(now()) @db.Timestamptz(6)
+  linked_by                                    String?   @db.Uuid
+  users_linked_accounts_linked_byTousers       users?    @relation("linked_accounts_linked_byTousers", fields: [linked_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_linked_accounts_linked_user_idTousers  users     @relation("linked_accounts_linked_user_idTousers", fields: [linked_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_linked_accounts_primary_user_idTousers users     @relation("linked_accounts_primary_user_idTousers", fields: [primary_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([primary_user_id, linked_user_id])
+  @@index([linked_user_id], map: "idx_linked_accounts_linked")
+  @@index([primary_user_id], map: "idx_linked_accounts_primary")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model membership_id_sequence {
+  id                 Int       @id(map: "reception_id_sequence_pkey") @default(autoincrement())
+  current_user_count Int?      @default(0)
+  created_at         DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime? @default(now()) @db.Timestamptz(6)
+}
+
+model password_reset_tokens {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id    String    @db.Uuid
+  token      String    @unique @db.VarChar(255)
+  expires_at DateTime  @db.Timestamptz(6)
+  used       Boolean?  @default(false)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([token], map: "idx_password_reset_tokens_token")
+  @@index([user_id], map: "idx_password_reset_tokens_user_id")
+}
+
+model points_earning_rules {
+  id                 String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name               String    @db.VarChar(100)
+  description        String?
+  points_per_unit    Decimal   @db.Decimal(10, 2)
+  unit_type          String?   @default("currency") @db.VarChar(50)
+  multiplier_by_tier Json?     @default("{}")
+  is_active          Boolean?  @default(true)
+  valid_from         DateTime? @default(now()) @db.Timestamptz(6)
+  valid_until        DateTime? @db.Timestamptz(6)
+  created_at         DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([is_active], map: "idx_points_earning_rules_active")
+}
+
+model points_transactions {
+  id                                             String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                                        String                  @db.Uuid
+  points                                         Int
+  type                                           points_transaction_type
+  description                                    String?
+  reference_id                                   String?                 @db.VarChar(100)
+  admin_user_id                                  String?                 @db.Uuid
+  admin_reason                                   String?
+  expires_at                                     DateTime?               @db.Timestamptz(6)
+  created_at                                     DateTime?               @default(now()) @db.Timestamptz(6)
+  nights_stayed                                  Int?                    @default(0)
+  users_points_transactions_admin_user_idTousers users?                  @relation("points_transactions_admin_user_idTousers", fields: [admin_user_id], references: [id], onUpdate: NoAction)
+  users_points_transactions_user_idTousers       users                   @relation("points_transactions_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_points_transactions_created_at")
+  @@index([expires_at], map: "idx_points_transactions_expires_at")
+  @@index([type], map: "idx_points_transactions_type")
+  @@index([user_id], map: "idx_points_transactions_user_id")
+}
+
+model refresh_tokens {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id    String    @db.Uuid
+  token      String    @unique @db.VarChar(500)
+  expires_at DateTime  @db.Timestamptz(6)
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([token], map: "idx_refresh_tokens_token")
+  @@index([user_id], map: "idx_refresh_tokens_user_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model has constraints using non-default deferring rules and requires additional setup for migrations. Visit https://pris.ly/d/constraint-deferring for more info.
+model survey_coupon_assignments {
+  id                    String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  survey_id             String                  @db.Uuid
+  coupon_id             String                  @db.Uuid
+  is_active             Boolean?                @default(true)
+  max_awards            Int?
+  awarded_count         Int?                    @default(0)
+  assigned_by           String?                 @db.Uuid
+  assigned_reason       String?                 @default("Survey completion reward")
+  custom_expiry_days    Int?
+  created_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  users                 users?                  @relation(fields: [assigned_by], references: [id], onUpdate: NoAction)
+  coupons               coupons                 @relation(fields: [coupon_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  surveys               surveys                 @relation(fields: [survey_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  survey_reward_history survey_reward_history[]
+
+  @@unique([survey_id, coupon_id])
+  @@index([is_active], map: "idx_survey_coupon_assignments_active")
+  @@index([coupon_id], map: "idx_survey_coupon_assignments_coupon_id")
+  @@index([survey_id], map: "idx_survey_coupon_assignments_survey_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model survey_invitations {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  survey_id  String?   @db.Uuid
+  user_id    String?   @db.Uuid
+  status     String?   @default("pending") @db.VarChar(50)
+  sent_at    DateTime? @db.Timestamp(6)
+  viewed_at  DateTime? @db.Timestamp(6)
+  expires_at DateTime? @db.Timestamp(6)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
+  surveys    surveys?  @relation(fields: [survey_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users?    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([survey_id, user_id], map: "idx_survey_invitations_unique")
+  @@index([status], map: "idx_survey_invitations_status")
+  @@index([survey_id], map: "idx_survey_invitations_survey_id")
+  @@index([user_id], map: "idx_survey_invitations_user_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model survey_responses {
+  id                    String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  survey_id             String?                 @db.Uuid
+  user_id               String?                 @db.Uuid
+  answers               Json
+  is_completed          Boolean?                @default(false)
+  progress              Int?                    @default(0)
+  started_at            DateTime?               @default(now()) @db.Timestamp(6)
+  completed_at          DateTime?               @db.Timestamp(6)
+  created_at            DateTime?               @default(now()) @db.Timestamp(6)
+  updated_at            DateTime?               @default(now()) @db.Timestamp(6)
+  surveys               surveys?                @relation(fields: [survey_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                 users?                  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  survey_reward_history survey_reward_history[]
+
+  @@unique([survey_id, user_id], map: "idx_survey_responses_unique")
+  @@index([is_completed], map: "idx_survey_responses_completed")
+  @@index([survey_id], map: "idx_survey_responses_survey_id")
+  @@index([user_id], map: "idx_survey_responses_user_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model survey_reward_history {
+  id                          String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  survey_coupon_assignment_id String                    @db.Uuid
+  survey_response_id          String                    @db.Uuid
+  user_coupon_id              String                    @db.Uuid
+  user_id                     String                    @db.Uuid
+  awarded_at                  DateTime?                 @default(now()) @db.Timestamptz(6)
+  award_condition_met         String                    @db.VarChar(50)
+  metadata                    Json?                     @default("{}")
+  created_at                  DateTime?                 @default(now()) @db.Timestamptz(6)
+  survey_coupon_assignments   survey_coupon_assignments @relation(fields: [survey_coupon_assignment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  survey_responses            survey_responses          @relation(fields: [survey_response_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_coupons                user_coupons              @relation(fields: [user_coupon_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                       users                     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([survey_coupon_assignment_id, user_id])
+  @@index([survey_coupon_assignment_id], map: "idx_survey_reward_history_assignment_id")
+  @@index([awarded_at], map: "idx_survey_reward_history_awarded_at")
+  @@index([user_id], map: "idx_survey_reward_history_user_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model survey_translations {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  survey_id   String    @db.Uuid
+  language    String    @db.VarChar(10)
+  title       String
+  description String?
+  questions   Json
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  surveys     surveys   @relation(fields: [survey_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([survey_id, language])
+  @@index([survey_id, language], map: "idx_survey_translations_survey_lang")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model surveys {
+  id                        String                      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  title                     String                      @db.VarChar(255)
+  description               String?
+  questions                 Json
+  target_segment            Json?                       @default("{}")
+  status                    String?                     @default("draft") @db.VarChar(50)
+  scheduled_start           DateTime?                   @db.Timestamp(6)
+  scheduled_end             DateTime?                   @db.Timestamp(6)
+  created_by                String?                     @db.Uuid
+  created_at                DateTime?                   @default(now()) @db.Timestamp(6)
+  updated_at                DateTime?                   @default(now()) @db.Timestamp(6)
+  access_type               String                      @default("public") @db.VarChar(20)
+  original_language         String?                     @default("th") @db.VarChar(10)
+  available_languages       Json?                       @default("[\"th\"]")
+  last_translated           DateTime?                   @db.Timestamptz(6)
+  translation_status        String?                     @default("none") @db.VarChar(20)
+  survey_coupon_assignments survey_coupon_assignments[]
+  survey_invitations        survey_invitations[]
+  survey_responses          survey_responses[]
+  survey_translations       survey_translations[]
+  users                     users?                      @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+
+  @@index([access_type], map: "idx_surveys_access_type")
+  @@index([created_at], map: "idx_surveys_created_at")
+  @@index([created_by], map: "idx_surveys_created_by")
+  @@index([status], map: "idx_surveys_status")
+  @@index([status, access_type], map: "idx_surveys_status_access_type")
+}
+
+model tiers {
+  id           String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name         String         @unique @db.VarChar(50)
+  min_points   Int
+  benefits     Json?          @default("{}")
+  color        String         @db.VarChar(7)
+  sort_order   Int
+  is_active    Boolean?       @default(true)
+  created_at   DateTime?      @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime?      @default(now()) @db.Timestamptz(6)
+  user_loyalty user_loyalty[]
+
+  @@index([min_points], map: "idx_tiers_min_points")
+  @@index([sort_order], map: "idx_tiers_sort_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model translation_jobs {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entity_type           String    @db.VarChar(20)
+  entity_id             String    @db.Uuid
+  source_language       String    @db.VarChar(10)
+  target_languages      Json
+  status                String    @default("pending") @db.VarChar(20)
+  progress              Int       @default(0)
+  characters_translated Int?      @default(0)
+  provider              String    @default("azure") @db.VarChar(20)
+  error                 String?
+  created_by            String?   @db.Uuid
+  created_at            DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime? @default(now()) @db.Timestamptz(6)
+  completed_at          DateTime? @db.Timestamptz(6)
+  users                 users?    @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([created_by], map: "idx_translation_jobs_created_by")
+  @@index([entity_type, entity_id], map: "idx_translation_jobs_entity")
+  @@index([status], map: "idx_translation_jobs_status")
+}
+
+model user_audit_log {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id    String?   @db.Uuid
+  action     String    @db.VarChar(100)
+  details    Json?     @default("{}")
+  ip_address String?   @db.Inet
+  user_agent String?
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  users      users?    @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([created_at], map: "idx_user_audit_log_created_at")
+  @@index([user_id], map: "idx_user_audit_log_user_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model user_coupons {
+  id                                      String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id                                 String                  @db.Uuid
+  coupon_id                               String                  @db.Uuid
+  status                                  user_coupon_status?     @default(available)
+  qr_code                                 String                  @unique
+  used_at                                 DateTime?               @db.Timestamptz(6)
+  used_by_admin                           String?                 @db.Uuid
+  redemption_location                     String?                 @db.VarChar(255)
+  redemption_details                      Json?                   @default("{}")
+  assigned_by                             String?                 @db.Uuid
+  assigned_reason                         String?
+  expires_at                              DateTime?               @db.Timestamptz(6)
+  created_at                              DateTime?               @default(now()) @db.Timestamptz(6)
+  updated_at                              DateTime?               @default(now()) @db.Timestamptz(6)
+  coupon_redemptions                      coupon_redemptions[]
+  survey_reward_history                   survey_reward_history[]
+  users_user_coupons_assigned_byTousers   users?                  @relation("user_coupons_assigned_byTousers", fields: [assigned_by], references: [id], onUpdate: NoAction)
+  coupons                                 coupons                 @relation(fields: [coupon_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_user_coupons_used_by_adminTousers users?                  @relation("user_coupons_used_by_adminTousers", fields: [used_by_admin], references: [id], onUpdate: NoAction)
+  users_user_coupons_user_idTousers       users                   @relation("user_coupons_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([coupon_id], map: "idx_user_coupons_coupon_id")
+  @@index([expires_at], map: "idx_user_coupons_expires_at")
+  @@index([qr_code], map: "idx_user_coupons_qr_code")
+  @@index([status], map: "idx_user_coupons_status")
+  @@index([user_id], map: "idx_user_coupons_user_id")
+}
+
+model user_loyalty {
+  user_id           String    @id @db.Uuid
+  current_points    Int?      @default(0)
+  tier_id           String?   @db.Uuid
+  tier_updated_at   DateTime? @default(now()) @db.Timestamptz(6)
+  points_updated_at DateTime? @default(now()) @db.Timestamptz(6)
+  created_at        DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime? @default(now()) @db.Timestamptz(6)
+  total_nights      Int?      @default(0)
+  tiers             tiers?    @relation(fields: [tier_id], references: [id], onUpdate: NoAction)
+  users             users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([current_points], map: "idx_user_loyalty_current_points")
+  @@index([tier_id], map: "idx_user_loyalty_tier_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model user_profiles {
+  user_id       String    @id @db.Uuid
+  first_name    String?   @db.VarChar(100)
+  last_name     String?   @db.VarChar(100)
+  phone         String?   @db.VarChar(20)
+  date_of_birth DateTime? @db.Date
+  preferences   Json?     @default("{}")
+  avatar_url    String?   @db.VarChar(500)
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime? @default(now()) @db.Timestamptz(6)
+  membership_id String    @unique(map: "idx_user_profiles_membership_id") @db.VarChar(8)
+  users         users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_user_profiles_user_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model users {
+  id                                                                   String                      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email                                                                String?                     @db.VarChar(255)
+  password_hash                                                        String?                     @db.VarChar(255)
+  role                                                                 user_role?                  @default(customer)
+  is_active                                                            Boolean?                    @default(true)
+  email_verified                                                       Boolean?                    @default(false)
+  created_at                                                           DateTime?                   @default(now()) @db.Timestamptz(6)
+  updated_at                                                           DateTime?                   @default(now()) @db.Timestamptz(6)
+  oauth_provider                                                       String?                     @db.VarChar(50)
+  oauth_provider_id                                                    String?                     @db.VarChar(255)
+  account_link_requests_account_link_requests_requester_user_idTousers account_link_requests[]     @relation("account_link_requests_requester_user_idTousers")
+  account_link_requests_account_link_requests_target_user_idTousers    account_link_requests[]     @relation("account_link_requests_target_user_idTousers")
+  account_linking_audit_account_linking_audit_target_user_idTousers    account_linking_audit[]     @relation("account_linking_audit_target_user_idTousers")
+  account_linking_audit_account_linking_audit_user_idTousers           account_linking_audit[]     @relation("account_linking_audit_user_idTousers")
+  coupon_redemptions                                                   coupon_redemptions[]
+  coupons                                                              coupons[]
+  feature_toggle_audit                                                 feature_toggle_audit[]
+  feature_toggles_feature_toggles_created_byTousers                    feature_toggles[]           @relation("feature_toggles_created_byTousers")
+  feature_toggles_feature_toggles_updated_byTousers                    feature_toggles[]           @relation("feature_toggles_updated_byTousers")
+  linked_accounts_linked_accounts_linked_byTousers                     linked_accounts[]           @relation("linked_accounts_linked_byTousers")
+  linked_accounts_linked_accounts_linked_user_idTousers                linked_accounts[]           @relation("linked_accounts_linked_user_idTousers")
+  linked_accounts_linked_accounts_primary_user_idTousers               linked_accounts[]           @relation("linked_accounts_primary_user_idTousers")
+  password_reset_tokens                                                password_reset_tokens[]
+  points_transactions_points_transactions_admin_user_idTousers         points_transactions[]       @relation("points_transactions_admin_user_idTousers")
+  points_transactions_points_transactions_user_idTousers               points_transactions[]       @relation("points_transactions_user_idTousers")
+  refresh_tokens                                                       refresh_tokens[]
+  survey_coupon_assignments                                            survey_coupon_assignments[]
+  survey_invitations                                                   survey_invitations[]
+  survey_responses                                                     survey_responses[]
+  survey_reward_history                                                survey_reward_history[]
+  surveys                                                              surveys[]
+  translation_jobs                                                     translation_jobs[]
+  user_audit_log                                                       user_audit_log[]
+  user_coupons_user_coupons_assigned_byTousers                         user_coupons[]              @relation("user_coupons_assigned_byTousers")
+  user_coupons_user_coupons_used_by_adminTousers                       user_coupons[]              @relation("user_coupons_used_by_adminTousers")
+  user_coupons_user_coupons_user_idTousers                             user_coupons[]              @relation("user_coupons_user_idTousers")
+  user_loyalty                                                         user_loyalty?
+  user_profiles                                                        user_profiles?
+
+  @@index([email], map: "idx_users_email")
+  @@index([oauth_provider, oauth_provider_id], map: "idx_users_oauth_provider_id")
+  @@index([role], map: "idx_users_role")
+}
+
+enum coupon_status {
+  draft
+  active
+  paused
+  expired
+  exhausted
+}
+
+enum coupon_type {
+  percentage
+  fixed_amount
+  bogo
+  free_upgrade
+  free_service
+}
+
+enum points_transaction_type {
+  earned_stay
+  earned_bonus
+  redeemed
+  expired
+  admin_adjustment
+  admin_award
+  admin_deduction
+}
+
+enum user_coupon_status {
+  available
+  used
+  expired
+  revoked
+}
+
+enum user_role {
+  customer
+  admin
+  super_admin
+}
