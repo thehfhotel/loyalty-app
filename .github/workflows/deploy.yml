@@ -294,12 +294,18 @@ jobs:
           # Clean any existing node_modules to avoid permission conflicts
           if [ -d "node_modules" ]; then
             echo "Cleaning existing node_modules..."
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S rm -rf node_modules package-lock.json
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S rm -rf node_modules
           fi
           
-          # Install frontend dependencies
+          # Smart NPM installation - use ci if lockfile exists, install if not
           echo "Installing frontend dependencies..."
-          npm ci
+          if [ -f "package-lock.json" ]; then
+            echo "Using npm ci (lockfile found)..."
+            npm ci
+          else
+            echo "Using npm install (no lockfile found)..."
+            npm install
+          fi
           
           echo "✅ Frontend dependencies installed successfully"
 
@@ -427,12 +433,18 @@ jobs:
           # Clean any existing node_modules to avoid permission conflicts
           if [ -d "node_modules" ]; then
             echo "Cleaning existing node_modules..."
-            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S rm -rf node_modules package-lock.json
+            echo "${{ secrets.SUDO_PASSWORD }}" | sudo -S rm -rf node_modules
           fi
           
-          # Install dependencies (including dev dependencies for Prisma CLI)
+          # Smart NPM installation - use ci if lockfile exists, install if not
           echo "Installing backend dependencies..."
-          npm ci --include=dev
+          if [ -f "package-lock.json" ]; then
+            echo "Using npm ci with dev dependencies (lockfile found)..."
+            npm ci --include=dev
+          else
+            echo "Using npm install with dev dependencies (no lockfile found)..."
+            npm install --include=dev
+          fi
           
           # Verify Prisma installation
           echo "Verifying Prisma CLI installation..."
