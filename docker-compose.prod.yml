@@ -20,10 +20,11 @@ services:
   frontend:
     environment:
       NODE_ENV: production
+      VITE_API_URL: ${VITE_API_URL}
     volumes:
       # Remove development volume mounts for production
       - frontend_logs:/app/logs
-    command: sh -c "if [ ! -d dist ]; then npm run build; fi && npm run preview -- --host 0.0.0.0 --port 3000"
+    command: sh -c "echo 'Building frontend for production...' && npm run build && echo 'Starting preview server...' && npm run preview -- --host 0.0.0.0 --port 3000"
     restart: unless-stopped
 
   postgres:
