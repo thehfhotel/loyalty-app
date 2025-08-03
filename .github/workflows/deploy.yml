@@ -460,30 +460,38 @@ jobs:
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR/backend"
           
+          # Wait for database to be ready
+          echo "Waiting for database to be ready..."
+          max_attempts=30
+          attempt=0
+          
+          while [ $attempt -lt $max_attempts ]; do
+            if docker compose -f ../docker-compose.yml -f ../docker-compose.prod.yml exec -T postgres pg_isready -U loyalty -d loyalty_db >/dev/null 2>&1; then
+              echo "✅ Database is ready"
+              break
+            fi
+            attempt=$((attempt + 1))
+            echo "Waiting for database... (attempt $attempt/$max_attempts)"
+            sleep 3
+          done
+          
+          if [ $attempt -ge $max_attempts ]; then
+            echo "❌ Database failed to become ready"
+            echo "Container status:"
+            docker compose -f ../docker-compose.yml -f ../docker-compose.prod.yml ps postgres
+            exit 1
+          fi
+          
           # Ensure Prisma client is generated
           echo "Generating Prisma client..."
           npm run db:generate
-          
-          # Test database connection
-          echo "Testing database connection..."
-          npx tsx src/test-prisma.ts || {
-            echo "⚠️ Database connection test failed, attempting to apply schema..."
-            
-            # If connection fails, apply consolidated schema as fallback
-            echo "Applying consolidated schema as fallback..."
-            docker compose -f ../docker-compose.yml -f ../docker-compose.prod.yml exec -T postgres psql -U loyalty -d loyalty_db -f /docker-entrypoint-initdb.d/consolidated_schema.sql
-            
-            # Test connection again
-            echo "Re-testing connection after schema application..."
-            npx tsx src/test-prisma.ts
-          }
           
           # Deploy Prisma migrations
           echo "Deploying Prisma migrations..."
           npm run db:migrate:deploy
           
-          # Verify final state
-          echo "Verifying database state..."
+          # Test database connection
+          echo "Testing database connection..."
           npx tsx src/test-prisma.ts
           
           echo "✅ Database migrations completed successfully"
