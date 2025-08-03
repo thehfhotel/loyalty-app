@@ -109,30 +109,7 @@ jobs:
       tests-passed: ${{ steps.test-results.outputs.passed }}
       coverage-percent: ${{ steps.test-results.outputs.coverage }}
     
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: loyalty_test
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_DB: loyalty_test_db
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5433:5432
-      
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6380:6379
+    # Services will be started via docker compose instead of GitHub Actions services
     
     steps:
       - name: "🧹 Workspace preparation"
@@ -179,23 +156,35 @@ jobs:
         working-directory: ./backend
         run: npm ci --prefer-offline --include=dev
       
+      - name: "🐳 Start test services"
+        run: |
+          # Start test database and redis with custom configuration
+          docker compose -f docker-compose.yml up -d postgres redis
+          
+          # Wait for services to be ready
+          echo "Waiting for services to be ready..."
+          sleep 10
+          
+          # Configure test database (separate commands to avoid transaction block issues)
+          docker exec loyalty_postgres psql -U loyalty -d postgres -c "DROP DATABASE IF EXISTS loyalty_test_db;" || true
+          docker exec loyalty_postgres psql -U loyalty -d postgres -c "DROP USER IF EXISTS loyalty_test;" || true  
+          docker exec loyalty_postgres psql -U loyalty -d postgres -c "CREATE USER loyalty_test WITH PASSWORD 'test_password';" || true
+          docker exec loyalty_postgres psql -U loyalty -d postgres -c "CREATE DATABASE loyalty_test_db OWNER loyalty_test;" || true
+          docker exec loyalty_postgres psql -U loyalty -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE loyalty_test_db TO loyalty_test;" || true
+          
+          # Enable UUID extension in test database
+          docker exec loyalty_postgres psql -U loyalty_test -d loyalty_test_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
+      
       - name: "🔧 Setup test environment"
         working-directory: ./backend
         env:
-          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5433/loyalty_test_db
-          REDIS_URL: redis://localhost:6380
+          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5434/loyalty_test_db
+          REDIS_URL: redis://localhost:6379
           NODE_ENV: test
           JWT_SECRET: test-jwt-secret-for-testing-only-min-32-chars
           JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
           SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
         run: |
-          # Enable UUID extension in test database using Docker
-          echo "Enabling UUID extension in test database..."
-          # Wait for postgres to be ready first
-          timeout 30 bash -c 'until docker exec postgres pg_isready -U loyalty_test; do sleep 1; done'
-          # Create UUID extension
-          docker exec postgres psql -U loyalty_test -d loyalty_test_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
-          
           # Generate Prisma client for tests
           npm run db:generate
           
@@ -205,8 +194,8 @@ jobs:
       - name: "🧪 Run unit tests"
         working-directory: ./backend
         env:
-          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5433/loyalty_test_db
-          REDIS_URL: redis://localhost:6380
+          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5434/loyalty_test_db
+          REDIS_URL: redis://localhost:6379
           NODE_ENV: test
           JWT_SECRET: test-jwt-secret-for-testing-only-min-32-chars
           JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
@@ -216,8 +205,8 @@ jobs:
       - name: "🧪 Run integration tests"
         working-directory: ./backend
         env:
-          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5433/loyalty_test_db
-          REDIS_URL: redis://localhost:6380
+          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5434/loyalty_test_db
+          REDIS_URL: redis://localhost:6379
           NODE_ENV: test
           JWT_SECRET: test-jwt-secret-for-testing-only-min-32-chars
           JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
@@ -312,11 +301,11 @@ jobs:
       
       - name: "🔧 Setup E2E environment"
         run: |
-          # Start test containers with docker-compose
-          docker-compose -f docker-compose.yml up -d postgres redis
+          # Start test containers with docker compose
+          docker compose -f docker compose.yml up -d postgres redis
           
           # Wait for services to be ready
-          timeout 60 bash -c 'until docker-compose exec -T postgres pg_isready -U loyalty -d loyalty_db; do sleep 2; done'
+          timeout 60 bash -c 'until docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db; do sleep 2; done'
       
       - name: "🏗️ Build application for E2E"
         run: |
@@ -345,7 +334,7 @@ jobs:
       - name: "🧹 Cleanup E2E environment"
         if: always()
         run: |
-          docker-compose down || true
+          docker compose down || true
 
   # =============================================================================
   # PHASE 2: BUILD & DEPLOYMENT PREPARATION (2-3 minutes, only on main)
@@ -460,10 +449,10 @@ jobs:
           export COMPOSE_DOCKER_CLI_BUILD=1
           
           # Validate Docker Compose configuration
-          docker-compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null
+          docker compose -f docker compose.yml -f docker compose.prod.yml config > /dev/null
           
           # Build images (without starting services)
-          docker-compose -f docker-compose.yml -f docker-compose.prod.yml build \
+          docker compose -f docker compose.yml -f docker compose.prod.yml build \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
             --parallel
       
@@ -652,15 +641,15 @@ jobs:
           export COMPOSE_DOCKER_CLI_BUILD=1
           
           # Graceful shutdown of existing services
-          if docker-compose ps -q | head -1 | grep -q .; then
+          if docker compose ps -q | head -1 | grep -q .; then
             echo "🛑 Graceful shutdown of existing services..."
-            timeout 30s docker-compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 10 || \
-            docker-compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 5
+            timeout 30s docker compose -f docker compose.yml -f docker compose.prod.yml down --timeout 10 || \
+            docker compose -f docker compose.yml -f docker compose.prod.yml down --timeout 5
           fi
           
           # Build and start services
           echo "🏗️ Building and starting services..."
-          docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+          docker compose -f docker compose.yml -f docker compose.prod.yml up -d --build
           
           echo "✅ Services deployed"
       
@@ -673,19 +662,19 @@ jobs:
           
           # Wait for database to be ready
           echo "Waiting for database..."
-          timeout 60s bash -c 'until docker-compose exec -T postgres pg_isready -U loyalty -d loyalty_db; do sleep 2; done'
+          timeout 60s bash -c 'until docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db; do sleep 2; done'
           
           # Generate Prisma client and run migrations
           cd backend
           npm run db:generate
           
           # Deploy migrations through container
-          if ! docker-compose exec -T backend npm run db:migrate:deploy 2>&1; then
+          if ! docker compose exec -T backend npm run db:migrate:deploy 2>&1; then
             echo "Checking for baseline scenario..."
-            if docker-compose exec -T backend npm run db:migrate:deploy 2>&1 | grep -q "P3005"; then
+            if docker compose exec -T backend npm run db:migrate:deploy 2>&1 | grep -q "P3005"; then
               echo "Performing baseline..."
-              docker-compose exec -T backend npx prisma migrate resolve --applied 0_init
-              docker-compose exec -T backend npm run db:migrate:deploy
+              docker compose exec -T backend npx prisma migrate resolve --applied 0_init
+              docker compose exec -T backend npm run db:migrate:deploy
             else
               echo "❌ Migration failed"
               exit 1
