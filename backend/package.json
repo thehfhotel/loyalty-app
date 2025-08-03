@@ -15,6 +15,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:reset": "prisma migrate reset",
+    "db:migrate:status": "prisma migrate status",
     "db:studio": "prisma studio",
     "db:seed": "tsx src/utils/seedDatabase.ts"
   },

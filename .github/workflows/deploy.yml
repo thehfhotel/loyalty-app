@@ -501,6 +501,17 @@ jobs:
           # Set database URL for host connection (using exposed port)
           export DATABASE_URL="postgresql://loyalty:loyalty_pass@localhost:5434/loyalty_db"
           
+          # Check if this is first-time migration setup (database exists but no migration history)
+          echo "Checking migration status..."
+          if npm run db:migrate:status 2>&1 | grep -q "Database schema is not empty"; then
+            echo "Database exists but no migration history found - performing baseline..."
+            # Baseline the existing database by marking initial migration as applied
+            npx prisma migrate resolve --applied 0_init
+            echo "✅ Database baseline completed"
+          else
+            echo "Migration history exists, proceeding with normal migration..."
+          fi
+          
           # Deploy Prisma migrations from host (can access localhost:5434)
           echo "Deploying Prisma migrations from host..."
           npm run db:migrate:deploy
