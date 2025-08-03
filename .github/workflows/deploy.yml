@@ -76,7 +76,11 @@ jobs:
       
       - name: "🔍 TypeScript type checking"
         working-directory: ./backend
-        run: npm run typecheck
+        run: |
+          # Generate Prisma client for type checking
+          npm run db:generate
+          # Run TypeScript type checking
+          npm run typecheck
       
       - name: "🔒 Security linting (ESLint + Security rules)"
         working-directory: ./backend
@@ -185,6 +189,10 @@ jobs:
           JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
           SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
         run: |
+          # Enable UUID extension in test database
+          echo "Enabling UUID extension in test database..."
+          PGPASSWORD=test_password psql -h localhost -p 5433 -U loyalty_test -d loyalty_test_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
+          
           # Generate Prisma client for tests
           npm run db:generate
           
