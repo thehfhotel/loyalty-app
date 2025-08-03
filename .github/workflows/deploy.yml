@@ -114,21 +114,20 @@ jobs:
           - 6380:6379
     
     steps:
-      - name: "🧹 Pre-checkout cleanup"
-        run: |
-          # Fix permissions and clean up existing artifacts before checkout
-          # Use sudo to ensure we can remove files with any ownership
-          sudo rm -rf ${{ github.workspace }}/frontend/dist ${{ github.workspace }}/backend/dist 2>/dev/null || true
-          sudo rm -rf ${{ github.workspace }}/frontend/build ${{ github.workspace }}/backend/build 2>/dev/null || true
-          sudo rm -rf ${{ github.workspace }}/frontend/.next ${{ github.workspace }}/backend/.next 2>/dev/null || true
-          # Fix permissions on the entire workspace
-          sudo chmod -R 777 ${{ github.workspace }} 2>/dev/null || true
-      
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          clean: true  # Enable clean to properly handle workspace
+          clean: false  # Disable clean to avoid permission issues
+      
+      - name: "🧹 Post-checkout cleanup"
+        run: |
+          # Clean build artifacts after checkout with proper permissions
+          sudo rm -rf frontend/dist backend/dist 2>/dev/null || true
+          sudo rm -rf frontend/build backend/build 2>/dev/null || true
+          sudo rm -rf frontend/.next backend/.next 2>/dev/null || true
+          # Ensure proper permissions for the workflow
+          sudo chown -R $USER:$USER . 2>/dev/null || true
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -217,21 +216,20 @@ jobs:
       e2e-passed: ${{ steps.e2e-results.outputs.passed }}
     
     steps:
-      - name: "🧹 Pre-checkout cleanup"
-        run: |
-          # Fix permissions and clean up existing artifacts before checkout
-          # Use sudo to ensure we can remove files with any ownership
-          sudo rm -rf ${{ github.workspace }}/frontend/dist ${{ github.workspace }}/backend/dist 2>/dev/null || true
-          sudo rm -rf ${{ github.workspace }}/frontend/build ${{ github.workspace }}/backend/build 2>/dev/null || true
-          sudo rm -rf ${{ github.workspace }}/frontend/.next ${{ github.workspace }}/backend/.next 2>/dev/null || true
-          # Fix permissions on the entire workspace
-          sudo chmod -R 777 ${{ github.workspace }} 2>/dev/null || true
-      
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          clean: true  # Enable clean to properly handle workspace
+          clean: false  # Disable clean to avoid permission issues
+      
+      - name: "🧹 Post-checkout cleanup"
+        run: |
+          # Clean build artifacts after checkout with proper permissions
+          sudo rm -rf frontend/dist backend/dist 2>/dev/null || true
+          sudo rm -rf frontend/build backend/build 2>/dev/null || true
+          sudo rm -rf frontend/.next backend/.next 2>/dev/null || true
+          # Ensure proper permissions for the workflow
+          sudo chown -R $USER:$USER . 2>/dev/null || true
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -300,21 +298,20 @@ jobs:
       build-passed: ${{ steps.build-results.outputs.passed }}
     
     steps:
-      - name: "🧹 Pre-checkout cleanup"
-        run: |
-          # Fix permissions and clean up existing artifacts before checkout
-          # Use sudo to ensure we can remove files with any ownership
-          sudo rm -rf ${{ github.workspace }}/frontend/dist ${{ github.workspace }}/backend/dist 2>/dev/null || true
-          sudo rm -rf ${{ github.workspace }}/frontend/build ${{ github.workspace }}/backend/build 2>/dev/null || true
-          sudo rm -rf ${{ github.workspace }}/frontend/.next ${{ github.workspace }}/backend/.next 2>/dev/null || true
-          # Fix permissions on the entire workspace
-          sudo chmod -R 777 ${{ github.workspace }} 2>/dev/null || true
-      
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          clean: true  # Enable clean to properly handle workspace
+          clean: false  # Disable clean to avoid permission issues
+      
+      - name: "🧹 Post-checkout cleanup"
+        run: |
+          # Clean build artifacts after checkout with proper permissions
+          sudo rm -rf frontend/dist backend/dist 2>/dev/null || true
+          sudo rm -rf frontend/build backend/build 2>/dev/null || true
+          sudo rm -rf frontend/.next backend/.next 2>/dev/null || true
+          # Ensure proper permissions for the workflow
+          sudo chown -R $USER:$USER . 2>/dev/null || true
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
