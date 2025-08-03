@@ -208,33 +208,6 @@ jobs:
           
           echo "✅ Environment variables configured"
 
-      - name: Stop existing containers with graceful shutdown
-        run: |
-          echo "🛑 Gracefully stopping existing containers..."
-          
-          # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
-          cd "$DEPLOY_DIR"
-          
-          # Check if containers are running
-          if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q | head -1 | grep -q .; then
-            echo "Containers found, initiating shutdown..."
-            
-            # Graceful shutdown with timeout
-            timeout 30s docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 10 || {
-              echo "⚠️ Graceful shutdown timed out, forcing stop..."
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 5 || true
-            }
-          else
-            echo "No containers running"
-          fi
-          
-          # Clean up any orphaned containers
-          docker compose down --remove-orphans 2>/dev/null || true
-          
-          sleep 3
-          echo "✅ Container shutdown completed"
-
       - name: Intelligent database backup with retry logic
         run: |
           echo "💾 Creating intelligent database backup..."
@@ -375,6 +348,33 @@ jobs:
           else
             echo "No existing backups found"
           fi
+
+      - name: Stop existing containers with graceful shutdown
+        run: |
+          echo "🛑 Gracefully stopping existing containers..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
+          # Check if containers are running
+          if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q | head -1 | grep -q .; then
+            echo "Containers found, initiating shutdown..."
+            
+            # Graceful shutdown with timeout
+            timeout 30s docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 10 || {
+              echo "⚠️ Graceful shutdown timed out, forcing stop..."
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 5 || true
+            }
+          else
+            echo "No containers running"
+          fi
+          
+          # Clean up any orphaned containers
+          docker compose down --remove-orphans 2>/dev/null || true
+          
+          sleep 3
+          echo "✅ Container shutdown completed"
 
       - name: Cache Node.js dependencies
         uses: actions/cache@v4
