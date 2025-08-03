@@ -23,7 +23,7 @@ services:
     volumes:
       # Remove development volume mounts for production
       - frontend_logs:/app/logs
-    command: npm run preview -- --host 0.0.0.0 --port 3000
+    command: sh -c "if [ -d dist ]; then serve -s dist -l 3000; else npm run build && serve -s dist -l 3000; fi"
     restart: unless-stopped
 
   postgres:
