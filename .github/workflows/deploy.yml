@@ -191,6 +191,9 @@ jobs:
         run: |
           # Enable UUID extension in test database using Docker
           echo "Enabling UUID extension in test database..."
+          # Wait for postgres to be ready first
+          timeout 30 bash -c 'until docker exec postgres pg_isready -U loyalty_test; do sleep 1; done'
+          # Create UUID extension
           docker exec postgres psql -U loyalty_test -d loyalty_test_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
           
           # Generate Prisma client for tests

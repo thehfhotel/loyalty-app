@@ -27,9 +27,8 @@ export function getPrismaClient(): PrismaClient {
     }
 
     // Add error handling for connection issues
-    prisma.$on('error', (e: any) => {
-      logger.error('Prisma error:', e);
-    });
+    // Note: Removed $on('error') as it's not a valid Prisma event
+    // Error handling is done through try-catch blocks where needed
 
     logger.info('Prisma client initialized');
   }
