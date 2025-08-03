@@ -30,12 +30,22 @@ jobs:
         run: |
           # Completely clean and reset the workspace to avoid permission issues
           echo "Cleaning workspace at ${{ github.workspace }}"
-          # Force ownership change and removal
-          sudo chown -R $USER:$USER ${{ github.workspace }} 2>/dev/null || true
-          # Remove all contents including hidden files
+          
+          # First, handle the specific problematic directory
+          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
+            echo "Found frontend/dist/assets - removing with elevated permissions"
+            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
+            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
+          fi
+          
+          # Then clean the entire workspace
+          echo "Cleaning entire workspace..."
           cd ${{ github.workspace }}
-          sudo rm -rf * .[^.]* 2>/dev/null || true
-          # Ensure directory is empty
+          # Force removal of all files and directories
+          sudo rm -rf ./* ./.[!.]* 2>&1 | grep -v "No such file" || true
+          
+          # Verify workspace is clean
+          echo "Workspace contents after cleaning:"
           ls -la
       
       - name: "📥 Checkout code"
@@ -119,12 +129,22 @@ jobs:
         run: |
           # Completely clean and reset the workspace to avoid permission issues
           echo "Cleaning workspace at ${{ github.workspace }}"
-          # Force ownership change and removal
-          sudo chown -R $USER:$USER ${{ github.workspace }} 2>/dev/null || true
-          # Remove all contents including hidden files
+          
+          # First, handle the specific problematic directory
+          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
+            echo "Found frontend/dist/assets - removing with elevated permissions"
+            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
+            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
+          fi
+          
+          # Then clean the entire workspace
+          echo "Cleaning entire workspace..."
           cd ${{ github.workspace }}
-          sudo rm -rf * .[^.]* 2>/dev/null || true
-          # Ensure directory is empty
+          # Force removal of all files and directories
+          sudo rm -rf ./* ./.[!.]* 2>&1 | grep -v "No such file" || true
+          
+          # Verify workspace is clean
+          echo "Workspace contents after cleaning:"
           ls -la
       
       - name: "📥 Checkout code"
@@ -223,12 +243,22 @@ jobs:
         run: |
           # Completely clean and reset the workspace to avoid permission issues
           echo "Cleaning workspace at ${{ github.workspace }}"
-          # Force ownership change and removal
-          sudo chown -R $USER:$USER ${{ github.workspace }} 2>/dev/null || true
-          # Remove all contents including hidden files
+          
+          # First, handle the specific problematic directory
+          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
+            echo "Found frontend/dist/assets - removing with elevated permissions"
+            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
+            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
+          fi
+          
+          # Then clean the entire workspace
+          echo "Cleaning entire workspace..."
           cd ${{ github.workspace }}
-          sudo rm -rf * .[^.]* 2>/dev/null || true
-          # Ensure directory is empty
+          # Force removal of all files and directories
+          sudo rm -rf ./* ./.[!.]* 2>&1 | grep -v "No such file" || true
+          
+          # Verify workspace is clean
+          echo "Workspace contents after cleaning:"
           ls -la
       
       - name: "📥 Checkout code"
@@ -307,12 +337,22 @@ jobs:
         run: |
           # Completely clean and reset the workspace to avoid permission issues
           echo "Cleaning workspace at ${{ github.workspace }}"
-          # Force ownership change and removal
-          sudo chown -R $USER:$USER ${{ github.workspace }} 2>/dev/null || true
-          # Remove all contents including hidden files
+          
+          # First, handle the specific problematic directory
+          if [ -d "${{ github.workspace }}/frontend/dist/assets" ]; then
+            echo "Found frontend/dist/assets - removing with elevated permissions"
+            sudo chmod -R 777 "${{ github.workspace }}/frontend/dist" || true
+            sudo rm -rf "${{ github.workspace }}/frontend/dist" || true
+          fi
+          
+          # Then clean the entire workspace
+          echo "Cleaning entire workspace..."
           cd ${{ github.workspace }}
-          sudo rm -rf * .[^.]* 2>/dev/null || true
-          # Ensure directory is empty
+          # Force removal of all files and directories
+          sudo rm -rf ./* ./.[!.]* 2>&1 | grep -v "No such file" || true
+          
+          # Verify workspace is clean
+          echo "Workspace contents after cleaning:"
           ls -la
       
       - name: "📥 Checkout code"
