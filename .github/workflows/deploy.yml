@@ -26,18 +26,19 @@ jobs:
       security-passed: ${{ steps.security-results.outputs.passed }}
     
     steps:
+      - name: "🧹 Pre-checkout cleanup"
+        run: |
+          # Fix permissions and clean up existing artifacts before checkout
+          sudo chmod -R 777 ${{ github.workspace }} 2>/dev/null || true
+          rm -rf frontend/dist backend/dist 2>/dev/null || true
+          rm -rf frontend/build backend/build 2>/dev/null || true
+          rm -rf frontend/.next backend/.next 2>/dev/null || true
+      
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1  # Shallow clone for speed
-          clean: false  # Don't clean, we'll handle artifacts manually
-      
-      - name: "🧹 Clean build artifacts"
-        run: |
-          # Clean any build artifacts that might cause issues
-          rm -rf frontend/dist backend/dist 2>/dev/null || true
-          rm -rf frontend/build backend/build 2>/dev/null || true
-          rm -rf frontend/.next backend/.next 2>/dev/null || true
+          clean: true  # Enable clean to properly handle workspace
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -111,18 +112,19 @@ jobs:
           - 6380:6379
     
     steps:
+      - name: "🧹 Pre-checkout cleanup"
+        run: |
+          # Fix permissions and clean up existing artifacts before checkout
+          sudo chmod -R 777 ${{ github.workspace }} 2>/dev/null || true
+          rm -rf frontend/dist backend/dist 2>/dev/null || true
+          rm -rf frontend/build backend/build 2>/dev/null || true
+          rm -rf frontend/.next backend/.next 2>/dev/null || true
+      
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          clean: false  # Don't clean, we'll handle artifacts manually
-      
-      - name: "🧹 Clean build artifacts"
-        run: |
-          # Clean any build artifacts that might cause issues
-          rm -rf frontend/dist backend/dist 2>/dev/null || true
-          rm -rf frontend/build backend/build 2>/dev/null || true
-          rm -rf frontend/.next backend/.next 2>/dev/null || true
+          clean: true  # Enable clean to properly handle workspace
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -211,18 +213,19 @@ jobs:
       e2e-passed: ${{ steps.e2e-results.outputs.passed }}
     
     steps:
+      - name: "🧹 Pre-checkout cleanup"
+        run: |
+          # Fix permissions and clean up existing artifacts before checkout
+          sudo chmod -R 777 ${{ github.workspace }} 2>/dev/null || true
+          rm -rf frontend/dist backend/dist 2>/dev/null || true
+          rm -rf frontend/build backend/build 2>/dev/null || true
+          rm -rf frontend/.next backend/.next 2>/dev/null || true
+      
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          clean: false  # Don't clean, we'll handle artifacts manually
-      
-      - name: "🧹 Clean build artifacts"
-        run: |
-          # Clean any build artifacts that might cause issues
-          rm -rf frontend/dist backend/dist 2>/dev/null || true
-          rm -rf frontend/build backend/build 2>/dev/null || true
-          rm -rf frontend/.next backend/.next 2>/dev/null || true
+          clean: true  # Enable clean to properly handle workspace
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -291,18 +294,19 @@ jobs:
       build-passed: ${{ steps.build-results.outputs.passed }}
     
     steps:
+      - name: "🧹 Pre-checkout cleanup"
+        run: |
+          # Fix permissions and clean up existing artifacts before checkout
+          sudo chmod -R 777 ${{ github.workspace }} 2>/dev/null || true
+          rm -rf frontend/dist backend/dist 2>/dev/null || true
+          rm -rf frontend/build backend/build 2>/dev/null || true
+          rm -rf frontend/.next backend/.next 2>/dev/null || true
+      
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          clean: false  # Don't clean, we'll handle artifacts manually
-      
-      - name: "🧹 Clean build artifacts"
-        run: |
-          # Clean any build artifacts that might cause issues
-          rm -rf frontend/dist backend/dist 2>/dev/null || true
-          rm -rf frontend/build backend/build 2>/dev/null || true
-          rm -rf frontend/.next backend/.next 2>/dev/null || true
+          clean: true  # Enable clean to properly handle workspace
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
