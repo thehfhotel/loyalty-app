@@ -54,7 +54,7 @@ export class OAuthService {
         clientSecret: googleClientSecret,
         callbackURL: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:4001/api/oauth/google/callback',
         passReqToCallback: false
-      } as any, async (_accessToken: string, _refreshToken: string, profile: GoogleProfile, done: any) => {
+      } as any, async (_accessToken: any, _refreshToken: any, profile: any, done: any) => {
         try {
           logger.debug('[OAuth Service] Google profile received', {
             id: profile.id,
@@ -63,10 +63,10 @@ export class OAuthService {
             verified: profile.emails?.[0]?.verified
           });
           const result = await this.handleGoogleAuth(profile);
-          return done(null, result);
+          return done(null, result.user);
         } catch (error) {
           logger.error('[OAuth Service] Google OAuth error:', error);
-          return done(error, null);
+          return done(error, false);
         }
       }));
     } else {

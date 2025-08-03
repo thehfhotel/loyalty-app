@@ -70,6 +70,19 @@ export async function query<T>(text: string, params?: any[]): Promise<T[]> {
   }
 }
 
+export async function queryWithMeta<T>(text: string, params?: any[]): Promise<{ rows: T[]; rowCount: number }> {
+  const start = Date.now();
+  try {
+    const result = await pool.query(text, params);
+    const duration = Date.now() - start;
+    logger.debug('Executed query', { text, duration, rows: result.rowCount });
+    return { rows: result.rows, rowCount: result.rowCount || 0 };
+  } catch (error) {
+    logger.error('Database query error:', { text, error });
+    throw error;
+  }
+}
+
 export async function getClient() {
   return pool.connect();
 }

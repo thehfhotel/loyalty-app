@@ -48,15 +48,15 @@ export interface Survey {
 
 export interface SurveyResponse {
   id: string;
-  survey_id: string;
-  user_id: string;
+  survey_id: string | null;
+  user_id: string | null;
   answers: Record<string, any>;
-  is_completed: boolean;
-  progress: number;
-  started_at: string;
-  completed_at?: string;
-  created_at: string;
-  updated_at: string;
+  is_completed: boolean | null;
+  progress: number | null;
+  started_at: Date | null;
+  completed_at: Date | null;
+  created_at: Date | null;
+  updated_at: Date | null;
 }
 
 export interface SurveyInvitation {

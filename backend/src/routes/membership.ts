@@ -43,7 +43,7 @@ router.get('/lookup/:membershipId',
 router.get('/stats',
   authenticate,
   authorize('admin', 'super_admin'),
-  async (req, res, next) => {
+  async (_req, res, next) => {
     try {
       const stats = await membershipIdService.getMembershipIdStats();
       

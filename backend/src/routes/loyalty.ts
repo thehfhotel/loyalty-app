@@ -127,12 +127,13 @@ router.get('/history', loyaltyController.getPointsHistory.bind(loyaltyController
 router.post('/simulate-stay', loyaltyController.simulateStayEarning.bind(loyaltyController));
 
 // Admin routes - require admin role
-const requireAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+const requireAdmin = (req: express.Request, res: express.Response, next: express.NextFunction): void => {
   if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'super_admin')) {
-    return res.status(403).json({
+    res.status(403).json({
       success: false,
       message: 'Admin access required'
     });
+    return;
   }
   next();
 };

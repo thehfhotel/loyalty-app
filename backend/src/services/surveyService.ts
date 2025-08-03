@@ -363,7 +363,7 @@ export class SurveyService {
 
         return {
           ...updatedResponse,
-          answers: updatedResponse.answers
+          answers: updatedResponse.answers as Record<string, any>
         };
       }
 
@@ -381,7 +381,7 @@ export class SurveyService {
 
       return {
         ...newResponse,
-        answers: newResponse.answers
+        answers: newResponse.answers as Record<string, any>
       };
     } catch (error) {
       logger.error('Error submitting survey response:', error);

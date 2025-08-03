@@ -1,4 +1,4 @@
-import { query } from '../config/database';
+import { query, queryWithMeta } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { UserProfile } from '../types/auth';
 import { ProfileUpdate } from '../types/user';
@@ -105,7 +105,7 @@ export class UserService {
   }
 
   async updateAvatar(userId: string, avatarUrl: string): Promise<void> {
-    const result = await query(
+    const result = await queryWithMeta(
       'UPDATE user_profiles SET avatar_url = $1, updated_at = NOW() WHERE user_id = $2',
       [avatarUrl, userId]
     );
@@ -154,7 +154,7 @@ export class UserService {
     }
 
     // Update user email
-    const result = await query(
+    const result = await queryWithMeta(
       'UPDATE users SET email = $1, email_verified = false, updated_at = NOW() WHERE id = $2',
       [email, userId]
     );

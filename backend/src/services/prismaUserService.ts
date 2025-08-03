@@ -35,7 +35,7 @@ export class PrismaUserService {
    */
   async getUserByEmail(email: string): Promise<UserWithProfile | null> {
     try {
-      const user = await db.users.findUnique({
+      const user = await db.users.findFirst({
         where: { email },
         include: {
           user_profiles: true,

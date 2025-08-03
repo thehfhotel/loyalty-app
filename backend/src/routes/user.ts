@@ -44,9 +44,9 @@ router.put(
         return res.status(401).json({ error: 'Not authenticated' });
       }
       const profile = await userService.updateProfile(req.user.id, req.body);
-      res.json({ profile });
+      return res.json({ profile });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 );
@@ -131,7 +131,7 @@ router.put('/avatar/emoji', async (req, res, next) => {
       }
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -160,7 +160,7 @@ router.put('/email', async (req, res, next) => {
       message: 'Email updated successfully'
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -182,7 +182,7 @@ router.delete('/avatar', async (req, res, next) => {
       message: 'Avatar deleted successfully' 
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -207,7 +207,7 @@ router.get('/admin/users', requireAdmin, async (req, res, next) => {
       }
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -217,7 +217,7 @@ router.get('/admin/stats', requireAdmin, async (_req, res, next) => {
     const stats = await userService.getUserStats();
     res.json({ success: true, data: stats });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -227,7 +227,7 @@ router.get('/admin/users/:userId', requireAdmin, async (req, res, next) => {
     const user = await userService.getUserById(req.params.userId);
     res.json({ success: true, data: user });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -247,7 +247,7 @@ router.patch('/admin/users/:userId/status', requireAdmin, async (req, res, next)
       message: `User ${isActive ? 'activated' : 'deactivated'} successfully` 
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -267,7 +267,7 @@ router.patch('/admin/users/:userId/role', requireAdmin, async (req, res, next) =
       message: 'User role updated successfully' 
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -290,7 +290,7 @@ router.delete('/admin/users/:userId', requireAdmin, async (req, res, next) => {
       message: 'User deleted successfully' 
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 

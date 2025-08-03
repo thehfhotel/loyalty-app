@@ -216,7 +216,7 @@ jobs:
       - name: "🧪 Run database schema tests"
         working-directory: ./backend
         env:
-          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5433/loyalty_test_db
+          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5434/loyalty_test_db
           NODE_ENV: test
         run: npm run test:db -- --passWithNoTests
       
