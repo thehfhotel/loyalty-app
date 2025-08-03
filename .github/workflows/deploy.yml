@@ -28,40 +28,36 @@ jobs:
     steps:
       - name: "🧹 Workspace preparation"
         run: |
-          # Clean workspace without sudo (self-hosted runner doesn't have passwordless sudo)
+          # Clean workspace with passwordless sudo (now configured)
           echo "Cleaning workspace at ${{ github.workspace }}"
           
-          # Try to clean what we can as the current user
           cd ${{ github.workspace }}
           
-          # First attempt: regular removal
-          rm -rf frontend/dist backend/dist 2>/dev/null || true
-          rm -rf frontend/build backend/build 2>/dev/null || true
-          rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
+          # Force clean the problematic directories with sudo
+          echo "Removing build artifacts with elevated permissions..."
+          sudo rm -rf frontend/dist backend/dist 2>/dev/null || true
+          sudo rm -rf frontend/build backend/build 2>/dev/null || true
+          sudo rm -rf frontend/.next backend/.next 2>/dev/null || true
+          sudo rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
           
-          # If frontend/dist still exists with permission issues, try to work around it
-          if [ -d "frontend/dist" ]; then
-            echo "frontend/dist still exists - attempting workaround"
-            # Try to take ownership if possible (may fail without sudo)
-            chmod -R 777 frontend/dist 2>/dev/null || true
-            # Try again
-            rm -rf frontend/dist 2>/dev/null || true
-          fi
-          
-          # Clean git repository to reset state
+          # Clean git repository state
           if [ -d ".git" ]; then
-            git clean -xffd 2>/dev/null || true
+            echo "Cleaning git repository state..."
+            sudo git clean -xffd 2>/dev/null || true
             git reset --hard 2>/dev/null || true
           fi
           
-          echo "Workspace after cleanup attempt:"
+          # Fix ownership of remaining files to current user
+          sudo chown -R $USER:$USER . 2>/dev/null || true
+          
+          echo "Workspace after cleanup:"
           ls -la
       
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
         with:
           fetch-depth: 1  # Shallow clone for speed
-          clean: false  # Don't try to clean, we already did that
+          clean: true  # Clean enabled, workspace preparation should handle permissions
       
       - name: "⚡ Setup Node.js with cache"
         uses: actions/setup-node@v4
@@ -137,33 +133,29 @@ jobs:
     steps:
       - name: "🧹 Workspace preparation"
         run: |
-          # Clean workspace without sudo (self-hosted runner doesn't have passwordless sudo)
+          # Clean workspace with passwordless sudo (now configured)
           echo "Cleaning workspace at ${{ github.workspace }}"
           
-          # Try to clean what we can as the current user
           cd ${{ github.workspace }}
           
-          # First attempt: regular removal
-          rm -rf frontend/dist backend/dist 2>/dev/null || true
-          rm -rf frontend/build backend/build 2>/dev/null || true
-          rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
+          # Force clean the problematic directories with sudo
+          echo "Removing build artifacts with elevated permissions..."
+          sudo rm -rf frontend/dist backend/dist 2>/dev/null || true
+          sudo rm -rf frontend/build backend/build 2>/dev/null || true
+          sudo rm -rf frontend/.next backend/.next 2>/dev/null || true
+          sudo rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
           
-          # If frontend/dist still exists with permission issues, try to work around it
-          if [ -d "frontend/dist" ]; then
-            echo "frontend/dist still exists - attempting workaround"
-            # Try to take ownership if possible (may fail without sudo)
-            chmod -R 777 frontend/dist 2>/dev/null || true
-            # Try again
-            rm -rf frontend/dist 2>/dev/null || true
-          fi
-          
-          # Clean git repository to reset state
+          # Clean git repository state
           if [ -d ".git" ]; then
-            git clean -xffd 2>/dev/null || true
+            echo "Cleaning git repository state..."
+            sudo git clean -xffd 2>/dev/null || true
             git reset --hard 2>/dev/null || true
           fi
           
-          echo "Workspace after cleanup attempt:"
+          # Fix ownership of remaining files to current user
+          sudo chown -R $USER:$USER . 2>/dev/null || true
+          
+          echo "Workspace after cleanup:"
           ls -la
       
       - name: "📥 Checkout code"
@@ -261,33 +253,29 @@ jobs:
     steps:
       - name: "🧹 Workspace preparation"
         run: |
-          # Clean workspace without sudo (self-hosted runner doesn't have passwordless sudo)
+          # Clean workspace with passwordless sudo (now configured)
           echo "Cleaning workspace at ${{ github.workspace }}"
           
-          # Try to clean what we can as the current user
           cd ${{ github.workspace }}
           
-          # First attempt: regular removal
-          rm -rf frontend/dist backend/dist 2>/dev/null || true
-          rm -rf frontend/build backend/build 2>/dev/null || true
-          rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
+          # Force clean the problematic directories with sudo
+          echo "Removing build artifacts with elevated permissions..."
+          sudo rm -rf frontend/dist backend/dist 2>/dev/null || true
+          sudo rm -rf frontend/build backend/build 2>/dev/null || true
+          sudo rm -rf frontend/.next backend/.next 2>/dev/null || true
+          sudo rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
           
-          # If frontend/dist still exists with permission issues, try to work around it
-          if [ -d "frontend/dist" ]; then
-            echo "frontend/dist still exists - attempting workaround"
-            # Try to take ownership if possible (may fail without sudo)
-            chmod -R 777 frontend/dist 2>/dev/null || true
-            # Try again
-            rm -rf frontend/dist 2>/dev/null || true
-          fi
-          
-          # Clean git repository to reset state
+          # Clean git repository state
           if [ -d ".git" ]; then
-            git clean -xffd 2>/dev/null || true
+            echo "Cleaning git repository state..."
+            sudo git clean -xffd 2>/dev/null || true
             git reset --hard 2>/dev/null || true
           fi
           
-          echo "Workspace after cleanup attempt:"
+          # Fix ownership of remaining files to current user
+          sudo chown -R $USER:$USER . 2>/dev/null || true
+          
+          echo "Workspace after cleanup:"
           ls -la
       
       - name: "📥 Checkout code"
@@ -365,33 +353,29 @@ jobs:
     steps:
       - name: "🧹 Workspace preparation"
         run: |
-          # Clean workspace without sudo (self-hosted runner doesn't have passwordless sudo)
+          # Clean workspace with passwordless sudo (now configured)
           echo "Cleaning workspace at ${{ github.workspace }}"
           
-          # Try to clean what we can as the current user
           cd ${{ github.workspace }}
           
-          # First attempt: regular removal
-          rm -rf frontend/dist backend/dist 2>/dev/null || true
-          rm -rf frontend/build backend/build 2>/dev/null || true
-          rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
+          # Force clean the problematic directories with sudo
+          echo "Removing build artifacts with elevated permissions..."
+          sudo rm -rf frontend/dist backend/dist 2>/dev/null || true
+          sudo rm -rf frontend/build backend/build 2>/dev/null || true
+          sudo rm -rf frontend/.next backend/.next 2>/dev/null || true
+          sudo rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
           
-          # If frontend/dist still exists with permission issues, try to work around it
-          if [ -d "frontend/dist" ]; then
-            echo "frontend/dist still exists - attempting workaround"
-            # Try to take ownership if possible (may fail without sudo)
-            chmod -R 777 frontend/dist 2>/dev/null || true
-            # Try again
-            rm -rf frontend/dist 2>/dev/null || true
-          fi
-          
-          # Clean git repository to reset state
+          # Clean git repository state
           if [ -d ".git" ]; then
-            git clean -xffd 2>/dev/null || true
+            echo "Cleaning git repository state..."
+            sudo git clean -xffd 2>/dev/null || true
             git reset --hard 2>/dev/null || true
           fi
           
-          echo "Workspace after cleanup attempt:"
+          # Fix ownership of remaining files to current user
+          sudo chown -R $USER:$USER . 2>/dev/null || true
+          
+          echo "Workspace after cleanup:"
           ls -la
       
       - name: "📥 Checkout code"
