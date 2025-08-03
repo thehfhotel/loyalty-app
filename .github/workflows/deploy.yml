@@ -6,7 +6,7 @@ on:
   workflow_dispatch:  # Allow manual trigger
 
 env:
-  DEPLOY_PATH: /opt/loyalty-app  # Path on your server
+  DEPLOY_PATH: /home/nut/loyalty-app  # Path on your server
 
 jobs:
   deploy:
@@ -20,13 +20,13 @@ jobs:
           
           # Get workspace path
           WORKSPACE_DIR="${GITHUB_WORKSPACE:-$PWD}"
-          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           
           # Validate deployment path (no tilde paths in production)
           if [[ "$DEPLOY_DIR" == ~* ]]; then
             echo "❌ Error: Tilde paths not allowed in production deployment"
             echo "Current DEPLOY_DIR: $DEPLOY_DIR"
-            echo "Use absolute paths like /opt/loyalty-app instead"
+            echo "Use absolute paths like /home/nut/loyalty-app instead"
             exit 1
           fi
           
@@ -77,7 +77,7 @@ jobs:
           echo "🔍 Post-checkout validation..."
           
           # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
           # Verify critical files exist
@@ -109,7 +109,7 @@ jobs:
           echo "🔧 Setting up production environment..."
           
           # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
           # Validate critical secrets exist
@@ -174,7 +174,7 @@ jobs:
           echo "🛑 Gracefully stopping existing containers..."
           
           # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
           # Check if containers are running
@@ -201,7 +201,7 @@ jobs:
           echo "💾 Creating database backup..."
           
           # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
           # Create backups directory if it doesn't exist
@@ -237,7 +237,7 @@ jobs:
           echo "🔨 Building containers..."
           
           # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
           # Validate docker-compose files exist
@@ -278,7 +278,7 @@ jobs:
           echo "🚀 Starting containers..."
           
           # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
           # Start containers in detached mode
@@ -320,7 +320,7 @@ jobs:
           echo "📊 Running database migrations..."
           
           # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
           # Check if consolidated schema needs to be applied
@@ -342,7 +342,7 @@ jobs:
           echo "🏥 Running comprehensive health checks..."
           
           # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
           # Function to check service health
@@ -409,7 +409,7 @@ jobs:
           echo "🧹 Post-deployment cleanup..."
           
           # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
           # Clean up unused Docker resources
@@ -449,7 +449,7 @@ jobs:
           echo "=============================="
           
           # Navigate to deployment directory
-          DEPLOY_DIR="${DEPLOY_PATH:-/opt/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
           echo "\n🐳 Container Status:"

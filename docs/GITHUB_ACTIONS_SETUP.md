@@ -25,8 +25,8 @@ SSH to your server and run:
 
 ```bash
 # 1. Clone/pull the repository
-git clone <your-repo-url> /opt/loyalty-app
-cd /opt/loyalty-app
+git clone <your-repo-url> /home/nut/loyalty-app
+cd /home/nut/loyalty-app
 
 # 2. Run the setup script
 bash scripts/setup-github-runner.sh
