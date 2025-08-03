@@ -271,6 +271,17 @@ jobs:
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR/frontend"
           
+          # Fix permissions for Node.js installation
+          echo "Setting proper permissions for Node.js..."
+          sudo chown -R $(whoami):$(whoami) .
+          sudo chmod -R 755 .
+          
+          # Clean any existing node_modules to avoid permission conflicts
+          if [ -d "node_modules" ]; then
+            echo "Cleaning existing node_modules..."
+            sudo rm -rf node_modules package-lock.json
+          fi
+          
           # Install frontend dependencies
           echo "Installing frontend dependencies..."
           npm ci
@@ -385,6 +396,17 @@ jobs:
           # Check Node.js version
           echo "Node.js version: $(node --version)"
           echo "NPM version: $(npm --version)"
+          
+          # Fix permissions for Node.js installation
+          echo "Setting proper permissions for Node.js..."
+          sudo chown -R $(whoami):$(whoami) .
+          sudo chmod -R 755 .
+          
+          # Clean any existing node_modules to avoid permission conflicts
+          if [ -d "node_modules" ]; then
+            echo "Cleaning existing node_modules..."
+            sudo rm -rf node_modules package-lock.json
+          fi
           
           # Install dependencies (including dev dependencies for Prisma CLI)
           echo "Installing backend dependencies..."
