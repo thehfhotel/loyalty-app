@@ -458,7 +458,12 @@ jobs:
           
           # Navigate to deployment directory
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
-          cd "$DEPLOY_DIR/backend"
+          cd "$DEPLOY_DIR"
+          
+          # Stop containers and restart with database port exposed for migrations
+          echo "Restarting containers with database access for migrations..."
+          docker compose -f docker-compose.yml down --timeout 10 || true
+          docker compose -f docker-compose.yml up -d
           
           # Wait for database to be ready
           echo "Waiting for database to be ready..."
@@ -466,7 +471,7 @@ jobs:
           attempt=0
           
           while [ $attempt -lt $max_attempts ]; do
-            if docker compose -f ../docker-compose.yml -f ../docker-compose.prod.yml exec -T postgres pg_isready -U loyalty -d loyalty_db >/dev/null 2>&1; then
+            if docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db >/dev/null 2>&1; then
               echo "✅ Database is ready"
               break
             fi
@@ -478,21 +483,41 @@ jobs:
           if [ $attempt -ge $max_attempts ]; then
             echo "❌ Database failed to become ready"
             echo "Container status:"
-            docker compose -f ../docker-compose.yml -f ../docker-compose.prod.yml ps postgres
+            docker compose ps postgres
             exit 1
           fi
+          
+          # Wait additional time for full database initialization
+          echo "Allowing additional time for database initialization..."
+          sleep 10
+          
+          # Navigate to backend directory
+          cd backend
           
           # Ensure Prisma client is generated
           echo "Generating Prisma client..."
           npm run db:generate
           
-          # Deploy Prisma migrations using container context
-          echo "Deploying Prisma migrations..."
-          docker compose -f ../docker-compose.yml -f ../docker-compose.prod.yml exec -T backend npm run db:migrate:deploy
+          # Set database URL for host connection (using exposed port)
+          export DATABASE_URL="postgresql://loyalty:loyalty_pass@localhost:5434/loyalty_db"
           
-          # Test database connection using container context
-          echo "Testing database connection..."
-          docker compose -f ../docker-compose.yml -f ../docker-compose.prod.yml exec -T backend npx tsx src/test-prisma.ts
+          # Deploy Prisma migrations from host (can access localhost:5434)
+          echo "Deploying Prisma migrations from host..."
+          npm run db:migrate:deploy
+          
+          # Test database connection from host
+          echo "Testing database connection from host..."
+          npx tsx src/test-prisma.ts
+          
+          # Return to deployment directory and restart with production configuration
+          cd "$DEPLOY_DIR"
+          echo "Restarting containers with production configuration..."
+          docker compose -f docker-compose.yml down --timeout 10
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+          
+          # Wait for containers to restart
+          echo "Waiting for containers to restart..."
+          sleep 15
           
           echo "✅ Database migrations completed successfully"
 
