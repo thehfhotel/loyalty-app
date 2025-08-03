@@ -287,7 +287,6 @@ jobs:
       - name: Cache Node.js dependencies and node_modules
         uses: actions/cache@v4
         id: deps-cache
-        working-directory: /home/nut/loyalty-app
         with:
           path: |
             ~/.npm
