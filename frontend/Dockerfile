@@ -16,9 +16,6 @@ ARG VITE_API_URL=https://loyalty.saichon.com/api
 ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build || echo "Build failed, will try at runtime"
 
-# Install a simple static server for production
-RUN npm install -g serve
-
 # Expose port
 EXPOSE 3000
 
