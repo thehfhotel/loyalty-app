@@ -1018,24 +1018,56 @@ jobs:
           echo "Waiting for database..."
           timeout 60s bash -c 'until docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db; do sleep 2; done'
           
-          # Generate Prisma client and run migrations
+          # Wait for backend container to be fully ready
+          echo "Waiting for backend container..."
+          timeout 60s bash -c 'until docker compose exec -T backend echo "ready" >/dev/null 2>&1; do sleep 2; done'
+          
+          # Give containers additional time to stabilize
+          echo "Allowing containers to stabilize..."
+          sleep 10
+          
+          # Generate Prisma client from host (more reliable than container exec)
           cd backend
+          echo "Generating Prisma client..."
           npm run db:generate
           
-          # Deploy migrations through container
-          if ! docker compose exec -T backend npm run db:migrate:deploy 2>&1; then
-            echo "Checking for baseline scenario..."
-            if docker compose exec -T backend npm run db:migrate:deploy 2>&1 | grep -q "P3005"; then
-              echo "Performing baseline..."
-              docker compose exec -T backend npx prisma migrate resolve --applied 0_init
-              docker compose exec -T backend npm run db:migrate:deploy
-            else
-              echo "❌ Migration failed"
-              exit 1
-            fi
-          fi
+          # Set environment variables for migration
+          export DATABASE_URL="${DATABASE_URL}"
+          export NODE_ENV="production"
           
-          echo "✅ Database migrations completed"
+          # Run migration from host with retry logic
+          echo "Running database migration..."
+          for attempt in 1 2 3; do
+            echo "Migration attempt $attempt/3..."
+            
+            if npm run db:migrate:deploy; then
+              echo "✅ Database migrations completed successfully"
+              break
+            else
+              if [ $attempt -eq 3 ]; then
+                echo "❌ Migration failed after 3 attempts"
+                
+                # Check for baseline scenario
+                echo "Checking migration status..."
+                if npm run db:migrate:status 2>&1 | grep -q "migrations have not yet been applied"; then
+                  echo "Attempting baseline resolution..."
+                  npx prisma migrate resolve --applied 0_init 2>/dev/null || true
+                  
+                  echo "Retrying migration after baseline..."
+                  if npm run db:migrate:deploy; then
+                    echo "✅ Database migrations completed after baseline"
+                    break
+                  fi
+                fi
+                
+                echo "❌ All migration attempts failed"
+                exit 1
+              else
+                echo "Retrying in 5 seconds..."
+                sleep 5
+              fi
+            fi
+          done
       
       - name: "🏥 Health checks & validation"
         run: |
