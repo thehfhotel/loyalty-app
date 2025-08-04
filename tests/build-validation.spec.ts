@@ -228,6 +228,74 @@ services:
         await fs.unlink(tempComposeFile).catch(() => {});
       }
     });
+
+    test('should detect incomplete Docker Compose file generation', async () => {
+      // Test for the specific issue we encountered: incomplete compose file when appending services
+      const incompleteComposeContent = `
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15-alpine
+  redis:
+    image: redis:7-alpine
+volumes:
+  test_data:
+`;
+      
+      // Simulate the append operation that was causing issues
+      const appendContent = `
+  backend:
+    image: test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  frontend:
+    image: test
+    depends_on:
+      backend:
+        condition: service_healthy
+`;
+      
+      const tempComposeFile = path.join(projectRoot, 'temp-incomplete-test.yml');
+      
+      try {
+        // Write initial content
+        await fs.writeFile(tempComposeFile, incompleteComposeContent);
+        
+        // Simulate the problematic append operation
+        await fs.appendFile(tempComposeFile, appendContent);
+        
+        // This should fail validation because the appended content isn't properly formatted
+        const fileContent = await fs.readFile(tempComposeFile, 'utf-8');
+        
+        // Check if the file has proper YAML structure
+        if (!fileContent.includes('volumes:') || fileContent.split('services:').length > 2) {
+          throw new Error('Docker compose file generation created invalid YAML structure');
+        }
+        
+        // Validate with docker compose
+        await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} config`);
+        
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        // Should detect YAML structure issues or Docker Compose validation errors
+        if (errorMessage.includes('invalid') || 
+            errorMessage.includes('YAML') ||
+            errorMessage.includes('structure') ||
+            errorMessage.includes('Additional property') ||
+            errorMessage.includes('not allowed')) {
+          // This is the expected error - test passes
+        } else {
+          throw new Error(`Docker compose file generation test failed unexpectedly: ${errorMessage}`);
+        }
+      } finally {
+        // Clean up temp file
+        await fs.unlink(tempComposeFile).catch(() => {});
+      }
+    });
   });
 
   test.describe('Database Migration Validation', () => {

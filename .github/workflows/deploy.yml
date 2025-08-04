@@ -644,54 +644,7 @@ jobs:
           
           echo "🚀 Setting up isolated E2E environment on custom ports..."
           
-          # Create temporary compose file for E2E tests with isolated ports
-          cat > docker-compose.e2e-test.yml << 'EOF'
-          version: '3.8'
-          services:
-            postgres:
-              image: postgres:15-alpine
-              container_name: loyalty_postgres_e2e
-              environment:
-                POSTGRES_USER: loyalty
-                POSTGRES_PASSWORD: loyalty_password
-                POSTGRES_DB: loyalty_db
-              ports:
-                - "5436:5432"
-              volumes:
-                - loyalty_postgres_e2e_data:/var/lib/postgresql/data
-              healthcheck:
-                test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
-                interval: 5s
-                timeout: 5s
-                retries: 5
-            
-            redis:
-              image: redis:7-alpine
-              container_name: loyalty_redis_e2e
-              ports:
-                - "6381:6379"
-              volumes:
-                - loyalty_redis_e2e_data:/data
-              healthcheck:
-                test: ["CMD", "redis-cli", "ping"]
-                interval: 5s
-                timeout: 3s
-                retries: 5
-          
-          volumes:
-            loyalty_postgres_e2e_data:
-            loyalty_redis_e2e_data:
-          EOF
-          
-          # Start isolated E2E services
-          docker compose -f docker-compose.e2e-test.yml up -d
-          
-          # Wait for services to be ready with health checks
-          echo "⏳ Waiting for isolated E2E services to be ready..."
-          timeout 60 bash -c 'until docker compose -f docker-compose.e2e-test.yml exec -T postgres pg_isready -U loyalty -d loyalty_db; do echo "Waiting for isolated postgres..."; sleep 2; done'
-          timeout 30 bash -c 'until docker compose -f docker-compose.e2e-test.yml exec -T redis redis-cli ping | grep -q PONG; do echo "Waiting for isolated redis..."; sleep 2; done'
-          
-          echo "✅ Isolated E2E services are ready on ports 5436 (postgres) and 6381 (redis)"
+          # Database services will be started with the complete compose file after build
       
       - name: "🏗️ Build and start isolated application for E2E"
         env:
@@ -728,9 +681,40 @@ jobs:
           cd ../frontend && npm run build &
           wait
           
-          # Add application services to existing E2E compose file
-          cat >> docker-compose.e2e-test.yml << 'EOF'
-          
+          # Create complete E2E compose file (replace the initial file with complete version)
+          cat > docker-compose.e2e-test.yml << 'EOF'
+          version: '3.8'
+          services:
+            postgres:
+              image: postgres:15-alpine
+              container_name: loyalty_postgres_e2e
+              environment:
+                POSTGRES_USER: loyalty
+                POSTGRES_PASSWORD: loyalty_password
+                POSTGRES_DB: loyalty_db
+              ports:
+                - "5436:5432"
+              volumes:
+                - loyalty_postgres_e2e_data:/var/lib/postgresql/data
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
+                interval: 5s
+                timeout: 5s
+                retries: 5
+            
+            redis:
+              image: redis:7-alpine
+              container_name: loyalty_redis_e2e
+              ports:
+                - "6381:6379"
+              volumes:
+                - loyalty_redis_e2e_data:/data
+              healthcheck:
+                test: ["CMD", "redis-cli", "ping"]
+                interval: 5s
+                timeout: 3s
+                retries: 5
+            
             backend:
               build:
                 context: ./backend
@@ -772,6 +756,10 @@ jobs:
               depends_on:
                 backend:
                   condition: service_healthy
+          
+          volumes:
+            loyalty_postgres_e2e_data:
+            loyalty_redis_e2e_data:
           EOF
           
           # Validate the generated Docker Compose file
@@ -784,6 +772,17 @@ jobs:
           fi
           
           echo "✅ E2E Docker Compose configuration validated"
+          
+          # Start database services first
+          echo "🗄️ Starting isolated database services..."
+          docker compose -f docker-compose.e2e-test.yml up -d postgres redis
+          
+          # Wait for database services to be ready
+          echo "⏳ Waiting for isolated database services to be ready..."
+          timeout 60 bash -c 'until docker compose -f docker-compose.e2e-test.yml exec -T postgres pg_isready -U loyalty -d loyalty_db; do echo "Waiting for isolated postgres..."; sleep 2; done'
+          timeout 30 bash -c 'until docker compose -f docker-compose.e2e-test.yml exec -T redis redis-cli ping | grep -q PONG; do echo "Waiting for isolated redis..."; sleep 2; done'
+          
+          echo "✅ Isolated database services are ready"
           
           # Start the complete isolated application stack
           echo "🚀 Starting isolated application stack for E2E tests..."
