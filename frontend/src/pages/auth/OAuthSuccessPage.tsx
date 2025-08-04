@@ -33,7 +33,7 @@ export default function OAuthSuccessPage() {
         setTokens(token, refreshToken);
 
         // Get user data using the token
-        const meUrl = `${import.meta.env.VITE_API_URL}/api/oauth/me`;
+        const meUrl = `${import.meta.env.VITE_API_URL}/oauth/me`;
         
         const response = await fetch(meUrl, {
           headers: {
