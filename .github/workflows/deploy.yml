@@ -186,6 +186,28 @@ jobs:
     # Use isolated test environment to prevent conflicts with E2E tests
     
     steps:
+      - name: "🔍 Pre-build validation"
+        run: |
+          echo "🔍 Running pre-build validation checks..."
+          
+          # Validate essential files exist
+          if [ ! -f "backend/package.json" ]; then
+            echo "❌ Backend package.json missing"
+            exit 1
+          fi
+          
+          if [ ! -f "frontend/package.json" ]; then
+            echo "❌ Frontend package.json missing"
+            exit 1
+          fi
+          
+          if [ ! -f "backend/prisma/schema.prisma" ]; then
+            echo "❌ Prisma schema missing"
+            exit 1
+          fi
+          
+          echo "✅ Pre-build validation passed"
+
       - name: "🧹 Workspace preparation"
         run: |
           # Clean workspace with passwordless sudo (now configured)
@@ -377,6 +399,19 @@ jobs:
         run: |
           # Generate Prisma client for tests
           npm run db:generate
+          
+          # Validate Prisma client was generated successfully
+          if [ ! -d "src/generated/prisma" ]; then
+            echo "❌ Prisma client generation failed - directory not found"
+            exit 1
+          fi
+          
+          if [ ! -f "src/generated/prisma/index.js" ]; then
+            echo "❌ Prisma client generation failed - index.js not found"
+            exit 1
+          fi
+          
+          echo "✅ Prisma client validated successfully"
           
           # Run database migrations for test DB
           npm run db:migrate:deploy
@@ -670,15 +705,33 @@ jobs:
           BACKEND_URL: http://localhost:4002
           VITE_API_URL: http://localhost:4002/api
         run: |
+          # Generate Prisma client first
+          echo "🔄 Generating Prisma client for E2E tests..."
+          cd backend && npm run db:generate
+          
+          # Validate Prisma client was generated successfully
+          if [ ! -d "src/generated/prisma" ]; then
+            echo "❌ E2E Prisma client generation failed - directory not found"
+            exit 1
+          fi
+          
+          if [ ! -f "src/generated/prisma/index.js" ]; then
+            echo "❌ E2E Prisma client generation failed - index.js not found"
+            exit 1
+          fi
+          
+          echo "✅ E2E Prisma client validated successfully"
+          
           # Build backend and frontend
           echo "🏗️ Building application for isolated E2E testing..."
-          cd backend && npm run build &
-          cd frontend && npm run build &
+          npm run build &
+          cd ../frontend && npm run build &
           wait
           
           # Create complete isolated application stack for E2E
           cat >> docker-compose.e2e-test.yml << 'EOF'
-            
+          
+          services:
             backend:
               build:
                 context: ./backend

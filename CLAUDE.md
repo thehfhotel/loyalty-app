@@ -136,6 +136,127 @@ chore: Maintenance tasks
 4. **Before pushing**: Run full quality check
 5. **After merging**: Monitor pipeline status
 
+### 12. 🚨 TypeScript Error Prevention Rules
+**MANDATORY: Proper Error Handling to Prevent Build Failures**
+
+#### ❌ FORBIDDEN - Unknown Error Types
+```typescript
+// ❌ WILL CAUSE: error TS18046: 'error' is of type 'unknown'
+try {
+  // some operation
+} catch (error) {
+  console.log(error.message);  // TypeScript error!
+  throw new Error(error);      // TypeScript error!
+}
+```
+
+#### ✅ REQUIRED - Proper Error Type Handling
+```typescript
+// ✅ CORRECT - Explicit type checking
+try {
+  // some operation
+} catch (error) {
+  if (error instanceof Error) {
+    console.log(error.message);
+    throw new AppError(500, error.message);
+  } else {
+    console.log('Unknown error:', String(error));
+    throw new AppError(500, `Unknown error: ${String(error)}`);
+  }
+}
+
+// ✅ CORRECT - Type assertion (when you're certain)
+try {
+  // some operation
+} catch (error) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  throw new AppError(500, `Operation failed: ${errorMessage}`);
+}
+
+// ✅ CORRECT - Unknown parameter with proper handling
+export const handleError = (error: unknown) => {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+};
+```
+
+#### 🔧 Build System Requirements
+**MANDATORY: Prisma Client Generation Before Build**
+
+#### ❌ FORBIDDEN - Building Without Prisma Generation
+```bash
+# ❌ WILL CAUSE: Cannot find module '../generated/prisma'
+npm run build  # Without generating Prisma client first
+```
+
+#### ✅ REQUIRED - Proper Build Sequence
+```bash
+# ✅ CORRECT - Always generate Prisma client first
+npm run db:generate  # Generate Prisma client
+npm run build       # Then build application
+
+# ✅ CORRECT - CI/CD pipeline must include:
+- name: "Generate Prisma Client"
+  run: cd backend && npm run db:generate
+- name: "Build Application"  
+  run: npm run build
+```
+
+#### 🐳 Docker Compose Validation Rules
+**MANDATORY: Proper Docker Compose Syntax**
+
+#### ❌ FORBIDDEN - Invalid Docker Compose Properties
+```yaml
+# ❌ WILL CAUSE: Additional property container_name is not allowed
+volumes:
+  backend:
+    container_name: backend_container  # INVALID - containers only!
+```
+
+#### ✅ REQUIRED - Correct Docker Compose Structure
+```yaml
+# ✅ CORRECT - container_name only in services
+services:
+  backend:
+    container_name: backend_container  # Valid location
+    
+volumes:
+  backend_data:  # No container_name property allowed here
+```
+
+#### 🧪 Build Validation Testing
+**MANDATORY: Tests to Prevent Build Failures**
+
+All projects must include `tests/build-validation.spec.ts` with:
+- ✅ Prisma client generation validation
+- ✅ TypeScript compilation validation  
+- ✅ Docker Compose syntax validation
+- ✅ Error handling pattern detection
+- ✅ CI/CD configuration validation
+
+#### 🚨 Enforcement in CI/CD
+**REQUIRED: Pipeline Build Validation Steps**
+
+```yaml
+# MANDATORY CI/CD steps to prevent build failures:
+- name: "Validate Prisma Generation"
+  run: |
+    if [ ! -d "backend/src/generated/prisma" ]; then
+      echo "❌ Prisma client not generated!"
+      exit 1
+    fi
+
+- name: "Validate TypeScript Compilation"  
+  run: |
+    cd backend && npx tsc --noEmit
+    cd ../frontend && npx tsc --noEmit
+
+- name: "Validate Docker Compose"
+  run: docker compose config
+```
+
 ## 🚨 Enforcement
 
 These rules are enforced through:
