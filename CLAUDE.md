@@ -70,9 +70,123 @@ await expectAsync(promise).toBeRejected()     # Proper async testing
 
 **Rationale**: Tests are the foundation of code reliability. Any bypassing, skipping, or fake implementations compromise system integrity and can hide critical bugs, security vulnerabilities, or breaking changes.
 
+### 4. 🛣️ Path Handling Requirements
+**MANDATORY: Absolute Path Preference and Relative Path Validation**
+
+**ALWAYS PREFER:** Absolute paths in CI/CD configurations  
+**BE EXTREMELY CAREFUL:** With relative paths, especially `../` and `../../`
+
+#### ❌ FORBIDDEN - Risky Relative Path Usage
+```yaml
+# ❌ HIGH RISK - Different behavior between local and CI/CD
+backend:
+  build:
+    context: ./backend        # May fail on CI/CD runners
+    dockerfile: Dockerfile
+    
+frontend:
+  build:
+    context: ./frontend       # Context mismatch in different environments
+    dockerfile: Dockerfile
+
+# ❌ DANGEROUS - Parent directory references without validation
+COPY ../shared /app/shared   # Dockerfile - may break in different build contexts
+cd ../scripts && ./deploy.sh  # Shell script - working directory dependent
+```
+
+#### ✅ REQUIRED - Safe Path Practices
+```yaml
+# ✅ CORRECT - Absolute or carefully validated relative paths
+backend:
+  build:
+    context: .                # Current directory context (validated)
+    dockerfile: Dockerfile
+    
+frontend:
+  build:
+    context: ../frontend      # Parent reference with validation
+    dockerfile: Dockerfile
+
+# ✅ CORRECT - Explicit working directory management
+- name: "Deploy from scripts directory"
+  run: |
+    cd /absolute/path/to/scripts
+    ./deploy.sh
+    
+# ✅ CORRECT - Environment-aware path resolution
+BACKEND_URL: ${BACKEND_URL:-http://localhost:4001}
+FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+```
+
+#### 🧪 Path Validation Requirements
+**MANDATORY: Validate paths work in both environments**
+
+Before using relative paths with `../` or `../../`:
+1. **Test locally**: Verify path resolution from project root
+2. **Test in CI/CD**: Verify path resolution from runner working directory
+3. **Document assumptions**: Comment on expected working directory
+4. **Add validation**: Include path existence checks where possible
+
+```bash
+# ✅ REQUIRED - Path validation in scripts
+if [ ! -f "../frontend/package.json" ]; then
+  echo "❌ Frontend directory not found at expected relative path"
+  exit 1
+fi
+
+# ✅ REQUIRED - Working directory awareness
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${PROJECT_ROOT}" || exit 1
+```
+
+#### 🐳 Docker Build Context Path Rules
+**CRITICAL: Build context must match file structure**
+
+```yaml
+# ✅ CORRECT - Context matches Dockerfile location
+services:
+  backend:
+    build:
+      context: .              # From backend/ directory
+      dockerfile: Dockerfile  # backend/Dockerfile exists
+      
+  frontend:
+    build:
+      context: ../frontend    # From backend/ to frontend/
+      dockerfile: Dockerfile  # frontend/Dockerfile exists
+
+# ❌ FORBIDDEN - Context/Dockerfile mismatch
+services:
+  backend:
+    build:
+      context: ./backend      # From project root
+      dockerfile: Dockerfile  # Would look for project-root/backend/Dockerfile
+```
+
+#### 🔍 Common Path Issues to Avoid
+Based on actual CI/CD failures encountered:
+
+1. **Docker Build Context Mismatch**:
+   - Error: `failed to read dockerfile: open Dockerfile: no such file or directory`
+   - Cause: Build context pointing to wrong directory relative to Dockerfile
+   - Solution: Ensure context path + dockerfile path resolves correctly
+
+2. **Workflow File Deletion**:
+   - Error: `no such file or directory` after validation
+   - Cause: File deleted after validation but before use
+   - Solution: Proper cleanup timing and file lifecycle management
+
+3. **Cross-Platform Path Differences**:
+   - Error: Different path resolution between local and CI/CD
+   - Cause: Working directory assumptions don't match between environments
+   - Solution: Explicit working directory management and path validation
+
+**Rationale**: Path mismatches are a leading cause of CI/CD failures. Different working directories between local development and CI/CD runners can cause relative paths to resolve incorrectly, leading to "file not found" errors and build failures.
+
 ## 📋 Additional Project Conventions
 
-### 4. Project Structure
+### 5. Project Structure
 ```
 loyalty-app/
 ├── backend/          # Node.js/Express API
@@ -82,12 +196,12 @@ loyalty-app/
 └── manage.sh        # Centralized management script
 ```
 
-### 5. Environment Variables
+### 6. Environment Variables
 - **Production**: Always use `.env.production`
 - **Development**: Use `.env` or `.env.development`
 - **Never commit**: `.env` files with real secrets
 
-### 6. Testing Requirements
+### 7. Testing Requirements
 All code changes must:
 - ✅ Pass TypeScript compilation
 - ✅ Pass ESLint checks (warnings acceptable, errors not)
@@ -100,18 +214,18 @@ All code changes must:
 - ❌ **NEVER** skip tests with `.skip()`, `xit()`, or conditional returns
 - ❌ **NEVER** mock critical functionality without proper validation
 
-### 7. Database Operations
+### 8. Database Operations
 - **Always use migrations**: Never modify database directly
 - **Migration command**: `npm run db:migrate`
 - **Generate Prisma client**: `npm run db:generate`
 
-### 8. Security Best Practices
+### 9. Security Best Practices
 - **Never log sensitive data**: passwords, tokens, keys
 - **Always validate input**: Use Zod schemas
 - **Sanitize user content**: Prevent XSS attacks
 - **Use parameterized queries**: Prevent SQL injection
 
-### 9. Git Commit Convention
+### 10. Git Commit Convention
 ```bash
 # Format: <type>: <description>
 feat: Add new feature
@@ -123,20 +237,20 @@ docs: Documentation changes
 chore: Maintenance tasks
 ```
 
-### 10. Pipeline & CI/CD
+### 11. Pipeline & CI/CD
 - **Single pipeline**: `deploy.yml` handles everything
 - **Quality gates**: All tests must pass before deployment
 - **Automatic deployment**: Only from main branch
 - **Manual approval**: Required for production
 
-### 11. Development Workflow
+### 12. Development Workflow
 1. **Before starting**: Pull latest changes
 2. **During development**: Run tests locally
 3. **Before committing**: Ensure hooks pass
 4. **Before pushing**: Run full quality check
 5. **After merging**: Monitor pipeline status
 
-### 12. 🚨 TypeScript Error Prevention Rules
+### 13. 🚨 TypeScript Error Prevention Rules
 **MANDATORY: Proper Error Handling to Prevent Build Failures**
 
 #### ❌ FORBIDDEN - Unknown Error Types
@@ -301,9 +415,10 @@ npm run test
 1. **ALWAYS** use `docker compose` (never `docker-compose`)
 2. **NEVER** bypass git hooks (`--no-verify` is FORBIDDEN)
 3. **NEVER** bypass, skip, or fake any tests (test integrity is ABSOLUTE)
-4. **ALWAYS** maintain code quality standards
-5. **ALWAYS** follow security best practices
-6. **ALWAYS** write meaningful tests that validate actual functionality
+4. **ALWAYS** prefer absolute paths and validate relative paths with `../` or `../../`
+5. **ALWAYS** maintain code quality standards
+6. **ALWAYS** follow security best practices
+7. **ALWAYS** write meaningful tests that validate actual functionality
 
 ---
 

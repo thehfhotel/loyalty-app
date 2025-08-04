@@ -795,6 +795,29 @@ jobs:
           
           echo "✅ Isolated database services are ready"
           
+          # Run database migrations before starting the backend
+          echo "🔄 Running database migrations for E2E tests..."
+          cd backend
+          
+          # Set environment for migrations
+          export DATABASE_URL="postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db"
+          
+          # Generate Prisma client if not already done
+          if [ ! -d "src/generated/prisma" ]; then
+            npm run db:generate
+          fi
+          
+          # Run migrations
+          if npm run db:migrate:deploy; then
+            echo "✅ E2E database migrations completed successfully"
+          else
+            echo "❌ E2E database migrations failed"
+            docker compose -f ../docker-compose.e2e-test.yml logs postgres
+            exit 1
+          fi
+          
+          cd ..
+          
           # Start the complete isolated application stack
           echo "🚀 Starting isolated application stack for E2E tests..."
           docker compose -f docker-compose.e2e-test.yml up -d --build
