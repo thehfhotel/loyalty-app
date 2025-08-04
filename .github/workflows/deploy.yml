@@ -728,7 +728,7 @@ jobs:
             
             backend:
               build:
-                context: ./backend
+                context: .
                 dockerfile: Dockerfile
               container_name: loyalty_backend_e2e
               environment:
@@ -757,7 +757,7 @@ jobs:
             
             frontend:
               build:
-                context: ./frontend
+                context: ../frontend
                 dockerfile: Dockerfile
                 args:
                   VITE_API_URL: http://localhost:4002/api

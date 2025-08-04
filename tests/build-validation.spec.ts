@@ -397,6 +397,65 @@ services:
         await fs.unlink(tempComposeFile).catch(() => {});
       }
     });
+
+    test('should detect Docker build context path issues', async () => {
+      // Test for the specific E2E issue: build context pointing to wrong directory
+      const backendPath = path.join(projectRoot, 'backend');
+      const frontendPath = path.join(projectRoot, 'frontend');
+      
+      try {
+        // Test backend build context from backend directory (correct for E2E)
+        const e2eBackendComposeContent = `
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: test_backend_e2e
+`;
+        
+        const tempE2EComposeFile = path.join(backendPath, 'temp-e2e-context-test.yml');
+        await fs.writeFile(tempE2EComposeFile, e2eBackendComposeContent);
+        
+        // This should work - backend Dockerfile exists in backend directory
+        await execAsync(`cd ${backendPath} && docker compose -f temp-e2e-context-test.yml config`);
+        
+        // Clean up E2E test file
+        await fs.unlink(tempE2EComposeFile).catch(() => {});
+        
+        // Test problematic context that would fail
+        const badContextComposeContent = `
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: test_backend_bad
+`;
+        
+        const tempBadComposeFile = path.join(backendPath, 'temp-bad-context-test.yml');
+        await fs.writeFile(tempBadComposeFile, badContextComposeContent);
+        
+        try {
+          // This should fail because ./backend/Dockerfile doesn't exist from backend directory
+          await execAsync(`cd ${backendPath} && docker compose -f temp-bad-context-test.yml config`);
+          throw new Error('Expected build context validation to fail but it passed');
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          
+          // Should detect missing Dockerfile in wrong context
+          if (errorMessage.includes('Expected build context validation to fail')) {
+            throw error;
+          }
+          // Expected error - build context issue detected
+        }
+        
+        await fs.unlink(tempBadComposeFile).catch(() => {});
+        
+      } catch (error) {
+        throw new Error(`Build context validation test failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
   });
 
   test.describe('Database Migration Validation', () => {
