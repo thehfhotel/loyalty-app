@@ -1,0 +1,158 @@
+{
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2020,
+    "sourceType": "module",
+    "project": "./tsconfig.json",
+    "ecmaFeatures": {
+      "jsx": true
+    }
+  },
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:react/recommended",
+    "plugin:react-hooks/recommended",
+    "plugin:react/jsx-runtime"
+  ],
+  "plugins": [
+    "@typescript-eslint",
+    "react",
+    "react-hooks",
+    "react-refresh",
+    "security"
+  ],
+  "settings": {
+    "react": {
+      "version": "detect"
+    }
+  },
+  "rules": {
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/no-unused-vars": "error",
+    "@typescript-eslint/prefer-nullish-coalescing": "warn",
+    "@typescript-eslint/prefer-optional-chain": "error",
+    "@typescript-eslint/no-non-null-assertion": "warn",
+    
+    "react/react-in-jsx-scope": "off",
+    "react/prop-types": "off",
+    "react/jsx-uses-react": "off",
+    "react/jsx-uses-vars": "error",
+    "react/jsx-no-target-blank": "error",
+    "react/jsx-no-duplicate-props": "error",
+    "react/no-danger": "warn",
+    "react/no-danger-with-children": "error",
+    "react/no-deprecated": "warn",
+    "react/no-direct-mutation-state": "error",
+    "react/no-find-dom-node": "error",
+    "react/no-is-mounted": "error",
+    "react/no-render-return-value": "error",
+    "react/no-string-refs": "error",
+    "react/no-unescaped-entities": "error",
+    "react/no-unknown-property": "error",
+    "react/require-render-return": "error",
+    "react/self-closing-comp": "warn",
+    "react/jsx-pascal-case": "warn",
+    "react/jsx-closing-bracket-location": "warn",
+    "react/jsx-closing-tag-location": "warn",
+    "react/jsx-curly-spacing": ["warn", "never"],
+    "react/jsx-equals-spacing": ["warn", "never"],
+    "react/jsx-indent": "off",
+    "react/jsx-indent-props": "off",
+    "react/jsx-max-props-per-line": ["warn", { "maximum": 1, "when": "multiline" }],
+    "react/jsx-no-bind": ["warn", {
+      "ignoreRefs": true,
+      "allowArrowFunctions": true,
+      "allowFunctions": false,
+      "allowBind": false
+    }],
+    "react/jsx-no-comment-textnodes": "error",
+    "react/jsx-no-undef": "error",
+    "react/jsx-tag-spacing": "warn",
+    "react/jsx-wrap-multilines": "warn",
+    
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+    
+    "react-refresh/only-export-components": [
+      "warn",
+      { "allowConstantExport": true }
+    ],
+    
+    "security/detect-object-injection": "warn",
+    "security/detect-non-literal-regexp": "warn",
+    "security/detect-unsafe-regex": "error",
+    "security/detect-buffer-noassert": "error",
+    "security/detect-child-process": "error",
+    "security/detect-disable-mustache-escape": "error",
+    "security/detect-eval-with-expression": "error",
+    "security/detect-new-buffer": "error",
+    "security/detect-pseudoRandomBytes": "error",
+    
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-new-func": "error",
+    "no-script-url": "error",
+    "no-console": "warn",
+    
+    "no-restricted-globals": [
+      "error",
+      "event",
+      "fdescribe"
+    ],
+    
+    "no-restricted-properties": [
+      "error",
+      {
+        "object": "window",
+        "property": "eval",
+        "message": "eval() is dangerous and should not be used."
+      },
+      {
+        "object": "global",
+        "property": "eval",
+        "message": "eval() is dangerous and should not be used."
+      },
+      {
+        "object": "document",
+        "property": "write",
+        "message": "document.write() can be dangerous. Use React rendering instead."
+      }
+    ],
+    
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["fs", "path", "os", "crypto"],
+            "message": "Node.js modules should not be used in frontend code."
+          }
+        ]
+      }
+    ],
+    
+    "prefer-const": "error",
+    "no-var": "error",
+    "eqeqeq": ["error", "always"],
+    "curly": "warn",
+    "no-alert": "warn",
+    "no-debugger": "warn"
+  },
+  "env": {
+    "browser": true,
+    "es2020": true,
+    "node": false
+  },
+  "ignorePatterns": [
+    "dist/",
+    "node_modules/",
+    "build/",
+    "public/",
+    "*.config.js",
+    "*.config.ts",
+    "vite.config.ts",
+    "tailwind.config.js",
+    "postcss.config.js"
+  ]
+}
