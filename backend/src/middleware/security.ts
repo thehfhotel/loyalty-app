@@ -151,7 +151,7 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
     if (typeof value === 'string') {
       // Remove potentially dangerous characters
       return value
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags
+        .replace(/<script[^>]*>.*?<\/script>/gi, '') // Remove script tags (safer regex)
         .replace(/javascript:/gi, '') // Remove javascript: protocol
         .replace(/on\w+\s*=/gi, '') // Remove event handlers
         .trim();
