@@ -127,20 +127,27 @@ git push --no-verify
 
 ### GitHub Actions Workflows
 
-1. **Quality Gate** (`.github/workflows/quality-gate.yml`)
-   - Runs on all pushes and pull requests
-   - Complete quality checks including tests
-   - Required to pass before merging
+**Unified CI/CD Pipeline** (`.github/workflows/deploy.yml`)
+- **Phase 1**: Parallel quality validation (security analysis, unit/integration tests, E2E tests)
+- **Phase 2**: Build validation (only on main branch)
+- **Phase 3**: Production deployment (only on main branch, after all tests pass)
+- **Phase 4**: Post-deployment monitoring and cleanup
 
-2. **Deployment** (`.github/workflows/deploy.yml`)
-   - Full deployment pipeline
-   - Includes quality gates plus deployment
+**Quality Gates Integration**:
+- ✅ TypeScript type checking
+- ✅ ESLint security rules and code quality
+- ✅ npm security audit
+- ✅ Custom security validation
+- ✅ Unit and integration tests
+- ✅ E2E tests (conditional on main/PR to main)
+- ✅ Build verification
+- ✅ Coverage reporting
 
 ### Branch Protection
 
 Recommended GitHub branch protection rules for `main`:
 - Require pull request reviews
-- Require status checks to pass (`Quality Gate`)
+- Require status checks to pass (deploy.yml pipeline jobs)
 - Require branches to be up to date
 - Restrict pushes to matching branches
 
