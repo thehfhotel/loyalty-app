@@ -251,11 +251,21 @@ export const productionSecurity = (req: Request, res: Response, next: NextFuncti
     }
   }
   
-  // Require HTTPS in production
-  if (!req.secure && req.get('x-forwarded-proto') !== 'https') {
+  // Require HTTPS in production - Cloudflare tunnel compatible
+  const forwardedProto = req.get('x-forwarded-proto') || req.get('X-Forwarded-Proto');
+  const isHttps = req.secure || forwardedProto === 'https' || req.connection.encrypted;
+  
+  if (!isHttps) {
     logger.warn('HTTP request detected in production', {
       ip: req.ip,
       url: req.url,
+      secure: req.secure,
+      forwardedProto,
+      headers: {
+        'x-forwarded-proto': req.get('x-forwarded-proto'),
+        'X-Forwarded-Proto': req.get('X-Forwarded-Proto'),
+        'cf-visitor': req.get('cf-visitor')
+      }
     });
     return res.redirect(301, `https://${req.get('host')}${req.url}`);
   }

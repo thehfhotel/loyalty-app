@@ -47,7 +47,8 @@ const httpServer = createServer(app);
 const PORT = serverConfig.port;
 
 // Trust proxy headers (required for Cloudflare and other reverse proxies)
-app.set('trust proxy', true);
+// Set to 1 to trust first proxy (Cloudflare Tunnel)
+app.set('trust proxy', 1);
 
 // Security middleware - Apply production security checks first
 if (isProduction()) {
