@@ -59,19 +59,84 @@ jobs:
           fetch-depth: 1  # Shallow clone for speed
           clean: true  # Clean enabled, workspace preparation should handle permissions
       
-      - name: "⚡ Setup Node.js with cache"
+      - name: "⚡ Setup Node.js (no remote cache)"
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: |
-            backend/package-lock.json
-            frontend/package-lock.json
+          # Removed cache: 'npm' to use local cache instead
+      
+      - name: "🚀 Setup local cache strategy"
+        id: local-cache
+        run: |
+          echo "🚀 Using local cache strategy for self-hosted runner"
+          
+          # Define local cache directories (using nut user home)
+          LOCAL_CACHE_BASE="/home/nut/.cache/loyalty-app"
+          NPM_CACHE="/home/nut/.npm-cache"
+          
+          # Create cache directories if they don't exist
+          mkdir -p "$LOCAL_CACHE_BASE"/{frontend,backend} "$NPM_CACHE"
+          
+          # Calculate cache keys based on package files
+          FRONTEND_KEY=$(shasum frontend/package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
+          BACKEND_KEY=$(shasum backend/package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
+          
+          echo "frontend_cache_key=$FRONTEND_KEY" >> $GITHUB_OUTPUT
+          echo "backend_cache_key=$BACKEND_KEY" >> $GITHUB_OUTPUT
+          echo "cache_base=$LOCAL_CACHE_BASE" >> $GITHUB_OUTPUT
+          echo "npm_cache=$NPM_CACHE" >> $GITHUB_OUTPUT
+          
+          # Check if local cache exists and is valid
+          CACHE_HIT=false
+          if [ -f "$LOCAL_CACHE_BASE/frontend/.cache-key" ] && [ -f "$LOCAL_CACHE_BASE/backend/.cache-key" ]; then
+            STORED_FRONTEND_KEY=$(cat "$LOCAL_CACHE_BASE/frontend/.cache-key")
+            STORED_BACKEND_KEY=$(cat "$LOCAL_CACHE_BASE/backend/.cache-key")
+            
+            if [ "$STORED_FRONTEND_KEY" = "$FRONTEND_KEY" ] && [ "$STORED_BACKEND_KEY" = "$BACKEND_KEY" ]; then
+              CACHE_HIT=true
+              echo "✅ Local cache valid and ready to use"
+            else
+              echo "♻️ Package files changed, cache needs refresh"
+            fi
+          else
+            echo "📦 No local cache found, will create one"
+          fi
+          
+          echo "cache_hit=$CACHE_HIT" >> $GITHUB_OUTPUT
       
       - name: "📦 Install dependencies (Backend)"
         working-directory: ./backend
         run: |
-          npm ci --prefer-offline --no-audit --ignore-scripts
+          echo "📦 Installing backend dependencies with local cache..."
+          
+          # Variables from cache setup
+          LOCAL_CACHE_BASE="${{ steps.local-cache.outputs.cache_base }}"
+          NPM_CACHE="${{ steps.local-cache.outputs.npm_cache }}"
+          CACHE_HIT="${{ steps.local-cache.outputs.cache_hit }}"
+          
+          # Set npm cache directory
+          npm config set cache "$NPM_CACHE"
+          
+          if [ "$CACHE_HIT" = "true" ]; then
+            echo "⚡ Restoring from local cache..."
+            # Restore node_modules from local cache
+            if [ -d "$LOCAL_CACHE_BASE/backend/node_modules" ]; then
+              cp -r "$LOCAL_CACHE_BASE/backend/node_modules" .
+              echo "✅ Backend dependencies restored from local cache"
+            else
+              echo "📦 Cache miss - installing normally"
+              npm ci --prefer-offline --no-audit --ignore-scripts
+            fi
+          else
+            echo "📦 Installing and caching dependencies..."
+            npm ci --prefer-offline --no-audit --ignore-scripts
+            
+            # Cache the installed node_modules
+            echo "💾 Caching backend dependencies..."
+            cp -r node_modules "$LOCAL_CACHE_BASE/backend/"
+            echo "${{ steps.local-cache.outputs.backend_cache_key }}" > "$LOCAL_CACHE_BASE/backend/.cache-key"
+            echo "✅ Backend dependencies cached locally"
+          fi
           # Only install what's needed for linting and security
       
       - name: "🔍 TypeScript type checking"
@@ -145,16 +210,81 @@ jobs:
           fetch-depth: 1
           clean: false  # Don't try to clean, we already did that
       
-      - name: "⚡ Setup Node.js with cache"
+      - name: "⚡ Setup Node.js (no remote cache)"
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
+          # Removed cache: 'npm' to use local cache instead
+      
+      - name: "🚀 Setup local cache strategy"
+        id: local-cache
+        run: |
+          echo "🚀 Using local cache strategy for self-hosted runner"
+          
+          # Define local cache directories (using nut user home)
+          LOCAL_CACHE_BASE="/home/nut/.cache/loyalty-app"
+          NPM_CACHE="/home/nut/.npm-cache"
+          
+          # Create cache directories if they don't exist
+          mkdir -p "$LOCAL_CACHE_BASE"/backend "$NPM_CACHE"
+          
+          # Calculate cache key based on package file
+          BACKEND_KEY=$(shasum backend/package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
+          
+          echo "backend_cache_key=$BACKEND_KEY" >> $GITHUB_OUTPUT
+          echo "cache_base=$LOCAL_CACHE_BASE" >> $GITHUB_OUTPUT
+          echo "npm_cache=$NPM_CACHE" >> $GITHUB_OUTPUT
+          
+          # Check if local cache exists and is valid
+          CACHE_HIT=false
+          if [ -f "$LOCAL_CACHE_BASE/backend/.cache-key" ]; then
+            STORED_BACKEND_KEY=$(cat "$LOCAL_CACHE_BASE/backend/.cache-key")
+            
+            if [ "$STORED_BACKEND_KEY" = "$BACKEND_KEY" ]; then
+              CACHE_HIT=true
+              echo "✅ Local cache valid and ready to use"
+            else
+              echo "♻️ Package files changed, cache needs refresh"
+            fi
+          else
+            echo "📦 No local cache found, will create one"
+          fi
+          
+          echo "cache_hit=$CACHE_HIT" >> $GITHUB_OUTPUT
       
       - name: "📦 Install dependencies"
         working-directory: ./backend
-        run: npm ci --prefer-offline --include=dev
+        run: |
+          echo "📦 Installing backend dependencies with local cache..."
+          
+          # Variables from cache setup
+          LOCAL_CACHE_BASE="${{ steps.local-cache.outputs.cache_base }}"
+          NPM_CACHE="${{ steps.local-cache.outputs.npm_cache }}"
+          CACHE_HIT="${{ steps.local-cache.outputs.cache_hit }}"
+          
+          # Set npm cache directory
+          npm config set cache "$NPM_CACHE"
+          
+          if [ "$CACHE_HIT" = "true" ]; then
+            echo "⚡ Restoring from local cache..."
+            # Restore node_modules from local cache
+            if [ -d "$LOCAL_CACHE_BASE/backend/node_modules" ]; then
+              cp -r "$LOCAL_CACHE_BASE/backend/node_modules" .
+              echo "✅ Backend dependencies restored from local cache"
+            else
+              echo "📦 Cache miss - installing normally"
+              npm ci --prefer-offline --include=dev
+            fi
+          else
+            echo "📦 Installing and caching dependencies..."
+            npm ci --prefer-offline --include=dev
+            
+            # Cache the installed node_modules
+            echo "💾 Caching backend dependencies..."
+            cp -r node_modules "$LOCAL_CACHE_BASE/backend/"
+            echo "${{ steps.local-cache.outputs.backend_cache_key }}" > "$LOCAL_CACHE_BASE/backend/.cache-key"
+            echo "✅ Backend dependencies cached locally"
+          fi
       
       - name: "🐳 Start test services"
         run: |
@@ -284,20 +414,92 @@ jobs:
           fetch-depth: 1
           clean: false  # Don't try to clean, we already did that
       
-      - name: "⚡ Setup Node.js with cache"
+      - name: "⚡ Setup Node.js (no remote cache)"
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: |
-            backend/package-lock.json
-            frontend/package-lock.json
+          # Removed cache: 'npm' to use local cache instead
+      
+      - name: "🚀 Setup local cache strategy"
+        id: local-cache
+        run: |
+          echo "🚀 Using local cache strategy for self-hosted runner"
+          
+          # Define local cache directories (using nut user home)
+          LOCAL_CACHE_BASE="/home/nut/.cache/loyalty-app"
+          NPM_CACHE="/home/nut/.npm-cache"
+          
+          # Create cache directories if they don't exist
+          mkdir -p "$LOCAL_CACHE_BASE"/{frontend,backend} "$NPM_CACHE"
+          
+          # Calculate cache keys based on package files
+          FRONTEND_KEY=$(shasum frontend/package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
+          BACKEND_KEY=$(shasum backend/package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
+          
+          echo "frontend_cache_key=$FRONTEND_KEY" >> $GITHUB_OUTPUT
+          echo "backend_cache_key=$BACKEND_KEY" >> $GITHUB_OUTPUT
+          echo "cache_base=$LOCAL_CACHE_BASE" >> $GITHUB_OUTPUT
+          echo "npm_cache=$NPM_CACHE" >> $GITHUB_OUTPUT
+          
+          # Check if local cache exists and is valid
+          CACHE_HIT=false
+          if [ -f "$LOCAL_CACHE_BASE/frontend/.cache-key" ] && [ -f "$LOCAL_CACHE_BASE/backend/.cache-key" ]; then
+            STORED_FRONTEND_KEY=$(cat "$LOCAL_CACHE_BASE/frontend/.cache-key")
+            STORED_BACKEND_KEY=$(cat "$LOCAL_CACHE_BASE/backend/.cache-key")
+            
+            if [ "$STORED_FRONTEND_KEY" = "$FRONTEND_KEY" ] && [ "$STORED_BACKEND_KEY" = "$BACKEND_KEY" ]; then
+              CACHE_HIT=true
+              echo "✅ Local cache valid and ready to use"
+            else
+              echo "♻️ Package files changed, cache needs refresh"
+            fi
+          else
+            echo "📦 No local cache found, will create one"
+          fi
+          
+          echo "cache_hit=$CACHE_HIT" >> $GITHUB_OUTPUT
       
       - name: "📦 Install dependencies (parallel)"
         run: |
-          cd backend && npm ci --prefer-offline --include=dev &
-          cd frontend && npm ci --prefer-offline &
-          wait
+          echo "📦 Installing dependencies with local cache..."
+          
+          # Variables from cache setup
+          LOCAL_CACHE_BASE="${{ steps.local-cache.outputs.cache_base }}"
+          NPM_CACHE="${{ steps.local-cache.outputs.npm_cache }}"
+          CACHE_HIT="${{ steps.local-cache.outputs.cache_hit }}"
+          
+          # Set npm cache directory
+          npm config set cache "$NPM_CACHE"
+          
+          if [ "$CACHE_HIT" = "true" ]; then
+            echo "⚡ Restoring from local cache..."
+            # Restore node_modules from local cache in parallel
+            if [ -d "$LOCAL_CACHE_BASE/backend/node_modules" ] && [ -d "$LOCAL_CACHE_BASE/frontend/node_modules" ]; then
+              cp -r "$LOCAL_CACHE_BASE/backend/node_modules" backend/ &
+              cp -r "$LOCAL_CACHE_BASE/frontend/node_modules" frontend/ &
+              wait
+              echo "✅ Dependencies restored from local cache"
+            else
+              echo "📦 Cache miss - installing normally"
+              cd backend && npm ci --prefer-offline --include=dev &
+              cd frontend && npm ci --prefer-offline &
+              wait
+            fi
+          else
+            echo "📦 Installing and caching dependencies..."
+            cd backend && npm ci --prefer-offline --include=dev &
+            cd frontend && npm ci --prefer-offline &
+            wait
+            
+            # Cache the installed node_modules
+            echo "💾 Caching dependencies..."
+            cp -r backend/node_modules "$LOCAL_CACHE_BASE/backend/" &
+            cp -r frontend/node_modules "$LOCAL_CACHE_BASE/frontend/" &
+            wait
+            echo "${{ steps.local-cache.outputs.backend_cache_key }}" > "$LOCAL_CACHE_BASE/backend/.cache-key"
+            echo "${{ steps.local-cache.outputs.frontend_cache_key }}" > "$LOCAL_CACHE_BASE/frontend/.cache-key"
+            echo "✅ Dependencies cached locally"
+          fi
       
       - name: "🔧 Setup E2E environment"
         run: |
@@ -384,20 +586,92 @@ jobs:
           fetch-depth: 1
           clean: false  # Don't try to clean, we already did that
       
-      - name: "⚡ Setup Node.js with cache"
+      - name: "⚡ Setup Node.js (no remote cache)"
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: |
-            backend/package-lock.json
-            frontend/package-lock.json
+          # Removed cache: 'npm' to use local cache instead
+      
+      - name: "🚀 Setup local cache strategy"
+        id: local-cache
+        run: |
+          echo "🚀 Using local cache strategy for self-hosted runner"
+          
+          # Define local cache directories (using nut user home)
+          LOCAL_CACHE_BASE="/home/nut/.cache/loyalty-app"
+          NPM_CACHE="/home/nut/.npm-cache"
+          
+          # Create cache directories if they don't exist
+          mkdir -p "$LOCAL_CACHE_BASE"/{frontend,backend} "$NPM_CACHE"
+          
+          # Calculate cache keys based on package files
+          FRONTEND_KEY=$(shasum frontend/package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
+          BACKEND_KEY=$(shasum backend/package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
+          
+          echo "frontend_cache_key=$FRONTEND_KEY" >> $GITHUB_OUTPUT
+          echo "backend_cache_key=$BACKEND_KEY" >> $GITHUB_OUTPUT
+          echo "cache_base=$LOCAL_CACHE_BASE" >> $GITHUB_OUTPUT
+          echo "npm_cache=$NPM_CACHE" >> $GITHUB_OUTPUT
+          
+          # Check if local cache exists and is valid
+          CACHE_HIT=false
+          if [ -f "$LOCAL_CACHE_BASE/frontend/.cache-key" ] && [ -f "$LOCAL_CACHE_BASE/backend/.cache-key" ]; then
+            STORED_FRONTEND_KEY=$(cat "$LOCAL_CACHE_BASE/frontend/.cache-key")
+            STORED_BACKEND_KEY=$(cat "$LOCAL_CACHE_BASE/backend/.cache-key")
+            
+            if [ "$STORED_FRONTEND_KEY" = "$FRONTEND_KEY" ] && [ "$STORED_BACKEND_KEY" = "$BACKEND_KEY" ]; then
+              CACHE_HIT=true
+              echo "✅ Local cache valid and ready to use"
+            else
+              echo "♻️ Package files changed, cache needs refresh"
+            fi
+          else
+            echo "📦 No local cache found, will create one"
+          fi
+          
+          echo "cache_hit=$CACHE_HIT" >> $GITHUB_OUTPUT
       
       - name: "📦 Install dependencies (parallel)"
         run: |
-          cd backend && npm ci --prefer-offline &
-          cd frontend && npm ci --prefer-offline &
-          wait
+          echo "📦 Installing dependencies with local cache..."
+          
+          # Variables from cache setup
+          LOCAL_CACHE_BASE="${{ steps.local-cache.outputs.cache_base }}"
+          NPM_CACHE="${{ steps.local-cache.outputs.npm_cache }}"
+          CACHE_HIT="${{ steps.local-cache.outputs.cache_hit }}"
+          
+          # Set npm cache directory
+          npm config set cache "$NPM_CACHE"
+          
+          if [ "$CACHE_HIT" = "true" ]; then
+            echo "⚡ Restoring from local cache..."
+            # Restore node_modules from local cache in parallel
+            if [ -d "$LOCAL_CACHE_BASE/backend/node_modules" ] && [ -d "$LOCAL_CACHE_BASE/frontend/node_modules" ]; then
+              cp -r "$LOCAL_CACHE_BASE/backend/node_modules" backend/ &
+              cp -r "$LOCAL_CACHE_BASE/frontend/node_modules" frontend/ &
+              wait
+              echo "✅ Dependencies restored from local cache"
+            else
+              echo "📦 Cache miss - installing normally"
+              cd backend && npm ci --prefer-offline &
+              cd frontend && npm ci --prefer-offline &
+              wait
+            fi
+          else
+            echo "📦 Installing and caching dependencies..."
+            cd backend && npm ci --prefer-offline &
+            cd frontend && npm ci --prefer-offline &
+            wait
+            
+            # Cache the installed node_modules
+            echo "💾 Caching dependencies..."
+            cp -r backend/node_modules "$LOCAL_CACHE_BASE/backend/" &
+            cp -r frontend/node_modules "$LOCAL_CACHE_BASE/frontend/" &
+            wait
+            echo "${{ steps.local-cache.outputs.backend_cache_key }}" > "$LOCAL_CACHE_BASE/backend/.cache-key"
+            echo "${{ steps.local-cache.outputs.frontend_cache_key }}" > "$LOCAL_CACHE_BASE/frontend/.cache-key"
+            echo "✅ Dependencies cached locally"
+          fi
       
       - name: "🏗️ Build applications (parallel)"
         run: |
