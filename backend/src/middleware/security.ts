@@ -254,7 +254,19 @@ export const productionSecurity = (req: Request, res: Response, next: NextFuncti
   // Require HTTPS in production - Cloudflare tunnel compatible
   const forwardedProto = req.get('x-forwarded-proto') ?? req.get('X-Forwarded-Proto');
   const cfVisitor = req.get('cf-visitor');
-  const isHttps = req.secure || forwardedProto === 'https';
+  
+  // Check Cloudflare's cf-visitor header first (most reliable for Cloudflare Tunnel)
+  let isCloudflareHttps = false;
+  if (cfVisitor) {
+    try {
+      const visitor = JSON.parse(cfVisitor);
+      isCloudflareHttps = visitor.scheme === 'https';
+    } catch (error) {
+      logger.warn('Failed to parse cf-visitor header', { cfVisitor, error: error.message });
+    }
+  }
+  
+  const isHttps = req.secure || forwardedProto === 'https' || isCloudflareHttps;
   
   // Enhanced logging for debugging Cloudflare tunnel
   logger.info('Production security check', {
@@ -264,31 +276,19 @@ export const productionSecurity = (req: Request, res: Response, next: NextFuncti
     secure: req.secure,
     forwardedProto,
     cfVisitor,
+    isCloudflareHttps,
     isHttps,
     host: req.get('host'),
-    userAgent: req.get('user-agent'),
-    allHeaders: Object.keys(req.headers).reduce((acc, key) => {
-      if (key.toLowerCase().includes('forward') || key.toLowerCase().includes('cf-') || key.toLowerCase().includes('x-')) {
-        acc[key] = req.get(key);
-      }
-      return acc;
-    }, {} as Record<string, string | undefined>)
+    userAgent: req.get('user-agent')
   });
   
-  // Temporarily disable HTTPS redirect for OAuth debugging
-  if (!isHttps && req.url.startsWith('/api/oauth/')) {
-    logger.warn('Allowing HTTP for OAuth debugging', {
-      ip: req.ip,
-      url: req.url,
-      secure: req.secure,
-      forwardedProto
-    });
-  } else if (!isHttps) {
+  if (!isHttps) {
     logger.warn('HTTP request detected in production - redirecting to HTTPS', {
       ip: req.ip,
       url: req.url,
       secure: req.secure,
-      forwardedProto
+      forwardedProto,
+      isCloudflareHttps
     });
     return res.redirect(301, `https://${req.get('host')}${req.url}`);
   }
