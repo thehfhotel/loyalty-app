@@ -156,15 +156,27 @@ router.get('/line', (req, res, next) => {
 });
 
 router.get('/line/callback', 
-  (req, _res, next) => {
-    logger.debug('[OAuth] LINE OAuth callback received', {
-      query: req.query,
-      headers: req.headers,
-      cookies: req.cookies,
-      sessionID: req.sessionID,
-      session: req.session
-    });
-    next();
+  (req, res, next) => {
+    try {
+      // Check for OAuth errors in callback
+      if (req.query.error) {
+        const error = `LINE OAuth error: ${req.query.error} - ${req.query.error_description ?? 'No description'}`;
+        logger.error('[OAuth] ' + error);
+        return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_provider_error`);
+      }
+
+      logger.debug('[OAuth] LINE OAuth callback received', {
+        query: req.query,
+        headers: req.headers,
+        cookies: req.cookies,
+        sessionID: req.sessionID,
+        session: req.session
+      });
+      next();
+    } catch (error) {
+      logger.error('[OAuth] LINE callback preprocessing error:', error);
+      res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`);
+    }
   },
   passport.authenticate('line', { session: false }),
   async (req, res) => {

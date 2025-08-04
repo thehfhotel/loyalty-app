@@ -79,7 +79,7 @@ check_dependencies() {
     
     # Check for required commands
     command -v docker >/dev/null 2>&1 || missing_deps+=("docker")
-    command -v docker-compose >/dev/null 2>&1 || missing_deps+=("docker-compose")
+    docker compose version >/dev/null 2>&1 || missing_deps+=("docker compose")
     command -v node >/dev/null 2>&1 || missing_deps+=("node")
     command -v npm >/dev/null 2>&1 || missing_deps+=("npm")
     
@@ -92,9 +92,9 @@ check_dependencies() {
 
 get_service_status() {
     local service="$1"
-    if docker-compose ps "$service" 2>/dev/null | grep -q "Up"; then
+    if docker compose ps "$service" 2>/dev/null | grep -q "Up"; then
         echo "running"
-    elif docker-compose ps "$service" 2>/dev/null | grep -q "Exit"; then
+    elif docker compose ps "$service" 2>/dev/null | grep -q "Exit"; then
         echo "stopped"
     else
         echo "unknown"
@@ -129,7 +129,7 @@ start_services() {
     print_section "Starting Services"
     
     print_status "Starting Docker services..."
-    docker-compose up -d
+    docker compose up -d
     
     # Wait for services to be ready
     print_status "Waiting for services to be ready..."
@@ -152,14 +152,14 @@ start_services() {
     if [[ "$backend_ready" == true ]]; then
         print_success "Backend is ready at http://localhost:4001"
     else
-        print_warning "Backend may not be ready. Check logs with: docker-compose logs backend"
+        print_warning "Backend may not be ready. Check logs with: docker compose logs backend"
     fi
     
     # Check frontend
     if curl -s http://localhost:3000 >/dev/null 2>&1; then
         print_success "Frontend is ready at http://localhost:3000"
     else
-        print_warning "Frontend may not be ready. Check logs with: docker-compose logs frontend"
+        print_warning "Frontend may not be ready. Check logs with: docker compose logs frontend"
     fi
     
     show_service_status
@@ -170,7 +170,7 @@ stop_services() {
     
     if confirm "Are you sure you want to stop all services?" "n"; then
         print_status "Stopping Docker services..."
-        docker-compose down
+        docker compose down
         print_success "All services stopped"
     else
         print_status "Operation cancelled"
@@ -181,7 +181,7 @@ restart_services() {
     print_section "Restarting Services"
     
     print_status "Restarting Docker services..."
-    docker-compose restart
+    docker compose restart
     
     print_status "Waiting for services to be ready..."
     sleep 5
@@ -206,7 +206,7 @@ restart_specific_service() {
     if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#services_array[@]} ]]; then
         local selected_service="${services_array[$((choice-1))]}"
         print_status "Restarting $selected_service..."
-        docker-compose restart "$selected_service"
+        docker compose restart "$selected_service"
         print_success "$selected_service restarted"
     else
         print_error "Invalid selection"
@@ -263,6 +263,9 @@ build_production() {
 run_all_tests() {
     print_section "Running All Tests"
     
+    print_status "Validating test integrity..."
+    npm run test:integrity
+    
     print_status "Running unit tests..."
     npm run test:unit
     
@@ -298,6 +301,55 @@ run_test_coverage() {
     npm run test:coverage
     print_success "Coverage analysis completed"
     print_status "Coverage report available at: backend/coverage/lcov-report/index.html"
+}
+
+validate_test_integrity() {
+    print_section "Validating Test Integrity"
+    print_status "Scanning for test bypassing violations..."
+    npm run test:integrity
+    print_success "Test integrity validation completed"
+}
+
+validate_oauth_health() {
+    print_section "OAuth Health Validation"
+    print_status "Checking OAuth endpoints and configuration..."
+    npm run oauth:health
+    print_success "OAuth health validation completed"
+}
+
+validate_database_migration() {
+    print_section "Database Migration Validation"
+    print_status "Checking database migration readiness..."
+    npm run db:validate
+    print_success "Database migration validation completed"
+}
+
+check_migration_rollback_safety() {
+    print_section "Migration Rollback Safety Check"
+    print_status "Verifying rollback procedures and backups..."
+    npm run db:rollback-check
+    print_success "Migration rollback safety check completed"
+}
+
+create_database_backup() {
+    print_section "Creating Database Backup"
+    print_status "Creating pre-migration database backup..."
+    npm run db:backup
+    print_success "Database backup completed"
+}
+
+run_deployment_validation() {
+    print_section "Complete Deployment Validation"
+    print_status "Running comprehensive pre-deployment checks..."
+    npm run deploy:validate
+    print_success "Deployment validation completed"
+}
+
+reset_oauth_rate_limits() {
+    print_section "OAuth Rate Limit Reset"
+    print_status "Resetting OAuth endpoint rate limits for testing..."
+    ./scripts/reset-rate-limits.sh
+    print_success "OAuth rate limit reset completed"
 }
 
 # =============================================================================
@@ -464,10 +516,10 @@ show_logs() {
     read -r choice
     
     if [[ "$choice" == "$i" ]]; then
-        docker-compose logs -f
+        docker compose logs -f
     elif [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#services_array[@]} ]]; then
         local selected_service="${services_array[$((choice-1))]}"
-        docker-compose logs -f "$selected_service"
+        docker compose logs -f "$selected_service"
     else
         print_error "Invalid selection"
     fi
@@ -504,7 +556,7 @@ cleanup_project() {
         3)
             if confirm "Remove Docker images?" "n"; then
                 print_status "Removing Docker images..."
-                docker-compose down --rmi all
+                docker compose down --rmi all
                 print_success "Docker images removed"
             fi
             ;;
@@ -529,7 +581,7 @@ cleanup_project() {
             fi
             if confirm "Remove Docker images?" "n"; then
                 print_status "Removing Docker images..."
-                docker-compose down --rmi all
+                docker compose down --rmi all
                 print_success "Docker images removed"
             fi
             if confirm "Remove log files?" "n"; then
@@ -555,7 +607,7 @@ show_system_info() {
     echo "  Node.js: $(node --version 2>/dev/null || echo 'Not installed')"
     echo "  NPM: $(npm --version 2>/dev/null || echo 'Not installed')"
     echo "  Docker: $(docker --version 2>/dev/null | cut -d' ' -f3 | tr -d ',' || echo 'Not installed')"
-    echo "  Docker Compose: $(docker-compose --version 2>/dev/null | cut -d' ' -f3 | tr -d ',' || echo 'Not installed')"
+    echo "  Docker Compose: $(docker compose version 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo 'Not installed')"
     echo ""
     
     echo "Services Status:"
@@ -581,11 +633,12 @@ show_main_menu() {
     echo "  6)  🧪 Testing Menu"
     echo "  7)  ✅ Quality Menu"
     echo "  8)  🔒 Security Menu"
+    echo "  9)  🚀 Deployment Menu"
     echo ""
-    echo "  9)  📋 Show Logs"
-    echo "  10) 🧹 Cleanup Project"
-    echo "  11) ℹ️  System Info"
-    echo "  12) ❓ Help"
+    echo "  10) 📋 Show Logs"
+    echo "  11) 🧹 Cleanup Project"
+    echo "  12) ℹ️  System Info"
+    echo "  13) ❓ Help"
     echo ""
     echo "  0)  👋 Exit"
     echo ""
@@ -615,6 +668,10 @@ show_testing_menu() {
     echo "  3) 🔗 Integration Tests"
     echo "  4) 🎭 E2E Tests"
     echo "  5) 📊 Test Coverage"
+    echo "  6) 🛡️  Test Integrity Validation"
+    echo "  7) 🔐 OAuth Health Validation"
+    echo "  8) 🗄️  Database Migration Validation"
+    echo "  9) 💾 Migration Rollback Safety Check"
     echo ""
     echo "  0) ← Back to Main Menu"
     echo ""
@@ -647,6 +704,23 @@ show_security_menu() {
     echo ""
 }
 
+show_deployment_menu() {
+    clear
+    print_header
+    
+    echo -e "${WHITE}Deployment Menu:${NC}"
+    echo "  1) 🚀 Complete Deployment Validation"
+    echo "  2) 🔐 OAuth Health Check"
+    echo "  3) 🗄️  Database Migration Validation"
+    echo "  4) 💾 Check Migration Rollback Safety"
+    echo "  5) 📦 Create Database Backup"
+    echo "  6) 🧪 Run OAuth E2E Tests"
+    echo "  7) 🔄 Reset OAuth Rate Limits"
+    echo ""
+    echo "  0) ← Back to Main Menu"
+    echo ""
+}
+
 show_help() {
     clear
     print_header
@@ -661,6 +735,8 @@ show_help() {
     echo "  • Testing (unit/integration/e2e/coverage)"
     echo "  • Quality checks (lint/typecheck/fixes)"
     echo "  • Security audits and fixes"
+    echo "  • OAuth rate limit reset for testing"
+    echo "  • Database migration validation"
     echo "  • Log viewing and project cleanup"
     echo ""
     echo -e "${YELLOW}Prerequisites:${NC}"
@@ -675,7 +751,7 @@ show_help() {
     echo "  4. Visit http://localhost:4001 for backend API"
     echo ""
     echo -e "${YELLOW}Environment:${NC}"
-    echo "  • Development: Uses docker-compose.yml"
+    echo "  • Development: Uses docker compose.yml"
     echo "  • Production: Use production build option"
     echo ""
     echo "Press any key to continue..."
@@ -688,7 +764,7 @@ show_help() {
 
 handle_main_menu() {
     local choice
-    echo -ne "${YELLOW}Enter your choice (0-12): ${NC}"
+    echo -ne "${YELLOW}Enter your choice (0-13): ${NC}"
     read -r choice
     
     case "$choice" in
@@ -700,10 +776,11 @@ handle_main_menu() {
         6) handle_testing_menu ;;
         7) handle_quality_menu ;;
         8) handle_security_menu ;;
-        9) show_logs ;;
-        10) cleanup_project ;;
-        11) show_system_info ;;
-        12) show_help ;;
+        9) handle_deployment_menu ;;
+        10) show_logs ;;
+        11) cleanup_project ;;
+        12) show_system_info ;;
+        13) show_help ;;
         0) 
             print_success "Thanks for using $PROJECT_NAME Manager!"
             exit 0
@@ -745,7 +822,7 @@ handle_build_menu() {
 handle_testing_menu() {
     while true; do
         show_testing_menu
-        echo -ne "${YELLOW}Enter your choice (0-5): ${NC}"
+        echo -ne "${YELLOW}Enter your choice (0-9): ${NC}"
         read -r choice
         
         case "$choice" in
@@ -754,6 +831,10 @@ handle_testing_menu() {
             3) run_integration_tests ;;
             4) run_e2e_tests ;;
             5) run_test_coverage ;;
+            6) validate_test_integrity ;;
+            7) validate_oauth_health ;;
+            8) validate_database_migration ;;
+            9) check_migration_rollback_safety ;;
             0) return ;;
             *)
                 print_error "Invalid choice. Please try again."
@@ -801,6 +882,40 @@ handle_security_menu() {
             1) run_security_audit ;;
             2) fix_security_issues ;;
             3) validate_security ;;
+            0) return ;;
+            *)
+                print_error "Invalid choice. Please try again."
+                continue
+                ;;
+        esac
+        
+        echo ""
+        echo "Press any key to continue..."
+        read -r
+    done
+}
+
+run_oauth_e2e_tests() {
+    print_section "Running OAuth E2E Tests"
+    print_status "Executing OAuth flow validation tests..."
+    npx playwright test tests/oauth-validation.spec.ts --reporter=line
+    print_success "OAuth E2E tests completed"
+}
+
+handle_deployment_menu() {
+    while true; do
+        show_deployment_menu
+        echo -ne "${YELLOW}Enter your choice (0-7): ${NC}"
+        read -r choice
+        
+        case "$choice" in
+            1) run_deployment_validation ;;
+            2) validate_oauth_health ;;
+            3) validate_database_migration ;;
+            4) check_migration_rollback_safety ;;
+            5) create_database_backup ;;
+            6) run_oauth_e2e_tests ;;
+            7) reset_oauth_rate_limits ;;
             0) return ;;
             *)
                 print_error "Invalid choice. Please try again."
