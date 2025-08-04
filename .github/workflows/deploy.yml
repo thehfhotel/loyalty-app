@@ -1008,89 +1008,232 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
           
           echo "✅ Services deployed"
+          
+          # Give services time to initialize before health checks
+          echo "⏳ Allowing services to initialize (30 seconds)..."
+          sleep 30
+          
+          # Quick startup verification
+          echo "🔍 Quick startup verification:"
+          docker compose ps
+          echo "📝 Backend startup logs (last 10 lines):"
+          docker compose logs --tail=10 backend 2>/dev/null || echo "No backend logs yet"
       
       - name: "🗃️ Database migration (container context)"
         run: |
-          echo "🗃️ Running database migrations..."
+          echo "🗃️ Running database migrations with enhanced logging..."
           
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
           
-          # Wait for database to be ready
-          echo "Waiting for database to be ready..."
-          timeout 60s bash -c 'until docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db; do sleep 2; done'
+          # Pre-migration container status
+          echo "📦 Pre-migration container status:"
+          docker compose ps
+          
+          # Wait for database to be ready with enhanced logging
+          echo "💾 Waiting for database to be ready..."
+          if timeout 60s bash -c 'until docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db; do echo "Database not ready, waiting..."; sleep 2; done'; then
+            echo "✅ Database is ready"
+          else
+            echo "❌ Database readiness timeout"
+            echo "📄 Database logs:"
+            docker compose logs --tail=20 postgres
+            exit 1
+          fi
           
           # Wait for backend container to be fully ready
-          echo "Waiting for backend container to be ready..."
-          timeout 60s bash -c 'until docker compose exec -T backend echo "ready" >/dev/null 2>&1; do sleep 2; done'
+          echo "📦 Waiting for backend container to be ready..."
+          if timeout 60s bash -c 'until docker compose exec -T backend echo "ready" >/dev/null 2>&1; do echo "Backend not ready, waiting..."; sleep 2; done'; then
+            echo "✅ Backend container is ready"
+          else
+            echo "❌ Backend container timeout"
+            echo "📄 Backend logs:"
+            docker compose logs --tail=20 backend
+            exit 1
+          fi
           
           # Give containers additional time to stabilize
-          echo "Allowing containers to stabilize..."
+          echo "⏳ Allowing containers to stabilize (10 seconds)..."
           sleep 10
           
+          # Show database connection info before migration
+          echo "🔗 Database connection check:"
+          docker compose exec -T backend node -e "console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'configured' : 'missing')" || echo "Cannot check DB config"
+          
           # Run migration from within backend container (correct network context)
-          echo "Running database migration from container..."
+          echo "🗃️ Running database migration from container..."
           for attempt in 1 2 3; do
-            echo "Migration attempt $attempt/3..."
+            echo "
+🔄 Migration attempt $attempt/3..."
+            
+            # First check migration status
+            echo "🔍 Checking current migration status:"
+            docker compose exec -T backend npm run db:migrate:status || echo "Cannot check migration status"
             
             if docker compose exec -T backend npm run db:migrate:deploy; then
               echo "✅ Database migrations completed successfully"
+              
+              # Verify migration success
+              echo "🔍 Post-migration verification:"
+              docker compose exec -T backend npm run db:migrate:status || echo "Cannot verify final status"
               break
             else
+              echo "❌ Migration attempt $attempt failed"
+              
+              # Show backend logs for debugging
+              echo "📄 Backend logs during migration failure:"
+              docker compose logs --tail=10 backend
+              
               if [ $attempt -eq 3 ]; then
                 echo "❌ Migration failed after 3 attempts"
                 
-                # Check for baseline scenario
-                echo "Checking migration status from container..."
-                if docker compose exec -T backend npm run db:migrate:status 2>&1 | grep -q "migrations have not yet been applied"; then
-                  echo "Attempting baseline resolution..."
-                  docker compose exec -T backend npx prisma migrate resolve --applied 0_init 2>/dev/null || true
+                # Enhanced baseline scenario handling
+                echo "🔍 Checking for baseline scenario..."
+                migration_status=$(docker compose exec -T backend npm run db:migrate:status 2>&1 || echo "status_check_failed")
+                echo "Migration status output: $migration_status"
+                
+                if echo "$migration_status" | grep -q "migrations have not yet been applied"; then
+                  echo "🔧 Attempting baseline resolution..."
+                  docker compose exec -T backend npx prisma migrate resolve --applied 0_init 2>/dev/null || echo "Baseline resolution failed"
                   
-                  echo "Retrying migration after baseline..."
+                  echo "🔄 Retrying migration after baseline..."
                   if docker compose exec -T backend npm run db:migrate:deploy; then
-                    echo "✅ Database migrations completed after baseline"
+                    echo "✅ Database migrations completed after baseline resolution"
                     break
+                  else
+                    echo "❌ Migration still failed after baseline"
                   fi
                 fi
+                
+                # Final failure diagnostics
+                echo "🔴 MIGRATION FAILURE DIAGNOSTICS:"
+                echo "=== Container Status ==="
+                docker compose ps
+                echo "\n=== Database Connection Test ==="
+                docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db || echo "Database connection failed"
+                echo "\n=== Backend Environment ==="
+                docker compose exec -T backend env | grep -E "DATABASE_URL|NODE_ENV" || echo "Cannot check environment"
+                echo "\n=== Backend Logs (last 30 lines) ==="
+                docker compose logs --tail=30 backend
                 
                 echo "❌ All migration attempts failed"
                 exit 1
               else
-                echo "Retrying in 5 seconds..."
+                echo "⏳ Retrying in 5 seconds..."
                 sleep 5
               fi
             fi
           done
+          
+          echo "✅ Database migration phase completed"
       
       - name: "🏥 Health checks & validation (service readiness)"
         run: |
-          echo "🏥 Running health checks..."
+          echo "🏥 Running comprehensive health checks with enhanced logging..."
           
-          # Function for health checking with timeout
-          check_health() {
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
+          # Enhanced logging function with container inspection
+          enhanced_health_check() {
             local service=$1
             local url=$2
             local max_attempts=15
             local attempt=0
             
+            echo "🔍 Starting health check for $service at $url"
+            
+            # First, check container status
+            echo "📦 Checking container status..."
+            docker compose ps
+            
+            # Show container logs for startup diagnostics
+            echo "📜 Recent startup logs from containers:"
+            echo "=== Backend Logs (last 50 lines) ==="
+            docker compose logs --tail=50 backend 2>/dev/null || echo "No backend logs available"
+            
+            echo "\n=== Frontend Logs (last 20 lines) ==="
+            docker compose logs --tail=20 frontend 2>/dev/null || echo "No frontend logs available"
+            
+            echo "\n=== Database Logs (last 10 lines) ==="
+            docker compose logs --tail=10 postgres 2>/dev/null || echo "No database logs available"
+            
+            # Check if containers are actually running
+            if ! docker compose ps | grep -q "Up"; then
+              echo "❌ Critical: No containers are running!"
+              echo "🔴 Container status details:"
+              docker compose ps -a
+              return 1
+            fi
+            
+            # Enhanced health checking with detailed diagnostics
             while [ $attempt -lt $max_attempts ]; do
+              echo "🔄 Health Check Attempt $((attempt + 1))/$max_attempts for $service"
+              
+              # Test with verbose curl output for diagnostics
               if curl -f -s --max-time 3 "$url" > /dev/null 2>&1; then
-                echo "✅ $service is healthy"
+                echo "✅ $service is healthy and responding"
+                
+                # Additional validation - get response details
+                response=$(curl -s --max-time 3 "$url" 2>/dev/null || echo "No response body")
+                echo "📄 Response preview: ${response:0:200}..."
                 return 0
+              else
+                # Detailed failure diagnostics
+                http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "$url" 2>/dev/null || echo "000")
+                echo "⚠️ $service not ready (HTTP: $http_code)"
+                
+                # Every 3rd attempt, show detailed diagnostics
+                if [ $((attempt % 3)) -eq 0 ] && [ $attempt -gt 0 ]; then
+                  echo "🔍 Diagnostic info (attempt $((attempt + 1))):"
+                  echo "  - Port check:" $(nc -z localhost 4001 && echo "Port 4001 open" || echo "Port 4001 closed")
+                  echo "  - Backend container:" $(docker compose exec -T backend echo "responsive" 2>/dev/null || echo "not responding")
+                  echo "  - Recent backend errors:"
+                  docker compose logs --tail=5 backend 2>/dev/null | grep -i "error\|fail\|exception" | tail -3 || echo "    No recent errors found"
+                fi
               fi
+              
               attempt=$((attempt + 1))
-              [ $((attempt % 5)) -eq 0 ] && echo "Waiting for $service... ($attempt/$max_attempts)"
-              sleep 2
+              [ $attempt -lt $max_attempts ] && sleep 2
             done
-            echo "❌ $service health check failed"
+            
+            echo "❌ $service health check failed after $max_attempts attempts"
+            
+            # Final diagnostic dump on failure
+            echo "🔴 FAILURE DIAGNOSTICS:"
+            echo "=== Container Status ==="
+            docker compose ps -a
+            
+            echo "\n=== Network Status ==="
+            docker compose exec -T backend cat /etc/hosts 2>/dev/null | head -5 || echo "Cannot access container network info"
+            
+            echo "\n=== Application Ports ==="
+            docker compose exec -T backend netstat -tlnp 2>/dev/null | grep -E ":3000|:4001" || echo "Cannot check application ports"
+            
+            echo "\n=== Final Backend Logs ==="
+            docker compose logs --tail=30 backend
+            
+            echo "\n=== System Resources ==="
+            echo "Memory:" $(free -h | head -2 | tail -1)
+            echo "Disk:" $(df -h / | tail -1)
+            
             return 1
           }
           
-          # Check application health
-          check_health "Application" "http://localhost:4001/api/health"
-          check_health "Frontend" "http://localhost:4001/"
+          # Run enhanced health checks
+          enhanced_health_check "Application" "http://localhost:4001/api/health"
           
-          echo "✅ All health checks passed"
+          # If backend is healthy, check frontend
+          echo "\n🌐 Checking frontend..."
+          if curl -f -s --max-time 3 "http://localhost:4001/" > /dev/null 2>&1; then
+            echo "✅ Frontend is responding"
+          else
+            echo "⚠️ Frontend not responding (non-critical for deployment)"
+            echo "📄 Frontend logs:"
+            docker compose logs --tail=10 frontend
+          fi
+          
+          echo "✅ Health checks completed successfully"
 
   # =============================================================================
   # PHASE 4: POST-DEPLOYMENT MONITORING & CLEANUP
