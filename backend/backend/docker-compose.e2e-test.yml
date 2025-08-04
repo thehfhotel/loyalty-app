@@ -1,0 +1,35 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: loyalty_postgres_e2e
+    environment:
+      POSTGRES_USER: loyalty
+      POSTGRES_PASSWORD: loyalty_password
+      POSTGRES_DB: loyalty_db
+    ports:
+      - "5436:5432"
+    volumes:
+      - loyalty_postgres_e2e_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  
+  redis:
+    image: redis:7-alpine
+    container_name: loyalty_redis_e2e
+    ports:
+      - "6381:6379"
+    volumes:
+      - loyalty_redis_e2e_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  loyalty_postgres_e2e_data:
+  loyalty_redis_e2e_data:

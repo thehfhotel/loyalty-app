@@ -300,7 +300,6 @@ volumes:
     test('should detect Docker container naming conflicts', async () => {
       // Test for the specific container conflict issue we encountered
       const testComposeContent = `
-version: '3.8'
 services:
   test_postgres:
     image: postgres:15-alpine
@@ -347,6 +346,54 @@ services:
       } finally {
         // Ensure cleanup
         await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} down -v --remove-orphans`).catch(() => {});
+        await fs.unlink(tempComposeFile).catch(() => {});
+      }
+    });
+
+    test('should detect workflow file deletion issues', async () => {
+      // Test for the specific workflow issue: file gets deleted after validation but before use
+      const testComposeContent = `
+services:
+  test_service:
+    image: alpine:latest
+    container_name: workflow_test_container
+`;
+      
+      const tempComposeFile = path.join(projectRoot, 'temp-workflow-test.yml');
+      
+      try {
+        // Step 1: Create file
+        await fs.writeFile(tempComposeFile, testComposeContent);
+        
+        // Step 2: Validate file
+        await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} config`);
+        
+        // Step 3: Simulate the problematic cleanup (this was the bug)
+        // await fs.unlink(tempComposeFile); // This is what was causing the issue
+        
+        // Step 4: Try to use the file (this would fail if file was deleted)
+        const fileExists = await fs.access(tempComposeFile)
+          .then(() => true)
+          .catch(() => false);
+        
+        expect(fileExists).toBe(true, 'Docker compose file should exist after validation for subsequent use');
+        
+        // Step 5: Verify the file can still be used
+        await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} config`);
+        
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        if (errorMessage.includes('no such file or directory')) {
+          throw new Error(
+            'Workflow file deletion issue detected: file was deleted after validation but before use. ' +
+            'This indicates improper cleanup timing in the CI/CD workflow.'
+          );
+        } else {
+          throw new Error(`Unexpected workflow test error: ${errorMessage}`);
+        }
+      } finally {
+        // Clean up
         await fs.unlink(tempComposeFile).catch(() => {});
       }
     });

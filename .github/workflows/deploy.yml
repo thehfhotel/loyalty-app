@@ -675,6 +675,18 @@ jobs:
           
           echo "✅ E2E Prisma client validated successfully"
           
+          # Clean up any existing E2E containers first (before creating new compose file)
+          echo "🧹 Cleaning up any existing E2E containers..."
+          docker stop loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
+          docker rm loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
+          
+          # Clean up any existing compose stack if file exists
+          if [ -f "docker-compose.e2e-test.yml" ]; then
+            echo "🧹 Cleaning up existing E2E compose stack..."
+            docker compose -f docker-compose.e2e-test.yml down -v --remove-orphans 2>/dev/null || true
+            rm -f docker-compose.e2e-test.yml
+          fi
+          
           # Build backend and frontend
           echo "🏗️ Building application for isolated E2E testing..."
           npm run build &
@@ -683,7 +695,6 @@ jobs:
           
           # Create complete E2E compose file (replace the initial file with complete version)
           cat > docker-compose.e2e-test.yml << 'EOF'
-          version: '3.8'
           services:
             postgres:
               image: postgres:15-alpine
@@ -772,18 +783,6 @@ jobs:
           fi
           
           echo "✅ E2E Docker Compose configuration validated"
-          
-          # Clean up any existing E2E containers first
-          echo "🧹 Cleaning up any existing E2E containers..."
-          docker stop loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
-          docker rm loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
-          
-          # Clean up any existing compose stack if file exists
-          if [ -f "docker-compose.e2e-test.yml" ]; then
-            echo "🧹 Cleaning up existing E2E compose stack..."
-            docker compose -f docker-compose.e2e-test.yml down -v --remove-orphans 2>/dev/null || true
-            rm -f docker-compose.e2e-test.yml
-          fi
           
           # Start database services first
           echo "🗄️ Starting isolated database services..."
