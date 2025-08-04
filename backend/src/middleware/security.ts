@@ -253,19 +253,42 @@ export const productionSecurity = (req: Request, res: Response, next: NextFuncti
   
   // Require HTTPS in production - Cloudflare tunnel compatible
   const forwardedProto = req.get('x-forwarded-proto') ?? req.get('X-Forwarded-Proto');
+  const cfVisitor = req.get('cf-visitor');
   const isHttps = req.secure || forwardedProto === 'https';
   
-  if (!isHttps) {
-    logger.warn('HTTP request detected in production', {
+  // Enhanced logging for debugging Cloudflare tunnel
+  logger.info('Production security check', {
+    ip: req.ip,
+    url: req.url,
+    method: req.method,
+    secure: req.secure,
+    forwardedProto,
+    cfVisitor,
+    isHttps,
+    host: req.get('host'),
+    userAgent: req.get('user-agent'),
+    allHeaders: Object.keys(req.headers).reduce((acc, key) => {
+      if (key.toLowerCase().includes('forward') || key.toLowerCase().includes('cf-') || key.toLowerCase().includes('x-')) {
+        acc[key] = req.get(key);
+      }
+      return acc;
+    }, {} as Record<string, string | undefined>)
+  });
+  
+  // Temporarily disable HTTPS redirect for OAuth debugging
+  if (!isHttps && req.url.startsWith('/api/oauth/')) {
+    logger.warn('Allowing HTTP for OAuth debugging', {
       ip: req.ip,
       url: req.url,
       secure: req.secure,
-      forwardedProto,
-      headers: {
-        'x-forwarded-proto': req.get('x-forwarded-proto'),
-        'X-Forwarded-Proto': req.get('X-Forwarded-Proto'),
-        'cf-visitor': req.get('cf-visitor')
-      }
+      forwardedProto
+    });
+  } else if (!isHttps) {
+    logger.warn('HTTP request detected in production - redirecting to HTTPS', {
+      ip: req.ip,
+      url: req.url,
+      secure: req.secure,
+      forwardedProto
     });
     return res.redirect(301, `https://${req.get('host')}${req.url}`);
   }

@@ -104,12 +104,21 @@ router.get('/google/callback',
       });
 
       // Create success URL with tokens
-      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL ?? 'http://localhost:4001');
+      const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:4001';
+      const successUrl = new URL('/oauth/success', frontendUrl);
       successUrl.searchParams.set('token', tokens.accessToken);
       successUrl.searchParams.set('refreshToken', tokens.refreshToken);
       successUrl.searchParams.set('isNewUser', isNewUser.toString());
 
       logger.info(`[OAuth] Google OAuth success for user ${user.email}, isNewUser: ${isNewUser}`);
+      logger.info('[OAuth] Environment check', {
+        frontendUrl,
+        nodeEnv: process.env.NODE_ENV,
+        host: req.get('host'),
+        protocol: req.protocol,
+        secure: req.secure,
+        forwardedProto: req.get('x-forwarded-proto')
+      });
       logger.debug('[OAuth] Redirecting to success URL', { successUrl: successUrl.toString() });
       
       res.redirect(successUrl.toString());
