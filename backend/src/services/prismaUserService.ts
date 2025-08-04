@@ -97,7 +97,7 @@ export class PrismaUserService {
           throw new AppError(409, 'User with this email already exists');
         }
       }
-      throw new AppError(500, `Failed to create user: ${error}`);
+      throw new AppError(500, `Failed to create user: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
