@@ -60,17 +60,17 @@ const envSchema = z.object({
     
     // Check each secret and provide specific feedback
     if (!data.JWT_SECRET || data.JWT_SECRET.length < 64) {
-      errors.push(`JWT_SECRET length: ${data.JWT_SECRET?.length || 0}/64 required`);
+      errors.push(`JWT_SECRET length: ${data.JWT_SECRET?.length ?? 0}/64 required`);
     }
     if (!data.JWT_REFRESH_SECRET || data.JWT_REFRESH_SECRET.length < 64) {
-      errors.push(`JWT_REFRESH_SECRET length: ${data.JWT_REFRESH_SECRET?.length || 0}/64 required`);
+      errors.push(`JWT_REFRESH_SECRET length: ${data.JWT_REFRESH_SECRET?.length ?? 0}/64 required`);
     }
     if (!data.SESSION_SECRET || data.SESSION_SECRET.length < 64) {
-      errors.push(`SESSION_SECRET length: ${data.SESSION_SECRET?.length || 0}/64 required`);
+      errors.push(`SESSION_SECRET length: ${data.SESSION_SECRET?.length ?? 0}/64 required`);
     }
     
     if (errors.length > 0) {
-      console.error('🔐 Production Secret Length Validation:', errors.join(', '));
+      logger.error('🔐 Production Secret Length Validation:', { errors });
       return false;
     }
   }
@@ -84,12 +84,13 @@ export type Environment = z.infer<typeof envSchema>;
 
 // Debug environment variables in production
 if (process.env.NODE_ENV === 'production') {
-  console.log('🔍 Environment Debug Info:');
-  console.log('NODE_ENV:', process.env.NODE_ENV);
-  console.log('REDIS_URL:', process.env.REDIS_URL ? 'configured' : 'missing');
-  console.log('JWT_SECRET length:', process.env.JWT_SECRET?.length || 0);
-  console.log('JWT_REFRESH_SECRET length:', process.env.JWT_REFRESH_SECRET?.length || 0);
-  console.log('SESSION_SECRET length:', process.env.SESSION_SECRET?.length || 0);
+  logger.info('🔍 Environment Debug Info:', {
+    nodeEnv: process.env.NODE_ENV,
+    redisUrl: process.env.REDIS_URL ? 'configured' : 'missing',
+    jwtSecretLength: process.env.JWT_SECRET?.length ?? 0,
+    jwtRefreshSecretLength: process.env.JWT_REFRESH_SECRET?.length ?? 0,
+    sessionSecretLength: process.env.SESSION_SECRET?.length ?? 0,
+  });
 }
 
 // Validate environment variables
@@ -108,11 +109,11 @@ try {
       errors: error.errors.map(err => ({
         path: err.path.join('.'),
         message: err.message,
-        received: err.code === 'invalid_type' ? typeof (error as any).received : undefined,
+        received: err.code === 'invalid_type' ? typeof err.received : undefined,
       })),
     });
     
-    // Print detailed error for debugging
+    // Print detailed error for debugging (keep console for critical startup errors)
     console.error('\n🚨 ENVIRONMENT VALIDATION FAILED 🚨');
     console.error('The following environment variables are invalid or missing:\n');
     
