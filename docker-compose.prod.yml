@@ -9,7 +9,10 @@ services:
     environment:
       NODE_ENV: production
       LOG_LEVEL: info
-      # All secrets will be injected via environment variables by GitHub Actions
+      # Override development database URL with production URL from secrets
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      # All other secrets will be injected via environment variables by GitHub Actions
     volumes:
       # Remove development volume mounts for production
       - backend_logs:/app/logs

@@ -600,6 +600,78 @@ jobs:
           
           echo "✅ Environment variables configured"
 
+      - name: Create .env file for Docker Compose
+        run: |
+          echo "📝 Creating .env file for Docker Compose..."
+          
+          # Navigate to deployment directory
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
+          # Create .env file with all environment variables
+          cat > .env << EOF
+          # Node environment
+          NODE_ENV=${NODE_ENV}
+          LOG_LEVEL=${LOG_LEVEL}
+          CORS_ORIGINS=${CORS_ORIGINS}
+          
+          # Security secrets
+          JWT_SECRET=${JWT_SECRET}
+          JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+          SESSION_SECRET=${SESSION_SECRET}
+          
+          # Database configuration
+          DATABASE_URL=${DATABASE_URL}
+          REDIS_URL=${REDIS_URL}
+          
+          # URLs
+          FRONTEND_URL=${FRONTEND_URL}
+          BACKEND_URL=${BACKEND_URL}
+          VITE_API_URL=${VITE_API_URL}
+          
+          # OAuth Configuration
+          GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+          GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+          GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL}
+          FACEBOOK_APP_ID=${FACEBOOK_APP_ID}
+          FACEBOOK_APP_SECRET=${FACEBOOK_APP_SECRET}
+          FACEBOOK_CALLBACK_URL=${FACEBOOK_CALLBACK_URL}
+          LINE_CHANNEL_ID=${LINE_CHANNEL_ID}
+          LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET}
+          LINE_CALLBACK_URL=${LINE_CALLBACK_URL}
+          
+          # Azure Translation Service
+          AZURE_TRANSLATION_TEXT_URI=${AZURE_TRANSLATION_TEXT_URI}
+          AZURE_TRANSLATION_KEY_1=${AZURE_TRANSLATION_KEY_1}
+          AZURE_TRANSLATION_KEY_2=${AZURE_TRANSLATION_KEY_2}
+          AZURE_TRANSLATION_REGION=${AZURE_TRANSLATION_REGION}
+          
+          # Admin credentials
+          LOYALTY_USERNAME=${LOYALTY_USERNAME}
+          LOYALTY_PASSWORD=${LOYALTY_PASSWORD}
+          EOF
+          
+          # Verify .env file was created and contains expected variables
+          if [ -f .env ]; then
+            echo "✅ .env file created successfully"
+            echo "📊 Environment variables count: $(grep -c "=" .env)"
+            
+            # Check for critical variables (without exposing values)
+            for var in NODE_ENV JWT_SECRET DATABASE_URL; do
+              if grep -q "^${var}=" .env; then
+                echo "✅ $var configured"
+              else
+                echo "❌ $var missing or empty"
+                exit 1
+              fi
+            done
+          else
+            echo "❌ Failed to create .env file"
+            exit 1
+          fi
+          
+          echo "✅ .env file validation completed"
+
       - name: Stop existing containers with graceful shutdown
         run: |
           echo "🛑 Gracefully stopping existing containers..."
