@@ -308,6 +308,34 @@ services:
         }
       }
     });
+
+    test('should validate E2E tests use environment variables for URLs', async () => {
+      const testFiles = [
+        path.join(projectRoot, 'tests/health.spec.ts'),
+        path.join(projectRoot, 'tests/oauth-validation.spec.ts')
+      ];
+
+      for (const testFile of testFiles) {
+        const fileExists = await fs.access(testFile)
+          .then(() => true)
+          .catch(() => false);
+        
+        if (fileExists) {
+          const fileContent = await fs.readFile(testFile, 'utf-8');
+          
+          // Should use environment variables instead of hardcoded URLs
+          expect(fileContent).toContain('process.env.BACKEND_URL');
+          expect(fileContent).toContain('process.env.FRONTEND_URL');
+          
+          // Should not have hardcoded localhost URLs (except as fallbacks)
+          const hardcodedUrls = fileContent.match(/http:\/\/localhost:\d{4}(?!')/g) || [];
+          const fallbackUrls = fileContent.match(/\|\|\s*'http:\/\/localhost:\d{4}'/g) || [];
+          
+          expect(hardcodedUrls.length).toBeLessThanOrEqual(fallbackUrls.length * 2, 
+            `Test file ${testFile} has hardcoded URLs that should use environment variables`);
+        }
+      }
+    });
   });
 });
 
