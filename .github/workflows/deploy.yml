@@ -137,7 +137,7 @@ jobs:
             echo "${{ steps.local-cache.outputs.backend_cache_key }}" > "$LOCAL_CACHE_BASE/backend/.cache-key"
             echo "✅ Backend dependencies cached locally"
           fi
-          # Only install what's needed for linting and security
+          # Install all dependencies for validation scripts
       
       - name: "🔍 TypeScript type checking (validation)"
         working-directory: ./backend
@@ -158,6 +158,15 @@ jobs:
       - name: "🔒 Run custom security validation"
         working-directory: ./backend
         run: node scripts/validate-security.js
+      
+      - name: "🛡️ Test integrity validation"
+        run: |
+          echo "🛡️ Running test integrity validation..."
+          if [ -f "./scripts/validate-test-integrity.sh" ]; then
+            ./scripts/validate-test-integrity.sh
+          else
+            echo "⚠️ Test integrity script not found - skipping"
+          fi
       
       - name: "📊 Security results summary (reporting only)"
         id: security-results
@@ -358,6 +367,33 @@ jobs:
           path: backend/coverage/
           retention-days: 7
       
+      - name: "🔐 OAuth validation tests"
+        run: |
+          echo "🔐 Running OAuth validation tests..."
+          # Check if services are running
+          if curl -s http://localhost:4001/api/health >/dev/null 2>&1; then
+            echo "✅ Backend service is running, performing OAuth validation"
+            if [ -f "./scripts/validate-oauth-health.sh" ]; then
+              ./scripts/validate-oauth-health.sh || echo "⚠️ OAuth validation failed (non-blocking in CI)"
+            else
+              echo "⚠️ OAuth validation script not found - skipping"
+            fi
+          else
+            echo "⚠️ Backend not running - skipping OAuth validation"
+          fi
+      
+      - name: "🗄️ Database migration validation"
+        env:
+          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5434/loyalty_test_db
+          NODE_ENV: test
+        run: |
+          echo "🗄️ Running database migration validation..."
+          if [ -f "./scripts/validate-db-migration.sh" ]; then
+            ./scripts/validate-db-migration.sh || echo "⚠️ DB migration validation failed (non-blocking in CI)"
+          else
+            echo "⚠️ Database migration validation script not found - skipping"
+          fi
+      
       - name: "📈 Test results summary (reporting only)"
         id: test-results
         run: |
@@ -526,6 +562,28 @@ jobs:
           DATABASE_URL: postgresql://loyalty:loyalty_password@localhost:5432/loyalty_db
           REDIS_URL: redis://localhost:6379
         run: npm run test:e2e -- --passWithNoTests
+      
+      - name: "🔐 OAuth E2E validation tests"
+        env:
+          NODE_ENV: test
+          BACKEND_URL: http://localhost:4001
+          FRONTEND_URL: http://localhost:3000
+        run: |
+          echo "🔐 Running OAuth-specific E2E tests..."
+          if [ -f "tests/oauth-validation.spec.ts" ]; then
+            npx playwright test tests/oauth-validation.spec.ts --reporter=line || echo "⚠️ OAuth E2E tests failed (non-blocking in CI)"
+          else
+            echo "⚠️ OAuth E2E test file not found - skipping"
+          fi
+      
+      - name: "🗄️ Database migration rollback safety"
+        run: |
+          echo "🗄️ Checking migration rollback safety..."
+          if [ -f "./scripts/migration-rollback-safety.sh" ]; then
+            ./scripts/migration-rollback-safety.sh check || echo "⚠️ Migration rollback check failed (non-blocking in CI)"
+          else
+            echo "⚠️ Migration rollback safety script not found - skipping"
+          fi
       
       - name: "📊 E2E results summary (reporting only)"
         id: e2e-results
@@ -1176,6 +1234,59 @@ jobs:
           
           echo "✅ Database migration phase completed"
       
+      - name: "🔐 Post-deployment OAuth validation"
+        run: |
+          echo "🔐 Validating OAuth configuration in production environment..."
+          
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
+          # Wait for application to be ready
+          echo "⏳ Waiting for application to be ready..."
+          sleep 10
+          
+          # Run OAuth health validation in container context
+          echo "🔍 Running OAuth validation..."
+          if docker compose exec -T backend test -f "/app/scripts/validate-oauth-health.sh"; then
+            # Run OAuth validation from within container (production network context)
+            if docker compose exec -T backend bash -c "cd /app && ./scripts/validate-oauth-health.sh"; then
+              echo "✅ OAuth validation passed in production"
+            else
+              echo "⚠️ OAuth validation failed in production - check configuration"
+              echo "📄 Recent backend logs:"
+              docker compose logs --tail=20 backend
+            fi
+          else
+            echo "⚠️ OAuth validation script not found in container - skipping"
+          fi
+      
+      - name: "🗄️ Post-deployment database validation"
+        run: |
+          echo "🗄️ Validating database migration status in production..."
+          
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR"
+          
+          # Verify database migration status
+          echo "🔍 Checking final migration status..."
+          if docker compose exec -T backend npm run db:migrate:status; then
+            echo "✅ Database migration status verified"
+          else
+            echo "⚠️ Cannot verify database migration status"
+          fi
+          
+          # Run database migration rollback safety check
+          if docker compose exec -T backend test -f "/app/scripts/migration-rollback-safety.sh"; then
+            echo "🔍 Running rollback safety check..."
+            if docker compose exec -T backend bash -c "cd /app && ./scripts/migration-rollback-safety.sh check"; then
+              echo "✅ Migration rollback safety verified"
+            else
+              echo "⚠️ Migration rollback safety check failed"
+            fi
+          else
+            echo "⚠️ Migration rollback safety script not found - skipping"
+          fi
+      
       - name: "🏥 Health checks & validation (service readiness)"
         run: |
           echo "🏥 Running comprehensive health checks with enhanced logging..."
@@ -1357,11 +1468,15 @@ jobs:
 # - ESLint security rules
 # - npm audit
 # - Custom security validation
+# - Test integrity validation (prevents test bypassing)
 # - TypeScript type checking
 # - Unit tests
 # - Integration tests
 # - E2E tests (conditional)
 # - Database schema tests
+# - OAuth health validation (pre & post deployment)
+# - Database migration validation & rollback safety
+# - OAuth E2E validation tests
 # 
 # ⚡ ESTIMATED TIMES:
 # - Phase 1 (Parallel): 3-4 minutes

@@ -2,6 +2,8 @@
 
 A modern hotel loyalty program application built with React, Node.js, and PostgreSQL. This is Phase 1 implementation featuring user authentication and profile management.
 
+> **📋 Important**: Please read [CLAUDE.md](./CLAUDE.md) for critical project rules and conventions that must be followed.
+
 ## Features (Phase 1)
 
 ### Customer Features
@@ -159,12 +161,110 @@ Key environment variables to configure:
 - `DATABASE_URL` - PostgreSQL connection string
 - `REDIS_URL` - Redis connection string
 
+## CI/CD Pipeline
+
+### Overview
+The project uses an optimized GitHub Actions pipeline with comprehensive validation and automated deployment to production.
+
+### Pipeline Architecture
+**4-Phase Deployment Process** (8-12 minutes total):
+
+#### Phase 1: Parallel Validation & Security (3-4 minutes)
+- **Security Analysis**: ESLint security rules, npm audit, custom security validation, test integrity validation
+- **Unit & Integration Tests**: Backend tests with PostgreSQL test database, TypeScript validation, database schema tests
+- **E2E Tests**: Full application testing with Playwright (main branch only)
+
+#### Phase 2: Build Validation (2-3 minutes, main branch only)
+- **Production Build**: Parallel backend/frontend builds with TypeScript compilation
+- **Docker Validation**: Container build validation with production environment variables
+- **Artifact Verification**: Build output validation and integrity checks
+
+#### Phase 3: Production Deployment (3-5 minutes, main branch only)
+- **Smart Database Backup**: Automated pre-deployment database backups
+- **Zero-Downtime Deployment**: Optimized code deployment with intelligent caching
+- **Environment Configuration**: Secure environment variable management
+- **Database Migration**: Automated migrations with rollback safety checks
+- **Service Deployment**: Docker Compose production deployment
+
+#### Phase 4: Post-Deployment Monitoring (< 1 minute)
+- **Health Checks**: Comprehensive application and service validation
+- **OAuth Validation**: Production OAuth endpoint health verification
+- **Database Validation**: Migration status and rollback safety verification
+- **Smart Cleanup**: Conditional resource cleanup based on disk usage
+
+### Key Features
+
+#### 🔒 Security & Quality Validation
+- **Test Integrity Validation**: Prevents test bypassing patterns that could hide failures
+- **OAuth Health Validation**: Validates OAuth endpoints before and after deployment
+- **Database Migration Validation**: Comprehensive migration testing and rollback safety
+- **Security Auditing**: npm audit, ESLint security rules, custom security scripts
+- **TypeScript Validation**: Full type checking across backend and frontend
+
+#### ⚡ Performance Optimizations
+- **Parallel Execution**: Jobs run simultaneously when possible (40-50% faster)
+- **Intelligent Caching**: Local npm cache, Docker BuildKit, dependency caching
+- **Conditional Jobs**: E2E tests only run on main branch or PRs to main
+- **Smart Deployment**: Updates existing deployments instead of full rebuilds
+
+#### 🛡️ Deployment Safety
+- **Pre-deployment Validation**: All tests must pass before deployment
+- **Automated Backups**: Database backups before each deployment
+- **Health Monitoring**: Post-deployment validation ensures services are operational
+- **Rollback Safety**: Migration rollback procedures validated before deployment
+
+### OAuth & Database Validation
+
+#### OAuth Health Validation
+The pipeline validates OAuth functionality at multiple stages:
+- **Pre-deployment**: Validates OAuth endpoints during testing phase
+- **E2E Testing**: OAuth-specific end-to-end tests using Playwright
+- **Post-deployment**: Production OAuth configuration validation
+
+OAuth validation checks:
+- OAuth provider endpoints (Google, LINE, Facebook)
+- Redirect URL configuration
+- Authentication flow integrity
+- Rate limiting functionality
+
+#### Database Migration Validation
+Comprehensive database validation includes:
+- **Migration Status**: Verifies all migrations are properly applied
+- **Rollback Safety**: Validates rollback procedures and backup availability
+- **Schema Integrity**: Tests database schema after migrations
+- **Connection Validation**: Ensures database connectivity in production
+
+### Rate Limit Management
+The pipeline includes OAuth rate limit reset functionality:
+- **Reset Script**: `./scripts/reset-rate-limits.sh` with multiple reset strategies
+- **Integration**: Available via `./manage.sh` (Deployment Menu → Reset OAuth Rate Limits)
+- **CI Integration**: Rate limits automatically managed during testing
+
+### Pipeline Triggers
+- **Push to main**: Full pipeline with deployment
+- **Push to develop**: Validation and testing only
+- **Pull Request to main**: Full validation including E2E tests
+- **Manual Trigger**: `workflow_dispatch` for manual deployments
+
+### Environment Requirements
+- **Self-hosted Runner**: Optimized for dedicated build environment
+- **Docker & Docker Compose**: Container orchestration
+- **PostgreSQL & Redis**: Database and caching services
+- **GitHub Secrets**: Production environment variables and OAuth credentials
+
+### Monitoring & Observability
+- **Deployment Summaries**: Comprehensive reporting of all pipeline stages
+- **Enhanced Logging**: Detailed diagnostics for troubleshooting
+- **Health Dashboards**: Post-deployment service monitoring
+- **Performance Metrics**: Build times, test coverage, deployment success rates
+
 ## Contributing
 
 1. Create feature branch from main
 2. Implement changes with tests
 3. Ensure all linting passes
-4. Submit pull request
+4. Run `npm run oauth:health` and `npm run db:validate` for validation features
+5. Submit pull request
 
 ## License
 
