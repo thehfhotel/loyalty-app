@@ -139,7 +139,7 @@ jobs:
           fi
           # Only install what's needed for linting and security
       
-      - name: "🔍 TypeScript type checking"
+      - name: "🔍 TypeScript type checking (validation)"
         working-directory: ./backend
         run: |
           # Generate Prisma client for type checking
@@ -159,7 +159,7 @@ jobs:
         working-directory: ./backend
         run: node scripts/validate-security.js
       
-      - name: "📊 Security results summary"
+      - name: "📊 Security results summary (reporting only)"
         id: security-results
         run: |
           echo "Security analysis completed successfully"
@@ -358,7 +358,7 @@ jobs:
           path: backend/coverage/
           retention-days: 7
       
-      - name: "📈 Test results summary"
+      - name: "📈 Test results summary (reporting only)"
         id: test-results
         run: |
           echo "Unit and integration tests completed"
@@ -527,7 +527,7 @@ jobs:
           REDIS_URL: redis://localhost:6379
         run: npm run test:e2e -- --passWithNoTests
       
-      - name: "📊 E2E results summary"
+      - name: "📊 E2E results summary (reporting only)"
         id: e2e-results
         run: |
           echo "E2E tests completed"
@@ -673,7 +673,7 @@ jobs:
             echo "✅ Dependencies cached locally"
           fi
       
-      - name: "🔧 Generate Prisma client"
+      - name: "🔧 Generate Prisma client (build phase)"
         run: |
           echo "🔧 Generating Prisma client for TypeScript compilation..."
           cd backend && npm run db:generate
@@ -701,7 +701,7 @@ jobs:
             exit 1
           fi
       
-      - name: "✅ Build validation"
+      - name: "✅ Build validation (artifact verification)"
         run: |
           # Verify build outputs
           if [ ! -d "backend/dist" ] || [ ! -d "frontend/dist" ]; then
@@ -736,7 +736,7 @@ jobs:
             --build-arg BUILDKIT_INLINE_CACHE=1 \
             --parallel
       
-      - name: "📊 Build results"
+      - name: "📊 Build results (output summary)"
         id: build-results
         run: |
           echo "Build validation completed successfully"
@@ -744,6 +744,8 @@ jobs:
 
   # =============================================================================
   # PHASE 3: PRODUCTION DEPLOYMENT (only on main, after all tests pass)
+  # Pipeline Order: Pre-validation → Backup → Code Deploy → Dependencies → 
+  # Environment → Service Deploy → Migration → Health Check → Summary
   # =============================================================================
   
   production-deployment:
@@ -755,7 +757,7 @@ jobs:
     timeout-minutes: 15
     
     steps:
-      - name: "📊 Pre-deployment validation"
+      - name: "📊 Pre-deployment validation (quality gates)"
         run: |
           echo "🔍 Pre-deployment checks..."
           echo "Security Analysis: ${{ needs.security-analysis.outputs.security-passed }}"
@@ -781,7 +783,7 @@ jobs:
           
           echo "✅ All pre-deployment checks passed"
       
-      - name: "💾 Smart database backup"
+      - name: "💾 Smart database backup (pre-shutdown)"
         id: backup
         run: |
           echo "💾 Creating smart database backup..."
@@ -934,7 +936,7 @@ jobs:
           
           echo "✅ Environment configured"
       
-      - name: "📝 Create .env file for Docker Compose"
+      - name: "📝 Create .env file (container configuration)"
         run: |
           echo "📝 Creating .env file for Docker Compose..."
           
@@ -1007,7 +1009,7 @@ jobs:
           
           echo "✅ Services deployed"
       
-      - name: "🗃️ Database migration"
+      - name: "🗃️ Database migration (container context)"
         run: |
           echo "🗃️ Running database migrations..."
           
@@ -1015,32 +1017,23 @@ jobs:
           cd "$DEPLOY_DIR"
           
           # Wait for database to be ready
-          echo "Waiting for database..."
+          echo "Waiting for database to be ready..."
           timeout 60s bash -c 'until docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db; do sleep 2; done'
           
           # Wait for backend container to be fully ready
-          echo "Waiting for backend container..."
+          echo "Waiting for backend container to be ready..."
           timeout 60s bash -c 'until docker compose exec -T backend echo "ready" >/dev/null 2>&1; do sleep 2; done'
           
           # Give containers additional time to stabilize
           echo "Allowing containers to stabilize..."
           sleep 10
           
-          # Generate Prisma client from host (more reliable than container exec)
-          cd backend
-          echo "Generating Prisma client..."
-          npm run db:generate
-          
-          # Set environment variables for migration
-          export DATABASE_URL="${DATABASE_URL}"
-          export NODE_ENV="production"
-          
-          # Run migration from host with retry logic
-          echo "Running database migration..."
+          # Run migration from within backend container (correct network context)
+          echo "Running database migration from container..."
           for attempt in 1 2 3; do
             echo "Migration attempt $attempt/3..."
             
-            if npm run db:migrate:deploy; then
+            if docker compose exec -T backend npm run db:migrate:deploy; then
               echo "✅ Database migrations completed successfully"
               break
             else
@@ -1048,13 +1041,13 @@ jobs:
                 echo "❌ Migration failed after 3 attempts"
                 
                 # Check for baseline scenario
-                echo "Checking migration status..."
-                if npm run db:migrate:status 2>&1 | grep -q "migrations have not yet been applied"; then
+                echo "Checking migration status from container..."
+                if docker compose exec -T backend npm run db:migrate:status 2>&1 | grep -q "migrations have not yet been applied"; then
                   echo "Attempting baseline resolution..."
-                  npx prisma migrate resolve --applied 0_init 2>/dev/null || true
+                  docker compose exec -T backend npx prisma migrate resolve --applied 0_init 2>/dev/null || true
                   
                   echo "Retrying migration after baseline..."
-                  if npm run db:migrate:deploy; then
+                  if docker compose exec -T backend npm run db:migrate:deploy; then
                     echo "✅ Database migrations completed after baseline"
                     break
                   fi
@@ -1069,7 +1062,7 @@ jobs:
             fi
           done
       
-      - name: "🏥 Health checks & validation"
+      - name: "🏥 Health checks & validation (service readiness)"
         run: |
           echo "🏥 Running health checks..."
           
@@ -1111,7 +1104,7 @@ jobs:
     timeout-minutes: 5
     
     steps:
-      - name: "📊 Deployment summary"
+      - name: "📊 Deployment summary (reporting only)"
         run: |
           echo "==============================================="
           echo "📊 DEPLOYMENT SUMMARY"
