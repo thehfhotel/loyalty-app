@@ -721,8 +721,37 @@ jobs:
           fi
       
       - name: "🏗️ Docker image build validation"
+        env:
+          # Provide dummy environment variables for build-time validation
+          # Real secrets will be used in production-deployment job
+          NODE_ENV: production
+          LOG_LEVEL: info
+          CORS_ORIGINS: "https://loyalty.saichon.com"
+          JWT_SECRET: "dummy-build-validation-secret-min-32-chars"
+          JWT_REFRESH_SECRET: "dummy-build-validation-refresh-secret-min-32-chars"
+          SESSION_SECRET: "dummy-build-validation-session-secret-min-32-chars"
+          DATABASE_URL: "postgresql://dummy:dummy@dummy:5432/dummy"
+          REDIS_URL: "redis://redis:6379"
+          FRONTEND_URL: "https://loyalty.saichon.com"
+          BACKEND_URL: "https://loyalty.saichon.com/api"
+          VITE_API_URL: "https://loyalty.saichon.com/api"
+          GOOGLE_CLIENT_ID: "dummy-google-client-id"
+          GOOGLE_CLIENT_SECRET: "dummy-google-client-secret"
+          GOOGLE_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/google/callback"
+          FACEBOOK_APP_ID: "dummy-facebook-app-id"
+          FACEBOOK_APP_SECRET: "dummy-facebook-app-secret"
+          FACEBOOK_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/facebook/callback"
+          LINE_CHANNEL_ID: "dummy-line-channel-id"
+          LINE_CHANNEL_SECRET: "dummy-line-channel-secret"
+          LINE_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/line/callback"
+          AZURE_TRANSLATION_TEXT_URI: "https://dummy.cognitiveservices.azure.com"
+          AZURE_TRANSLATION_KEY_1: "dummy-azure-key-1"
+          AZURE_TRANSLATION_KEY_2: "dummy-azure-key-2"
+          AZURE_TRANSLATION_REGION: "southeastasia"
+          LOYALTY_USERNAME: "dummy-loyalty-user"
+          LOYALTY_PASSWORD: "dummy-loyalty-password"
         run: |
-          echo "🐳 Validating Docker builds..."
+          echo "🐳 Validating Docker builds with dummy environment variables..."
           
           # Enable BuildKit
           export DOCKER_BUILDKIT=1
@@ -731,7 +760,7 @@ jobs:
           # Validate Docker Compose configuration
           docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null
           
-          # Build images (without starting services)
+          # Build images (without starting services) - env vars now available
           docker compose -f docker-compose.yml -f docker-compose.prod.yml build \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
             --parallel
