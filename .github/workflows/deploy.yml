@@ -773,6 +773,18 @@ jobs:
           
           echo "✅ E2E Docker Compose configuration validated"
           
+          # Clean up any existing E2E containers first
+          echo "🧹 Cleaning up any existing E2E containers..."
+          docker stop loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
+          docker rm loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
+          
+          # Clean up any existing compose stack if file exists
+          if [ -f "docker-compose.e2e-test.yml" ]; then
+            echo "🧹 Cleaning up existing E2E compose stack..."
+            docker compose -f docker-compose.e2e-test.yml down -v --remove-orphans 2>/dev/null || true
+            rm -f docker-compose.e2e-test.yml
+          fi
+          
           # Start database services first
           echo "🗄️ Starting isolated database services..."
           docker compose -f docker-compose.e2e-test.yml up -d postgres redis

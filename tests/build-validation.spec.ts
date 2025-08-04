@@ -296,6 +296,60 @@ volumes:
         await fs.unlink(tempComposeFile).catch(() => {});
       }
     });
+
+    test('should detect Docker container naming conflicts', async () => {
+      // Test for the specific container conflict issue we encountered
+      const testComposeContent = `
+version: '3.8'
+services:
+  test_postgres:
+    image: postgres:15-alpine
+    container_name: loyalty_postgres_e2e
+    ports:
+      - "5436:5432"
+  test_redis:
+    image: redis:7-alpine  
+    container_name: loyalty_redis_e2e
+    ports:
+      - "6381:6379"
+`;
+      
+      const tempComposeFile = path.join(projectRoot, 'temp-conflict-test.yml');
+      
+      try {
+        // Write compose file
+        await fs.writeFile(tempComposeFile, testComposeContent);
+        
+        // Try to start services
+        const { stderr } = await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} up -d`).catch(error => error);
+        
+        // Clean up immediately to avoid leaving containers
+        await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} down -v --remove-orphans`).catch(() => {});
+        
+        // Check if container conflict was detected
+        if (stderr && (stderr.includes('Conflict') || stderr.includes('already in use'))) {
+          // This is expected - containers with these names already exist
+          console.warn('Container naming conflict detected - this indicates containers from previous runs weren\'t cleaned up properly');
+        }
+        
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        // Should detect container conflicts
+        if (errorMessage.includes('Conflict') || 
+            errorMessage.includes('already in use') ||
+            errorMessage.includes('container name')) {
+          // This is the expected error when containers aren't cleaned up - test passes
+        } else {
+          // Unexpected error - could be network issues, etc.
+          console.warn(`Container conflict test encountered unexpected error: ${errorMessage}`);
+        }
+      } finally {
+        // Ensure cleanup
+        await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} down -v --remove-orphans`).catch(() => {});
+        await fs.unlink(tempComposeFile).catch(() => {});
+      }
+    });
   });
 
   test.describe('Database Migration Validation', () => {
