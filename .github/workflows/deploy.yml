@@ -673,6 +673,12 @@ jobs:
             echo "✅ Dependencies cached locally"
           fi
       
+      - name: "🔧 Generate Prisma client"
+        run: |
+          echo "🔧 Generating Prisma client for TypeScript compilation..."
+          cd backend && npm run db:generate
+          echo "✅ Prisma client generated successfully"
+      
       - name: "🏗️ Build applications (parallel)"
         run: |
           # Backend build
