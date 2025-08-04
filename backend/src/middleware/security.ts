@@ -262,7 +262,10 @@ export const productionSecurity = (req: Request, res: Response, next: NextFuncti
       const visitor = JSON.parse(cfVisitor);
       isCloudflareHttps = visitor.scheme === 'https';
     } catch (error) {
-      logger.warn('Failed to parse cf-visitor header', { cfVisitor, error: error.message });
+      logger.warn('Failed to parse cf-visitor header', { 
+        cfVisitor, 
+        error: error instanceof Error ? error.message : String(error) 
+      });
     }
   }
   
