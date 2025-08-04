@@ -908,7 +908,7 @@ jobs:
           echo "JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}" >> $GITHUB_ENV
           echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> $GITHUB_ENV
           echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
-          echo "REDIS_URL=${{ secrets.REDIS_URL }}" >> $GITHUB_ENV
+          echo "REDIS_URL=${{ secrets.REDIS_URL || 'redis://redis:6379' }}" >> $GITHUB_ENV
           echo "FRONTEND_URL=${{ secrets.FRONTEND_URL }}" >> $GITHUB_ENV
           echo "BACKEND_URL=${{ secrets.BACKEND_URL }}" >> $GITHUB_ENV
           echo "VITE_API_URL=${{ secrets.VITE_API_URL }}" >> $GITHUB_ENV
@@ -935,6 +935,14 @@ jobs:
           echo "LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}" >> $GITHUB_ENV
           
           echo "✅ Environment configured"
+          
+          # Debug environment variable lengths for validation
+          echo "🔍 Environment Variable Debug:"
+          echo "JWT_SECRET length: ${#JWT_SECRET}"
+          echo "JWT_REFRESH_SECRET length: ${#JWT_REFRESH_SECRET}"
+          echo "SESSION_SECRET length: ${#SESSION_SECRET}"
+          echo "REDIS_URL configured: $([ -n "$REDIS_URL" ] && echo 'yes' || echo 'no')"
+          echo "DATABASE_URL configured: $([ -n "$DATABASE_URL" ] && echo 'yes' || echo 'no')"
       
       - name: "📝 Create .env file (container configuration)"
         run: |
@@ -955,7 +963,7 @@ jobs:
           JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
           SESSION_SECRET=${SESSION_SECRET}
           DATABASE_URL=${DATABASE_URL}
-          REDIS_URL=${REDIS_URL}
+          REDIS_URL=${REDIS_URL:-redis://redis:6379}
           FRONTEND_URL=${FRONTEND_URL}
           BACKEND_URL=${BACKEND_URL}
           VITE_API_URL=${VITE_API_URL}
@@ -984,6 +992,19 @@ jobs:
           
           echo "✅ Environment file created successfully"
           echo "📊 Environment variables configured: $(wc -l < .env) lines"
+          
+          # Debug .env file contents (without exposing secrets)
+          echo "🔍 .env file validation:"
+          echo "NODE_ENV: $(grep '^NODE_ENV=' .env | cut -d'=' -f2)"
+          echo "REDIS_URL configured: $(grep -q '^REDIS_URL=' .env && echo 'yes' || echo 'no')"
+          echo "DATABASE_URL configured: $(grep -q '^DATABASE_URL=' .env && echo 'yes' || echo 'no')"
+          echo "JWT_SECRET configured: $(grep -q '^JWT_SECRET=' .env && echo 'yes' || echo 'no')"
+          
+          # Check for empty values
+          empty_vars=$(grep '=$' .env | cut -d'=' -f1 | head -5)
+          if [ -n "$empty_vars" ]; then
+            echo "⚠️ Empty environment variables found: $empty_vars"
+          fi
       
       - name: "🚀 Optimized service deployment"
         run: |

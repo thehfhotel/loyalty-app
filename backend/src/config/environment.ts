@@ -24,8 +24,16 @@ const envSchema = z.object({
   // Database configuration
   DATABASE_URL: z.string().url('DATABASE_URL must be a valid URL'),
   
-  // Redis configuration
-  REDIS_URL: z.string().url('REDIS_URL must be a valid URL').optional(),
+  // Redis configuration (optional, fallback to localhost:6379)
+  REDIS_URL: z.string().optional().refine((val) => {
+    if (!val || val === '') return true; // Allow empty/undefined
+    try {
+      new URL(val);
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'REDIS_URL must be a valid URL when provided'),
   
   // External API keys (validate presence in production)
   GOOGLE_CLIENT_ID: z.string().optional(),
@@ -48,14 +56,21 @@ const envSchema = z.object({
 }).refine((data) => {
   // Production-specific validations
   if (data.NODE_ENV === 'production') {
-    // In production, require strong secrets
+    const errors: string[] = [];
+    
+    // Check each secret and provide specific feedback
     if (!data.JWT_SECRET || data.JWT_SECRET.length < 64) {
-      return false;
+      errors.push(`JWT_SECRET length: ${data.JWT_SECRET?.length || 0}/64 required`);
     }
     if (!data.JWT_REFRESH_SECRET || data.JWT_REFRESH_SECRET.length < 64) {
-      return false;
+      errors.push(`JWT_REFRESH_SECRET length: ${data.JWT_REFRESH_SECRET?.length || 0}/64 required`);
     }
     if (!data.SESSION_SECRET || data.SESSION_SECRET.length < 64) {
+      errors.push(`SESSION_SECRET length: ${data.SESSION_SECRET?.length || 0}/64 required`);
+    }
+    
+    if (errors.length > 0) {
+      console.error('🔐 Production Secret Length Validation:', errors.join(', '));
       return false;
     }
   }
@@ -66,6 +81,16 @@ const envSchema = z.object({
 
 // Environment type inference
 export type Environment = z.infer<typeof envSchema>;
+
+// Debug environment variables in production
+if (process.env.NODE_ENV === 'production') {
+  console.log('🔍 Environment Debug Info:');
+  console.log('NODE_ENV:', process.env.NODE_ENV);
+  console.log('REDIS_URL:', process.env.REDIS_URL ? 'configured' : 'missing');
+  console.log('JWT_SECRET length:', process.env.JWT_SECRET?.length || 0);
+  console.log('JWT_REFRESH_SECRET length:', process.env.JWT_REFRESH_SECRET?.length || 0);
+  console.log('SESSION_SECRET length:', process.env.SESSION_SECRET?.length || 0);
+}
 
 // Validate environment variables
 let env: Environment;
