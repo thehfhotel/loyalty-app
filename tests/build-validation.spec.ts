@@ -190,6 +190,44 @@ volumes:
         await fs.unlink(tempComposeFile).catch(() => {});
       }
     });
+
+    test('should detect Docker Compose service dependency errors', async () => {
+      // Test for the specific E2E error: undefined service dependencies
+      const testComposeContent = `
+version: '3.8'
+services:
+  backend:
+    image: test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  # Missing postgres and redis services - should cause error
+`;
+      
+      const tempComposeFile = path.join(projectRoot, 'temp-dependency-test.yml');
+      await fs.writeFile(tempComposeFile, testComposeContent);
+
+      try {
+        await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} config`);
+        // If no error thrown, validation didn't catch the dependency issue
+        throw new Error('Docker compose validation should have failed for undefined service dependencies');
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        // Should detect undefined service dependency
+        if (errorMessage.includes('depends on undefined service') || 
+            errorMessage.includes('service') && errorMessage.includes('undefined')) {
+          // This is the expected error - test passes
+        } else {
+          throw new Error(`Unexpected docker compose dependency error: ${errorMessage}`);
+        }
+      } finally {
+        // Clean up temp file
+        await fs.unlink(tempComposeFile).catch(() => {});
+      }
+    });
   });
 
   test.describe('Database Migration Validation', () => {

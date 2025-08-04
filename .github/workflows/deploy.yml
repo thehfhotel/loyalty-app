@@ -728,10 +728,9 @@ jobs:
           cd ../frontend && npm run build &
           wait
           
-          # Create complete isolated application stack for E2E
+          # Add application services to existing E2E compose file
           cat >> docker-compose.e2e-test.yml << 'EOF'
           
-          services:
             backend:
               build:
                 context: ./backend
@@ -774,6 +773,17 @@ jobs:
                 backend:
                   condition: service_healthy
           EOF
+          
+          # Validate the generated Docker Compose file
+          echo "🔍 Validating E2E Docker Compose configuration..."
+          if ! docker compose -f docker-compose.e2e-test.yml config >/dev/null 2>&1; then
+            echo "❌ E2E Docker Compose validation failed"
+            echo "Generated compose file contents:"
+            cat docker-compose.e2e-test.yml
+            exit 1
+          fi
+          
+          echo "✅ E2E Docker Compose configuration validated"
           
           # Start the complete isolated application stack
           echo "🚀 Starting isolated application stack for E2E tests..."
