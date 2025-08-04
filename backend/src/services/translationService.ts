@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { getPool } from '../config/database';
+import { logger } from '../utils/logger';
 
 export type SupportedLanguage = 'th' | 'en' | 'zh-CN';
 export type TranslationProvider = 'azure' | 'google' | 'libretranslate';
@@ -92,14 +93,19 @@ class TranslationService {
       
       // Initialize arrays for each target language
       targetLanguages.forEach(lang => {
-        translations[lang] = [];
+        if (typeof lang === 'string' && lang.match(/^[a-zA-Z-]+$/)) {
+          translations[lang] = [];
+        }
       });
 
       // Process Azure response
       response.data.forEach((translationGroup: any) => {
         translationGroup.translations.forEach((translation: any) => {
           const ourLangCode = this.fromAzureLanguageCode(translation.to);
-          if (translations[ourLangCode]) {
+          // Safe property access to prevent injection
+          if (typeof ourLangCode === 'string' && 
+              ourLangCode.match(/^[a-zA-Z-]+$/) && 
+              Object.prototype.hasOwnProperty.call(translations, ourLangCode)) {
             translations[ourLangCode].push(translation.text);
           }
         });
@@ -115,7 +121,10 @@ class TranslationService {
         charactersTranslated
       };
     } catch (error) {
-      console.error('Azure translation error:', error);
+      logger.error('Azure translation error', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       throw new Error(`Azure translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -172,7 +181,12 @@ class TranslationService {
     );
 
     // Start translation process asynchronously
-    this.processSurveyTranslation(job).catch(console.error);
+    this.processSurveyTranslation(job).catch(error => {
+      logger.error('Survey translation processing failed', {
+        jobId: job.id,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
 
     return job;
   }
@@ -208,7 +222,12 @@ class TranslationService {
       [jobId, 'coupon', couponId, sourceLanguage, JSON.stringify(targetLanguages), 'pending', 0, userId, provider]
     );
 
-    this.processCouponTranslation(job).catch(console.error);
+    this.processCouponTranslation(job).catch(error => {
+      logger.error('Coupon translation processing failed', {
+        jobId: job.id,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
 
     return job;
   }
@@ -305,7 +324,12 @@ class TranslationService {
       await this.updateJobStatus(job.id, 'completed', 100, translationResult.charactersTranslated);
 
     } catch (error) {
-      console.error('Survey translation failed:', error);
+      logger.error('Survey translation failed', {
+        surveyId: (job as any).survey_id,
+        jobId: job.id,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       await this.updateJobStatus(job.id, 'failed', 0, 0, error instanceof Error ? error.message : 'Unknown error');
     }
   }
@@ -378,7 +402,12 @@ class TranslationService {
       await this.updateJobStatus(job.id, 'completed', 100, translationResult.charactersTranslated);
 
     } catch (error) {
-      console.error('Coupon translation failed:', error);
+      logger.error('Coupon translation failed', {
+        couponId: (job as any).coupon_id,
+        jobId: job.id,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       await this.updateJobStatus(job.id, 'failed', 0, 0, error instanceof Error ? error.message : 'Unknown error');
     }
   }

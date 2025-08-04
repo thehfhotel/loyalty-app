@@ -147,7 +147,7 @@ export const customSecurityHeaders = (req: Request, res: Response, next: NextFun
 // Input validation middleware to prevent injection attacks
 export const inputSanitization = (req: Request, _res: Response, next: NextFunction) => {
   // Basic input sanitization
-  const sanitizeValue = (value: any): any => {
+  const sanitizeValue = (value: unknown): unknown => {
     if (typeof value === 'string') {
       // Remove potentially dangerous characters
       return value
@@ -159,10 +159,15 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
     if (Array.isArray(value)) {
       return value.map(sanitizeValue);
     }
-    if (value && typeof value === 'object') {
-      const sanitized: any = {};
-      for (const [key, val] of Object.entries(value)) {
-        sanitized[key] = sanitizeValue(val);
+    if (value && typeof value === 'object' && value !== null) {
+      const sanitized: Record<string, unknown> = {};
+      // Use known safe method for object iteration to avoid injection
+      const entries = Object.entries(value as Record<string, unknown>);
+      for (const [key, val] of entries) {
+        // Validate key is safe before using as property accessor
+        if (typeof key === 'string' && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key)) {
+          sanitized[key] = sanitizeValue(val);
+        }
       }
       return sanitized;
     }
@@ -171,12 +176,12 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
   
   // Sanitize request body
   if (req.body) {
-    req.body = sanitizeValue(req.body);
+    req.body = sanitizeValue(req.body) as any;
   }
   
   // Sanitize query parameters
   if (req.query) {
-    req.query = sanitizeValue(req.query);
+    req.query = sanitizeValue(req.query) as any;
   }
   
   next();

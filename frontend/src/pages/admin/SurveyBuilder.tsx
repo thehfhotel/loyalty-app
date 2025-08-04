@@ -590,6 +590,7 @@ const SurveyBuilder: React.FC = () => {
                   <QuestionEditor
                     key={question.id}
                     question={question}
+                    questionNumber={index + 1}
                     index={index}
                     onUpdate={(updates) => updateQuestion(question.id, updates)}
                     onRemove={() => removeQuestion(question.id)}

@@ -4,19 +4,14 @@ import { Coupon, CreateCouponRequest, CouponType, CouponStatus } from '../../typ
 import { SupportedLanguage } from '../../types/multilingual';
 import { couponService } from '../../services/couponService';
 import { translationService } from '../../services/translationService';
-import { loyaltyService } from '../../services/loyaltyService';
+import { loyaltyService, AdminUserLoyalty } from '../../services/loyaltyService';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageTabs from '../../components/translation/LanguageTabs';
 import TranslationButton from '../../components/translation/TranslationButton';
 import CouponAssignmentsModal from '../../components/admin/CouponAssignmentsModal';
 import toast from 'react-hot-toast';
 
-interface User {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-}
+// Use AdminUserLoyalty type from loyaltyService instead of local interface
 
 const CouponManagementMultilingual: React.FC = () => {
   const { t } = useTranslation();
@@ -29,7 +24,7 @@ const CouponManagementMultilingual: React.FC = () => {
   const [showAssignmentsModal, setShowAssignmentsModal] = useState(false);
   const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<AdminUserLoyalty[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -116,7 +111,7 @@ const CouponManagementMultilingual: React.FC = () => {
       
       for (const language of languages) {
         try {
-          const translatedCoupon = await couponService.getCouponWithTranslations(couponId, language);
+          const translatedCoupon = await couponService.getCouponWithTranslations(couponId);
           if (translatedCoupon) {
             translations[language] = translatedCoupon;
           }
@@ -261,7 +256,7 @@ const CouponManagementMultilingual: React.FC = () => {
       const couponData: CreateCouponRequest = {
         ...newCoupon,
         originalLanguage: currentLanguage,
-        autoTranslate: false
+        // Note: autoTranslate handled separately if needed
       };
 
       await couponService.createCoupon(couponData);
@@ -474,7 +469,7 @@ const CouponManagementMultilingual: React.FC = () => {
                     </button>
                     {coupon.id && (
                       <button
-                        onClick={() => handleTranslateCoupon(coupon.id, ['en', 'zh-CN'].filter(lang => !(coupon.availableLanguages || []).includes(lang as SupportedLanguage)))}
+                        onClick={() => handleTranslateCoupon(coupon.id, (['en', 'zh-CN'] as SupportedLanguage[]).filter(lang => !(coupon.availableLanguages || []).includes(lang)))}
                         disabled={translating}
                         className="text-green-600 hover:text-green-900 disabled:opacity-50"
                       >

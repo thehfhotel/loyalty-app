@@ -57,7 +57,7 @@ export function getPool(): Pool {
   return pool;
 }
 
-export async function query<T>(text: string, params?: any[]): Promise<T[]> {
+export async function query<T>(text: string, params?: unknown[]): Promise<T[]> {
   const start = Date.now();
   try {
     const result = await pool.query(text, params);
@@ -70,7 +70,7 @@ export async function query<T>(text: string, params?: any[]): Promise<T[]> {
   }
 }
 
-export async function queryWithMeta<T>(text: string, params?: any[]): Promise<{ rows: T[]; rowCount: number }> {
+export async function queryWithMeta<T>(text: string, params?: unknown[]): Promise<{ rows: T[]; rowCount: number }> {
   const start = Date.now();
   try {
     const result = await pool.query(text, params);

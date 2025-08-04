@@ -34,7 +34,7 @@ export const uploadAvatar = multer({
 }).single('avatar');
 
 // Error handler for multer
-export const handleMulterError = (error: any) => {
+export const handleMulterError = (error: unknown) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
       const maxSizeMB = Math.round(storageConfig.maxFileSize / (1024 * 1024));

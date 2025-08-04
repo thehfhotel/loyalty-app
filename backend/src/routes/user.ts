@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { authenticate } from '../middleware/auth';
 import { UserService } from '../services/userService';
 import { validateRequest } from '../middleware/validateRequest';
@@ -6,11 +6,14 @@ import { updateProfileSchema } from '../types/user';
 import { uploadAvatar, handleMulterError } from '../config/multer';
 import { ImageProcessor } from '../utils/imageProcessor';
 import { AppError } from '../middleware/errorHandler';
+import { logger } from '../utils/logger';
 
 // Middleware to check if user is admin
-const requireAdmin = (req: any, res: any, next: any) => {
-  if (!req.user || !['admin', 'super_admin'].includes(req.user.role)) {
-    return res.status(403).json({ error: 'Admin access required' });
+const requireAdmin = (req: Request, res: Response, next: NextFunction): void => {
+  const authReq = req as any; // Type assertion for user property
+  if (!authReq.user || !['admin', 'super_admin'].includes(authReq.user.role)) {
+    res.status(403).json({ error: 'Admin access required' });
+    return;
   }
   next();
 };
@@ -62,13 +65,20 @@ router.post('/avatar', uploadAvatar, async (req, res, next) => {
       throw new AppError(400, 'No file uploaded');
     }
 
-    console.log(`🔄 Processing avatar upload for user ${req.user.id} (${req.user.email})`);
-    console.log(`   File: ${req.file.originalname}, Size: ${req.file.size} bytes`);
+    logger.info('Processing avatar upload', {
+      userId: req.user.id,
+      userEmail: req.user.email,
+      filename: req.file.originalname,
+      fileSize: req.file.size
+    });
 
     try {
       // Get current avatar URL before update (for logging)
       const currentProfile = await userService.getProfile(req.user.id);
-      console.log(`   Current avatar: ${currentProfile?.avatarUrl ?? 'None'}`);
+      logger.debug('Current avatar status', {
+        userId: req.user.id,
+        currentAvatar: currentProfile?.avatarUrl ?? 'None'
+      });
 
       // Process and save new avatar (automatically deletes old one)
       const avatarUrl = await ImageProcessor.processAvatar(
@@ -77,7 +87,10 @@ router.post('/avatar', uploadAvatar, async (req, res, next) => {
         req.user.id
       );
 
-      console.log(`   New local avatar URL: ${avatarUrl}`);
+      logger.debug('Avatar processed', {
+        userId: req.user.id,
+        newAvatarUrl: avatarUrl
+      });
 
       // Update user profile with new avatar URL
       await userService.updateAvatar(req.user.id, avatarUrl);
@@ -85,7 +98,10 @@ router.post('/avatar', uploadAvatar, async (req, res, next) => {
       // Get updated profile
       const updatedProfile = await userService.getProfile(req.user.id);
 
-      console.log(`✅ Avatar upload completed. Final avatar URL: ${updatedProfile?.avatarUrl}`);
+      logger.info('Avatar upload completed', {
+        userId: req.user.id,
+        finalAvatarUrl: updatedProfile?.avatarUrl
+      });
 
       return res.json({
         success: true,
@@ -95,7 +111,11 @@ router.post('/avatar', uploadAvatar, async (req, res, next) => {
         }
       });
     } catch (error) {
-      console.error(`❌ Avatar upload failed for user ${req.user.id}:`, error);
+      logger.error('Avatar upload failed', {
+        userId: req.user.id,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       handleMulterError(error);
     }
   } catch (error) {
@@ -116,12 +136,17 @@ router.put('/avatar/emoji', async (req, res, next) => {
       return res.status(400).json({ error: 'Emoji is required' });
     }
 
-    console.log(`🔄 Updating emoji avatar for user ${req.user.id} to: ${emoji}`);
+    logger.info('Updating emoji avatar', {
+      userId: req.user.id,
+      emoji
+    });
 
     // Update emoji avatar
     const updatedProfile = await userService.updateEmojiAvatar(req.user.id, emoji);
 
-    console.log(`✅ Emoji avatar updated successfully for user ${req.user.id}`);
+    logger.info('Emoji avatar updated successfully', {
+      userId: req.user.id
+    });
 
     return res.json({
       success: true,
@@ -148,12 +173,17 @@ router.put('/email', async (req, res, next) => {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    console.log(`🔄 Updating email for user ${req.user.id} to: ${email}`);
+    logger.info('Updating user email', {
+      userId: req.user.id,
+      newEmail: email
+    });
 
     // Update user email
     await userService.updateUserEmail(req.user.id, email);
 
-    console.log(`✅ Email updated successfully for user ${req.user.id}`);
+    logger.info('Email updated successfully', {
+      userId: req.user.id
+    });
 
     return res.json({
       success: true,

@@ -80,13 +80,13 @@ const SurveyBuilderMultilingual: React.FC = () => {
           questions: { [originalLang]: survey.questions }
         });
         
-        setAvailableLanguages(survey.available_languages || [originalLang]);
-        setCurrentLanguage(originalLang);
+        setAvailableLanguages((survey.available_languages as SupportedLanguage[]) || [originalLang]);
+        setCurrentLanguage(originalLang as SupportedLanguage);
         setAccessType(survey.access_type);
         setStatus(survey.status);
         
         // Load translations if available
-        await loadTranslations(id, survey.available_languages || [originalLang]);
+        await loadTranslations(id, (survey.available_languages as SupportedLanguage[]) || [originalLang]);
       }
     } catch (error) {
       console.error('Failed to load survey:', error);
@@ -307,7 +307,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
         access_type: accessType,
         status,
         original_language: currentLanguage,
-        autoTranslate: false
+        // Note: autoTranslate handled separately if needed
       };
 
       let savedSurvey: Survey;

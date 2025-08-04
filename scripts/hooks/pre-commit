@@ -1,0 +1,76 @@
+#!/bin/bash
+
+# Loyalty App Pre-Commit Hook
+# Quick checks before committing to catch issues early
+
+set -e
+
+echo "🔍 Pre-Commit Quality Check..."
+
+# Color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+print_status() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Check if we're in the project root
+if [ ! -f "package.json" ] || [ ! -d "backend" ] || [ ! -d "frontend" ]; then
+    print_error "Must be run from project root directory"
+    exit 1
+fi
+
+# Quick TypeScript check
+print_status "Quick TypeScript check..."
+if cd backend && npm run typecheck && cd ../frontend && npm run typecheck && cd ..; then
+    print_success "TypeScript check passed ✅"
+else
+    print_error "TypeScript errors found - fix before committing"
+    exit 1
+fi
+
+# Quick lint check on staged files
+print_status "Checking staged files..."
+if git diff --cached --name-only | grep -E '\.(ts|tsx|js|jsx)$' > /dev/null; then
+    print_status "Linting staged files..."
+    
+    # Backend lint
+    if git diff --cached --name-only | grep '^backend/' | grep -E '\.(ts|js)$' > /dev/null; then
+        if cd backend && npm run lint; then
+            print_success "Backend lint passed ✅"
+        else
+            print_error "Backend lint failed - fix before committing"
+            exit 1
+        fi
+        cd ..
+    fi
+    
+    # Frontend lint
+    if git diff --cached --name-only | grep '^frontend/' | grep -E '\.(ts|tsx)$' > /dev/null; then
+        if cd frontend && npm run lint; then
+            print_success "Frontend lint passed ✅"
+        else
+            print_error "Frontend lint failed - fix before committing"
+            exit 1
+        fi
+        cd ..
+    fi
+else
+    print_status "No TypeScript/JavaScript files to lint"
+fi
+
+print_success "✅ Pre-commit checks passed!"
+echo "💡 Remember: Full quality gate will run on pre-push"
+
+exit 0
