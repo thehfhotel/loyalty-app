@@ -1063,8 +1063,7 @@ jobs:
           # Run migration from within backend container (correct network context)
           echo "🗃️ Running database migration from container..."
           for attempt in 1 2 3; do
-            echo "
-🔄 Migration attempt $attempt/3..."
+            echo "\n🔄 Migration attempt $attempt/3..."
             
             # First check migration status
             echo "🔍 Checking current migration status:"

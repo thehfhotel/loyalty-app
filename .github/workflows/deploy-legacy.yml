@@ -421,7 +421,11 @@ jobs:
                 # Update local cache for next run
                 rm -rf "$LOCAL_CACHE_BASE/$service/node_modules"
                 cp -r node_modules "$LOCAL_CACHE_BASE/$service/"
-                echo "${{ steps.local-cache.outputs.${service}_cache_key }}" > "$LOCAL_CACHE_BASE/$service/.cache-key"
+                if [ "$service" = "backend" ]; then
+                  echo "${{ steps.local-cache.outputs.backend_cache_key }}" > "$LOCAL_CACHE_BASE/$service/.cache-key"
+                else
+                  echo "${{ steps.local-cache.outputs.frontend_cache_key }}" > "$LOCAL_CACHE_BASE/$service/.cache-key"
+                fi
                 return 0
               fi
             fi
@@ -447,7 +451,11 @@ jobs:
             rm -rf "$LOCAL_CACHE_BASE/$service/node_modules"
             mkdir -p "$LOCAL_CACHE_BASE/$service"
             cp -r node_modules "$LOCAL_CACHE_BASE/$service/"
-            echo "${{ steps.local-cache.outputs.${service}_cache_key }}" > "$LOCAL_CACHE_BASE/$service/.cache-key"
+            if [ "$service" = "backend" ]; then
+              echo "${{ steps.local-cache.outputs.backend_cache_key }}" > "$LOCAL_CACHE_BASE/$service/.cache-key"
+            else
+              echo "${{ steps.local-cache.outputs.frontend_cache_key }}" > "$LOCAL_CACHE_BASE/$service/.cache-key"
+            fi
             
             echo "✅ $service dependencies installed and cached locally"
           }
