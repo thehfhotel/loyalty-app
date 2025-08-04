@@ -139,8 +139,9 @@ function validateESLintSecurity() {
   const eslintContent = validateFile(eslintPath, 'ESLint configuration file');
   
   if (eslintContent) {
-    // Check for security plugin
-    if (eslintContent.includes('plugin:security/recommended')) {
+    // Check for security plugin (multiple configuration approaches)
+    if (eslintContent.includes('plugin:security/recommended') || 
+        (eslintContent.includes("'security'") && eslintContent.includes('plugins:'))) {
       log('info', 'ESLint security plugin configured');
     } else {
       log('error', 'ESLint security plugin not configured');
