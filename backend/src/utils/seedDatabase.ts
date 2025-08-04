@@ -5,8 +5,8 @@ export interface SeedSurvey {
   id: string;
   title: string;
   description: string;
-  questions: any[];
-  target_segment: any;
+  questions: Array<Record<string, unknown>>;
+  target_segment: Record<string, string | number | boolean | null> | null;
   access_type: 'public' | 'invite_only';
   status: 'draft' | 'active' | 'paused' | 'completed' | 'archived';
 }

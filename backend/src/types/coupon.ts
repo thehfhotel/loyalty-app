@@ -23,7 +23,7 @@ export interface Coupon {
   
   // Targeting
   tierRestrictions: string[];
-  customerSegment: Record<string, any>;
+  customerSegment: Record<string, unknown>;
   
   // Metadata
   status: CouponStatus;
@@ -45,7 +45,7 @@ export interface UserCoupon {
   usedAt?: Date;
   usedByAdmin?: string;
   redemptionLocation?: string;
-  redemptionDetails: Record<string, any>;
+  redemptionDetails: Record<string, unknown>;
   
   // Assignment metadata
   assignedBy?: string;
@@ -73,7 +73,7 @@ export interface CouponRedemption {
   location?: string;
   
   // Metadata
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   
   createdAt: Date;
 }
@@ -142,7 +142,7 @@ export interface CreateCouponRequest {
   usageLimit?: number;
   usageLimitPerUser?: number;
   tierRestrictions?: string[];
-  customerSegment?: Record<string, any>;
+  customerSegment?: Record<string, unknown>;
 }
 
 export interface UpdateCouponRequest extends Partial<CreateCouponRequest> {
@@ -161,7 +161,7 @@ export interface RedeemCouponRequest {
   originalAmount: number;
   transactionReference?: string;
   location?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface RedeemCouponResponse {

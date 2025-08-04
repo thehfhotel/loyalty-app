@@ -7,7 +7,7 @@ export const updateProfileSchema = z.object({
   dateOfBirth: z.string().refine((date) => !isNaN(Date.parse(date)), {
     message: "Invalid date format"
   }).optional(),
-  preferences: z.record(z.any()).optional(),
+  preferences: z.record(z.unknown()).optional(),
 });
 
 export interface ProfileUpdate {
@@ -15,7 +15,7 @@ export interface ProfileUpdate {
   lastName?: string;
   phone?: string;
   dateOfBirth?: string;
-  preferences?: Record<string, any>;
+  preferences?: Record<string, unknown>;
 }
 
 export interface UserMembershipInfo {

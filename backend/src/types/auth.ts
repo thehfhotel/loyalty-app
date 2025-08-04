@@ -47,7 +47,7 @@ export interface UserProfile {
   lastName: string;
   phone?: string;
   dateOfBirth?: Date;
-  preferences: Record<string, any>;
+  preferences: Record<string, unknown>;
   avatarUrl?: string;
   membershipId?: string;
   createdAt: Date;

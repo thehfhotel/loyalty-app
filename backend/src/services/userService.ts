@@ -3,6 +3,7 @@ import { AppError } from '../middleware/errorHandler';
 import { UserProfile } from '../types/auth';
 import { ProfileUpdate } from '../types/user';
 import { validateEmojiAvatar, generateEmojiAvatarUrl } from '../utils/emojiUtils';
+import { logger } from '../utils/logger';
 
 interface UserWithProfile {
   userId: string;
@@ -49,7 +50,7 @@ export class UserService {
     data: ProfileUpdate
   ): Promise<UserProfile> {
     const updateFields: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
     let paramCount = 1;
 
     if (data.firstName !== undefined) {
@@ -115,7 +116,7 @@ export class UserService {
     }
     
     // Log successful avatar update
-    console.log(`✅ Avatar updated for user ${userId}: ${avatarUrl} (${result.rowCount} rows affected)`);
+    logger.info(`Avatar updated for user ${userId}`, { avatarUrl, rowsAffected: result.rowCount });
   }
 
   async updateEmojiAvatar(userId: string, emoji: string): Promise<UserProfile> {
@@ -163,7 +164,7 @@ export class UserService {
       throw new AppError(404, 'User not found');
     }
     
-    console.log(`✅ Email updated for user ${userId}: ${email} (${result.rowCount} rows affected)`);
+    logger.info(`Email updated for user ${userId}`, { email, rowsAffected: result.rowCount });
   }
 
   // Admin-only methods
