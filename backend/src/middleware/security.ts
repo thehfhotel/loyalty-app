@@ -253,7 +253,7 @@ export const productionSecurity = (req: Request, res: Response, next: NextFuncti
   
   // Require HTTPS in production - Cloudflare tunnel compatible
   const forwardedProto = req.get('x-forwarded-proto') || req.get('X-Forwarded-Proto');
-  const isHttps = req.secure || forwardedProto === 'https' || req.connection.encrypted;
+  const isHttps = req.secure || forwardedProto === 'https';
   
   if (!isHttps) {
     logger.warn('HTTP request detected in production', {
