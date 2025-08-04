@@ -233,8 +233,8 @@ class TranslationService {
   getDefaultLanguage(): SupportedLanguage {
     const browserLang = navigator.language.toLowerCase();
     
-    if (browserLang.startsWith('th')) return 'th';
-    if (browserLang.startsWith('zh')) return 'zh-CN';
+    if (browserLang.startsWith('th')) {return 'th';}
+    if (browserLang.startsWith('zh')) {return 'zh-CN';}
     return 'en'; // Default fallback
   }
 
@@ -259,15 +259,15 @@ class TranslationService {
   extractSurveyTexts(survey: any): string[] {
     const texts: string[] = [];
     
-    if (survey.title) texts.push(survey.title);
-    if (survey.description) texts.push(survey.description);
+    if (survey.title) {texts.push(survey.title);}
+    if (survey.description) {texts.push(survey.description);}
     
     survey.questions?.forEach((question: any) => {
-      if (question.text) texts.push(question.text);
-      if (question.description) texts.push(question.description);
+      if (question.text) {texts.push(question.text);}
+      if (question.description) {texts.push(question.description);}
       
       question.options?.forEach((option: any) => {
-        if (option.text) texts.push(option.text);
+        if (option.text) {texts.push(option.text);}
       });
     });
     
@@ -280,9 +280,9 @@ class TranslationService {
   extractCouponTexts(coupon: any): string[] {
     const texts: string[] = [];
     
-    if (coupon.name) texts.push(coupon.name);
-    if (coupon.description) texts.push(coupon.description);
-    if (coupon.termsAndConditions) texts.push(coupon.termsAndConditions);
+    if (coupon.name) {texts.push(coupon.name);}
+    if (coupon.description) {texts.push(coupon.description);}
+    if (coupon.termsAndConditions) {texts.push(coupon.termsAndConditions);}
     
     return texts.filter(text => this.needsTranslation(text));
   }

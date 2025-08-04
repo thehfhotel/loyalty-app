@@ -142,7 +142,7 @@ const TakeSurvey: React.FC = () => {
   };
 
   const saveProgress = async (isCompletingNow = false) => {
-    if (!survey || !id) return;
+    if (!survey || !id) {return;}
 
     try {
       setSaving(true);
@@ -186,10 +186,10 @@ const TakeSurvey: React.FC = () => {
 
   const validateCurrentQuestion = (): boolean => {
     const displayContent = getDisplayContent();
-    if (!displayContent || currentQuestion >= (displayContent.questions?.length || 0)) return true;
+    if (!displayContent || currentQuestion >= (displayContent.questions?.length || 0)) {return true;}
 
     const question = displayContent.questions?.[currentQuestion];
-    if (!question) return true;
+    if (!question) {return true;}
     
     const answer = answers[question.id];
     
@@ -206,7 +206,7 @@ const TakeSurvey: React.FC = () => {
   };
 
   const goToNext = () => {
-    if (!validateCurrentQuestion()) return;
+    if (!validateCurrentQuestion()) {return;}
 
     const displayContent = getDisplayContent();
     if (displayContent && currentQuestion < (displayContent.questions?.length || 0) - 1) {
@@ -240,7 +240,7 @@ const TakeSurvey: React.FC = () => {
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-4xl mx-auto p-4">
           <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
             <span className="ml-3 text-gray-600">{t('surveys.loading')}</span>
           </div>
         </div>
@@ -333,7 +333,7 @@ const TakeSurvey: React.FC = () => {
               progress={progress}
             />
 
-            {displayContent?.questions && displayContent.questions[currentQuestion] && (
+            {displayContent?.questions?.[currentQuestion] && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
                 <QuestionRenderer
                   question={displayContent.questions[currentQuestion]}

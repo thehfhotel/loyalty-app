@@ -75,7 +75,7 @@ const AssignCouponModal: React.FC<AssignCouponModalProps> = ({
     setAssignedReason('Survey completion reward');
   };
 
-  if (!isOpen) return null;
+  if (!isOpen) {return null;}
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -231,7 +231,7 @@ const EditAssignmentModal: React.FC<EditAssignmentModalProps> = ({
     });
   };
 
-  if (!isOpen || !assignment) return null;
+  if (!isOpen || !assignment) {return null;}
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -386,7 +386,7 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
   };
 
   const handleUpdateAssignment = async (data: UpdateSurveyCouponAssignmentRequest) => {
-    if (!editingAssignment) return;
+    if (!editingAssignment) {return;}
 
     try {
       await surveyService.updateSurveyCouponAssignment(
@@ -405,7 +405,7 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
   };
 
   const handleRemoveAssignment = async (assignment: SurveyCouponDetails) => {
-    if (!confirm(t('surveys.admin.couponAssignment.confirmRemove'))) return;
+    if (!confirm(t('surveys.admin.couponAssignment.confirmRemove'))) {return;}
 
     try {
       await surveyService.removeCouponFromSurvey(assignment.survey_id, assignment.coupon_id);
@@ -426,11 +426,11 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
     return (
       <div className="bg-white rounded-lg shadow p-6">
         <div className="animate-pulse">
-          <div className="h-6 bg-gray-200 rounded w-1/4 mb-4"></div>
+          <div className="h-6 bg-gray-200 rounded w-1/4 mb-4" />
           <div className="space-y-3">
-            <div className="h-4 bg-gray-200 rounded"></div>
-            <div className="h-4 bg-gray-200 rounded w-5/6"></div>
-            <div className="h-4 bg-gray-200 rounded w-4/6"></div>
+            <div className="h-4 bg-gray-200 rounded" />
+            <div className="h-4 bg-gray-200 rounded w-5/6" />
+            <div className="h-4 bg-gray-200 rounded w-4/6" />
           </div>
         </div>
       </div>
@@ -486,7 +486,8 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
                         assignment.is_active
                           ? 'bg-green-100 text-green-800'
                           : 'bg-gray-100 text-gray-800'
-                      }`}>
+                      }`}
+                      >
                         {assignment.is_active ? t('common.active') : t('common.inactive')}
                       </span>
                     </div>

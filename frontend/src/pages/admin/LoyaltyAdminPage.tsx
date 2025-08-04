@@ -114,7 +114,7 @@ export default function LoyaltyAdminPage() {
 
   const handlePointsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pointsModal.user || !pointsForm.points) return;
+    if (!pointsModal.user || !pointsForm.points) {return;}
 
     try {
       setIsLoadingAction(true);
@@ -219,7 +219,7 @@ export default function LoyaltyAdminPage() {
 
   const handleSpendingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!spendingForm.selectedUser || !spendingForm.spendingAmount || !spendingForm.checkinId) return;
+    if (!spendingForm.selectedUser || !spendingForm.spendingAmount || !spendingForm.checkinId) {return;}
 
     try {
       setIsLoadingAction(true);
@@ -413,7 +413,8 @@ export default function LoyaltyAdminPage() {
                                     user.oauth_provider === 'google' ? 'bg-red-100 text-red-800' :
                                     user.oauth_provider === 'facebook' ? 'bg-blue-100 text-blue-800' :
                                     'bg-gray-100 text-gray-800'
-                                  }`}>
+                                  }`}
+                                  >
                                     via {user.oauth_provider.toUpperCase()}
                                   </span>
                                 </div>
@@ -527,7 +528,8 @@ export default function LoyaltyAdminPage() {
                           selectedUser.oauth_provider === 'google' ? 'bg-red-100 text-red-800' :
                           selectedUser.oauth_provider === 'facebook' ? 'bg-blue-100 text-blue-800' :
                           'bg-gray-100 text-gray-800'
-                        }`}>
+                        }`}
+                        >
                           via {selectedUser.oauth_provider.toUpperCase()}
                         </span>
                       </div>

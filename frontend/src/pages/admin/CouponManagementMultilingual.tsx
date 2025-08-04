@@ -356,7 +356,7 @@ const CouponManagementMultilingual: React.FC = () => {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto" />
           <p className="mt-4 text-gray-600">{t('common.loading')}</p>
         </div>
       </div>
@@ -444,7 +444,8 @@ const CouponManagementMultilingual: React.FC = () => {
                       coupon.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
                       coupon.status === 'paused' ? 'bg-gray-100 text-gray-800' :
                       'bg-red-100 text-red-800'
-                    }`}>
+                    }`}
+                    >
                       {t(`coupons.statuses.${coupon.status}`)}
                     </span>
                   </td>

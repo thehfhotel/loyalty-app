@@ -193,25 +193,25 @@ const SurveyInvitations: React.FC = () => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+        return (<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
           <FiClock className="mr-1 h-3 w-3" /> Pending
-        </span>;
+                </span>);
       case 'sent':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+        return (<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
           <FiMail className="mr-1 h-3 w-3" /> Sent
-        </span>;
+                </span>);
       case 'viewed':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+        return (<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
           <FiAlertCircle className="mr-1 h-3 w-3" /> Viewed
-        </span>;
+                </span>);
       case 'started':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+        return (<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
           <FiClock className="mr-1 h-3 w-3" /> In Progress
-        </span>;
+                </span>);
       case 'completed':
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+        return (<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
           <FiCheckCircle className="mr-1 h-3 w-3" /> Completed
-        </span>;
+                </span>);
       default:
         return null;
     }
@@ -222,7 +222,7 @@ const SurveyInvitations: React.FC = () => {
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-7xl mx-auto p-4">
           <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
             <span className="ml-3 text-gray-600">Loading invitations...</span>
           </div>
         </div>
@@ -543,7 +543,7 @@ const SurveyInvitations: React.FC = () => {
             <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-md">
               {loadingUsers ? (
                 <div className="flex justify-center items-center p-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
                   <span className="ml-3 text-gray-600">Loading users...</span>
                 </div>
               ) : users.length > 0 ? (

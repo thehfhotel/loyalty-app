@@ -9,7 +9,7 @@ export default function DevTools() {
 
   useEffect(() => {
     // Only show in development mode
-    if (!import.meta.env?.DEV) return;
+    if (!import.meta.env?.DEV) {return;}
 
     // Check if React DevTools is installed
     const hasReactDevTools = !!(window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;

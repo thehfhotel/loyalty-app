@@ -71,7 +71,8 @@ const SurveyList: React.FC = () => {
                   survey.access_type === 'public' 
                     ? 'bg-green-100 text-green-800' 
                     : 'bg-blue-100 text-blue-800'
-                }`}>
+                }`}
+                >
                   {survey.access_type === 'public' ? (
                     <>
                       <FiUsers className="mr-1 h-3 w-3" />
@@ -129,7 +130,7 @@ const SurveyList: React.FC = () => {
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-4xl mx-auto p-4">
           <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
             <span className="ml-3 text-gray-600">{t('surveys.loading')}</span>
           </div>
         </div>

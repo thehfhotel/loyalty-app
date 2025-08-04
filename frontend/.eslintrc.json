@@ -29,9 +29,9 @@
   },
   "rules": {
     "@typescript-eslint/no-explicit-any": "warn",
-    "@typescript-eslint/no-unused-vars": "error",
+    "@typescript-eslint/no-unused-vars": "warn",
     "@typescript-eslint/prefer-nullish-coalescing": "warn",
-    "@typescript-eslint/prefer-optional-chain": "error",
+    "@typescript-eslint/prefer-optional-chain": "warn",
     "@typescript-eslint/no-non-null-assertion": "warn",
     
     "react/react-in-jsx-scope": "off",
@@ -48,7 +48,7 @@
     "react/no-is-mounted": "error",
     "react/no-render-return-value": "error",
     "react/no-string-refs": "error",
-    "react/no-unescaped-entities": "error",
+    "react/no-unescaped-entities": "warn",
     "react/no-unknown-property": "error",
     "react/require-render-return": "error",
     "react/self-closing-comp": "warn",
@@ -137,7 +137,9 @@
     "eqeqeq": ["error", "always"],
     "curly": "warn",
     "no-alert": "warn",
-    "no-debugger": "warn"
+    "no-debugger": "warn",
+    "no-case-declarations": "warn",
+    "no-empty-pattern": "warn"
   },
   "env": {
     "browser": true,

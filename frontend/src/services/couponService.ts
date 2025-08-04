@@ -226,12 +226,12 @@ export class CouponService {
   }
 
   formatMinimumSpend(coupon: Coupon | UserActiveCoupon): string | null {
-    if (!coupon.minimumSpend) return null;
+    if (!coupon.minimumSpend) {return null;}
     return `Min. spend ฿${coupon.minimumSpend}`;
   }
 
   formatMaximumDiscount(coupon: Coupon | UserActiveCoupon): string | null {
-    if (!coupon.maximumDiscount) return null;
+    if (!coupon.maximumDiscount) {return null;}
     return `Max. discount ฿${coupon.maximumDiscount}`;
   }
 
@@ -296,16 +296,16 @@ export class CouponService {
 
   formatExpiryDate(coupon: UserActiveCoupon): string | null {
     const expiryDate = this.getExpiryDate(coupon);
-    if (!expiryDate) return null;
+    if (!expiryDate) {return null;}
 
     const now = new Date();
     const timeDiff = expiryDate.getTime() - now.getTime();
     const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
 
-    if (daysDiff < 0) return 'Expired';
-    if (daysDiff === 0) return 'Expires today';
-    if (daysDiff === 1) return 'Expires tomorrow';
-    if (daysDiff <= 7) return `Expires in ${daysDiff} days`;
+    if (daysDiff < 0) {return 'Expired';}
+    if (daysDiff === 0) {return 'Expires today';}
+    if (daysDiff === 1) {return 'Expires tomorrow';}
+    if (daysDiff <= 7) {return `Expires in ${daysDiff} days`;}
 
     return expiryDate.toLocaleDateString();
   }

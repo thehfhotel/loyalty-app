@@ -16,15 +16,15 @@ export function useSessionTimeout() {
   useEffect(() => {
     if (!isAuthenticated) {
       // Clear any existing timers if user is not authenticated
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (warningRef.current) clearTimeout(warningRef.current);
+      if (timeoutRef.current) {clearTimeout(timeoutRef.current);}
+      if (warningRef.current) {clearTimeout(warningRef.current);}
       return;
     }
 
     const resetTimers = () => {
       // Clear existing timers
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (warningRef.current) clearTimeout(warningRef.current);
+      if (timeoutRef.current) {clearTimeout(timeoutRef.current);}
+      if (warningRef.current) {clearTimeout(warningRef.current);}
 
       // Set warning timer
       warningRef.current = setTimeout(() => {
@@ -64,8 +64,8 @@ export function useSessionTimeout() {
       events.forEach(event => {
         document.removeEventListener(event, handleActivity);
       });
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (warningRef.current) clearTimeout(warningRef.current);
+      if (timeoutRef.current) {clearTimeout(timeoutRef.current);}
+      if (warningRef.current) {clearTimeout(warningRef.current);}
     };
   }, [isAuthenticated, logout, navigate]);
 }

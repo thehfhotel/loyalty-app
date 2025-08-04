@@ -23,7 +23,7 @@ const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
     // This is a placeholder. In production, use a proper QR code library
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    if (!ctx) return '';
+    if (!ctx) {return '';}
 
     canvas.width = 200;
     canvas.height = 200;

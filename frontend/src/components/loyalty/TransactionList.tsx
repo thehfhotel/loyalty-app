@@ -36,7 +36,7 @@ export default function TransactionList({
   };
 
   const sanitizeDescription = (description: string | null) => {
-    if (!description) return null;
+    if (!description) {return null;}
     
     // Remove any text that mentions spending amounts or THB
     const lowercaseDesc = description.toLowerCase();
@@ -117,12 +117,12 @@ export default function TransactionList({
           {[...Array(5)].map((_, index) => (
             <div key={index} className="animate-pulse">
               <div className="flex items-center space-x-4">
-                <div className="w-10 h-10 bg-gray-200 rounded-lg"></div>
+                <div className="w-10 h-10 bg-gray-200 rounded-lg" />
                 <div className="flex-1">
-                  <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-                  <div className="h-3 bg-gray-200 rounded w-1/3"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/2 mb-2" />
+                  <div className="h-3 bg-gray-200 rounded w-1/3" />
                 </div>
-                <div className="h-4 bg-gray-200 rounded w-16"></div>
+                <div className="h-4 bg-gray-200 rounded w-16" />
               </div>
             </div>
           ))}
@@ -150,7 +150,8 @@ export default function TransactionList({
               <div className={`
                 w-10 h-10 rounded-lg flex items-center justify-center
                 ${transaction.points > 0 ? 'bg-green-50' : 'bg-red-50'}
-              `}>
+              `}
+              >
                 {getTransactionIcon(transaction.points)}
               </div>
 

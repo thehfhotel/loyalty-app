@@ -98,7 +98,7 @@ export default function SettingsModal({
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen) {return null;}
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -138,7 +138,7 @@ export default function SettingsModal({
                   />
                   {updatingEmoji && (
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600" />
                     </div>
                   )}
                 </div>

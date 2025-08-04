@@ -82,7 +82,7 @@ const UserManagement: React.FC = () => {
   };
 
   const handleDeleteUser = async () => {
-    if (!userToDelete) return;
+    if (!userToDelete) {return;}
 
     try {
       await userManagementService.deleteUser(userToDelete.userId);
@@ -137,12 +137,12 @@ const UserManagement: React.FC = () => {
       <div className="min-h-screen bg-gray-50 p-4">
         <div className="max-w-6xl mx-auto">
           <div className="animate-pulse">
-            <div className="h-8 bg-gray-300 rounded w-64 mb-6"></div>
+            <div className="h-8 bg-gray-300 rounded w-64 mb-6" />
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
               {[1, 2, 3, 4].map(i => (
                 <div key={i} className="bg-white p-6 rounded-lg shadow">
-                  <div className="h-4 bg-gray-300 rounded w-20 mb-2"></div>
-                  <div className="h-8 bg-gray-300 rounded w-12"></div>
+                  <div className="h-4 bg-gray-300 rounded w-20 mb-2" />
+                  <div className="h-8 bg-gray-300 rounded w-12" />
                 </div>
               ))}
             </div>

@@ -295,7 +295,7 @@ const SurveyBuilder: React.FC = () => {
   }, []);
 
   const loadSurvey = async () => {
-    if (!id) return;
+    if (!id) {return;}
     
     try {
       setLoading(true);
@@ -461,7 +461,7 @@ const SurveyBuilder: React.FC = () => {
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-4xl mx-auto p-4">
           <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
             <span className="ml-3 text-gray-600">{t('surveys.admin.surveyBuilder.loading')}</span>
           </div>
         </div>
@@ -679,12 +679,12 @@ const SurveyBuilder: React.FC = () => {
                     <div className="flex items-center text-sm">
                       {validationState.isValid ? (
                         <span className="flex items-center text-green-600">
-                          <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                          <span className="w-2 h-2 bg-green-500 rounded-full mr-2" />
                           {t('surveys.admin.validation.readyToSave')}
                         </span>
                       ) : (
                         <span className="flex items-center text-amber-600">
-                          <span className="w-2 h-2 bg-amber-500 rounded-full mr-2"></span>
+                          <span className="w-2 h-2 bg-amber-500 rounded-full mr-2" />
                           {validationState.emptyQuestions.length === 1 
                             ? t('surveys.admin.validation.needsAttention', { count: validationState.emptyQuestions.length })
                             : t('surveys.admin.validation.needsAttentionPlural', { count: validationState.emptyQuestions.length })
@@ -708,7 +708,7 @@ const SurveyBuilder: React.FC = () => {
                     disabled={saving}
                     className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {saving && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>}
+                    {saving && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />}
                     {isEditing ? t('surveys.admin.updateAndPublish') : t('surveys.admin.createAndPublish')}
                   </button>
                 </div>

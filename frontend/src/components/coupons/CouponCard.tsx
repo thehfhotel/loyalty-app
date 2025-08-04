@@ -20,16 +20,16 @@ const CouponCard: React.FC<CouponCardProps> = ({
 
   const formatExpiryDate = (coupon: UserActiveCoupon): string | null => {
     const expiryDate = couponService.getExpiryDate(coupon);
-    if (!expiryDate) return null;
+    if (!expiryDate) {return null;}
 
     const now = new Date();
     const timeDiff = expiryDate.getTime() - now.getTime();
     const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
 
-    if (daysDiff < 0) return t('coupons.expired');
-    if (daysDiff === 0) return t('coupons.expiresToday');
-    if (daysDiff === 1) return t('coupons.expiresTomorrow');
-    if (daysDiff <= 7) return t('coupons.expiresInDays', { count: daysDiff });
+    if (daysDiff < 0) {return t('coupons.expired');}
+    if (daysDiff === 0) {return t('coupons.expiresToday');}
+    if (daysDiff === 1) {return t('coupons.expiresTomorrow');}
+    if (daysDiff <= 7) {return t('coupons.expiresInDays', { count: daysDiff });}
 
     return expiryDate.toLocaleDateString();
   };
@@ -43,7 +43,8 @@ const CouponCard: React.FC<CouponCardProps> = ({
       relative bg-white rounded-lg shadow-md overflow-hidden border 
       ${isExpiring ? 'border-red-300 bg-red-50' : 'border-gray-200'}
       ${className}
-    `}>
+    `}
+    >
       {/* Expiring Soon Badge */}
       {isExpiring && (
         <div className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
@@ -111,8 +112,8 @@ const CouponCard: React.FC<CouponCardProps> = ({
       </div>
 
       {/* Decorative Perforations */}
-      <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-4 h-4 bg-gray-100 rounded-full -ml-2"></div>
-      <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-4 h-4 bg-gray-100 rounded-full -mr-2"></div>
+      <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-4 h-4 bg-gray-100 rounded-full -ml-2" />
+      <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-4 h-4 bg-gray-100 rounded-full -mr-2" />
     </div>
   );
 };

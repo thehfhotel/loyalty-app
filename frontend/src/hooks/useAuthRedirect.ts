@@ -38,7 +38,7 @@ export function useRoleCheck(requiredRole?: 'customer' | 'staff' | 'admin' | 'su
   const user = useAuthStore((state) => state.user);
 
   const hasRole = () => {
-    if (!isAuthenticated || !user || !requiredRole) return isAuthenticated;
+    if (!isAuthenticated || !user || !requiredRole) {return isAuthenticated;}
 
     const roleHierarchy = {
       'customer': 0,

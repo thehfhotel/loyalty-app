@@ -52,7 +52,7 @@ const LanguageTabs: React.FC<LanguageTabsProps> = ({
     };
     
     const config = statusConfig[status as keyof typeof statusConfig];
-    if (!config) return null;
+    if (!config) {return null;}
     
     return (
       <span 
@@ -67,7 +67,7 @@ const LanguageTabs: React.FC<LanguageTabsProps> = ({
 
   // Memoize the tab click handler
   const handleLanguageChange = useCallback((language: SupportedLanguage) => {
-    if (isLoading || language === currentLanguage) return;
+    if (isLoading || language === currentLanguage) {return;}
     onLanguageChange(language);
   }, [isLoading, currentLanguage, onLanguageChange]);
 
@@ -187,7 +187,7 @@ const StatusLegend: React.FC<StatusLegendProps> = ({ translationStatus }) => {
     return counts;
   }, [translationStatus]);
 
-  if (activeStatuses.length === 0) return null;
+  if (activeStatuses.length === 0) {return null;}
 
   return (
     <div 
@@ -201,7 +201,8 @@ const StatusLegend: React.FC<StatusLegendProps> = ({ translationStatus }) => {
           <span>{t('translation.statusLegend')}</span>
           <span className="text-xs text-gray-500">(
             {Object.keys(translationStatus).length} {t('translation.languages')}
-          )</span>
+          )
+          </span>
         </h3>
       </div>
       

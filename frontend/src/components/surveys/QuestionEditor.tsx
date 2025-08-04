@@ -29,7 +29,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
   const [isDragging, setIsDragging] = useState(false);
 
   const addOption = () => {
-    if (!question.options) return;
+    if (!question.options) {return;}
     
     const newOption: QuestionOption = {
       id: surveyService.generateOptionId(),
@@ -43,10 +43,10 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
   };
 
   const updateOption = (optionId: string, field: 'text' | 'value', value: string) => {
-    if (!question.options) return;
+    if (!question.options) {return;}
     
     // Only allow text updates from UI, value is auto-generated
-    if (field === 'value') return;
+    if (field === 'value') {return;}
     
     const updatedOptions = question.options.map((option, index) =>
       option.id === optionId 
@@ -58,7 +58,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
   };
 
   const removeOption = (optionId: string) => {
-    if (!question.options || question.options.length <= 2) return;
+    if (!question.options || question.options.length <= 2) {return;}
     
     // Re-index values when removing an option
     const filteredOptions = question.options

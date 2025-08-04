@@ -56,12 +56,15 @@ export default function TierStatus({ loyaltyStatus, allTiers }: TierStatusProps)
                     ? 'border-gray-300 border-dashed' 
                     : 'border-gray-200'
                 }
-              `} style={{
+              `}
+style={{
                 backgroundColor: isCompleted ? tier.color : isNext ? `${tier.color}20` : '#f9fafb'
-              }}>
+              }}
+              >
                 <FiAward className={`w-5 h-5 ${
                   isCompleted ? 'text-white' : isNext ? 'text-gray-600' : 'text-gray-400'
-                }`} />
+                }`}
+                />
               </div>
 
               {/* Tier Info */}
@@ -69,12 +72,14 @@ export default function TierStatus({ loyaltyStatus, allTiers }: TierStatusProps)
                 <div className="flex items-center justify-between">
                   <span className={`font-medium ${
                     isCurrentTier ? 'text-gray-900' : isCompleted ? 'text-gray-700' : 'text-gray-500'
-                  }`}>
+                  }`}
+                  >
                     {tier.name}
                   </span>
                   <span className={`text-sm ${
                     isCurrentTier ? 'text-gray-900' : 'text-gray-500'
-                  }`}>
+                  }`}
+                  >
                     {tier.min_points === 0 ? t('loyalty.newMember') : `${tier.min_points}+ ${tier.min_points === 1 ? t('loyalty.night') : t('loyalty.nights')}`}
                   </span>
                 </div>
@@ -100,7 +105,7 @@ export default function TierStatus({ loyaltyStatus, allTiers }: TierStatusProps)
                           width: `${getProgressPercentage()}%`,
                           backgroundColor: tier.color
                         }}
-                      ></div>
+                      />
                     </div>
                   </div>
                 )}
@@ -108,7 +113,7 @@ export default function TierStatus({ loyaltyStatus, allTiers }: TierStatusProps)
                 {/* Current Tier Indicator */}
                 {isCurrentTier && (
                   <div className="mt-1 flex items-center space-x-1">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tier.color }}></div>
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: tier.color }} />
                     <span className="text-xs text-gray-600">{t('loyalty.currentTier')}</span>
                   </div>
                 )}

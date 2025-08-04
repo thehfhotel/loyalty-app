@@ -50,7 +50,7 @@ export default function ResetPasswordPage() {
   };
 
   const onResetSubmit = async (data: ResetFormData) => {
-    if (!token) return;
+    if (!token) {return;}
     
     setIsLoading(true);
     try {

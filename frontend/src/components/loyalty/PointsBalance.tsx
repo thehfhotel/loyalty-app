@@ -16,7 +16,8 @@ export default function PointsBalance({
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6 border-l-4" 
-         style={{ borderLeftColor: loyaltyStatus.tier_color }}>
+         style={{ borderLeftColor: loyaltyStatus.tier_color }}
+    >
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-3">
           <div className="p-2 rounded-lg" style={{ backgroundColor: `${loyaltyStatus.tier_color}20` }}>
@@ -57,7 +58,8 @@ export default function PointsBalance({
               {loyaltyStatus.tier_benefits.perks.slice(0, 2).map((perk, index) => (
                 <li key={index} className="flex items-center space-x-1">
                   <span className="w-1.5 h-1.5 rounded-full" 
-                        style={{ backgroundColor: loyaltyStatus.tier_color }}></span>
+                        style={{ backgroundColor: loyaltyStatus.tier_color }}
+                  />
                   <span>{perk}</span>
                 </li>
               ))}

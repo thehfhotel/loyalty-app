@@ -153,7 +153,7 @@ export default function ProfilePage() {
 
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file) {return;}
 
     // Validate file type
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
@@ -229,7 +229,7 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600" />
           <p className="mt-4 text-gray-600">{t('profile.loading')}</p>
         </div>
       </div>
@@ -263,7 +263,8 @@ export default function ProfilePage() {
                       : user.role === 'admin'
                       ? 'bg-blue-100 text-blue-800'
                       : 'bg-gray-100 text-gray-800'
-                  }`}>
+                  }`}
+                  >
                     {user.role === 'super_admin' ? t('profile.superAdmin') : 
                      user.role === 'admin' ? t('profile.admin') : 
                      t('profile.staff')}
@@ -350,7 +351,7 @@ export default function ProfilePage() {
                         width: `${loyaltyStatus.progress_percentage}%`,
                         backgroundColor: loyaltyStatus.tier_color
                       }}
-                    ></div>
+                    />
                   </div>
                 </div>
               )}
@@ -398,7 +399,8 @@ export default function ProfilePage() {
                         : user.role === 'admin'
                         ? 'bg-blue-100 text-blue-800'
                         : 'bg-gray-100 text-gray-800'
-                    }`}>
+                    }`}
+                    >
                       {user.role === 'super_admin' ? t('profile.superAdmin') : 
                        user.role === 'admin' ? t('profile.admin') : 
                        t('profile.staff')}

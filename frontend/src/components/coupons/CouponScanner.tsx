@@ -237,10 +237,12 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
               validationResult.valid 
                 ? 'bg-green-50 border border-green-200' 
                 : 'bg-red-50 border border-red-200'
-            }`}>
+            }`}
+            >
               <div className={`flex items-center ${
                 validationResult.valid ? 'text-green-800' : 'text-red-800'
-              }`}>
+              }`}
+              >
                 <span className="mr-2">
                   {validationResult.valid ? '✅' : '❌'}
                 </span>
@@ -353,10 +355,12 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
             redemptionResult.success 
               ? 'bg-green-50 border border-green-200' 
               : 'bg-red-50 border border-red-200'
-          }`}>
+          }`}
+          >
             <div className={`flex items-center mb-2 ${
               redemptionResult.success ? 'text-green-800' : 'text-red-800'
-            }`}>
+            }`}
+            >
               <span className="mr-2 text-xl">
                 {redemptionResult.success ? '🎉' : '❌'}
               </span>

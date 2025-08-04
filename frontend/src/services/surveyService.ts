@@ -49,8 +49,8 @@ class SurveyService {
       const params = new URLSearchParams();
       params.append('page', page.toString());
       params.append('limit', limit.toString());
-      if (status) params.append('status', status);
-      if (createdBy) params.append('created_by', createdBy);
+      if (status) {params.append('status', status);}
+      if (createdBy) {params.append('created_by', createdBy);}
 
       const response = await surveyAxios.get(`/surveys?${params}`);
       return response.data;
@@ -220,10 +220,10 @@ class SurveyService {
     params.append('page', page.toString());
     params.append('limit', limit.toString());
     
-    if (filters.survey_id) params.append('survey_id', filters.survey_id);
-    if (filters.coupon_id) params.append('coupon_id', filters.coupon_id);
-    if (filters.is_active !== undefined) params.append('is_active', filters.is_active.toString());
-    if (filters.assigned_by) params.append('assigned_by', filters.assigned_by);
+    if (filters.survey_id) {params.append('survey_id', filters.survey_id);}
+    if (filters.coupon_id) {params.append('coupon_id', filters.coupon_id);}
+    if (filters.is_active !== undefined) {params.append('is_active', filters.is_active.toString());}
+    if (filters.assigned_by) {params.append('assigned_by', filters.assigned_by);}
 
     const response = await surveyAxios.get(`/surveys/admin/coupon-assignments?${params}`);
     return response.data;

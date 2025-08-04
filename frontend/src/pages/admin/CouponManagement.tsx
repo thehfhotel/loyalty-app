@@ -152,7 +152,7 @@ const CouponManagement: React.FC = () => {
   };
 
   const handleAssignCoupons = async () => {
-    if (!selectedCoupon || selectedUsers.length === 0) return;
+    if (!selectedCoupon || selectedUsers.length === 0) {return;}
     
     try {
       setLoading(true);
@@ -257,10 +257,10 @@ const CouponManagement: React.FC = () => {
         <div className="max-w-6xl mx-auto">
           <div className="bg-white rounded-lg shadow p-6">
             <div className="animate-pulse space-y-4">
-              <div className="h-6 bg-gray-200 rounded w-1/4"></div>
+              <div className="h-6 bg-gray-200 rounded w-1/4" />
               <div className="space-y-3">
                 {[...Array(5)].map((_, i) => (
-                  <div key={i} className="h-16 bg-gray-200 rounded"></div>
+                  <div key={i} className="h-16 bg-gray-200 rounded" />
                 ))}
               </div>
             </div>
@@ -407,7 +407,8 @@ const CouponManagement: React.FC = () => {
                           : coupon.status === 'paused'
                           ? 'bg-yellow-100 text-yellow-800'
                           : 'bg-red-100 text-red-800'
-                      }`}>
+                      }`}
+                      >
                         {coupon.status === 'active' ? t('admin.coupons.active') : 
                          coupon.status === 'paused' ? t('admin.coupons.paused') : 
                          t(`admin.coupons.${coupon.status}`)}
@@ -452,7 +453,7 @@ const CouponManagement: React.FC = () => {
                         </button>
                       </div>
                     </td>
-                  </tr>
+                    </tr>
                   ))
                 )}
               </tbody>
@@ -772,7 +773,7 @@ const CouponManagement: React.FC = () => {
               <div className="space-y-3 max-h-60 overflow-y-auto">
                 {users
                   .filter(user => {
-                    if (!userSearchTerm) return true;
+                    if (!userSearchTerm) {return true;}
                     const searchLower = userSearchTerm.toLowerCase();
                     const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
                     const email = (user.email || '').toLowerCase();
@@ -814,7 +815,7 @@ const CouponManagement: React.FC = () => {
                   </label>
                 ))}
                 {users.filter(user => {
-                  if (!userSearchTerm) return false;
+                  if (!userSearchTerm) {return false;}
                   const searchLower = userSearchTerm.toLowerCase();
                   const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
                   const email = (user.email || '').toLowerCase();

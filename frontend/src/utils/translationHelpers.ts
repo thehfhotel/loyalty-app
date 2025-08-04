@@ -8,7 +8,7 @@ export const getTextInLanguage = (
   language: SupportedLanguage,
   fallbackLanguage: SupportedLanguage = 'en'
 ): string => {
-  if (!multilingualText) return '';
+  if (!multilingualText) {return '';}
   
   if (typeof multilingualText === 'string') {
     return multilingualText;
@@ -77,7 +77,7 @@ export const hasTranslation = (
   multilingualText: MultilingualText | string | undefined,
   language: SupportedLanguage
 ): boolean => {
-  if (!multilingualText) return false;
+  if (!multilingualText) {return false;}
   
   if (typeof multilingualText === 'string') {
     return true; // String text is considered available for any language
@@ -92,7 +92,7 @@ export const hasTranslation = (
 export const getAvailableLanguages = (
   multilingualText: MultilingualText | string | undefined
 ): SupportedLanguage[] => {
-  if (!multilingualText) return [];
+  if (!multilingualText) {return [];}
   
   if (typeof multilingualText === 'string') {
     return ['th', 'en', 'zh-CN']; // String text is available for all languages
@@ -127,7 +127,7 @@ export const isFullyTranslated = (
   multilingualText: MultilingualText | string | undefined,
   requiredLanguages: SupportedLanguage[]
 ): boolean => {
-  if (!multilingualText) return false;
+  if (!multilingualText) {return false;}
   
   if (typeof multilingualText === 'string') {
     return requiredLanguages.length === 1; // String can only satisfy one language
@@ -143,7 +143,7 @@ export const getTranslationCompleteness = (
   multilingualText: MultilingualText | string | undefined,
   requiredLanguages: SupportedLanguage[]
 ): number => {
-  if (!multilingualText || requiredLanguages.length === 0) return 0;
+  if (!multilingualText || requiredLanguages.length === 0) {return 0;}
   
   if (typeof multilingualText === 'string') {
     return requiredLanguages.length === 1 ? 100 : (100 / requiredLanguages.length);
@@ -253,7 +253,7 @@ export const isValidLanguage = (language: string): language is SupportedLanguage
 export const getBrowserLanguage = (): SupportedLanguage => {
   const browserLang = navigator.language.toLowerCase();
   
-  if (browserLang.startsWith('th')) return 'th';
-  if (browserLang.startsWith('zh')) return 'zh-CN';
+  if (browserLang.startsWith('th')) {return 'th';}
+  if (browserLang.startsWith('zh')) {return 'zh-CN';}
   return 'en'; // Default fallback
 };

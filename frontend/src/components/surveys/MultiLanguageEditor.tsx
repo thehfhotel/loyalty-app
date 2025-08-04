@@ -67,7 +67,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
   };
 
   const removeLanguage = (langCode: string) => {
-    if (langCode === 'en') return; // Don't allow removing English
+    if (langCode === 'en') {return;} // Don't allow removing English
     
     const newTranslations = { ...value };
     delete newTranslations[langCode];

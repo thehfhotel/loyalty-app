@@ -13,7 +13,7 @@ interface User {
  * Gets a user-friendly display name from user data
  */
 export function getUserDisplayName(user: User | null): string {
-  if (!user) return 'Guest';
+  if (!user) {return 'Guest';}
 
   // If we have first and last name, use them
   if (user.firstName && user.lastName) {
@@ -58,7 +58,7 @@ export function getUserDisplayName(user: User | null): string {
  * Gets a user avatar URL or returns null for default avatar
  */
 export function getUserAvatarUrl(user: User | null): string | null {
-  if (!user) return null;
+  if (!user) {return null;}
   return user.avatarUrl || null;
 }
 
@@ -73,7 +73,7 @@ export function isOAuthUser(user: User | null): boolean {
  * Gets the OAuth provider display name
  */
 export function getOAuthProviderName(user: User | null): string | null {
-  if (!user?.oauthProvider) return null;
+  if (!user?.oauthProvider) {return null;}
   
   switch (user.oauthProvider) {
     case 'google':

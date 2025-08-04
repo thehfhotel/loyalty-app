@@ -116,7 +116,7 @@ export function generateEmojiAvatarUrl(emoji: string): string {
  * Extract emoji from avatar URL
  */
 export function extractEmojiFromUrl(avatarUrl: string | null | undefined): string | null {
-  if (!avatarUrl) return null;
+  if (!avatarUrl) {return null;}
   
   if (avatarUrl.startsWith('emoji:')) {
     const emoji = avatarUrl.replace('emoji:', '');
