@@ -45,8 +45,18 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
 COPY package*.json tsconfig.json ./
 
-# Ensure Prisma client is available in production stage for runtime fallback
-RUN if [ -d "/app/src/generated" ]; then echo "✅ Prisma client found in src/generated"; else echo "⚠️ Prisma client not found, generating..."; npm run db:generate; fi
+# Ensure Prisma client is available in both src and dist directories for runtime
+RUN if [ -d "src/generated" ]; then \
+      echo "✅ Prisma client found in src/generated"; \
+      # Copy generated client to dist for compiled JS files \
+      mkdir -p dist/generated && cp -r src/generated/* dist/generated/; \
+      echo "✅ Prisma client copied to dist/generated"; \
+    else \
+      echo "⚠️ Prisma client not found, generating..."; \
+      npm run db:generate; \
+      mkdir -p dist/generated && cp -r src/generated/* dist/generated/; \
+      echo "✅ Prisma client generated and copied to dist/generated"; \
+    fi
 
 # Set ownership
 RUN chown -R nodejs:nodejs /app
