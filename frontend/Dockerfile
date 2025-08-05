@@ -33,11 +33,14 @@ CMD ["nginx", "-g", "daemon off;"]
 # Development stage (default for docker-compose dev)
 FROM base AS development
 COPY package*.json ./
-COPY --from=dev-deps /app/node_modules ./node_modules
+
+# Install all dependencies directly in development stage to avoid multi-stage issues
+RUN npm ci && npm cache clean --force
+
 COPY . .
 
 # Copy built dist if available from builder stage
-COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/dist ./dist 2>/dev/null || echo "No pre-built dist available"
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
