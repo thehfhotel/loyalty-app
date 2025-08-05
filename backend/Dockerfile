@@ -27,6 +27,9 @@ RUN npm run build || echo "TypeScript compilation failed, will use tsx at runtim
 # Production stage
 FROM base AS runner
 
+# Install curl for health checks
+RUN apk add --no-cache curl
+
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
