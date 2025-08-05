@@ -420,8 +420,110 @@ npm run test
 6. **ALWAYS** follow security best practices
 7. **ALWAYS** write meaningful tests that validate actual functionality
 
+### 14. 🎭 E2E Testing Infrastructure Rules
+**MANDATORY: Comprehensive E2E Test Isolation and Validation**
+
+#### ❌ FORBIDDEN - E2E Testing Anti-patterns
+```bash
+# ❌ NEVER use production ports for E2E tests
+FRONTEND_PORT: 3000    # FORBIDDEN - conflicts with production
+BACKEND_PORT: 4000     # FORBIDDEN - conflicts with production
+
+# ❌ NEVER assume port availability without cleanup
+docker compose up -d   # WITHOUT port cleanup
+
+# ❌ NEVER create duplicate configurations
+cat > docker-compose.yml << EOF   # Multiple times with different content
+
+# ❌ NEVER skip container health validation
+curl http://localhost:port  # WITHOUT proper retry logic
+```
+
+#### ✅ REQUIRED - E2E Testing Best Practices
+
+**1. Port Allocation Strategy**
+```bash
+# ✅ CORRECT - Use non-conflicting E2E ports
+E2E_FRONTEND_PORT: 3201   # Safe high port for frontend
+E2E_BACKEND_PORT: 4202    # Safe high port for backend
+E2E_DB_PORT: 5436        # Different from production 5434
+E2E_REDIS_PORT: 6381     # Different from production 6379
+
+# ✅ REQUIRED - Port cleanup before E2E tests
+for port in 3201 4202 5436 6381; do
+  pid=$(lsof -ti:$port 2>/dev/null || true)
+  if [ ! -z "$pid" ]; then
+    kill -9 $pid 2>/dev/null || true
+  fi
+done
+```
+
+**2. Configuration File Management**
+```bash
+# ✅ REQUIRED - Single source of truth for configurations
+# If creating Docker compose files dynamically:
+1. Create file ONCE at the beginning
+2. Use variables for ALL port references
+3. Validate file exists before use
+4. Clean up after tests complete
+
+# ✅ CORRECT - Consistent port usage
+export E2E_FRONTEND_PORT="3201"
+export E2E_BACKEND_PORT="4202"
+# Use these variables EVERYWHERE
+```
+
+**3. Container Health Validation**
+```bash
+# ✅ REQUIRED - Proper health check dependencies
+# For Alpine containers:
+RUN apk add --no-cache curl
+
+# ✅ REQUIRED - Robust connection testing
+for i in {1..40}; do
+  if curl -s http://localhost:${PORT}/health; then
+    echo "✅ Service ready"
+    break
+  fi
+  sleep 3
+done
+```
+
+**4. Volume and State Management**
+```bash
+# ✅ REQUIRED - Clean state between runs
+docker compose -f docker-compose.e2e.yml down -v
+docker volume rm $(docker volume ls -q -f name=e2e) 2>/dev/null || true
+```
+
+**5. Path Resolution**
+```bash
+# ✅ REQUIRED - Explicit working directory
+cd "${GITHUB_WORKSPACE}" || exit 1
+# Use absolute paths or validate relative paths
+```
+
+#### 🔍 E2E Configuration Validation Checklist
+Before running E2E tests, validate:
+- [ ] All E2E ports are different from production ports
+- [ ] Port variables are used consistently across ALL configurations
+- [ ] Docker compose files are created exactly ONCE
+- [ ] Container health checks have required tools (curl)
+- [ ] Previous test volumes are cleaned up
+- [ ] Retry logic exists for service readiness
+- [ ] Working directories are explicitly set
+
+#### 🚨 Common E2E Pitfalls to Avoid
+1. **Port Assumption**: Never assume ports are free - always clean up
+2. **Configuration Duplication**: Never create the same config file multiple times
+3. **Partial Updates**: When changing ports, update ALL occurrences
+4. **State Persistence**: Always clean volumes between test runs
+5. **Path Ambiguity**: Always use absolute paths or validate context
+
+**Rationale**: E2E tests failed repeatedly due to port conflicts, configuration inconsistencies, missing health check tools, and state persistence. These rules ensure complete isolation, consistent configuration, and reliable test execution.
+
 ---
 
-**Last Updated**: December 2024  
+**Last Updated**: August 2025  
 **Enforced By**: Git hooks, CI/CD pipeline, and project conventions  
 **Compliance**: MANDATORY for all contributors
