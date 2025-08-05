@@ -1,0 +1,122 @@
+# Blue-Green Deployment Configuration
+# This extends the base docker-compose.yml with blue-green deployment support
+
+services:
+  # =============================================================================
+  # SHARED INFRASTRUCTURE (Always Running)
+  # =============================================================================
+  postgres:
+    # Inherits from base - always running, never stopped
+    restart: unless-stopped
+    
+  redis:
+    # Inherits from base - always running, never stopped  
+    restart: unless-stopped
+
+  # =============================================================================
+  # BLUE ENVIRONMENT (Current Production)
+  # =============================================================================
+  backend-blue:
+    extends:
+      service: backend
+    container_name: loyalty_backend_blue
+    environment:
+      DEPLOYMENT_COLOR: blue
+      HEALTH_CHECK_PATH: /api/health
+    ports:
+      - "4000:4000"  # Blue backend port
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    
+  frontend-blue:
+    extends:
+      service: frontend  
+    container_name: loyalty_frontend_blue
+    environment:
+      DEPLOYMENT_COLOR: blue
+      VITE_API_URL: http://localhost:4001/api
+    depends_on:
+      - backend-blue
+    restart: unless-stopped
+
+  # =============================================================================
+  # GREEN ENVIRONMENT (Deployment Target)
+  # =============================================================================
+  backend-green:
+    extends:
+      service: backend
+    container_name: loyalty_backend_green
+    environment:
+      DEPLOYMENT_COLOR: green
+      HEALTH_CHECK_PATH: /api/health
+    ports:
+      - "4002:4000"  # Green backend port (different from blue)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: "no"  # Only started during deployment
+    profiles:
+      - deployment
+    
+  frontend-green:
+    extends:
+      service: frontend
+    container_name: loyalty_frontend_green  
+    environment:
+      DEPLOYMENT_COLOR: green
+      VITE_API_URL: http://localhost:4001/api
+    depends_on:
+      - backend-green
+    restart: "no"  # Only started during deployment
+    profiles:
+      - deployment
+
+  # =============================================================================
+  # LOAD BALANCER WITH HEALTH-AWARE ROUTING
+  # =============================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: loyalty_nginx
+    ports:
+      - "4001:80"
+    volumes:
+      - ./nginx/nginx-blue-green.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/scripts:/etc/nginx/scripts:ro
+      - nginx_logs:/var/log/nginx
+    environment:
+      ACTIVE_COLOR: blue  # Controlled by deployment scripts
+    depends_on:
+      - backend-blue
+      - frontend-blue
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+# =============================================================================
+# DEPLOYMENT NETWORKS
+# =============================================================================
+networks:
+  default:
+    name: loyalty_network
+  blue:
+    name: loyalty_blue
+  green: 
+    name: loyalty_green
+
+volumes:
+  postgres_data:
+    # Shared between blue/green - never lost
+  backend_logs:
+  frontend_logs: 
+  nginx_logs:

@@ -34,6 +34,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: development
     container_name: loyalty_backend
     environment:
       NODE_ENV: ${NODE_ENV:-development}

@@ -4,7 +4,7 @@
   "description": "Hotel Loyalty System Backend",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "if [ -f dist/index.js ]; then node dist/index.js; else npx tsx src/index.ts; fi",
     "build": "tsc",
     "build:prod": "tsc -p tsconfig.prod.json",
     "start": "node dist/index.js",

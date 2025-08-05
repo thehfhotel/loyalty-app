@@ -24,6 +24,48 @@ RUN npm run db:generate
 # Build TypeScript - fail gracefully for runtime fallback
 RUN npm run build || echo "TypeScript compilation failed, will use tsx at runtime"
 
+# Development stage (for docker-compose dev)
+FROM base AS development
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/storage /app/storage/backup /app/storage/avatars /app/logs /tmp && \
+    chown -R nodejs:nodejs /app && \
+    chmod 755 /app/logs && \
+    chmod 1777 /tmp
+
+# Copy all dependencies (including dev dependencies for tsx)
+COPY --from=dev-deps /app/node_modules ./node_modules
+
+# Copy source files and configuration
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/prisma ./prisma
+COPY package*.json tsconfig.json ./
+
+# Generate Prisma client for development
+RUN npm run db:generate
+
+# Set ownership
+RUN chown -R nodejs:nodejs /app
+
+USER nodejs
+
+# Expose port
+EXPOSE 4000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:4000/api/health || exit 1
+
+# Development command (tsx is available)
+CMD ["npm", "run", "dev"]
+
 # Production stage
 FROM base AS runner
 
