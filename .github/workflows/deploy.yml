@@ -847,11 +847,10 @@ jobs:
               exit 1
             fi
           fi
-      
-      - name: "🚀 Start E2E Application Stack"
-        run: |
+          
           # Start the complete isolated application stack
           echo "🚀 Starting isolated application stack for E2E tests..."
+          cd ..
           docker compose -f docker-compose.e2e-test.yml up -d --build
           
           # Wait for application to be ready
