@@ -1,3 +1,6 @@
+-- CreateExtension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
