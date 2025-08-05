@@ -698,6 +698,9 @@ jobs:
           cd ../frontend && npm run build &
           wait
           
+          # Return to project root to create Docker Compose file
+          cd ..
+          
           # Create complete E2E compose file (replace the initial file with complete version)
           cat > docker-compose.e2e-test.yml << 'EOF'
           services:
@@ -733,7 +736,7 @@ jobs:
             
             backend:
               build:
-                context: ./
+                context: ./backend
                 dockerfile: Dockerfile
               container_name: loyalty_backend_e2e
               environment:
@@ -762,7 +765,7 @@ jobs:
             
             frontend:
               build:
-                context: ../frontend
+                context: ./frontend
                 dockerfile: Dockerfile
                 args:
                   VITE_API_URL: http://localhost:4002/api
@@ -888,7 +891,7 @@ jobs:
             
             backend:
               build:
-                context: ./
+                context: ./backend
                 dockerfile: Dockerfile
               container_name: loyalty_backend_e2e
               environment:
