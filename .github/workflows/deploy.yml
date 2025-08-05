@@ -802,10 +802,14 @@ jobs:
           
           # Run database migrations before starting the backend
           echo "🔄 Running database migrations for E2E tests..."
-          cd backend
-          
-          # Set environment for migrations
-          export DATABASE_URL="postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db"
+      
+      - name: "🔄 E2E Database Migration Setup"
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db
+          NODE_ENV: test
+        run: |
+          echo "🔄 Setting up E2E database migrations..."
           
           # Generate Prisma client if not already done
           if [ ! -d "src/generated/prisma" ]; then
@@ -843,9 +847,9 @@ jobs:
               exit 1
             fi
           fi
-          
-          cd ..
-          
+      
+      - name: "🚀 Start E2E Application Stack"
+        run: |
           # Start the complete isolated application stack
           echo "🚀 Starting isolated application stack for E2E tests..."
           docker compose -f docker-compose.e2e-test.yml up -d --build
