@@ -946,10 +946,27 @@ jobs:
           
           echo "✅ E2E Docker Compose configuration created"
           
-          # Clean up any existing E2E containers to prevent naming conflicts
-          echo "🧹 Cleaning up any existing E2E containers..."
+          # Clean up any existing E2E containers and ports to prevent conflicts
+          echo "🧹 Cleaning up any existing E2E containers and ports..."
+          
+          # Stop and remove containers
           docker stop loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
           docker rm loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
+          
+          # Check for processes using E2E ports and kill them
+          echo "🔍 Checking for processes using E2E ports..."
+          for port in 3001 4002 5436 6381; do
+            pid=$(lsof -ti:$port 2>/dev/null || true)
+            if [ ! -z "$pid" ]; then
+              echo "⚠️ Found process $pid using port $port, terminating..."
+              kill -9 $pid 2>/dev/null || true
+              sleep 1
+            fi
+          done
+          
+          # Verify ports are free
+          echo "✅ Port cleanup completed"
+          netstat -tlnp | grep -E ":300[1-9]|:400[2-9]|:543[6-9]|:638[1-9]" || echo "No conflicting ports found"
           
           # Start containers and capture any startup failures
           if docker compose -f docker-compose.e2e-test.yml up -d --build; then
