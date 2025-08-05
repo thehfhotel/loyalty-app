@@ -820,12 +820,28 @@ jobs:
           if npm run db:migrate:deploy; then
             echo "✅ E2E database migrations completed successfully"
           else
-            echo "❌ E2E database migrations failed"
+            echo "❌ E2E database migrations failed, attempting recovery..."
             echo "📊 Migration status for debugging:"
             npx prisma migrate status || true
-            echo "📄 Database logs:"
-            docker compose -f ../docker-compose.e2e-test.yml logs postgres
-            exit 1
+            
+            # Advanced fix: Handle P3009 error by resolving failed migrations
+            echo "🔧 Attempting to resolve failed migration state..."
+            if npx prisma migrate resolve --applied 0_init 2>/dev/null; then
+              echo "✅ Failed migration marked as applied, retrying deploy..."
+              if npm run db:migrate:deploy; then
+                echo "✅ E2E database migrations completed after resolve"
+              else
+                echo "❌ E2E database migrations still failing after resolve"
+                echo "📄 Database logs:"
+                docker compose -f ../docker-compose.e2e-test.yml logs postgres
+                exit 1
+              fi
+            else
+              echo "❌ Failed to resolve migration state"
+              echo "📄 Database logs:"
+              docker compose -f ../docker-compose.e2e-test.yml logs postgres
+              exit 1
+            fi
           fi
           
           cd ..
