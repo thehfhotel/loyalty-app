@@ -972,14 +972,22 @@ jobs:
           # Wait for application to be ready
           echo "⏳ Waiting for isolated application to be ready..."
           
-          # Wait for backend with detailed error logging and debugging
-          echo "🔍 Testing initial backend connection..."
-          curl -s http://localhost:4002/api/health || echo "Initial connection failed, will retry"
+          # Wait for backend with simplified retry logic 
+          echo "🔍 Waiting for backend to be ready..."
+          BACKEND_READY=false
+          for i in {1..60}; do
+            echo "Attempt $i/60: Testing backend connection..."
+            if curl -s http://localhost:4002/api/health >/dev/null 2>&1; then
+              echo "✅ Backend is responding!"
+              BACKEND_READY=true
+              break
+            fi
+            echo "Backend not ready yet, waiting 5 seconds..."
+            sleep 5
+          done
           
-          if timeout 300 bash -c 'until curl -s http://localhost:4002/api/health >/dev/null; do echo "Waiting for isolated backend..."; sleep 3; done'; then
-            echo "✅ Backend is responding"
-          else
-            echo "❌ Backend failed to become ready after 5 minutes, capturing detailed logs..."
+          if [ "$BACKEND_READY" = false ]; then
+            echo "❌ Backend failed to become ready after 5 minutes (60 attempts)"
             echo "🔍 Final connection test:"
             curl -v http://localhost:4002/api/health || echo "Final curl test failed"
             echo "📄 Backend container logs:"
@@ -991,14 +999,22 @@ jobs:
             exit 1
           fi
           
-          # Wait for frontend with error logging
-          echo "🔍 Testing initial frontend connection..."
-          curl -s http://localhost:3001 || echo "Initial frontend connection failed, will retry"
+          # Wait for frontend with simplified retry logic
+          echo "🔍 Waiting for frontend to be ready..."
+          FRONTEND_READY=false
+          for i in {1..40}; do
+            echo "Attempt $i/40: Testing frontend connection..."
+            if curl -s http://localhost:3001 >/dev/null 2>&1; then
+              echo "✅ Frontend is responding!"
+              FRONTEND_READY=true
+              break
+            fi
+            echo "Frontend not ready yet, waiting 3 seconds..."
+            sleep 3
+          done
           
-          if timeout 120 bash -c 'until curl -s http://localhost:3001 >/dev/null; do echo "Waiting for isolated frontend..."; sleep 3; done'; then
-            echo "✅ Frontend is responding"
-          else
-            echo "❌ Frontend failed to become ready after 2 minutes, capturing detailed logs..."
+          if [ "$FRONTEND_READY" = false ]; then
+            echo "❌ Frontend failed to become ready after 2 minutes (40 attempts)"
             echo "🔍 Final frontend connection test:"
             curl -v http://localhost:3001 || echo "Final frontend curl test failed"
             echo "📄 Frontend container logs:"
