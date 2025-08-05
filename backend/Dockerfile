@@ -18,6 +18,9 @@ COPY package*.json tsconfig.json ./
 COPY --from=dev-deps /app/node_modules ./node_modules
 COPY . .
 
+# Generate Prisma client first (required for TypeScript compilation)
+RUN npm run db:generate
+
 # Build TypeScript - fail gracefully for runtime fallback
 RUN npm run build || echo "TypeScript compilation failed, will use tsx at runtime"
 
@@ -36,11 +39,14 @@ RUN mkdir -p /app/storage /app/storage/backup /app/storage/avatars /app/logs && 
 # Copy production dependencies
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copy built application (if available) and source files
+# Copy built application (if available), source files, and generated Prisma client
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
 COPY package*.json tsconfig.json ./
+
+# Ensure Prisma client is available in production stage for runtime fallback
+RUN if [ -d "/app/src/generated" ]; then echo "✅ Prisma client found in src/generated"; else echo "⚠️ Prisma client not found, generating..."; npm run db:generate; fi
 
 # Set ownership
 RUN chown -R nodejs:nodejs /app
