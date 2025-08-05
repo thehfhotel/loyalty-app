@@ -522,6 +522,85 @@ Before running E2E tests, validate:
 
 **Rationale**: E2E tests failed repeatedly due to port conflicts, configuration inconsistencies, missing health check tools, and state persistence. These rules ensure complete isolation, consistent configuration, and reliable test execution.
 
+### 15. 🎨 Frontend Dependency Management Rules
+**MANDATORY: Consistent CSS Framework and Build Dependencies**
+
+#### ❌ FORBIDDEN - Dependency Management Anti-patterns
+```dockerfile
+# ❌ NEVER rely on multi-stage node_modules copying for dev environments
+COPY --from=dev-deps /app/node_modules ./node_modules  # UNRELIABLE
+
+# ❌ NEVER mix production and development dependency stages
+RUN npm ci --only=production  # Then expect dev tools to work
+
+# ❌ NEVER assume CSS framework plugins are available without explicit installation
+require('@tailwindcss/forms')  # WITHOUT ensuring it's installed in current stage
+```
+
+#### ✅ REQUIRED - Frontend Dependency Best Practices
+
+**1. Dockerfile Multi-Stage Strategy**
+```dockerfile
+# ✅ CORRECT - Install dependencies directly in target stage
+FROM base AS development
+COPY package*.json ./
+RUN npm ci && npm cache clean --force  # All deps in development
+COPY . .
+
+# ✅ CORRECT - Separate stages for different purposes
+FROM base AS production
+COPY package*.json ./
+RUN npm ci --only=production && npm cache clean --force
+```
+
+**2. CSS Framework Dependencies**
+```bash
+# ✅ REQUIRED - Explicit CSS framework plugin installation
+# Always ensure Tailwind plugins are in correct dependency section:
+"dependencies": {
+  "@tailwindcss/forms": "^0.5.10",    # PRODUCTION dependency
+  "@tailwindcss/typography": "^0.5.10" # If used in production builds
+}
+
+# ✅ REQUIRED - Validate CSS framework dependencies before build
+npm ls @tailwindcss/forms @tailwindcss/typography
+```
+
+**3. Container Dependency Verification**
+```bash
+# ✅ REQUIRED - Pre-flight dependency check in containers
+RUN npm ls || (echo "❌ Missing dependencies detected" && exit 1)
+
+# ✅ REQUIRED - CSS framework plugin verification
+RUN node -e "require('@tailwindcss/forms')" || (echo "❌ Tailwind plugins missing" && exit 1)
+```
+
+**4. Development Environment Consistency**
+```bash
+# ✅ REQUIRED - Consistent development setup
+1. Use same Node version in Docker and local development
+2. Install ALL dependencies in development stage (not just production)
+3. Verify CSS framework plugins before starting dev server
+4. Clear Docker build cache when dependency issues occur
+```
+
+#### 🔍 Frontend Dependency Validation Checklist
+Before starting development or building:
+- [ ] All CSS framework plugins are in correct package.json section
+- [ ] Docker development stage installs ALL dependencies (not just production)
+- [ ] Tailwind config plugins match installed packages
+- [ ] Build process validates required dependencies exist
+- [ ] Development containers don't rely on multi-stage node_modules copying
+
+#### 🚨 Common Frontend Dependency Pitfalls
+1. **Multi-Stage Confusion**: Copying node_modules between Docker stages causes inconsistencies
+2. **Dependency Section Mismatch**: CSS plugins in wrong package.json section (dev vs prod)
+3. **Build Cache Issues**: Stale Docker layers with outdated dependencies
+4. **Runtime vs Build Environment**: Different dependency availability between build and runtime
+5. **Plugin Configuration**: Requiring plugins that aren't installed in current stage
+
+**Rationale**: Tailwind CSS plugin errors occurred repeatedly when multi-stage Docker builds created inconsistent dependency environments. Direct dependency installation in target stages prevents module resolution failures and ensures CSS framework plugins are available when needed.
+
 ---
 
 **Last Updated**: August 2025  
