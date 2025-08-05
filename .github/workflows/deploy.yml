@@ -927,7 +927,7 @@ jobs:
               environment:
                 NODE_ENV: development
               ports:
-                - "3001:3000"
+                - "3201:3000"
               depends_on:
                 backend:
                   condition: service_healthy
