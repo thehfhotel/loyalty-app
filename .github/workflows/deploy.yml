@@ -687,6 +687,11 @@ jobs:
             rm -f docker-compose.e2e-test.yml
           fi
           
+          # Critical: Remove E2E database volumes to ensure clean state
+          echo "🧹 Removing E2E database volumes to prevent migration state corruption..."
+          docker volume rm loyalty_postgres_e2e_data loyalty_redis_e2e_data 2>/dev/null || true
+          docker volume rm loyalty-e2e-tests_loyalty_postgres_e2e_data loyalty-e2e-tests_loyalty_redis_e2e_data 2>/dev/null || true
+          
           # Build backend and frontend
           echo "🏗️ Building application for isolated E2E testing..."
           npm run build &
@@ -807,11 +812,18 @@ jobs:
             npm run db:generate
           fi
           
-          # Run migrations
+          # Critical fix: Reset any failed migration state to prevent P3009 error
+          echo "🔄 Resetting any failed migration state for clean E2E environment..."
+          npx prisma migrate reset --force --skip-seed 2>/dev/null || true
+          
+          # Run migrations with fresh state
           if npm run db:migrate:deploy; then
             echo "✅ E2E database migrations completed successfully"
           else
             echo "❌ E2E database migrations failed"
+            echo "📊 Migration status for debugging:"
+            npx prisma migrate status || true
+            echo "📄 Database logs:"
             docker compose -f ../docker-compose.e2e-test.yml logs postgres
             exit 1
           fi
@@ -880,6 +892,12 @@ jobs:
         run: |
           echo "🧹 Cleaning up isolated E2E environment..."
           docker compose -f docker-compose.e2e-test.yml down -v --remove-orphans || true
+          
+          # Critical: Ensure E2E volumes are completely removed
+          echo "🧹 Removing E2E volumes to prevent future migration state issues..."
+          docker volume rm loyalty_postgres_e2e_data loyalty_redis_e2e_data 2>/dev/null || true
+          docker volume rm loyalty-e2e-tests_loyalty_postgres_e2e_data loyalty-e2e-tests_loyalty_redis_e2e_data 2>/dev/null || true
+          
           docker system prune -f --volumes || true
           rm -f docker-compose.e2e-test.yml || true
           echo "✅ Isolated E2E environment cleaned up"
