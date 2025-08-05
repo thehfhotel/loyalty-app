@@ -943,6 +943,11 @@ jobs:
           
           echo "✅ E2E Docker Compose configuration created"
           
+          # Clean up any existing E2E containers to prevent naming conflicts
+          echo "🧹 Cleaning up any existing E2E containers..."
+          docker stop loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
+          docker rm loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
+          
           docker compose -f docker-compose.e2e-test.yml up -d --build
           
           # Wait for application to be ready
