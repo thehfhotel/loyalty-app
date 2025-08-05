@@ -40,7 +40,7 @@ RUN npm ci && npm cache clean --force
 COPY . .
 
 # Copy built dist if available from builder stage
-COPY --from=builder /app/dist ./dist 2>/dev/null || echo "No pre-built dist available"
+COPY --from=builder /app/dist ./dist
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
