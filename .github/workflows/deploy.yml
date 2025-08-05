@@ -851,6 +851,98 @@ jobs:
           # Start the complete isolated application stack
           echo "🚀 Starting isolated application stack for E2E tests..."
           cd ..
+          
+          # Create the E2E Docker Compose file
+          echo "📝 Creating E2E Docker Compose configuration..."
+          cat > docker-compose.e2e-test.yml << 'EOF'
+          services:
+            postgres:
+              image: postgres:15-alpine
+              container_name: loyalty_postgres_e2e
+              environment:
+                POSTGRES_USER: loyalty
+                POSTGRES_PASSWORD: loyalty_password
+                POSTGRES_DB: loyalty_db
+              ports:
+                - "5436:5432"
+              volumes:
+                - loyalty_postgres_e2e_data:/var/lib/postgresql/data
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
+                interval: 5s
+                timeout: 5s
+                retries: 5
+            
+            redis:
+              image: redis:7-alpine
+              container_name: loyalty_redis_e2e
+              ports:
+                - "6381:6379"
+              volumes:
+                - loyalty_redis_e2e_data:/data
+              healthcheck:
+                test: ["CMD", "redis-cli", "ping"]
+                interval: 5s
+                timeout: 3s
+                retries: 5
+            
+            backend:
+              build:
+                context: ./backend
+                dockerfile: Dockerfile
+              container_name: loyalty_backend_e2e
+              environment:
+                NODE_ENV: test
+                DATABASE_URL: postgresql://loyalty:loyalty_password@postgres:5432/loyalty_db
+                REDIS_URL: redis://redis:6379
+                JWT_SECRET: e2e-jwt-secret-for-testing-only-min-32-chars
+                JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-min-32-chars
+                SESSION_SECRET: e2e-session-secret-for-testing-only-min-32-chars
+                FRONTEND_URL: http://localhost:3001
+                BACKEND_URL: http://localhost:4002
+                CORS_ORIGINS: "http://localhost:3001"
+              ports:
+                - "4002:4000"
+              depends_on:
+                postgres:
+                  condition: service_healthy
+                redis:
+                  condition: service_healthy
+              healthcheck:
+                test: ["CMD-SHELL", "curl -f http://localhost:4000/api/health || exit 1"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
+            
+            frontend:
+              build:
+                context: ./frontend
+                dockerfile: Dockerfile
+                args:
+                  VITE_API_URL: http://localhost:4002/api
+              container_name: loyalty_frontend_e2e
+              environment:
+                NODE_ENV: test
+              ports:
+                - "3001:3000"
+              depends_on:
+                backend:
+                  condition: service_healthy
+              healthcheck:
+                test: ["CMD-SHELL", "curl -f http://localhost:3000 || exit 1"]
+                interval: 10s
+                timeout: 5s
+                retries: 3
+          
+          volumes:
+            loyalty_postgres_e2e_data:
+              driver: local
+            loyalty_redis_e2e_data:
+              driver: local
+          EOF
+          
+          echo "✅ E2E Docker Compose configuration created"
+          
           docker compose -f docker-compose.e2e-test.yml up -d --build
           
           # Wait for application to be ready
