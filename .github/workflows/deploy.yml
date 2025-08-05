@@ -951,12 +951,50 @@ jobs:
           docker stop loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
           docker rm loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
           
-          docker compose -f docker-compose.e2e-test.yml up -d --build
+          # Start containers and capture any startup failures
+          if docker compose -f docker-compose.e2e-test.yml up -d --build; then
+            echo "✅ Docker containers started successfully"
+          else
+            echo "❌ Docker containers failed to start, capturing logs..."
+            echo "📄 Backend container logs:"
+            docker logs loyalty_backend_e2e 2>&1 || echo "No backend logs available"
+            echo "📄 Frontend container logs:"
+            docker logs loyalty_frontend_e2e 2>&1 || echo "No frontend logs available"
+            echo "📄 PostgreSQL container logs:"
+            docker logs loyalty_postgres_e2e 2>&1 || echo "No postgres logs available"
+            echo "📄 Redis container logs:"
+            docker logs loyalty_redis_e2e 2>&1 || echo "No redis logs available"
+            echo "📊 Container status:"
+            docker compose -f docker-compose.e2e-test.yml ps
+            exit 1
+          fi
           
           # Wait for application to be ready
           echo "⏳ Waiting for isolated application to be ready..."
-          timeout 180 bash -c 'until curl -s http://localhost:4002/api/health >/dev/null; do echo "Waiting for isolated backend..."; sleep 5; done'
-          timeout 60 bash -c 'until curl -s http://localhost:3001 >/dev/null; do echo "Waiting for isolated frontend..."; sleep 3; done'
+          
+          # Wait for backend with detailed error logging
+          if timeout 180 bash -c 'until curl -s http://localhost:4002/api/health >/dev/null; do echo "Waiting for isolated backend..."; sleep 5; done'; then
+            echo "✅ Backend is responding"
+          else
+            echo "❌ Backend failed to become ready, capturing logs..."
+            echo "📄 Backend container logs:"
+            docker logs loyalty_backend_e2e 2>&1 || echo "No backend logs available"
+            echo "📊 Container status:"
+            docker compose -f docker-compose.e2e-test.yml ps
+            exit 1
+          fi
+          
+          # Wait for frontend with error logging
+          if timeout 60 bash -c 'until curl -s http://localhost:3001 >/dev/null; do echo "Waiting for isolated frontend..."; sleep 3; done'; then
+            echo "✅ Frontend is responding"
+          else
+            echo "❌ Frontend failed to become ready, capturing logs..."
+            echo "📄 Frontend container logs:"
+            docker logs loyalty_frontend_e2e 2>&1 || echo "No frontend logs available"
+            echo "📊 Container status:"
+            docker compose -f docker-compose.e2e-test.yml ps
+            exit 1
+          fi
           
           echo "✅ Isolated application stack is ready for E2E testing"
           echo "🌐 Backend: http://localhost:4002/api/health"
