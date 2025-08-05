@@ -639,8 +639,8 @@ jobs:
           export COMPOSE_PROJECT_NAME="loyalty-e2e-tests"
           export POSTGRES_PORT="5436"
           export REDIS_PORT="6381"
-          export BACKEND_PORT="4002"
-          export FRONTEND_PORT="3001"
+          export BACKEND_PORT="4202"
+          export FRONTEND_PORT="3201"
           
           echo "🚀 Setting up isolated E2E environment on custom ports..."
           
@@ -654,9 +654,9 @@ jobs:
           JWT_SECRET: e2e-jwt-secret-for-testing-only-min-32-chars
           JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-min-32-chars
           SESSION_SECRET: e2e-session-secret-for-testing-only-min-32-chars
-          FRONTEND_URL: http://localhost:3001
-          BACKEND_URL: http://localhost:4002
-          VITE_API_URL: http://localhost:4002/api
+          FRONTEND_URL: http://localhost:3201
+          BACKEND_URL: http://localhost:4202
+          VITE_API_URL: http://localhost:4202/api
         run: |
           # Generate Prisma client first
           echo "🔄 Generating Prisma client for E2E tests..."
@@ -746,11 +746,11 @@ jobs:
                 JWT_SECRET: e2e-jwt-secret-for-testing-only-min-32-chars
                 JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-min-32-chars
                 SESSION_SECRET: e2e-session-secret-for-testing-only-min-32-chars
-                FRONTEND_URL: http://localhost:3001
-                BACKEND_URL: http://localhost:4002
-                CORS_ORIGINS: "http://localhost:3001"
+                FRONTEND_URL: http://localhost:3201
+                BACKEND_URL: http://localhost:4202
+                CORS_ORIGINS: "http://localhost:3201"
               ports:
-                - "4002:4000"
+                - "4202:4000"
               depends_on:
                 postgres:
                   condition: service_healthy
@@ -768,10 +768,10 @@ jobs:
                 context: ./frontend
                 dockerfile: Dockerfile
                 args:
-                  VITE_API_URL: http://localhost:4002/api
+                  VITE_API_URL: http://localhost:4202/api
               container_name: loyalty_frontend_e2e
               ports:
-                - "3001:80"
+                - "3201:80"
               depends_on:
                 backend:
                   condition: service_healthy
@@ -901,11 +901,11 @@ jobs:
                 JWT_SECRET: e2e-jwt-secret-for-testing-only-min-32-chars
                 JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-min-32-chars
                 SESSION_SECRET: e2e-session-secret-for-testing-only-min-32-chars
-                FRONTEND_URL: http://localhost:3001
-                BACKEND_URL: http://localhost:4002
-                CORS_ORIGINS: "http://localhost:3001"
+                FRONTEND_URL: http://localhost:3201
+                BACKEND_URL: http://localhost:4202
+                CORS_ORIGINS: "http://localhost:3201"
               ports:
-                - "4002:4000"
+                - "4202:4000"
               depends_on:
                 postgres:
                   condition: service_healthy
@@ -922,7 +922,7 @@ jobs:
                 context: ./frontend
                 dockerfile: Dockerfile
                 args:
-                  VITE_API_URL: http://localhost:4002/api
+                  VITE_API_URL: http://localhost:4202/api
               container_name: loyalty_frontend_e2e
               environment:
                 NODE_ENV: development
@@ -955,7 +955,7 @@ jobs:
           
           # Check for processes using E2E ports and kill them
           echo "🔍 Checking for processes using E2E ports..."
-          for port in 3001 4002 5436 6381; do
+          for port in 3201 4202 5436 6381; do
             pid=$(lsof -ti:$port 2>/dev/null || true)
             if [ ! -z "$pid" ]; then
               echo "⚠️ Found process $pid using port $port, terminating..."
@@ -966,7 +966,7 @@ jobs:
           
           # Verify ports are free
           echo "✅ Port cleanup completed"
-          netstat -tlnp | grep -E ":300[1-9]|:400[2-9]|:543[6-9]|:638[1-9]" || echo "No conflicting ports found"
+          netstat -tlnp | grep -E ":320[1-9]|:420[2-9]|:543[6-9]|:638[1-9]" || echo "No conflicting ports found"
           
           # Start containers and capture any startup failures
           if docker compose -f docker-compose.e2e-test.yml up -d --build; then
@@ -994,7 +994,7 @@ jobs:
           BACKEND_READY=false
           for i in {1..60}; do
             echo "Attempt $i/60: Testing backend connection..."
-            if curl -s http://localhost:4002/api/health >/dev/null 2>&1; then
+            if curl -s http://localhost:4202/api/health >/dev/null 2>&1; then
               echo "✅ Backend is responding!"
               BACKEND_READY=true
               break
@@ -1006,13 +1006,13 @@ jobs:
           if [ "$BACKEND_READY" = false ]; then
             echo "❌ Backend failed to become ready after 5 minutes (60 attempts)"
             echo "🔍 Final connection test:"
-            curl -v http://localhost:4002/api/health || echo "Final curl test failed"
+            curl -v http://localhost:4202/api/health || echo "Final curl test failed"
             echo "📄 Backend container logs:"
             docker logs loyalty_backend_e2e 2>&1 || echo "No backend logs available"
             echo "📊 Container status:"
             docker compose -f docker-compose.e2e-test.yml ps
             echo "🌐 Port connectivity test:"
-            netstat -tlnp | grep :4002 || echo "Port 4002 not found in netstat"
+            netstat -tlnp | grep :4202 || echo "Port 4202 not found in netstat"
             exit 1
           fi
           
@@ -1021,7 +1021,7 @@ jobs:
           FRONTEND_READY=false
           for i in {1..40}; do
             echo "Attempt $i/40: Testing frontend connection..."
-            if curl -s http://localhost:3001 >/dev/null 2>&1; then
+            if curl -s http://localhost:3201 >/dev/null 2>&1; then
               echo "✅ Frontend is responding!"
               FRONTEND_READY=true
               break
@@ -1033,31 +1033,31 @@ jobs:
           if [ "$FRONTEND_READY" = false ]; then
             echo "❌ Frontend failed to become ready after 2 minutes (40 attempts)"
             echo "🔍 Final frontend connection test:"
-            curl -v http://localhost:3001 || echo "Final frontend curl test failed"
+            curl -v http://localhost:3201 || echo "Final frontend curl test failed"
             echo "📄 Frontend container logs:"
             docker logs loyalty_frontend_e2e 2>&1 || echo "No frontend logs available"
             echo "📊 Container status:"
             docker compose -f docker-compose.e2e-test.yml ps
             echo "🌐 Frontend port connectivity test:"
-            netstat -tlnp | grep :3001 || echo "Port 3001 not found in netstat"
+            netstat -tlnp | grep :3201 || echo "Port 3201 not found in netstat"
             exit 1
           fi
           
           echo "✅ Isolated application stack is ready for E2E testing"
-          echo "🌐 Backend: http://localhost:4002/api/health"
-          echo "🌐 Frontend: http://localhost:3001"
+          echo "🌐 Backend: http://localhost:4202/api/health"
+          echo "🌐 Frontend: http://localhost:3201"
       
       - name: "🎭 Run E2E tests with Playwright (isolated)"
         env:
           NODE_ENV: test
           DATABASE_URL: postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db
           REDIS_URL: redis://localhost:6381
-          BACKEND_URL: http://localhost:4002
-          FRONTEND_URL: http://localhost:3001
+          BACKEND_URL: http://localhost:4202
+          FRONTEND_URL: http://localhost:3201
         run: |
           echo "🎭 Running E2E tests with Playwright on isolated environment..."
-          echo "🌐 Testing against Backend: http://localhost:4002"
-          echo "🌐 Testing against Frontend: http://localhost:3001"
+          echo "🌐 Testing against Backend: http://localhost:4202"
+          echo "🌐 Testing against Frontend: http://localhost:3201"
           
           # Install Playwright browsers if needed
           npx playwright install --with-deps chromium
@@ -1068,11 +1068,11 @@ jobs:
       - name: "🔐 OAuth E2E validation tests (isolated)"
         env:
           NODE_ENV: test
-          BACKEND_URL: http://localhost:4002
-          FRONTEND_URL: http://localhost:3001
+          BACKEND_URL: http://localhost:4202
+          FRONTEND_URL: http://localhost:3201
         run: |
           echo "🔐 Running OAuth-specific E2E tests on isolated environment..."
-          echo "🔐 Testing OAuth against: http://localhost:4002"
+          echo "🔐 Testing OAuth against: http://localhost:4202"
           # Run OAuth-specific tests separately for focused validation
           npx playwright test tests/oauth-validation.spec.ts --reporter=line || echo "⚠️ OAuth E2E tests failed (non-blocking in CI)"
       
