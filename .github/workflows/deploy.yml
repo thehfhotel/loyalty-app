@@ -733,7 +733,7 @@ jobs:
             
             backend:
               build:
-                context: .
+                context: ./
                 dockerfile: Dockerfile
               container_name: loyalty_backend_e2e
               environment:
@@ -888,7 +888,7 @@ jobs:
             
             backend:
               build:
-                context: ./backend
+                context: ./
                 dockerfile: Dockerfile
               container_name: loyalty_backend_e2e
               environment:
