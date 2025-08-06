@@ -29,9 +29,12 @@ import ThaiSurveyDebug from './pages/admin/ThaiSurveyDebug';
 import UserManagement from './pages/admin/UserManagement';
 import NewMemberCouponSettings from './pages/admin/NewMemberCouponSettings';
 import { useEffect, useState, useRef } from 'react';
+import { checkPWAInstallPrompt } from './utils/pwaUtils';
+import { notificationService } from './services/notificationService';
 
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const user = useAuthStore((state) => state.user);
   const [isInitialized, setIsInitialized] = useState(false);
   const initializingRef = useRef(false);
   
@@ -151,6 +154,33 @@ function App() {
     
     initializeAuth();
   }, []); // Only run once on mount
+
+  // Initialize PWA features when user is authenticated
+  useEffect(() => {
+    if (isAuthenticated && user && isInitialized) {
+      const initializePWA = async () => {
+        try {
+          // Initialize PWA install prompt check
+          checkPWAInstallPrompt();
+          
+          // Initialize notification service
+          const notificationInitialized = await notificationService.initialize();
+          
+          if (notificationInitialized) {
+            // Auto-subscribe to notifications for PWA users
+            const subscribed = await notificationService.subscribeToPush(user.id);
+            if (subscribed) {
+              console.log('Successfully subscribed to push notifications');
+            }
+          }
+        } catch (error) {
+          console.error('Failed to initialize PWA features:', error);
+        }
+      };
+
+      initializePWA();
+    }
+  }, [isAuthenticated, user, isInitialized]);
 
   // Show loading while Zustand rehydrates from localStorage
   if (!isInitialized) {

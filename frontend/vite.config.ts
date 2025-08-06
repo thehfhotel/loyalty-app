@@ -8,6 +8,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'robots.txt', 'icon-192.png', 'icon-512.png'],
+      strategies: 'injectManifest',
+      srcDir: 'public',
+      filename: 'sw-custom.js',
       manifest: {
         name: 'Hotel Loyalty App',
         short_name: 'Loyalty',
@@ -17,6 +20,8 @@ export default defineConfig({
         display: 'standalone',
         start_url: '/',
         scope: '/',
+        orientation: 'portrait-primary',
+        categories: ['travel', 'business'],
         icons: [
           {
             src: '/icon-192.png',
@@ -35,6 +40,9 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         navigateFallbackDenylist: [/^\/api\/oauth/],
+        additionalManifestEntries: [
+          { url: '/sw-custom.js', revision: null }
+        ],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/loyalty\.saichon\.com\/api\/(?!oauth).*/i,

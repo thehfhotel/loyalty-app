@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { initiateOAuth, checkPWAInstallPrompt } from '../../utils/pwaUtils';
 
 interface LineLoginButtonProps {
   onSuccess?: () => void;
@@ -11,9 +12,11 @@ export default function LineLoginButton({ size = 'medium', variant = 'signIn' }:
   const { t } = useTranslation();
   
   const handleLineClick = () => {
-    const oauthUrl = `${import.meta.env.VITE_API_URL}/oauth/line`;
-    // Redirect to backend OAuth endpoint
-    window.location.href = oauthUrl;
+    // Check for PWA install prompt availability
+    checkPWAInstallPrompt();
+    
+    // Use PWA-aware OAuth initiation
+    initiateOAuth('line');
   };
 
   // Official LINE branding guidelines colors

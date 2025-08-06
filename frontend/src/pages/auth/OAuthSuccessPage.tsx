@@ -2,6 +2,13 @@ import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { notify } from '../../utils/notificationManager';
+import { 
+  handlePWAOAuthSuccess, 
+  recoverPWAOAuthState, 
+  detectPWA, 
+  requestPWANotificationPermission,
+  debugPWAOAuth
+} from '../../utils/pwaUtils';
 
 export default function OAuthSuccessPage() {
   const navigate = useNavigate();
@@ -10,11 +17,14 @@ export default function OAuthSuccessPage() {
 
   useEffect(() => {
     const handleOAuthSuccess = async () => {
+      // Debug PWA OAuth flow in development
+      debugPWAOAuth();
+      
       const token = searchParams.get('token');
       const refreshToken = searchParams.get('refreshToken');
       const isNewUser = searchParams.get('isNewUser') === 'true';
       const error = searchParams.get('error');
-
+      const isPWARedirect = searchParams.get('pwa_redirect') === 'true';
 
       if (error) {
         notify.error('Social login failed. Please try again.');
@@ -29,6 +39,23 @@ export default function OAuthSuccessPage() {
       }
 
       try {
+        const pwaInfo = detectPWA();
+        const tokens = { accessToken: token, refreshToken, isNewUser };
+        
+        // Handle PWA-specific OAuth flow
+        if (isPWARedirect || !pwaInfo.isPWA) {
+          // Check if we need to redirect back to PWA
+          handlePWAOAuthSuccess(tokens);
+          
+          // If we're in a browser window and have PWA state, 
+          // the handlePWAOAuthSuccess will redirect to PWA
+          const pwaState = recoverPWAOAuthState();
+          if (pwaState && !pwaInfo.isStandalone) {
+            // We're in browser window, redirect handled above
+            return;
+          }
+        }
+
         // Set tokens in auth store
         setTokens(token, refreshToken);
 
@@ -41,7 +68,6 @@ export default function OAuthSuccessPage() {
             'Content-Type': 'application/json'
           }
         });
-
 
         if (!response.ok) {
           throw new Error('Failed to get user data');
@@ -58,9 +84,26 @@ export default function OAuthSuccessPage() {
           isLoading: false
         });
 
+        // Request notification permissions for PWA users
+        if (pwaInfo.isPWA && isNewUser) {
+          try {
+            const notificationGranted = await requestPWANotificationPermission();
+            if (notificationGranted) {
+              console.log('PWA notification permission granted');
+            }
+          } catch (error) {
+            console.warn('PWA notification permission request failed:', error);
+          }
+        }
+
         // Show success message
         if (isNewUser) {
           notify.success('Welcome! Your account has been created successfully.');
+          
+          // Set flag to show PWA install prompt later if not already installed
+          if (!pwaInfo.isPWA) {
+            localStorage.setItem('show_pwa_install_prompt', 'true');
+          }
         } else {
           notify.success('Welcome back!');
         }

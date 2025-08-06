@@ -6,7 +6,31 @@ import { MarkReadRequest, NotificationType } from '../types/notification';
 const router = Router();
 const notificationService = new NotificationService();
 
-// All routes require authentication
+// VAPID public key endpoint (no auth required)
+router.get('/vapid-key', (_req, res) => {
+  try {
+    // In a real implementation, you would have VAPID keys configured
+    const publicKey = process.env.VAPID_PUBLIC_KEY;
+    
+    if (!publicKey) {
+      console.warn('[Notifications] VAPID public key not configured');
+      return res.status(503).json({ 
+        error: 'Push notifications not configured',
+        configured: false 
+      });
+    }
+    
+    return res.json({ 
+      publicKey,
+      configured: true 
+    });
+  } catch (error) {
+    console.error('[Notifications] Failed to get VAPID key:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// All other routes require authentication
 router.use(authenticate);
 
 // Get user's notifications with pagination
@@ -235,6 +259,65 @@ router.post('/admin/cleanup', async (req, res, next) => {
       success: true,
       data: { deletedCount },
       message: `${deletedCount} expired notifications cleaned up`
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// PWA Push Notification endpoints
+// Subscribe to push notifications
+router.post('/push/subscribe', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const { subscription, platform } = req.body;
+    
+    if (!subscription) {
+      return res.status(400).json({ error: 'Missing subscription data' });
+    }
+    
+    // In a real implementation, you would save the subscription to database
+    console.log('[Notifications] Push subscription received', {
+      userId: req.user.id,
+      platform,
+      endpoint: subscription.endpoint ? 'present' : 'missing'
+    });
+    
+    // TODO: Save subscription to database
+    // await saveUserPushSubscription(req.user.id, subscription, platform);
+    
+    res.json({ 
+      success: true,
+      message: 'Successfully subscribed to push notifications' 
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Unsubscribe from push notifications
+router.post('/push/unsubscribe', async (req, res, next) => {
+  try {
+    const { subscription } = req.body;
+    
+    if (!subscription) {
+      return res.status(400).json({ error: 'Missing subscription' });
+    }
+    
+    // In a real implementation, you would remove the subscription from database
+    console.log('[Notifications] Push unsubscription received', {
+      endpoint: subscription.endpoint ? 'present' : 'missing'
+    });
+    
+    // TODO: Remove subscription from database
+    // await removeUserPushSubscription(subscription);
+    
+    res.json({ 
+      success: true,
+      message: 'Successfully unsubscribed from push notifications' 
     });
   } catch (error) {
     return next(error);

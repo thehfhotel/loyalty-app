@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { initiateOAuth, checkPWAInstallPrompt } from '../../utils/pwaUtils';
 
 interface GoogleLoginButtonProps {
   onSuccess?: () => void;
@@ -11,9 +12,11 @@ export default function GoogleLoginButton({ theme = 'light', variant = 'signIn' 
   const { t } = useTranslation();
   
   const handleGoogleClick = () => {
-    const oauthUrl = `${import.meta.env.VITE_API_URL}/oauth/google`;
-    // Redirect to backend OAuth endpoint
-    window.location.href = oauthUrl;
+    // Check for PWA install prompt availability
+    checkPWAInstallPrompt();
+    
+    // Use PWA-aware OAuth initiation
+    initiateOAuth('google');
   };
 
   // Official Google branding guidelines colors and styles

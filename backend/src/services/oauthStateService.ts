@@ -13,6 +13,10 @@ export interface OAuthStateData {
   ip: string;
   secure: boolean;
   host: string;
+  // PWA context information
+  isPWA?: boolean;
+  isStandalone?: boolean;
+  platform?: string;
 }
 
 export class OAuthStateService {
