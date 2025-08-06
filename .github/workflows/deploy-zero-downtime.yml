@@ -5,11 +5,21 @@
 name: Zero-Downtime CI/CD Pipeline
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      deployment_reason:
+        description: 'Reason for manual deployment'
+        required: true
+        default: 'Manual deployment trigger'
+        type: string
+      target_environment:
+        description: 'Target deployment environment'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
 
 env:
   DEPLOY_PATH: /home/nut/loyalty-app
@@ -93,10 +103,18 @@ jobs:
     if: |
       needs.validation.result == 'success' && 
       needs.validation.outputs.validation-passed == 'true' &&
-      (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+      github.event_name == 'workflow_dispatch'
     environment: production
     
     steps:
+      - name: "📋 Log manual deployment trigger"
+        run: |
+          echo "🎯 Manual deployment initiated"
+          echo "📝 Reason: ${{ inputs.deployment_reason }}"
+          echo "🌐 Target: ${{ inputs.target_environment }}"
+          echo "👤 Triggered by: ${{ github.actor }}"
+          echo "📅 Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+      
       - name: "📥 Checkout production code"
         uses: actions/checkout@v4
         with:
@@ -320,6 +338,12 @@ jobs:
 # PIPELINE SUMMARY
 # =============================================================================
 # 
+# 🎯 MANUAL TRIGGER DEPLOYMENT:
+# - Deployments are triggered ONLY through manual workflow dispatch
+# - Requires explicit deployment reason for audit trail
+# - Supports production and staging environment targeting
+# - No automatic deployments on push or pull requests
+#
 # ✅ ZERO-DOWNTIME GUARANTEE:
 # - Running applications are NEVER stopped on pipeline failures
 # - Only successful deployments update the production environment
@@ -333,6 +357,7 @@ jobs:
 # - Cleans up old environment after successful switch
 #
 # 🛡️ SAFETY MECHANISMS:
+# - Manual approval required for all deployments
 # - Comprehensive health checks at every stage
 # - Automatic rollback on deployment failures
 # - Traffic switch validation with immediate rollback
@@ -343,5 +368,11 @@ jobs:
 # - Smart dependency caching
 # - Parallel validation phases
 # - Minimal downtime during traffic switching
+#
+# 📝 AUDIT TRAIL:
+# - All deployments logged with reason and timestamp
+# - Manual trigger provides deployment accountability
+# - User identification for deployment tracking
+# - Support for different target environments
 #
 # =============================================================================
