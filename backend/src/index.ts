@@ -44,6 +44,7 @@ import notificationRoutes from './routes/notifications';
 import analyticsRoutes from './routes/analyticsRoutes';
 // Import and initialize OAuth service to register strategies
 import './services/oauthService';
+import { oauthCleanupService } from './services/oauthCleanupService';
 
 const app = express();
 const httpServer = createServer(app);
@@ -310,9 +311,12 @@ async function startServer() {
       await seedSurveys();
     }
 
+    // Start OAuth state cleanup service
+    oauthCleanupService.start();
+
     httpServer.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
-      logger.info('Backend server initialized with storage and survey data');
+      logger.info('Backend server initialized with storage, survey data, and OAuth state cleanup');
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

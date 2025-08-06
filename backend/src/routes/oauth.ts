@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import passport from 'passport';
 import { logger } from '../utils/logger';
+import { oauthStateService } from '../services/oauthStateService';
 
 const router = Router();
 
 // Google OAuth routes
-router.get('/google', (req, res, next) => {
+router.get('/google', async (req, res) => {
   try {
-    
     logger.debug('[OAuth] Google OAuth initiated', {
       headers: req.headers,
       protocol: req.protocol,
@@ -30,21 +30,39 @@ router.get('/google', (req, res, next) => {
     
     logger.debug('[OAuth] Initiating Google OAuth with scopes', { scopes: ['profile', 'email'] });
     
-    // Enhanced mobile-friendly Google OAuth initiation for Safari iPhone
+    // Create OAuth state for session continuity across browser context switches
     const userAgent = req.get('User-Agent') ?? '';
+    const returnUrl = req.headers.referer ?? process.env.FRONTEND_URL ?? 'http://localhost:4001';
+    
+    const stateData = {
+      sessionId: req.sessionID,
+      userId: (req.session as any)?.userId,
+      userAgent,
+      timestamp: Date.now(),
+      returnUrl,
+      provider: 'google' as const,
+      originalUrl: req.originalUrl,
+      ip: req.ip ?? req.connection.remoteAddress ?? 'unknown',
+      secure: req.secure,
+      host: req.get('host') ?? 'localhost'
+    };
+    
+    const stateKey = await oauthStateService.createState(stateData);
+    
+    // Enhanced mobile-friendly Google OAuth initiation for Safari iPhone
     const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
     const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
     
     if (isMobile && isSafari) {
       // For Safari mobile, construct Google OAuth URL manually
       const callbackURL = encodeURIComponent(process.env.GOOGLE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/google/callback');
-      const state = Math.random().toString(36).substring(2, 15);
       const scope = encodeURIComponent('profile email');
       
-      const googleOAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${googleClientId}&redirect_uri=${callbackURL}&scope=${scope}&state=${state}`;
+      const googleOAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${googleClientId}&redirect_uri=${callbackURL}&scope=${scope}&state=${stateKey}`;
       
-      logger.debug('[OAuth] Generating mobile-friendly Google OAuth redirect', { 
-        googleOAuthUrl,
+      logger.debug('[OAuth] Generating mobile-friendly Google OAuth redirect with state', { 
+        googleOAuthUrl: googleOAuthUrl.replace(googleClientId, '***'),
+        stateKey,
         userAgent,
         isMobile,
         isSafari 
@@ -76,8 +94,19 @@ router.get('/google', (req, res, next) => {
       });
       res.status(200).send(htmlRedirect);
     } else {
-      // Standard passport authentication for desktop and other mobile browsers
-      passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+      // For desktop and other mobile browsers, we still use passport but with state
+      // Store state in request for passport to use
+      (req as any).oauthState = stateKey;
+      
+      // Custom passport authentication with state parameter
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${googleClientId}&redirect_uri=${encodeURIComponent(process.env.GOOGLE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/google/callback')}&scope=${encodeURIComponent('profile email')}&state=${stateKey}`;
+      
+      logger.debug('[OAuth] Redirecting to Google OAuth with state', {
+        stateKey,
+        authUrl: authUrl.replace(googleClientId, '***')
+      });
+      
+      res.redirect(authUrl);
     }
   } catch (error) {
     logger.error('[OAuth] Google initiation error:', error);
@@ -248,52 +277,71 @@ router.get('/google/callback',
 
 
 // LINE OAuth routes
-router.get('/line', (req, res, next) => {
-  logger.debug('[OAuth] LINE OAuth initiated', {
-    headers: req.headers,
-    protocol: req.protocol,
-    secure: req.secure,
-    ip: req.ip,
-    originalUrl: req.originalUrl,
-    host: req.get('host'),
-    forwardedProto: req.get('X-Forwarded-Proto'),
-    forwardedHost: req.get('X-Forwarded-Host')
-  });
-  
-  // Check if LINE strategy is configured
-  const lineChannelId = process.env.LINE_CHANNEL_ID;
-  
-  if (!lineChannelId || lineChannelId === 'your-line-channel-id') {
-    logger.warn('[OAuth] LINE OAuth not configured', { lineChannelId });
-    return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=line_not_configured`);
-  }
-  
-  logger.debug('[OAuth] Initiating LINE OAuth', { channelId: lineChannelId });
-  
-  // Enhanced mobile-friendly LINE OAuth initiation for Safari iPhone
-  // Fix: Safari iPhone treats OAuth redirects as file downloads when using standard HTTP redirects
-  // Solution: Use HTML meta refresh + JavaScript redirect for mobile Safari compatibility
-  const userAgent = req.get('User-Agent') ?? '';
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
-  const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
-  
-  if (isMobile && isSafari) {
-    // For Safari mobile, we need to construct the LINE OAuth URL manually
-    // and return an HTML page to avoid the redirect being treated as a download
-    const callbackURL = encodeURIComponent(process.env.LINE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/line/callback');
-    const state = Math.random().toString(36).substring(2, 15);
-    const scope = 'profile%20openid%20email';
-    
-    const lineOAuthUrl = `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${lineChannelId}&redirect_uri=${callbackURL}&state=${state}&scope=${scope}`;
-    
-    logger.debug('[OAuth] Generating mobile-friendly LINE OAuth redirect', { 
-      lineOAuthUrl,
-      userAgent,
-      isMobile,
-      isSafari 
+router.get('/line', async (req, res) => {
+  try {
+    logger.debug('[OAuth] LINE OAuth initiated', {
+      headers: req.headers,
+      protocol: req.protocol,
+      secure: req.secure,
+      ip: req.ip,
+      originalUrl: req.originalUrl,
+      host: req.get('host'),
+      forwardedProto: req.get('X-Forwarded-Proto'),
+      forwardedHost: req.get('X-Forwarded-Host')
     });
     
-    const htmlRedirect = `
+    // Check if LINE strategy is configured
+    const lineChannelId = process.env.LINE_CHANNEL_ID;
+    
+    if (!lineChannelId || lineChannelId === 'your-line-channel-id') {
+      logger.warn('[OAuth] LINE OAuth not configured', { lineChannelId });
+      return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=line_not_configured`);
+    }
+    
+    logger.debug('[OAuth] Initiating LINE OAuth', { channelId: lineChannelId });
+    
+    // Create OAuth state for session continuity across browser context switches
+    const userAgent = req.get('User-Agent') ?? '';
+    const returnUrl = req.headers.referer ?? process.env.FRONTEND_URL ?? 'http://localhost:4001';
+    
+    const stateData = {
+      sessionId: req.sessionID,
+      userId: (req.session as any)?.userId,
+      userAgent,
+      timestamp: Date.now(),
+      returnUrl,
+      provider: 'line' as const,
+      originalUrl: req.originalUrl,
+      ip: req.ip ?? req.connection.remoteAddress ?? 'unknown',
+      secure: req.secure,
+      host: req.get('host') ?? 'localhost'
+    };
+    
+    const stateKey = await oauthStateService.createState(stateData);
+    
+    // Enhanced mobile-friendly LINE OAuth initiation for Safari iPhone
+    // Fix: Safari iPhone treats OAuth redirects as file downloads when using standard HTTP redirects
+    // Solution: Use HTML meta refresh + JavaScript redirect for mobile Safari compatibility
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
+    const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
+    
+    if (isMobile && isSafari) {
+      // For Safari mobile, we need to construct the LINE OAuth URL manually
+      // and return an HTML page to avoid the redirect being treated as a download
+      const callbackURL = encodeURIComponent(process.env.LINE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/line/callback');
+      const scope = 'profile%20openid%20email';
+      
+      const lineOAuthUrl = `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${lineChannelId}&redirect_uri=${callbackURL}&state=${stateKey}&scope=${scope}`;
+      
+      logger.debug('[OAuth] Generating mobile-friendly LINE OAuth redirect with state', { 
+        lineOAuthUrl: lineOAuthUrl.replace(lineChannelId, '***'),
+        stateKey,
+        userAgent,
+        isMobile,
+        isSafari 
+      });
+      
+      const htmlRedirect = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -310,79 +358,181 @@ router.get('/line', (req, res, next) => {
     <p>If you are not redirected automatically, <a href="${lineOAuthUrl}">click here</a>.</p>
 </body>
 </html>`;
-    
-    res.set({
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
-    });
-    res.status(200).send(htmlRedirect);
-  } else {
-    // Standard passport authentication for desktop and other mobile browsers
-    passport.authenticate('line')(req, res, next);
+      
+      res.set({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+      res.status(200).send(htmlRedirect);
+    } else {
+      // For desktop and other mobile browsers, we need to store the state and use it
+      // Store state in request for passport to use
+      (req as any).oauthState = stateKey;
+      
+      // Custom passport authentication with state parameter
+      const authUrl = `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${lineChannelId}&redirect_uri=${encodeURIComponent(process.env.LINE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/line/callback')}&state=${stateKey}&scope=profile%20openid%20email`;
+      
+      logger.debug('[OAuth] Redirecting to LINE OAuth with state', {
+        stateKey,
+        authUrl: authUrl.replace(lineChannelId, '***')
+      });
+      
+      res.redirect(authUrl);
+    }
+  } catch (error) {
+    logger.error('[OAuth] LINE initiation error:', error);
+    res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`);
   }
 });
 
-router.get('/line/callback', 
-  (req, res, next) => {
-    try {
-      // Check for OAuth errors in callback
-      if (req.query.error) {
-        const error = `LINE OAuth error: ${req.query.error} - ${req.query.error_description ?? 'No description'}`;
-        logger.error('[OAuth] ' + error);
-        return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_provider_error`);
-      }
-
-      logger.debug('[OAuth] LINE OAuth callback received', {
-        query: req.query,
-        headers: req.headers,
-        cookies: req.cookies,
-        sessionID: req.sessionID,
-        session: req.session
-      });
-      next();
-    } catch (error) {
-      logger.error('[OAuth] LINE callback preprocessing error:', error);
-      res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`);
+router.get('/line/callback', async (req, res) => {
+  try {
+    // Check for OAuth errors in callback
+    if (req.query.error) {
+      const error = `LINE OAuth error: ${req.query.error} - ${req.query.error_description ?? 'No description'}`;
+      logger.error('[OAuth] ' + error);
+      return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_provider_error`);
     }
-  },
-  passport.authenticate('line', { session: false }),
-  async (req, res) => {
-    try {
-      logger.debug('[OAuth] LINE OAuth authenticated, processing result');
-      const oauthResult = req.user as any;
-      
-      if (!oauthResult) {
-        logger.error('[OAuth] LINE OAuth failed - no user data received');
-        return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_failed`);
-      }
 
-      const { user, tokens, isNewUser } = oauthResult;
-      logger.debug('[OAuth] LINE OAuth user data', {
-        userId: user.id,
-        email: user.email,
-        isNewUser,
-        provider: user.oauthProvider
+    const { code, state } = req.query;
+    
+    if (!code || !state) {
+      logger.error('[OAuth] LINE callback missing required parameters', { code: !!code, state: !!state });
+      return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_invalid`);
+    }
+
+    logger.debug('[OAuth] LINE OAuth callback received', {
+      hasCode: !!code,
+      hasState: !!state,
+      userAgent: req.get('User-Agent'),
+      ip: req.ip
+    });
+
+    // Retrieve state data for session continuity
+    const stateData = await oauthStateService.getState(state as string, 'line');
+    
+    if (!stateData) {
+      logger.error('[OAuth] LINE callback with invalid or expired state', { state });
+      return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=session_expired`);
+    }
+
+    logger.debug('[OAuth] LINE OAuth state recovered successfully', {
+      stateAge: Math.floor((Date.now() - stateData.timestamp) / 1000),
+      returnUrl: stateData.returnUrl,
+      originalUserAgent: stateData.userAgent
+    });
+
+    // Process LINE OAuth with authorization code - bypass passport for stateless operation
+    const { oauthService } = await import('../services/oauthService');
+    
+    // Exchange authorization code for access token
+    const lineTokenUrl = 'https://api.line.me/oauth2/v2.1/token';
+    const tokenParams = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: code as string,
+      redirect_uri: process.env.LINE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/line/callback',
+      client_id: process.env.LINE_CHANNEL_ID ?? '',
+      client_secret: process.env.LINE_CHANNEL_SECRET ?? ''
+    });
+
+    const tokenResponse = await fetch(lineTokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'loyalty-app/1.0'
+      },
+      body: tokenParams.toString()
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      logger.error('[OAuth] LINE token exchange failed', { 
+        status: tokenResponse.status, 
+        error: errorText 
       });
+      return res.redirect(`${stateData.returnUrl}/login?error=oauth_token_failed`);
+    }
 
-      // Create success URL with tokens
-      const successUrl = new URL('/oauth/success', process.env.FRONTEND_URL ?? 'http://localhost:4001');
-      successUrl.searchParams.set('token', tokens.accessToken);
-      successUrl.searchParams.set('refreshToken', tokens.refreshToken);
-      successUrl.searchParams.set('isNewUser', isNewUser.toString());
+    const tokenData = await tokenResponse.json() as {
+      access_token: string;
+      token_type: string;
+      expires_in: number;
+      refresh_token?: string;
+    };
+    
+    // Get LINE profile
+    const profileResponse = await fetch('https://api.line.me/v2/profile', {
+      headers: {
+        'Authorization': `Bearer ${tokenData.access_token}`,
+        'User-Agent': 'loyalty-app/1.0'
+      }
+    });
 
-      logger.info(`[OAuth] LINE OAuth success for user ${user.email}, isNewUser: ${isNewUser}`);
-      logger.debug('[OAuth] Redirecting to success URL', { successUrl: successUrl.toString() });
-      
-      // Enhanced mobile-friendly redirect for Safari iPhone compatibility
-      const userAgent = req.get('User-Agent') ?? '';
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
-      const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
-      
-      if (isMobile && isSafari) {
-        // Use HTML meta refresh for Safari mobile compatibility
-        const htmlRedirect = `
+    if (!profileResponse.ok) {
+      logger.error('[OAuth] LINE profile fetch failed', { status: profileResponse.status });
+      return res.redirect(`${stateData.returnUrl}/login?error=oauth_profile_failed`);
+    }
+
+    const lineProfile = await profileResponse.json() as {
+      userId: string;
+      displayName: string;
+      pictureUrl?: string;
+      statusMessage?: string;
+    };
+    
+    logger.debug('[OAuth] LINE profile received via direct API', {
+      userId: lineProfile.userId,
+      displayName: lineProfile.displayName,
+      hasProfilePicture: !!lineProfile.pictureUrl
+    });
+
+    // Convert LINE profile to our format and process through OAuth service
+    const profile = {
+      id: lineProfile.userId,
+      displayName: lineProfile.displayName,
+      pictureUrl: lineProfile.pictureUrl,
+      statusMessage: lineProfile.statusMessage,
+      email: undefined // LINE API doesn't provide email in basic profile
+    };
+
+    // Process authentication through our OAuth service
+    const oauthResult = await (oauthService as any).handleLineAuth(profile);
+    
+    if (!oauthResult) {
+      logger.error('[OAuth] LINE authentication processing failed');
+      return res.redirect(`${stateData.returnUrl}/login?error=oauth_processing_failed`);
+    }
+
+    const { user, tokens, isNewUser } = oauthResult;
+    logger.debug('[OAuth] LINE OAuth user authenticated', {
+      userId: user.id,
+      email: user.email,
+      isNewUser,
+      provider: user.oauthProvider
+    });
+
+    // Cleanup state data
+    await oauthStateService.deleteState(state as string, 'line');
+
+    // Create success URL with tokens using original return URL from state
+    const successUrl = new URL('/oauth/success', stateData.returnUrl);
+    successUrl.searchParams.set('token', tokens.accessToken);
+    successUrl.searchParams.set('refreshToken', tokens.refreshToken);
+    successUrl.searchParams.set('isNewUser', isNewUser.toString());
+
+    logger.info(`[OAuth] LINE OAuth success for user ${user.email || user.id}, isNewUser: ${isNewUser}`);
+    logger.debug('[OAuth] Redirecting to success URL', { successUrl: successUrl.toString() });
+    
+    // Enhanced mobile-friendly redirect for Safari iPhone compatibility
+    const userAgent = req.get('User-Agent') ?? '';
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
+    const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
+    
+    if (isMobile && isSafari) {
+      // Use HTML meta refresh for Safari mobile compatibility
+      const htmlRedirect = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -395,32 +545,48 @@ router.get('/line/callback',
     <script>
         window.location.href = '${successUrl.toString()}';
     </script>
+    <p>Authentication successful! Redirecting...</p>
     <p>If you are not redirected automatically, <a href="${successUrl.toString()}">click here</a>.</p>
 </body>
 </html>`;
-        
-        res.set({
-          'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        });
-        res.status(200).send(htmlRedirect);
-      } else {
-        // Standard redirect for desktop and other mobile browsers
-        res.redirect(302, successUrl.toString());
+      
+      res.set({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+      res.status(200).send(htmlRedirect);
+    } else {
+      // Standard redirect for desktop and other mobile browsers
+      res.redirect(302, successUrl.toString());
+    }
+  } catch (error) {
+    logger.error('[OAuth] LINE OAuth callback error:', error);
+    
+    // Try to get return URL from state if available
+    let returnUrl = process.env.FRONTEND_URL ?? 'http://localhost:4001';
+    try {
+      const state = req.query.state as string;
+      if (state) {
+        const stateData = await oauthStateService.getState(state, 'line');
+        if (stateData) {
+          returnUrl = stateData.returnUrl;
+          await oauthStateService.deleteState(state, 'line');
+        }
       }
-    } catch (error) {
-      logger.error('[OAuth] LINE OAuth callback error:', error);
-      
-      // Enhanced mobile-friendly error redirect
-      const userAgent = req.get('User-Agent') ?? '';
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
-      const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
-      const errorUrl = `${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`;
-      
-      if (isMobile && isSafari) {
-        const htmlRedirect = `
+    } catch (stateError) {
+      logger.error('[OAuth] Error cleaning up state after callback failure:', stateError);
+    }
+    
+    // Enhanced mobile-friendly error redirect
+    const userAgent = req.get('User-Agent') ?? '';
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
+    const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
+    const errorUrl = `${returnUrl}/login?error=oauth_error`;
+    
+    if (isMobile && isSafari) {
+      const htmlRedirect = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -433,23 +599,23 @@ router.get('/line/callback',
     <script>
         window.location.href = '${errorUrl}';
     </script>
+    <p>Authentication failed. Redirecting...</p>
     <p>If you are not redirected automatically, <a href="${errorUrl}">click here</a>.</p>
 </body>
 </html>`;
-        
-        res.set({
-          'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        });
-        res.status(200).send(htmlRedirect);
-      } else {
-        res.redirect(302, errorUrl);
-      }
+      
+      res.set({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+      res.status(200).send(htmlRedirect);
+    } else {
+      res.redirect(302, errorUrl);
     }
   }
-);
+});
 
 // OAuth status endpoint for frontend to get user info after OAuth
 router.get('/me', async (req, res) => {
@@ -487,6 +653,49 @@ router.get('/me', async (req, res) => {
   } catch (error) {
     logger.error('OAuth me endpoint error:', error);
     return res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+// OAuth state management endpoints for debugging and monitoring
+router.get('/state/health', async (_req, res) => {
+  try {
+    const stats = await oauthStateService.getStateStats();
+    
+    logger.debug('[OAuth State] Health check requested', stats);
+    
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      stats,
+      uptime: process.uptime()
+    });
+  } catch (error) {
+    logger.error('[OAuth State] Health check failed:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: 'State service unavailable'
+    });
+  }
+});
+
+// OAuth state cleanup endpoint (for maintenance)
+router.post('/state/cleanup', async (_req, res) => {
+  try {
+    const deletedCount = await oauthStateService.cleanupExpiredStates();
+    
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      deletedCount
+    });
+  } catch (error) {
+    logger.error('[OAuth State] Cleanup failed:', error);
+    res.status(500).json({
+      success: false,
+      timestamp: new Date().toISOString(),
+      error: 'Cleanup failed'
+    });
   }
 });
 
