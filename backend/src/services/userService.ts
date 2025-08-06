@@ -4,6 +4,8 @@ import { UserProfile } from '../types/auth';
 import { ProfileUpdate } from '../types/user';
 import { validateEmojiAvatar, generateEmojiAvatarUrl } from '../utils/emojiUtils';
 import { logger } from '../utils/logger';
+import { NotificationService } from './notificationService';
+import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
 
 interface UserWithProfile {
   userId: string;
@@ -20,6 +22,7 @@ interface UserWithProfile {
 }
 
 export class UserService {
+  private notificationService = new NotificationService();
   async getProfile(userId: string): Promise<UserProfile> {
     const [profile] = await query<UserProfile>(
       `SELECT 
@@ -31,6 +34,12 @@ export class UserService {
         preferences,
         avatar_url AS "avatarUrl",
         membership_id AS "membershipId",
+        gender,
+        occupation,
+        interests,
+        profile_completed AS "profileCompleted",
+        profile_completed_at AS "profileCompletedAt",
+        new_member_coupon_awarded AS "newMemberCouponAwarded",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM user_profiles
@@ -167,6 +176,329 @@ export class UserService {
     logger.info(`Email updated for user ${userId}`, { email, rowsAffected: result.rowCount });
   }
 
+  async getProfileCompletionStatus(userId: string): Promise<{
+    isComplete: boolean;
+    missingFields: string[];
+    newMemberCouponAvailable: boolean;
+  }> {
+    const profile = await this.getProfile(userId);
+    
+    const missingFields: string[] = [];
+
+    // Check each required field
+    if (!profile.firstName) missingFields.push('firstName');
+    if (!profile.dateOfBirth) missingFields.push('date_of_birth');
+    if (!profile.gender) missingFields.push('gender');
+    if (!profile.occupation) missingFields.push('occupation');
+    if (!profile.interests || profile.interests.length === 0) missingFields.push('interests');
+
+    const isComplete = missingFields.length === 0;
+    
+    // Check if new member rewards are available
+    // Available if profile is not complete AND rewards haven't been awarded yet AND admin has enabled rewards
+    let newMemberCouponAvailable = false;
+    
+    if (!isComplete && !profile.newMemberCouponAwarded) {
+      // Check if admin has enabled new member rewards (either coupons or points)
+      const [rewardSettings] = await query<{
+        isEnabled: boolean;
+        selectedCouponId: string | null;
+        pointsEnabled: boolean;
+        pointsAmount: number | null;
+      }>(
+        `SELECT 
+          is_enabled AS "isEnabled",
+          selected_coupon_id AS "selectedCouponId",
+          points_enabled AS "pointsEnabled",
+          points_amount AS "pointsAmount"
+        FROM new_member_coupon_settings 
+        ORDER BY created_at DESC 
+        LIMIT 1`
+      );
+
+      if (rewardSettings) {
+        // Available if either coupons are enabled with a selected coupon OR points are enabled with an amount
+        const couponRewardsEnabled = !!(rewardSettings.isEnabled && rewardSettings.selectedCouponId);
+        const pointsRewardsEnabled = !!(rewardSettings.pointsEnabled && rewardSettings.pointsAmount && rewardSettings.pointsAmount > 0);
+        
+        newMemberCouponAvailable = couponRewardsEnabled || pointsRewardsEnabled;
+      }
+    }
+
+    return {
+      isComplete,
+      missingFields,
+      newMemberCouponAvailable
+    };
+  }
+
+  async completeProfile(userId: string, data: {
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    dateOfBirth?: string;
+    gender?: string;
+    occupation?: string;
+    interests?: string[];
+  }): Promise<{
+    profile: UserProfile;
+    couponAwarded: boolean;
+    coupon?: any;
+    pointsAwarded?: number;
+  }> {
+    const currentProfile = await this.getProfile(userId);
+    
+    // Check if profile was already completed
+    const wasAlreadyCompleted = currentProfile.profileCompleted;
+    
+    // Update profile with new data
+    const updateFields: string[] = [];
+    const values: unknown[] = [];
+    let paramCount = 1;
+
+    if (data.firstName !== undefined) {
+      updateFields.push(`first_name = $${paramCount++}`);
+      values.push(data.firstName);
+    }
+    if (data.lastName !== undefined) {
+      updateFields.push(`last_name = $${paramCount++}`);
+      values.push(data.lastName);
+    }
+    if (data.phone !== undefined) {
+      updateFields.push(`phone = $${paramCount++}`);
+      values.push(data.phone);
+    }
+    if (data.dateOfBirth !== undefined) {
+      updateFields.push(`date_of_birth = $${paramCount++}`);
+      values.push(data.dateOfBirth);
+    }
+    if (data.gender !== undefined) {
+      updateFields.push(`gender = $${paramCount++}`);
+      values.push(data.gender);
+    }
+    if (data.occupation !== undefined) {
+      updateFields.push(`occupation = $${paramCount++}`);
+      values.push(data.occupation);
+    }
+    if (data.interests !== undefined) {
+      updateFields.push(`interests = $${paramCount++}`);
+      values.push(JSON.stringify(data.interests));
+    }
+
+    values.push(userId);
+
+    // Get updated profile to check completion status
+    const [updatedProfile] = await query<UserProfile>(
+      `UPDATE user_profiles 
+      SET ${updateFields.join(', ')}, updated_at = NOW()
+      WHERE user_id = $${paramCount}
+      RETURNING 
+        user_id AS "userId",
+        first_name AS "firstName",
+        last_name AS "lastName",
+        phone,
+        date_of_birth AS "dateOfBirth",
+        preferences,
+        avatar_url AS "avatarUrl",
+        membership_id AS "membershipId",
+        gender,
+        occupation,
+        interests,
+        profile_completed AS "profileCompleted",
+        profile_completed_at AS "profileCompletedAt",
+        new_member_coupon_awarded AS "newMemberCouponAwarded",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"`,
+      values
+    );
+
+    if (!updatedProfile) {
+      throw new AppError(404, 'Profile not found');
+    }
+
+    // Check if profile is now complete
+    const status = await this.getProfileCompletionStatus(userId);
+    let rewardsAwarded = false;
+    let coupon = null;
+    let pointsAwarded = 0;
+
+    if (status.isComplete && !wasAlreadyCompleted && !currentProfile.newMemberCouponAwarded) {
+      // Profile is now complete for the first time - award new member rewards
+      const rewardResult = await this.awardNewMemberRewards(userId);
+      rewardsAwarded = rewardResult.success;
+      coupon = rewardResult.coupon;
+      pointsAwarded = rewardResult.pointsAwarded ?? 0;
+
+      // Mark profile as completed
+      await query(
+        'UPDATE user_profiles SET profile_completed = true, profile_completed_at = NOW() WHERE user_id = $1',
+        [userId]
+      );
+
+      // Get final updated profile
+      const finalProfile = await this.getProfile(userId);
+
+      // Create notification for profile completion with rewards
+      try {
+        await this.notificationService.createProfileCompletionNotification(
+          userId,
+          rewardsAwarded && coupon !== null,
+          coupon,
+          pointsAwarded
+        );
+      } catch (error) {
+        logger.warn('Failed to create profile completion notification', {
+          userId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+
+      return {
+        profile: finalProfile,
+        couponAwarded: rewardsAwarded && coupon !== null,
+        coupon,
+        pointsAwarded
+      };
+    }
+
+    return {
+      profile: updatedProfile,
+      couponAwarded: false,
+      coupon: null,
+      pointsAwarded: 0
+    };
+  }
+
+  private async awardNewMemberRewards(userId: string): Promise<{
+    success: boolean;
+    coupon?: any;
+    pointsAwarded?: number;
+  }> {
+    try {
+      // Get active new member reward settings
+      const [rewardSettings] = await query<{
+        id: string;
+        isEnabled: boolean;
+        selectedCouponId: string | null;
+        pointsEnabled: boolean;
+        pointsAmount: number | null;
+      }>(
+        `SELECT 
+          id,
+          is_enabled AS "isEnabled",
+          selected_coupon_id AS "selectedCouponId",
+          points_enabled AS "pointsEnabled",
+          points_amount AS "pointsAmount"
+        FROM new_member_coupon_settings 
+        WHERE (is_enabled = true AND selected_coupon_id IS NOT NULL) 
+           OR (points_enabled = true AND points_amount IS NOT NULL)
+        ORDER BY created_at DESC 
+        LIMIT 1`
+      );
+
+      if (!rewardSettings || (!rewardSettings.isEnabled && !rewardSettings.pointsEnabled)) {
+        logger.warn(`No active new member reward settings found for user ${userId}`);
+        return { success: false };
+      }
+
+      let coupon = null;
+      let pointsAwarded = 0;
+
+      // Award coupon if configured
+      if (rewardSettings.isEnabled && rewardSettings.selectedCouponId) {
+        const couponId = rewardSettings.selectedCouponId;
+
+        // Verify the coupon exists, is active, and hasn't expired
+        const [couponData] = await query<{
+          id: string;
+          code: string;
+          name: string;
+          description: string;
+          validUntil: string;
+        }>(
+          `SELECT 
+            id, code, name, description,
+            valid_until AS "validUntil"
+          FROM coupons 
+          WHERE id = $1 AND status = 'active' AND valid_until > NOW()`,
+          [couponId]
+        );
+
+        if (!couponData) {
+          logger.warn(`Selected coupon not found, inactive, or expired for user ${userId}`, {
+            selectedCouponId: couponId
+          });
+        } else {
+          // Generate QR code for the user coupon
+          const qrCode = `NM${userId.substring(0, 8).toUpperCase()}${Date.now().toString(36).toUpperCase()}`;
+
+          // Award the coupon to the user
+          await query(
+            `INSERT INTO user_coupons (
+              user_id, coupon_id, status, qr_code, assigned_reason, 
+              expires_at, assigned_by
+            ) VALUES ($1, $2, 'available', $3, 'New member profile completion reward', 
+              $4, $1)`,
+            [userId, couponId, qrCode, couponData.validUntil]
+          );
+
+          coupon = {
+            id: couponData.id,
+            name: couponData.name,
+            code: couponData.code,
+            description: couponData.description
+          };
+
+          logger.info(`New member coupon awarded to user ${userId}`, {
+            couponId: couponData.id,
+            couponCode: couponData.code,
+            couponName: couponData.name,
+            qrCode
+          });
+        }
+      }
+
+      // Award points if configured
+      if (rewardSettings.pointsEnabled && rewardSettings.pointsAmount && rewardSettings.pointsAmount > 0) {
+        // Add points to user's loyalty account
+        await query(
+          `INSERT INTO points_transactions (
+            user_id, points, type, description, reference_id
+          ) VALUES ($1, $2, 'earned_bonus', $3, $4)`,
+          [
+            userId, 
+            rewardSettings.pointsAmount, 
+            `New member profile completion bonus: ${rewardSettings.pointsAmount} points`,
+            rewardSettings.id
+          ]
+        );
+
+        pointsAwarded = rewardSettings.pointsAmount;
+
+        logger.info(`New member points awarded to user ${userId}`, {
+          pointsAwarded: rewardSettings.pointsAmount
+        });
+      }
+
+      // Mark the new member rewards as awarded (if any rewards were given)
+      if (coupon !== null || pointsAwarded > 0) {
+        await query(
+          'UPDATE user_profiles SET new_member_coupon_awarded = true, new_member_coupon_awarded_at = NOW() WHERE user_id = $1',
+          [userId]
+        );
+      }
+
+      return {
+        success: coupon !== null || pointsAwarded > 0,
+        coupon: coupon,
+        pointsAwarded: pointsAwarded > 0 ? pointsAwarded : undefined
+      };
+    } catch (error) {
+      logger.error(`Failed to award new member rewards to user ${userId}`, error);
+      return { success: false };
+    }
+  }
+
   // Admin-only methods
   async getAllUsers(page = 1, limit = 10, search = ''): Promise<{ users: UserWithProfile[], total: number }> {
     const offset = (page - 1) * limit;
@@ -277,6 +609,199 @@ export class UserService {
       active: parseInt(stats.active),
       admins: parseInt(stats.admins),
       recentlyJoined: parseInt(stats.recentlyJoined)
+    };
+  }
+
+  async getNewMemberCouponSettings(): Promise<any> {
+    const [settings] = await query<any>(
+      `SELECT 
+        id,
+        is_enabled AS "isEnabled",
+        selected_coupon_id AS "selectedCouponId",
+        points_enabled AS "pointsEnabled",
+        points_amount AS "pointsAmount",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      FROM new_member_coupon_settings 
+      ORDER BY created_at DESC 
+      LIMIT 1`
+    );
+
+    // If no settings exist, create default ones
+    if (!settings) {
+      const [defaultSettings] = await query<any>(
+        `INSERT INTO new_member_coupon_settings (is_enabled, selected_coupon_id, points_enabled, points_amount)
+        VALUES ($1, $2, $3, $4)
+        RETURNING 
+          id,
+          is_enabled AS "isEnabled",
+          selected_coupon_id AS "selectedCouponId",
+          points_enabled AS "pointsEnabled",
+          points_amount AS "pointsAmount",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"`,
+        [false, null, false, null]
+      );
+      return defaultSettings;
+    }
+
+    return settings;
+  }
+
+  async updateNewMemberCouponSettings(data: {
+    isEnabled: boolean;
+    selectedCouponId: string | null;
+    pointsEnabled: boolean;
+    pointsAmount: number | null;
+  }): Promise<any> {
+    // Get current settings or create if none exist
+    const currentSettings = await this.getNewMemberCouponSettings();
+    
+    // Validate selected coupon if provided and enabled
+    if (data.isEnabled && data.selectedCouponId) {
+      const [coupon] = await query<{
+        id: string;
+        code: string;
+        name: string;
+        status: string;
+        validUntil: string | null;
+      }>(
+        `SELECT 
+          id, code, name, status,
+          valid_until AS "validUntil"
+        FROM coupons 
+        WHERE id = $1`,
+        [data.selectedCouponId]
+      );
+
+      if (!coupon) {
+        throw new AppError(400, 'Selected coupon not found');
+      }
+
+      if (coupon.status !== 'active') {
+        throw new AppError(400, `Selected coupon is ${coupon.status}. Only active coupons can be used for new member rewards.`);
+      }
+
+      if (coupon.validUntil && new Date(coupon.validUntil) <= new Date()) {
+        throw new AppError(400, `Selected coupon "${coupon.name}" has expired on ${formatDateToDDMMYYYY(coupon.validUntil)}. Please select a valid coupon.`);
+      }
+
+      // Warn if coupon expires within 7 days
+      if (coupon.validUntil && new Date(coupon.validUntil) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)) {
+        logger.warn('New member coupon expires within 7 days', {
+          couponId: coupon.id,
+          couponName: coupon.name,
+          expiresAt: coupon.validUntil
+        });
+      }
+    }
+
+    // Validate points settings
+    if (data.pointsEnabled) {
+      if (!data.pointsAmount || data.pointsAmount <= 0) {
+        throw new AppError(400, 'Points amount must be a positive number when points are enabled');
+      }
+      if (data.pointsAmount > 10000) {
+        throw new AppError(400, 'Points amount cannot exceed 10,000 points');
+      }
+    }
+    
+    const [updatedSettings] = await query<any>(
+      `UPDATE new_member_coupon_settings 
+      SET 
+        is_enabled = $1,
+        selected_coupon_id = $2,
+        points_enabled = $3,
+        points_amount = $4,
+        updated_at = NOW()
+      WHERE id = $5
+      RETURNING 
+        id,
+        is_enabled AS "isEnabled",
+        selected_coupon_id AS "selectedCouponId",
+        points_enabled AS "pointsEnabled",
+        points_amount AS "pointsAmount",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"`,
+      [
+        data.isEnabled,
+        data.selectedCouponId,
+        data.pointsEnabled,
+        data.pointsAmount,
+        currentSettings.id
+      ]
+    );
+
+    if (!updatedSettings) {
+      throw new AppError(404, 'Failed to update new member coupon settings');
+    }
+
+    logger.info('New member rewards settings updated', {
+      settingsId: updatedSettings.id,
+      isEnabled: data.isEnabled,
+      selectedCouponId: data.selectedCouponId,
+      pointsEnabled: data.pointsEnabled,
+      pointsAmount: data.pointsAmount
+    });
+
+    return updatedSettings;
+  }
+
+  async getCouponStatusForAdmin(couponId: string): Promise<{
+    id: string;
+    code: string;
+    name: string;
+    status: string;
+    validFrom: string | null;
+    validUntil: string | null;
+    isExpired: boolean;
+    daysUntilExpiry: number | null;
+    warningLevel: 'none' | 'warning' | 'danger';
+  }> {
+    const [coupon] = await query<{
+      id: string;
+      code: string;
+      name: string;
+      status: string;
+      validFrom: string | null;
+      validUntil: string | null;
+    }>(
+      `SELECT 
+        id, code, name, status,
+        valid_from AS "validFrom",
+        valid_until AS "validUntil"
+      FROM coupons 
+      WHERE id = $1`,
+      [couponId]
+    );
+
+    if (!coupon) {
+      throw new AppError(404, 'Coupon not found');
+    }
+
+    const now = new Date();
+    const isExpired = coupon.validUntil ? new Date(coupon.validUntil) <= now : false;
+    const daysUntilExpiry = coupon.validUntil 
+      ? Math.ceil((new Date(coupon.validUntil).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) 
+      : null;
+
+    let warningLevel: 'none' | 'warning' | 'danger' = 'none';
+    if (isExpired) {
+      warningLevel = 'danger';
+    } else if (daysUntilExpiry !== null && daysUntilExpiry <= 7) {
+      warningLevel = 'warning';
+    }
+
+    return {
+      id: coupon.id,
+      code: coupon.code,
+      name: coupon.name,
+      status: coupon.status,
+      validFrom: coupon.validFrom,
+      validUntil: coupon.validUntil,
+      isExpired,
+      daysUntilExpiry,
+      warningLevel
     };
   }
 }

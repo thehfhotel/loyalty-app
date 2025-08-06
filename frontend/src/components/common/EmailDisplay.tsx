@@ -1,4 +1,4 @@
-import React from 'react';
+// React import removed as it's not needed in newer React versions
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { FiMail } from 'react-icons/fi';

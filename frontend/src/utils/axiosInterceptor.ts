@@ -114,4 +114,67 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
       return Promise.reject(error);
     }
   );
+
+  // Add response interceptor for 401 handling specific to this instance
+  axiosInstance.interceptors.response.use(
+    (response) => response,
+    async (error: AxiosError) => {
+      const originalRequest = error.config as any;
+
+      if (error.response?.status === 401 && !originalRequest._retry) {
+        originalRequest._retry = true;
+        
+        const authStore = useAuthStore.getState();
+        const currentPath = window.location.pathname;
+        
+        // Skip if we're already on auth pages
+        const authPages = ['/login', '/register', '/reset-password', '/oauth/success'];
+        if (authPages.some(page => currentPath.startsWith(page))) {
+          return Promise.reject(error);
+        }
+
+        // Try to refresh token first - but only if we have a refresh token
+        const refreshToken = authStore.refreshToken;
+        if (refreshToken) {
+          try {
+            await authStore.refreshAuth();
+            
+            // If refresh successful, retry the original request
+            const newToken = useAuthStore.getState().accessToken;
+            if (newToken) {
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+              return axiosInstance.request(originalRequest);
+            }
+          } catch (refreshError) {
+            console.error('Token refresh failed:', refreshError);
+          }
+        }
+
+        // Clear auth state and redirect (whether refresh failed or no refresh token)
+        authStore.clearAuth();
+        
+        // Show session expired message only once
+        if (!sessionExpiredShown) {
+          sessionExpiredShown = true;
+          notify.error('Your session has expired. Please log in again.', {
+            id: 'session-expired'
+          });
+          
+          // Reset the flag after 5 seconds
+          setTimeout(() => {
+            sessionExpiredShown = false;
+          }, 5000);
+        }
+        
+        // Force redirect to login with return URL - use window.location for immediate redirect
+        const returnUrl = currentPath + window.location.search;
+        window.location.href = `/login?returnUrl=${encodeURIComponent(returnUrl)}`;
+        
+        // Also return rejected promise to prevent further processing
+        return new Promise(() => {}); // Never resolves, preventing continued execution
+      }
+      
+      return Promise.reject(error);
+    }
+  );
 }

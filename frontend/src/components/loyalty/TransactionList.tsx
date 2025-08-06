@@ -1,6 +1,7 @@
 import { PointsTransaction } from '../../services/loyaltyService';
 import { useTranslation } from 'react-i18next';
 import { FiPlus, FiMinus, FiClock, FiUser } from 'react-icons/fi';
+import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
 
 interface TransactionListProps {
   transactions: PointsTransaction[];
@@ -98,13 +99,14 @@ export default function TransactionList({
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('th-TH', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
+    const date = new Date(dateString);
+    const dateOnly = formatDateToDDMMYYYY(date);
+    const timeOnly = date.toLocaleTimeString('en-GB', {
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      hour12: false
     });
+    return `${dateOnly} ${timeOnly}`;
   };
 
   if (isLoading) {

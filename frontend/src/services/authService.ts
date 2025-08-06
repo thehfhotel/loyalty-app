@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -9,94 +10,22 @@ const api = axios.create({
   },
 });
 
-// Add auth token to requests
-api.interceptors.request.use(
-  (config) => {
-    // Get token from Zustand persist storage
-    const authStorage = localStorage.getItem('auth-storage');
-    
-    if (authStorage) {
-      try {
-        const parsedAuth = JSON.parse(authStorage);
-        const token = parsedAuth.state?.accessToken;
-        
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-          console.log('[Auth Debug] Request interceptor adding token', {
-            url: config.url,
-            hasToken: true,
-            method: config.method
-          });
-        } else {
-          console.log('[Auth Debug] Request interceptor - no token found', {
-            url: config.url,
-            method: config.method
-          });
-        }
-      } catch (error) {
-        console.error('[Auth Debug] Error parsing auth storage:', error);
-      }
-    } else {
-      console.log('[Auth Debug] Request interceptor - no auth storage', {
-        url: config.url,
-        method: config.method
-      });
-    }
-    return config;
-  },
-  (error) => {
-    console.error('[Auth Debug] Request interceptor error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// Handle token refresh
-api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      try {
-        // Get refresh token from Zustand persist storage
-        const authStorage = localStorage.getItem('auth-storage');
-        if (authStorage) {
-          const parsedAuth = JSON.parse(authStorage);
-          const refreshToken = parsedAuth.state?.refreshToken;
-          
-          if (refreshToken) {
-            const response = await authService.refreshToken(refreshToken);
-            
-            // Update the Zustand storage with new tokens
-            parsedAuth.state.accessToken = response.tokens.accessToken;
-            parsedAuth.state.refreshToken = response.tokens.refreshToken;
-            localStorage.setItem('auth-storage', JSON.stringify(parsedAuth));
-            
-            originalRequest.headers.Authorization = `Bearer ${response.tokens.accessToken}`;
-            return api(originalRequest);
-          }
-        }
-      } catch (refreshError) {
-        // Refresh failed, clear auth and redirect to login
-        localStorage.removeItem('auth-storage');
-        window.location.href = '/login';
-      }
-    }
-
-    return Promise.reject(error);
-  }
-);
+// Use the unified auth token interceptor
+addAuthTokenInterceptor(api);
 
 export const authService = {
-  async login(email: string, password: string) {
-    console.log('[Auth Debug] Login attempt', { email });
-    const response = await api.post('/auth/login', { email, password });
+  async login(email: string, password: string, rememberMe?: boolean) {
+    console.log('[Auth Debug] Login attempt', { email, rememberMe });
+    const response = await api.post('/auth/login', { 
+      email, 
+      password,
+      rememberMe: rememberMe || false
+    });
     console.log('[Auth Debug] Login response', { 
       success: response.data.success,
       hasUser: !!response.data.user,
-      hasTokens: !!response.data.tokens
+      hasTokens: !!response.data.tokens,
+      rememberMe: rememberMe
     });
     return response.data;
   },

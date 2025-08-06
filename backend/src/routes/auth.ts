@@ -28,8 +28,8 @@ router.post('/register', validateRequest(registerSchema), async (req, res, next)
 // Login
 router.post('/login', validateRequest(loginSchema), async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    const result = await authService.login(email, password);
+    const { email, password, rememberMe } = req.body;
+    const result = await authService.login(email, password, rememberMe);
     res.json({
       user: result.user,
       tokens: result.tokens,

@@ -2,6 +2,7 @@ import React from 'react';
 import { UserActiveCoupon } from '../../types/coupon';
 import { couponService } from '../../services/couponService';
 import { useTranslation } from 'react-i18next';
+import { formatExpiryDateWithRelative } from '../../utils/dateFormatter';
 
 interface CouponCardProps {
   coupon: UserActiveCoupon;
@@ -20,18 +21,7 @@ const CouponCard: React.FC<CouponCardProps> = ({
 
   const formatExpiryDate = (coupon: UserActiveCoupon): string | null => {
     const expiryDate = couponService.getExpiryDate(coupon);
-    if (!expiryDate) {return null;}
-
-    const now = new Date();
-    const timeDiff = expiryDate.getTime() - now.getTime();
-    const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
-
-    if (daysDiff < 0) {return t('coupons.expired');}
-    if (daysDiff === 0) {return t('coupons.expiresToday');}
-    if (daysDiff === 1) {return t('coupons.expiresTomorrow');}
-    if (daysDiff <= 7) {return t('coupons.expiresInDays', { count: daysDiff });}
-
-    return expiryDate.toLocaleDateString();
+    return formatExpiryDateWithRelative(expiryDate, t);
   };
 
   const isExpiring = couponService.isExpiringSoon(coupon);

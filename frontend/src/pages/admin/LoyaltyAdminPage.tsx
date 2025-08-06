@@ -11,6 +11,7 @@ import {
   FiUser
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
+import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { 
   loyaltyService, 
   AdminUserLoyalty, 
@@ -584,13 +585,7 @@ export default function LoyaltyAdminPage() {
                             </div>
                             <div className="mt-1 space-y-1">
                               <div className="text-xs text-gray-600">
-                                {new Date(transaction.created_at).toLocaleDateString('en-US', {
-                                  year: 'numeric',
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
+                                {formatDateTimeToEuropean(transaction.created_at)}
                               </div>
                               {transaction.admin_email && (
                                 <div className="flex items-center space-x-1 text-xs text-blue-600">

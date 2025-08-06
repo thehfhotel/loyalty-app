@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import { useTranslation } from 'react-i18next';
+// Removed unused useTranslation import
 import { Suspense } from 'react';
 import { useAuthStore } from './store/authStore';
 import LoginPage from './pages/auth/LoginPage';
@@ -27,16 +27,25 @@ import SurveyTemplates from './pages/admin/SurveyTemplates';
 import SurveyInvitations from './pages/admin/SurveyInvitations';
 import ThaiSurveyDebug from './pages/admin/ThaiSurveyDebug';
 import UserManagement from './pages/admin/UserManagement';
-import { useEffect, useState } from 'react';
+import NewMemberCouponSettings from './pages/admin/NewMemberCouponSettings';
+import { useEffect, useState, useRef } from 'react';
 
 function App() {
-  const { t } = useTranslation();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const [isInitialized, setIsInitialized] = useState(false);
+  const initializingRef = useRef(false);
   
 
   useEffect(() => {
     const initializeAuth = async () => {
+      // Prevent duplicate initialization (React StrictMode causes double mounting)
+      if (initializingRef.current) {
+        console.log('Auth initialization already in progress, skipping duplicate');
+        return;
+      }
+      
+      initializingRef.current = true;
+      
       // Set maximum timeout for initialization to prevent infinite loading
       const initTimeout = setTimeout(() => {
         console.warn('Auth initialization timeout - forcing app to load');
@@ -100,8 +109,21 @@ function App() {
             }
           } catch (error) {
             console.warn('Auth validation failed during initialization:', error instanceof Error ? error.message : error);
-            // Clear potentially corrupted auth state on any error
-            authStore.clearAuth();
+            // Don't clear auth on rate limit or network errors during page refresh
+            if (error instanceof Error && (error.message.includes('429') || error.message.includes('rate limit'))) {
+              console.log('Rate limit during auth init, keeping user logged in');
+            } else if (error && typeof error === 'object' && 'response' in error) {
+              const httpError = error as any;
+              if (httpError.response?.status === 429) {
+                console.log('Rate limit HTTP error during auth init, keeping user logged in');
+              } else {
+                // Clear potentially corrupted auth state on other HTTP errors
+                authStore.clearAuth();
+              }
+            } else {
+              // Clear auth state on other types of errors
+              authStore.clearAuth();
+            }
           }
         }
         
@@ -123,6 +145,7 @@ function App() {
         // Always clear timeout and mark as initialized
         clearTimeout(initTimeout);
         setIsInitialized(true);
+        initializingRef.current = false;
       }
     };
     
@@ -152,7 +175,7 @@ function App() {
         >
           <SessionManager />
           <Toaster 
-            position="top-right"
+            position="top-center"
             toastOptions={{
               duration: 4000,
               style: {
@@ -314,6 +337,14 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin">
               <ThaiSurveyDebug />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/new-member-coupons"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <NewMemberCouponSettings />
             </ProtectedRoute>
           }
         />

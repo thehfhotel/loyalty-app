@@ -54,6 +54,39 @@ router.put(
   }
 );
 
+// Get profile completion status
+router.get('/profile-completion-status', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    const status = await userService.getProfileCompletionStatus(req.user.id);
+    return res.json({ 
+      success: true,
+      data: status 
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Complete user profile with potential coupon reward
+router.put('/complete-profile', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const result = await userService.completeProfile(req.user.id, req.body);
+    return res.json({ 
+      success: true,
+      data: result 
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 // Upload avatar
 router.post('/avatar', uploadAvatar, async (req, res, next) => {
   try {
@@ -318,6 +351,45 @@ router.delete('/admin/users/:userId', requireAdmin, async (req, res, next) => {
     res.json({ 
       success: true, 
       message: 'User deleted successfully' 
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Get new member coupon settings
+router.get('/admin/new-member-coupon-settings', requireAdmin, async (_req, res, next) => {
+  try {
+    const settings = await userService.getNewMemberCouponSettings();
+    res.json({ 
+      success: true, 
+      data: settings 
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Update new member coupon settings
+router.put('/admin/new-member-coupon-settings', requireAdmin, async (req, res, next) => {
+  try {
+    const settings = await userService.updateNewMemberCouponSettings(req.body);
+    res.json({ 
+      success: true, 
+      data: settings 
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Get coupon status for admin validation
+router.get('/admin/coupon-status/:couponId', requireAdmin, async (req, res, next) => {
+  try {
+    const couponStatus = await userService.getCouponStatusForAdmin(req.params.couponId);
+    res.json({ 
+      success: true, 
+      data: couponStatus 
     });
   } catch (error) {
     return next(error);

@@ -1,8 +1,9 @@
 import axios from 'axios';
+import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
 
 const API_URL = import.meta.env?.VITE_API_URL || 'http://localhost:4000/api';
 
-// Create axios instance with auth interceptor
+// Create axios instance with unified auth interceptor
 const api = axios.create({
   baseURL: API_URL,
   headers: {
@@ -10,30 +11,8 @@ const api = axios.create({
   },
 });
 
-// Add auth token to requests
-api.interceptors.request.use(
-  (config) => {
-    // Get token from Zustand persist storage
-    const authStorage = localStorage.getItem('auth-storage');
-    
-    if (authStorage) {
-      try {
-        const parsedAuth = JSON.parse(authStorage);
-        const token = parsedAuth.state?.accessToken;
-        
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
-      } catch (error) {
-        console.error('Error parsing auth storage:', error);
-      }
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
+// Use the unified auth token interceptor
+addAuthTokenInterceptor(api);
 
 export interface Tier {
   id: string;

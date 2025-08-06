@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
+import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
 import type {
   Coupon,
   UserActiveCoupon,
@@ -30,10 +31,17 @@ addAuthTokenInterceptor(api);
 
 export class CouponService {
   // Customer coupon management
-  async getUserCoupons(page: number = 1, limit: number = 20): Promise<UserCouponListResponse> {
-    const response = await api.get(`/coupons/my-coupons`, {
-      params: { page, limit }
-    });
+  async getUserCoupons(
+    page: number = 1, 
+    limit: number = 20,
+    status?: 'used' | 'expired' | 'revoked' | 'available'
+  ): Promise<UserCouponListResponse> {
+    const params: any = { page, limit };
+    if (status) {
+      params.status = status;
+    }
+    
+    const response = await api.get(`/coupons/my-coupons`, { params });
     return response.data.data;
   }
 
@@ -307,7 +315,8 @@ export class CouponService {
     if (daysDiff === 1) {return 'Expires tomorrow';}
     if (daysDiff <= 7) {return `Expires in ${daysDiff} days`;}
 
-    return expiryDate.toLocaleDateString();
+    // Use dd/mm/yyyy format for dates more than 7 days away
+    return formatDateToDDMMYYYY(expiryDate);
   }
 
   async revokeUserCouponsForCoupon(

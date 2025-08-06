@@ -20,6 +20,7 @@ import {
   customSecurityHeaders, 
   createRateLimiter, 
   createApiRateLimiter, 
+  createUserRateLimiter,
   createAuthRateLimiter,
   inputSanitization,
   securityMonitoring,
@@ -39,6 +40,8 @@ import surveyRoutes from './routes/survey';
 import storageRoutes from './routes/storage';
 import membershipRoutes from './routes/membership';
 import translationRoutes from './routes/translation';
+import notificationRoutes from './routes/notifications';
+import analyticsRoutes from './routes/analyticsRoutes';
 // Import and initialize OAuth service to register strategies
 import './services/oauthService';
 
@@ -253,22 +256,25 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
-// API Routes with specific rate limiting
-const apiRateLimit = createApiRateLimiter();
-const authRateLimit = createAuthRateLimiter();
+// API Routes with layered rate limiting
+const apiRateLimit = createApiRateLimiter(); // IP-based with user awareness
+const userRateLimit = createUserRateLimiter(); // Per-user rate limiting
+const authRateLimit = createAuthRateLimiter(); // Authentication rate limiting
 
 // Auth routes with strict rate limiting
 app.use('/api/auth', authRateLimit, authRoutes);
 
-// Other API routes with standard API rate limiting
-app.use('/api/users', apiRateLimit, userRoutes);
+// Other API routes with layered rate limiting (IP + User-based)
+app.use('/api/users', apiRateLimit, userRateLimit, userRoutes);
 app.use('/api/oauth', oauthRoutes); // OAuth routes don't need extra rate limiting
-app.use('/api/loyalty', apiRateLimit, loyaltyRoutes);
-app.use('/api/coupons', apiRateLimit, couponRoutes);
-app.use('/api/surveys', apiRateLimit, surveyRoutes);
-app.use('/api/storage', apiRateLimit, storageRoutes);
-app.use('/api/membership', apiRateLimit, membershipRoutes);
-app.use('/api/translation', apiRateLimit, translationRoutes);
+app.use('/api/loyalty', apiRateLimit, userRateLimit, loyaltyRoutes);
+app.use('/api/coupons', apiRateLimit, userRateLimit, couponRoutes);
+app.use('/api/surveys', apiRateLimit, userRateLimit, surveyRoutes);
+app.use('/api/storage', apiRateLimit, storageRoutes); // File uploads use IP-based only
+app.use('/api/membership', apiRateLimit, userRateLimit, membershipRoutes);
+app.use('/api/translation', apiRateLimit, translationRoutes); // Public translations use IP-based only
+app.use('/api/notifications', apiRateLimit, userRateLimit, notificationRoutes);
+app.use('/api/analytics', apiRateLimit, userRateLimit, analyticsRoutes);
 
 // Error handling
 app.use(errorHandler);

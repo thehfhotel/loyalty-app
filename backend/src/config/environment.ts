@@ -52,7 +52,7 @@ const envSchema = z.object({
   
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: z.string().regex(/^\d+$/, 'RATE_LIMIT_WINDOW_MS must be a number').default('900000'), // 15 minutes
-  RATE_LIMIT_MAX_REQUESTS: z.string().regex(/^\d+$/, 'RATE_LIMIT_MAX_REQUESTS must be a number').default('100'),
+  RATE_LIMIT_MAX_REQUESTS: z.string().regex(/^\d+$/, 'RATE_LIMIT_MAX_REQUESTS must be a number').default('10000'), // 100x increase: 100 -> 10,000
 }).refine((data) => {
   // Production-specific validations
   if (data.NODE_ENV === 'production') {

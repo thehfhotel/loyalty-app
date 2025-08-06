@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { UserActiveCoupon } from '../../types/coupon';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
+import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
 
 interface QRCodeDisplayProps {
   coupon: UserActiveCoupon;
@@ -167,7 +168,7 @@ const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
               <div className="flex justify-between">
                 <span className="text-gray-600">{t('coupons.expiresOn')}:</span>
                 <span className="font-medium">
-                  {new Date(coupon.effectiveExpiry).toLocaleDateString()}
+                  {formatDateToDDMMYYYY(coupon.effectiveExpiry)}
                 </span>
               </div>
             )}

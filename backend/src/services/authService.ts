@@ -89,7 +89,7 @@ export class AuthService {
     }
   }
 
-  async login(email: string, password: string): Promise<{ user: User; tokens: AuthTokens }> {
+  async login(email: string, password: string, rememberMe: boolean = false): Promise<{ user: User; tokens: AuthTokens }> {
     // Find user
     const [user] = await query<User & { passwordHash: string }>(
       `SELECT id, email, password_hash AS "passwordHash", role, is_active AS "isActive", 
@@ -159,8 +159,8 @@ export class AuthService {
       });
     }
 
-    // Generate tokens with updated user data
-    const tokens = await this.generateTokens(updatedUser);
+    // Generate tokens with updated user data (pass rememberMe parameter)
+    const tokens = await this.generateTokens(updatedUser, undefined, rememberMe);
 
     // Log login
     await this.logUserAction(updatedUser.id, 'login', { email });
@@ -289,32 +289,37 @@ export class AuthService {
     await this.logUserAction(resetToken.userId, 'password_reset_complete');
   }
 
-  async generateTokens(user: User, client?: any): Promise<AuthTokens> {
+  async generateTokens(user: User, client?: any, rememberMe: boolean = false): Promise<AuthTokens> {
     const payload: JWTPayload = {
       id: user.id,
       email: user.email,
       role: user.role,
     };
 
+    // Use longer token expiration times for "Remember Me"
+    const accessTokenExpire = rememberMe ? '2h' : ACCESS_TOKEN_EXPIRE; // 2 hours vs 15 minutes
+    const refreshTokenExpire = rememberMe ? '30d' : REFRESH_TOKEN_EXPIRE; // 30 days vs 7 days
+    const refreshTokenDbInterval = rememberMe ? '30 days' : '7 days';
+
     const accessToken = jwt.sign(payload, JWT_SECRET, {
-      expiresIn: ACCESS_TOKEN_EXPIRE,
+      expiresIn: accessTokenExpire,
     });
 
     const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, {
-      expiresIn: REFRESH_TOKEN_EXPIRE,
+      expiresIn: refreshTokenExpire,
     });
 
-    // Store refresh token
+    // Store refresh token with appropriate expiration
     if (client) {
       await client.query(
         `INSERT INTO refresh_tokens (user_id, token, expires_at) 
-         VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
+         VALUES ($1, $2, NOW() + INTERVAL '${refreshTokenDbInterval}')`,
         [user.id, refreshToken]
       );
     } else {
       await query(
         `INSERT INTO refresh_tokens (user_id, token, expires_at) 
-         VALUES ($1, $2, NOW() + INTERVAL '7 days')`,
+         VALUES ($1, $2, NOW() + INTERVAL '${refreshTokenDbInterval}')`,
         [user.id, refreshToken]
       );
     }

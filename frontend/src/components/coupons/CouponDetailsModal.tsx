@@ -2,6 +2,7 @@ import React from 'react';
 import { UserActiveCoupon } from '../../types/coupon';
 import { useTranslation } from 'react-i18next';
 import { couponService } from '../../services/couponService';
+import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
 
 interface CouponDetailsModalProps {
   coupon: UserActiveCoupon;
@@ -152,7 +153,7 @@ const CouponDetailsModal: React.FC<CouponDetailsModalProps> = ({
               <div className="flex justify-between items-center py-2">
                 <span className="text-gray-600">{t('coupons.expiresOn')}:</span>
                 <span className={`font-medium ${isExpiring ? 'text-red-600' : 'text-gray-900'}`}>
-                  {new Date(coupon.effectiveExpiry).toLocaleDateString()}
+                  {formatDateToDDMMYYYY(coupon.effectiveExpiry)}
                 </span>
               </div>
             )}

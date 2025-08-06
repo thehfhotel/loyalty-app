@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { couponService } from '../../services/couponService';
 import { Coupon } from '../../types/coupon';
+import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
 
 interface CouponAssignment {
   userId: string;
@@ -74,13 +75,7 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
   }, [coupon.id]);
 
   const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return formatDateToDDMMYYYY(date);
   };
 
   const getStatusBadge = (assignment: CouponAssignment) => {

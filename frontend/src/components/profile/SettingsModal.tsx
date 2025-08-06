@@ -3,13 +3,14 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
-import { FiX, FiUser, FiPhone, FiCalendar, FiCamera, FiSmile, FiMail } from 'react-icons/fi';
+import { FiX, FiUser, FiPhone, FiCamera, FiSmile, FiMail } from 'react-icons/fi';
 import { UserProfile, userService } from '../../services/userService';
 import { useAuthStore } from '../../store/authStore';
 import EmojiAvatar from './EmojiAvatar';
 import { EmojiSelectorInline } from './EmojiSelector';
 import { notify } from '../../utils/notificationManager';
 import { extractEmojiFromUrl } from '../../utils/emojiUtils';
+import { GenderField, OccupationField, InterestsField, DateOfBirthField } from './ProfileFormFields';
 
 const profileSchema = z.object({
   email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
@@ -17,6 +18,9 @@ const profileSchema = z.object({
   lastName: z.string().optional(),
   phone: z.string().optional(),
   dateOfBirth: z.string().optional(),
+  gender: z.string().optional(),
+  occupation: z.string().optional(),
+  interests: z.string().optional(), // Comma-separated string
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -66,6 +70,9 @@ export default function SettingsModal({
       dateOfBirth: profile?.dateOfBirth 
         ? new Date(profile.dateOfBirth).toISOString().split('T')[0] 
         : '',
+      gender: profile?.gender || '',
+      occupation: profile?.occupation || '',
+      interests: profile?.interests?.join(', ') || '',
     }
   });
 
@@ -80,6 +87,9 @@ export default function SettingsModal({
         dateOfBirth: profile.dateOfBirth 
           ? new Date(profile.dateOfBirth).toISOString().split('T')[0] 
           : '',
+        gender: profile.gender || '',
+        occupation: profile.occupation || '',
+        interests: profile.interests?.join(', ') || '',
       });
     }
   }, [profile, user, reset]);
@@ -300,25 +310,29 @@ export default function SettingsModal({
                 )}
               </div>
 
-              <div>
-                <label htmlFor="dateOfBirth" className="block text-sm font-medium text-gray-700">
-                  {t('profile.dateOfBirth')}
-                </label>
-                <div className="mt-1 relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <FiCalendar className="h-5 w-5 text-gray-400" />
-                  </div>
-                  <input
-                    {...register('dateOfBirth')}
-                    id="dateOfBirth"
-                    type="date"
-                    className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                  />
-                </div>
-                {errors.dateOfBirth && (
-                  <p className="mt-1 text-sm text-red-600">{errors.dateOfBirth.message}</p>
-                )}
-              </div>
+              <DateOfBirthField 
+                register={register}
+                errors={errors}
+                isModal={false}
+              />
+
+              <GenderField 
+                register={register}
+                errors={errors}
+                isModal={false}
+              />
+
+              <OccupationField 
+                register={register}
+                errors={errors}
+                isModal={false}
+              />
+
+              <InterestsField 
+                register={register}
+                errors={errors}
+                isModal={false}
+              />
 
               <div className="flex justify-end space-x-3 pt-4">
                 <button

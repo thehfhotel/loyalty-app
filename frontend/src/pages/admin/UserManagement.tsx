@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { FiUser, FiUsers, FiUserCheck, FiUserX, FiSearch, FiTrash2, FiEye } from 'react-icons/fi';
 import { userManagementService, User, UserStats } from '../../services/userManagementService';
 import DashboardButton from '../../components/navigation/DashboardButton';
+import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
 
 const UserManagement: React.FC = () => {
   const { t } = useTranslation();
@@ -112,7 +113,7 @@ const UserManagement: React.FC = () => {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString();
+    return formatDateToDDMMYYYY(dateString);
   };
 
   const getRoleBadgeColor = (role: string) => {

@@ -40,17 +40,118 @@ export const createRateLimiter = () => {
   });
 };
 
-// API-specific rate limiter (stricter)
+// API-specific rate limiter with user-aware rate limiting
 export const createApiRateLimiter = () => {
-  return rateLimit({
+  // Very generous limits for development to handle React StrictMode and hot reloading
+  const developmentLimits = {
+    windowMs: 1 * 60 * 1000, // 1 minute window in development
+    max: 20000, // 100x increase: 200 -> 20,000 requests per minute
+  };
+  
+  const productionLimits = {
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 50, // limit each IP to 50 API requests per windowMs
+    max: 30000, // 100x increase: 300 -> 30,000 requests per 15 minutes
+  };
+  
+  const limits = isProduction() ? productionLimits : developmentLimits;
+  
+  return rateLimit({
+    windowMs: limits.windowMs,
+    max: limits.max,
     message: {
       error: 'API rate limit exceeded',
-      message: 'Too many API requests from this IP, please try again later.',
+      message: `Too many API requests from this IP, please try again later. ${!isProduction() ? '(Development mode - limits are more lenient)' : ''}`,
     },
     standardHeaders: true,
     legacyHeaders: false,
+    // Use composite key: IP + User ID (when available) for better rate limiting
+    keyGenerator: (req) => {
+      const userId = req.user?.id ?? 'anonymous';
+      const ip = req.ip ?? 'unknown';
+      
+      // In production, use user-specific rate limiting when authenticated
+      if (isProduction() && req.user?.id) {
+        return `user:${userId}:${ip}`;
+      }
+      
+      // Fallback to IP-based rate limiting for anonymous users
+      return `ip:${ip}`;
+    },
+    skip: (req) => {
+      // In development, skip rate limiting for localhost and Docker network requests
+      if (!isProduction()) {
+        const devBypassIPs = [
+          '127.0.0.1',           // IPv4 localhost
+          '::1',                 // IPv6 localhost  
+          '::ffff:127.0.0.1',    // IPv4-mapped IPv6 localhost
+          '192.168.65.1',        // Docker Desktop network gateway
+          '172.17.0.1',          // Default Docker bridge network gateway
+          '172.18.0.1',          // Docker Compose network gateway
+          '10.0.0.1'             // Common Docker network gateway
+        ];
+        if (req.ip && (devBypassIPs.includes(req.ip) || req.ip.startsWith('192.168.') || req.ip.startsWith('172.'))) {
+          return true;
+        }
+      }
+      return false;
+    },
+  });
+};
+
+// Per-user rate limiter for authenticated API requests
+export const createUserRateLimiter = () => {
+  const developmentLimits = {
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 10000, // 100x increase: 100 -> 10,000 per user per minute
+  };
+  
+  const productionLimits = {
+    windowMs: 15 * 60 * 1000, // 15 minutes  
+    max: 10000, // 100x increase: 100 -> 10,000 per user per 15 minutes
+  };
+  
+  const limits = isProduction() ? productionLimits : developmentLimits;
+  
+  return rateLimit({
+    windowMs: limits.windowMs,
+    max: limits.max,
+    message: {
+      error: 'User rate limit exceeded',
+      message: 'Too many requests from your account, please try again later.',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+      // Use user ID as key for per-user rate limiting
+      return req.user?.id ? `user:${req.user.id}` : `ip:${req.ip}`;
+    },
+    skip: (req) => {
+      // Skip in development for local testing
+      if (!isProduction()) {
+        const devBypassIPs = [
+          '127.0.0.1', '::1', '::ffff:127.0.0.1',
+          '192.168.65.1', '172.17.0.1', '172.18.0.1', '10.0.0.1'
+        ];
+        if (req.ip && (devBypassIPs.includes(req.ip) || req.ip.startsWith('192.168.') || req.ip.startsWith('172.'))) {
+          return true;
+        }
+      }
+      
+      // Only apply to authenticated users in production
+      return isProduction() && !req.user?.id;
+    },
+    handler: (req: Request, res: Response) => {
+      logger.warn('User rate limit reached', {
+        userId: req.user?.id,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        path: req.path,
+      });
+      res.status(429).json({
+        error: 'User rate limit exceeded',
+        message: 'Too many requests from your account, please try again later.',
+      });
+    },
   });
 };
 

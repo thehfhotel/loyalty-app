@@ -504,6 +504,115 @@ export class CouponService {
     };
   }
 
+  // Get user's coupon history by status
+  async getUserCouponsByStatus(
+    userId: string,
+    status: 'used' | 'expired' | 'revoked' | 'available',
+    page: number = 1,
+    limit: number = 20
+  ): Promise<UserCouponListResponse> {
+    const offset = (page - 1) * limit;
+
+    // Build the status condition based on the requested status
+    let statusCondition = '';
+    const statusParams: any[] = [userId];
+    
+    switch (status) {
+      case 'used':
+        statusCondition = 'AND uc.status = $2';
+        statusParams.push('used');
+        break;
+      case 'expired':
+        // Include coupons that are expired by date OR have expired status
+        statusCondition = 'AND (uc.status = $2 OR (uc.expires_at IS NOT NULL AND uc.expires_at < NOW()) OR (c.valid_until IS NOT NULL AND c.valid_until < NOW()))';
+        statusParams.push('expired');
+        break;
+      case 'revoked':
+        statusCondition = 'AND uc.status = $2';
+        statusParams.push('revoked');
+        break;
+      case 'available':
+        statusCondition = 'AND uc.status = $2 AND (uc.expires_at IS NULL OR uc.expires_at > NOW()) AND (c.valid_until IS NULL OR c.valid_until > NOW())';
+        statusParams.push('available');
+        break;
+    }
+
+    // Get total count
+    const [countResult] = await query<{ count: number }>(
+      `SELECT COUNT(*) as count 
+       FROM user_coupons uc 
+       JOIN coupons c ON uc.coupon_id = c.id
+       WHERE uc.user_id = $1 ${statusCondition}`,
+      statusParams
+    );
+
+    const total = countResult.count;
+    const totalPages = Math.ceil(total / limit);
+
+    // Get user coupons with redemption info for used coupons
+    const couponsQuery = `
+      SELECT 
+        uc.id as "userCouponId", 
+        uc.user_id as "userId", 
+        uc.status,
+        uc.qr_code as "qrCode", 
+        uc.expires_at as "expiresAt", 
+        uc.created_at as "assignedAt",
+        uc.used_at as "usedAt",
+        uc.redemption_location as "redemptionLocation",
+        uc.coupon_id as "couponId", 
+        c.code, 
+        c.name, 
+        c.description,
+        c.terms_and_conditions as "termsAndConditions", 
+        c.type, 
+        c.value, 
+        c.currency,
+        c.minimum_spend as "minimumSpend", 
+        c.maximum_discount as "maximumDiscount",
+        c.valid_until as "couponExpiresAt",
+        CASE 
+          WHEN uc.expires_at IS NOT NULL THEN uc.expires_at
+          ELSE c.valid_until
+        END as "effectiveExpiry",
+        CASE 
+          WHEN uc.expires_at IS NOT NULL AND uc.expires_at <= NOW() + INTERVAL '7 days' THEN true
+          WHEN c.valid_until IS NOT NULL AND c.valid_until <= NOW() + INTERVAL '7 days' THEN true
+          ELSE false
+        END as "expiringSoon",
+        cr.original_amount as "originalAmount",
+        cr.discount_amount as "discountAmount", 
+        cr.final_amount as "finalAmount",
+        cr.created_at as "redeemedAt"
+      FROM user_coupons uc 
+      JOIN coupons c ON uc.coupon_id = c.id
+      LEFT JOIN coupon_redemptions cr ON uc.id = cr.user_coupon_id
+      WHERE uc.user_id = $1 ${statusCondition}
+      ORDER BY 
+        CASE 
+          WHEN uc.status = 'used' THEN uc.used_at
+          ELSE uc.created_at
+        END DESC
+      LIMIT $${statusParams.length + 1} OFFSET $${statusParams.length + 2}`;
+
+    const coupons = await query<UserActiveCoupon & {
+      usedAt?: string;
+      redemptionLocation?: string;
+      originalAmount?: number;
+      discountAmount?: number;
+      finalAmount?: number;
+      redeemedAt?: string;
+    }>(couponsQuery, [...statusParams, limit, offset]);
+
+    return {
+      coupons: coupons as UserActiveCoupon[],
+      total,
+      page,
+      limit,
+      totalPages
+    };
+  }
+
   // Get coupon redemption history
   async getCouponRedemptions(
     couponId: string,

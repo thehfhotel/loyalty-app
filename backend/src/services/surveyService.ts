@@ -1,6 +1,7 @@
 import { getPool } from '../config/database';
 import { db } from '../config/prisma';
 import { logger } from '../utils/logger';
+import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
 import { 
   Survey, 
   SurveyResponse, 
@@ -700,7 +701,7 @@ export class SurveyService {
       );
 
       const responsesByDate = responsesByDateResult.rows.map(row => ({
-        date: new Date(row.date).toLocaleDateString(),
+        date: formatDateToDDMMYYYY(row.date) ?? row.date,
         count: parseInt(row.count)
       })).reverse();
 

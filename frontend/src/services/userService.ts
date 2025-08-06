@@ -9,8 +9,20 @@ export interface UserProfile {
   preferences: Record<string, any>;
   avatarUrl?: string;
   membershipId?: string;
+  gender?: string;
+  occupation?: string;
+  interests?: string[];
+  profileCompleted?: boolean;
+  profileCompletedAt?: string;
+  newMemberCouponAwarded?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProfileCompletionStatus {
+  isComplete: boolean;
+  missingFields: string[];
+  newMemberCouponAvailable: boolean;
 }
 
 export interface User {
@@ -65,6 +77,24 @@ export const userService = {
 
   async getMyMembershipId(): Promise<{ membershipId: string }> {
     const response = await api.get('/membership/my-id');
+    return response.data.data;
+  },
+
+  async getProfileCompletionStatus(): Promise<ProfileCompletionStatus> {
+    const response = await api.get('/users/profile-completion-status');
+    return response.data.data;
+  },
+
+  async completeProfile(data: {
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    dateOfBirth?: string;
+    gender?: string;
+    occupation?: string;
+    interests?: string[];
+  }): Promise<{ profile: UserProfile; couponAwarded: boolean; coupon?: any; pointsAwarded?: number }> {
+    const response = await api.put('/users/complete-profile', data);
     return response.data.data;
   },
 

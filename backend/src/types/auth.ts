@@ -14,6 +14,7 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
+  rememberMe: z.boolean().optional().default(false),
 });
 
 export const resetPasswordRequestSchema = z.object({
@@ -27,7 +28,7 @@ export const resetPasswordSchema = z.object({
 
 export interface User {
   id: string;
-  email: string;
+  email: string | null;
   role: UserRole;
   isActive: boolean;
   emailVerified: boolean;
@@ -50,13 +51,19 @@ export interface UserProfile {
   preferences: Record<string, unknown>;
   avatarUrl?: string;
   membershipId?: string;
+  gender?: string;
+  occupation?: string;
+  interests?: string[];
+  profileCompleted?: boolean;
+  profileCompletedAt?: Date;
+  newMemberCouponAwarded?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface JWTPayload {
   id: string;
-  email: string;
+  email: string | null;
   role: UserRole;
 }
 

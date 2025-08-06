@@ -184,9 +184,154 @@ Based on actual CI/CD failures encountered:
 
 **Rationale**: Path mismatches are a leading cause of CI/CD failures. Different working directories between local development and CI/CD runners can cause relative paths to resolve incorrectly, leading to "file not found" errors and build failures.
 
+### 5. 🗄️ Database Interaction Rules
+**MANDATORY: Never Directly Interact with Database - Always Use Backend APIs**
+
+#### ❌ ABSOLUTELY FORBIDDEN - Direct Database Access
+```bash
+# ❌ NEVER connect directly to database for data operations
+docker compose exec postgres psql -U loyalty -d loyalty_db
+psql -h localhost -U user -d database
+
+# ❌ NEVER run raw SQL for business operations
+UPDATE user_loyalty SET current_points = 500 WHERE user_id = '...';
+INSERT INTO points_transactions (...) VALUES (...);
+DELETE FROM users WHERE id = '...';
+
+# ❌ NEVER bypass backend APIs for data manipulation
+# Even for debugging, testing, or "quick fixes"
+```
+
+#### ✅ REQUIRED - API-First Database Interactions
+```bash
+# ✅ CORRECT - Use backend APIs for ALL data operations
+curl -X POST "http://localhost:4001/api/loyalty/award-points" \
+     -H "Content-Type: application/json" \
+     -d '{"userId": "...", "points": 500, "reason": "Profile completion"}'
+
+# ✅ CORRECT - Create API endpoints if they don't exist
+# 1. Create backend route in appropriate router file
+# 2. Implement service method with proper validation
+# 3. Test API endpoint thoroughly
+# 4. Use API from frontend or tools
+```
+
+#### 🔧 API Development Requirements
+**When backend API doesn't exist, CREATE IT:**
+
+```typescript
+// ✅ REQUIRED - Create proper backend API endpoint
+// backend/src/routes/loyalty.ts
+router.post('/admin/fix-user-points', requireAdmin, async (req, res, next) => {
+  try {
+    const { userId, correctPoints, reason } = req.body;
+    
+    // Validate input
+    if (!userId || typeof correctPoints !== 'number') {
+      return res.status(400).json({ error: 'Invalid input parameters' });
+    }
+    
+    // Use service layer with proper business logic
+    const result = await loyaltyService.fixUserPointsBalance(userId, correctPoints, reason);
+    
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ✅ REQUIRED - Implement in service layer
+async fixUserPointsBalance(userId: string, correctPoints: number, reason: string) {
+  // Validate user exists
+  const user = await this.getUserLoyaltyStatus(userId);
+  if (!user) throw new Error('User not found');
+  
+  // Calculate difference and create adjustment transaction
+  const pointsDifference = correctPoints - user.current_points;
+  
+  if (pointsDifference !== 0) {
+    // Use proper award_points function that maintains integrity
+    return this.awardPoints(
+      userId, 
+      pointsDifference, 
+      'admin_adjustment', 
+      reason,
+      undefined, 
+      adminUserId, 
+      'Points balance correction'
+    );
+  }
+  
+  return { message: 'Points already correct', currentPoints: user.current_points };
+}
+```
+
+#### 🛡️ Database Protection Measures
+
+**1. Access Control**
+```bash
+# ✅ REQUIRED - Database access only for schema operations
+# Direct database access permitted ONLY for:
+- Schema migrations (npm run db:migrate)
+- Database setup/initialization
+- Schema debugging (read-only inspection)
+- Emergency disaster recovery (with documented approval)
+```
+
+**2. API Completeness**
+```typescript
+// ✅ REQUIRED - Comprehensive API coverage
+// Every database operation must have corresponding API:
+- Create: POST /api/resource
+- Read: GET /api/resource/:id
+- Update: PUT/PATCH /api/resource/:id  
+- Delete: DELETE /api/resource/:id
+- Admin operations: POST /api/resource/admin/:operation
+- Bulk operations: POST /api/resource/bulk
+```
+
+**3. Data Integrity Protection**
+```typescript
+// ✅ REQUIRED - Use database functions for complex operations
+await loyaltyService.awardPoints(userId, points);  // Uses award_points() function
+await loyaltyService.deductPoints(userId, points); // Maintains balance integrity
+await userService.completeProfile(userId, data);   // Handles rewards properly
+```
+
+#### 🔍 Database Interaction Checklist
+Before ANY database-related operation:
+- [ ] Check if backend API endpoint exists for the operation
+- [ ] If no API exists, create one following proper patterns
+- [ ] Test API endpoint thoroughly with validation
+- [ ] Use API instead of direct database access
+- [ ] Document new API in appropriate documentation
+- [ ] Never bypass APIs even for "quick fixes" or debugging
+
+#### 🚨 Common Database Interaction Violations
+1. **Direct SQL for Data Fixes**: Running UPDATE/INSERT commands directly
+2. **Bypassing Business Logic**: Skipping validation and integrity checks
+3. **Missing Transaction Context**: Not using proper database functions
+4. **Emergency Shortcuts**: Using direct access during troubleshooting
+5. **Development Convenience**: Quick data manipulation during testing
+
+#### ⚡ Emergency Exception Protocol
+**ONLY in extreme emergencies with proper documentation:**
+
+```bash
+# ✅ EMERGENCY PROTOCOL - Document everything
+1. Document the emergency reason and timeline pressure
+2. Document exactly what direct database operation was performed
+3. Create GitHub issue to implement proper API endpoint
+4. Add TODO comments linking to the issue
+5. Implement proper API as immediate next priority
+6. Test that new API produces same results as direct operation
+```
+
+**Rationale**: Direct database manipulation bypasses critical business logic, validation, transaction management, and data integrity functions. The recent points balance issue occurred because direct INSERT bypassed the `award_points()` stored procedure that maintains consistency between `points_transactions` and `user_loyalty` tables. All database interactions must go through properly designed APIs that maintain data integrity and business rules.
+
 ## 📋 Additional Project Conventions
 
-### 5. Project Structure
+### 6. Project Structure
 ```
 loyalty-app/
 ├── backend/          # Node.js/Express API
@@ -196,12 +341,12 @@ loyalty-app/
 └── manage.sh        # Centralized management script
 ```
 
-### 6. Environment Variables
+### 7. Environment Variables
 - **Production**: Always use `.env.production`
 - **Development**: Use `.env` or `.env.development`
 - **Never commit**: `.env` files with real secrets
 
-### 7. Testing Requirements
+### 8. Testing Requirements
 All code changes must:
 - ✅ Pass TypeScript compilation
 - ✅ Pass ESLint checks (warnings acceptable, errors not)
@@ -214,18 +359,18 @@ All code changes must:
 - ❌ **NEVER** skip tests with `.skip()`, `xit()`, or conditional returns
 - ❌ **NEVER** mock critical functionality without proper validation
 
-### 8. Database Operations
+### 9. Database Operations
 - **Always use migrations**: Never modify database directly
 - **Migration command**: `npm run db:migrate`
 - **Generate Prisma client**: `npm run db:generate`
 
-### 9. Security Best Practices
+### 10. Security Best Practices
 - **Never log sensitive data**: passwords, tokens, keys
 - **Always validate input**: Use Zod schemas
 - **Sanitize user content**: Prevent XSS attacks
 - **Use parameterized queries**: Prevent SQL injection
 
-### 10. Git Commit Convention
+### 11. Git Commit Convention
 ```bash
 # Format: <type>: <description>
 feat: Add new feature
@@ -237,20 +382,20 @@ docs: Documentation changes
 chore: Maintenance tasks
 ```
 
-### 11. Pipeline & CI/CD
+### 12. Pipeline & CI/CD
 - **Single pipeline**: `deploy.yml` handles everything
 - **Quality gates**: All tests must pass before deployment
 - **Automatic deployment**: Only from main branch
 - **Manual approval**: Required for production
 
-### 12. Development Workflow
+### 13. Development Workflow
 1. **Before starting**: Pull latest changes
 2. **During development**: Run tests locally
 3. **Before committing**: Ensure hooks pass
 4. **Before pushing**: Run full quality check
 5. **After merging**: Monitor pipeline status
 
-### 13. 🚨 TypeScript Error Prevention Rules
+### 14. 🚨 TypeScript Error Prevention Rules
 **MANDATORY: Proper Error Handling to Prevent Build Failures**
 
 #### ❌ FORBIDDEN - Unknown Error Types
@@ -416,11 +561,12 @@ npm run test
 2. **NEVER** bypass git hooks (`--no-verify` is FORBIDDEN)
 3. **NEVER** bypass, skip, or fake any tests (test integrity is ABSOLUTE)
 4. **ALWAYS** prefer absolute paths and validate relative paths with `../` or `../../`
-5. **ALWAYS** maintain code quality standards
-6. **ALWAYS** follow security best practices
-7. **ALWAYS** write meaningful tests that validate actual functionality
+5. **NEVER** interact directly with database - always use backend APIs (if API doesn't exist, create one)
+6. **ALWAYS** maintain code quality standards
+7. **ALWAYS** follow security best practices
+8. **ALWAYS** write meaningful tests that validate actual functionality
 
-### 14. 🎭 E2E Testing Infrastructure Rules
+### 15. 🎭 E2E Testing Infrastructure Rules
 **MANDATORY: Comprehensive E2E Test Isolation and Validation**
 
 #### ❌ FORBIDDEN - E2E Testing Anti-patterns
@@ -522,7 +668,7 @@ Before running E2E tests, validate:
 
 **Rationale**: E2E tests failed repeatedly due to port conflicts, configuration inconsistencies, missing health check tools, and state persistence. These rules ensure complete isolation, consistent configuration, and reliable test execution.
 
-### 15. 🎨 Frontend Dependency Management Rules
+### 16. 🎨 Frontend Dependency Management Rules
 **MANDATORY: Consistent CSS Framework and Build Dependencies**
 
 #### ❌ FORBIDDEN - Dependency Management Anti-patterns
@@ -600,6 +746,82 @@ Before starting development or building:
 5. **Plugin Configuration**: Requiring plugins that aren't installed in current stage
 
 **Rationale**: Tailwind CSS plugin errors occurred repeatedly when multi-stage Docker builds created inconsistent dependency environments. Direct dependency installation in target stages prevents module resolution failures and ensures CSS framework plugins are available when needed.
+
+### 17. 🔗 API Route Path Consistency Rules
+**MANDATORY: Frontend Service Paths Must Match Backend Route Definitions**
+
+#### ❌ FORBIDDEN - API Path Mismatches
+```typescript
+// ❌ FRONTEND assumes direct admin routes
+adminService.get('/admin/new-member-coupon-settings')
+
+// ❌ BACKEND defines routes under user router
+router.get('/admin/new-member-coupon-settings')  // Actually at /api/users/admin/...
+```
+
+#### ✅ REQUIRED - API Path Best Practices
+
+**1. Route Definition Verification**
+```bash
+# ✅ REQUIRED - Before creating frontend service calls:
+1. Check which router file contains the endpoint
+2. Check how the router is mounted in index.ts
+3. Construct full path: /api/{mount-path}/{route-path}
+
+# Example:
+# If user.ts has: router.get('/admin/settings')
+# And index.ts has: app.use('/api/users', userRoutes)
+# Then frontend must use: '/users/admin/settings'
+```
+
+**2. Frontend Service Implementation**
+```typescript
+// ✅ CORRECT - Match actual backend route structure
+export const adminService = {
+  async getSettings() {
+    // Check backend route mounting first!
+    return api.get('/users/admin/settings');  // NOT '/admin/settings'
+  }
+}
+```
+
+**3. Route Testing Protocol**
+```bash
+# ✅ REQUIRED - Test routes before implementing frontend
+curl -s http://localhost:4001/api/admin/endpoint  # Try direct path
+curl -s http://localhost:4001/api/users/admin/endpoint  # Try nested path
+curl -s http://localhost:4001/api/[router]/admin/endpoint  # Check router mounting
+```
+
+**4. Common Route Patterns**
+```typescript
+// Backend route definitions typically follow:
+// router.ts: router.get('/admin/feature')
+// index.ts: app.use('/api/entity', router)
+// Result: /api/entity/admin/feature
+
+// Admin routes commonly found in:
+- /api/users/admin/*     # User management admin routes
+- /api/coupons/admin/*   # Coupon admin routes
+- /api/loyalty/admin/*   # Loyalty admin routes
+```
+
+#### 🔍 API Path Validation Checklist
+Before implementing frontend API calls:
+- [ ] Locate the backend route definition file
+- [ ] Check how the router is mounted in index.ts
+- [ ] Construct the full API path including mount point
+- [ ] Test the endpoint with curl before coding
+- [ ] Update frontend service to use correct full path
+
+#### 🚨 Common API Path Pitfalls
+1. **Assuming Direct Routes**: Frontend assumes `/api/admin/*` when routes are nested
+2. **Missing Mount Path**: Forgetting router mount path from index.ts
+3. **Inconsistent Patterns**: Different routers use different admin path patterns
+4. **Documentation Gaps**: API paths not clearly documented
+5. **Testing Shortcuts**: Implementing without testing actual endpoint
+
+**Rationale**: AxiosError 404 errors frequently occur when frontend services use incorrect API paths. Backend routes defined in router files are mounted under specific paths in index.ts, creating nested URLs that must be matched exactly in frontend services.
 
 ---
 

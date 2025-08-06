@@ -14,6 +14,7 @@ import LanguageSwitcher from '../../components/LanguageSwitcher';
 type LoginFormData = {
   email: string;
   password: string;
+  rememberMe: boolean;
 };
 
 export default function LoginPage() {
@@ -22,6 +23,7 @@ export default function LoginPage() {
   const loginSchema = z.object({
     email: z.string().email(t('auth.invalidEmail')),
     password: z.string().min(1, t('auth.passwordRequired')),
+    rememberMe: z.boolean().optional().default(false),
   });
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -53,7 +55,7 @@ export default function LoginPage() {
 
   const onSubmit = async (data: LoginFormData) => {
     try {
-      await login(data.email, data.password);
+      await login(data.email, data.password, data.rememberMe);
       
       // Check for returnUrl in query params
       const returnUrl = searchParams.get('returnUrl');
@@ -147,6 +149,17 @@ export default function LoginPage() {
           </div>
 
           <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <input
+                {...register('rememberMe')}
+                id="rememberMe"
+                type="checkbox"
+                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+              />
+              <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-900">
+                {t('auth.rememberMe')}
+              </label>
+            </div>
             <div className="text-sm">
               <Link
                 to="/reset-password"

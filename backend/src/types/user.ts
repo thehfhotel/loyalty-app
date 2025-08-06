@@ -16,6 +16,9 @@ export interface ProfileUpdate {
   phone?: string;
   dateOfBirth?: string;
   preferences?: Record<string, unknown>;
+  gender?: string;
+  occupation?: string;
+  interests?: string[];
 }
 
 export interface UserMembershipInfo {

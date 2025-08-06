@@ -294,6 +294,7 @@ export class CouponController {
 
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
+      const status = req.query.status as 'used' | 'expired' | 'revoked' | 'available' | undefined;
 
       // Admin can view any user's coupons
       let targetUserId = userId;
@@ -301,7 +302,14 @@ export class CouponController {
         targetUserId = req.query.userId as string;
       }
 
-      const result = await couponService.getUserActiveCoupons(targetUserId, page, limit);
+      let result;
+      if (status && ['used', 'expired', 'revoked', 'available'].includes(status)) {
+        // Get coupons by specific status
+        result = await couponService.getUserCouponsByStatus(targetUserId, status, page, limit);
+      } else {
+        // Default: get only active coupons (available and not expired)
+        result = await couponService.getUserActiveCoupons(targetUserId, page, limit);
+      }
 
       res.json({
         success: true,

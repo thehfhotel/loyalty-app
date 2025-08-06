@@ -7,6 +7,8 @@ import QRCodeModal from '../../components/coupons/QRCodeModal';
 import CouponDetailsModal from '../../components/coupons/CouponDetailsModal';
 import DashboardButton from '../../components/navigation/DashboardButton';
 
+type CouponFilter = 'active' | 'used' | 'expired';
+
 const CouponWallet: React.FC = () => {
   const { t } = useTranslation();
   const [coupons, setCoupons] = useState<UserActiveCoupon[]>([]);
@@ -18,13 +20,28 @@ const CouponWallet: React.FC = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<CouponFilter>('active');
 
-  const loadCoupons = async (pageNum: number = 1, append: boolean = false) => {
+  const loadCoupons = async (pageNum: number = 1, append: boolean = false, filter: CouponFilter = activeFilter) => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await couponService.getUserCoupons(pageNum, 20);
+      let status: 'used' | 'expired' | 'available' | undefined;
+      switch (filter) {
+        case 'used':
+          status = 'used';
+          break;
+        case 'expired':
+          status = 'expired';
+          break;
+        case 'active':
+        default:
+          status = undefined; // Use default (active coupons)
+          break;
+      }
+
+      const response = await couponService.getUserCoupons(pageNum, 20, status);
       
       if (append) {
         setCoupons(prev => [...prev, ...response.coupons]);
@@ -45,12 +62,25 @@ const CouponWallet: React.FC = () => {
 
   useEffect(() => {
     loadCoupons();
-  }, []);
+  }, [activeFilter]); // Reload when filter changes
+
+  const handleFilterChange = (filter: CouponFilter) => {
+    if (filter !== activeFilter) {
+      setActiveFilter(filter);
+      setPage(1);
+      setCoupons([]);
+      setHasMore(false);
+      // loadCoupons will be called by useEffect when activeFilter changes
+    }
+  };
 
   const handleUseCoupon = (coupon: UserActiveCoupon) => {
-    setSelectedCoupon(coupon);
-    setShowQRCode(true);
-    setShowDetails(false);
+    // Only allow using active coupons
+    if (activeFilter === 'active') {
+      setSelectedCoupon(coupon);
+      setShowQRCode(true);
+      setShowDetails(false);
+    }
   };
 
   const handleViewDetails = (coupon: UserActiveCoupon) => {
@@ -61,18 +91,22 @@ const CouponWallet: React.FC = () => {
 
   const handleLoadMore = () => {
     if (hasMore && !loading) {
-      loadCoupons(page + 1, true);
+      loadCoupons(page + 1, true, activeFilter);
     }
   };
 
   const handleRefresh = () => {
     setPage(1);
-    loadCoupons(1, false);
+    loadCoupons(1, false, activeFilter);
   };
 
-  // Separate coupons by expiry status
-  const activeCoupons = coupons.filter(coupon => !couponService.isExpiringSoon(coupon));
-  const expiringSoonCoupons = coupons.filter(coupon => couponService.isExpiringSoon(coupon));
+  // Separate coupons by expiry status (only for active filter)
+  const activeCoupons = activeFilter === 'active' 
+    ? coupons.filter(coupon => !couponService.isExpiringSoon(coupon))
+    : [];
+  const expiringSoonCoupons = activeFilter === 'active'
+    ? coupons.filter(coupon => couponService.isExpiringSoon(coupon))
+    : [];
 
   if (loading && coupons.length === 0) {
     return (
@@ -121,8 +155,50 @@ const CouponWallet: React.FC = () => {
         </div>
       </div>
 
-      {/* Content */}
+      {/* Filter Tabs */}
       <div className="max-w-4xl mx-auto p-4">
+        <div className="mb-6">
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8">
+              {/* Active Tab */}
+              <button
+                onClick={() => handleFilterChange('active')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                  activeFilter === 'active'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {t('coupons.activeCoupons')}
+              </button>
+              
+              {/* Used Tab */}
+              <button
+                onClick={() => handleFilterChange('used')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                  activeFilter === 'used'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {t('coupons.usedCoupons', 'Used')}
+              </button>
+              
+              {/* Expired Tab */}
+              <button
+                onClick={() => handleFilterChange('expired')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                  activeFilter === 'expired'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {t('coupons.expiredCoupons', 'Expired')}
+              </button>
+            </nav>
+          </div>
+        </div>
+
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
             <div className="flex">
@@ -145,12 +221,24 @@ const CouponWallet: React.FC = () => {
 
         {coupons.length === 0 && !loading && !error && (
           <div className="bg-white rounded-lg shadow p-8 text-center">
-            <div className="text-6xl mb-4">🎫</div>
+            <div className="text-6xl mb-4">
+              {activeFilter === 'used' ? '✓' : activeFilter === 'expired' ? '⏰' : '🎫'}
+            </div>
             <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              {t('coupons.noCoupons')}
+              {activeFilter === 'used' 
+                ? t('coupons.noUsedCoupons', 'No Used Coupons')
+                : activeFilter === 'expired' 
+                  ? t('coupons.noExpiredCoupons', 'No Expired Coupons')
+                  : t('coupons.noCoupons')
+              }
             </h3>
             <p className="text-gray-600 mb-4">
-              {t('coupons.noCouponsDescription')}
+              {activeFilter === 'used' 
+                ? t('coupons.noUsedCouponsDescription', "You haven't used any coupons yet.")
+                : activeFilter === 'expired' 
+                  ? t('coupons.noExpiredCouponsDescription', "You don't have any expired coupons.")
+                  : t('coupons.noCouponsDescription')
+              }
             </p>
             <button
               onClick={handleRefresh}
@@ -161,43 +249,89 @@ const CouponWallet: React.FC = () => {
           </div>
         )}
 
-        {/* Expiring Soon Section */}
-        {expiringSoonCoupons.length > 0 && (
-          <div className="mb-8">
-            <div className="flex items-center mb-4">
-              <div className="bg-red-100 p-2 rounded-full mr-3">
-                <span className="text-red-600 text-xl">⏰</span>
+        {/* Coupon Display Based on Active Filter */}
+        {activeFilter === 'active' && (
+          <>
+            {/* Expiring Soon Section */}
+            {expiringSoonCoupons.length > 0 && (
+              <div className="mb-8">
+                <div className="flex items-center mb-4">
+                  <div className="bg-red-100 p-2 rounded-full mr-3">
+                    <span className="text-red-600 text-xl">⏰</span>
+                  </div>
+                  <h2 className="text-xl font-semibold text-red-700">
+                    {t('coupons.expiringSoon')} ({expiringSoonCoupons.length})
+                  </h2>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {expiringSoonCoupons.map((coupon) => (
+                    <CouponCard
+                      key={coupon.userCouponId}
+                      coupon={coupon}
+                      onUse={handleUseCoupon}
+                      onViewDetails={handleViewDetails}
+                    />
+                  ))}
+                </div>
               </div>
-              <h2 className="text-xl font-semibold text-red-700">
-                {t('coupons.expiringSoon')} ({expiringSoonCoupons.length})
-              </h2>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {expiringSoonCoupons.map((coupon) => (
-                <CouponCard
-                  key={coupon.userCouponId}
-                  coupon={coupon}
-                  onUse={handleUseCoupon}
-                  onViewDetails={handleViewDetails}
-                />
-              ))}
-            </div>
-          </div>
+            )}
+
+            {/* Active Coupons Section */}
+            {activeCoupons.length > 0 && (
+              <div className="mb-8">
+                <div className="flex items-center mb-4">
+                  <div className="bg-green-100 p-2 rounded-full mr-3">
+                    <span className="text-green-600 text-xl">✅</span>
+                  </div>
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    {t('coupons.activeCoupons')} ({activeCoupons.length})
+                  </h2>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {activeCoupons.map((coupon) => (
+                    <CouponCard
+                      key={coupon.userCouponId}
+                      coupon={coupon}
+                      onUse={handleUseCoupon}
+                      onViewDetails={handleViewDetails}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
-        {/* Active Coupons Section */}
-        {activeCoupons.length > 0 && (
+        {/* Used/Expired Coupons Display */}
+        {(activeFilter === 'used' || activeFilter === 'expired') && coupons.length > 0 && (
           <div className="mb-8">
             <div className="flex items-center mb-4">
-              <div className="bg-green-100 p-2 rounded-full mr-3">
-                <span className="text-green-600 text-xl">✅</span>
+              <div className={`p-2 rounded-full mr-3 ${
+                activeFilter === 'used' 
+                  ? 'bg-gray-100' 
+                  : 'bg-red-100'
+              }`}>
+                <span className={`text-xl ${
+                  activeFilter === 'used' 
+                    ? 'text-gray-600' 
+                    : 'text-red-600'
+                }`}>
+                  {activeFilter === 'used' ? '✓' : '⏰'}
+                </span>
               </div>
-              <h2 className="text-xl font-semibold text-gray-900">
-                {t('coupons.activeCoupons')} ({activeCoupons.length})
+              <h2 className={`text-xl font-semibold ${
+                activeFilter === 'used' 
+                  ? 'text-gray-900' 
+                  : 'text-red-700'
+              }`}>
+                {activeFilter === 'used' 
+                  ? t('coupons.usedCoupons', 'Used Coupons')
+                  : t('coupons.expiredCoupons', 'Expired Coupons')
+                } ({coupons.length})
               </h2>
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {activeCoupons.map((coupon) => (
+              {coupons.map((coupon) => (
                 <CouponCard
                   key={coupon.userCouponId}
                   coupon={coupon}

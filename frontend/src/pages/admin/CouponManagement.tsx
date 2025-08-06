@@ -6,6 +6,7 @@ import { loyaltyService } from '../../services/loyaltyService';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import CouponAssignmentsModal from '../../components/admin/CouponAssignmentsModal';
 import toast from 'react-hot-toast';
+import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
 
 interface User {
   id: string;
@@ -394,10 +395,10 @@ const CouponManagement: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
-                        {new Date(coupon.validFrom).toLocaleDateString()}
+                        {formatDateToDDMMYYYY(coupon.validFrom)}
                       </div>
                       <div className="text-sm text-gray-500">
-                        {t('admin.coupons.to')} {coupon.validUntil ? new Date(coupon.validUntil).toLocaleDateString() : t('common.noEndDate')}
+                        {t('admin.coupons.to')} {coupon.validUntil ? formatDateToDDMMYYYY(coupon.validUntil) : t('common.noEndDate')}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">

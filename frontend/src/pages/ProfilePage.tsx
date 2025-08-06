@@ -12,6 +12,9 @@ import { FiUser, FiPhone, FiCalendar, FiCamera, FiLink, FiCopy, FiSettings, FiGi
 import EmailDisplay from '../components/common/EmailDisplay';
 import { getUserDisplayName, getOAuthProviderName, isOAuthUser } from '../utils/userHelpers';
 import DashboardButton from '../components/navigation/DashboardButton';
+import MainLayout from '../components/layout/MainLayout';
+import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
+import { getTranslatedInterest } from '../utils/interestUtils';
 import { 
   loyaltyService, 
   UserLoyaltyStatus, 
@@ -31,6 +34,9 @@ const profileSchema = z.object({
   lastName: z.string().optional(),
   phone: z.string().optional(),
   dateOfBirth: z.string().optional(),
+  gender: z.string().optional(),
+  occupation: z.string().optional(),
+  interests: z.string().optional(), // Comma-separated string
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -90,6 +96,11 @@ export default function ProfilePage() {
         dateOfBirth: profileData.dateOfBirth 
           ? new Date(profileData.dateOfBirth).toISOString().split('T')[0] 
           : '',
+        gender: profileData.gender || '',
+        occupation: profileData.occupation || '',
+        interests: Array.isArray(profileData.interests) 
+          ? profileData.interests.join(', ') 
+          : '',
       });
     } catch (error: any) {
       notify.error(t('profile.profileLoadError'));
@@ -126,14 +137,55 @@ export default function ProfilePage() {
   const onSubmit = async (data: ProfileFormData) => {
     setIsSaving(true);
     try {
-      // Update profile
-      const updatedProfile = await userService.updateProfile({
-        firstName: data.firstName,
-        lastName: data.lastName,
-        phone: data.phone || undefined,
-        dateOfBirth: data.dateOfBirth || undefined,
-      });
-      setProfile(updatedProfile);
+      // Check if this is a profile completion (has new fields)
+      const hasNewFields = data.dateOfBirth || data.gender || data.occupation || data.interests;
+      
+      let response;
+      if (hasNewFields) {
+        // Use complete profile endpoint for potential coupon rewards
+        response = await userService.completeProfile({
+          firstName: data.firstName,
+          lastName: data.lastName,
+          phone: data.phone || undefined,
+          dateOfBirth: data.dateOfBirth || undefined,
+          gender: data.gender || undefined,
+          occupation: data.occupation || undefined,
+          interests: data.interests ? data.interests.split(',').map(i => i.trim()).filter(i => i) : undefined,
+        });
+        
+        setProfile(response.profile);
+        
+        // Show reward notifications
+        const rewards = [];
+        if (response.couponAwarded && response.coupon) {
+          rewards.push(`coupon: ${response.coupon.name}`);
+        }
+        if (response.pointsAwarded && response.pointsAwarded > 0) {
+          rewards.push(`${response.pointsAwarded.toLocaleString()} loyalty points`);
+        }
+
+        if (rewards.length > 0) {
+          notify.success(
+            `🎉 Profile completed! You received: ${rewards.join(' and ')}`,
+            { duration: 8000 }
+          );
+          
+          // Refresh loyalty data to show new rewards
+          loadLoyaltyData();
+        } else {
+          notify.success(t('profile.profileCompleted'));
+        }
+      } else {
+        // Regular profile update
+        const updatedProfile = await userService.updateProfile({
+          firstName: data.firstName,
+          lastName: data.lastName,
+          phone: data.phone || undefined,
+          dateOfBirth: data.dateOfBirth || undefined,
+        });
+        setProfile(updatedProfile);
+        notify.success(t('profile.profileUpdated'));
+      }
       
       // Update email if changed
       if (data.email && data.email !== user?.email) {
@@ -142,7 +194,6 @@ export default function ProfilePage() {
         notify.success(t('profile.emailUpdated'));
       }
       
-      notify.success(t('profile.profileUpdated'));
       setShowSettingsModal(false);
     } catch (error: any) {
       notify.error(error.response?.data?.error || t('profile.profileUpdateError'));
@@ -237,47 +288,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div className="flex items-center">
-              <h1 className="text-3xl font-bold text-gray-900">{t('profile.title')}</h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <DashboardButton variant="outline" size="md" />
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-500">
-                  {t('profile.loggedInAs', { email: getUserDisplayName(user) })}
-                  {isOAuthUser(user) && (
-                    <span className="ml-1 text-xs text-gray-400">
-                      {t('profile.via', { provider: getOAuthProviderName(user) })}
-                    </span>
-                  )}
-                </span>
-                {user?.role && user.role !== 'customer' && (
-                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                    user.role === 'super_admin' 
-                      ? 'bg-purple-100 text-purple-800' 
-                      : user.role === 'admin'
-                      ? 'bg-blue-100 text-blue-800'
-                      : 'bg-gray-100 text-gray-800'
-                  }`}
-                  >
-                    {user.role === 'super_admin' ? t('profile.superAdmin') : 
-                     user.role === 'admin' ? t('profile.admin') : 
-                     t('profile.staff')}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+    <MainLayout title={t('profile.title')} showProfileBanner={false} showDashboardButton={true}>
         {/* Membership Tier Display */}
         {loyaltyStatus && (
           <div className="mb-6 bg-white shadow rounded-lg border-l-4" style={{ borderLeftColor: loyaltyStatus.tier_color }}>
@@ -431,7 +442,45 @@ export default function ProfilePage() {
                     <div>
                       <dt className="font-medium text-gray-500">{t('profile.dateOfBirth')}</dt>
                       <dd className="mt-1 text-gray-900">
-                        {new Date(profile.dateOfBirth).toLocaleDateString()}
+                        {formatDateToDDMMYYYY(profile.dateOfBirth)}
+                      </dd>
+                    </div>
+                  )}
+
+                  {profile?.gender && (
+                    <div>
+                      <dt className="font-medium text-gray-500">{t('profile.gender')}</dt>
+                      <dd className="mt-1 text-gray-900">
+                        {profile.gender === 'male' ? t('profile.male') :
+                         profile.gender === 'female' ? t('profile.female') :
+                         profile.gender === 'other' ? t('profile.other') :
+                         profile.gender === 'prefer_not_to_say' ? t('profile.preferNotToSay') :
+                         profile.gender}
+                      </dd>
+                    </div>
+                  )}
+
+                  {profile?.occupation && (
+                    <div>
+                      <dt className="font-medium text-gray-500">{t('profile.occupation')}</dt>
+                      <dd className="mt-1 text-gray-900">{profile.occupation}</dd>
+                    </div>
+                  )}
+
+                  {profile?.interests && profile.interests.length > 0 && (
+                    <div>
+                      <dt className="font-medium text-gray-500">{t('profile.interests')}</dt>
+                      <dd className="mt-1">
+                        <div className="flex flex-wrap gap-1">
+                          {profile.interests.map((interest, index) => (
+                            <span 
+                              key={index}
+                              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                            >
+                              {getTranslatedInterest(interest, t)}
+                            </span>
+                          ))}
+                        </div>
                       </dd>
                     </div>
                   )}
@@ -439,7 +488,7 @@ export default function ProfilePage() {
                   <div>
                     <dt className="font-medium text-gray-500">{t('profile.memberSince')}</dt>
                     <dd className="mt-1 text-gray-900">
-                      {profile ? new Date(profile.createdAt).toLocaleDateString() : '...'}
+                      {profile ? formatDateToDDMMYYYY(profile.createdAt) : '...'}
                     </dd>
                   </div>
 
@@ -521,7 +570,6 @@ export default function ProfilePage() {
             updateUser({ avatarUrl: updatedProfile.avatarUrl });
           }}
         />
-      </main>
-    </div>
+    </MainLayout>
   );
 }

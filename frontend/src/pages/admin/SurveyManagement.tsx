@@ -7,6 +7,7 @@ import { surveyService } from '../../services/surveyService';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import SurveyCouponAssignments from '../../components/surveys/SurveyCouponAssignments';
 import toast from 'react-hot-toast';
+import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
 
 const SurveyManagement: React.FC = () => {
   const { t } = useTranslation();
@@ -221,8 +222,8 @@ const SurveyManagement: React.FC = () => {
                                 <FiUsers className="mr-1 h-3 w-3" />
                                 {survey.questions.length} questions
                               </span>
-                              <span>Created: {new Date(survey.created_at).toLocaleDateString()}</span>
-                              <span>Updated: {new Date(survey.updated_at).toLocaleDateString()}</span>
+                              <span>Created: {formatDateToDDMMYYYY(survey.created_at)}</span>
+                              <span>Updated: {formatDateToDDMMYYYY(survey.updated_at)}</span>
                             </div>
                           </div>
                         </div>

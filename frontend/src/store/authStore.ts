@@ -21,7 +21,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
   register: (data: {
     email: string;
     password: string;
@@ -46,10 +46,10 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
 
-      login: async (email: string, password: string) => {
+      login: async (email: string, password: string, rememberMe?: boolean) => {
         set({ isLoading: true });
         try {
-          const response = await authService.login(email, password);
+          const response = await authService.login(email, password, rememberMe);
           set({
             user: response.user,
             accessToken: response.tokens.accessToken,
@@ -185,6 +185,13 @@ export const useAuthStore = create<AuthState>()(
             return true;
           }
           
+          // Handle rate limiting (429) - don't logout user for this
+          if (error.response?.status === 429) {
+            console.warn('Rate limit hit during auth check, assuming valid for now');
+            // On rate limit, keep user logged in - this is temporary
+            return true;
+          }
+          
           // Token is invalid or expired, try to refresh
           if (state.refreshToken) {
             try {
@@ -192,6 +199,13 @@ export const useAuthStore = create<AuthState>()(
               return true;
             } catch (refreshError: any) {
               console.warn('Refresh token failed:', refreshError.message);
+              
+              // Handle rate limiting on refresh - don't logout
+              if (refreshError.response?.status === 429) {
+                console.warn('Rate limit hit during token refresh, keeping auth state');
+                return true;
+              }
+              
               // Only clear auth on explicit 401/403 errors, not network issues
               if (refreshError.response?.status === 401 || refreshError.response?.status === 403) {
                 get().clearAuth();

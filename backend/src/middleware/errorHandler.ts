@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { logger } from '../utils/logger';
 
@@ -16,8 +16,11 @@ export class AppError extends Error {
 export function errorHandler(
   err: Error,
   req: Request,
-  res: Response
-): Response | void {
+  res: Response,
+  _next: NextFunction
+): void {
+  // NextFunction parameter required by Express error handler signature
+  _next;
 
   if (err instanceof ZodError) {
     const errorMessage = err.errors.map((e) => ({
@@ -25,16 +28,18 @@ export function errorHandler(
       message: e.message,
     }));
     
-    return res.status(400).json({
+    res.status(400).json({
       error: 'Validation failed',
       details: errorMessage,
     });
+    return;
   }
 
   if (err instanceof AppError) {
-    return res.status(err.statusCode).json({
+    res.status(err.statusCode).json({
       error: err.message,
     });
+    return;
   }
 
   // Log unexpected errors
