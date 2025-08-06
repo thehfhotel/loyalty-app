@@ -271,6 +271,8 @@ router.get('/line', (req, res, next) => {
   logger.debug('[OAuth] Initiating LINE OAuth', { channelId: lineChannelId });
   
   // Enhanced mobile-friendly LINE OAuth initiation for Safari iPhone
+  // Fix: Safari iPhone treats OAuth redirects as file downloads when using standard HTTP redirects
+  // Solution: Use HTML meta refresh + JavaScript redirect for mobile Safari compatibility
   const userAgent = req.get('User-Agent') ?? '';
   const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
   const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
