@@ -121,10 +121,78 @@ router.get('/google/callback',
       });
       logger.debug('[OAuth] Redirecting to success URL', { successUrl: successUrl.toString() });
       
-      res.redirect(successUrl.toString());
+      // Enhanced mobile-friendly redirect for Safari iPhone compatibility
+      const userAgent = req.get('User-Agent') ?? '';
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
+      const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
+      
+      if (isMobile && isSafari) {
+        // Use HTML meta refresh for Safari mobile compatibility
+        const htmlRedirect = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Redirecting...</title>
+    <meta http-equiv="refresh" content="0;url=${successUrl.toString()}">
+</head>
+<body>
+    <script>
+        window.location.href = '${successUrl.toString()}';
+    </script>
+    <p>If you are not redirected automatically, <a href="${successUrl.toString()}">click here</a>.</p>
+</body>
+</html>`;
+        
+        res.set({
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        });
+        res.status(200).send(htmlRedirect);
+      } else {
+        // Standard redirect for desktop and other mobile browsers
+        res.redirect(302, successUrl.toString());
+      }
     } catch (error) {
       logger.error('[OAuth] Google OAuth callback error:', error);
-      res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`);
+      
+      // Enhanced mobile-friendly error redirect
+      const userAgent = req.get('User-Agent') ?? '';
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
+      const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
+      const errorUrl = `${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`;
+      
+      if (isMobile && isSafari) {
+        const htmlRedirect = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Redirecting...</title>
+    <meta http-equiv="refresh" content="0;url=${errorUrl}">
+</head>
+<body>
+    <script>
+        window.location.href = '${errorUrl}';
+    </script>
+    <p>If you are not redirected automatically, <a href="${errorUrl}">click here</a>.</p>
+</body>
+</html>`;
+        
+        res.set({
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        });
+        res.status(200).send(htmlRedirect);
+      } else {
+        res.redirect(302, errorUrl);
+      }
     }
   }
 );
@@ -206,10 +274,78 @@ router.get('/line/callback',
       logger.info(`[OAuth] LINE OAuth success for user ${user.email}, isNewUser: ${isNewUser}`);
       logger.debug('[OAuth] Redirecting to success URL', { successUrl: successUrl.toString() });
       
-      res.redirect(successUrl.toString());
+      // Enhanced mobile-friendly redirect for Safari iPhone compatibility
+      const userAgent = req.get('User-Agent') ?? '';
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
+      const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
+      
+      if (isMobile && isSafari) {
+        // Use HTML meta refresh for Safari mobile compatibility
+        const htmlRedirect = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Redirecting...</title>
+    <meta http-equiv="refresh" content="0;url=${successUrl.toString()}">
+</head>
+<body>
+    <script>
+        window.location.href = '${successUrl.toString()}';
+    </script>
+    <p>If you are not redirected automatically, <a href="${successUrl.toString()}">click here</a>.</p>
+</body>
+</html>`;
+        
+        res.set({
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        });
+        res.status(200).send(htmlRedirect);
+      } else {
+        // Standard redirect for desktop and other mobile browsers
+        res.redirect(302, successUrl.toString());
+      }
     } catch (error) {
       logger.error('[OAuth] LINE OAuth callback error:', error);
-      res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`);
+      
+      // Enhanced mobile-friendly error redirect
+      const userAgent = req.get('User-Agent') ?? '';
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
+      const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
+      const errorUrl = `${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`;
+      
+      if (isMobile && isSafari) {
+        const htmlRedirect = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Redirecting...</title>
+    <meta http-equiv="refresh" content="0;url=${errorUrl}">
+</head>
+<body>
+    <script>
+        window.location.href = '${errorUrl}';
+    </script>
+    <p>If you are not redirected automatically, <a href="${errorUrl}">click here</a>.</p>
+</body>
+</html>`;
+        
+        res.set({
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        });
+        res.status(200).send(htmlRedirect);
+      } else {
+        res.redirect(302, errorUrl);
+      }
     }
   }
 );
