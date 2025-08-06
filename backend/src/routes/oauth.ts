@@ -29,7 +29,56 @@ router.get('/google', (req, res, next) => {
     }
     
     logger.debug('[OAuth] Initiating Google OAuth with scopes', { scopes: ['profile', 'email'] });
-    passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+    
+    // Enhanced mobile-friendly Google OAuth initiation for Safari iPhone
+    const userAgent = req.get('User-Agent') ?? '';
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
+    const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
+    
+    if (isMobile && isSafari) {
+      // For Safari mobile, construct Google OAuth URL manually
+      const callbackURL = encodeURIComponent(process.env.GOOGLE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/google/callback');
+      const state = Math.random().toString(36).substring(2, 15);
+      const scope = encodeURIComponent('profile email');
+      
+      const googleOAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${googleClientId}&redirect_uri=${callbackURL}&scope=${scope}&state=${state}`;
+      
+      logger.debug('[OAuth] Generating mobile-friendly Google OAuth redirect', { 
+        googleOAuthUrl,
+        userAgent,
+        isMobile,
+        isSafari 
+      });
+      
+      const htmlRedirect = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Redirecting to Google...</title>
+    <meta http-equiv="refresh" content="0;url=${googleOAuthUrl}">
+</head>
+<body>
+    <script>
+        window.location.href = '${googleOAuthUrl}';
+    </script>
+    <p>Redirecting to Google for authentication...</p>
+    <p>If you are not redirected automatically, <a href="${googleOAuthUrl}">click here</a>.</p>
+</body>
+</html>`;
+      
+      res.set({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+      res.status(200).send(htmlRedirect);
+    } else {
+      // Standard passport authentication for desktop and other mobile browsers
+      passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+    }
   } catch (error) {
     logger.error('[OAuth] Google initiation error:', error);
     res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_error`);
@@ -220,7 +269,57 @@ router.get('/line', (req, res, next) => {
   }
   
   logger.debug('[OAuth] Initiating LINE OAuth', { channelId: lineChannelId });
-  passport.authenticate('line')(req, res, next);
+  
+  // Enhanced mobile-friendly LINE OAuth initiation for Safari iPhone
+  const userAgent = req.get('User-Agent') ?? '';
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(userAgent);
+  const isSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS/i.test(userAgent);
+  
+  if (isMobile && isSafari) {
+    // For Safari mobile, we need to construct the LINE OAuth URL manually
+    // and return an HTML page to avoid the redirect being treated as a download
+    const callbackURL = encodeURIComponent(process.env.LINE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/line/callback');
+    const state = Math.random().toString(36).substring(2, 15);
+    const scope = 'profile%20openid%20email';
+    
+    const lineOAuthUrl = `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${lineChannelId}&redirect_uri=${callbackURL}&state=${state}&scope=${scope}`;
+    
+    logger.debug('[OAuth] Generating mobile-friendly LINE OAuth redirect', { 
+      lineOAuthUrl,
+      userAgent,
+      isMobile,
+      isSafari 
+    });
+    
+    const htmlRedirect = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Redirecting to LINE...</title>
+    <meta http-equiv="refresh" content="0;url=${lineOAuthUrl}">
+</head>
+<body>
+    <script>
+        window.location.href = '${lineOAuthUrl}';
+    </script>
+    <p>Redirecting to LINE for authentication...</p>
+    <p>If you are not redirected automatically, <a href="${lineOAuthUrl}">click here</a>.</p>
+</body>
+</html>`;
+    
+    res.set({
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+    res.status(200).send(htmlRedirect);
+  } else {
+    // Standard passport authentication for desktop and other mobile browsers
+    passport.authenticate('line')(req, res, next);
+  }
 });
 
 router.get('/line/callback', 
