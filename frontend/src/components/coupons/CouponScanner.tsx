@@ -60,7 +60,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
     }
 
     return () => stopCamera();
-  }, [scanMode]);
+  }, [scanMode, startCamera]);
 
   const validateCoupon = async (code: string) => {
     if (!code.trim()) {

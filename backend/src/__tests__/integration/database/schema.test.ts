@@ -332,9 +332,9 @@ describe('Database Schema Integration', () => {
           const orderDir = params.orderBy[orderKey];
           transactions.sort((a, b) => {
             if (orderDir === 'desc') {
-              return new Date(b[orderKey]).getTime() - new Date(a[orderKey]).getTime();
+              return new Date((b as Record<string, unknown>)[orderKey] as string).getTime() - new Date((a as Record<string, unknown>)[orderKey] as string).getTime();
             }
-            return new Date(a[orderKey]).getTime() - new Date(b[orderKey]).getTime();
+            return new Date((a as Record<string, unknown>)[orderKey] as string).getTime() - new Date((b as Record<string, unknown>)[orderKey] as string).getTime();
           });
         }
         if (params?.take) {

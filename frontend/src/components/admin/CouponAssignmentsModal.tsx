@@ -72,7 +72,7 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
 
   useEffect(() => {
     loadAssignments(1);
-  }, [coupon.id]);
+  }, [coupon.id, loadAssignments]);
 
   const formatDate = (date: Date) => {
     return formatDateToDDMMYYYY(date);

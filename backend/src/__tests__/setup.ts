@@ -5,20 +5,76 @@
 
 import { v4 as uuidv4 } from 'uuid';
 
-// Mock data storage for tests
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const mockUsers: any[] = [];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const mockTransactions: any[] = [];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const mockCoupons: any[] = [];
+// Type definitions for test data with index signature for flexible access
+interface MockUser {
+  id: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  email_verified: boolean;
+  created_at: Date;
+  updated_at: Date;
+  membershipId: string;
+  [key: string]: unknown; // Allow dynamic property access
+}
+
+interface MockTransaction {
+  id: string;
+  user_id: string;
+  type: string;
+  points: number;
+  description?: string;
+  created_at: Date;
+  [key: string]: unknown; // Allow dynamic property access
+}
+
+interface MockCoupon {
+  id: string;
+  user_id: string;
+  coupon_id: string;
+  status: string;
+  qr_code: string;
+  expires_at: Date;
+  created_at: Date;
+  updated_at: Date;
+  [key: string]: unknown; // Allow dynamic property access
+}
+
+// Type-safe mock data storage for tests
+export const mockUsers: MockUser[] = [];
+export const mockTransactions: MockTransaction[] = [];
+export const mockCoupons: MockCoupon[] = [];
+
+// Mock Prisma client interface for testing
+interface MockPrismaClient {
+  users: {
+    create: jest.Mock;
+    findUnique: jest.Mock;
+    findMany: jest.Mock;
+    delete: jest.Mock;
+  };
+  user_profiles: {
+    create: jest.Mock;
+  };
+  points_transactions: {
+    create: jest.Mock;
+    findMany: jest.Mock;
+    aggregate: jest.Mock;
+    findUnique: jest.Mock;
+    deleteMany: jest.Mock;
+  };
+  user_coupons: {
+    create: jest.Mock;
+    findMany: jest.Mock;
+  };
+}
 
 // Mock Prisma client for testing - will be initialized in beforeAll
-export const testDb: any = {
-  users: {},
-  user_profiles: {},
-  points_transactions: {},
-  user_coupons: {},
+export const testDb: MockPrismaClient = {
+  users: {} as MockPrismaClient['users'],
+  user_profiles: {} as MockPrismaClient['user_profiles'],
+  points_transactions: {} as MockPrismaClient['points_transactions'],
+  user_coupons: {} as MockPrismaClient['user_coupons'],
 };
 
 // Removed setupBasicMockBehaviors - moved to beforeAll
@@ -27,17 +83,17 @@ export const testDb: any = {
 beforeAll(async () => {
   // Set test environment
   process.env.NODE_ENV = 'test';
-  console.log('Test setup initialized (using mocked Prisma client)');
+  // Test logging removed to reduce noise - setup complete
   
   // Initialize mocks properly within Jest context
   testDb.users.create = jest.fn();
   
   testDb.users.findUnique = jest.fn();
-  testDb.users.findMany = jest.fn().mockImplementation((params: any) => {
+  testDb.users.findMany = jest.fn().mockImplementation((params: { where?: Record<string, unknown>; take?: number }) => {
     let users = [...mockUsers];
     if (params?.where) {
       users = users.filter(u => 
-        Object.keys(params.where).every(key => u[key] === params.where[key])
+        Object.keys(params.where!).every(key => (u as Record<string, unknown>)[key] === params.where![key])
       );
     }
     if (params?.take) {
@@ -61,11 +117,11 @@ beforeAll(async () => {
   testDb.user_coupons.findMany = jest.fn();
   
   // Setup persistent mock behaviors for query operations
-  testDb.points_transactions.findMany = jest.fn().mockImplementation((params: any) => {
+  testDb.points_transactions.findMany = jest.fn().mockImplementation((params: { where?: Record<string, unknown>; orderBy?: Record<string, 'asc' | 'desc'>; take?: number }) => {
     let transactions = [...mockTransactions];
     if (params?.where) {
       transactions = transactions.filter(t => 
-        Object.keys(params.where).every(key => t[key] === params.where[key])
+        Object.keys(params.where!).every(key => (t as Record<string, unknown>)[key] === params.where![key])
       );
     }
     if (params?.orderBy) {
@@ -73,9 +129,9 @@ beforeAll(async () => {
       const orderDir = params.orderBy[orderKey];
       transactions.sort((a, b) => {
         if (orderDir === 'desc') {
-          return new Date(b[orderKey]).getTime() - new Date(a[orderKey]).getTime();
+          return new Date((b as Record<string, unknown>)[orderKey] as string).getTime() - new Date((a as Record<string, unknown>)[orderKey] as string).getTime();
         }
-        return new Date(a[orderKey]).getTime() - new Date(b[orderKey]).getTime();
+        return new Date((a as Record<string, unknown>)[orderKey] as string).getTime() - new Date((b as Record<string, unknown>)[orderKey] as string).getTime();
       });
     }
     if (params?.take) {
@@ -84,11 +140,11 @@ beforeAll(async () => {
     return Promise.resolve(transactions);
   });
   
-  testDb.points_transactions.aggregate = jest.fn().mockImplementation((params: any) => {
+  testDb.points_transactions.aggregate = jest.fn().mockImplementation((params: { where?: Record<string, unknown>; _sum?: { points: boolean } }) => {
     let transactions = [...mockTransactions];
     if (params?.where) {
       transactions = transactions.filter(t => 
-        Object.keys(params.where).every(key => t[key] === params.where[key])
+        Object.keys(params.where!).every(key => (t as Record<string, unknown>)[key] === params.where![key])
       );
     }
     
@@ -101,27 +157,27 @@ beforeAll(async () => {
     return Promise.resolve({ _sum: { points: null } });
   });
   
-  testDb.points_transactions.findUnique = jest.fn().mockImplementation((params: any) => {
+  testDb.points_transactions.findUnique = jest.fn().mockImplementation((params: { where?: { id?: string } }) => {
     if (params?.where?.id) {
-      const transaction = mockTransactions.find(t => t.id === params.where.id);
+      const transaction = mockTransactions.find(t => t.id === params.where!.id);
       return Promise.resolve(transaction || null);
     }
     return Promise.resolve(null);
   });
   
-  testDb.users.findUnique = jest.fn().mockImplementation((params: any) => {
+  testDb.users.findUnique = jest.fn().mockImplementation((params: { where?: { email?: string; id?: string } }) => {
     if (params?.where?.email) {
-      const user = mockUsers.find(u => u.email === params.where.email);
+      const user = mockUsers.find(u => u.email === params.where!.email);
       return Promise.resolve(user || null);
     }
     if (params?.where?.id) {
-      const user = mockUsers.find(u => u.id === params.where.id);
+      const user = mockUsers.find(u => u.id === params.where!.id);
       return Promise.resolve(user || null);
     }
     return Promise.resolve(null);
   });
   
-  testDb.users.delete = jest.fn().mockImplementation((params: any) => {
+  testDb.users.delete = jest.fn().mockImplementation((params: { where: { id: string } }) => {
     const index = mockUsers.findIndex(u => u.id === params.where.id);
     if (index !== -1) {
       const user = mockUsers[index];
@@ -131,9 +187,9 @@ beforeAll(async () => {
     return Promise.reject(new Error('User not found'));
   });
   
-  testDb.points_transactions.deleteMany = jest.fn().mockImplementation((params: any) => {
+  testDb.points_transactions.deleteMany = jest.fn().mockImplementation((params: { where?: { user_id?: string } }) => {
     if (params?.where?.user_id) {
-      const toDelete = mockTransactions.filter(t => t.user_id === params.where.user_id);
+      const toDelete = mockTransactions.filter(t => t.user_id === params.where!.user_id);
       const count = toDelete.length;
       toDelete.forEach(t => {
         const index = mockTransactions.indexOf(t);
@@ -151,8 +207,7 @@ beforeAll(async () => {
 
 // Cleanup after each test
 afterEach(async () => {
-  console.log('Before cleanup - users:', mockUsers.length, 'transactions:', mockTransactions.length);
-  // Clear mock data
+  // Clear mock data with silent cleanup for better test performance
   mockUsers.length = 0;
   mockTransactions.length = 0;
   mockCoupons.length = 0;
@@ -165,14 +220,14 @@ afterEach(async () => {
 
 // Cleanup after all tests
 afterAll(async () => {
-  console.log('Test cleanup completed');
+  // Test cleanup completed - logging removed for cleaner output
 });
 
 // Counter for unique membership IDs
 let membershipCounter = 0;
 
 // Test utilities
-export const createTestUser = async (overrides: any = {}) => {
+export const createTestUser = async (overrides: Record<string, unknown> = {}) => {
   const userId = uuidv4();
   const membershipId = overrides.membershipId || `TEST-${Date.now()}-${++membershipCounter}`;
   const email = overrides.email !== undefined ? overrides.email : `test-${uuidv4()}@example.com`;
@@ -192,7 +247,7 @@ export const createTestUser = async (overrides: any = {}) => {
   // Apply mock implementation inline to avoid Jest clearing it
   
   // Set mock implementation inline to ensure it's available
-  (testDb.users.create as jest.Mock).mockImplementation((params: any) => {
+  (testDb.users.create as jest.Mock).mockImplementation((params: { data: Partial<MockUser> }) => {
     const userData = params.data;
     
     // Check for email uniqueness
@@ -209,7 +264,7 @@ export const createTestUser = async (overrides: any = {}) => {
     
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(userData.email)) {
+    if (!emailRegex.test(userData.email as string)) {
       return Promise.reject(new Error('invalid email format'));
     }
     
@@ -219,7 +274,7 @@ export const createTestUser = async (overrides: any = {}) => {
       created_at: userData.created_at || new Date(),
       updated_at: userData.updated_at || new Date(),
       ...userData 
-    };
+    } as MockUser;
     mockUsers.push(user);
     return Promise.resolve(user);
   });
@@ -241,7 +296,7 @@ export const createTestUser = async (overrides: any = {}) => {
   };
   
   // Set mock implementation for user profile creation
-  (testDb.user_profiles.create as jest.Mock).mockImplementation((params: any) => {
+  (testDb.user_profiles.create as jest.Mock).mockImplementation((params: { data: Record<string, unknown> }) => {
     const profile = { 
       id: uuidv4(), 
       created_at: new Date(),
@@ -270,7 +325,7 @@ export const createTestUser = async (overrides: any = {}) => {
   return returnUser;
 };
 
-export const createTestCoupon = async (userId: string, overrides: any = {}) => {
+export const createTestCoupon = async (userId: string, overrides: Record<string, unknown> = {}) => {
   const couponData = {
     id: uuidv4(),
     user_id: userId,
@@ -284,7 +339,7 @@ export const createTestCoupon = async (userId: string, overrides: any = {}) => {
   };
   
   // Set mock implementation inline
-  (testDb.user_coupons.create as jest.Mock).mockImplementation((params: any) => {
+  (testDb.user_coupons.create as jest.Mock).mockImplementation((params: { data: Partial<MockCoupon> }) => {
     // Check if user exists (foreign key constraint)
     const userExists = mockUsers.find(u => u.id === params?.data?.user_id);
     if (!userExists) {
@@ -303,7 +358,7 @@ export const createTestCoupon = async (userId: string, overrides: any = {}) => {
       id: uuidv4(),
       ...params.data,
       qr_code: qrCode,
-    };
+    } as MockCoupon;
     
     // Add to mock storage
     mockCoupons.push(couponData);
@@ -315,7 +370,7 @@ export const createTestCoupon = async (userId: string, overrides: any = {}) => {
   });
 };
 
-export const createTestLoyaltyTransaction = async (userId: string, overrides: any = {}) => {
+export const createTestLoyaltyTransaction = async (userId: string, overrides: Record<string, unknown> = {}) => {
   
   // Create the transaction object
   const transactionData = {
@@ -329,7 +384,7 @@ export const createTestLoyaltyTransaction = async (userId: string, overrides: an
   };
   
   // Set mock implementation inline
-  (testDb.points_transactions.create as jest.Mock).mockImplementation((params: any) => {
+  (testDb.points_transactions.create as jest.Mock).mockImplementation((params: { data: Partial<MockTransaction> }) => {
     // Check for foreign key constraint
     if (params?.data?.user_id && !mockUsers.find(u => u.id === params.data.user_id)) {
       return Promise.reject(new Error('Foreign key constraint failed'));
@@ -344,7 +399,7 @@ export const createTestLoyaltyTransaction = async (userId: string, overrides: an
       id: params.data.id || uuidv4(), 
       created_at: params.data.created_at || new Date(),
       ...params.data 
-    };
+    } as MockTransaction;
     mockTransactions.push(transaction);
     return Promise.resolve(transaction);
   });

@@ -329,6 +329,33 @@ Before ANY database-related operation:
 
 **Rationale**: Direct database manipulation bypasses critical business logic, validation, transaction management, and data integrity functions. The recent points balance issue occurred because direct INSERT bypassed the `award_points()` stored procedure that maintains consistency between `points_transactions` and `user_loyalty` tables. All database interactions must go through properly designed APIs that maintain data integrity and business rules.
 
+## 🔧 ESLint Migration Priority Plan
+
+### ⚠️ CRITICAL PRIORITY: ESLint Configuration Technical Debt
+
+The ESLint configuration has been systematically weakened by downgrading critical errors to warnings to allow pipeline passage. This represents **significant technical debt** and **security vulnerabilities** that must be addressed immediately.
+
+**Security Rules Improperly Suppressed:**
+- `security/detect-object-injection: 'warn'` → **~130 injection points** 
+- `security/detect-child-process: 'warn'` → **Process injection risk**
+- `security/detect-non-literal-fs-filename: 'warn'` → **File system attacks**
+
+**Type Safety Issues:**
+- `@typescript-eslint/no-explicit-any: 'warn'` → **~300 unsafe types**
+- `@typescript-eslint/no-unused-vars: 'warn'` → **Dead code**
+
+**React Critical Issues:**
+- `react-hooks/exhaustive-deps: 'warn'` → **~28 stale closures**
+
+### Implementation Plan Location
+📋 **Full migration plan**: `/Users/nut/loyalty-app/ESLINT_MIGRATION_PLAN.md`
+
+**Phase 1 (Week 1)**: Security Critical Rules → errors
+**Phase 2 (Week 2)**: Type Safety Rules → errors  
+**Phase 3 (Week 3)**: React Critical Rules → errors
+
+This ESLint migration is **TOP PRIORITY** for codebase security and reliability.
+
 ## 📋 Additional Project Conventions
 
 ### 6. Project Structure
