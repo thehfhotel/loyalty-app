@@ -8,9 +8,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'robots.txt', 'icon-192.png', 'icon-512.png'],
-      strategies: 'injectManifest',
-      srcDir: 'public',
-      filename: 'sw-custom.js',
+      strategies: 'generateSW',
       manifest: {
         name: 'Hotel Loyalty App',
         short_name: 'Loyalty',
