@@ -15,8 +15,8 @@ interface CouponUsageEvent {
 interface ProfileChangeEvent {
   userId: string;
   field: string;
-  oldValue: any;
-  newValue: any;
+  oldValue: unknown;
+  newValue: unknown;
   changeSource: 'user' | 'admin' | 'system';
   metadata?: Record<string, any>;
   ipAddress?: string;
@@ -105,8 +105,8 @@ export class AnalyticsService {
     userId: string,
     changes: Array<{
       field: string;
-      oldValue: any;
-      newValue: any;
+      oldValue: unknown;
+      newValue: unknown;
     }>,
     changeSource: 'user' | 'admin' | 'system',
     metadata?: Record<string, any>,
@@ -182,7 +182,7 @@ export class AnalyticsService {
     }>;
   }> {
     const whereConditions: string[] = [];
-    const whereValues: any[] = [];
+    const whereValues: (string | Date)[] = [];
     let paramIndex = 1;
 
     if (startDate) {
@@ -319,7 +319,7 @@ export class AnalyticsService {
     }>;
   }> {
     const whereConditions: string[] = [];
-    const whereValues: any[] = [];
+    const whereValues: (string | Date)[] = [];
     let paramIndex = 1;
 
     if (startDate) {
@@ -576,7 +576,7 @@ export class AnalyticsService {
     }>;
   }> {
     const whereConditions: string[] = [];
-    const whereValues: any[] = [];
+    const whereValues: (string | Date)[] = [];
     let paramIndex = 1;
 
     if (startDate) {

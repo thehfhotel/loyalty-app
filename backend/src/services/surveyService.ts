@@ -198,7 +198,7 @@ export class SurveyService {
     try {
       const offset = (page - 1) * limit;
       let whereClause = '';
-      const queryParams: any[] = [limit, offset];
+      const queryParams: (string | number)[] = [limit, offset];
       let paramIndex = 3;
 
       const conditions: string[] = [];
@@ -251,7 +251,7 @@ export class SurveyService {
     const client = await getPool().connect();
     try {
       const updateFields: string[] = [];
-      const values: any[] = [];
+      const values: (string | number | boolean | Date | null | object)[] = [];
       let paramIndex = 1;
 
       if (data.title !== undefined) {
@@ -706,7 +706,13 @@ export class SurveyService {
       })).reverse();
 
       // Generate question analytics
-      const questionAnalytics: any[] = [];
+      const questionAnalytics: Array<{
+        questionId: string;
+        question: string;
+        type: string;
+        responses: Record<string, number>;
+        averageRating?: number;
+      }> = [];
       
       for (const question of survey.questions) {
         const analytics = await this.getQuestionAnalytics(surveyId, question);
@@ -945,7 +951,7 @@ export class SurveyService {
         LEFT JOIN user_profiles up ON u.id = up.user_id
         WHERE u.role NOT IN ('admin', 'super_admin')
       `;
-      const params: any[] = [];
+      const params: (string | number | string[] | number[])[] = [];
       let paramIndex = 1;
 
       // Add tier restrictions
@@ -1106,7 +1112,7 @@ export class SurveyService {
     const client = await getPool().connect();
     try {
       const updateFields: string[] = [];
-      const values: any[] = [surveyId, couponId];
+      const values: (string | number | boolean | null)[] = [surveyId, couponId];
       let paramIndex = 3;
 
       // Note: award_condition is no longer needed - coupons always awarded on completion
@@ -1263,7 +1269,7 @@ export class SurveyService {
     try {
       const offset = (page - 1) * limit;
       const whereConditions: string[] = [];
-      const whereValues: any[] = [];
+      const whereValues: (string | boolean | number)[] = [];
       let paramIndex = 1;
 
       if (filters.survey_id) {

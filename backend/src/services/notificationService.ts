@@ -66,7 +66,7 @@ export class NotificationService {
     
     // Base query conditions
     let whereCondition = 'WHERE user_id = $1 AND (expires_at IS NULL OR expires_at > NOW())';
-    const queryParams: any[] = [userId];
+    const queryParams: (string | number)[] = [userId];
     
     if (!includeRead) {
       whereCondition += ' AND read_at IS NULL';

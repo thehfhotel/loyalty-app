@@ -1,7 +1,6 @@
 import multer from 'multer';
 import path from 'path';
 import { Request } from 'express';
-import type { Express } from 'express-serve-static-core';
 import { AppError } from '../middleware/errorHandler';
 import { storageConfig } from './storage';
 

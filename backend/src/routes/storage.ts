@@ -25,7 +25,7 @@ router.post('/backup', authenticate, authorize('admin', 'super_admin'), async (_
     });
     
     res.json({ message: 'Backup started successfully' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Failed to start backup:', error);
     res.status(500).json({ error: 'Failed to start backup' });
   }

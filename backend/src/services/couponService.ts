@@ -289,7 +289,7 @@ export class CouponService {
     
     // Build WHERE clause
     const whereConditions: string[] = [];
-    const whereValues: any[] = [];
+    const whereValues: (string | number | boolean | Date)[] = [];
     let paramIndex = 1;
 
     if (filters.status) {
@@ -385,8 +385,9 @@ export class CouponService {
           ).then(res => res.rows);
 
           userCoupons.push(userCoupon);
-        } catch (error: any) {
-          logger.warn(`Failed to assign coupon ${data.couponId} to user ${userId}: ${error.message}`);
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.warn(`Failed to assign coupon ${data.couponId} to user ${userId}: ${errorMessage}`);
           // Continue with other users instead of failing the entire batch
         }
       }
@@ -515,7 +516,7 @@ export class CouponService {
 
     // Build the status condition based on the requested status
     let statusCondition = '';
-    const statusParams: any[] = [userId];
+    const statusParams: (string | number)[] = [userId];
     
     switch (status) {
       case 'used':
@@ -672,7 +673,7 @@ export class CouponService {
     
     // Build WHERE clause
     const whereConditions: string[] = [];
-    const whereValues: any[] = [];
+    const whereValues: (string | number | boolean | Date)[] = [];
     let paramIndex = 1;
 
     if (couponId) {

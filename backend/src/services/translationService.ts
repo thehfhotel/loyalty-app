@@ -100,8 +100,8 @@ class TranslationService {
       });
 
       // Process Azure response
-      response.data.forEach((translationGroup: any) => {
-        translationGroup.translations.forEach((translation: any) => {
+      response.data.forEach((translationGroup: { translations: any[] }) => {
+        translationGroup.translations.forEach((translation: { to: string; text: string }) => {
           const ourLangCode = this.fromAzureLanguageCode(translation.to);
           // Safe property access to prevent injection
           if (typeof ourLangCode === 'string' && 
@@ -265,7 +265,7 @@ class TranslationService {
 
       // Questions and options
       const questions = survey.questions ?? [];
-      questions.forEach((question: any, questionIndex: number) => {
+      questions.forEach((question: { text?: string; description?: string; options?: any[] }, questionIndex: number) => {
         if (question.text) {
           textsToTranslate.push(question.text);
           textMapping.push({ type: 'question', index: questionIndex, field: 'text' });
@@ -275,7 +275,7 @@ class TranslationService {
           textMapping.push({ type: 'question', index: questionIndex, field: 'description' });
         }
         if (question.options) {
-          question.options.forEach((option: any, optionIndex: number) => {
+          question.options.forEach((option: { text?: string }, optionIndex: number) => {
             if (option.text) {
               textsToTranslate.push(option.text);
               textMapping.push({ type: 'option', index: questionIndex, field: 'text', optionIndex });
@@ -417,10 +417,10 @@ class TranslationService {
    * Apply translations to survey data structure
    */
   private applyTranslationsToSurvey(
-    original: any, 
+    original: Record<string, unknown>, 
     translations: string[], 
     textMapping: { type: string; index?: number; field: string; optionIndex?: number }[]
-  ): any {
+  ): Record<string, unknown> {
     const result = JSON.parse(JSON.stringify(original));
     
     translations.forEach((translation, index) => {
@@ -452,10 +452,10 @@ class TranslationService {
    * Apply translations to coupon data structure
    */
   private applyTranslationsToCoupon(
-    original: any, 
+    original: Record<string, unknown>, 
     translations: string[], 
     textMapping: { field: string }[]
-  ): any {
+  ): Record<string, unknown> {
     const result = { ...original };
     
     translations.forEach((translation, index) => {
@@ -479,7 +479,7 @@ class TranslationService {
     error?: string
   ): Promise<void> {
     const updateFields = ['status = $2', 'progress = $3', 'updated_at = NOW()'];
-    const values: any[] = [jobId, status, progress];
+    const values: (string | number | Date)[] = [jobId, status, progress];
 
     if (charactersTranslated !== undefined) {
       updateFields.push(`characters_translated = $${values.length + 1}`);

@@ -31,7 +31,7 @@ export interface UserLoyaltyStatus {
   current_points: number;
   tier_name: string;
   tier_color: string;
-  tier_benefits: any;
+  tier_benefits: Record<string, unknown>;
   tier_level: number;
   progress_percentage: number;
   next_tier_points: number | null;
@@ -279,7 +279,7 @@ export class LoyaltyService {
         LEFT JOIN user_profiles up ON u.id = up.user_id
       `;
       
-      const params: any[] = [];
+      const params: (string | number)[] = [];
       let paramIndex = 1;
 
       if (searchTerm) {
@@ -301,7 +301,7 @@ export class LoyaltyService {
         LEFT JOIN user_profiles up ON u.id = up.user_id
       `;
       
-      const countParams: any[] = [];
+      const countParams: string[] = [];
       if (searchTerm) {
         countQuery += ` WHERE (u.email ILIKE $1 OR up.first_name ILIKE $1 OR up.last_name ILIKE $1 OR u.id::text ILIKE $1 OR up.membership_id ILIKE $1)`;
         countParams.push(`%${searchTerm}%`);

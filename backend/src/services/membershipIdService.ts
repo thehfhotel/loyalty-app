@@ -28,14 +28,14 @@ export class MembershipIdService {
       const membershipId = await this.generateIdWithFallback(blockNumber, userCount);
       
       return membershipId;
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error generating membership ID:', error);
       
-      if (error.message?.includes('All available blocks exhausted')) {
+      if (error instanceof Error && error.message?.includes('All available blocks exhausted')) {
         throw new AppError(500, 'Membership ID system approaching capacity. All nearby blocks are full. Please contact system administrator.');
       }
       
-      if (error.message?.includes('Block may be full')) {
+      if (error instanceof Error && error.message?.includes('Block may be full')) {
         throw new AppError(500, 'Current block is full. This indicates high registration volume in this block.');
       }
       

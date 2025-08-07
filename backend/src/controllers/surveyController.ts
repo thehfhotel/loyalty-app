@@ -111,14 +111,19 @@ export class SurveyController {
 
       const survey = await surveyService.createSurvey(surveyData, user.id);
       res.status(201).json({ survey });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorDetail = error && typeof error === 'object' && 'detail' in error ? (error as any).detail : undefined;
+      const errorHint = error && typeof error === 'object' && 'hint' in error ? (error as any).hint : undefined;
+      const errorCode = error && typeof error === 'object' && 'code' in error ? (error as any).code : undefined;
+      const errorConstraint = error && typeof error === 'object' && 'constraint' in error ? (error as any).constraint : undefined;
       
       res.status(500).json({ 
         message: 'Failed to create survey', 
-        error: error.message,
-        details: error.detail || error.hint || 'Internal server error',
-        errorCode: error.code,
-        constraint: error.constraint
+        error: errorMessage,
+        details: errorDetail || errorHint || 'Internal server error',
+        errorCode: errorCode,
+        constraint: errorConstraint
       });
     }
   }
@@ -148,9 +153,10 @@ export class SurveyController {
       }
 
       res.json({ survey });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error fetching survey:', error);
-      res.status(500).json({ message: 'Failed to fetch survey', error: error.message });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: 'Failed to fetch survey', error: errorMessage });
     }
   }
 
@@ -181,9 +187,10 @@ export class SurveyController {
           totalPages: result.totalPages
         }
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error fetching surveys:', error);
-      res.status(500).json({ message: 'Failed to fetch surveys', error: error.message });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: 'Failed to fetch surveys', error: errorMessage });
     }
   }
 
