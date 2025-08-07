@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RedeemCouponRequest, RedeemCouponResponse } from '../../types/coupon';
 import { couponService } from '../../services/couponService';
@@ -27,7 +27,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
   const [cameraActive, setCameraActive] = useState(false);
 
   // Camera functionality (simplified - in production, use a proper QR code scanner library)
-  const startCamera = async () => {
+  const startCamera = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'environment' } // Use back camera on mobile
@@ -41,7 +41,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
       alert(t('coupons.cameraError'));
       setScanMode('manual');
     }
-  };
+  }, [t, setScanMode, setCameraActive]);
 
   const stopCamera = () => {
     if (videoRef.current && videoRef.current.srcObject) {

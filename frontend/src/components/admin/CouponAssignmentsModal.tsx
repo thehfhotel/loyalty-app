@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { couponService } from '../../services/couponService';
 import { Coupon } from '../../types/coupon';
@@ -51,7 +51,7 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
   const [userToRemove, setUserToRemove] = useState<CouponAssignment | null>(null);
   const limit = 10;
 
-  const loadAssignments = async (pageNum: number = 1) => {
+  const loadAssignments = useCallback(async (pageNum: number = 1) => {
     try {
       setLoading(true);
       setError(null);
@@ -68,7 +68,7 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [coupon.id, limit]);
 
   useEffect(() => {
     loadAssignments(1);

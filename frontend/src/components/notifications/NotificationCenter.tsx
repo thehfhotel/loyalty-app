@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FiBell, FiCheck, FiX, FiTrash2, FiCheckCircle } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
@@ -50,9 +50,9 @@ export default function NotificationCenter() {
     if (isOpen && user) {
       fetchNotifications();
     }
-  }, [isOpen, user]);
+  }, [isOpen, user, fetchNotifications]);
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     if (!user) return;
     
     setIsLoading(true);
@@ -75,7 +75,7 @@ export default function NotificationCenter() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user]);
 
   const markAsRead = async (notificationIds: string[]) => {
     if (!user || notificationIds.length === 0) return;
