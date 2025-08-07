@@ -114,10 +114,10 @@ run_eslint_check() {
         local security_warnings
         local hooks_warnings
         
-        console_warnings=$(echo "$eslint_output" | grep -c "no-console" 2>/dev/null)
-        any_warnings=$(echo "$eslint_output" | grep -c "no-explicit-any" 2>/dev/null)  
-        security_warnings=$(echo "$eslint_output" | grep -c "security/detect-object-injection" 2>/dev/null)
-        hooks_warnings=$(echo "$eslint_output" | grep -c "react-hooks/exhaustive-deps" 2>/dev/null)
+        console_warnings=$(echo "$eslint_output" | grep -c "no-console" 2>/dev/null || echo "0")
+        any_warnings=$(echo "$eslint_output" | grep -c "no-explicit-any" 2>/dev/null || echo "0")  
+        security_warnings=$(echo "$eslint_output" | grep -c "security/detect-object-injection" 2>/dev/null || echo "0")
+        hooks_warnings=$(echo "$eslint_output" | grep -c "react-hooks/exhaustive-deps" 2>/dev/null || echo "0")
         
         # Ensure all are numeric - handle empty or invalid values
         case "$console_warnings" in
