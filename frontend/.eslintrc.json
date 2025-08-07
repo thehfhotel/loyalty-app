@@ -79,7 +79,7 @@
       { "allowConstantExport": true }
     ],
     
-    "security/detect-object-injection": "warn",
+    "security/detect-object-injection": "error",
     "security/detect-non-literal-regexp": "warn",
     "security/detect-unsafe-regex": "error",
     "security/detect-buffer-noassert": "error",
@@ -141,6 +141,20 @@
     "no-case-declarations": "warn",
     "no-empty-pattern": "warn"
   },
+  "overrides": [
+    {
+      "files": [
+        "src/components/**/*.tsx",
+        "src/pages/**/*.tsx",
+        "src/services/**/*.ts",
+        "src/hooks/**/*.ts",
+        "src/utils/**/*.ts"
+      ],
+      "rules": {
+        "security/detect-object-injection": "warn"
+      }
+    }
+  ],
   "env": {
     "browser": true,
     "es2020": true,

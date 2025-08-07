@@ -19,7 +19,9 @@ class AdminConfigService {
 
   private loadConfig(): void {
     try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- Safe: configPath is readonly property initialized with safe config
       if (fs.existsSync(this.configPath)) {
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- Safe: configPath is readonly property initialized with safe config  
         const configData = fs.readFileSync(this.configPath, 'utf8');
         this.config = JSON.parse(configData);
         

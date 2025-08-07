@@ -267,6 +267,7 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
       for (const [key, val] of entries) {
         // Validate key is safe before using as property accessor
         if (typeof key === 'string' && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key)) {
+          // eslint-disable-next-line security/detect-object-injection -- Safe: key validated with regex
           sanitized[key] = sanitizeValue(val);
         }
       }

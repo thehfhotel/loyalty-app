@@ -21,17 +21,17 @@ module.exports = {
     '@typescript-eslint/prefer-optional-chain': 'warn',
     '@typescript-eslint/no-inferrable-types': 'warn',
     
-    // Security plugin rules (enhanced configuration)
+    // Security plugin rules (Phase 1: UPGRADED TO ERRORS)
     'security/detect-buffer-noassert': 'error',
-    'security/detect-child-process': 'warn',
+    'security/detect-child-process': 'error',          // ← UPGRADED from warn
     'security/detect-disable-mustache-escape': 'error',
     'security/detect-eval-with-expression': 'error',
     'security/detect-new-buffer': 'error',
     'security/detect-no-csrf-before-method-override': 'error',
-    'security/detect-non-literal-fs-filename': 'warn',
+    'security/detect-non-literal-fs-filename': 'error', // ← UPGRADED from warn
     'security/detect-non-literal-regexp': 'warn',
     'security/detect-non-literal-require': 'warn',
-    'security/detect-object-injection': 'warn',
+    'security/detect-object-injection': 'error',        // ← UPGRADED from warn
     'security/detect-possible-timing-attacks': 'warn',
     'security/detect-pseudoRandomBytes': 'error',
     'security/detect-unsafe-regex': 'error',
@@ -92,5 +92,38 @@ module.exports = {
     'node_modules/',
     'src/generated/',
     '*.js',
+  ],
+  overrides: [
+    {
+      // Test files - security rules relaxed for mock objects and test utilities
+      files: ['**/*.test.ts', '**/*.spec.ts', 'src/__tests__/**/*.ts'],
+      rules: {
+        'security/detect-object-injection': 'warn', // Tests need flexible object access
+        '@typescript-eslint/no-explicit-any': 'warn', // Mock objects often need any
+      },
+    },
+    {
+      // Translation and language processing services
+      files: ['src/services/*translation*.ts', 'src/services/*language*.ts', 'src/utils/*translation*.ts'],
+      rules: {
+        'security/detect-object-injection': 'warn', // Language processing needs dynamic object access
+        'security/detect-non-literal-fs-filename': 'warn', // Translation cache and file operations
+      },
+    },
+    {
+      // Image processing and file utilities
+      files: ['src/utils/*image*.ts', 'src/utils/*file*.ts', 'src/services/*storage*.ts'],
+      rules: {
+        'security/detect-object-injection': 'warn', // Image metadata processing needs dynamic access
+        'security/detect-non-literal-fs-filename': 'warn', // File operations with computed paths
+      },
+    },
+    {
+      // Survey processing services
+      files: ['src/services/*survey*.ts', 'src/controllers/*survey*.ts'],
+      rules: {
+        'security/detect-object-injection': 'warn', // Survey response aggregation needs dynamic object access
+      },
+    },
   ],
 };

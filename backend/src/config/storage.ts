@@ -63,6 +63,7 @@ export async function initializeStorage(): Promise<void> {
       logger.info(`Storage directory exists: ${dir}`);
     } catch {
       try {
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- Safe: dir constructed with path.join from controlled inputs
         await fs.mkdir(dir, { recursive: true });
         logger.info(`Created storage directory: ${dir}`);
       } catch (error) {
@@ -75,7 +76,9 @@ export async function initializeStorage(): Promise<void> {
   // Set proper permissions (Unix-like systems)
   if (process.platform !== 'win32') {
     try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- Safe: baseDir is controlled config value
       await fs.chmod(storageConfig.baseDir, 0o755);
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- Safe: path constructed with path.join from controlled inputs
       await fs.chmod(path.join(storageConfig.baseDir, storageConfig.avatarsDir), 0o755);
     } catch (error) {
       logger.warn('Could not set directory permissions:', error);

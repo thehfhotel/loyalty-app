@@ -94,6 +94,7 @@ class TranslationService {
       // Initialize arrays for each target language
       targetLanguages.forEach(lang => {
         if (typeof lang === 'string' && lang.match(/^[a-zA-Z-]+$/)) {
+          // eslint-disable-next-line security/detect-object-injection -- Safe: lang validated with regex for language codes
           translations[lang] = [];
         }
       });
