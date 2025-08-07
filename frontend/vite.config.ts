@@ -8,7 +8,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'robots.txt', 'icon-192.png', 'icon-512.png'],
-      strategies: 'generateSW',
+      strategies: 'injectManifest',
+      srcDir: 'public',
+      filename: 'sw-custom.js',
       manifest: {
         name: 'Hotel Loyalty App',
         short_name: 'Loyalty',
@@ -38,9 +40,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         navigateFallbackDenylist: [/^\/api\/oauth/],
-        additionalManifestEntries: [
-          { url: '/sw-custom.js', revision: null }
-        ],
+        // Remove additionalManifestEntries to prevent duplicate cache entries
+        // The sw-custom.js file is already included in the build process
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/loyalty\.saichon\.com\/api\/(?!oauth).*/i,

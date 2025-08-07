@@ -3,9 +3,11 @@
  * Handles push notifications and PWA OAuth flows
  */
 
-// Inject Workbox manifest for precaching
-// This placeholder is replaced by Vite PWA plugin during build
-self.__WB_MANIFEST;
+// Import Workbox for precaching
+import { precacheAndRoute } from 'workbox-precaching';
+
+// Precache and route with injected manifest
+precacheAndRoute(self.__WB_MANIFEST);
 
 // Listen for push events
 self.addEventListener('push', event => {

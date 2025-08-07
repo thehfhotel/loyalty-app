@@ -214,7 +214,8 @@ export class UserService {
     missingFields: string[];
     newMemberCouponAvailable: boolean;
   }> {
-    const profile = await this.getProfile(userId);
+    try {
+      const profile = await this.getProfile(userId);
     
     const missingFields: string[] = [];
 
@@ -263,6 +264,10 @@ export class UserService {
       missingFields,
       newMemberCouponAvailable
     };
+    } catch (error) {
+      logger.error(`Error getting profile completion status for user ${userId}:`, error);
+      throw new Error(`Failed to get profile completion status: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async completeProfile(userId: string, data: {

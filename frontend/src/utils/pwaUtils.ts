@@ -308,14 +308,14 @@ export function checkPWAInstallPrompt(): void {
   let deferredPrompt: any;
   
   window.addEventListener('beforeinstallprompt', (e) => {
-    // Prevent Chrome 67 and earlier from automatically showing the prompt
-    e.preventDefault();
     // Stash the event so it can be triggered later
     deferredPrompt = e;
     
-    // Show custom install prompt if user completes OAuth successfully
+    // Check if we should show the install prompt
     const showInstallPrompt = localStorage.getItem('show_pwa_install_prompt');
     if (showInstallPrompt === 'true') {
+      // Prevent the automatic prompt and show custom one
+      e.preventDefault();
       localStorage.removeItem('show_pwa_install_prompt');
       
       setTimeout(() => {
@@ -330,6 +330,7 @@ export function checkPWAInstallPrompt(): void {
         }
       }, 2000); // Show after 2 seconds
     }
+    // If no custom prompt needed, let browser handle automatically
   });
 }
 
