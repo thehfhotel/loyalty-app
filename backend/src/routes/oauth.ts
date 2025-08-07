@@ -32,12 +32,12 @@ router.get('/google', async (req, res) => {
     
     // Create OAuth state for session continuity across browser context switches
     const userAgent = req.get('User-Agent') ?? '';
-    const returnUrl = (req.query.return_url as string) || req.headers.referer || process.env.FRONTEND_URL || 'http://localhost:4001';
+    const returnUrl = (req.query.return_url as string) ?? req.headers.referer ?? process.env.FRONTEND_URL ?? 'http://localhost:4001';
     
     // PWA-specific parameters
     const isPWA = req.query.pwa === 'true';
     const isStandalone = req.query.standalone === 'true';
-    const platform = req.query.platform as string || 'web';
+    const platform = (req.query.platform as string) ?? 'web';
     
     const stateData = {
       sessionId: req.sessionID,
@@ -311,12 +311,12 @@ router.get('/line', async (req, res) => {
     
     // Create OAuth state for session continuity across browser context switches
     const userAgent = req.get('User-Agent') ?? '';
-    const returnUrl = (req.query.return_url as string) || req.headers.referer || process.env.FRONTEND_URL || 'http://localhost:4001';
+    const returnUrl = (req.query.return_url as string) ?? req.headers.referer ?? process.env.FRONTEND_URL ?? 'http://localhost:4001';
     
     // PWA-specific parameters
     const isPWA = req.query.pwa === 'true';
     const isStandalone = req.query.standalone === 'true';
-    const platform = req.query.platform as string || 'web';
+    const platform = (req.query.platform as string) ?? 'web';
     
     const stateData = {
       sessionId: req.sessionID,

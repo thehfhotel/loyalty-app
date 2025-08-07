@@ -62,6 +62,7 @@ export function createPWAOAuthURL(provider: 'google' | 'line'): string {
 
 /**
  * Handle OAuth initiation with PWA-specific optimizations
+ * Implements recommendations from StackOverflow about iOS PWA OAuth issues
  */
 export function initiateOAuth(provider: 'google' | 'line'): void {
   const pwaInfo = detectPWA();
@@ -72,15 +73,115 @@ export function initiateOAuth(provider: 'google' | 'line'): void {
     storePWAOAuthState();
     
     if (pwaInfo.isIOS) {
-      // iOS PWA: Use location.href to maintain app context better
+      // iOS PWA: Apply StackOverflow recommendations for manifest handling
+      applyIOSPWAManifestWorkaround();
+      
+      // Use redirect method instead of popup for iOS PWA
+      // This prevents OAuth from opening in Safari instead of the PWA
+      window.location.href = oauthUrl;
+    } else if (pwaInfo.isAndroid) {
+      // Android PWA: Use intent-based redirect if possible
       window.location.href = oauthUrl;
     } else {
-      // Android PWA: Try to open in same context
+      // Other PWA platforms
       window.location.href = oauthUrl;
     }
   } else {
     // Regular web browser
     window.location.href = oauthUrl;
+  }
+}
+
+/**
+ * Apply iOS PWA manifest workaround for OAuth redirects
+ * Based on StackOverflow recommendations for handling OAuth in iOS standalone PWAs
+ */
+function applyIOSPWAManifestWorkaround(): void {
+  const pwaInfo = detectPWA();
+  
+  if (!pwaInfo.isIOS || !pwaInfo.isStandalone) return;
+  
+  try {
+    // Find the manifest link element
+    const manifestEl = document.head.querySelector('link[rel="manifest"]') as HTMLLinkElement;
+    
+    if (manifestEl) {
+      // Temporarily modify manifest relationship to help with OAuth redirect handling
+      // This technique helps maintain PWA context during OAuth flows on iOS
+      const originalRel = manifestEl.rel;
+      manifestEl.rel = 'pwa-setup';
+      
+      // Restore original relationship after OAuth initiation
+      setTimeout(() => {
+        if (manifestEl) {
+          manifestEl.rel = originalRel;
+        }
+      }, 1000);
+    }
+    
+    // Add iOS-specific meta tags for better PWA OAuth handling
+    addIOSPWAMetaTags();
+    
+  } catch (error) {
+    console.warn('Failed to apply iOS PWA manifest workaround:', error);
+  }
+}
+
+/**
+ * Add iOS-specific meta tags for better PWA OAuth handling
+ */
+function addIOSPWAMetaTags(): void {
+  const metaTags = [
+    { name: 'apple-mobile-web-app-capable', content: 'yes' },
+    { name: 'apple-mobile-web-app-status-bar-style', content: 'default' },
+    { name: 'mobile-web-app-capable', content: 'yes' }
+  ];
+  
+  metaTags.forEach(tag => {
+    let existingTag = document.head.querySelector(`meta[name="${tag.name}"]`) as HTMLMetaElement;
+    
+    if (!existingTag) {
+      existingTag = document.createElement('meta');
+      existingTag.name = tag.name;
+      existingTag.content = tag.content;
+      document.head.appendChild(existingTag);
+    } else if (existingTag.content !== tag.content) {
+      existingTag.content = tag.content;
+    }
+  });
+}
+
+/**
+ * Restore iOS PWA manifest after OAuth success
+ * Ensures proper PWA behavior is maintained post-authentication
+ */
+export function restoreIOSPWAManifest(): void {
+  const pwaInfo = detectPWA();
+  
+  if (!pwaInfo.isIOS || !pwaInfo.isStandalone) return;
+  
+  try {
+    // Find the manifest link element and ensure it's properly set
+    let manifestEl = document.head.querySelector('link[rel="manifest"]') as HTMLLinkElement;
+    
+    if (!manifestEl) {
+      // Restore manifest link if it was removed during OAuth workaround
+      manifestEl = document.head.querySelector('link[rel="pwa-setup"]') as HTMLLinkElement;
+      if (manifestEl) {
+        manifestEl.rel = 'manifest';
+      }
+    }
+    
+    // Ensure iOS-specific meta tags are still present
+    addIOSPWAMetaTags();
+    
+    // Clear any temporary OAuth state
+    localStorage.removeItem('ios_pwa_manifest_modified');
+    
+    console.log('iOS PWA manifest restored after OAuth success');
+    
+  } catch (error) {
+    console.warn('Failed to restore iOS PWA manifest:', error);
   }
 }
 

@@ -7,7 +7,8 @@ import {
   recoverPWAOAuthState, 
   detectPWA, 
   requestPWANotificationPermission,
-  debugPWAOAuth
+  debugPWAOAuth,
+  restoreIOSPWAManifest
 } from '../../utils/pwaUtils';
 
 export default function OAuthSuccessPage() {
@@ -42,7 +43,7 @@ export default function OAuthSuccessPage() {
         const pwaInfo = detectPWA();
         const tokens = { accessToken: token, refreshToken, isNewUser };
         
-        // Handle PWA-specific OAuth flow
+        // Enhanced PWA-specific OAuth flow handling
         if (isPWARedirect || !pwaInfo.isPWA) {
           // Check if we need to redirect back to PWA
           handlePWAOAuthSuccess(tokens);
@@ -51,9 +52,17 @@ export default function OAuthSuccessPage() {
           // the handlePWAOAuthSuccess will redirect to PWA
           const pwaState = recoverPWAOAuthState();
           if (pwaState && !pwaInfo.isStandalone) {
-            // We're in browser window, redirect handled above
+            // We're in browser window opened by iOS PWA OAuth redirect
+            // Show loading message and wait for redirect
+            console.log('OAuth success in browser window, redirecting to PWA...');
             return;
           }
+        }
+        
+        // iOS PWA specific: Handle context restoration after OAuth redirect
+        if (pwaInfo.isIOS && pwaInfo.isStandalone) {
+          // Restore iOS PWA manifest settings after OAuth success
+          restoreIOSPWAManifest();
         }
 
         // Set tokens in auth store
