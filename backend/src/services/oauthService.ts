@@ -54,7 +54,7 @@ export class OAuthService {
             verified: profile.emails?.[0]?.verified
           });
           const result = await this.handleGoogleAuth(profile);
-          return done(null, result.user as any);
+          return done(null, result as any);
         } catch (error) {
           logger.error('[OAuth Service] Google OAuth error:', error);
           return done(error as Error, undefined);
