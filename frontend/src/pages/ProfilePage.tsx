@@ -73,6 +73,7 @@ export default function ProfilePage() {
   useEffect(() => {
     loadProfile();
     loadLoyaltyData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Handle URL parameters to open settings modal
@@ -92,17 +93,17 @@ export default function ProfilePage() {
       reset({
         firstName: profileData.firstName,
         lastName: profileData.lastName,
-        phone: profileData.phone || '',
+        phone: profileData.phone ?? '',
         dateOfBirth: profileData.dateOfBirth 
           ? new Date(profileData.dateOfBirth).toISOString().split('T')[0] 
           : '',
-        gender: profileData.gender || '',
-        occupation: profileData.occupation || '',
+        gender: profileData.gender ?? '',
+        occupation: profileData.occupation ?? '',
         interests: Array.isArray(profileData.interests) 
           ? profileData.interests.join(', ') 
           : '',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       notify.error(t('profile.profileLoadError'));
       console.error('Profile load error:', error);
     } finally {
@@ -138,7 +139,7 @@ export default function ProfilePage() {
     setIsSaving(true);
     try {
       // Check if this is a profile completion (has new fields)
-      const hasNewFields = data.dateOfBirth || data.gender || data.occupation || data.interests;
+      const hasNewFields = data.dateOfBirth ?? data.gender ?? data.occupation ?? data.interests;
       
       let response;
       if (hasNewFields) {
@@ -146,10 +147,10 @@ export default function ProfilePage() {
         response = await userService.completeProfile({
           firstName: data.firstName,
           lastName: data.lastName,
-          phone: data.phone || undefined,
-          dateOfBirth: data.dateOfBirth || undefined,
-          gender: data.gender || undefined,
-          occupation: data.occupation || undefined,
+          phone: data.phone ?? undefined,
+          dateOfBirth: data.dateOfBirth ?? undefined,
+          gender: data.gender ?? undefined,
+          occupation: data.occupation ?? undefined,
           interests: data.interests ? data.interests.split(',').map(i => i.trim()).filter(i => i) : undefined,
         });
         
@@ -180,8 +181,8 @@ export default function ProfilePage() {
         const updatedProfile = await userService.updateProfile({
           firstName: data.firstName,
           lastName: data.lastName,
-          phone: data.phone || undefined,
-          dateOfBirth: data.dateOfBirth || undefined,
+          phone: data.phone ?? undefined,
+          dateOfBirth: data.dateOfBirth ?? undefined,
         });
         setProfile(updatedProfile);
         notify.success(t('profile.profileUpdated'));
@@ -195,8 +196,11 @@ export default function ProfilePage() {
       }
       
       setShowSettingsModal(false);
-    } catch (error: any) {
-      notify.error(error.response?.data?.error || t('profile.profileUpdateError'));
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+        : undefined;
+      notify.error(errorMessage ?? t('profile.profileUpdateError'));
     } finally {
       setIsSaving(false);
     }
@@ -237,8 +241,11 @@ export default function ProfilePage() {
       }
       
       notify.success(t('profile.photoUpdated'));
-    } catch (error: any) {
-      notify.error(error.response?.data?.error || t('profile.photoUploadError'));
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+        : undefined;
+      notify.error(errorMessage ?? t('profile.photoUploadError'));
     } finally {
       setUploadingAvatar(false);
       // Reset file input
@@ -269,8 +276,11 @@ export default function ProfilePage() {
       }
       
       notify.success(t('profile.photoRemoved'));
-    } catch (error: any) {
-      notify.error(error.response?.data?.error || t('profile.photoRemoveError'));
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+        : undefined;
+      notify.error(errorMessage ?? t('profile.photoRemoveError'));
     } finally {
       setUploadingAvatar(false);
     }
@@ -501,8 +511,10 @@ export default function ProfilePage() {
                         </span>
                         <button
                           onClick={() => {
-                            navigator.clipboard.writeText(profile.membershipId!);
-                            notify.success(t('profile.membershipIdCopied'));
+                            if (profile.membershipId) {
+                              navigator.clipboard.writeText(profile.membershipId);
+                              notify.success(t('profile.membershipIdCopied'));
+                            }
                           }}
                           className="text-gray-400 hover:text-gray-600 p-1"
                           title={t('profile.copyMembershipId')}

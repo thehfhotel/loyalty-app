@@ -74,7 +74,9 @@ export class CouponService {
           JSON.stringify(data.tierRestrictions ?? []),
           JSON.stringify(data.customerSegment ?? {}),
           createdBy,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (data as any).originalLanguage ?? 'th',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           JSON.stringify([(data as any).originalLanguage ?? 'th'])
         ]
       ).then(res => res.rows);
@@ -122,7 +124,7 @@ export class CouponService {
 
       // Build update query dynamically
       const updateFields: string[] = [];
-      const updateValues: any[] = [couponId];
+      const updateValues: unknown[] = [couponId];
       let paramIndex = 2;
 
       const fieldsMap = {
@@ -219,10 +221,11 @@ export class CouponService {
   // Get coupon with translations for a specific language
   async getCouponWithTranslations(couponId: string, language?: string): Promise<Coupon | null> {
     try {
-      let coupon: any;
+      let coupon: Coupon | null = null;
       
       if (language && language !== 'th') {
         // Try to get translated version first
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const [translatedCoupon] = await query<any>(
           `SELECT c.*, ct.name as translated_name, ct.description as translated_description, 
            ct.terms_and_conditions as translated_terms_and_conditions 

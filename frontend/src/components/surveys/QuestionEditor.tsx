@@ -169,7 +169,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
           </label>
           <input
             type="text"
-            value={question.description || ''}
+            value={question.description ?? ''}
             onChange={(e) => onUpdate({ description: e.target.value })}
             disabled={disabled}
             className={`block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${disabled ? 'bg-gray-100' : ''}`}
@@ -227,7 +227,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
               </label>
               <input
                 type="number"
-                value={question.min_rating || 1}
+                value={question.min_rating ?? 1}
                 onChange={(e) => onUpdate({ min_rating: parseInt(e.target.value) })}
                 disabled={disabled}
                 min="1"
@@ -241,7 +241,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
               </label>
               <input
                 type="number"
-                value={question.max_rating || (question.type === 'rating_5' ? 5 : 10)}
+                value={question.max_rating ?? (question.type === 'rating_5' ? 5 : 10)}
                 onChange={(e) => onUpdate({ max_rating: parseInt(e.target.value) })}
                 disabled={disabled}
                 min="1"
@@ -321,7 +321,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
             
             {(question.type === 'rating_5' || question.type === 'rating_10') && (
               <div className="flex items-center space-x-1">
-                {Array.from({ length: question.max_rating || (question.type === 'rating_5' ? 5 : 10) }, (_, i) => (
+                {Array.from({ length: question.max_rating ?? (question.type === 'rating_5' ? 5 : 10) }, (_, i) => (
                   <span key={i} className="text-gray-300 text-lg">★</span>
                 ))}
               </div>

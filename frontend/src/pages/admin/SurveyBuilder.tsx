@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 // Fixed JSX warning - cache refresh trigger
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -38,7 +38,7 @@ const validateSurveyQuestions = (questions: SurveyQuestion[], t: any): SurveyVal
     if (!hasValidText) {
       emptyQuestions.push({
         id: question.id,
-        text: question.text || '',
+        text: question.text ?? '',
         error: t('surveys.admin.validation.questionTextRequired'),
         questionNumber: index + 1
       });
@@ -54,7 +54,7 @@ const validateSurveyQuestions = (questions: SurveyQuestion[], t: any): SurveyVal
         if (!hasValidOptionText) {
           emptyOptions.push({
             id: `${question.id}_${option.id}`,
-            text: option.text || '',
+            text: option.text ?? '',
             error: `Option ${optIndex + 1} text is required`,
             questionNumber: index + 1
           });
@@ -193,6 +193,22 @@ const SurveyBuilder: React.FC = () => {
     isValid: true
   });
 
+  const loadSurvey = useCallback(async () => {
+    if (!id) {return;}
+    
+    try {
+      setLoading(true);
+      const surveyData = await surveyService.getSurveyById(id);
+      setSurvey(surveyData);
+    } catch (err: any) {
+      console.error('Error loading survey:', err);
+      toast.error(t('surveys.admin.messages.loadError'));
+      navigate('/admin/surveys');
+    } finally {
+      setLoading(false);
+    }
+  }, [id, t, navigate]);
+
   useEffect(() => {
     if (isEditing) {
       loadSurvey();
@@ -208,7 +224,7 @@ const SurveyBuilder: React.FC = () => {
         access_type: 'public'
       });
     }
-  }, [id, isEditing, location.state]);
+  }, [id, isEditing, location.state, loadSurvey]);
 
   // Real-time validation check
   useEffect(() => {
@@ -294,22 +310,6 @@ const SurveyBuilder: React.FC = () => {
     };
   }, []);
 
-  const loadSurvey = async () => {
-    if (!id) {return;}
-    
-    try {
-      setLoading(true);
-      const surveyData = await surveyService.getSurveyById(id);
-      setSurvey(surveyData);
-    } catch (err: any) {
-      console.error('Error loading survey:', err);
-      toast.error(t('surveys.admin.messages.loadError'));
-      navigate('/admin/surveys');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSurveyChange = (field: string, value: any) => {
     setSurvey(prev => ({
       ...prev,
@@ -323,7 +323,7 @@ const SurveyBuilder: React.FC = () => {
       type,
       text: '',
       required: true,
-      order: (survey.questions?.length || 0) + 1,
+      order: (survey.questions?.length ?? 0) + 1,
       ...(type === 'multiple_choice' || type === 'single_choice' ? {
         options: [
           { id: surveyService.generateOptionId(), text: t('surveys.admin.questions.defaultOptions.option1'), value: '1' },
@@ -336,7 +336,7 @@ const SurveyBuilder: React.FC = () => {
 
     setSurvey(prev => ({
       ...prev,
-      questions: [...(prev.questions || []), newQuestion]
+      questions: [...(prev.questions ?? []), newQuestion]
     }));
   };
 
@@ -345,19 +345,19 @@ const SurveyBuilder: React.FC = () => {
       ...prev,
       questions: prev.questions?.map(q => 
         q.id === questionId ? { ...q, ...updates } : q
-      ) || []
+      ) ?? []
     }));
   };
 
   const removeQuestion = (questionId: string) => {
     setSurvey(prev => ({
       ...prev,
-      questions: prev.questions?.filter(q => q.id !== questionId) || []
+      questions: prev.questions?.filter(q => q.id !== questionId) ?? []
     }));
   };
 
   const reorderQuestions = (fromIndex: number, toIndex: number) => {
-    const questions = [...(survey.questions || [])];
+    const questions = [...(survey.questions ?? [])];
     const [removed] = questions.splice(fromIndex, 1);
     questions.splice(toIndex, 0, removed);
     
@@ -393,8 +393,8 @@ const SurveyBuilder: React.FC = () => {
         description: survey.description,
         questions: survey.questions,
         target_segment: survey.target_segment,
-        access_type: survey.access_type || 'public' as SurveyAccessType,
-        status: (status || survey.status) as SurveyStatus
+        access_type: survey.access_type ?? 'public' as SurveyAccessType,
+        status: (status ?? survey.status) as SurveyStatus
       };
 
       // Debug logging for development (only in non-production environments)
@@ -408,7 +408,7 @@ const SurveyBuilder: React.FC = () => {
       }
 
       if (isEditing && id) {
-        await surveyService.updateSurvey(id, { ...surveyData, status: (status || survey.status) as SurveyStatus });
+        await surveyService.updateSurvey(id, { ...surveyData, status: (status ?? survey.status) as SurveyStatus });
         toast.success(t('surveys.admin.messages.updateSuccess'));
       } else {
         const newSurvey = await surveyService.createSurvey(surveyData);
@@ -418,13 +418,13 @@ const SurveyBuilder: React.FC = () => {
     } catch (err: any) {
       // Enhanced error handling with graceful degradation
       const isValidationError = err.response?.status === 400;
-      const errorMessage = err.response?.data?.message || err.message || 'Failed to save survey';
+      const errorMessage = err.response?.data?.message ?? err.message ?? 'Failed to save survey';
       
       if (isValidationError) {
         // Handle backend validation errors gracefully
-        const backendErrors = err.response?.data?.validationErrors || [];
+        const backendErrors = err.response?.data?.validationErrors ?? [];
         if (backendErrors.length > 0) {
-          const fieldErrors = backendErrors.map((error: any) => error.message || error.field).join(', ');
+          const fieldErrors = backendErrors.map((error: any) => error.message ?? error.field).join(', ');
           toast.error(t('surveys.admin.messages.validationFailed', { errors: fieldErrors }), {
             duration: 6000,
             icon: '⚠️'
@@ -512,7 +512,7 @@ const SurveyBuilder: React.FC = () => {
                   <input
                     type="text"
                     id="title"
-                    value={survey.title || ''}
+                    value={survey.title ?? ''}
                     onChange={(e) => handleSurveyChange('title', e.target.value)}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     placeholder={t('surveys.admin.basicInfo.surveyTitlePlaceholder')}
@@ -526,7 +526,7 @@ const SurveyBuilder: React.FC = () => {
                   <textarea
                     id="description"
                     rows={3}
-                    value={survey.description || ''}
+                    value={survey.description ?? ''}
                     onChange={(e) => handleSurveyChange('description', e.target.value)}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     placeholder={t('surveys.admin.basicInfo.descriptionPlaceholder')}
@@ -539,7 +539,7 @@ const SurveyBuilder: React.FC = () => {
                   </label>
                   <select
                     id="status"
-                    value={survey.status || 'draft'}
+                    value={survey.status ?? 'draft'}
                     onChange={(e) => handleSurveyChange('status', e.target.value)}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   >
@@ -557,7 +557,7 @@ const SurveyBuilder: React.FC = () => {
                   </label>
                   <select
                     id="access_type"
-                    value={survey.access_type || 'public'}
+                    value={survey.access_type ?? 'public'}
                     onChange={(e) => handleSurveyChange('access_type', e.target.value)}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   >
@@ -580,7 +580,7 @@ const SurveyBuilder: React.FC = () => {
                 <h2 className="text-lg font-medium text-gray-900">{t('surveys.admin.questions.title')}</h2>
                 <div className="flex items-center space-x-2">
                   <span className="text-sm text-gray-500">
-                    {t('surveys.admin.questions.count', { count: survey.questions?.length || 0 })}
+                    {t('surveys.admin.questions.count', { count: survey.questions?.length ?? 0 })}
                   </span>
                 </div>
               </div>
@@ -595,7 +595,7 @@ const SurveyBuilder: React.FC = () => {
                     onUpdate={(updates) => updateQuestion(question.id, updates)}
                     onRemove={() => removeQuestion(question.id)}
                     onReorder={reorderQuestions}
-                    canMove={survey.questions!.length > 1}
+                    canMove={(survey.questions?.length ?? 0) > 1}
                   />
                 ))}
 

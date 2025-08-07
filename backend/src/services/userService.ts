@@ -7,6 +7,39 @@ import { logger } from '../utils/logger';
 import { NotificationService } from './notificationService';
 import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
 
+interface CouponData {
+  id: string;
+  code: string;
+  title: string;
+  description?: string;
+  discountType: string;
+  discountValue: number;
+  isActive: boolean;
+}
+
+interface NewMemberRewardResult {
+  success: boolean;
+  coupon?: CouponData | null;
+  pointsAwarded?: number;
+}
+
+interface ProfileUpdateResult {
+  profile: UserProfile;
+  couponAwarded: boolean;
+  coupon?: CouponData | null;
+  pointsAwarded?: number;
+}
+
+interface NewMemberCouponSettings {
+  id: number;
+  isEnabled: boolean;
+  selectedCouponId: string | null;
+  pointsEnabled: boolean;
+  pointsAmount: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface UserWithProfile {
   userId: string;
   email: string;
@@ -240,12 +273,7 @@ export class UserService {
     gender?: string;
     occupation?: string;
     interests?: string[];
-  }): Promise<{
-    profile: UserProfile;
-    couponAwarded: boolean;
-    coupon?: any;
-    pointsAwarded?: number;
-  }> {
+  }): Promise<ProfileUpdateResult> {
     const currentProfile = await this.getProfile(userId);
     
     // Check if profile was already completed
@@ -340,10 +368,35 @@ export class UserService {
 
       // Create notification for profile completion with rewards
       try {
+        // Convert CouponData to Coupon format for notification service
+        const couponForNotification = coupon ? {
+          id: coupon.id,
+          code: coupon.code,
+          name: coupon.title,
+          description: coupon.description,
+          termsAndConditions: undefined,
+          type: 'fixed_amount' as const,
+          value: coupon.discountValue,
+          currency: 'THB',
+          minimumSpend: undefined,
+          maximumDiscount: undefined,
+          validFrom: new Date(),
+          validUntil: undefined,
+          usageLimit: undefined,
+          usageLimitPerUser: 1,
+          usedCount: 0,
+          tierRestrictions: [],
+          customerSegment: {},
+          status: 'active' as const,
+          createdBy: undefined,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        } : undefined;
+
         await this.notificationService.createProfileCompletionNotification(
           userId,
           rewardsAwarded && coupon !== null,
-          coupon,
+          couponForNotification,
           pointsAwarded
         );
       } catch (error) {
@@ -364,16 +417,12 @@ export class UserService {
     return {
       profile: updatedProfile,
       couponAwarded: false,
-      coupon: null,
+      coupon: null as CouponData | null,
       pointsAwarded: 0
     };
   }
 
-  private async awardNewMemberRewards(userId: string): Promise<{
-    success: boolean;
-    coupon?: any;
-    pointsAwarded?: number;
-  }> {
+  private async awardNewMemberRewards(userId: string): Promise<NewMemberRewardResult> {
     try {
       // Get active new member reward settings
       const [rewardSettings] = await query<{
@@ -401,7 +450,7 @@ export class UserService {
         return { success: false };
       }
 
-      let coupon = null;
+      let coupon: CouponData | null = null;
       let pointsAwarded = 0;
 
       // Award coupon if configured
@@ -444,9 +493,12 @@ export class UserService {
 
           coupon = {
             id: couponData.id,
-            name: couponData.name,
             code: couponData.code,
-            description: couponData.description
+            title: couponData.name,
+            description: couponData.description,
+            discountType: 'unknown',
+            discountValue: 0,
+            isActive: true
           };
 
           logger.info(`New member coupon awarded to user ${userId}`, {
@@ -612,8 +664,8 @@ export class UserService {
     };
   }
 
-  async getNewMemberCouponSettings(): Promise<any> {
-    const [settings] = await query<any>(
+  async getNewMemberCouponSettings(): Promise<NewMemberCouponSettings> {
+    const [settings] = await query<NewMemberCouponSettings>(
       `SELECT 
         id,
         is_enabled AS "isEnabled",
@@ -629,7 +681,7 @@ export class UserService {
 
     // If no settings exist, create default ones
     if (!settings) {
-      const [defaultSettings] = await query<any>(
+      const [defaultSettings] = await query<NewMemberCouponSettings>(
         `INSERT INTO new_member_coupon_settings (is_enabled, selected_coupon_id, points_enabled, points_amount)
         VALUES ($1, $2, $3, $4)
         RETURNING 
@@ -653,7 +705,7 @@ export class UserService {
     selectedCouponId: string | null;
     pointsEnabled: boolean;
     pointsAmount: number | null;
-  }): Promise<any> {
+  }): Promise<NewMemberCouponSettings> {
     // Get current settings or create if none exist
     const currentSettings = await this.getNewMemberCouponSettings();
     
@@ -706,7 +758,7 @@ export class UserService {
       }
     }
     
-    const [updatedSettings] = await query<any>(
+    const [updatedSettings] = await query<NewMemberCouponSettings>(
       `UPDATE new_member_coupon_settings 
       SET 
         is_enabled = $1,

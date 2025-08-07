@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
 
+declare global {
+  interface Window {
+    __REACT_DEVTOOLS_GLOBAL_HOOK__?: Record<string, unknown>;
+  }
+}
+
 /**
  * Development tools component that shows helpful development information
  * Only renders in development mode
@@ -12,7 +18,7 @@ export default function DevTools() {
     if (!import.meta.env?.DEV) {return;}
 
     // Check if React DevTools is installed
-    const hasReactDevTools = !!(window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__;
+    const hasReactDevTools = !!window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
     
     if (!hasReactDevTools) {
       // Show info about React DevTools only once per session

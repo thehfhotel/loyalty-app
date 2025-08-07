@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { FiPlus, FiEdit, FiTrash2, FiEye, FiBarChart, FiDownload, FiUsers, FiFileText, FiMail, FiGlobe, FiLock, FiGift } from 'react-icons/fi';
@@ -19,11 +19,7 @@ const SurveyManagement: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [selectedSurveyForCoupons, setSelectedSurveyForCoupons] = useState<Survey | null>(null);
 
-  useEffect(() => {
-    loadSurveys();
-  }, [currentPage, statusFilter]);
-
-  const loadSurveys = async () => {
+  const loadSurveys = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -38,7 +34,11 @@ const SurveyManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentPage, statusFilter]);
+
+  useEffect(() => {
+    loadSurveys();
+  }, [currentPage, statusFilter, loadSurveys]);
 
   const handleDeleteSurvey = async (surveyId: string) => {
     if (!confirm('Are you sure you want to delete this survey? This action cannot be undone.')) {

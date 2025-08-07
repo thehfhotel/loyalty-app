@@ -237,7 +237,7 @@ export const getLanguageDisplayName = (language: SupportedLanguage): string => {
     'en': 'English',
     'zh-CN': '中文'
   };
-  return names[language] || language;
+  return names[language] ?? language;
 };
 
 /**

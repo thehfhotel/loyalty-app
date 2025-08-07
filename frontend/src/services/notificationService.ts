@@ -228,8 +228,8 @@ export class NotificationService {
 
       await this.swRegistration.showNotification(options.title, {
         body: options.body,
-        icon: options.icon || '/icon-192.png',
-        badge: options.badge || '/icon-192.png',
+        icon: options.icon ?? '/icon-192.png',
+        badge: options.badge ?? '/icon-192.png',
         tag: options.tag,
         requireInteraction: options.requireInteraction,
         data: options.data,

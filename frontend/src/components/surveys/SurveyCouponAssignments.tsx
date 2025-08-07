@@ -133,7 +133,7 @@ const AssignCouponModal: React.FC<AssignCouponModalProps> = ({
                 <input
                   type="number"
                   min="1"
-                  value={maxAwards || ''}
+                  value={maxAwards ?? ''}
                   onChange={(e) => setMaxAwards(e.target.value ? parseInt(e.target.value) : undefined)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder={t('surveys.admin.couponAssignment.unlimited')}
@@ -151,7 +151,7 @@ const AssignCouponModal: React.FC<AssignCouponModalProps> = ({
                 <input
                   type="number"
                   min="1"
-                  value={customExpiryDays || ''}
+                  value={customExpiryDays ?? ''}
                   onChange={(e) => setCustomExpiryDays(e.target.value ? parseInt(e.target.value) : undefined)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder={t('surveys.admin.couponAssignment.useCouponExpiry')}
@@ -280,7 +280,7 @@ const EditAssignmentModal: React.FC<EditAssignmentModalProps> = ({
                 <input
                   type="number"
                   min="1"
-                  value={maxAwards || ''}
+                  value={maxAwards ?? ''}
                   onChange={(e) => setMaxAwards(e.target.value ? parseInt(e.target.value) : undefined)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder={t('surveys.admin.couponAssignment.unlimited')}
@@ -295,7 +295,7 @@ const EditAssignmentModal: React.FC<EditAssignmentModalProps> = ({
                 <input
                   type="number"
                   min="1"
-                  value={customExpiryDays || ''}
+                  value={customExpiryDays ?? ''}
                   onChange={(e) => setCustomExpiryDays(e.target.value ? parseInt(e.target.value) : undefined)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder={t('surveys.admin.couponAssignment.useCouponExpiry')}
@@ -353,6 +353,7 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surveyId]);
 
   const loadData = async () => {

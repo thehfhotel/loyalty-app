@@ -54,13 +54,14 @@ const SurveyBuilderMultilingual: React.FC = () => {
     if (id) {
       loadSurvey();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
     // Update current displayed content when language changes
-    setTitle(multilingualData.title[currentLanguage] || '');
-    setDescription(multilingualData.description[currentLanguage] || '');
-    setQuestions(multilingualData.questions[currentLanguage] || []);
+    setTitle(multilingualData.title[currentLanguage] ?? '');
+    setDescription(multilingualData.description[currentLanguage] ?? '');
+    setQuestions(multilingualData.questions[currentLanguage] ?? []);
   }, [currentLanguage, multilingualData]);
 
   const loadSurvey = async () => {
@@ -72,21 +73,21 @@ const SurveyBuilderMultilingual: React.FC = () => {
       
       if (survey) {
         // Initialize with existing data
-        const originalLang = survey.original_language || 'th';
+        const originalLang = survey.original_language ?? 'th';
         
         setMultilingualData({
           title: { [originalLang]: survey.title },
-          description: { [originalLang]: survey.description || '' },
+          description: { [originalLang]: survey.description ?? '' },
           questions: { [originalLang]: survey.questions }
         });
         
-        setAvailableLanguages((survey.available_languages as SupportedLanguage[]) || [originalLang]);
+        setAvailableLanguages((survey.available_languages as SupportedLanguage[]) ?? [originalLang]);
         setCurrentLanguage(originalLang as SupportedLanguage);
         setAccessType(survey.access_type);
         setStatus(survey.status);
         
         // Load translations if available
-        await loadTranslations(id, (survey.available_languages as SupportedLanguage[]) || [originalLang]);
+        await loadTranslations(id, (survey.available_languages as SupportedLanguage[]) ?? [originalLang]);
       }
     } catch (error) {
       console.error('Failed to load survey:', error);
@@ -119,7 +120,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
         const language = lang as SupportedLanguage;
         if (data) {
           newMultilingualData.title[language] = data.title;
-          newMultilingualData.description[language] = data.description || '';
+          newMultilingualData.description[language] = data.description ?? '';
           newMultilingualData.questions[language] = data.questions;
           newTranslationStatus[language] = 'translated';
         }
@@ -394,7 +395,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
                 onTranslate={handleTranslate}
                 isTranslating={translating}
                 availableLanguages={availableLanguages}
-                originalLanguage={availableLanguages[0] || 'th'}
+                originalLanguage={availableLanguages[0] ?? 'th'}
               />
             )}
           </div>
@@ -573,7 +574,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
               <div className="p-6">
                 <SurveyPreview
                   survey={{
-                    id: id || 'preview',
+                    id: id ?? 'preview',
                     title,
                     description,
                     questions,

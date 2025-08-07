@@ -4,7 +4,7 @@ export interface Notification {
   title: string;
   message: string;
   type: NotificationType;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   readAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -27,7 +27,7 @@ export interface CreateNotificationData {
   title: string;
   message: string;
   type: NotificationType;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   expiresAt?: string;
 }
 

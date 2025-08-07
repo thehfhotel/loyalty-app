@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { UserActiveCoupon } from '../../types/coupon';
 import { couponService } from '../../services/couponService';
@@ -22,7 +22,7 @@ const CouponWallet: React.FC = () => {
   const [hasMore, setHasMore] = useState(false);
   const [activeFilter, setActiveFilter] = useState<CouponFilter>('active');
 
-  const loadCoupons = async (pageNum: number = 1, append: boolean = false, filter: CouponFilter = activeFilter) => {
+  const loadCoupons = useCallback(async (pageNum: number = 1, append: boolean = false, filter: CouponFilter = activeFilter) => {
     try {
       setLoading(true);
       setError(null);
@@ -58,11 +58,11 @@ const CouponWallet: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeFilter, t]);
 
   useEffect(() => {
     loadCoupons();
-  }, [activeFilter]); // Reload when filter changes
+  }, [activeFilter, loadCoupons]); // Reload when filter changes
 
   const handleFilterChange = (filter: CouponFilter) => {
     if (filter !== activeFilter) {
@@ -310,12 +310,14 @@ const CouponWallet: React.FC = () => {
                 activeFilter === 'used' 
                   ? 'bg-gray-100' 
                   : 'bg-red-100'
-              }`}>
+              }`}
+              >
                 <span className={`text-xl ${
                   activeFilter === 'used' 
                     ? 'text-gray-600' 
                     : 'text-red-600'
-                }`}>
+                }`}
+                >
                   {activeFilter === 'used' ? '✓' : '⏰'}
                 </span>
               </div>
@@ -323,7 +325,8 @@ const CouponWallet: React.FC = () => {
                 activeFilter === 'used' 
                   ? 'text-gray-900' 
                   : 'text-red-700'
-              }`}>
+              }`}
+              >
                 {activeFilter === 'used' 
                   ? t('coupons.usedCoupons', 'Used Coupons')
                   : t('coupons.expiredCoupons', 'Expired Coupons')

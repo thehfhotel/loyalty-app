@@ -19,7 +19,7 @@ export default function LanguageProvider({ children }: LanguageProviderProps) {
       'zh-CN': '酒店会员积分系统'
     };
     
-    document.title = titleMap[i18n.language] || titleMap.en;
+    document.title = titleMap[i18n.language] ?? titleMap.en;
     
     // Add class to body for language-specific styling
     document.body.className = document.body.className.replace(/lang-\w+/g, '');

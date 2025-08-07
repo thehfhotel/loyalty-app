@@ -155,6 +155,7 @@ const createSessionConfig = (req?: express.Request) => {
   try {
     const redisClient = getRedisClient();
     if (redisClient && redisClient.isReady) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const redisStore = new (RedisStore as any)({
         client: redisClient,
         prefix: 'loyalty-app:sess:'

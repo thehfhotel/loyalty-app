@@ -7,7 +7,7 @@ interface CouponUsageEvent {
   userCouponId?: string;
   eventType: 'view' | 'assign' | 'redeem_attempt' | 'redeem_success' | 'redeem_fail' | 'expire' | 'revoke';
   source?: string; // 'admin_assign', 'profile_completion', 'bulk_assign', etc.
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   ipAddress?: string;
   userAgent?: string;
 }
@@ -18,7 +18,7 @@ interface ProfileChangeEvent {
   oldValue: unknown;
   newValue: unknown;
   changeSource: 'user' | 'admin' | 'system';
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   ipAddress?: string;
   userAgent?: string;
 }
@@ -109,7 +109,7 @@ export class AnalyticsService {
       newValue: unknown;
     }>,
     changeSource: 'user' | 'admin' | 'system',
-    metadata?: Record<string, any>,
+    metadata?: Record<string, unknown>,
     ipAddress?: string,
     userAgent?: string
   ): Promise<void> {

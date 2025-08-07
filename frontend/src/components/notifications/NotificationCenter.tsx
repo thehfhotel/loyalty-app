@@ -4,12 +4,24 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
 import { formatDistanceToNow } from 'date-fns';
 
+interface NotificationData {
+  coupon?: {
+    id: string;
+    name: string;
+    code?: string;
+  };
+  pointsAwarded?: number;
+  surveyId?: string;
+  userId?: string;
+  [key: string]: unknown;
+}
+
 interface Notification {
   id: string;
   title: string;
   message: string;
   type: 'info' | 'success' | 'warning' | 'error' | 'system' | 'reward' | 'coupon' | 'survey' | 'profile';
-  data?: Record<string, any>;
+  data?: NotificationData;
   readAt?: string;
   createdAt: string;
   expiresAt?: string;
@@ -46,7 +58,7 @@ export default function NotificationCenter() {
   }, []);
 
   const fetchNotifications = useCallback(async () => {
-    if (!user) return;
+    if (!user) {return;}
     
     setIsLoading(true);
     try {
@@ -78,7 +90,7 @@ export default function NotificationCenter() {
   }, [isOpen, user, fetchNotifications]);
 
   const markAsRead = async (notificationIds: string[]) => {
-    if (!user || notificationIds.length === 0) return;
+    if (!user || notificationIds.length === 0) {return;}
 
     try {
       const response = await fetch('/api/notifications/mark-read', {
@@ -108,7 +120,7 @@ export default function NotificationCenter() {
   };
 
   const markAllAsRead = async () => {
-    if (!user || notifications.unread === 0) return;
+    if (!user || notifications.unread === 0) {return;}
 
     try {
       const response = await fetch('/api/notifications/mark-read', {
@@ -127,7 +139,7 @@ export default function NotificationCenter() {
           unread: 0,
           notifications: prev.notifications.map(notif => ({
             ...notif,
-            readAt: notif.readAt || new Date().toISOString()
+            readAt: notif.readAt ?? new Date().toISOString()
           }))
         }));
       }
@@ -137,7 +149,7 @@ export default function NotificationCenter() {
   };
 
   const deleteNotification = async (notificationId: string) => {
-    if (!user) return;
+    if (!user) {return;}
 
     try {
       const response = await fetch(`/api/notifications/${notificationId}`, {
@@ -205,7 +217,7 @@ export default function NotificationCenter() {
     }
   };
 
-  if (!user) return null;
+  if (!user) {return null;}
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -291,12 +303,14 @@ export default function NotificationCenter() {
                           <div className="flex-1">
                             <p className={`text-sm font-semibold ${
                               !notification.readAt ? 'text-gray-900' : 'text-gray-700'
-                            }`}>
+                            }`}
+                            >
                               {notification.title}
                             </p>
                             <p className={`text-sm mt-1 ${
                               !notification.readAt ? 'text-gray-700' : 'text-gray-500'
-                            }`}>
+                            }`}
+                            >
                               {notification.message}
                             </p>
                             <p className="text-xs text-gray-400 mt-1">

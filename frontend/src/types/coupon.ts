@@ -23,7 +23,7 @@ export interface Coupon {
   
   // Targeting
   tierRestrictions: string[];
-  customerSegment: Record<string, any>;
+  customerSegment: Record<string, unknown>;
   
   // Metadata
   status: CouponStatus;
@@ -49,7 +49,7 @@ export interface UserCoupon {
   usedAt?: string;
   usedByAdmin?: string;
   redemptionLocation?: string;
-  redemptionDetails: Record<string, any>;
+  redemptionDetails: Record<string, unknown>;
   
   // Assignment metadata
   assignedBy?: string;
@@ -102,7 +102,7 @@ export interface CreateCouponRequest {
   usageLimit?: number;
   usageLimitPerUser?: number;
   tierRestrictions?: string[];
-  customerSegment?: Record<string, any>;
+  customerSegment?: Record<string, unknown>;
   // Multilingual support
   originalLanguage?: import('./multilingual').SupportedLanguage;
 }
@@ -123,7 +123,7 @@ export interface RedeemCouponRequest {
   originalAmount: number;
   transactionReference?: string;
   location?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface RedeemCouponResponse {

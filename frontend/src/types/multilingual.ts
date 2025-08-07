@@ -60,7 +60,7 @@ export interface MultilingualSurvey {
   availableLanguages: SupportedLanguage[];
   lastTranslated?: string;
   translationStatus: 'none' | 'pending' | 'completed' | 'error';
-  translations?: { [language: string]: any };
+  translations?: { [language: string]: unknown };
 }
 
 // Extended coupon types with multi-language support
@@ -85,7 +85,7 @@ export interface MultilingualCoupon {
   
   // Targeting
   tierRestrictions: string[];
-  customerSegment: Record<string, any>;
+  customerSegment: Record<string, unknown>;
   
   // Metadata
   status: import('./coupon').CouponStatus;
@@ -141,7 +141,7 @@ export interface CreateMultilingualCouponRequest {
   usageLimit?: number;
   usageLimitPerUser?: number;
   tierRestrictions?: string[];
-  customerSegment?: Record<string, any>;
+  customerSegment?: Record<string, unknown>;
   originalLanguage: SupportedLanguage;
   autoTranslate?: boolean;
   targetLanguages?: SupportedLanguage[];

@@ -278,11 +278,13 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
   
   // Sanitize request body
   if (req.body) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     req.body = sanitizeValue(req.body) as any;
   }
   
   // Sanitize query parameters
   if (req.query) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     req.query = sanitizeValue(req.query) as any;
   }
   

@@ -15,7 +15,7 @@ export interface PWAInfo {
  * Detect if app is running as PWA and get platform info
  */
 export function detectPWA(): PWAInfo {
-  const userAgent = navigator.userAgent || '';
+  const userAgent = navigator.userAgent ?? '';
   const isIOS = /iPhone|iPad|iPod/i.test(userAgent);
   const isAndroid = /Android/i.test(userAgent);
   
@@ -40,7 +40,7 @@ export function detectPWA(): PWAInfo {
  */
 export function createPWAOAuthURL(provider: 'google' | 'line'): string {
   const pwaInfo = detectPWA();
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4001/api';
+  const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:4001/api';
   
   // Base OAuth URL
   const oauthUrl = `${apiUrl}/oauth/${provider}`;
@@ -99,7 +99,7 @@ export function initiateOAuth(provider: 'google' | 'line'): void {
 function applyIOSPWAManifestWorkaround(): void {
   const pwaInfo = detectPWA();
   
-  if (!pwaInfo.isIOS || !pwaInfo.isStandalone) return;
+  if (!pwaInfo.isIOS || !pwaInfo.isStandalone) {return;}
   
   try {
     // Find the manifest link element
@@ -158,7 +158,7 @@ function addIOSPWAMetaTags(): void {
 export function restoreIOSPWAManifest(): void {
   const pwaInfo = detectPWA();
   
-  if (!pwaInfo.isIOS || !pwaInfo.isStandalone) return;
+  if (!pwaInfo.isIOS || !pwaInfo.isStandalone) {return;}
   
   try {
     // Find the manifest link element and ensure it's properly set
@@ -204,7 +204,7 @@ function storePWAOAuthState(): void {
 export function recoverPWAOAuthState(): { url: string; timestamp: number } | null {
   try {
     const stateJson = localStorage.getItem('pwa_oauth_state');
-    if (!stateJson) return null;
+    if (!stateJson) {return null;}
     
     const state = JSON.parse(stateJson);
     

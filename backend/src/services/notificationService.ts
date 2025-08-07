@@ -6,6 +6,7 @@ import {
   NotificationPreference, 
   NotificationSummary
 } from '../types/notification';
+import { Coupon } from '../types/coupon';
 import { logger } from '../utils/logger';
 
 export class NotificationService {
@@ -258,12 +259,12 @@ export class NotificationService {
   async createProfileCompletionNotification(
     userId: string, 
     couponAwarded: boolean, 
-    coupon?: any, 
+    coupon?: Coupon, 
     pointsAwarded?: number
   ): Promise<Notification> {
     let title = 'Profile Completed!';
     let message = 'Congratulations! You have successfully completed your profile.';
-    const data: Record<string, any> = {};
+    const data: Record<string, unknown> = {};
 
     if (couponAwarded && coupon) {
       title = '🎉 Profile Completed - Coupon Reward!';
@@ -296,7 +297,7 @@ export class NotificationService {
    */
   async createCouponNotification(
     userId: string, 
-    coupon: any, 
+    coupon: Coupon, 
     reason = 'Special offer'
   ): Promise<Notification> {
     return await this.createNotification({
@@ -305,7 +306,7 @@ export class NotificationService {
       message: `You've received a new coupon: ${coupon.name}. ${reason}`,
       type: 'coupon',
       data: { coupon },
-      expiresAt: coupon.validUntil || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      expiresAt: coupon.validUntil ? coupon.validUntil.toISOString() : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
     });
   }
 

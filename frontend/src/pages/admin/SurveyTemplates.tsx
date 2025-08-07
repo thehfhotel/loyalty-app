@@ -447,7 +447,7 @@ const SurveyTemplates: React.FC = () => {
                       </h3>
                       
                       <p className="text-sm text-gray-600 mb-4">
-                        {template.description || t('surveys.admin.templates.noDescription')}
+                        {template.description ?? t('surveys.admin.templates.noDescription')}
                       </p>
                       
                       <div className="flex items-center justify-between text-xs text-gray-500 mb-4">

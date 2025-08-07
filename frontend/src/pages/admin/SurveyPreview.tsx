@@ -19,14 +19,21 @@ const SurveyPreviewPage: React.FC = () => {
     if (id) {
       loadSurvey();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const loadSurvey = async () => {
+    if (!id) {
+      setError('Survey ID is required');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
       
-      const surveyData = await surveyService.getSurveyById(id!);
+      const surveyData = await surveyService.getSurveyById(id);
       setSurvey(surveyData);
     } catch (err: any) {
       console.error('Error loading survey:', err);
@@ -50,12 +57,13 @@ const SurveyPreviewPage: React.FC = () => {
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
   if (error || !survey) {
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-7xl mx-auto p-4">
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
-            <p>{error || 'Survey not found'}</p>
+            <p>{error ?? 'Survey not found'}</p>
             <Link to="/admin/surveys" className="text-red-800 underline mt-2 inline-block">
               Back to Surveys
             </Link>

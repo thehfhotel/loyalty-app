@@ -44,9 +44,9 @@ export default function NewMemberCouponSettings() {
       };
       const originalState = {
         isEnabled: settings.isEnabled,
-        selectedCouponId: settings.selectedCouponId || '',
+        selectedCouponId: settings.selectedCouponId ?? '',
         pointsEnabled: settings.pointsEnabled,
-        pointsAmount: settings.pointsAmount?.toString() || ''
+        pointsAmount: settings.pointsAmount?.toString() ?? ''
       };
       setHasChanged(JSON.stringify(currentState) !== JSON.stringify(originalState));
     }
@@ -86,26 +86,29 @@ export default function NewMemberCouponSettings() {
       
       // Set form state from loaded settings
       setIsEnabled(settingsData.isEnabled);
-      setSelectedCouponId(settingsData.selectedCouponId || '');
+      setSelectedCouponId(settingsData.selectedCouponId ?? '');
       setPointsEnabled(settingsData.pointsEnabled);
-      setPointsAmount(settingsData.pointsAmount?.toString() || '');
+      setPointsAmount(settingsData.pointsAmount?.toString() ?? '');
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to load data:', error);
-      toast.error(error.response?.data?.error || 'Failed to load settings');
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+        : undefined;
+      toast.error(errorMessage ?? 'Failed to load settings');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleSave = async () => {
-    if (!hasChanged) return;
+    if (!hasChanged) {return;}
     
     setIsSaving(true);
     try {
       const updateData = {
         isEnabled,
-        selectedCouponId: selectedCouponId || null,
+        selectedCouponId: selectedCouponId ?? null,
         pointsEnabled,
         pointsAmount: pointsAmount ? parseInt(pointsAmount) : null
       };
@@ -114,9 +117,12 @@ export default function NewMemberCouponSettings() {
       setSettings(updatedSettings);
       setHasChanged(false);
       toast.success('New member coupon settings updated successfully');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to update settings:', error);
-      toast.error(error.response?.data?.error || 'Failed to update settings');
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+        : undefined;
+      toast.error(errorMessage ?? 'Failed to update settings');
     } finally {
       setIsSaving(false);
     }
@@ -125,9 +131,9 @@ export default function NewMemberCouponSettings() {
   const handleReset = () => {
     if (settings) {
       setIsEnabled(settings.isEnabled);
-      setSelectedCouponId(settings.selectedCouponId || '');
+      setSelectedCouponId(settings.selectedCouponId ?? '');
       setPointsEnabled(settings.pointsEnabled);
-      setPointsAmount(settings.pointsAmount?.toString() || '');
+      setPointsAmount(settings.pointsAmount?.toString() ?? '');
       setHasChanged(false);
     }
   };
@@ -229,7 +235,8 @@ export default function NewMemberCouponSettings() {
                   couponStatus.warningLevel === 'danger' 
                     ? 'bg-red-50 border-red-200' 
                     : 'bg-yellow-50 border-yellow-200'
-                }`}>
+                }`}
+                >
                   <div className="flex items-start space-x-2">
                     {couponStatus.warningLevel === 'danger' ? (
                       <FiAlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
@@ -239,12 +246,14 @@ export default function NewMemberCouponSettings() {
                     <div className="flex-1">
                       <p className={`text-sm font-medium ${
                         couponStatus.warningLevel === 'danger' ? 'text-red-800' : 'text-yellow-800'
-                      }`}>
+                      }`}
+                      >
                         {couponStatus.isExpired ? 'Coupon Expired' : 'Coupon Expiring Soon'}
                       </p>
                       <p className={`text-sm mt-1 ${
                         couponStatus.warningLevel === 'danger' ? 'text-red-700' : 'text-yellow-700'
-                      }`}>
+                      }`}
+                      >
                         {couponStatus.isExpired 
                           ? `This coupon expired ${couponStatus.validUntil ? new Date(couponStatus.validUntil).toLocaleDateString() : 'recently'}. New members will not receive this coupon.`
                           : `This coupon expires in ${couponStatus.daysUntilExpiry} day${couponStatus.daysUntilExpiry === 1 ? '' : 's'} (${couponStatus.validUntil ? new Date(couponStatus.validUntil).toLocaleDateString() : 'soon'}). Consider selecting a different coupon or extending the validity period.`
@@ -262,7 +271,7 @@ export default function NewMemberCouponSettings() {
                 <h4 className="font-medium text-gray-900 mb-2">Selected Coupon Details</h4>
                 {(() => {
                   const selectedCoupon = availableCoupons.find(c => c.id === selectedCouponId);
-                  if (!selectedCoupon) return null;
+                  if (!selectedCoupon) {return null;}
                   return (
                     <div className="space-y-1 text-sm text-gray-600">
                       <p><span className="font-medium">Code:</span> {selectedCoupon.code}</p>
@@ -287,7 +296,8 @@ export default function NewMemberCouponSettings() {
                                 couponStatus.warningLevel === 'danger' ? 'text-red-600 font-medium' :
                                 couponStatus.warningLevel === 'warning' ? 'text-yellow-600 font-medium' :
                                 'text-gray-600'
-                              }>
+                              }
+                              >
                                 {new Date(couponStatus.validUntil).toLocaleDateString()}
                                 {couponStatus.isExpired && ' (EXPIRED)'}
                                 {!couponStatus.isExpired && couponStatus.daysUntilExpiry !== null && couponStatus.daysUntilExpiry <= 7 && 
@@ -379,8 +389,9 @@ export default function NewMemberCouponSettings() {
                   !hasChanged || 
                   isSaving || 
                   (isEnabled && !selectedCouponId) ||
+                  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
                   (isEnabled && couponStatus?.isExpired) ||
-                  (pointsEnabled && (!pointsAmount || parseInt(pointsAmount) < 1 || parseInt(pointsAmount) > 10000))
+                  (pointsEnabled && (!pointsAmount || (parseInt(pointsAmount) < 1 || parseInt(pointsAmount) > 10000)))
                 }
                 className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >

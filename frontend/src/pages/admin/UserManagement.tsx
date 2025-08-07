@@ -51,7 +51,7 @@ const UserManagement: React.FC = () => {
     };
 
     loadData();
-  }, [currentPage, searchTerm]);
+  }, [currentPage, searchTerm, fetchUsers, fetchStats]);
 
   const handleSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -286,8 +286,8 @@ const UserManagement: React.FC = () => {
                         </div>
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900">
-                            {user.firstName || user.lastName 
-                              ? `${user.firstName || ''} ${user.lastName || ''}`.trim()
+                            {user.firstName ?? user.lastName 
+                              ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
                               : t('userManagement.noNameProvided')
                             }
                           </div>
@@ -295,7 +295,7 @@ const UserManagement: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
-                      {user.membershipId || '-'}
+                      {user.membershipId ?? '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {user.email}
@@ -389,15 +389,15 @@ const UserManagement: React.FC = () => {
                   <div>
                     <span className="font-medium text-gray-700">{t('userManagement.name')}: </span>
                     <span className="text-gray-900">
-                      {selectedUser.firstName || selectedUser.lastName 
-                        ? `${selectedUser.firstName || ''} ${selectedUser.lastName || ''}`.trim()
+                      {selectedUser.firstName ?? selectedUser.lastName 
+                        ? `${selectedUser.firstName ?? ''} ${selectedUser.lastName ?? ''}`.trim()
                         : t('userManagement.notProvided')
                       }
                     </span>
                   </div>
                   <div>
                     <span className="font-medium text-gray-700">{t('profile.membershipId')}: </span>
-                    <span className="text-gray-900 font-mono text-sm">{selectedUser.membershipId || t('admin.coupons.notAssigned')}</span>
+                    <span className="text-gray-900 font-mono text-sm">{selectedUser.membershipId ?? t('admin.coupons.notAssigned')}</span>
                   </div>
                   <div>
                     <span className="font-medium text-gray-700">{t('userManagement.email')}: </span>
@@ -405,7 +405,7 @@ const UserManagement: React.FC = () => {
                   </div>
                   <div>
                     <span className="font-medium text-gray-700">{t('userManagement.phone')}: </span>
-                    <span className="text-gray-900">{selectedUser.phone || t('userManagement.notProvided')}</span>
+                    <span className="text-gray-900">{selectedUser.phone ?? t('userManagement.notProvided')}</span>
                   </div>
                   <div>
                     <span className="font-medium text-gray-700">{t('userManagement.role')}: </span>
@@ -451,8 +451,8 @@ const UserManagement: React.FC = () => {
                 <h3 className="text-lg font-medium text-gray-900 mt-4">{t('userManagement.deleteUser')}</h3>
                 <p className="text-sm text-gray-500 mt-2">
                   {t('userManagement.confirmDelete', {
-                    name: userToDelete.firstName || userToDelete.lastName 
-                      ? `${userToDelete.firstName || ''} ${userToDelete.lastName || ''}`.trim()
+                    name: userToDelete.firstName ?? userToDelete.lastName 
+                      ? `${userToDelete.firstName ?? ''} ${userToDelete.lastName ?? ''}`.trim()
                       : userToDelete.email
                   })}
                 </p>

@@ -56,7 +56,7 @@ class NotificationManager {
   }
 
   showSuccess(message: string, options?: NotificationOptions): string | undefined {
-    const id = options?.id || this.generateId('success', message);
+    const id = options?.id ?? this.generateId('success', message);
     
     if (this.isDuplicate(id)) {
       console.debug(`[NotificationManager] Blocked duplicate success notification: ${message}`);
@@ -74,7 +74,7 @@ class NotificationManager {
   }
 
   showError(message: string, options?: NotificationOptions): string | undefined {
-    const id = options?.id || this.generateId('error', message);
+    const id = options?.id ?? this.generateId('error', message);
     
     if (this.isDuplicate(id)) {
       console.debug(`[NotificationManager] Blocked duplicate error notification: ${message}`);
@@ -92,7 +92,7 @@ class NotificationManager {
   }
 
   showInfo(message: string, options?: NotificationOptions): string | undefined {
-    const id = options?.id || this.generateId('info', message);
+    const id = options?.id ?? this.generateId('info', message);
     
     if (this.isDuplicate(id)) {
       console.debug(`[NotificationManager] Blocked duplicate info notification: ${message}`);
@@ -110,7 +110,7 @@ class NotificationManager {
   }
 
   showWarning(message: string, options?: NotificationOptions): string | undefined {
-    const id = options?.id || this.generateId('warning', message);
+    const id = options?.id ?? this.generateId('warning', message);
     
     if (this.isDuplicate(id)) {
       console.debug(`[NotificationManager] Blocked duplicate warning notification: ${message}`);

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RedeemCouponRequest, RedeemCouponResponse } from '../../types/coupon';
+import { RedeemCouponRequest, RedeemCouponResponse, Coupon, UserActiveCoupon } from '../../types/coupon';
 import { couponService } from '../../services/couponService';
 
 interface CouponScannerProps {
@@ -21,7 +21,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
   const [transactionReference, setTransactionReference] = useState('');
   const [location, setLocation] = useState('');
   const [loading, setLoading] = useState(false);
-  const [validationResult, setValidationResult] = useState<{success: boolean; valid: boolean; message: string; data?: any} | null>(null);
+  const [validationResult, setValidationResult] = useState<{success: boolean; valid: boolean; message: string; data?: unknown} | null>(null);
   const [redemptionResult, setRedemptionResult] = useState<RedeemCouponResponse | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [cameraActive, setCameraActive] = useState(false);
@@ -44,7 +44,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
   }, [t, setScanMode, setCameraActive]);
 
   const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
+    if (videoRef.current?.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
       stream.getTracks().forEach(track => track.stop());
       videoRef.current.srcObject = null;
@@ -75,7 +75,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
     } catch (err: unknown) {
       console.error('Error validating coupon:', err);
       const errorMessage = err instanceof Error && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'message' in err.response.data
-        ? (err.response.data as any).message
+        ? (err.response.data as { message: string }).message
         : t('errors.validationFailed');
       setValidationResult({
         success: false,
@@ -142,7 +142,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
     } catch (err: unknown) {
       console.error('Error redeeming coupon:', err);
       const errorMessage = err instanceof Error && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'message' in err.response.data
-        ? (err.response.data as any).message
+        ? (err.response.data as { message: string }).message
         : t('errors.redemptionFailed');
       const errorResult: RedeemCouponResponse = {
         success: false,
@@ -158,7 +158,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
 
   // Calculate preview of discount
   const discountPreview = validationResult?.valid && originalAmount ? 
-    couponService.calculateDiscount(validationResult.data, parseFloat(originalAmount)) : null;
+    couponService.calculateDiscount(validationResult.data as Coupon | UserActiveCoupon, parseFloat(originalAmount)) : null;
 
   return (
     <div className={`bg-white rounded-lg shadow-lg ${className}`}>
@@ -252,18 +252,18 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
                 <span className="mr-2">
                   {validationResult.valid ? '✅' : '❌'}
                 </span>
-                <span className="font-medium">{validationResult.message}</span>
+                <span className="font-medium">{String(validationResult?.message || '')}</span>
               </div>
               
-              {validationResult.valid && validationResult.data && (
+              {validationResult && validationResult.valid && validationResult.data ? (
                 <div className="mt-2 text-sm text-green-700">
-                  <div className="font-medium">{validationResult.data.name}</div>
-                  <div>{validationResult.data.description}</div>
+                  <div className="font-medium">{(validationResult.data as any)?.name || ''}</div>
+                  <div>{(validationResult.data as any)?.description || ''}</div>
                   <div className="mt-1">
-                    {t('coupons.value')}: {couponService.formatCouponValue(validationResult.data)}
+                    {t('coupons.value')}: {couponService.formatCouponValue(validationResult.data as Coupon | UserActiveCoupon)}
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
           )}
 

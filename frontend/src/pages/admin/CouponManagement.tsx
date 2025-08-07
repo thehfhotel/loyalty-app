@@ -12,7 +12,7 @@ interface User {
   id: string;
   email: string;
   firstName: string;
-  lastName: string;
+  lastName?: string;
   membershipId?: string | null;
 }
 
@@ -80,9 +80,12 @@ const CouponManagement: React.FC = () => {
       setCoupons(paginatedCoupons);
       setTotalPages(calculatedTotalPages);
       setPage(pageNum);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading coupons:', err);
-      setError(err.response?.data?.message || 'Failed to load coupons');
+      const errorMessage = err instanceof Error && 'response' in err 
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message 
+        : undefined;
+      setError(errorMessage ?? 'Failed to load coupons');
     } finally {
       setLoading(false);
     }
@@ -95,12 +98,12 @@ const CouponManagement: React.FC = () => {
       const usersData = response.users || [];
       
       // Transform the loyalty service response to our User interface
-      const transformedUsers = usersData.map((user: any) => ({
+      const transformedUsers = usersData.map((user: { user_id: string; email: string; first_name: string | null; last_name?: string | null; phone?: string; membership_id?: string | null }) => ({
         id: user.user_id,
         email: user.email,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        membershipId: user.membership_id
+        firstName: user.first_name ?? '',
+        lastName: user.last_name ?? undefined,
+        membershipId: user.membership_id ?? undefined
       }));
       setUsers(transformedUsers);
     } catch (err) {
@@ -144,9 +147,12 @@ const CouponManagement: React.FC = () => {
         termsAndConditions: ''
       });
       await loadCoupons();
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Show error in modal instead of main page
-      setCreateModalError(err.response?.data?.message || 'Failed to create coupon');
+      const errorMessage = err instanceof Error && 'response' in err 
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message 
+        : undefined;
+      setCreateModalError(errorMessage ?? 'Failed to create coupon');
     } finally {
       setLoading(false);
     }
@@ -176,11 +182,13 @@ const CouponManagement: React.FC = () => {
       
       // Refresh the coupons list to update counts
       await loadCoupons();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Assignment error:', err);
-      const errorMessage = err.response?.data?.message || err.message || 'Failed to assign coupons';
-      setError(errorMessage);
-      toast.error(errorMessage);
+      const errorMessage = err instanceof Error && 'response' in err 
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message 
+        : err instanceof Error ? err.message : 'Failed to assign coupons';
+      setError(errorMessage ?? null);
+      toast.error(errorMessage ?? 'Unknown error');
     } finally {
       setLoading(false);
     }
@@ -191,8 +199,11 @@ const CouponManagement: React.FC = () => {
       const newStatus = coupon.status === 'active' ? 'paused' : 'active';
       await couponService.updateCouponStatus(coupon.id, newStatus as CouponStatus);
       await loadCoupons();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update coupon status');
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error && 'response' in err 
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message 
+        : undefined;
+      setError(errorMessage ?? 'Failed to update coupon status');
     }
   };
 
@@ -221,15 +232,16 @@ const CouponManagement: React.FC = () => {
       await loadCoupons();
       setError(null);
       
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error deleting coupon:', err);
       
       // Handle authentication errors specifically
-      if (err.response?.status === 401) {
+      const httpError = err instanceof Error && 'response' in err ? err as { response?: { status?: number; data?: { message?: string } } } : null;
+      if (httpError?.response?.status === 401) {
         setError('Your session has expired. Please refresh the page and log in again.');
-      } else if (err.response?.status === 403) {
+      } else if (httpError?.response?.status === 403) {
         setError('You do not have permission to delete coupons. Admin access required.');
-      } else if (err.response?.status === 404) {
+      } else if (httpError?.response?.status === 404) {
         // Handle case where coupon was already deleted
         setError(`Coupon "${selectedCoupon.name}" has already been deleted. Refreshing the list...`);
         // Auto-refresh the list to remove stale entries
@@ -238,7 +250,7 @@ const CouponManagement: React.FC = () => {
           setError(null);
         }, 2000);
       } else {
-        setError(err.response?.data?.message || `Failed to delete coupon "${selectedCoupon.name}"`);
+        setError(httpError?.response?.data?.message ?? `Failed to delete coupon "${selectedCoupon.name}"`);
       }
     } finally {
       setLoading(false);
@@ -375,13 +387,13 @@ const CouponManagement: React.FC = () => {
                         {coupon.type === 'percentage' 
                           ? `${coupon.value}% off`
                           : coupon.type === 'fixed_amount'
-                          ? formatCurrency(coupon.value || 0)
+                          ? formatCurrency(coupon.value ?? 0)
                           : t(`coupons.types.${coupon.type}`)
                         }
                       </div>
-                      {(coupon.minimumSpend || 0) > 0 && (
+                      {(coupon.minimumSpend ?? 0) > 0 && (
                         <div className="text-sm text-gray-500">
-                          {t('admin.coupons.min')}: {formatCurrency(coupon.minimumSpend || 0)}
+                          {t('admin.coupons.min')}: {formatCurrency(coupon.minimumSpend ?? 0)}
                         </div>
                       )}
                     </td>
@@ -776,9 +788,9 @@ const CouponManagement: React.FC = () => {
                   .filter(user => {
                     if (!userSearchTerm) {return true;}
                     const searchLower = userSearchTerm.toLowerCase();
-                    const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
-                    const email = (user.email || '').toLowerCase();
-                    const membershipId = (user.membershipId || '').toLowerCase();
+                    const fullName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.toLowerCase();
+                    const email = (user.email ?? '').toLowerCase();
+                    const membershipId = (user.membershipId ?? '').toLowerCase();
                     return (
                       fullName.includes(searchLower) ||
                       email.includes(searchLower) ||
@@ -801,14 +813,14 @@ const CouponManagement: React.FC = () => {
                     />
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
-                        <div className="font-medium text-gray-900">{user.firstName || ''} {user.lastName || ''}</div>
+                        <div className="font-medium text-gray-900">{user.firstName ?? ''} {user.lastName ?? ''}</div>
                         {user.membershipId && (
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                             ID: {user.membershipId}
                           </span>
                         )}
                       </div>
-                      <div className="text-sm text-gray-600">{user.email || 'No email'}</div>
+                      <div className="text-sm text-gray-600">{user.email ?? 'No email'}</div>
                       {!user.membershipId && (
                         <div className="text-xs text-gray-400">{t('admin.coupons.noMembershipId')}</div>
                       )}
@@ -818,9 +830,9 @@ const CouponManagement: React.FC = () => {
                 {users.filter(user => {
                   if (!userSearchTerm) {return false;}
                   const searchLower = userSearchTerm.toLowerCase();
-                  const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
-                  const email = (user.email || '').toLowerCase();
-                  const membershipId = (user.membershipId || '').toLowerCase();
+                  const fullName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.toLowerCase();
+                  const email = (user.email ?? '').toLowerCase();
+                  const membershipId = (user.membershipId ?? '').toLowerCase();
                   return (
                     fullName.includes(searchLower) ||
                     email.includes(searchLower) ||

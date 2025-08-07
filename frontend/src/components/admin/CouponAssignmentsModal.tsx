@@ -62,9 +62,12 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
       setPage(result.page);
       setTotalPages(result.totalPages);
       setTotal(result.total);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading coupon assignments:', err);
-      setError(err.response?.data?.message || 'Failed to load assignments');
+      const errorMessage = err instanceof Error && 'response' in err 
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message 
+        : undefined;
+      setError(errorMessage ?? 'Failed to load assignments');
     } finally {
       setLoading(false);
     }
@@ -123,9 +126,12 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
       await loadAssignments(page);
       
       setUserToRemove(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error removing user coupons:', err);
-      setError(err.response?.data?.message || 'Failed to remove user coupons');
+      const errorMessage = err instanceof Error && 'response' in err 
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message 
+        : undefined;
+      setError(errorMessage ?? 'Failed to remove user coupons');
     } finally {
       setRemovingUserId(null);
     }

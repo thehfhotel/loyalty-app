@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FiGift, FiUser, FiCalendar, FiSearch } from 'react-icons/fi';
 import toast from 'react-hot-toast';
@@ -21,29 +21,29 @@ const SurveyRewardHistoryComponent: React.FC<SurveyRewardHistoryProps> = ({
   const [totalPages, setTotalPages] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
-    loadRewardHistory();
-  }, [surveyId, currentPage]);
-
-  const loadRewardHistory = async () => {
+  const loadRewardHistory = useCallback(async () => {
     try {
       setLoading(true);
       const response = await surveyService.getSurveyRewardHistory(surveyId, currentPage, 20);
       setRewards(response.rewards);
       setTotalPages(response.totalPages);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading reward history:', error);
       toast.error(t('surveys.couponAssignment.loadError'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [surveyId, currentPage, t]);
+
+  useEffect(() => {
+    loadRewardHistory();
+  }, [surveyId, currentPage, loadRewardHistory]);
 
   const filteredRewards = rewards.filter(reward =>
-    reward.user_email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    reward.user_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    reward.coupon_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    reward.coupon_name?.toLowerCase().includes(searchTerm.toLowerCase())
+    (reward.user_email ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (reward.user_name ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (reward.coupon_code ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (reward.coupon_name ?? '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const formatDate = (dateString: string) => {
@@ -133,7 +133,7 @@ const SurveyRewardHistoryComponent: React.FC<SurveyRewardHistoryProps> = ({
                       <div className="flex items-center">
                         <FiUser className="mr-2 text-green-500" />
                         <span>
-                          {reward.user_name || 'Unknown User'} ({reward.user_email})
+                          {reward.user_name ?? 'Unknown User'} ({reward.user_email})
                         </span>
                       </div>
 

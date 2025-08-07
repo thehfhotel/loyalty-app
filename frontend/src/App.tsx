@@ -116,7 +116,7 @@ function App() {
             if (error instanceof Error && (error.message.includes('429') || error.message.includes('rate limit'))) {
               console.log('Rate limit during auth init, keeping user logged in');
             } else if (error && typeof error === 'object' && 'response' in error) {
-              const httpError = error as any;
+              const httpError = error as { response?: { status?: number } };
               if (httpError.response?.status === 429) {
                 console.log('Rate limit HTTP error during auth init, keeping user logged in');
               } else {

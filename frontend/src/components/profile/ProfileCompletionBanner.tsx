@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { FiX, FiGift, FiChevronRight, FiUser, FiPhone } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
@@ -20,13 +20,14 @@ interface ProfileCompletionBannerProps {
 }
 
 const profileCompletionSchema = z.object({
-  firstName: z.string().min(1, 'First name is required').optional(),
+  firstName: z.string().min(1, 'First name is required'),
   lastName: z.string().optional(),
   dateOfBirth: z.string().optional(),
   gender: z.string().optional(),
   occupation: z.string().optional(),
   interests: z.string().optional(),
   phone: z.string().optional(),
+  email: z.string().optional(),
 });
 
 type ProfileCompletionFormData = z.infer<typeof profileCompletionSchema>;
@@ -94,10 +95,10 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
     setShowModal(true);
   };
 
-  const handleCloseModal = () => {
+  const handleCloseModal = useCallback(() => {
     setShowModal(false);
     reset();
-  };
+  }, [reset]);
 
   // Handle keyboard events for modal
   useEffect(() => {
@@ -118,7 +119,7 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'unset';
     };
-  }, [showModal, isSaving]);
+  }, [showModal, isSaving, handleCloseModal]);
 
   const onSubmit = async (data: ProfileCompletionFormData) => {
     setIsSaving(true);
@@ -160,8 +161,11 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
       const newStatus = await userService.getProfileCompletionStatus();
       setProfileStatus(newStatus);
 
-    } catch (error: any) {
-      notify.error(error.response?.data?.error || t('profile.profileUpdateError'));
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+        : undefined;
+      notify.error(errorMessage ?? t('profile.profileUpdateError'));
     } finally {
       setIsSaving(false);
     }
@@ -254,7 +258,7 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
       {showModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={handleCloseModal}></div>
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={handleCloseModal} />
 
             <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
 
@@ -374,8 +378,8 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
                     {isSaving ? (
                       <>
                         <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                         </svg>
                         {t('common.saving')}
                       </>

@@ -127,7 +127,7 @@ export default function OAuthSuccessPage() {
     };
 
     handleOAuthSuccess();
-  }, [searchParams, navigate]); // Removed setTokens to prevent re-runs
+  }, [searchParams, navigate, setTokens]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">

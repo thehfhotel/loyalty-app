@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { FiUsers, FiEye, FiCalendar, FiRefreshCw } from 'react-icons/fi';
@@ -19,14 +19,7 @@ const SurveyList: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'public' | 'invited'>('public');
 
-  useEffect(() => {
-    // Only load surveys if authenticated
-    if (isAuthenticated) {
-      loadSurveys();
-    }
-  }, [isAuthenticated]);
-
-  const loadSurveys = async () => {
+  const loadSurveys = useCallback(async () => {
     // Don't attempt to load if not authenticated
     if (!isAuthenticated) {
       setLoading(false);
@@ -48,7 +41,14 @@ const SurveyList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated, t]);
+
+  useEffect(() => {
+    // Only load surveys if authenticated
+    if (isAuthenticated) {
+      loadSurveys();
+    }
+  }, [isAuthenticated, loadSurveys]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();

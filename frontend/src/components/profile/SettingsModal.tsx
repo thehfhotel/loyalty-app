@@ -63,16 +63,16 @@ export default function SettingsModal({
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      email: user?.email || '',
-      firstName: profile?.firstName || '',
-      lastName: profile?.lastName || '',
-      phone: profile?.phone || '',
+      email: user?.email ?? '',
+      firstName: profile?.firstName ?? '',
+      lastName: profile?.lastName ?? '',
+      phone: profile?.phone ?? '',
       dateOfBirth: profile?.dateOfBirth 
         ? new Date(profile.dateOfBirth).toISOString().split('T')[0] 
         : '',
-      gender: profile?.gender || '',
-      occupation: profile?.occupation || '',
-      interests: profile?.interests?.join(', ') || '',
+      gender: profile?.gender ?? '',
+      occupation: profile?.occupation ?? '',
+      interests: profile?.interests?.join(', ') ?? '',
     }
   });
 
@@ -80,16 +80,16 @@ export default function SettingsModal({
   React.useEffect(() => {
     if (profile) {
       reset({
-        email: user?.email || '',
+        email: user?.email ?? '',
         firstName: profile.firstName,
         lastName: profile.lastName,
-        phone: profile.phone || '',
+        phone: profile.phone ?? '',
         dateOfBirth: profile.dateOfBirth 
           ? new Date(profile.dateOfBirth).toISOString().split('T')[0] 
           : '',
-        gender: profile.gender || '',
-        occupation: profile.occupation || '',
-        interests: profile.interests?.join(', ') || '',
+        gender: profile.gender ?? '',
+        occupation: profile.occupation ?? '',
+        interests: profile.interests?.join(', ') ?? '',
       });
     }
   }, [profile, user, reset]);
@@ -101,8 +101,11 @@ export default function SettingsModal({
       onProfileUpdate?.(updatedProfile);
       setShowEmojiSelector(false);
       notify.success('Profile picture updated!');
-    } catch (error: any) {
-      notify.error(error.response?.data?.error || 'Failed to update profile picture');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error && 'response' in error 
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+        : undefined;
+      notify.error(errorMessage ?? 'Failed to update profile picture');
     } finally {
       setUpdatingEmoji(false);
     }

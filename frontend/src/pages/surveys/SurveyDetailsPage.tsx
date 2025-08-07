@@ -31,16 +31,23 @@ const SurveyDetailsPage: React.FC = () => {
     if (id) {
       loadSurvey();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const loadSurvey = async () => {
+    if (!id) {
+      setError('Survey ID is required');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
       
       const [surveyData, translationsData] = await Promise.all([
-        surveyService.getSurveyById(id!),
-        translationService.getSurveyTranslations(id!)
+        surveyService.getSurveyById(id),
+        translationService.getSurveyTranslations(id)
       ]);
       
       setSurvey(surveyData);
@@ -104,9 +111,9 @@ const SurveyDetailsPage: React.FC = () => {
 
     return {
       ...survey,
-      title: translation.title || survey.title,
-      description: translation.description || survey.description,
-      questions: translation.questions || survey.questions
+      title: (translation as any)?.title || survey.title,
+      description: (translation as any)?.description || survey.description,
+      questions: (translation as any)?.questions || survey.questions
     };
   }, [survey, multilingualSurvey, selectedLanguage]);
 
@@ -145,13 +152,14 @@ const SurveyDetailsPage: React.FC = () => {
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
   if (error || !survey) {
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-4xl mx-auto p-4">
           <div className="text-center py-12">
             <div className="text-red-500 text-xl mb-4">
-              {error || t('surveys.notFound')}
+              {error ?? t('surveys.notFound')}
             </div>
             <Link
               to="/surveys"
@@ -255,7 +263,7 @@ const SurveyDetailsPage: React.FC = () => {
             {t('surveys.preview', { count: displayContent?.questions?.length || 0 })}
           </h2>
           <SurveyPreview 
-            survey={displayContent || survey} 
+            survey={displayContent ?? survey} 
             onClose={() => window.history.back()} 
           />
         </div>

@@ -4,11 +4,24 @@ import { Request } from 'express';
 import { AppError } from '../middleware/errorHandler';
 import { storageConfig } from './storage';
 
+// Define Multer file type directly without namespace
+interface MulterFile {
+  fieldname: string;
+  originalname: string;
+  encoding: string;
+  mimetype: string;
+  size: number;
+  destination?: string;
+  filename?: string;
+  path?: string;
+  buffer: Buffer;
+}
+
 // Configure storage
 const storage = multer.memoryStorage(); // Store in memory for processing
 
 // File filter for images only
-const fileFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+const fileFilter = (_req: Request, file: MulterFile, cb: multer.FileFilterCallback) => {
   // Allowed file types
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
   

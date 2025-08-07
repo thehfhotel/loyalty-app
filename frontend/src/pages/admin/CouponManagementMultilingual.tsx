@@ -67,6 +67,7 @@ const CouponManagementMultilingual: React.FC = () => {
   useEffect(() => {
     loadCoupons();
     loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
   useEffect(() => {
@@ -74,9 +75,9 @@ const CouponManagementMultilingual: React.FC = () => {
     if (showCreateModal) {
       setNewCoupon(prev => ({
         ...prev,
-        name: multilingualCouponData.name[currentLanguage] || '',
-        description: multilingualCouponData.description[currentLanguage] || '',
-        termsAndConditions: multilingualCouponData.termsAndConditions[currentLanguage] || ''
+        name: multilingualCouponData.name[currentLanguage] ?? '',
+        description: multilingualCouponData.description[currentLanguage] ?? '',
+        termsAndConditions: multilingualCouponData.termsAndConditions[currentLanguage] ?? ''
       }));
     }
   }, [currentLanguage, multilingualCouponData, showCreateModal]);
@@ -99,7 +100,7 @@ const CouponManagementMultilingual: React.FC = () => {
   const loadUsers = async () => {
     try {
       const usersData = await loyaltyService.getUsers();
-      setUsers(usersData.users || []);
+      setUsers(usersData.users ?? []);
     } catch (err) {
       console.error('Failed to load users:', err);
     }
@@ -128,8 +129,8 @@ const CouponManagementMultilingual: React.FC = () => {
         const language = lang as SupportedLanguage;
         if (data) {
           newMultilingualData.name[language] = data.name;
-          newMultilingualData.description[language] = data.description || '';
-          newMultilingualData.termsAndConditions[language] = data.termsAndConditions || '';
+          newMultilingualData.description[language] = data.description ?? '';
+          newMultilingualData.termsAndConditions[language] = data.termsAndConditions ?? '';
           newTranslationStatus[language] = 'translated';
         }
       });
@@ -147,8 +148,8 @@ const CouponManagementMultilingual: React.FC = () => {
       setMultilingualCouponData(prev => ({
         ...prev,
         name: { ...prev.name, [currentLanguage]: newCoupon.name },
-        description: { ...prev.description, [currentLanguage]: newCoupon.description || '' },
-        termsAndConditions: { ...prev.termsAndConditions, [currentLanguage]: newCoupon.termsAndConditions || '' }
+        description: { ...prev.description, [currentLanguage]: newCoupon.description ?? '' },
+        termsAndConditions: { ...prev.termsAndConditions, [currentLanguage]: newCoupon.termsAndConditions ?? '' }
       }));
     }
   };
@@ -267,7 +268,7 @@ const CouponManagementMultilingual: React.FC = () => {
       loadCoupons(page);
     } catch (err: any) {
       console.error('Failed to create coupon:', err);
-      setCreateModalError(err.response?.data?.error || t('coupons.admin.errors.createFailed'));
+      setCreateModalError(err.response?.data?.error ?? t('coupons.admin.errors.createFailed'));
     }
   };
 
@@ -319,29 +320,29 @@ const CouponManagementMultilingual: React.FC = () => {
     setSelectedCoupon(coupon);
     
     // Initialize multilingual data for editing
-    const originalLang = coupon.originalLanguage || 'th';
+    const originalLang = coupon.originalLanguage ?? 'th';
     setCurrentLanguage(originalLang);
-    setAvailableLanguages(coupon.availableLanguages || [originalLang]);
+    setAvailableLanguages(coupon.availableLanguages ?? [originalLang]);
     
     setMultilingualCouponData({
       name: { [originalLang]: coupon.name },
-      description: { [originalLang]: coupon.description || '' },
-      termsAndConditions: { [originalLang]: coupon.termsAndConditions || '' }
+      description: { [originalLang]: coupon.description ?? '' },
+      termsAndConditions: { [originalLang]: coupon.termsAndConditions ?? '' }
     });
     
     setNewCoupon({
       code: coupon.code,
       name: coupon.name,
-      description: coupon.description || '',
+      description: coupon.description ?? '',
       type: coupon.type,
-      value: coupon.value || 0,
-      minimumSpend: coupon.minimumSpend || 0,
-      maximumDiscount: coupon.maximumDiscount || 0,
-      usageLimit: coupon.usageLimit || 100,
+      value: coupon.value ?? 0,
+      minimumSpend: coupon.minimumSpend ?? 0,
+      maximumDiscount: coupon.maximumDiscount ?? 0,
+      usageLimit: coupon.usageLimit ?? 100,
       usageLimitPerUser: coupon.usageLimitPerUser,
       validFrom: coupon.validFrom ? new Date(coupon.validFrom).toISOString().split('T')[0] : '',
       validUntil: coupon.validUntil ? new Date(coupon.validUntil).toISOString().split('T')[0] : '',
-      termsAndConditions: coupon.termsAndConditions || ''
+      termsAndConditions: coupon.termsAndConditions ?? ''
     });
     
     // Load translations if available
@@ -451,7 +452,7 @@ const CouponManagementMultilingual: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <div className="flex space-x-1">
-                      {(coupon.availableLanguages || ['th']).map(lang => (
+                      {(coupon.availableLanguages ?? ['th']).map(lang => (
                         <span
                           key={lang}
                           className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
@@ -470,7 +471,7 @@ const CouponManagementMultilingual: React.FC = () => {
                     </button>
                     {coupon.id && (
                       <button
-                        onClick={() => handleTranslateCoupon(coupon.id, (['en', 'zh-CN'] as SupportedLanguage[]).filter(lang => !(coupon.availableLanguages || []).includes(lang)))}
+                        onClick={() => handleTranslateCoupon(coupon.id, (['en', 'zh-CN'] as SupportedLanguage[]).filter(lang => !(coupon.availableLanguages ?? []).includes(lang)))}
                         disabled={translating}
                         className="text-green-600 hover:text-green-900 disabled:opacity-50"
                       >
@@ -545,7 +546,7 @@ const CouponManagementMultilingual: React.FC = () => {
                       onTranslate={(targetLanguages) => handleTranslateCoupon(selectedCoupon.id, targetLanguages)}
                       isTranslating={translating}
                       availableLanguages={availableLanguages}
-                      originalLanguage={availableLanguages[0] || 'th'}
+                      originalLanguage={availableLanguages[0] ?? 'th'}
                     />
                   </div>
                   

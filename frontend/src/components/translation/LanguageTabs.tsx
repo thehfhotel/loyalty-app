@@ -32,7 +32,7 @@ const LanguageTabs: React.FC<LanguageTabsProps> = ({
   } as const), []);
 
   const getLanguageDisplayName = useCallback((language: SupportedLanguage): string => {
-    return languageNames[language] || language;
+    return languageNames[language] ?? language;
   }, [languageNames]);
 
   // Memoize status indicators for performance
@@ -181,7 +181,7 @@ const StatusLegend: React.FC<StatusLegendProps> = ({ translationStatus }) => {
     const counts: Record<string, number> = {};
     Object.values(translationStatus).forEach(status => {
       if (status) {
-        counts[status] = (counts[status] || 0) + 1;
+        counts[status] = (counts[status] ?? 0) + 1;
       }
     });
     return counts;
@@ -210,7 +210,7 @@ const StatusLegend: React.FC<StatusLegendProps> = ({ translationStatus }) => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {activeStatuses.map((status) => {
           const config = statusConfig[status];
-          const count = statusCounts[status] || 0;
+          const count = statusCounts[status] ?? 0;
           const IconComponent = config.icon;
           
           return (
@@ -255,7 +255,7 @@ const StatusLegend: React.FC<StatusLegendProps> = ({ translationStatus }) => {
                 <div 
                   className="bg-green-500 h-1.5 rounded-full transition-all duration-300"
                   style={{ 
-                    width: `${(statusCounts.translated || 0) / Object.keys(translationStatus).length * 100}%` 
+                    width: `${(statusCounts.translated ?? 0) / Object.keys(translationStatus).length * 100}%` 
                   }}
                   aria-label={`${Math.round((statusCounts.translated || 0) / Object.keys(translationStatus).length * 100)}% complete`}
                 />

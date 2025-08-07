@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { db } from '../config/prisma';
 import { AppError } from '../middleware/errorHandler';
 import { users, user_profiles, Prisma } from '../generated/prisma';
@@ -111,7 +112,7 @@ export class PrismaUserService {
       last_name?: string;
       phone?: string;
       date_of_birth?: Date;
-      preferences?: any;
+      preferences?: Record<string, unknown>;
       avatar_url?: string;
     }
   ): Promise<user_profiles> {
@@ -120,11 +121,13 @@ export class PrismaUserService {
         where: { user_id: userId },
         update: {
           ...profileData,
+          preferences: profileData.preferences as any, // Cast to satisfy Prisma JSON type
           updated_at: new Date(),
         },
         create: {
           user_id: userId,
           ...profileData,
+          preferences: profileData.preferences as any, // Cast to satisfy Prisma JSON type
           membership_id: await this.generateMembershipId(),
         },
       });

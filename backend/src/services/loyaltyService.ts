@@ -262,7 +262,7 @@ export class LoyaltyService {
     limit: number = 50,
     offset: number = 0,
     searchTerm?: string
-  ): Promise<{ users: any[]; total: number }> {
+  ): Promise<{ users: UserLoyaltyStatus[]; total: number }> {
     try {
       let query = `
         SELECT 
@@ -322,6 +322,7 @@ export class LoyaltyService {
   /**
    * Get points earning rules
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async getPointsEarningRules(): Promise<any[]> {
     try {
       const result = await getPool().query(

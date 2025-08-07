@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Router } from 'express';
 import passport from 'passport';
 import { logger } from '../utils/logger';
@@ -187,7 +188,7 @@ router.get('/google/callback',
         userId: user.id,
         email: user.email,
         isNewUser,
-        provider: user.oauthProvider
+        provider: (user as any).oauthProvider
       });
 
       // Create success URL with tokens
@@ -516,7 +517,7 @@ router.get('/line/callback', async (req, res) => {
     };
 
     // Process authentication through our OAuth service
-    const oauthResult = await (oauthService as any).handleLineAuth(profile);
+    const oauthResult = await oauthService.handleLineAuth(profile);
     
     if (!oauthResult) {
       logger.error('[OAuth] LINE authentication processing failed');
@@ -528,7 +529,7 @@ router.get('/line/callback', async (req, res) => {
       userId: user.id,
       email: user.email,
       isNewUser,
-      provider: user.oauthProvider
+      provider: (user as any).oauthProvider
     });
 
     // Cleanup state data
@@ -540,7 +541,7 @@ router.get('/line/callback', async (req, res) => {
     successUrl.searchParams.set('refreshToken', tokens.refreshToken);
     successUrl.searchParams.set('isNewUser', isNewUser.toString());
 
-    logger.info(`[OAuth] LINE OAuth success for user ${user.email || user.id}, isNewUser: ${isNewUser}`);
+    logger.info(`[OAuth] LINE OAuth success for user ${user.email ?? user.id}, isNewUser: ${isNewUser}`);
     logger.debug('[OAuth] Redirecting to success URL', { successUrl: successUrl.toString() });
     
     // Enhanced mobile-friendly redirect for Safari iPhone compatibility

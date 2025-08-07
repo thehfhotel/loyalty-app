@@ -97,7 +97,7 @@ export function formatEmojiAvatar(avatar: string | null | undefined, size: 'sm' 
   };
   
   return {
-    emoji: isEmoji ? actualEmoji! : '👤', // Default user icon
+    emoji: isEmoji && actualEmoji ? actualEmoji : '👤', // Default user icon
     isEmoji: !!isEmoji,
     className: `${sizeClasses[size]} select-none`,
   };

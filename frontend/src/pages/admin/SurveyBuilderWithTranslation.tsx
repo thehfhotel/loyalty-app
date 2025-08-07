@@ -39,7 +39,7 @@ const validateSurveyQuestions = (questions: SurveyQuestion[], t: any): SurveyVal
     if (!hasValidText) {
       emptyQuestions.push({
         id: question.id,
-        text: question.text || '',
+        text: question.text ?? '',
         error: t('surveys.admin.validation.questionTextRequired'),
         questionNumber: index + 1
       });
@@ -54,7 +54,7 @@ const validateSurveyQuestions = (questions: SurveyQuestion[], t: any): SurveyVal
         if (!hasValidOptionText) {
           emptyOptions.push({
             id: `${question.id}_${option.id}`,
-            text: option.text || '',
+            text: option.text ?? '',
             error: `Option ${optIndex + 1} text is required`,
             questionNumber: index + 1
           });
@@ -209,6 +209,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
         access_type: 'public'
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isEditing, location.state]);
 
   useEffect(() => {
@@ -306,10 +307,10 @@ const SurveyBuilderWithTranslation: React.FC = () => {
         // Create a MultilingualSurvey-compatible object from backend response
         const multilingualData: MultilingualSurvey = {
           ...translationsData,
-          originalLanguage: translationsData.original_language || 'th',
-          availableLanguages: translationsData.available_languages || ['th'],
+          originalLanguage: translationsData.original_language ?? 'th',
+          availableLanguages: translationsData.available_languages ?? ['th'],
           translationStatus: 'none',
-          translations: translationsData.translations || {}
+          translations: translationsData.translations ?? {}
         };
         
         setMultilingualSurvey(multilingualData);
@@ -331,7 +332,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
         }
         
         setTranslationStatus(newStatus);
-        setSelectedLanguage(translationsData.original_language || 'th');
+        setSelectedLanguage(translationsData.original_language ?? 'th');
       }
     } catch (err: any) {
       console.error('Error loading survey:', err);
@@ -391,7 +392,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
                 });
                 setTranslationStatus(errorStatus);
                 
-                toast.error(`Translation failed for some languages: ${jobStatus.error || 'Unknown error'}`, {
+                toast.error(`Translation failed for some languages: ${jobStatus.error ?? 'Unknown error'}`, {
                   duration: 7000,
                   icon: '❌'
                 });
@@ -515,7 +516,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
             });
             setTranslationStatus(errorStatus);
             
-            toast.error(`Translation failed: ${jobStatus.error || 'Unknown error'}`, {
+            toast.error(`Translation failed: ${jobStatus.error ?? 'Unknown error'}`, {
               duration: 7000,
               icon: '❌'
             });
@@ -551,7 +552,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
       type,
       text: '',
       required: true,
-      order: (survey.questions?.length || 0) + 1,
+      order: (survey.questions?.length ?? 0) + 1,
       ...(type === 'multiple_choice' || type === 'single_choice' ? {
         options: [
           { id: surveyService.generateOptionId(), text: t('surveys.admin.questions.defaultOptions.option1'), value: '1' },
@@ -564,7 +565,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
 
     setSurvey(prev => ({
       ...prev,
-      questions: [...(prev.questions || []), newQuestion]
+      questions: [...(prev.questions ?? []), newQuestion]
     }));
   };
 
@@ -573,19 +574,19 @@ const SurveyBuilderWithTranslation: React.FC = () => {
       ...prev,
       questions: prev.questions?.map(q => 
         q.id === questionId ? { ...q, ...updates } : q
-      ) || []
+      ) ?? []
     }));
   };
 
   const removeQuestion = (questionId: string) => {
     setSurvey(prev => ({
       ...prev,
-      questions: prev.questions?.filter(q => q.id !== questionId) || []
+      questions: prev.questions?.filter(q => q.id !== questionId) ?? []
     }));
   };
 
   const reorderQuestions = (fromIndex: number, toIndex: number) => {
-    const questions = [...(survey.questions || [])];
+    const questions = [...(survey.questions ?? [])];
     const [removed] = questions.splice(fromIndex, 1);
     questions.splice(toIndex, 0, removed);
     
@@ -619,8 +620,8 @@ const SurveyBuilderWithTranslation: React.FC = () => {
         description: survey.description,
         questions: survey.questions,
         target_segment: survey.target_segment,
-        access_type: survey.access_type || 'public' as SurveyAccessType,
-        status: (status || survey.status) as SurveyStatus,
+        access_type: survey.access_type ?? 'public' as SurveyAccessType,
+        status: (status ?? survey.status) as SurveyStatus,
         original_language: selectedLanguage,
         available_languages: [selectedLanguage]
       };
@@ -628,7 +629,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
       let surveyId = id;
       
       if (isEditing && id) {
-        await surveyService.updateSurvey(id, { ...surveyData, status: (status || survey.status) as SurveyStatus });
+        await surveyService.updateSurvey(id, { ...surveyData, status: (status ?? survey.status) as SurveyStatus });
         toast.success(t('surveys.admin.messages.updateSuccess'));
       } else {
         const newSurvey = await surveyService.createSurvey(surveyData);
@@ -638,7 +639,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
       }
 
       // Auto-translate when publishing (status = 'active')
-      if ((status || survey.status) === 'active' && surveyId) {
+      if ((status ?? survey.status) === 'active' && surveyId) {
         try {
           setIsTranslating(true);
           const targetLanguages: SupportedLanguage[] = (['en', 'zh-CN'] as SupportedLanguage[]).filter(lang => lang !== selectedLanguage);
@@ -668,12 +669,12 @@ const SurveyBuilderWithTranslation: React.FC = () => {
       }
     } catch (err: any) {
       const isValidationError = err.response?.status === 400;
-      const errorMessage = err.response?.data?.message || err.message || 'Failed to save survey';
+      const errorMessage = err.response?.data?.message ?? err.message ?? 'Failed to save survey';
       
       if (isValidationError) {
-        const backendErrors = err.response?.data?.validationErrors || [];
+        const backendErrors = err.response?.data?.validationErrors ?? [];
         if (backendErrors.length > 0) {
-          const fieldErrors = backendErrors.map((error: any) => error.message || error.field).join(', ');
+          const fieldErrors = backendErrors.map((error: any) => error.message ?? error.field).join(', ');
           toast.error(t('surveys.admin.messages.validationFailed', { errors: fieldErrors }), {
             duration: 6000,
             icon: '⚠️'
@@ -710,9 +711,9 @@ const SurveyBuilderWithTranslation: React.FC = () => {
 
     return {
       ...survey,
-      title: translation.title || survey.title,
-      description: translation.description || survey.description,
-      questions: translation.questions || survey.questions
+      title: (translation as any)?.title ?? survey.title,
+      description: (translation as any)?.description ?? survey.description,
+      questions: (translation as any)?.questions ?? survey.questions
     };
   };
 
@@ -821,7 +822,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
                   <input
                     type="text"
                     id="title"
-                    value={displayContent.title || ''}
+                    value={displayContent.title ?? ''}
                     onChange={(e) => handleSurveyChange('title', e.target.value)}
                     disabled={isEditing && selectedLanguage !== multilingualSurvey?.originalLanguage}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-100"
@@ -836,7 +837,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
                   <textarea
                     id="description"
                     rows={3}
-                    value={displayContent.description || ''}
+                    value={displayContent.description ?? ''}
                     onChange={(e) => handleSurveyChange('description', e.target.value)}
                     disabled={isEditing && selectedLanguage !== multilingualSurvey?.originalLanguage}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:bg-gray-100"
@@ -850,7 +851,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
                   </label>
                   <select
                     id="status"
-                    value={survey.status || 'draft'}
+                    value={survey.status ?? 'draft'}
                     onChange={(e) => handleSurveyChange('status', e.target.value)}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   >
@@ -868,7 +869,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
                   </label>
                   <select
                     id="access_type"
-                    value={survey.access_type || 'public'}
+                    value={survey.access_type ?? 'public'}
                     onChange={(e) => handleSurveyChange('access_type', e.target.value)}
                     className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   >
@@ -891,7 +892,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
                 <h2 className="text-lg font-medium text-gray-900">{t('surveys.admin.questions.title')}</h2>
                 <div className="flex items-center space-x-2">
                   <span className="text-sm text-gray-500">
-                    {t('surveys.admin.questions.count', { count: displayContent.questions?.length || 0 })}
+                    {t('surveys.admin.questions.count', { count: displayContent.questions?.length ?? 0 })}
                   </span>
                 </div>
               </div>
@@ -906,7 +907,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
                     onUpdate={(updates) => updateQuestion(question.id, updates)}
                     onRemove={() => removeQuestion(question.id)}
                     onReorder={reorderQuestions}
-                    canMove={displayContent.questions!.length > 1}
+                    canMove={(displayContent.questions?.length || 0) > 1}
                     disabled={isEditing && selectedLanguage !== multilingualSurvey?.originalLanguage}
                   />
                 ))}

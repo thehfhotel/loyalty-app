@@ -31,7 +31,7 @@ const TranslationButton: React.FC<TranslationButtonProps> = ({
       'en': 'English',
       'zh-CN': '中文'
     };
-    return names[language] || language;
+    return names[language] ?? language;
   };
 
   const handleStartTranslation = () => {

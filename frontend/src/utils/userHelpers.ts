@@ -59,7 +59,7 @@ export function getUserDisplayName(user: User | null): string {
  */
 export function getUserAvatarUrl(user: User | null): string | null {
   if (!user) {return null;}
-  return user.avatarUrl || null;
+  return user.avatarUrl ?? null;
 }
 
 /**

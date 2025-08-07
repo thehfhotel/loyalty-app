@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Survey, SurveyResponse } from '../../types/survey';
@@ -34,7 +34,7 @@ const TakeSurvey: React.FC = () => {
   const [isCompleted, setIsCompleted] = useState(false);
 
   // Get display content based on selected language
-  const getDisplayContent = () => {
+  const getDisplayContent = useCallback(() => {
     if (!multilingualSurvey || selectedLanguage === multilingualSurvey.originalLanguage) {
       return survey;
     }
@@ -51,38 +51,13 @@ const TakeSurvey: React.FC = () => {
 
     return {
       ...survey,
-      title: translation.title || survey?.title,
-      description: translation.description || survey?.description,
-      questions: translation.questions || survey?.questions
+      title: (translation as any)?.title ?? survey?.title,
+      description: (translation as any)?.description ?? survey?.description,
+      questions: (translation as any)?.questions ?? survey?.questions
     };
-  };
+  }, [multilingualSurvey, selectedLanguage, survey]);
 
-  useEffect(() => {
-    if (id) {
-      loadSurvey(id);
-    }
-  }, [id]);
-
-  // Track language changes
-  useEffect(() => {
-    // Language change effect - can add analytics tracking here if needed
-  }, [selectedLanguage, multilingualSurvey]);
-
-  // Get display content based on selected language (moved here to fix hooks order)
-  const displayContent = useMemo(() => getDisplayContent(), [multilingualSurvey, selectedLanguage, survey]);
-
-  // Auto-save every 30 seconds
-  useEffect(() => {
-    if (survey && Object.keys(answers).length > 0) {
-      const interval = setInterval(() => {
-        saveProgress();
-      }, 30000);
-
-      return () => clearInterval(interval);
-    }
-  }, [survey, answers]);
-
-  const loadSurvey = async (surveyId: string) => {
+  const loadSurvey = useCallback(async (surveyId: string) => {
     try {
       setLoading(true);
       setError(null);
@@ -100,10 +75,10 @@ const TakeSurvey: React.FC = () => {
       if (translationsData) {
         const multilingualData: MultilingualSurvey = {
           ...translationsData,
-          originalLanguage: translationsData.original_language || 'th',
-          availableLanguages: translationsData.available_languages || ['th'],
+          originalLanguage: translationsData.original_language ?? 'th',
+          availableLanguages: translationsData.available_languages ?? ['th'],
           translationStatus: 'none',
-          translations: translationsData.translations || {}
+          translations: translationsData.translations ?? {}
         };
         
         setMultilingualSurvey(multilingualData);
@@ -124,7 +99,7 @@ const TakeSurvey: React.FC = () => {
         }
         
         setTranslationStatus(newStatus);
-        setSelectedLanguage(translationsData.original_language || 'th');
+        setSelectedLanguage(translationsData.original_language ?? 'th');
       }
 
       if (responseData) {
@@ -135,13 +110,13 @@ const TakeSurvey: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Error loading survey:', err);
-      setError(err.response?.data?.message || t('surveys.errors.loadFailed'));
+      setError(err.response?.data?.message ?? t('surveys.errors.loadFailed'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [t]);
 
-  const saveProgress = async (isCompletingNow = false) => {
+  const saveProgress = useCallback(async (isCompletingNow = false) => {
     if (!survey || !id) {return;}
 
     try {
@@ -158,15 +133,40 @@ const TakeSurvey: React.FC = () => {
       if (isComplete && isCompletingNow) {
         setIsCompleted(true);
         const displayContent = getDisplayContent();
-        setCurrentQuestion(displayContent?.questions?.length || 0);
+        setCurrentQuestion(displayContent?.questions?.length ?? 0);
       }
     } catch (err: any) {
       console.error('Error saving progress:', err);
-      setError(err.response?.data?.message || t('surveys.errors.saveFailed'));
+      setError(err.response?.data?.message ?? t('surveys.errors.saveFailed'));
     } finally {
       setSaving(false);
     }
-  };
+  }, [survey, id, answers, getDisplayContent, t]);
+
+  useEffect(() => {
+    if (id) {
+      loadSurvey(id);
+    }
+  }, [id, loadSurvey]);
+
+  // Track language changes
+  useEffect(() => {
+    // Language change effect - can add analytics tracking here if needed
+  }, [selectedLanguage, multilingualSurvey]);
+
+  // Get display content based on selected language (moved here to fix hooks order)
+  const displayContent = useMemo(() => getDisplayContent(), [getDisplayContent]);
+
+  // Auto-save every 30 seconds
+  useEffect(() => {
+    if (survey && Object.keys(answers).length > 0) {
+      const interval = setInterval(() => {
+        saveProgress();
+      }, 30000);
+
+      return () => clearInterval(interval);
+    }
+  }, [survey, answers, saveProgress]);
 
   const handleAnswerChange = (questionId: string, answer: any) => {
     setAnswers(prev => ({
@@ -186,7 +186,7 @@ const TakeSurvey: React.FC = () => {
 
   const validateCurrentQuestion = (): boolean => {
     const displayContent = getDisplayContent();
-    if (!displayContent || currentQuestion >= (displayContent.questions?.length || 0)) {return true;}
+    if (!displayContent || currentQuestion >= (displayContent.questions?.length ?? 0)) {return true;}
 
     const question = displayContent.questions?.[currentQuestion];
     if (!question) {return true;}
@@ -209,7 +209,7 @@ const TakeSurvey: React.FC = () => {
     if (!validateCurrentQuestion()) {return;}
 
     const displayContent = getDisplayContent();
-    if (displayContent && currentQuestion < (displayContent.questions?.length || 0) - 1) {
+    if (displayContent && currentQuestion < (displayContent.questions?.length ?? 0) - 1) {
       setCurrentQuestion(prev => prev + 1);
       saveProgress();
     } else {
@@ -280,9 +280,9 @@ const TakeSurvey: React.FC = () => {
     );
   }
 
-  const progress = surveyService.calculateProgress(answers, displayContent?.questions?.length || 0);
-  const isLastQuestion = currentQuestion >= (displayContent?.questions?.length || 0) - 1;
-  const isCompletionPage = currentQuestion >= (displayContent?.questions?.length || 0);
+  const progress = surveyService.calculateProgress(answers, displayContent?.questions?.length ?? 0);
+  const isLastQuestion = currentQuestion >= (displayContent?.questions?.length ?? 0) - 1;
+  const isCompletionPage = currentQuestion >= (displayContent?.questions?.length ?? 0);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -329,7 +329,7 @@ const TakeSurvey: React.FC = () => {
           <>
             <SurveyProgress
               current={currentQuestion + 1}
-              total={displayContent?.questions?.length || 0}
+              total={displayContent?.questions?.length ?? 0}
               progress={progress}
             />
 

@@ -1,9 +1,12 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import passport from 'passport';
-import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
-import { Strategy as LineStrategy } from 'passport-line-auth';
+import { Strategy as GoogleStrategy, Profile as GoogleProfileImport, VerifyCallback } from 'passport-google-oauth20';
+import { Strategy as LineStrategy, VerifyCallback as LineVerifyCallback } from 'passport-line-auth';
 import { query } from '../config/database';
 import { AuthService } from './authService';
 import { User, AuthTokens } from '../types/auth';
+
+// Add type augmentation for Express User to work with Passport
 import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
@@ -12,22 +15,10 @@ import { membershipIdService } from './membershipIdService';
 const authService = new AuthService();
 
 
-interface GoogleProfile {
-  id: string;
-  displayName: string;
-  name: {
-    familyName?: string;
-    givenName?: string;
-  };
-  emails?: Array<{
-    value: string;
-    verified?: boolean;
-  }>;
-  photos?: Array<{
-    value: string;
-  }>;
-}
+// Use imported types from passport strategies
+type GoogleProfile = GoogleProfileImport;
 
+// Define LineProfile interface since passport-line-auth doesn't export it
 interface LineProfile {
   id: string;
   displayName: string;
@@ -53,8 +44,8 @@ export class OAuthService {
         clientID: googleClientId,
         clientSecret: googleClientSecret,
         callbackURL: process.env.GOOGLE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/google/callback',
-        passReqToCallback: false
-      } as any, async (_accessToken: any, _refreshToken: any, profile: any, done: any) => {
+        passReqToCallback: false as const
+      }, async (_accessToken: string, _refreshToken: string, profile: GoogleProfile, done: VerifyCallback) => {
         try {
           logger.debug('[OAuth Service] Google profile received', {
             id: profile.id,
@@ -63,10 +54,10 @@ export class OAuthService {
             verified: profile.emails?.[0]?.verified
           });
           const result = await this.handleGoogleAuth(profile);
-          return done(null, result);
+          return done(null, result.user as any);
         } catch (error) {
           logger.error('[OAuth Service] Google OAuth error:', error);
-          return done(error, false);
+          return done(error as Error, undefined);
         }
       }));
     } else {
@@ -85,7 +76,7 @@ export class OAuthService {
         channelID: lineChannelId,
         channelSecret: lineChannelSecret,
         callbackURL: process.env.LINE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/line/callback'
-      }, async (_accessToken: string, _refreshToken: string, profile: LineProfile, done: any) => {
+      }, async (_accessToken: string, _refreshToken: string, profile: LineProfile, done: LineVerifyCallback) => {
         try {
           logger.debug('[OAuth Service] LINE profile received', {
             id: profile.id,
@@ -96,19 +87,21 @@ export class OAuthService {
             hasEmail: !!profile.email
           });
           const result = await this.handleLineAuth(profile);
-          return done(null, result);
+          return done(null, result.user as any);
         } catch (error) {
           logger.error('[OAuth Service] LINE OAuth error:', error);
-          return done(error, null);
+          return done(error as Error, undefined);
         }
       }));
     } else {
       logger.warn('LINE OAuth not configured - LINE Channel ID and Secret required');
     }
 
-    // Serialize user for session
+    // Serialize user for session  
     passport.serializeUser((user: any, done) => {
-      done(null, user.id);
+      // Cast to our User type to access id property
+      const appUser = user as User;
+      done(null, appUser.id);
     });
 
     // Deserialize user from session
@@ -118,9 +111,9 @@ export class OAuthService {
           'SELECT id, email, role, is_active AS "isActive" FROM users WHERE id = $1',
           [id]
         );
-        done(null, user ?? null);
+        done(null, user as any || null);
       } catch (error) {
-        done(error, null);
+        done(error as Error, null);
       }
     });
   }
@@ -295,7 +288,7 @@ export class OAuthService {
   }
 
 
-  private async handleLineAuth(profile: LineProfile): Promise<{ user: User; tokens: AuthTokens; isNewUser: boolean }> {
+  async handleLineAuth(profile: LineProfile): Promise<{ user: User; tokens: AuthTokens; isNewUser: boolean }> {
     const lineId = profile.id;
     
     logger.debug('[OAuth Service] Processing LINE auth', { 

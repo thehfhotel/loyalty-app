@@ -10,6 +10,7 @@ import { logger } from '../utils/logger';
 
 // Middleware to check if user is admin
 const requireAdmin = (req: Request, res: Response, next: NextFunction): void => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const authReq = req as any; // Type assertion for user property
   if (!authReq.user || !['admin', 'super_admin'].includes(authReq.user.role)) {
     res.status(403).json({ error: 'Admin access required' });

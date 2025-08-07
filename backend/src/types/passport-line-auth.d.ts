@@ -1,5 +1,11 @@
 declare module 'passport-line-auth' {
   import { Strategy as PassportStrategy } from 'passport';
+  import { Request } from 'express';
+
+  interface User {
+    id: string;
+    [key: string]: unknown;
+  }
   
   interface LineProfile {
     id: string;
@@ -9,7 +15,7 @@ declare module 'passport-line-auth' {
     statusMessage?: string;
     provider: 'line';
     _raw: string;
-    _json: any;
+    _json: Record<string, unknown>;
   }
   
   interface StrategyOptions {
@@ -20,13 +26,23 @@ declare module 'passport-line-auth' {
     state?: boolean;
   }
   
+  interface AuthenticateOptions {
+    [key: string]: unknown;
+  }
+
+  interface VerifyCallback {
+    (error?: Error | null, user?: User, info?: unknown): void;
+  }
+
   interface VerifyFunction {
-    (accessToken: string, refreshToken: string, profile: LineProfile, done: any): void;
+    (accessToken: string, refreshToken: string, profile: LineProfile, done: VerifyCallback): void;
   }
   
   export class Strategy extends PassportStrategy {
     constructor(options: StrategyOptions, verify: VerifyFunction);
     name: string;
-    authenticate(req: any, options?: any): void;
+    authenticate(req: Request, options?: AuthenticateOptions): void;
   }
+
+  export { LineProfile, VerifyCallback };
 }

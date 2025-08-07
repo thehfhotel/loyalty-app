@@ -52,7 +52,7 @@ export interface SurveyResponse {
   id: string;
   survey_id: string;
   user_id: string;
-  answers: Record<string, any>;
+  answers: Record<string, unknown>;
   is_completed: boolean;
   progress: number;
   started_at: string;
@@ -96,7 +96,7 @@ export interface UpdateSurveyRequest extends Partial<CreateSurveyRequest> {
 
 export interface SubmitResponseRequest {
   survey_id: string;
-  answers: Record<string, any>;
+  answers: Record<string, unknown>;
   is_completed?: boolean;
 }
 
@@ -184,7 +184,7 @@ export interface SurveyRewardHistory {
   user_id: string;
   awarded_at: string;
   award_condition_met: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   created_at: string;
   // Additional display fields
   user_email?: string;

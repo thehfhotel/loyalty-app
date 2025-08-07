@@ -62,7 +62,7 @@ const ThaiSurveyDebug: React.FC = () => {
       
       console.log('Description:', {
         text: surveyData.description,
-        length: surveyData.description?.length || 0,
+        length: surveyData.description?.length ?? 0,
         bytes: surveyData.description ? new TextEncoder().encode(surveyData.description).length : 0
       });
 
@@ -90,7 +90,7 @@ const ThaiSurveyDebug: React.FC = () => {
       console.error('❌ THAI SURVEY CREATION ERROR:', error);
       setLastError(error);
       
-      const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+      const errorMessage = error.response?.data?.message ?? error.message ?? 'Unknown error';
       toast.error(`Failed to create survey: ${errorMessage}`);
     } finally {
       setIsCreating(false);
@@ -162,7 +162,7 @@ const ThaiSurveyDebug: React.FC = () => {
                   rows={3}
                 />
                 <div className="mt-2 text-xs text-gray-600">
-                  <div>Length: {surveyData.description?.length || 0} chars</div>
+                  <div>Length: {surveyData.description?.length ?? 0} chars</div>
                   <div>Bytes: {surveyData.description ? new TextEncoder().encode(surveyData.description).length : 0}</div>
                 </div>
               </div>
@@ -200,8 +200,10 @@ const ThaiSurveyDebug: React.FC = () => {
                       value={option.text}
                       onChange={(e) => {
                         const updated = {...surveyData};
-                        updated.questions[0].options![index].text = e.target.value;
-                        setSurveyData(updated);
+                        if (updated.questions[0].options?.[index]) {
+                          updated.questions[0].options[index].text = e.target.value;
+                          setSurveyData(updated);
+                        }
                       }}
                       className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                       placeholder={`Option ${index + 1}`}
@@ -248,7 +250,7 @@ const ThaiSurveyDebug: React.FC = () => {
                 </div>
                 
                 <div className="mb-4">
-                  <strong>Message:</strong> {lastError.response?.data?.message || lastError.message}
+                  <strong>Message:</strong> {lastError.response?.data?.message ?? lastError.message}
                 </div>
 
                 {lastError.response?.data?.validationErrors && (
@@ -272,7 +274,7 @@ const ThaiSurveyDebug: React.FC = () => {
                 <div>
                   <strong>Full Error:</strong>
                   <pre className="text-xs mt-2 bg-white p-2 rounded border overflow-auto max-h-60">
-                    {JSON.stringify(lastError.response?.data || lastError, null, 2)}
+                    {JSON.stringify(lastError.response?.data ?? lastError, null, 2)}
                   </pre>
                 </div>
               </div>

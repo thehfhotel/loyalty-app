@@ -95,7 +95,7 @@ export default function TransactionList({
       'admin_award': t('loyalty.transactionTypes.adminAward'),
       'admin_deduction': t('loyalty.transactionTypes.adminDeduction'),
     };
-    return typeMap[type] || type;
+    return typeMap[type] ?? type;
   };
 
   const formatDate = (dateString: string) => {

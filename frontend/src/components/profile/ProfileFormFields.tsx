@@ -4,9 +4,20 @@ import { FiUser, FiBriefcase, FiHeart, FiCalendar } from 'react-icons/fi';
 import { UseFormRegister, FieldErrors } from 'react-hook-form';
 import { getInterestOptions } from '../../utils/interestUtils';
 
+interface ProfileFormData {
+  firstName: string;
+  lastName?: string;
+  phone?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  occupation?: string;
+  interests?: string;
+  email?: string;
+}
+
 interface ProfileFormFieldsProps {
-  register: UseFormRegister<any>;
-  errors: FieldErrors<any>;
+  register: UseFormRegister<ProfileFormData>;
+  errors: FieldErrors<ProfileFormData>;
   showRequiredAsterisk?: boolean;
   isModal?: boolean;
 }
@@ -175,14 +186,14 @@ export function InterestsField({ register, errors, showRequiredAsterisk = false,
   // Initialize selected interests from existing value
   React.useEffect(() => {
     const hiddenInput = document.getElementById(fieldId) as HTMLInputElement;
-    if (hiddenInput && hiddenInput.value) {
+    if (hiddenInput?.value) {
       const existing = hiddenInput.value.split(', ').filter(i => i.trim());
       setSelectedInterests(existing);
     } else {
       // Clear selections if no value
       setSelectedInterests([]);
     }
-  }, []);
+  }, [fieldId]);
   
   // Watch for external value changes (form reset)
   React.useEffect(() => {
@@ -206,7 +217,7 @@ export function InterestsField({ register, errors, showRequiredAsterisk = false,
         hiddenInput.removeEventListener('change', handleValueChange);
       };
     }
-  }, [register]);
+  }, [fieldId, register]);
 
   return (
     <div>

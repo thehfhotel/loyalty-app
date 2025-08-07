@@ -16,7 +16,7 @@ import type {
   CouponStatus
 } from '../types/coupon';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api';
 
 // Create axios instance with auth interceptor
 const api = axios.create({
@@ -298,7 +298,7 @@ export class CouponService {
   }
 
   getExpiryDate(coupon: UserActiveCoupon): Date | null {
-    const expiryDate = coupon.effectiveExpiry || coupon.expiresAt;
+    const expiryDate = coupon.effectiveExpiry ?? coupon.expiresAt;
     return expiryDate ? new Date(expiryDate) : null;
   }
 

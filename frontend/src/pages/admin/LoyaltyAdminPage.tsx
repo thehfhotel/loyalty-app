@@ -67,6 +67,7 @@ export default function LoyaltyAdminPage() {
 
   useEffect(() => {
     loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, searchTerm]);
 
   const loadUsers = async () => {
@@ -75,7 +76,7 @@ export default function LoyaltyAdminPage() {
       const result = await loyaltyService.getAllUsersLoyaltyStatus(
         pageSize,
         currentPage * pageSize,
-        searchTerm || undefined
+        searchTerm ?? undefined
       );
       setUsers(result.users);
       setTotalUsers(result.total);
@@ -125,15 +126,15 @@ export default function LoyaltyAdminPage() {
         await loyaltyService.awardPoints(
           pointsModal.user.user_id,
           points,
-          pointsForm.description || undefined,
-          pointsForm.referenceId || undefined
+          pointsForm.description ?? undefined,
+          pointsForm.referenceId ?? undefined
         );
         toast.success(t('admin.loyalty.success.pointsAwarded', { points }));
       } else {
         await loyaltyService.deductPoints(
           pointsModal.user.user_id,
           points,
-          pointsForm.description || `Points deducted by admin`
+          pointsForm.description ?? `Points deducted by admin`
         );
         toast.success(t('admin.loyalty.success.pointsDeducted', { points }));
       }
@@ -225,7 +226,7 @@ export default function LoyaltyAdminPage() {
     try {
       setIsLoadingAction(true);
       const spendingAmount = parseFloat(spendingForm.spendingAmount);
-      const nightsStayed = parseInt(spendingForm.nightsStayed) || 0;
+      const nightsStayed = parseInt(spendingForm.nightsStayed) ?? 0;
       const pointsToAward = calculatePoints(spendingAmount);
       
       let description = `Spending points: ${spendingAmount} THB`;
@@ -435,7 +436,7 @@ export default function LoyaltyAdminPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-gray-900 font-mono">
-                              {user.membership_id || '-'}
+                              {user.membership_id ?? '-'}
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -539,7 +540,7 @@ export default function LoyaltyAdminPage() {
                   
                   <div>
                     <div className="text-xs text-gray-500">{t('profile.membershipId')}</div>
-                    <div className="text-sm font-mono text-gray-900">{selectedUser.membership_id || t('admin.coupons.notAssigned')}</div>
+                    <div className="text-sm font-mono text-gray-900">{selectedUser.membership_id ?? t('admin.coupons.notAssigned')}</div>
                   </div>
                   
                   <div>
@@ -749,7 +750,7 @@ export default function LoyaltyAdminPage() {
                           {user.oauth_provider === 'line' && user.first_name ? 'LINE User' : user.email}
                         </div>
                         <div className="text-xs text-gray-400">
-                          {user.tier_name} • {user.current_points} points • {t('profile.membershipId')}: {user.membership_id || 'N/A'}
+                          {user.tier_name} • {user.current_points} points • {t('profile.membershipId')}: {user.membership_id ?? 'N/A'}
                         </div>
                       </button>
                     ))}
@@ -805,7 +806,7 @@ export default function LoyaltyAdminPage() {
                 />
                 {spendingForm.spendingAmount && (
                   <div className="mt-1 text-sm text-green-600">
-                    Points to award: {calculatePoints(parseFloat(spendingForm.spendingAmount) || 0)}
+                    Points to award: {calculatePoints(parseFloat(spendingForm.spendingAmount) ?? 0)}
                   </div>
                 )}
               </div>

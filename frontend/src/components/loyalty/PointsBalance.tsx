@@ -50,7 +50,7 @@ export default function PointsBalance({
           {t('loyalty.tierBenefits')}
         </div>
         <div className="text-sm text-gray-600">
-          {loyaltyStatus.tier_benefits?.description || t('loyalty.noDescription')}
+          {loyaltyStatus.tier_benefits?.description ?? t('loyalty.noDescription')}
         </div>
         {loyaltyStatus.tier_benefits?.perks && loyaltyStatus.tier_benefits.perks.length > 0 && (
           <div className="mt-2">

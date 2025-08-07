@@ -97,9 +97,9 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
       } else {
         // If no token is available and this isn't a public endpoint,
         // we should probably redirect to login immediately
-        const isPublicEndpoint = config.url?.includes('/auth/') || 
-                                config.url?.includes('/register') ||
-                                config.url?.includes('/forgot-password');
+        const isPublicEndpoint = (config.url?.includes('/auth/') ?? false) ||
+                                (config.url?.includes('/register') ?? false) ||
+                                (config.url?.includes('/forgot-password') ?? false);
         
         if (!isPublicEndpoint) {
           console.warn('No auth token available for protected endpoint:', config.url);

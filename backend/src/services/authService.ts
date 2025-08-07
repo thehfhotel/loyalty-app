@@ -289,6 +289,7 @@ export class AuthService {
     await this.logUserAction(resetToken.userId, 'password_reset_complete');
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async generateTokens(user: User, client?: any, rememberMe: boolean = false): Promise<AuthTokens> {
     const payload: JWTPayload = {
       id: user.id,
@@ -327,10 +328,12 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async logUserAction(
     userId: string,
     action: string,
-    details: Record<string, any> = {},
+    details: Record<string, unknown> = {},
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     client?: any
   ): Promise<void> {
     if (client) {

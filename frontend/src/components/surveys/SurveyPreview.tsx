@@ -4,6 +4,9 @@ import { Survey } from '../../types/survey';
 import QuestionRenderer from './QuestionRenderer';
 import SurveyProgress from './SurveyProgress';
 
+// Survey answer can be string, number, boolean, array of strings, or null
+type SurveyAnswer = string | number | boolean | string[] | null;
+
 interface SurveyPreviewProps {
   survey: Survey;
   onClose: () => void;
@@ -11,9 +14,9 @@ interface SurveyPreviewProps {
 
 const SurveyPreview: React.FC<SurveyPreviewProps> = ({ survey, onClose }) => {
   const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [answers, setAnswers] = useState<Record<string, SurveyAnswer>>({});
 
-  const handleAnswerChange = (questionId: string, answer: any) => {
+  const handleAnswerChange = (questionId: string, answer: SurveyAnswer) => {
     setAnswers(prev => ({
       ...prev,
       [questionId]: answer

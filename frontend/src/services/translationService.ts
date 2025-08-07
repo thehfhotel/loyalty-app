@@ -8,7 +8,7 @@ import {
   TranslationJob 
 } from '../types/multilingual';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4001/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4001/api';
 
 // Create axios instance with auth interceptor
 const api = axios.create({
@@ -26,8 +26,8 @@ class TranslationService {
     this.config = {
       provider: 'azure',
       apiKey: import.meta.env.VITE_AZURE_TRANSLATION_KEY_1,
-      endpoint: import.meta.env.VITE_AZURE_TRANSLATION_TEXT_URI || 'https://api.cognitive.microsofttranslator.com',
-      region: import.meta.env.VITE_AZURE_TRANSLATION_REGION || 'global'
+      endpoint: import.meta.env.VITE_AZURE_TRANSLATION_TEXT_URI ?? 'https://api.cognitive.microsofttranslator.com',
+      region: import.meta.env.VITE_AZURE_TRANSLATION_REGION ?? 'global'
     };
   }
 
@@ -66,7 +66,7 @@ class TranslationService {
 
     const result: { [language: string]: string } = {};
     for (const [language, translations] of Object.entries(response.translations)) {
-      result[language] = translations[0] || text;
+      result[language] = translations[0] ?? text;
     }
     
     return result;
@@ -142,7 +142,7 @@ class TranslationService {
   async getTranslationJobs(): Promise<TranslationJob[]> {
     try {
       const response = await api.get('/translation/jobs');
-      return response.data.jobs || [];
+      return response.data.jobs ?? [];
     } catch (error) {
       console.error('Translation jobs error:', error);
       throw error;
@@ -198,7 +198,7 @@ class TranslationService {
    * Check if translation service is configured
    */
   isConfigured(): boolean {
-    return !!(this.config.apiKey || this.config.endpoint);
+    return !!(this.config.apiKey ?? this.config.endpoint);
   }
 
   /**
@@ -217,7 +217,7 @@ class TranslationService {
       'en': 'English',
       'zh-CN': '中文'
     };
-    return names[language] || language;
+    return names[language] ?? language;
   }
 
   /**

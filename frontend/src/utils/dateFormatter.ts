@@ -4,7 +4,7 @@
  */
 
 export const formatDateToDDMMYYYY = (date: Date | string | null | undefined): string | null => {
-  if (!date) return null;
+  if (!date) {return null;}
   
   try {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
@@ -27,7 +27,7 @@ export const formatDateToDDMMYYYY = (date: Date | string | null | undefined): st
 };
 
 export const formatDateTimeToEuropean = (date: Date | string | null | undefined): string | null => {
-  if (!date) return null;
+  if (!date) {return null;}
   
   try {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
@@ -61,7 +61,7 @@ export const formatExpiryDateWithRelative = (
   date: Date | string | null | undefined,
   t: (key: string, options?: any) => string
 ): string | null => {
-  if (!date) return null;
+  if (!date) {return null;}
   
   try {
     const expiryDate = typeof date === 'string' ? new Date(date) : date;
@@ -75,10 +75,10 @@ export const formatExpiryDateWithRelative = (
     const timeDiff = expiryDate.getTime() - now.getTime();
     const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
 
-    if (daysDiff < 0) return t('coupons.expired');
-    if (daysDiff === 0) return t('coupons.expiresToday');
-    if (daysDiff === 1) return t('coupons.expiresTomorrow');
-    if (daysDiff <= 7) return t('coupons.expiresInDays', { count: daysDiff });
+    if (daysDiff < 0) {return t('coupons.expired');}
+    if (daysDiff === 0) {return t('coupons.expiresToday');}
+    if (daysDiff === 1) {return t('coupons.expiresTomorrow');}
+    if (daysDiff <= 7) {return t('coupons.expiresInDays', { count: daysDiff });}
 
     // For dates more than 7 days away, use dd/mm/yyyy format
     return formatDateToDDMMYYYY(expiryDate);

@@ -70,14 +70,21 @@ const SurveyAnalytics: React.FC = () => {
     if (id) {
       loadAnalytics();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const loadAnalytics = async () => {
+    if (!id) {
+      setError('Survey ID is required');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
       
-      const analyticsData = await surveyService.getSurveyAnalytics(id!);
+      const analyticsData = await surveyService.getSurveyAnalytics(id);
       setAnalytics(analyticsData);
     } catch (err: any) {
       console.error('Error loading analytics:', err);
@@ -89,8 +96,13 @@ const SurveyAnalytics: React.FC = () => {
   };
 
   const handleExportAnalytics = async () => {
+    if (!id) {
+      toast.error('Survey ID is required for export');
+      return;
+    }
+
     try {
-      const blob = await surveyService.exportSurveyResponses(id!);
+      const blob = await surveyService.exportSurveyResponses(id);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -178,12 +190,13 @@ const SurveyAnalytics: React.FC = () => {
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
   if (error || !analytics) {
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-7xl mx-auto p-4">
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
-            <p>{error || 'Survey not found'}</p>
+            <p>{error ?? 'Survey not found'}</p>
             <Link to="/admin/surveys" className="text-red-800 underline mt-2 inline-block">
               Back to Surveys
             </Link>
@@ -335,7 +348,7 @@ const SurveyAnalytics: React.FC = () => {
                       <div className="text-center">
                         <p className="text-gray-500 text-sm">Average Rating</p>
                         <p className="text-5xl font-bold text-blue-600">
-                          {question.averageRating?.toFixed(1) || '0'}
+                          {question.averageRating?.toFixed(1) ?? '0'}
                         </p>
                         <p className="text-gray-500 text-sm">
                           out of {question.type === 'rating_5' ? '5' : '10'}

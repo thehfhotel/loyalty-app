@@ -14,6 +14,14 @@ interface User {
   oauthProviderId?: string;
 }
 
+interface HttpError {
+  response?: {
+    status?: number;
+  };
+  name?: string;
+  code?: string;
+}
+
 interface AuthState {
   user: User | null;
   accessToken: string | null;
@@ -58,9 +66,9 @@ export const useAuthStore = create<AuthState>()(
             isLoading: false,
           });
           notify.success('Welcome back!');
-        } catch (error: any) {
+        } catch (error: unknown) {
           set({ isLoading: false });
-          notify.error(error.message || 'Login failed');
+          notify.error(error instanceof Error ? error.message : 'Login failed');
           throw error;
         }
       },
@@ -77,9 +85,9 @@ export const useAuthStore = create<AuthState>()(
             isLoading: false,
           });
           notify.success('Account created successfully!');
-        } catch (error: any) {
+        } catch (error: unknown) {
           set({ isLoading: false });
-          notify.error(error.message || 'Registration failed');
+          notify.error(error instanceof Error ? error.message : 'Registration failed');
           throw error;
         }
       },
@@ -122,12 +130,12 @@ export const useAuthStore = create<AuthState>()(
           if (import.meta.env?.DEV) {
             console.log('Token refresh successful');
           }
-        } catch (error: any) {
-          console.warn('Token refresh failed:', error.message || error);
+        } catch (error: unknown) {
+          console.warn('Token refresh failed:', error instanceof Error ? error.message : String(error));
           
           // Only clear auth on explicit auth failures, not network issues
-          if (error.response?.status === 401 || error.response?.status === 403 || 
-              error.message?.includes('Invalid refresh token')) {
+          if ((error as HttpError)?.response?.status === 401 || (error as HttpError)?.response?.status === 403 || 
+              (error instanceof Error && error.message.includes('Invalid refresh token'))) {
             console.warn('Refresh token is invalid, clearing auth state');
             get().clearAuth();
           }
@@ -177,16 +185,16 @@ export const useAuthStore = create<AuthState>()(
           }
           
           return true;
-        } catch (error: any) {
+        } catch (error: unknown) {
           // Handle network errors differently from auth errors
-          if (error.name === 'AbortError' || error.code === 'NETWORK_ERROR') {
-            console.warn('Network error during auth check, assuming valid for now:', error.message);
+          if ((error as HttpError)?.name === 'AbortError' || (error as HttpError)?.code === 'NETWORK_ERROR') {
+            console.warn('Network error during auth check, assuming valid for now:', error instanceof Error ? error.message : String(error));
             // On network errors, don't clear auth - user might be offline
             return true;
           }
           
           // Handle rate limiting (429) - don't logout user for this
-          if (error.response?.status === 429) {
+          if ((error as HttpError)?.response?.status === 429) {
             console.warn('Rate limit hit during auth check, assuming valid for now');
             // On rate limit, keep user logged in - this is temporary
             return true;
@@ -197,17 +205,17 @@ export const useAuthStore = create<AuthState>()(
             try {
               await get().refreshAuth();
               return true;
-            } catch (refreshError: any) {
-              console.warn('Refresh token failed:', refreshError.message);
+            } catch (refreshError: unknown) {
+              console.warn('Refresh token failed:', refreshError instanceof Error ? refreshError.message : String(refreshError));
               
               // Handle rate limiting on refresh - don't logout
-              if (refreshError.response?.status === 429) {
+              if ((refreshError as HttpError)?.response?.status === 429) {
                 console.warn('Rate limit hit during token refresh, keeping auth state');
                 return true;
               }
               
               // Only clear auth on explicit 401/403 errors, not network issues
-              if (refreshError.response?.status === 401 || refreshError.response?.status === 403) {
+              if ((refreshError as HttpError)?.response?.status === 401 || (refreshError as HttpError)?.response?.status === 403) {
                 get().clearAuth();
                 return false;
               }

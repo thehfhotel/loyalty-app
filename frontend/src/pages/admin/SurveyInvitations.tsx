@@ -55,18 +55,25 @@ const SurveyInvitations: React.FC = () => {
     if (id) {
       loadData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const loadData = async () => {
+    if (!id) {
+      toast.error('Survey ID is required');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       
       // Load survey details
-      const surveyData = await surveyService.getSurveyById(id!);
+      const surveyData = await surveyService.getSurveyById(id);
       setSurvey(surveyData);
       
       // Load invitations
-      const invitationsData = await surveyService.getSurveyInvitations(id!);
+      const invitationsData = await surveyService.getSurveyInvitations(id);
       setInvitations(invitationsData);
       
       // Calculate stats
@@ -92,9 +99,14 @@ const SurveyInvitations: React.FC = () => {
       return;
     }
 
+    if (!id) {
+      toast.error('Survey ID is required');
+      return;
+    }
+
     try {
       setSending(true);
-      const result = await surveyService.sendSurveyInvitations(id!);
+      const result = await surveyService.sendSurveyInvitations(id);
       toast.success(`Successfully sent ${result.sent} invitations`);
       loadData();
     } catch (err: any) {
@@ -157,11 +169,16 @@ const SurveyInvitations: React.FC = () => {
       return;
     }
 
+    if (!id) {
+      toast.error('Survey ID is required');
+      return;
+    }
+
     try {
       setSendingToUsers(true);
       const userIdsArray = Array.from(selectedUsers);
       
-      const result = await surveyService.sendSurveyInvitationsToUsers(id!, userIdsArray);
+      const result = await surveyService.sendSurveyInvitationsToUsers(id, userIdsArray);
       
       if (result.sent === 0) {
         toast.error(`No invitations were sent. Users may not match targeting criteria or already have invitations.`);
@@ -188,6 +205,7 @@ const SurveyInvitations: React.FC = () => {
       }, 300);
       return () => clearTimeout(timer);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userSearch, showUserSelection]);
 
   const getStatusBadge = (status: string) => {
