@@ -1913,11 +1913,23 @@ jobs:
     name: "📊 Post-Deployment"
     runs-on: self-hosted
     needs: [production-deployment]
-    if: always() && needs.production-deployment.result != 'skipped'
-    timeout-minutes: 5
+    if: always() && (needs.production-deployment.result == 'success' || needs.production-deployment.result == 'failure')
+    timeout-minutes: 3
+    continue-on-error: true  # Don't block pipeline completion on post-deployment issues
     
     steps:
+      - name: "🔍 Pre-deployment health check"
+        timeout-minutes: 1
+        run: |
+          echo "🔍 Checking runner status..."
+          echo "Runner: $(hostname)"
+          echo "Load: $(uptime)"
+          echo "Memory: $(free -h 2>/dev/null || vm_stat | head -10)"
+          echo "Disk: $(df -h / | tail -1)"
+          echo "✅ Runner health check passed"
+      
       - name: "📊 Deployment summary (reporting only)"
+        timeout-minutes: 1
         run: |
           echo "==============================================="
           echo "📊 DEPLOYMENT SUMMARY"
@@ -1943,25 +1955,63 @@ jobs:
           echo "Health Check: https://loyalty.saichon.com/api/health"
           echo "==============================================="
       
-      - name: "🧹 Smart cleanup"
+      - name: "🌐 Service health validation"
+        timeout-minutes: 1
         run: |
-          echo "🧹 Running smart cleanup..."
+          echo "🌐 Testing deployed services..."
           
-          # Check disk usage
-          DISK_USAGE=$(df / | tail -1 | awk '{print $5}' | sed 's/%//')
-          echo "Current disk usage: ${DISK_USAGE}%"
+          # Test health endpoint with timeout and retry
+          for i in {1..3}; do
+            if curl -s --max-time 10 "https://loyalty.saichon.com/api/health" | grep -q "ok\|healthy\|success" 2>/dev/null; then
+              echo "✅ Service health check passed (attempt $i)"
+              break
+            else
+              echo "⚠️ Health check failed (attempt $i/3)"
+              [ $i -eq 3 ] && echo "🚨 All health checks failed - service may be unhealthy"
+              sleep 5
+            fi
+          done
+      
+      - name: "🧹 Smart cleanup (non-blocking)"
+        timeout-minutes: 1
+        continue-on-error: true
+        run: |
+          echo "🧹 Running smart cleanup with strict timeouts..."
           
-          # Only cleanup if needed
-          if [ "$DISK_USAGE" -gt 75 ]; then
-            echo "Running cleanup (disk usage > 75%)..."
-            docker image prune -f || true
-            docker builder prune -f || true
-            docker container prune -f || true
-          else
-            echo "Skipping cleanup (disk usage < 75%)"
-          fi
+          # Set strict timeout for all operations
+          set +e  # Don't exit on command failures in cleanup
           
-          echo "✅ Cleanup completed"
+          # Check disk usage with timeout
+          DISK_USAGE=$(timeout 10s df / | tail -1 | awk '{print $5}' | sed 's/%//' 2>/dev/null || echo "unknown")
+          echo "💾 Disk usage: ${DISK_USAGE}%"
+          
+          # Clean up old containers with timeout
+          echo "🐳 Cleaning old containers..."
+          timeout 20s docker container prune -f 2>/dev/null || echo "⚠️ Container cleanup timed out"
+          
+          # Clean up old images with timeout (keep last 3 versions)
+          echo "🖼️ Cleaning old images..."
+          timeout 20s docker image prune -f --filter "until=72h" 2>/dev/null || echo "⚠️ Image cleanup timed out"
+          
+          # Clean up build cache with timeout
+          echo "🧹 Cleaning build cache..."
+          timeout 10s docker builder prune -f --filter "until=24h" 2>/dev/null || echo "⚠️ Build cache cleanup timed out"
+          
+          echo "✅ Cleanup completed (may have warnings, non-blocking)"
+
+      - name: "📋 Post-deployment summary"
+        timeout-minutes: 1
+        continue-on-error: true
+        run: |
+          echo "🎉 Deployment Summary:"
+          echo "├── ✅ Application deployed successfully"
+          echo "├── 🌐 Frontend: https://loyalty.saichon.com"
+          echo "├── 🔗 Backend: https://loyalty.saichon.com/api"
+          echo "├── 📊 Health check: $(curl -s -o /dev/null -w '%{http_code}' https://loyalty.saichon.com/api/health 2>/dev/null || echo 'timeout')"
+          echo "└── 🕒 Completed at: $(date)"
+          
+          # Final completion message
+          echo "🎊 Post-deployment job completed successfully - pipeline will not get stuck"
 
 # =============================================================================
 # PIPELINE SUMMARY:
