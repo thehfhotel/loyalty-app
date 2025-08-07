@@ -45,13 +45,6 @@ export default function NotificationCenter() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Fetch notifications when dropdown opens
-  useEffect(() => {
-    if (isOpen && user) {
-      fetchNotifications();
-    }
-  }, [isOpen, user, fetchNotifications]);
-
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
     
@@ -76,6 +69,13 @@ export default function NotificationCenter() {
       setIsLoading(false);
     }
   }, [user]);
+
+  // Fetch notifications when dropdown opens
+  useEffect(() => {
+    if (isOpen && user) {
+      fetchNotifications();
+    }
+  }, [isOpen, user, fetchNotifications]);
 
   const markAsRead = async (notificationIds: string[]) => {
     if (!user || notificationIds.length === 0) return;
