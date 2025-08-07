@@ -5,6 +5,18 @@
 
 import { testDb, createTestUser, createTestCoupon, createTestLoyaltyTransaction, mockUsers, mockTransactions } from '../../setup';
 
+// Define the test user interface to match createTestUser return type
+interface TestUser {
+  id: string;
+  email: unknown;
+  firstName: unknown;
+  lastName: unknown;
+  membershipId: unknown;
+  loyaltyPoints: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 describe('Database Schema Integration', () => {
   describe('User Table Constraints', () => {
     it('should enforce email uniqueness', async () => {
@@ -69,7 +81,7 @@ describe('Database Schema Integration', () => {
   });
 
   describe('Loyalty Transaction Relationships', () => {
-    let testUser: any;
+    let testUser: TestUser;
 
     beforeEach(async () => {
       testUser = await createTestUser({
@@ -128,10 +140,10 @@ describe('Database Schema Integration', () => {
       
       // Verify transaction exists
       // Set inline mock for findUnique to ensure it works properly
-      (testDb.points_transactions.findUnique as jest.Mock).mockImplementation((params: any) => {
+      (testDb.points_transactions.findUnique as jest.Mock).mockImplementation((params: { where?: { id?: string } }) => {
         if (params?.where?.id) {
-          const foundTransaction = mockTransactions.find(t => t.id === params.where.id);
-          return Promise.resolve(foundTransaction || null);
+          const foundTransaction = mockTransactions.find(t => t.id === params.where!.id);
+          return Promise.resolve(foundTransaction ?? null);
         }
         return Promise.resolve(null);
       });
@@ -144,7 +156,7 @@ describe('Database Schema Integration', () => {
   });
 
   describe('Coupon Relationships', () => {
-    let testUser: any;
+    let testUser: TestUser;
 
     beforeEach(async () => {
       testUser = await createTestUser({
@@ -255,12 +267,16 @@ describe('Database Schema Integration', () => {
       
       // Verify only one user exists with this email
       // Set inline mock for findMany to ensure it works properly
-      (testDb.users.findMany as jest.Mock).mockImplementation((params: any) => {
+      (testDb.users.findMany as jest.Mock).mockImplementation((params: { where?: Record<string, unknown>; take?: number }) => {
         let users = [...mockUsers];
         if (params?.where) {
-          users = users.filter(u => 
-            Object.keys(params.where).every(key => u[key] === params.where[key])
-          );
+          users = users.filter(u => {
+            return Object.keys(params.where!).every(key => {
+              const userValue = (u as Record<string, unknown>)[key];
+              const whereValue = (params.where! as Record<string, unknown>)[key];
+              return userValue === whereValue;
+            });
+          });
         }
         if (params?.take) {
           users = users.slice(0, params.take);
@@ -283,14 +299,14 @@ describe('Database Schema Integration', () => {
       });
 
       // Set inline mock for findUnique to ensure it works properly
-      (testDb.users.findUnique as jest.Mock).mockImplementation((params: any) => {
+      (testDb.users.findUnique as jest.Mock).mockImplementation((params: { where?: { email?: string; id?: string } }) => {
         if (params?.where?.email) {
-          const user = mockUsers.find(u => u.email === params.where.email);
-          return Promise.resolve(user || null);
+          const user = mockUsers.find(u => u.email === params.where!.email);
+          return Promise.resolve(user ?? null);
         }
         if (params?.where?.id) {
-          const user = mockUsers.find(u => u.id === params.where.id);
-          return Promise.resolve(user || null);
+          const user = mockUsers.find(u => u.id === params.where!.id);
+          return Promise.resolve(user ?? null);
         }
         return Promise.resolve(null);
       });
@@ -320,12 +336,16 @@ describe('Database Schema Integration', () => {
       ));
 
       // Set inline mock for findMany to ensure it works properly
-      (testDb.points_transactions.findMany as jest.Mock).mockImplementation((params: any) => {
+      (testDb.points_transactions.findMany as jest.Mock).mockImplementation((params: { where?: Record<string, unknown>; orderBy?: Record<string, unknown>; take?: number }) => {
         let transactions = [...mockTransactions];
         if (params?.where) {
-          transactions = transactions.filter(t => 
-            Object.keys(params.where).every(key => t[key] === params.where[key])
-          );
+          transactions = transactions.filter(t => {
+            return Object.keys(params.where!).every(key => {
+              const transactionValue = (t as Record<string, unknown>)[key];
+              const whereValue = (params.where! as Record<string, unknown>)[key];
+              return transactionValue === whereValue;
+            });
+          });
         }
         if (params?.orderBy) {
           const orderKey = Object.keys(params.orderBy)[0];
@@ -368,17 +388,21 @@ describe('Database Schema Integration', () => {
       ]);
 
       // Set inline mock for aggregate to ensure it works properly
-      (testDb.points_transactions.aggregate as jest.Mock).mockImplementation((params: any) => {
+      (testDb.points_transactions.aggregate as jest.Mock).mockImplementation((params: { where?: Record<string, unknown>; _sum?: { points: boolean } }) => {
         let transactions = [...mockTransactions];
         if (params?.where) {
-          transactions = transactions.filter(t => 
-            Object.keys(params.where).every(key => t[key] === params.where[key])
-          );
+          transactions = transactions.filter(t => {
+            return Object.keys(params.where!).every(key => {
+              const transactionValue = (t as Record<string, unknown>)[key];
+              const whereValue = (params.where! as Record<string, unknown>)[key];
+              return transactionValue === whereValue;
+            });
+          });
         }
         
         // Check if we're summing points
         if (params?._sum?.points) {
-          const sum = transactions.reduce((acc, t) => acc + (t.points || 0), 0);
+          const sum = transactions.reduce((acc, t) => acc + (t.points ?? 0), 0);
           return Promise.resolve({ _sum: { points: sum } });
         }
         
