@@ -166,7 +166,7 @@ const CouponManagement: React.FC = () => {
       });
       
       // Show success message
-      const assignedCount = response?.length || selectedUsers.length;
+      const assignedCount = response?.assignedCount ?? selectedUsers.length;
       toast.success(`Successfully assigned coupon "${selectedCoupon.name}" to ${assignedCount} user(s)`);
       
       setShowAssignModal(false);

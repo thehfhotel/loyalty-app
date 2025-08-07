@@ -1,6 +1,7 @@
 import multer from 'multer';
 import path from 'path';
 import { Request } from 'express';
+import type { Express } from 'express-serve-static-core';
 import { AppError } from '../middleware/errorHandler';
 import { storageConfig } from './storage';
 
@@ -8,7 +9,7 @@ import { storageConfig } from './storage';
 const storage = multer.memoryStorage(); // Store in memory for processing
 
 // File filter for images only
-const fileFilter = (_req: Request, file: any, cb: multer.FileFilterCallback) => {
+const fileFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   // Allowed file types
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
   

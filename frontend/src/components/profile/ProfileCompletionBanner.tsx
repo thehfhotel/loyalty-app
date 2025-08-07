@@ -126,10 +126,10 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
       const response = await userService.completeProfile({
         firstName: data.firstName,
         lastName: data.lastName,
-        phone: data.phone || undefined,
-        dateOfBirth: data.dateOfBirth || undefined,
-        gender: data.gender || undefined,
-        occupation: data.occupation || undefined,
+        phone: data.phone ?? undefined,
+        dateOfBirth: data.dateOfBirth ?? undefined,
+        gender: data.gender ?? undefined,
+        occupation: data.occupation ?? undefined,
         interests: data.interests ? data.interests.split(',').map(i => i.trim()).filter(i => i) : undefined,
       });
 

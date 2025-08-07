@@ -155,7 +155,7 @@ const createSessionConfig = (req?: express.Request) => {
   try {
     const redisClient = getRedisClient();
     if (redisClient && redisClient.isReady) {
-      const redisStore = new (RedisStore as any)({
+      const redisStore = new (RedisStore as unknown as new (options: Record<string, unknown>) => unknown)({
         client: redisClient,
         prefix: 'loyalty-app:sess:'
       });

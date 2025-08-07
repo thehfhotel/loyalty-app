@@ -14,7 +14,7 @@ export default function EmojiSelector({
   onCancel,
   className = '' 
 }: EmojiSelectorProps) {
-  const [selectedEmoji, setSelectedEmoji] = useState<string | null>(currentEmoji || null);
+  const [selectedEmoji, setSelectedEmoji] = useState<string | null>(currentEmoji ?? null);
   const emojiOptions = getAllEmojiOptions();
 
   const handleEmojiClick = (emoji: string) => {

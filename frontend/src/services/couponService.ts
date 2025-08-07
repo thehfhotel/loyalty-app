@@ -36,7 +36,7 @@ export class CouponService {
     limit: number = 20,
     status?: 'used' | 'expired' | 'revoked' | 'available'
   ): Promise<UserCouponListResponse> {
-    const params: any = { page, limit };
+    const params: Record<string, any> = { page, limit };
     if (status) {
       params.status = status;
     }
@@ -53,7 +53,7 @@ export class CouponService {
   async validateCoupon(qrCode: string): Promise<{
     success: boolean;
     valid: boolean;
-    data?: any;
+    data?: Coupon;
     message: string;
   }> {
     const response = await api.get(`/coupons/validate/${qrCode}`);
@@ -135,12 +135,12 @@ export class CouponService {
     return response.data.data;
   }
 
-  async assignCoupon(data: AssignCouponRequest): Promise<any> {
+  async assignCoupon(data: AssignCouponRequest): Promise<{success: boolean; message: string; assignedCount: number}> {
     const response = await api.post(`/coupons/assign`, data);
     return response.data.data;
   }
 
-  async assignCouponToUsers(data: { couponId: string; userIds: string[]; assignedReason?: string }): Promise<any> {
+  async assignCouponToUsers(data: { couponId: string; userIds: string[]; assignedReason?: string }): Promise<{success: boolean; message: string; assignedCount: number}> {
     const response = await api.post(`/coupons/assign`, data);
     return response.data.data;
   }
@@ -165,7 +165,7 @@ export class CouponService {
       startDate?: string;
       endDate?: string;
     } = {}
-  ): Promise<any> {
+  ): Promise<{data: any[]; total: number; page: number; limit: number; totalPages: number}> {
     const response = await api.get(`/coupons/analytics/data`, {
       params: { page, limit, ...filters }
     });
@@ -176,7 +176,7 @@ export class CouponService {
     couponId: string,
     page: number = 1,
     limit: number = 20
-  ): Promise<any> {
+  ): Promise<{redemptions: any[]; total: number; page: number; limit: number; totalPages: number}> {
     const response = await api.get(`/coupons/${couponId}/redemptions`, {
       params: { page, limit }
     });
@@ -219,9 +219,9 @@ export class CouponService {
   formatCouponValue(coupon: Coupon | UserActiveCoupon): string {
     switch (coupon.type) {
       case 'percentage':
-        return `${coupon.value || 0}%`;
+        return `${coupon.value ?? 0}%`;
       case 'fixed_amount':
-        return `฿${coupon.value || 0}`;
+        return `฿${coupon.value ?? 0}`;
       case 'bogo':
         return 'Buy One Get One';
       case 'free_upgrade':
@@ -266,14 +266,14 @@ export class CouponService {
 
     switch (coupon.type) {
       case 'percentage':
-        discountAmount = originalAmount * ((coupon.value || 0) / 100);
+        discountAmount = originalAmount * ((coupon.value ?? 0) / 100);
         // Apply maximum discount if set
         if (coupon.maximumDiscount && discountAmount > coupon.maximumDiscount) {
           discountAmount = coupon.maximumDiscount;
         }
         break;
       case 'fixed_amount':
-        discountAmount = Math.min(coupon.value || 0, originalAmount);
+        discountAmount = Math.min(coupon.value ?? 0, originalAmount);
         break;
       case 'bogo':
         // Assume 50% discount for BOGO

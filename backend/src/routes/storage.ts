@@ -10,7 +10,7 @@ router.get('/stats', authenticate, authorize('admin', 'super_admin'), async (_re
   try {
     const report = await StorageService.getStorageReport();
     res.json(report);
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Failed to get storage stats:', error);
     res.status(500).json({ error: 'Failed to retrieve storage statistics' });
   }

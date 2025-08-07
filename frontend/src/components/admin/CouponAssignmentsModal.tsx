@@ -30,7 +30,7 @@ interface CouponAssignmentsModalProps {
 
 const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
   coupon,
-  isOpen,
+  isOpen: _isOpen,
   onClose
 }) => {
   const { } = useTranslation();

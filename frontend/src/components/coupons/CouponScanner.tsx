@@ -21,7 +21,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
   const [transactionReference, setTransactionReference] = useState('');
   const [location, setLocation] = useState('');
   const [loading, setLoading] = useState(false);
-  const [validationResult, setValidationResult] = useState<any>(null);
+  const [validationResult, setValidationResult] = useState<{success: boolean; valid: boolean; message: string; data?: any} | null>(null);
   const [redemptionResult, setRedemptionResult] = useState<RedeemCouponResponse | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [cameraActive, setCameraActive] = useState(false);
@@ -72,12 +72,15 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
       setLoading(true);
       const result = await couponService.validateCoupon(code.trim());
       setValidationResult(result);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error validating coupon:', err);
+      const errorMessage = err instanceof Error && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'message' in err.response.data
+        ? (err.response.data as any).message
+        : t('errors.validationFailed');
       setValidationResult({
         success: false,
         valid: false,
-        message: err.response?.data?.message || t('errors.validationFailed')
+        message: errorMessage
       });
     } finally {
       setLoading(false);
@@ -114,8 +117,8 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
       const request: RedeemCouponRequest = {
         qrCode: qrCode.trim(),
         originalAmount: amount,
-        transactionReference: transactionReference.trim() || undefined,
-        location: location.trim() || undefined,
+        transactionReference: transactionReference.trim() ?? undefined,
+        location: location.trim() ?? undefined,
         metadata: {
           redemptionChannel: 'staff_interface',
           timestamp: new Date().toISOString()
@@ -136,13 +139,16 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
           onRedemptionComplete(result);
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error redeeming coupon:', err);
+      const errorMessage = err instanceof Error && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'message' in err.response.data
+        ? (err.response.data as any).message
+        : t('errors.redemptionFailed');
       const errorResult: RedeemCouponResponse = {
         success: false,
-        message: err.response?.data?.message || t('errors.redemptionFailed'),
+        message: errorMessage,
         discountAmount: 0,
-        finalAmount: parseFloat(originalAmount) || 0
+        finalAmount: parseFloat(originalAmount) ?? 0
       };
       setRedemptionResult(errorResult);
     } finally {

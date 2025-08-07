@@ -1,6 +1,6 @@
 import { UserLoyaltyStatus } from '../../services/loyaltyService';
 import { useTranslation } from 'react-i18next';
-import { FiStar, FiTrendingUp } from 'react-icons/fi';
+import { FiStar } from 'react-icons/fi';
 
 interface PointsBalanceProps {
   loyaltyStatus: UserLoyaltyStatus;
