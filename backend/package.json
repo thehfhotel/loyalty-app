@@ -29,6 +29,10 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx src/utils/seedDatabase.ts"
   },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "dependencies": {
     "@prisma/client": "^6.13.0",
     "@trpc/server": "^11.0.0",
