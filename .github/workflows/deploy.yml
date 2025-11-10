@@ -1004,9 +1004,24 @@ jobs:
           echo "🎭 Running E2E tests with Playwright on isolated environment..."
           echo "🌐 Testing against Backend: http://localhost:4202"
           echo "🌐 Testing against Frontend: http://localhost:3201"
-          
+
+          # Verify Playwright is available
+          if [ ! -d "node_modules/@playwright" ]; then
+            echo "❌ @playwright/test not found in node_modules"
+            echo "📂 Root node_modules contents:"
+            ls -la node_modules/ 2>&1 | head -20 || echo "node_modules directory not found"
+            exit 1
+          fi
+
+          echo "✅ @playwright/test found in node_modules"
+
           # Install Playwright browsers if needed
+          echo "📥 Installing Playwright browsers..."
           npx playwright install --with-deps chromium
+
+          # Verify Playwright installation
+          echo "🔍 Verifying Playwright installation..."
+          npx playwright --version
 
           # Run all E2E tests against isolated environment (BLOCKING - must pass to succeed)
           echo "🎭 Running E2E tests - failures will BLOCK the pipeline..."
