@@ -172,19 +172,27 @@ jobs:
           name: ci-workspace-${{ github.run_id }}
           path: .
 
-      - name: "♻️ Restore backend node_modules from cache"
-        uses: actions/cache/restore@v4
-        with:
-          path: backend/node_modules
-          key: backend-deps-${{ hashFiles('backend/package-lock.json') }}
-          fail-on-cache-miss: true
+      - name: "♻️ Restore dependencies from local cache"
+        run: |
+          LOCAL_CACHE_BASE="/home/nut/.cache/loyalty-app"
 
-      - name: "♻️ Restore frontend node_modules from cache"
-        uses: actions/cache/restore@v4
-        with:
-          path: frontend/node_modules
-          key: frontend-deps-${{ hashFiles('frontend/package-lock.json') }}
-          fail-on-cache-miss: true
+          echo "♻️ Restoring backend node_modules from local cache..."
+          if [ -d "$LOCAL_CACHE_BASE/backend/node_modules" ]; then
+            cp -r "$LOCAL_CACHE_BASE/backend/node_modules" backend/
+            echo "✅ Backend dependencies restored"
+          else
+            echo "❌ Backend cache not found"
+            exit 1
+          fi
+
+          echo "♻️ Restoring frontend node_modules from local cache..."
+          if [ -d "$LOCAL_CACHE_BASE/frontend/node_modules" ]; then
+            cp -r "$LOCAL_CACHE_BASE/frontend/node_modules" frontend/
+            echo "✅ Frontend dependencies restored"
+          else
+            echo "❌ Frontend cache not found"
+            exit 1
+          fi
 
       - name: "🔍 TypeScript type checking (validation)"
         working-directory: ./backend
@@ -236,19 +244,27 @@ jobs:
           name: ci-workspace-${{ github.run_id }}
           path: .
 
-      - name: "♻️ Restore backend node_modules from cache"
-        uses: actions/cache/restore@v4
-        with:
-          path: backend/node_modules
-          key: backend-deps-${{ hashFiles('backend/package-lock.json') }}
-          fail-on-cache-miss: true
+      - name: "♻️ Restore dependencies from local cache"
+        run: |
+          LOCAL_CACHE_BASE="/home/nut/.cache/loyalty-app"
 
-      - name: "♻️ Restore frontend node_modules from cache"
-        uses: actions/cache/restore@v4
-        with:
-          path: frontend/node_modules
-          key: frontend-deps-${{ hashFiles('frontend/package-lock.json') }}
-          fail-on-cache-miss: true
+          echo "♻️ Restoring backend node_modules from local cache..."
+          if [ -d "$LOCAL_CACHE_BASE/backend/node_modules" ]; then
+            cp -r "$LOCAL_CACHE_BASE/backend/node_modules" backend/
+            echo "✅ Backend dependencies restored"
+          else
+            echo "❌ Backend cache not found"
+            exit 1
+          fi
+
+          echo "♻️ Restoring frontend node_modules from local cache..."
+          if [ -d "$LOCAL_CACHE_BASE/frontend/node_modules" ]; then
+            cp -r "$LOCAL_CACHE_BASE/frontend/node_modules" frontend/
+            echo "✅ Frontend dependencies restored"
+          else
+            echo "❌ Frontend cache not found"
+            exit 1
+          fi
 
       - name: "🐳 Start isolated test services"
         run: |
@@ -452,19 +468,27 @@ jobs:
           name: ci-workspace-${{ github.run_id }}
           path: .
 
-      - name: "♻️ Restore backend node_modules from cache"
-        uses: actions/cache/restore@v4
-        with:
-          path: backend/node_modules
-          key: backend-deps-${{ hashFiles('backend/package-lock.json') }}
-          fail-on-cache-miss: true
+      - name: "♻️ Restore dependencies from local cache"
+        run: |
+          LOCAL_CACHE_BASE="/home/nut/.cache/loyalty-app"
 
-      - name: "♻️ Restore frontend node_modules from cache"
-        uses: actions/cache/restore@v4
-        with:
-          path: frontend/node_modules
-          key: frontend-deps-${{ hashFiles('frontend/package-lock.json') }}
-          fail-on-cache-miss: true
+          echo "♻️ Restoring backend node_modules from local cache..."
+          if [ -d "$LOCAL_CACHE_BASE/backend/node_modules" ]; then
+            cp -r "$LOCAL_CACHE_BASE/backend/node_modules" backend/
+            echo "✅ Backend dependencies restored"
+          else
+            echo "❌ Backend cache not found"
+            exit 1
+          fi
+
+          echo "♻️ Restoring frontend node_modules from local cache..."
+          if [ -d "$LOCAL_CACHE_BASE/frontend/node_modules" ]; then
+            cp -r "$LOCAL_CACHE_BASE/frontend/node_modules" frontend/
+            echo "✅ Frontend dependencies restored"
+          else
+            echo "❌ Frontend cache not found"
+            exit 1
+          fi
 
       - name: "🔧 Setup isolated E2E environment"
         run: |
