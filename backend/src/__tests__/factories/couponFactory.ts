@@ -298,7 +298,7 @@ export const userCouponFactory = {
    * Build user's coupon collection
    */
   buildUserCollection: (userId: string, count: number) => {
-    const statuses: user_coupon_status[] = ['available', 'used', 'expired'];
+    const statuses: UserCouponStatus[] = ['available', 'used', 'expired'];
     return Array.from({ length: count }, () => {
       const status = faker.helpers.arrayElement(statuses);
       return userCouponFactory.build({

@@ -258,7 +258,7 @@ export const pointsTransactionFactory = {
    */
   buildHistory: (userId: string, count: number) => {
     const transactions: ReturnType<typeof pointsTransactionFactory.build>[] = [];
-    const types: points_transaction_type[] = ['earned_stay', 'earned_bonus', 'redeemed', 'admin_adjustment'];
+    const types: PointsTransactionType[] = ['earned_stay', 'earned_bonus', 'redeemed', 'admin_adjustment'];
 
     for (let i = 0; i < count; i++) {
       const type = faker.helpers.arrayElement(types);
