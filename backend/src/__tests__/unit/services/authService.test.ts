@@ -14,8 +14,31 @@ const JWT_REFRESH_SECRET = 'test-refresh-secret';
 process.env.JWT_SECRET = JWT_SECRET;
 process.env.JWT_REFRESH_SECRET = JWT_REFRESH_SECRET;
 
+// Test types
+interface TestUser {
+  id: string;
+  email: string | null;
+  role?: string;
+  membershipId?: string;
+  password?: string;
+  passwordHash?: string;
+  firstName?: string;
+  lastName?: string;
+  loyaltyPoints?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+interface JWTPayload {
+  id: string;
+  email: string;
+  role: string;
+  iat?: number;
+  exp?: number;
+}
+
 describe('AuthService', () => {
-  let testUser: any;
+  let testUser: TestUser;
 
   beforeEach(async () => {
     testUser = await createTestUser({
@@ -79,7 +102,7 @@ describe('AuthService', () => {
       };
 
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
 
       expect(decoded.id).toBe(payload.id);
       expect(decoded.email).toBe(payload.email);
@@ -201,10 +224,11 @@ describe('AuthService', () => {
         testDb.users.create({
           data: {
             id: 'test-uuid',
-            // email: missing
+            // email: missing - intentional for testing validation
             role: 'customer',
             created_at: new Date(),
             updated_at: new Date(),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Test case for missing required field
           } as any,
         })
       ).rejects.toThrow();
@@ -327,6 +351,7 @@ describe('AuthService', () => {
           data: {
             id: 'test-uuid',
             email: 'test@example.com',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Test case for invalid enum value
             role: 'invalid' as any, // Should be valid enum
             created_at: new Date(),
             updated_at: new Date(),

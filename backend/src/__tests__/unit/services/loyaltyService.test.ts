@@ -8,8 +8,19 @@ import { testDb, createTestUser, createTestLoyaltyTransaction } from '../../setu
 // Note: This tests the new Prisma-based LoyaltyService that will replace the SQL-based one
 // For now, we're testing the interface we want to move towards
 
+interface TestUser {
+  id: string;
+  email: unknown;
+  firstName: unknown;
+  lastName: unknown;
+  membershipId: unknown;
+  loyaltyPoints: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 describe('LoyaltyService', () => {
-  let testUser: any;
+  let testUser: TestUser;
 
   beforeEach(async () => {
     testUser = await createTestUser({
@@ -35,15 +46,12 @@ describe('LoyaltyService', () => {
 
   describe('Points Management', () => {
     it('should award points correctly', async () => {
-      console.log('Creating transaction for user:', testUser.id);
       // Create a loyalty transaction (points award)
       const transaction = await createTestLoyaltyTransaction(testUser.id, {
         type: 'earned_stay',
         points: 100,
         description: 'Hotel stay points',
       });
-
-      console.log('Transaction created:', transaction);
       expect(transaction.points).toBe(100);
       expect(transaction.type).toBe('earned_stay');
       expect(transaction.user_id).toBe(testUser.id);
@@ -73,15 +81,13 @@ describe('LoyaltyService', () => {
       await createTestLoyaltyTransaction(testUser.id, { points: 50, type: 'bonus' });
       await createTestLoyaltyTransaction(testUser.id, { points: -30, type: 'redeemed_coupon' });
 
-      console.log('About to call testDb.points_transactions.findMany');
-      
       // Manually mock the response for this test
       const expectedTransactions = [
         { user_id: testUser.id, points: 100, type: 'earned_stay' },
         { user_id: testUser.id, points: 50, type: 'bonus' },
         { user_id: testUser.id, points: -30, type: 'redeemed_coupon' }
       ];
-      
+
       (testDb.points_transactions.findMany as jest.Mock).mockResolvedValueOnce(expectedTransactions);
 
       // Query all transactions for user
@@ -89,9 +95,7 @@ describe('LoyaltyService', () => {
         where: { user_id: testUser.id },
       });
 
-      console.log('Result from findMany:', transactions);
-
-      const totalPoints = transactions.reduce((sum: number, t: any) => sum + t.points, 0);
+      const totalPoints = transactions.reduce((sum: number, t: { points: number }) => sum + t.points, 0);
       expect(totalPoints).toBe(120); // 100 + 50 - 30
     });
   });
@@ -174,11 +178,11 @@ describe('LoyaltyService', () => {
           data: {
             id: 'test-uuid',
             user_id: testUser.id,
-            // type: missing
+            // type: missing - intentionally omitted for test
             points: 100,
             description: 'Test transaction',
             created_at: new Date(),
-          } as any,
+          } as { id: string; user_id: string; points: number; description: string; created_at: Date },
         })
       ).rejects.toThrow();
     });
@@ -195,7 +199,7 @@ describe('LoyaltyService', () => {
             id: 'test-uuid',
             user_id: testUser.id,
             type: 'earned_stay',
-            points: 'invalid' as any,
+            points: 'invalid' as unknown as number, // Intentionally invalid for test
             description: 'Test transaction',
             created_at: new Date(),
           },

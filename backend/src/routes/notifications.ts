@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import { NotificationService } from '../services/notificationService';
 import { MarkReadRequest, NotificationType } from '../types/notification';
+import { logger } from '../utils/logger';
 
 const router = Router();
 const notificationService = new NotificationService();
@@ -13,19 +14,19 @@ router.get('/vapid-key', (_req, res) => {
     const publicKey = process.env.VAPID_PUBLIC_KEY;
     
     if (!publicKey) {
-      console.warn('[Notifications] VAPID public key not configured');
-      return res.status(503).json({ 
+      logger.warn('[Notifications] VAPID public key not configured');
+      return res.status(503).json({
         error: 'Push notifications not configured',
-        configured: false 
+        configured: false
       });
     }
-    
-    return res.json({ 
+
+    return res.json({
       publicKey,
-      configured: true 
+      configured: true
     });
   } catch (error) {
-    console.error('[Notifications] Failed to get VAPID key:', error);
+    logger.error('[Notifications] Failed to get VAPID key:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -280,7 +281,7 @@ router.post('/push/subscribe', async (req, res, next) => {
     }
     
     // In a real implementation, you would save the subscription to database
-    console.log('[Notifications] Push subscription received', {
+    logger.info('[Notifications] Push subscription received', {
       userId: req.user.id,
       platform,
       endpoint: subscription.endpoint ? 'present' : 'missing'
@@ -308,7 +309,7 @@ router.post('/push/unsubscribe', async (req, res, next) => {
     }
     
     // In a real implementation, you would remove the subscription from database
-    console.log('[Notifications] Push unsubscription received', {
+    logger.info('[Notifications] Push unsubscription received', {
       endpoint: subscription.endpoint ? 'present' : 'missing'
     });
     

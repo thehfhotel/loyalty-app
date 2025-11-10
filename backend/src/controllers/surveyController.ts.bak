@@ -16,7 +16,7 @@ export class SurveyController {
       const user = req.user;
 
       // Check if user is admin
-      if (!user?.id || !['admin', 'super_admin'].includes(user.role)) {
+      if (!user || !user.id || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
         return;
       }
@@ -135,7 +135,7 @@ export class SurveyController {
       const { id } = req.params;
       const user = req.user;
 
-      const survey = await surveyService.getSurveyById(id!);
+      const survey = await surveyService.getSurveyById(id);
 
       if (!survey) {
         res.status(404).json({ message: 'Survey not found' });
@@ -143,9 +143,9 @@ export class SurveyController {
       }
 
       // For non-admin users, check access permissions
-      if (user?.id && !['admin', 'super_admin'].includes(user.role)) {
+      if (user && user.id && !['admin', 'super_admin'].includes(user.role)) {
         const userId: string = user.id;
-        const hasAccess = await surveyService.canUserAccessSurvey(userId, id!);
+        const hasAccess = await surveyService.canUserAccessSurvey(userId, id);
         if (!hasAccess) {
           res.status(403).json({ 
             message: 'Access denied. You do not have permission to access this survey.' 
@@ -211,8 +211,8 @@ export class SurveyController {
       const updateData: UpdateSurveyRequest = req.body;
       
       // Enhanced logging for update operations too
-
-      const survey = await surveyService.updateSurvey(id!, updateData);
+      
+      const survey = await surveyService.updateSurvey(id, updateData);
       
       if (!survey) {
         res.status(404).json({ message: 'Survey not found' });
@@ -220,10 +220,9 @@ export class SurveyController {
       }
 
       res.json({ survey });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error updating survey:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to update survey', error: errorMessage });
+      res.status(500).json({ message: 'Failed to update survey', error: error.message });
     }
   }
 
@@ -239,7 +238,7 @@ export class SurveyController {
         return;
       }
 
-      const deleted = await surveyService.deleteSurvey(id!);
+      const deleted = await surveyService.deleteSurvey(id);
       
       if (!deleted) {
         res.status(404).json({ message: 'Survey not found' });
@@ -247,10 +246,9 @@ export class SurveyController {
       }
 
       res.json({ message: 'Survey deleted successfully' });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error deleting survey:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to delete survey', error: errorMessage });
+      res.status(500).json({ message: 'Failed to delete survey', error: error.message });
     }
   }
 
@@ -273,7 +271,7 @@ export class SurveyController {
       }
 
       // Check if user has access to this survey
-      const hasAccess = await surveyService.canUserAccessSurvey(user.id!, responseData.survey_id);
+      const hasAccess = await surveyService.canUserAccessSurvey(user.id, responseData.survey_id);
       if (!hasAccess) {
         res.status(403).json({ 
           message: 'Access denied. You do not have permission to respond to this survey.' 
@@ -281,12 +279,11 @@ export class SurveyController {
         return;
       }
 
-      const response = await surveyService.submitResponse(user.id!, responseData);
+      const response = await surveyService.submitResponse(user.id, responseData);
       res.json({ response });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error submitting response:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to submit response', error: errorMessage });
+      res.status(500).json({ message: 'Failed to submit response', error: error.message });
     }
   }
 
@@ -301,12 +298,11 @@ export class SurveyController {
         return;
       }
 
-      const response = await surveyService.getUserResponse(user.id!, surveyId!);
+      const response = await surveyService.getUserResponse(user.id, surveyId);
       res.json({ response });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error fetching user response:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to fetch response', error: errorMessage });
+      res.status(500).json({ message: 'Failed to fetch response', error: error.message });
     }
   }
 
@@ -325,7 +321,7 @@ export class SurveyController {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
 
-      const result = await surveyService.getSurveyResponses(surveyId!, page, limit);
+      const result = await surveyService.getSurveyResponses(surveyId, page, limit);
       
       res.json({
         responses: result.responses,
@@ -336,10 +332,9 @@ export class SurveyController {
           totalPages: result.totalPages
         }
       });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error fetching survey responses:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to fetch responses', error: errorMessage });
+      res.status(500).json({ message: 'Failed to fetch responses', error: error.message });
     }
   }
 
@@ -353,12 +348,11 @@ export class SurveyController {
         return;
       }
 
-      const surveys = await surveyService.getAvailableSurveys(user.id!);
+      const surveys = await surveyService.getAvailableSurveys(user.id);
       res.json({ surveys });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error fetching available surveys:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to fetch surveys', error: errorMessage });
+      res.status(500).json({ message: 'Failed to fetch surveys', error: error.message });
     }
   }
 
@@ -372,12 +366,11 @@ export class SurveyController {
         return;
       }
 
-      const surveys = await surveyService.getPublicSurveys(user.id!);
+      const surveys = await surveyService.getPublicSurveys(user.id);
       res.json({ surveys });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error fetching public surveys:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to fetch public surveys', error: errorMessage });
+      res.status(500).json({ message: 'Failed to fetch public surveys', error: error.message });
     }
   }
 
@@ -391,12 +384,11 @@ export class SurveyController {
         return;
       }
 
-      const surveys = await surveyService.getInvitedSurveys(user.id!);
+      const surveys = await surveyService.getInvitedSurveys(user.id);
       res.json({ surveys });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error fetching invited surveys:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to fetch invited surveys', error: errorMessage });
+      res.status(500).json({ message: 'Failed to fetch invited surveys', error: error.message });
     }
   }
 
@@ -412,7 +404,7 @@ export class SurveyController {
         return;
       }
 
-      const analytics = await surveyService.getSurveyAnalytics(surveyId!);
+      const analytics = await surveyService.getSurveyAnalytics(surveyId);
       
       if (!analytics) {
         res.status(404).json({ message: 'Survey not found' });
@@ -420,10 +412,9 @@ export class SurveyController {
       }
 
       res.json(analytics);
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error fetching survey analytics:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to fetch analytics', error: errorMessage });
+      res.status(500).json({ message: 'Failed to fetch analytics', error: error.message });
     }
   }
 
@@ -440,14 +431,14 @@ export class SurveyController {
       }
 
       // Get survey and all responses
-      const survey = await surveyService.getSurveyById(surveyId!);
+      const survey = await surveyService.getSurveyById(surveyId);
       if (!survey) {
         res.status(404).json({ message: 'Survey not found' });
         return;
       }
 
       // Get all responses (without pagination)
-      const result = await surveyService.getSurveyResponses(surveyId!, 1, 10000);
+      const result = await surveyService.getSurveyResponses(surveyId, 1, 10000);
       const responses = result.responses;
 
       // Generate CSV header
@@ -456,11 +447,10 @@ export class SurveyController {
 
       // Generate CSV rows
       const csvRows = responses.map(response => {
-        const responseWithUser = response as unknown as Record<string, unknown>;
         const row = [
-          String(responseWithUser.user_email ?? ''),
-          String(responseWithUser.user_first_name ?? ''),
-          String(responseWithUser.user_last_name ?? ''),
+          (response as any).user_email || '',
+          (response as any).user_first_name || '',
+          (response as any).user_last_name || '',
           response.is_completed ? 'Yes' : 'No',
           `${response.progress}%`,
           response.started_at,
@@ -490,12 +480,11 @@ export class SurveyController {
       // Set response headers for CSV download
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="survey-${surveyId}-responses.csv"`);
-
+      
       res.send(csvContent);
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error exporting survey responses:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to export responses', error: errorMessage });
+      res.status(500).json({ message: 'Failed to export responses', error: error.message });
     }
   }
 
@@ -511,12 +500,11 @@ export class SurveyController {
         return;
       }
 
-      const invitations = await surveyService.getSurveyInvitations(surveyId!);
+      const invitations = await surveyService.getSurveyInvitations(surveyId);
       res.json({ invitations });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error fetching survey invitations:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to fetch invitations', error: errorMessage });
+      res.status(500).json({ message: 'Failed to fetch invitations', error: error.message });
     }
   }
 
@@ -532,12 +520,11 @@ export class SurveyController {
         return;
       }
 
-      const result = await surveyService.sendSurveyInvitations(surveyId!);
+      const result = await surveyService.sendSurveyInvitations(surveyId);
       res.json(result);
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error sending survey invitations:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to send invitations', error: errorMessage });
+      res.status(500).json({ message: 'Failed to send invitations', error: error.message });
     }
   }
 
@@ -560,12 +547,11 @@ export class SurveyController {
         return;
       }
 
-      const result = await surveyService.sendSurveyInvitationsToUsers(surveyId!, userIds);
+      const result = await surveyService.sendSurveyInvitationsToUsers(surveyId, userIds);
       res.json(result);
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error sending survey invitations to users:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to send invitations', error: errorMessage });
+      res.status(500).json({ message: 'Failed to send invitations', error: error.message });
     }
   }
 
@@ -581,12 +567,11 @@ export class SurveyController {
         return;
       }
 
-      await surveyService.resendInvitation(invitationId!);
+      await surveyService.resendInvitation(invitationId);
       res.json({ success: true });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error resending invitation:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to resend invitation', error: errorMessage });
+      res.status(500).json({ message: 'Failed to resend invitation', error: error.message });
     }
   }
 
@@ -629,17 +614,16 @@ export class SurveyController {
         return;
       }
 
-      const assignment = await surveyService.assignCouponToSurvey(assignmentData, user.id!);
+      const assignment = await surveyService.assignCouponToSurvey(assignmentData, user.id);
       res.status(201).json({ assignment });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error assigning coupon to survey:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes('not found')) {
-        res.status(404).json({ message: errorMessage });
-      } else if (errorMessage.includes('not active')) {
-        res.status(400).json({ message: errorMessage });
+      if (error.message.includes('not found')) {
+        res.status(404).json({ message: error.message });
+      } else if (error.message.includes('not active')) {
+        res.status(400).json({ message: error.message });
       } else {
-        res.status(500).json({ message: 'Failed to assign coupon', error: errorMessage });
+        res.status(500).json({ message: 'Failed to assign coupon', error: error.message });
       }
     }
   }
@@ -658,12 +642,11 @@ export class SurveyController {
         return;
       }
 
-      const result = await surveyService.getSurveyCouponAssignments(surveyId!, page, limit);
+      const result = await surveyService.getSurveyCouponAssignments(surveyId, page, limit);
       res.json(result);
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error fetching survey coupon assignments:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to fetch assignments', error: errorMessage });
+      res.status(500).json({ message: 'Failed to fetch assignments', error: error.message });
     }
   }
 
@@ -694,7 +677,7 @@ export class SurveyController {
         return;
       }
 
-      const assignment = await surveyService.updateSurveyCouponAssignment(surveyId!, couponId!, updateData);
+      const assignment = await surveyService.updateSurveyCouponAssignment(surveyId, couponId, updateData);
       
       if (!assignment) {
         res.status(404).json({ message: 'Assignment not found' });
@@ -702,10 +685,9 @@ export class SurveyController {
       }
 
       res.json({ assignment });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error updating survey coupon assignment:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to update assignment', error: errorMessage });
+      res.status(500).json({ message: 'Failed to update assignment', error: error.message });
     }
   }
 
@@ -721,7 +703,7 @@ export class SurveyController {
         return;
       }
 
-      const removed = await surveyService.removeCouponFromSurvey(surveyId!, couponId!, user.id!);
+      const removed = await surveyService.removeCouponFromSurvey(surveyId, couponId, user.id);
       
       if (!removed) {
         res.status(404).json({ message: 'Assignment not found or already inactive' });
@@ -729,10 +711,9 @@ export class SurveyController {
       }
 
       res.json({ message: 'Coupon assignment removed successfully' });
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error removing coupon from survey:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to remove assignment', error: errorMessage });
+      res.status(500).json({ message: 'Failed to remove assignment', error: error.message });
     }
   }
 
@@ -750,12 +731,11 @@ export class SurveyController {
         return;
       }
 
-      const result = await surveyService.getSurveyRewardHistory(surveyId!, page, limit);
+      const result = await surveyService.getSurveyRewardHistory(surveyId, page, limit);
       res.json(result);
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error fetching survey reward history:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to fetch reward history', error: errorMessage });
+      res.status(500).json({ message: 'Failed to fetch reward history', error: error.message });
     }
   }
 
@@ -781,10 +761,9 @@ export class SurveyController {
 
       const result = await surveyService.getAllSurveyCouponAssignments(page, limit, filters);
       res.json(result);
-    } catch (error: unknown) {
+    } catch (error: any) {
       logger.error('Error fetching all survey coupon assignments:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      res.status(500).json({ message: 'Failed to fetch assignments', error: errorMessage });
+      res.status(500).json({ message: 'Failed to fetch assignments', error: error.message });
     }
   }
 }

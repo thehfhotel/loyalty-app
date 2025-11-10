@@ -246,7 +246,7 @@ let membershipCounter = 0;
 export const createTestUser = async (overrides: Record<string, unknown> = {}) => {
   const userId = uuidv4();
   const membershipId = overrides.membershipId ?? `TEST-${Date.now()}-${++membershipCounter}`;
-  const email = overrides.email !== undefined ? overrides.email : `test-${uuidv4()}@example.com`;
+  const email = overrides.email !== undefined ? String(overrides.email) : `test-${uuidv4()}@example.com`;
   
   // Create the user object
   const userData = {
@@ -330,14 +330,14 @@ export const createTestUser = async (overrides: Record<string, unknown> = {}) =>
   const returnUser = {
     id: userId,
     email: email,
-    firstName: overrides.firstName ?? 'Test',
-    lastName: overrides.lastName ?? 'User',
-    membershipId: membershipId,
+    firstName: overrides.firstName !== undefined ? String(overrides.firstName) : 'Test',
+    lastName: overrides.lastName !== undefined ? String(overrides.lastName) : 'User',
+    membershipId: String(membershipId),
     loyaltyPoints: 0, // Default
     createdAt: new Date(),
     updatedAt: new Date(),
   };
-  
+
   return returnUser;
 };
 

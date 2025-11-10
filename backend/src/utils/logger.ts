@@ -28,6 +28,7 @@ if (!fs.existsSync(logsDir)) {
   try {
     fs.mkdirSync(logsDir, { recursive: true });
   } catch (error) {
+    // eslint-disable-next-line no-console -- Fallback logging when logger initialization fails
     console.warn('Could not create logs directory:', error);
   }
 }
@@ -81,6 +82,7 @@ try {
     })
   );
 } catch (error) {
+  // eslint-disable-next-line no-console -- Fallback logging when file transports cannot be initialized
   console.warn('File logging disabled - could not create logs directory:', error);
 }
 

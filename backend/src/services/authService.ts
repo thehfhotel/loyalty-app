@@ -93,7 +93,7 @@ export class AuthService {
     }
   }
 
-  async login(email: string, password: string, rememberMe: boolean = false): Promise<{ user: User; tokens: AuthTokens }> {
+  async login(email: string, password: string, rememberMe = false): Promise<{ user: User; tokens: AuthTokens }> {
     // Find user
     const [user] = await query<User & { passwordHash: string }>(
       `SELECT id, email, password_hash AS "passwordHash", role, is_active AS "isActive", 
@@ -302,7 +302,7 @@ export class AuthService {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async generateTokens(user: User, client?: any, rememberMe: boolean = false): Promise<AuthTokens> {
+  async generateTokens(user: User, client?: any, rememberMe = false): Promise<AuthTokens> {
     const payload: JWTPayload = {
       id: user.id,
       email: user.email,

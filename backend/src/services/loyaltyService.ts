@@ -137,7 +137,7 @@ export class LoyaltyService {
   async awardPoints(
     userId: string,
     points: number,
-    type: string = 'admin_award',
+    type = 'admin_award',
     description?: string,
     referenceId?: string,
     adminUserId?: string,
@@ -174,7 +174,7 @@ export class LoyaltyService {
   async deductPoints(
     userId: string,
     points: number,
-    type: string = 'admin_deduction',
+    type = 'admin_deduction',
     description?: string,
     referenceId?: string,
     adminUserId?: string,
@@ -207,8 +207,8 @@ export class LoyaltyService {
    */
   async getUserPointsHistory(
     userId: string,
-    limit: number = 50,
-    offset: number = 0
+    limit = 50,
+    offset = 0
   ): Promise<{ transactions: PointsTransaction[]; total: number }> {
     try {
       // Get transactions with pagination
@@ -259,8 +259,8 @@ export class LoyaltyService {
    * Get all users' loyalty status for admin (with pagination)
    */
   async getAllUsersLoyaltyStatus(
-    limit: number = 50,
-    offset: number = 0,
+    limit = 50,
+    offset = 0,
     searchTerm?: string
   ): Promise<{ users: UserLoyaltyStatus[]; total: number }> {
     try {

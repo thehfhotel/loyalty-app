@@ -2,6 +2,15 @@ import { storageConfig } from '../config/storage';
 import { logger } from '../utils/logger';
 import { ImageProcessor } from '../utils/imageProcessor';
 
+interface StorageReport {
+  storage: {
+    totalFiles: number;
+    totalSize: number;
+    averageSize: number;
+    usagePercent: number;
+  };
+}
+
 export class StorageService {
   // Initialize simple daily backup
   static initialize(): void {
@@ -44,7 +53,7 @@ export class StorageService {
   }
   
   // Get simple storage report
-  static async getStorageReport(): Promise<any> {
+  static async getStorageReport(): Promise<StorageReport> {
     const stats = await ImageProcessor.getStorageStats();
     
     return {

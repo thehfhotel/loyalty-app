@@ -287,8 +287,8 @@ export class CouponService {
 
   // List coupons with filtering and pagination
   async listCoupons(
-    page: number = 1,
-    limit: number = 20,
+    page = 1,
+    limit = 20,
     filters: {
       status?: CouponStatus;
       type?: CouponType;
@@ -492,8 +492,8 @@ export class CouponService {
   // Get user's active coupons
   async getUserActiveCoupons(
     userId: string,
-    page: number = 1,
-    limit: number = 20
+    page = 1,
+    limit = 20
   ): Promise<UserCouponListResponse> {
     const offset = (page - 1) * limit;
 
@@ -540,8 +540,8 @@ export class CouponService {
   async getUserCouponsByStatus(
     userId: string,
     status: 'used' | 'expired' | 'revoked' | 'available',
-    page: number = 1,
-    limit: number = 20
+    page = 1,
+    limit = 20
   ): Promise<UserCouponListResponse> {
     const offset = (page - 1) * limit;
 
@@ -652,8 +652,8 @@ export class CouponService {
   // Get coupon redemption history
   async getCouponRedemptions(
     couponId: string,
-    page: number = 1,
-    limit: number = 20
+    page = 1,
+    limit = 20
   ): Promise<{ redemptions: CouponRedemption[]; total: number; page: number; limit: number; totalPages: number }> {
     const offset = (page - 1) * limit;
 
@@ -705,8 +705,8 @@ export class CouponService {
     couponId?: string,
     startDate?: Date,
     endDate?: Date,
-    page: number = 1,
-    limit: number = 20
+    page = 1,
+    limit = 20
   ): Promise<CouponAnalyticsResponse> {
     const offset = (page - 1) * limit;
     
@@ -882,8 +882,8 @@ export class CouponService {
   // Get coupon assignments (admin only)
   async getCouponAssignments(
     couponId: string,
-    page: number = 1,
-    limit: number = 20
+    page = 1,
+    limit = 20
   ): Promise<{
     assignments: Array<{
       userId: string;

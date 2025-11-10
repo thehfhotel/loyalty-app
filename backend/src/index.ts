@@ -46,6 +46,11 @@ import analyticsRoutes from './routes/analyticsRoutes';
 import './services/oauthService';
 import { oauthCleanupService } from './services/oauthCleanupService';
 
+// tRPC imports
+import { createExpressMiddleware } from '@trpc/server/adapters/express';
+import { createContext } from './trpc/context';
+import { appRouter } from './trpc/routers/_app';
+
 const app = express();
 const httpServer = createServer(app);
 const PORT = serverConfig.port;
@@ -277,6 +282,16 @@ app.use('/api/membership', apiRateLimit, userRateLimit, membershipRoutes);
 app.use('/api/translation', apiRateLimit, translationRoutes); // Public translations use IP-based only
 app.use('/api/notifications', apiRateLimit, userRateLimit, notificationRoutes);
 app.use('/api/analytics', apiRateLimit, userRateLimit, analyticsRoutes);
+
+// tRPC endpoint - Type-safe API with end-to-end type safety
+app.use(
+  '/api/trpc',
+  apiRateLimit,
+  createExpressMiddleware({
+    router: appRouter,
+    createContext,
+  })
+);
 
 // Error handling
 app.use(errorHandler);

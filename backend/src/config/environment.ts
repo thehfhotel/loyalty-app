@@ -114,14 +114,19 @@ try {
     });
     
     // Print detailed error for debugging (keep console for critical startup errors)
+    // eslint-disable-next-line no-console -- Critical startup error must be visible before logger initialization
     console.error('\n🚨 ENVIRONMENT VALIDATION FAILED 🚨');
+    // eslint-disable-next-line no-console -- Critical startup error must be visible before logger initialization
     console.error('The following environment variables are invalid or missing:\n');
-    
+
     error.errors.forEach((err, index) => {
+      // eslint-disable-next-line no-console -- Critical startup error must be visible before logger initialization
       console.error(`${index + 1}. ${err.path.join('.')}: ${err.message}`);
     });
-    
+
+    // eslint-disable-next-line no-console -- Critical startup error must be visible before logger initialization
     console.error('\nPlease check your .env file and ensure all required variables are set correctly.');
+    // eslint-disable-next-line no-console -- Critical startup error must be visible before logger initialization
     console.error('See docs/ENVIRONMENT.md for detailed configuration instructions.\n');
     
     process.exit(1);
@@ -166,12 +171,15 @@ const performSecurityChecks = () => {
   // Log warnings
   if (warnings.length > 0) {
     logger.warn('Security warnings detected:', { warnings });
-    
+
     if (env.NODE_ENV === 'production') {
+      // eslint-disable-next-line no-console -- Critical production security warning must be visible
       console.error('\n⚠️  SECURITY WARNINGS IN PRODUCTION ⚠️');
       warnings.forEach((warning, index) => {
+        // eslint-disable-next-line no-console -- Critical production security warning must be visible
         console.error(`${index + 1}. ${warning}`);
       });
+      // eslint-disable-next-line no-console -- Critical production security warning must be visible
       console.error('\nThese issues should be resolved before production deployment.\n');
     }
   }

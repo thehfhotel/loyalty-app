@@ -2,9 +2,9 @@ import { getPool } from '../config/database';
 import { db } from '../config/prisma';
 import { logger } from '../utils/logger';
 import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
-import { 
-  Survey, 
-  SurveyResponse, 
+import {
+  Survey,
+  SurveyResponse,
   // SurveyInvitation,
   CreateSurveyRequest,
   UpdateSurveyRequest,
@@ -16,16 +16,56 @@ import {
   SurveyRewardHistory,
   AssignCouponToSurveyRequest,
   UpdateSurveyCouponAssignmentRequest,
-  SurveyCouponAssignmentListResponse
+  SurveyCouponAssignmentListResponse,
+  SurveyQuestion
 } from '../types/survey';
+
+// Internal types for survey service
+
+interface UserWithLoyalty {
+  id: string;
+  email: string;
+  tier_id?: number;
+  oauth_provider?: string;
+  created_at: Date;
+  first_name?: string;
+  last_name?: string;
+}
+
+interface SurveyTranslations {
+  [language: string]: {
+    title: string;
+    description: string;
+    questions: SurveyQuestion[];
+  };
+}
+
+interface SurveyWithTranslations {
+  original_language: string;
+  available_languages: string[];
+  translations: SurveyTranslations;
+}
+
+interface SurveyInvitation {
+  id: string;
+  survey_id: string;
+  user_id: string;
+  status: string;
+  sent_at?: Date;
+  created_at: Date;
+  updated_at: Date;
+  email?: string;
+  first_name?: string;
+  last_name?: string;
+}
 
 export class SurveyService {
   // Normalize question options to ensure consistent values
-  private normalizeQuestionOptions(questions: any[]): any[] {
+  private normalizeQuestionOptions(questions: SurveyQuestion[]): SurveyQuestion[] {
     return questions.map(question => {
       if (question.options && Array.isArray(question.options)) {
         // Re-index option values to be sequential numbers starting from 1
-        question.options = question.options.map((option: any, index: number) => ({
+        question.options = question.options.map((option, index: number) => ({
           ...option,
           value: (index + 1).toString() // Ensure values are sequential strings "1", "2", "3", etc.
         }));
@@ -93,8 +133,8 @@ export class SurveyService {
   async getSurveyWithTranslations(id: string, language?: string): Promise<Survey | null> {
     const client = await getPool().connect();
     try {
-      let survey: any;
-      
+      let survey: Survey | null = null;
+
       if (language && language !== 'th') {
         // Try to get translated version first
         const translationResult = await client.query(
@@ -135,7 +175,7 @@ export class SurveyService {
   }
 
   // Get all translations for a survey in multilingual format
-  async getAllSurveyTranslations(id: string): Promise<any> {
+  async getAllSurveyTranslations(id: string): Promise<SurveyWithTranslations | null> {
     const client = await getPool().connect();
     try {
       // Get the original survey
@@ -143,19 +183,19 @@ export class SurveyService {
         'SELECT * FROM surveys WHERE id = $1',
         [id]
       );
-      
+
       if (surveyResult.rows.length === 0) return null;
-      
+
       const originalSurvey = surveyResult.rows[0];
-      
+
       // Get all translations for this survey
       const translationsResult = await client.query(
         'SELECT language, title, description, questions FROM survey_translations WHERE survey_id = $1',
         [id]
       );
-      
+
       // Build the translations object
-      const translations: any = {};
+      const translations: SurveyTranslations = {};
       const availableLanguages = ['th']; // Start with original language
       
       // Add original survey content
@@ -364,7 +404,7 @@ export class SurveyService {
 
         return {
           ...updatedResponse,
-          answers: updatedResponse.answers as Record<string, any>
+          answers: updatedResponse.answers as Record<string, string | number | boolean | string[] | null>
         };
       }
 
@@ -382,7 +422,7 @@ export class SurveyService {
 
       return {
         ...newResponse,
-        answers: newResponse.answers as Record<string, any>
+        answers: newResponse.answers as Record<string, string | number | boolean | string[] | null>
       };
     } catch (error) {
       logger.error('Error submitting survey response:', error);
@@ -608,7 +648,7 @@ export class SurveyService {
   }
 
   // Check if user matches targeting criteria
-  private isUserTargeted(user: any, targetSegment: TargetSegment): boolean {
+  private isUserTargeted(user: UserWithLoyalty, targetSegment: TargetSegment): boolean {
     // If no targeting criteria, include all users
     if (!targetSegment || Object.keys(targetSegment).length === 0) {
       return true;
@@ -616,7 +656,7 @@ export class SurveyService {
 
     // Check tier restrictions
     if (targetSegment.tier_restrictions && targetSegment.tier_restrictions.length > 0) {
-      if (!targetSegment.tier_restrictions.includes(user.tier_id)) {
+      if (!user.tier_id || !targetSegment.tier_restrictions.includes(user.tier_id)) {
         return false;
       }
     }
@@ -651,7 +691,21 @@ export class SurveyService {
   }
 
   // Generate survey analytics
-  async getSurveyAnalytics(surveyId: string): Promise<any | null> {
+  async getSurveyAnalytics(surveyId: string): Promise<{
+    survey: Survey;
+    responses: unknown[];
+    totalResponses: number;
+    completionRate: number;
+    averageCompletionTime: number;
+    responsesByDate: Array<{ date: string; count: number }>;
+    questionAnalytics: Array<{
+      questionId: string;
+      question: string;
+      type: string;
+      responses: Record<string, number>;
+      averageRating?: number;
+    }>;
+  } | null> {
     const client = await getPool().connect();
     try {
       // Get survey details
@@ -740,13 +794,13 @@ export class SurveyService {
   }
 
   // Generate analytics for a specific question
-  private async getQuestionAnalytics(surveyId: string, question: any): Promise<QuestionAnalytics> {
+  private async getQuestionAnalytics(surveyId: string, question: SurveyQuestion): Promise<QuestionAnalytics> {
     const client = await getPool().connect();
     try {
       // Get all responses for this question
       const result = await client.query(
-        `SELECT answers->$1 as answer 
-         FROM survey_responses 
+        `SELECT answers->$1 as answer
+         FROM survey_responses
          WHERE survey_id = $2 AND answers ? $1`,
         [question.id, surveyId]
       );
@@ -761,7 +815,7 @@ export class SurveyService {
       if (totalResponses > 0) {
         // Calculate response distribution for choice questions
         if (question.type === 'multiple_choice' || question.type === 'single_choice' || question.type === 'yes_no') {
-          responseDistribution = responses.reduce((acc: Record<string, number>, response: any) => {
+          responseDistribution = responses.reduce((acc: Record<string, number>, response: unknown) => {
             const key = Array.isArray(response) ? response.join(', ') : String(response);
             // Safe: key is stringified response data used only for counting
             // eslint-disable-next-line security/detect-object-injection
@@ -801,7 +855,7 @@ export class SurveyService {
   }
 
   // Get survey invitations
-  async getSurveyInvitations(surveyId: string): Promise<any[]> {
+  async getSurveyInvitations(surveyId: string): Promise<SurveyInvitation[]> {
     const client = await getPool().connect();
     try {
       const result = await client.query(
@@ -943,7 +997,7 @@ export class SurveyService {
   }
 
   // Get eligible users for a target segment
-  private async getEligibleUsers(targetSegment: TargetSegment): Promise<any[]> {
+  private async getEligibleUsers(targetSegment: TargetSegment): Promise<UserWithLoyalty[]> {
     const client = await getPool().connect();
     try {
       let query = `

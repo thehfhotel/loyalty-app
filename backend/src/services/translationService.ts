@@ -37,6 +37,28 @@ export interface TranslationJob {
   provider: TranslationProvider;
 }
 
+// Internal types for translation service
+interface AzureTranslation {
+  to: string;
+  text: string;
+}
+
+interface AzureTranslationGroup {
+  translations: AzureTranslation[];
+}
+
+interface QuestionOption {
+  text?: string;
+  label?: string;
+  value?: string;
+}
+
+interface SurveyQuestion {
+  text?: string;
+  description?: string;
+  options?: QuestionOption[];
+}
+
 class TranslationService {
   private azureConfig = {
     endpoint: process.env.AZURE_TRANSLATION_TEXT_URI ?? 'https://api.cognitive.microsofttranslator.com',
@@ -100,15 +122,18 @@ class TranslationService {
       });
 
       // Process Azure response
-      response.data.forEach((translationGroup: { translations: any[] }) => {
-        translationGroup.translations.forEach((translation: { to: string; text: string }) => {
+      response.data.forEach((translationGroup: AzureTranslationGroup) => {
+        translationGroup.translations.forEach((translation: AzureTranslation) => {
           const ourLangCode = this.fromAzureLanguageCode(translation.to);
           // Safe property access to prevent injection
-          if (typeof ourLangCode === 'string' && 
-              ourLangCode.match(/^[a-zA-Z-]+$/) && 
+          if (typeof ourLangCode === 'string' &&
+              ourLangCode.match(/^[a-zA-Z-]+$/) &&
               Object.prototype.hasOwnProperty.call(translations, ourLangCode)) {
             // eslint-disable-next-line security/detect-object-injection
-            translations[ourLangCode].push(translation.text);
+            const langArray = translations[ourLangCode];
+            if (langArray) {
+              langArray.push(translation.text);
+            }
           }
         });
       });
@@ -266,7 +291,7 @@ class TranslationService {
 
       // Questions and options
       const questions = survey.questions ?? [];
-      questions.forEach((question: { text?: string; description?: string; options?: any[] }, questionIndex: number) => {
+      questions.forEach((question: SurveyQuestion, questionIndex: number) => {
         if (question.text) {
           textsToTranslate.push(question.text);
           textMapping.push({ type: 'question', index: questionIndex, field: 'text' });
@@ -276,7 +301,7 @@ class TranslationService {
           textMapping.push({ type: 'question', index: questionIndex, field: 'description' });
         }
         if (question.options) {
-          question.options.forEach((option: { text?: string }, optionIndex: number) => {
+          question.options.forEach((option: QuestionOption, optionIndex: number) => {
             if (option.text) {
               textsToTranslate.push(option.text);
               textMapping.push({ type: 'option', index: questionIndex, field: 'text', optionIndex });
@@ -333,7 +358,7 @@ class TranslationService {
 
     } catch (error) {
       logger.error('Survey translation failed', {
-        surveyId: (job as any).survey_id,
+        surveyId: job.entityId,
         jobId: job.id,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined
@@ -417,7 +442,7 @@ class TranslationService {
 
     } catch (error) {
       logger.error('Coupon translation failed', {
-        couponId: (job as any).coupon_id,
+        couponId: job.entityId,
         jobId: job.id,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined
