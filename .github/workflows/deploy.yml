@@ -118,6 +118,43 @@ jobs:
             echo "cache-hit=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: "📦 Install root dependencies (Playwright)"
+        id: root-cache
+        run: |
+          LOCAL_CACHE_BASE="${{ steps.cache-setup.outputs.cache_base }}"
+          NPM_CACHE="${{ steps.cache-setup.outputs.npm_cache }}"
+
+          npm config set cache "$NPM_CACHE"
+
+          # Generate cache key from root package-lock.json
+          ROOT_KEY=$(shasum package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
+
+          # Check cache
+          CACHE_HIT=false
+          if [ -f "$LOCAL_CACHE_BASE/root/.cache-key" ]; then
+            STORED_KEY=$(cat "$LOCAL_CACHE_BASE/root/.cache-key")
+            if [ "$STORED_KEY" = "$ROOT_KEY" ]; then
+              CACHE_HIT=true
+              echo "⚡ Restoring root dependencies from cache..."
+              mkdir -p node_modules
+              cp -r "$LOCAL_CACHE_BASE/root/node_modules/"* node_modules/ 2>/dev/null || true
+              echo "cache-hit=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+          if [ "$CACHE_HIT" = false ]; then
+            echo "📦 Installing root dependencies (Playwright)..."
+            npm ci --prefer-offline
+
+            echo "💾 Caching root dependencies..."
+            mkdir -p "$LOCAL_CACHE_BASE/root"
+            cp -r node_modules "$LOCAL_CACHE_BASE/root/"
+            echo "$ROOT_KEY" > "$LOCAL_CACHE_BASE/root/.cache-key"
+            echo "cache-hit=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo "✅ Root dependencies installed (includes @playwright/test)"
+
       - name: "🔧 Generate Prisma client (shared)"
         working-directory: ./backend
         run: |
@@ -146,9 +183,9 @@ jobs:
           path: |
             .
             !.git
+            !node_modules
             !backend/node_modules
             !frontend/node_modules
-            !node_modules
           retention-days: 1
           compression-level: 0
 
@@ -486,6 +523,17 @@ jobs:
       - name: "♻️ Restore dependencies from local cache"
         run: |
           LOCAL_CACHE_BASE="/home/nut/.cache/loyalty-app"
+
+          echo "♻️ Restoring root node_modules (Playwright) from local cache..."
+          if [ -d "$LOCAL_CACHE_BASE/root/node_modules" ]; then
+            mkdir -p node_modules
+            cp -r "$LOCAL_CACHE_BASE/root/node_modules/"* node_modules/
+            echo "✅ Root dependencies restored (includes @playwright/test)"
+          else
+            echo "❌ Root cache not found, installing..."
+            npm ci --prefer-offline
+            echo "✅ Root dependencies installed"
+          fi
 
           echo "♻️ Restoring backend node_modules from local cache..."
           if [ -d "$LOCAL_CACHE_BASE/backend/node_modules" ]; then
@@ -925,10 +973,11 @@ jobs:
           
           # Install Playwright browsers if needed
           npx playwright install --with-deps chromium
-          
-          # Run all E2E tests against isolated environment
-          npx playwright test --reporter=line || echo "⚠️ E2E tests failed (non-blocking in CI)"
-      
+
+          # Run all E2E tests against isolated environment (BLOCKING - must pass to succeed)
+          echo "🎭 Running E2E tests - failures will BLOCK the pipeline..."
+          npx playwright test --reporter=line
+
       - name: "🔐 OAuth E2E validation tests (isolated)"
         env:
           NODE_ENV: test
@@ -937,8 +986,9 @@ jobs:
         run: |
           echo "🔐 Running OAuth-specific E2E tests on isolated environment..."
           echo "🔐 Testing OAuth against: http://localhost:4202"
-          # Run OAuth-specific tests separately for focused validation
-          npx playwright test tests/oauth-validation.spec.ts --reporter=line || echo "⚠️ OAuth E2E tests failed (non-blocking in CI)"
+          # Run OAuth-specific tests separately for focused validation (BLOCKING - must pass to succeed)
+          echo "🔐 OAuth E2E test failures will BLOCK the pipeline..."
+          npx playwright test tests/oauth-validation.spec.ts --reporter=line
       
       - name: "🗄️ Database migration rollback safety"
         run: |
@@ -949,11 +999,20 @@ jobs:
             echo "⚠️ Migration rollback safety script not found - skipping"
           fi
       
-      - name: "📊 E2E results summary (reporting only)"
+      - name: "📊 E2E results summary"
         id: e2e-results
+        if: success()
         run: |
-          echo "E2E tests completed"
+          echo "✅ E2E tests completed successfully"
           echo "passed=true" >> $GITHUB_OUTPUT
+
+      - name: "📊 E2E results summary (failure)"
+        id: e2e-results-failure
+        if: failure()
+        run: |
+          echo "❌ E2E tests failed"
+          echo "passed=false" >> $GITHUB_OUTPUT
+          exit 1
       
       - name: "🧹 Cleanup isolated E2E environment"
         if: always()
