@@ -213,137 +213,12 @@ jobs:
     # Use isolated test environment to prevent conflicts with E2E tests
     
     steps:
-      - name: "🔍 Pre-build validation"
-        run: |
-          echo "🔍 Running pre-build validation checks..."
-          
-          # Validate essential files exist
-          if [ ! -f "backend/package.json" ]; then
-            echo "❌ Backend package.json missing"
-            exit 1
-          fi
-          
-          if [ ! -f "frontend/package.json" ]; then
-            echo "❌ Frontend package.json missing"
-            exit 1
-          fi
-          
-          if [ ! -f "backend/prisma/schema.prisma" ]; then
-            echo "❌ Prisma schema missing"
-            exit 1
-          fi
-          
-          echo "✅ Pre-build validation passed"
+      - name: "📥 Download shared workspace"
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-workspace-${{ github.run_id }}
+          path: .
 
-      - name: "🧹 Workspace preparation"
-        run: |
-          # Clean workspace with passwordless sudo (now configured)
-          echo "Cleaning workspace at ${{ github.workspace }}"
-          
-          cd ${{ github.workspace }}
-          
-          # Force clean the problematic directories with sudo
-          echo "Removing build artifacts with elevated permissions..."
-          sudo rm -rf frontend/dist backend/dist 2>/dev/null || true
-          sudo rm -rf frontend/build backend/build 2>/dev/null || true
-          sudo rm -rf frontend/.next backend/.next 2>/dev/null || true
-          sudo rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
-          
-          # Clean git repository state
-          if [ -d ".git" ]; then
-            echo "Cleaning git repository state..."
-            sudo git clean -xffd 2>/dev/null || true
-            git reset --hard 2>/dev/null || true
-          fi
-          
-          # Fix ownership of remaining files to current user
-          sudo chown -R $USER:$USER . 2>/dev/null || true
-          
-          echo "Workspace after cleanup:"
-          ls -la
-      
-      - name: "📥 Checkout code"
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          clean: false  # Don't try to clean, we already did that
-      
-      - name: "⚡ Setup Node.js (no remote cache)"
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          # Removed cache: 'npm' to use local cache instead
-      
-      - name: "🚀 Setup local cache strategy"
-        id: local-cache
-        run: |
-          echo "🚀 Using local cache strategy for self-hosted runner"
-          
-          # Define local cache directories (using nut user home)
-          LOCAL_CACHE_BASE="/home/nut/.cache/loyalty-app"
-          NPM_CACHE="/home/nut/.npm-cache"
-          
-          # Create cache directories if they don't exist
-          mkdir -p "$LOCAL_CACHE_BASE"/backend "$NPM_CACHE"
-          
-          # Calculate cache key based on package file
-          BACKEND_KEY=$(shasum backend/package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
-          
-          echo "backend_cache_key=$BACKEND_KEY" >> $GITHUB_OUTPUT
-          echo "cache_base=$LOCAL_CACHE_BASE" >> $GITHUB_OUTPUT
-          echo "npm_cache=$NPM_CACHE" >> $GITHUB_OUTPUT
-          
-          # Check if local cache exists and is valid
-          CACHE_HIT=false
-          if [ -f "$LOCAL_CACHE_BASE/backend/.cache-key" ]; then
-            STORED_BACKEND_KEY=$(cat "$LOCAL_CACHE_BASE/backend/.cache-key")
-            
-            if [ "$STORED_BACKEND_KEY" = "$BACKEND_KEY" ]; then
-              CACHE_HIT=true
-              echo "✅ Local cache valid and ready to use"
-            else
-              echo "♻️ Package files changed, cache needs refresh"
-            fi
-          else
-            echo "📦 No local cache found, will create one"
-          fi
-          
-          echo "cache_hit=$CACHE_HIT" >> $GITHUB_OUTPUT
-      
-      - name: "📦 Install dependencies"
-        working-directory: ./backend
-        run: |
-          echo "📦 Installing backend dependencies with local cache..."
-          
-          # Variables from cache setup
-          LOCAL_CACHE_BASE="${{ steps.local-cache.outputs.cache_base }}"
-          NPM_CACHE="${{ steps.local-cache.outputs.npm_cache }}"
-          CACHE_HIT="${{ steps.local-cache.outputs.cache_hit }}"
-          
-          # Set npm cache directory
-          npm config set cache "$NPM_CACHE"
-          
-          if [ "$CACHE_HIT" = "true" ]; then
-            echo "⚡ Restoring from local cache..."
-            # Restore node_modules from local cache
-            if [ -d "$LOCAL_CACHE_BASE/backend/node_modules" ]; then
-              cp -r "$LOCAL_CACHE_BASE/backend/node_modules" .
-              echo "✅ Backend dependencies restored from local cache"
-            else
-              echo "📦 Cache miss - installing normally"
-              npm ci --prefer-offline --include=dev
-            fi
-          else
-            echo "📦 Installing and caching dependencies..."
-            npm ci --prefer-offline --include=dev
-            
-            # Cache the installed node_modules
-            echo "💾 Caching backend dependencies..."
-            cp -r node_modules "$LOCAL_CACHE_BASE/backend/"
-            echo "${{ steps.local-cache.outputs.backend_cache_key }}" > "$LOCAL_CACHE_BASE/backend/.cache-key"
-            echo "✅ Backend dependencies cached locally"
-          fi
-      
       - name: "🐳 Start isolated test services"
         run: |
           # Use unique project name and ports to avoid conflicts with E2E tests
@@ -533,133 +408,19 @@ jobs:
   e2e-tests:
     name: "🎭 E2E Tests"
     runs-on: self-hosted
-    needs: [unit-integration-tests]
-    timeout-minutes: 20
-    if: (github.ref == 'refs/heads/main' || github.base_ref == 'main') && needs.unit-integration-tests.outputs.tests-passed == 'true'
+    needs: prepare-workspace
+    timeout-minutes: 8
+    if: (github.ref == 'refs/heads/main' || github.base_ref == 'main')
     outputs:
       e2e-passed: ${{ steps.e2e-results.outputs.passed }}
-    
+
     steps:
-      - name: "🧹 Workspace preparation"
-        run: |
-          # Clean workspace with passwordless sudo (now configured)
-          echo "Cleaning workspace at ${{ github.workspace }}"
-          
-          cd ${{ github.workspace }}
-          
-          # Force clean the problematic directories with sudo
-          echo "Removing build artifacts with elevated permissions..."
-          sudo rm -rf frontend/dist backend/dist 2>/dev/null || true
-          sudo rm -rf frontend/build backend/build 2>/dev/null || true
-          sudo rm -rf frontend/.next backend/.next 2>/dev/null || true
-          sudo rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
-          
-          # Clean git repository state
-          if [ -d ".git" ]; then
-            echo "Cleaning git repository state..."
-            sudo git clean -xffd 2>/dev/null || true
-            git reset --hard 2>/dev/null || true
-          fi
-          
-          # Fix ownership of remaining files to current user
-          sudo chown -R $USER:$USER . 2>/dev/null || true
-          
-          echo "Workspace after cleanup:"
-          ls -la
-      
-      - name: "📥 Checkout code"
-        uses: actions/checkout@v4
+      - name: "📥 Download shared workspace"
+        uses: actions/download-artifact@v4
         with:
-          fetch-depth: 1
-          clean: false  # Don't try to clean, we already did that
-      
-      - name: "⚡ Setup Node.js (no remote cache)"
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          # Removed cache: 'npm' to use local cache instead
-      
-      - name: "🚀 Setup local cache strategy"
-        id: local-cache
-        run: |
-          echo "🚀 Using local cache strategy for self-hosted runner"
-          
-          # Define local cache directories (using nut user home)
-          LOCAL_CACHE_BASE="/home/nut/.cache/loyalty-app"
-          NPM_CACHE="/home/nut/.npm-cache"
-          
-          # Create cache directories if they don't exist
-          mkdir -p "$LOCAL_CACHE_BASE"/{frontend,backend} "$NPM_CACHE"
-          
-          # Calculate cache keys based on package files
-          FRONTEND_KEY=$(shasum frontend/package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
-          BACKEND_KEY=$(shasum backend/package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
-          
-          echo "frontend_cache_key=$FRONTEND_KEY" >> $GITHUB_OUTPUT
-          echo "backend_cache_key=$BACKEND_KEY" >> $GITHUB_OUTPUT
-          echo "cache_base=$LOCAL_CACHE_BASE" >> $GITHUB_OUTPUT
-          echo "npm_cache=$NPM_CACHE" >> $GITHUB_OUTPUT
-          
-          # Check if local cache exists and is valid
-          CACHE_HIT=false
-          if [ -f "$LOCAL_CACHE_BASE/frontend/.cache-key" ] && [ -f "$LOCAL_CACHE_BASE/backend/.cache-key" ]; then
-            STORED_FRONTEND_KEY=$(cat "$LOCAL_CACHE_BASE/frontend/.cache-key")
-            STORED_BACKEND_KEY=$(cat "$LOCAL_CACHE_BASE/backend/.cache-key")
-            
-            if [ "$STORED_FRONTEND_KEY" = "$FRONTEND_KEY" ] && [ "$STORED_BACKEND_KEY" = "$BACKEND_KEY" ]; then
-              CACHE_HIT=true
-              echo "✅ Local cache valid and ready to use"
-            else
-              echo "♻️ Package files changed, cache needs refresh"
-            fi
-          else
-            echo "📦 No local cache found, will create one"
-          fi
-          
-          echo "cache_hit=$CACHE_HIT" >> $GITHUB_OUTPUT
-      
-      - name: "📦 Install dependencies (parallel)"
-        run: |
-          echo "📦 Installing dependencies with local cache..."
-          
-          # Variables from cache setup
-          LOCAL_CACHE_BASE="${{ steps.local-cache.outputs.cache_base }}"
-          NPM_CACHE="${{ steps.local-cache.outputs.npm_cache }}"
-          CACHE_HIT="${{ steps.local-cache.outputs.cache_hit }}"
-          
-          # Set npm cache directory
-          npm config set cache "$NPM_CACHE"
-          
-          if [ "$CACHE_HIT" = "true" ]; then
-            echo "⚡ Restoring from local cache..."
-            # Restore node_modules from local cache in parallel
-            if [ -d "$LOCAL_CACHE_BASE/backend/node_modules" ] && [ -d "$LOCAL_CACHE_BASE/frontend/node_modules" ]; then
-              cp -r "$LOCAL_CACHE_BASE/backend/node_modules" backend/ &
-              cp -r "$LOCAL_CACHE_BASE/frontend/node_modules" frontend/ &
-              wait
-              echo "✅ Dependencies restored from local cache"
-            else
-              echo "📦 Cache miss - installing normally"
-              cd backend && npm ci --prefer-offline --include=dev &
-              cd frontend && npm ci --prefer-offline &
-              wait
-            fi
-          else
-            echo "📦 Installing and caching dependencies..."
-            cd backend && npm ci --prefer-offline --include=dev &
-            cd frontend && npm ci --prefer-offline &
-            wait
-            
-            # Cache the installed node_modules
-            echo "💾 Caching dependencies..."
-            cp -r backend/node_modules "$LOCAL_CACHE_BASE/backend/" &
-            cp -r frontend/node_modules "$LOCAL_CACHE_BASE/frontend/" &
-            wait
-            echo "${{ steps.local-cache.outputs.backend_cache_key }}" > "$LOCAL_CACHE_BASE/backend/.cache-key"
-            echo "${{ steps.local-cache.outputs.frontend_cache_key }}" > "$LOCAL_CACHE_BASE/frontend/.cache-key"
-            echo "✅ Dependencies cached locally"
-          fi
-      
+          name: ci-workspace-${{ github.run_id }}
+          path: .
+
       - name: "🔧 Setup isolated E2E environment"
         run: |
           # Use unique project name and ports to avoid conflicts with unit tests
@@ -685,23 +446,15 @@ jobs:
           BACKEND_URL: http://localhost:4202
           VITE_API_URL: http://localhost:4202/api
         run: |
-          # Generate Prisma client first
-          echo "🔄 Generating Prisma client for E2E tests..."
-          cd backend && npm run db:generate
-          
-          # Validate Prisma client was generated successfully
-          if [ ! -d "src/generated/prisma" ]; then
-            echo "❌ E2E Prisma client generation failed - directory not found"
+          # Validate Prisma client from workspace (already generated)
+          echo "🔍 Validating Prisma client from shared workspace..."
+          if [ ! -d "backend/src/generated/prisma" ]; then
+            echo "❌ Prisma client not found - workspace preparation may have failed"
             exit 1
           fi
-          
-          if [ ! -f "src/generated/prisma/index.js" ]; then
-            echo "❌ E2E Prisma client generation failed - index.js not found"
-            exit 1
-          fi
-          
-          echo "✅ E2E Prisma client validated successfully"
-          
+
+          echo "✅ Prisma client validated successfully"
+
           # Clean up any existing E2E containers first (before creating new compose file)
           echo "🧹 Cleaning up any existing E2E containers..."
           docker stop loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
