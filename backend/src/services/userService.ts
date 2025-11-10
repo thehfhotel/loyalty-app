@@ -589,9 +589,11 @@ export class UserService {
       [limit, offset, ...searchParam]
     );
 
+    const total = totalResult ? parseInt(totalResult.count) : 0;
+
     return {
       users,
-      total: parseInt(totalResult.count)
+      total
     };
   }
 
@@ -661,6 +663,15 @@ export class UserService {
       FROM users`
     );
 
+    if (!stats) {
+      return {
+        total: 0,
+        active: 0,
+        admins: 0,
+        recentlyJoined: 0
+      };
+    }
+
     return {
       total: parseInt(stats.total),
       active: parseInt(stats.active),
@@ -699,6 +710,11 @@ export class UserService {
           updated_at AS "updatedAt"`,
         [false, null, false, null]
       );
+
+      if (!defaultSettings) {
+        throw new AppError(500, 'Failed to create default coupon settings');
+      }
+
       return defaultSettings;
     }
 

@@ -6,7 +6,7 @@ export interface StorageConfig {
   // Base storage paths
   baseDir: string;
   avatarsDir: string;
-  backupDir: string;
+  backupDir?: string;
   
   // Storage limits
   maxFileSize: number;
@@ -21,7 +21,7 @@ export const storageConfig: StorageConfig = {
   // Base paths - simple structure
   baseDir: process.env.STORAGE_PATH ?? path.join(process.cwd(), 'storage'),
   avatarsDir: 'avatars',
-  backupDir: process.env.BACKUP_PATH ?? path.join(process.cwd(), 'storage', 'backup'),
+  backupDir: (process.env.BACKUP_PATH ?? path.join(process.cwd(), 'storage', 'backup')) as string,
   
   // Storage limits
   maxFileSize: 5 * 1024 * 1024, // 5MB
@@ -44,8 +44,12 @@ export class StoragePaths {
   
   static getBackupPath(relativePath: string): string {
     const date = new Date();
-    const dateStr = date.toISOString().split('T')[0];
-    return path.join(storageConfig.backupDir, dateStr, relativePath);
+    const dateStr = date.toISOString().split('T')[0]!;
+    return path.join(
+      (process.env.BACKUP_PATH ?? path.join(process.cwd(), 'storage', 'backup')) as string,
+      dateStr,
+      relativePath
+    );
   }
 }
 
@@ -54,7 +58,7 @@ export async function initializeStorage(): Promise<void> {
   const directories = [
     storageConfig.baseDir,
     path.join(storageConfig.baseDir, storageConfig.avatarsDir),
-    storageConfig.backupDir
+    storageConfig.backupDir!
   ];
   
   for (const dir of directories) {

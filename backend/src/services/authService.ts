@@ -51,11 +51,15 @@ export class AuthService {
 
       // Create user
       const [user] = await client.query<User>(
-        `INSERT INTO users (email, password_hash) 
-         VALUES ($1, $2) 
+        `INSERT INTO users (email, password_hash)
+         VALUES ($1, $2)
          RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", created_at AS "createdAt", updated_at AS "updatedAt"`,
         [data.email, passwordHash]
       ).then(res => res.rows);
+
+      if (!user) {
+        throw new AppError(500, 'Failed to create user');
+      }
 
       // Create user profile with membership ID and emoji avatar
       await client.query(
@@ -119,16 +123,20 @@ export class AuthService {
     
     if (requiredRole && user.role === 'customer') {
       logger.info(`Upgrading user ${email} to ${requiredRole} role based on admin config`);
-      
+
       // Update user role
       const [upgradedUser] = await query<User & { passwordHash: string }>(
-        `UPDATE users SET role = $1, updated_at = NOW() 
-         WHERE id = $2 
-         RETURNING id, email, password_hash AS "passwordHash", role, is_active AS "isActive", 
+        `UPDATE users SET role = $1, updated_at = NOW()
+         WHERE id = $2
+         RETURNING id, email, password_hash AS "passwordHash", role, is_active AS "isActive",
                    email_verified AS "emailVerified", created_at AS "createdAt", updated_at AS "updatedAt"`,
         [requiredRole, user.id]
       );
-      
+
+      if (!upgradedUser) {
+        throw new AppError(500, 'Failed to upgrade user role');
+      }
+
       updatedUser = upgradedUser;
       
       // Log role upgrade
@@ -140,15 +148,19 @@ export class AuthService {
     } else if (requiredRole && user.role === 'admin' && requiredRole === 'super_admin') {
       // Handle upgrade from admin to super_admin
       logger.info(`Upgrading user ${email} from admin to super_admin role based on admin config`);
-      
+
       const [upgradedUser] = await query<User & { passwordHash: string }>(
-        `UPDATE users SET role = 'super_admin', updated_at = NOW() 
-         WHERE id = $1 
-         RETURNING id, email, password_hash AS "passwordHash", role, is_active AS "isActive", 
+        `UPDATE users SET role = 'super_admin', updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, email, password_hash AS "passwordHash", role, is_active AS "isActive",
                    email_verified AS "emailVerified", created_at AS "createdAt", updated_at AS "updatedAt"`,
         [user.id]
       );
-      
+
+      if (!upgradedUser) {
+        throw new AppError(500, 'Failed to upgrade user role');
+      }
+
       updatedUser = upgradedUser;
       
       // Log role upgrade

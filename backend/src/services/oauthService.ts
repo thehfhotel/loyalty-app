@@ -5,6 +5,7 @@ import { Strategy as LineStrategy, VerifyCallback as LineVerifyCallback } from '
 import { query } from '../config/database';
 import { AuthService } from './authService';
 import { User, AuthTokens } from '../types/auth';
+import { AppError } from '../middleware/errorHandler';
 
 // Add type augmentation for Express User to work with Passport
 import { logger } from '../utils/logger';
@@ -194,24 +195,28 @@ export class OAuthService {
         const avatarUrl = profile.photos?.[0]?.value;
 
         const [newOAuthUser] = await query<User>(
-          `INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id) 
-           VALUES ($1, '', true, 'google', $2) 
-           RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+          `INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id)
+           VALUES ($1, '', true, 'google', $2)
+           RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified",
                      created_at AS "createdAt", updated_at AS "updatedAt"`,
           [`google_${profile.id}@google.oauth`, profile.id]
         );
+
+        if (!newOAuthUser) {
+          throw new AppError(500, 'Failed to create OAuth user');
+        }
 
         // Generate reception ID for new OAuth user
         const membershipId = await membershipIdService.generateUniqueMembershipId();
 
         // Create user profile with reception ID
         await query(
-          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id) 
+          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id)
            VALUES ($1, $2, $3, $4, $5)`,
           [newOAuthUser.id, firstName, lastName, avatarUrl, membershipId]
         );
 
-        
+
         user = newOAuthUser;
       } else {
         // Create new user
@@ -223,19 +228,23 @@ export class OAuthService {
 
         // Create user account (no password needed for OAuth)
         const [newUser] = await query<User>(
-          `INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id) 
-           VALUES ($1, '', true, 'google', $2) 
-           RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+          `INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id)
+           VALUES ($1, '', true, 'google', $2)
+           RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified",
                      created_at AS "createdAt", updated_at AS "updatedAt"`,
           [email, profile.id]
         );
+
+        if (!newUser) {
+          throw new AppError(500, 'Failed to create user');
+        }
 
         // Generate reception ID for new user
         const membershipId = await membershipIdService.generateUniqueMembershipId();
 
         // Create user profile with reception ID
         await query(
-          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id) 
+          `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id)
            VALUES ($1, $2, $3, $4, $5)`,
           [newUser.id, firstName, lastName, avatarUrl, membershipId]
         );
@@ -248,27 +257,35 @@ export class OAuthService {
     const requiredRole = adminConfigService.getRequiredRole(email);
     if (requiredRole && user.role === 'customer') {
       logger.info(`Upgrading Google user ${email} to ${requiredRole} role based on admin config`);
-      
+
       const [upgradedUser] = await query<User>(
-        `UPDATE users SET role = $1, updated_at = NOW() 
-         WHERE id = $2 
-         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+        `UPDATE users SET role = $1, updated_at = NOW()
+         WHERE id = $2
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified",
                    created_at AS "createdAt", updated_at AS "updatedAt"`,
         [requiredRole, user.id]
       );
-      
+
+      if (!upgradedUser) {
+        throw new AppError(500, 'Failed to upgrade user role');
+      }
+
       user = upgradedUser;
     } else if (requiredRole && user.role === 'admin' && requiredRole === 'super_admin') {
       logger.info(`Upgrading Google user ${email} from admin to super_admin role based on admin config`);
-      
+
       const [upgradedUser] = await query<User>(
-        `UPDATE users SET role = 'super_admin', updated_at = NOW() 
-         WHERE id = $1 
-         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+        `UPDATE users SET role = 'super_admin', updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified",
                    created_at AS "createdAt", updated_at AS "updatedAt"`,
         [user.id]
       );
-      
+
+      if (!upgradedUser) {
+        throw new AppError(500, 'Failed to upgrade user role');
+      }
+
       user = upgradedUser;
     }
 
@@ -347,13 +364,16 @@ export class OAuthService {
       if (hasRealEmail && !user.email) {
         logger.info(`[OAuth Service] Updating LINE user ${user.id} with real email: ${email}`);
         const [updatedUser] = await query<User>(
-          `UPDATE users 
-           SET email = $1, email_verified = true, updated_at = NOW() 
+          `UPDATE users
+           SET email = $1, email_verified = true, updated_at = NOW()
            WHERE id = $2
-           RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+           RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified",
                      created_at AS "createdAt", updated_at AS "updatedAt"`,
           [email, user.id]
         );
+        if (!updatedUser) {
+          throw new AppError(500, 'Failed to update user email');
+        }
         user = updatedUser;
       }
       
@@ -413,12 +433,16 @@ export class OAuthService {
       // Create user account (no password needed for OAuth)
       // Set email_verified based on whether we have a real email
       const [newUser] = await query<User>(
-        `INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id) 
-         VALUES ($1, '', $2, 'line', $3) 
-         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+        `INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id)
+         VALUES ($1, '', $2, 'line', $3)
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified",
                    created_at AS "createdAt", updated_at AS "updatedAt"`,
         [email, hasRealEmail, lineId]
       );
+
+      if (!newUser) {
+        throw new AppError(500, 'Failed to create LINE user');
+      }
 
       user = newUser;
 
@@ -437,27 +461,35 @@ export class OAuthService {
     const requiredRole = user.email ? adminConfigService.getRequiredRole(user.email) : null;
     if (requiredRole && user.role === 'customer') {
       logger.info(`Upgrading LINE user ${user.email} to ${requiredRole} role based on admin config`);
-      
+
       const [upgradedUser] = await query<User>(
-        `UPDATE users SET role = $1, updated_at = NOW() 
-         WHERE id = $2 
-         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+        `UPDATE users SET role = $1, updated_at = NOW()
+         WHERE id = $2
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified",
                    created_at AS "createdAt", updated_at AS "updatedAt"`,
         [requiredRole, user.id]
       );
-      
+
+      if (!upgradedUser) {
+        throw new AppError(500, 'Failed to upgrade user role');
+      }
+
       user = upgradedUser;
     } else if (requiredRole && user.role === 'admin' && requiredRole === 'super_admin') {
       logger.info(`Upgrading LINE user ${user.email} from admin to super_admin role based on admin config`);
-      
+
       const [upgradedUser] = await query<User>(
-        `UPDATE users SET role = 'super_admin', updated_at = NOW() 
-         WHERE id = $1 
-         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified", 
+        `UPDATE users SET role = 'super_admin', updated_at = NOW()
+         WHERE id = $1
+         RETURNING id, email, role, is_active AS "isActive", email_verified AS "emailVerified",
                    created_at AS "createdAt", updated_at AS "updatedAt"`,
         [user.id]
       );
-      
+
+      if (!upgradedUser) {
+        throw new AppError(500, 'Failed to upgrade user role');
+      }
+
       user = upgradedUser;
     }
 

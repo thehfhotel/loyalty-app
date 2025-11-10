@@ -75,17 +75,25 @@ export class NotificationService {
 
     // Get total count
     const [countResult] = await query<{ total: string; unread: string }>(
-      `SELECT 
+      `SELECT
         COUNT(*) as total,
         COUNT(CASE WHEN read_at IS NULL THEN 1 END) as unread
-      FROM notifications 
+      FROM notifications
       ${whereCondition}`,
       queryParams
     );
 
+    if (!countResult) {
+      return {
+        total: 0,
+        unread: 0,
+        notifications: []
+      };
+    }
+
     // Get notifications
     const notifications = await query<Notification>(
-      `SELECT 
+      `SELECT
         id,
         user_id AS "userId",
         title,
@@ -96,7 +104,7 @@ export class NotificationService {
         created_at AS "createdAt",
         updated_at AS "updatedAt",
         expires_at AS "expiresAt"
-      FROM notifications 
+      FROM notifications
       ${whereCondition}
       ORDER BY created_at DESC
       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`,
@@ -119,7 +127,7 @@ export class NotificationService {
       [userId]
     );
 
-    return parseInt(result.count);
+    return result ? parseInt(result.count) : 0;
   }
 
   /**
@@ -157,7 +165,7 @@ export class NotificationService {
       [userId]
     );
 
-    const markedCount = parseInt(result.count);
+    const markedCount = result ? parseInt(result.count) : 0;
 
     logger.info('All notifications marked as read', {
       userId,
@@ -196,7 +204,7 @@ export class NotificationService {
       'SELECT cleanup_expired_notifications() as count'
     );
 
-    const deletedCount = parseInt(result.count);
+    const deletedCount = result ? parseInt(result.count) : 0;
 
     if (deletedCount > 0) {
       logger.info('Expired notifications cleaned up', {
