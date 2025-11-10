@@ -1,6 +1,13 @@
+/* eslint-disable security/detect-object-injection */
 /**
  * Jest Test Setup
  * Global test configuration and database setup for isolated testing
+ *
+ * Note: Object injection ESLint rule disabled for this file because:
+ * - Test file only (not production code)
+ * - Dynamic property access uses Object.keys() on controlled test data
+ * - No user input involved
+ * - Pattern necessary for dynamic Prisma mock implementations
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -92,7 +99,8 @@ beforeAll(async () => {
   testDb.users.findMany = jest.fn().mockImplementation((params: { where?: Record<string, unknown>; take?: number }) => {
     let users = [...mockUsers];
     if (params?.where) {
-      users = users.filter(u => 
+      users = users.filter(u =>
+        // eslint-disable-next-line security/detect-object-injection
         Object.keys(params.where!).every(key => (u as Record<string, unknown>)[key] === params.where![key])
       );
     }
@@ -120,7 +128,8 @@ beforeAll(async () => {
   testDb.points_transactions.findMany = jest.fn().mockImplementation((params: { where?: Record<string, unknown>; orderBy?: Record<string, 'asc' | 'desc'>; take?: number }) => {
     let transactions = [...mockTransactions];
     if (params?.where) {
-      transactions = transactions.filter(t => 
+      transactions = transactions.filter(t =>
+        // eslint-disable-next-line security/detect-object-injection
         Object.keys(params.where!).every(key => (t as Record<string, unknown>)[key] === params.where![key])
       );
     }
@@ -129,11 +138,14 @@ beforeAll(async () => {
       if (!orderKey) {
         throw new Error('orderBy key is required');
       }
+      // eslint-disable-next-line security/detect-object-injection
       const orderDir = params.orderBy[orderKey];
       transactions.sort((a, b) => {
         if (orderDir === 'desc') {
+          // eslint-disable-next-line security/detect-object-injection
           return new Date((b as Record<string, unknown>)[orderKey] as string).getTime() - new Date((a as Record<string, unknown>)[orderKey] as string).getTime();
         }
+        // eslint-disable-next-line security/detect-object-injection
         return new Date((a as Record<string, unknown>)[orderKey] as string).getTime() - new Date((b as Record<string, unknown>)[orderKey] as string).getTime();
       });
     }
@@ -146,7 +158,8 @@ beforeAll(async () => {
   testDb.points_transactions.aggregate = jest.fn().mockImplementation((params: { where?: Record<string, unknown>; _sum?: { points: boolean } }) => {
     let transactions = [...mockTransactions];
     if (params?.where) {
-      transactions = transactions.filter(t => 
+      transactions = transactions.filter(t =>
+        // eslint-disable-next-line security/detect-object-injection
         Object.keys(params.where!).every(key => (t as Record<string, unknown>)[key] === params.where![key])
       );
     }

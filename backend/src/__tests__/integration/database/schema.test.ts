@@ -1,6 +1,13 @@
+/* eslint-disable security/detect-object-injection */
 /**
  * Database Schema Integration Tests
  * Tests database constraints, relationships, and integrity
+ *
+ * Note: Object injection ESLint rule disabled for this file because:
+ * - Test file only (not production code)
+ * - Dynamic property access uses Object.keys() on controlled test data
+ * - No user input involved
+ * - Pattern necessary for dynamic Prisma mock implementations
  */
 
 import { testDb, createTestUser, createTestCoupon, createTestLoyaltyTransaction, mockUsers, mockTransactions } from '../../setup';
@@ -341,7 +348,9 @@ describe('Database Schema Integration', () => {
         if (params?.where) {
           transactions = transactions.filter(t => {
             return Object.keys(params.where!).every(key => {
+              // eslint-disable-next-line security/detect-object-injection
               const transactionValue = (t as Record<string, unknown>)[key];
+              // eslint-disable-next-line security/detect-object-injection
               const whereValue = (params.where! as Record<string, unknown>)[key];
               return transactionValue === whereValue;
             });
@@ -352,11 +361,14 @@ describe('Database Schema Integration', () => {
           if (!orderKey) {
             throw new Error('orderBy key is required');
           }
+          // eslint-disable-next-line security/detect-object-injection
           const orderDir = params.orderBy[orderKey];
           transactions.sort((a, b) => {
             if (orderDir === 'desc') {
+              // eslint-disable-next-line security/detect-object-injection
               return new Date((b as Record<string, unknown>)[orderKey] as string).getTime() - new Date((a as Record<string, unknown>)[orderKey] as string).getTime();
             }
+            // eslint-disable-next-line security/detect-object-injection
             return new Date((a as Record<string, unknown>)[orderKey] as string).getTime() - new Date((b as Record<string, unknown>)[orderKey] as string).getTime();
           });
         }

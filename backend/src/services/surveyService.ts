@@ -763,6 +763,8 @@ export class SurveyService {
         if (question.type === 'multiple_choice' || question.type === 'single_choice' || question.type === 'yes_no') {
           responseDistribution = responses.reduce((acc: Record<string, number>, response: any) => {
             const key = Array.isArray(response) ? response.join(', ') : String(response);
+            // Safe: key is stringified response data used only for counting
+            // eslint-disable-next-line security/detect-object-injection
             acc[key] = (acc[key] || 0) + 1;
             return acc;
           }, {});

@@ -107,6 +107,7 @@ class TranslationService {
           if (typeof ourLangCode === 'string' && 
               ourLangCode.match(/^[a-zA-Z-]+$/) && 
               Object.prototype.hasOwnProperty.call(translations, ourLangCode)) {
+            // eslint-disable-next-line security/detect-object-injection
             translations[ourLangCode].push(translation.text);
           }
         });
@@ -298,7 +299,13 @@ class TranslationService {
 
       // Store translations
       for (const targetLanguage of job.targetLanguages) {
+        // Validate target language exists in translation results
+        // eslint-disable-next-line security/detect-object-injection
         const translations = translationResult.translations[targetLanguage];
+        if (!translations) {
+          logger.warn('Translation missing for language', { language: targetLanguage });
+          continue;
+        }
         const translatedData = this.applyTranslationsToSurvey(
           { title: survey.title, description: survey.description, questions },
           translations,
@@ -378,7 +385,13 @@ class TranslationService {
 
       // Store translations
       for (const targetLanguage of job.targetLanguages) {
+        // Validate target language exists in translation results
+        // eslint-disable-next-line security/detect-object-injection
         const translations = translationResult.translations[targetLanguage];
+        if (!translations) {
+          logger.warn('Translation missing for language', { language: targetLanguage });
+          continue;
+        }
         const translatedData = this.applyTranslationsToCoupon(
           { name: coupon.name, description: coupon.description, terms_and_conditions: coupon.terms_and_conditions },
           translations,
@@ -424,6 +437,8 @@ class TranslationService {
     const result = JSON.parse(JSON.stringify(original));
     
     translations.forEach((translation, index) => {
+      // Array index from forEach is safe
+      // eslint-disable-next-line security/detect-object-injection
       const mapping = textMapping[index];
       if (!mapping) return;
 
@@ -459,6 +474,8 @@ class TranslationService {
     const result = { ...original };
     
     translations.forEach((translation, index) => {
+      // Array index from forEach is safe
+      // eslint-disable-next-line security/detect-object-injection
       const mapping = textMapping[index];
       if (mapping) {
         result[mapping.field] = translation;
@@ -636,6 +653,8 @@ class TranslationService {
       'en': 'en',
       'zh-CN': 'zh-Hans'
     };
+    // Type-safe mapping with SupportedLanguage type
+    // eslint-disable-next-line security/detect-object-injection
     return mapping[language] || language;
   }
 
@@ -648,6 +667,8 @@ class TranslationService {
       'en': 'en',
       'zh-Hans': 'zh-CN'
     };
+    // Safe fallback to 'en' for unknown Azure language codes
+    // eslint-disable-next-line security/detect-object-injection
     return mapping[azureLang] ?? 'en';
   }
 }

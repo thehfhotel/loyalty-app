@@ -18,13 +18,17 @@ export class ImageProcessor {
     try {
       await fs.access(this.storageDir);
     } catch {
+      // Safe: storageDir is from config, not user input
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
       await fs.mkdir(this.storageDir, { recursive: true });
       logger.info(`Created avatar storage directory: ${this.storageDir}`);
     }
-    
+
     try {
       await fs.access(this.backupDir);
     } catch {
+      // Safe: backupDir is from config, not user input
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
       await fs.mkdir(this.backupDir, { recursive: true });
       logger.info(`Created avatar backup directory: ${this.backupDir}`);
     }
@@ -69,8 +73,10 @@ export class ImageProcessor {
     for (const ext of extensions) {
       const filename = `${userId}_avatar${ext}`;
       const filepath = path.join(this.storageDir, filename);
-      
+
       try {
+        // Safe: filepath is constructed from config storageDir + userId (validated)
+        // eslint-disable-next-line security/detect-non-literal-fs-filename
         await fs.unlink(filepath);
         logger.info(`Deleted old avatar for user ${userId}: ${filename}`);
         break; // Stop after deleting the first match
@@ -87,7 +93,9 @@ export class ImageProcessor {
     try {
       const filename = path.basename(avatarPath);
       const filepath = path.join(this.storageDir, filename);
-      
+
+      // Safe: filepath is constructed from config storageDir + basename (sanitized)
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
       await fs.unlink(filepath);
       logger.info(`Deleted avatar: ${filename}`);
     } catch (error) {
@@ -102,12 +110,16 @@ export class ImageProcessor {
     averageSize: number;
   }> {
     try {
+      // Safe: storageDir is from config, not user input
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
       const files = await fs.readdir(this.storageDir);
       let totalSize = 0;
       let fileCount = 0;
 
       for (const file of files) {
         try {
+          // Safe: path constructed from config storageDir + directory listing
+          // eslint-disable-next-line security/detect-non-literal-fs-filename
           const stats = await fs.stat(path.join(this.storageDir, file));
           if (stats.isFile()) {
             totalSize += stats.size;
@@ -135,10 +147,14 @@ export class ImageProcessor {
     
     const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
     const backupPath = path.join(this.backupDir, timestamp);
-    
+
     try {
+      // Safe: backupPath is constructed from config backupDir + ISO date
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
       await fs.mkdir(backupPath, { recursive: true });
-      
+
+      // Safe: storageDir is from config, not user input
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
       const files = await fs.readdir(this.storageDir);
       let copiedCount = 0;
       
@@ -167,6 +183,8 @@ export class ImageProcessor {
   // Clean backups older than 7 days
   private static async cleanOldBackups(): Promise<void> {
     try {
+      // Safe: backupDir is from config, not user input
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
       const backups = await fs.readdir(this.backupDir);
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 7);

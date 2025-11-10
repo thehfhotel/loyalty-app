@@ -350,6 +350,8 @@ describe('LoyaltyService', () => {
 
       // Check that timestamps are in ascending order
       for (let i = 1; i < timestamps.length; i++) {
+        // Array index from loop is safe
+        // eslint-disable-next-line security/detect-object-injection
         expect(timestamps[i].getTime()).toBeGreaterThanOrEqual(timestamps[i - 1].getTime());
       }
     });
