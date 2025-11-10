@@ -159,18 +159,18 @@ class TranslationService {
   /**
    * Translate using Google Translate (placeholder implementation)
    */
-  private async translateWithGoogle(request: TranslationRequest): Promise<TranslationResponse> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async translateWithGoogle(_request: TranslationRequest): Promise<TranslationResponse> {
     // Placeholder implementation - parameters will be used when implemented
-    request; // Reference to avoid unused parameter warning
     throw new Error('Google Translate integration not implemented yet');
   }
 
   /**
    * Translate using LibreTranslate (placeholder implementation)
    */
-  private async translateWithLibreTranslate(request: TranslationRequest): Promise<TranslationResponse> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async translateWithLibreTranslate(_request: TranslationRequest): Promise<TranslationResponse> {
     // Placeholder implementation - parameters will be used when implemented
-    request; // Reference to avoid unused parameter warning
     throw new Error('LibreTranslate integration not implemented yet');
   }
 
@@ -661,7 +661,7 @@ class TranslationService {
         available: false,
         provider: 'none'
       };
-    } catch (_error) {
+    } catch {
       return {
         available: false,
         provider: 'error'

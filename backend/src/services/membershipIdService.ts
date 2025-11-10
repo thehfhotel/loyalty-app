@@ -77,10 +77,10 @@ export class MembershipIdService {
       const membershipId = await this.generateIdInBlock(primaryBlockNumber);
       const blockStart = primaryBlockNumber * this.BLOCK_SIZE + 1;
       const blockEnd = (primaryBlockNumber + 1) * this.BLOCK_SIZE;
-      
+
       logger.info(`Generated membership ID: ${membershipId} for user #${userCount} (Primary Block ${primaryBlockNumber}: ${blockStart}-${blockEnd})`);
       return membershipId;
-    } catch (error) {
+    } catch {
       logger.warn(`Primary block ${primaryBlockNumber} exhausted for user #${userCount}, searching for available blocks`);
     }
     
@@ -97,10 +97,10 @@ export class MembershipIdService {
         const membershipId = await this.generateIdInBlock(fallbackBlock);
         const blockStart = fallbackBlock * this.BLOCK_SIZE + 1;
         const blockEnd = (fallbackBlock + 1) * this.BLOCK_SIZE;
-        
+
         logger.info(`Generated membership ID: ${membershipId} for user #${userCount} (Fallback Block ${fallbackBlock}: ${blockStart}-${blockEnd}) - Advanced ${blockOffset} blocks due to exhaustion`);
         return membershipId;
-      } catch (error) {
+      } catch {
         logger.debug(`Fallback block ${fallbackBlock} also exhausted, trying next block`);
         continue;
       }
@@ -120,10 +120,10 @@ export class MembershipIdService {
         const membershipId = await this.generateIdInBlock(fallbackBlock);
         const blockStart = fallbackBlock * this.BLOCK_SIZE + 1;
         const blockEnd = (fallbackBlock + 1) * this.BLOCK_SIZE;
-        
+
         logger.info(`Generated membership ID: ${membershipId} for user #${userCount} (Backward Fallback Block ${fallbackBlock}: ${blockStart}-${blockEnd}) - Retreated ${blockOffset} blocks due to exhaustion`);
         return membershipId;
-      } catch (error) {
+      } catch {
         logger.debug(`Backward fallback block ${fallbackBlock} also exhausted, trying previous block`);
         continue;
       }

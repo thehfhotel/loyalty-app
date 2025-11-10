@@ -235,7 +235,7 @@ export class PrismaUserService {
     try {
       await db.$queryRaw`SELECT 1`;
       return true;
-    } catch (_error) {
+    } catch {
       return false;
     }
   }

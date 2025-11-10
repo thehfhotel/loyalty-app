@@ -135,7 +135,7 @@ export class OAuthStateService {
       const redisClient = getRedisClient();
       const pattern = `${this.KEY_PREFIX}:*`;
 
-      let cursor: number = 0;
+      let cursor = 0;
       let deletedCount = 0;
 
       do {
@@ -157,7 +157,7 @@ export class OAuthStateService {
               await redisClient.del(key);
               deletedCount++;
             }
-          } catch (_error) {
+          } catch {
             // Invalid data, delete it
             await redisClient.del(key);
             deletedCount++;
@@ -221,7 +221,7 @@ export class OAuthStateService {
             if (!stats.oldestTimestamp || stateData.timestamp < stats.oldestTimestamp) {
               stats.oldestTimestamp = stateData.timestamp;
             }
-          } catch (_error) {
+          } catch {
             // Invalid data, don't count it
           }
         }
