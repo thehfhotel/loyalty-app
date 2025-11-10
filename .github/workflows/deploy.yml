@@ -146,6 +146,9 @@ jobs:
           path: |
             .
             !.git
+            !backend/node_modules
+            !frontend/node_modules
+            !node_modules
           retention-days: 1
           compression-level: 0
 
@@ -168,6 +171,20 @@ jobs:
         with:
           name: ci-workspace-${{ github.run_id }}
           path: .
+
+      - name: "♻️ Restore backend node_modules from cache"
+        uses: actions/cache/restore@v4
+        with:
+          path: backend/node_modules
+          key: backend-deps-${{ hashFiles('backend/package-lock.json') }}
+          fail-on-cache-miss: true
+
+      - name: "♻️ Restore frontend node_modules from cache"
+        uses: actions/cache/restore@v4
+        with:
+          path: frontend/node_modules
+          key: frontend-deps-${{ hashFiles('frontend/package-lock.json') }}
+          fail-on-cache-miss: true
 
       - name: "🔍 TypeScript type checking (validation)"
         working-directory: ./backend
@@ -218,6 +235,20 @@ jobs:
         with:
           name: ci-workspace-${{ github.run_id }}
           path: .
+
+      - name: "♻️ Restore backend node_modules from cache"
+        uses: actions/cache/restore@v4
+        with:
+          path: backend/node_modules
+          key: backend-deps-${{ hashFiles('backend/package-lock.json') }}
+          fail-on-cache-miss: true
+
+      - name: "♻️ Restore frontend node_modules from cache"
+        uses: actions/cache/restore@v4
+        with:
+          path: frontend/node_modules
+          key: frontend-deps-${{ hashFiles('frontend/package-lock.json') }}
+          fail-on-cache-miss: true
 
       - name: "🐳 Start isolated test services"
         run: |
@@ -420,6 +451,20 @@ jobs:
         with:
           name: ci-workspace-${{ github.run_id }}
           path: .
+
+      - name: "♻️ Restore backend node_modules from cache"
+        uses: actions/cache/restore@v4
+        with:
+          path: backend/node_modules
+          key: backend-deps-${{ hashFiles('backend/package-lock.json') }}
+          fail-on-cache-miss: true
+
+      - name: "♻️ Restore frontend node_modules from cache"
+        uses: actions/cache/restore@v4
+        with:
+          path: frontend/node_modules
+          key: frontend-deps-${{ hashFiles('frontend/package-lock.json') }}
+          fail-on-cache-miss: true
 
       - name: "🔧 Setup isolated E2E environment"
         run: |
