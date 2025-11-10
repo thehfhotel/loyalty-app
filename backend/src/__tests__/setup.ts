@@ -166,7 +166,7 @@ beforeAll(async () => {
     
     // Check if we're summing points
     if (params?._sum?.points) {
-      const sum = transactions.reduce((acc, t) => acc + (t.points || 0), 0);
+      const sum = transactions.reduce((acc, t) => acc + (t.points ?? 0), 0);
       return Promise.resolve({ _sum: { points: sum } });
     }
     
@@ -176,7 +176,7 @@ beforeAll(async () => {
   testDb.points_transactions.findUnique = jest.fn().mockImplementation((params: { where?: { id?: string } }) => {
     if (params?.where?.id) {
       const transaction = mockTransactions.find(t => t.id === params.where!.id);
-      return Promise.resolve(transaction || null);
+      return Promise.resolve(transaction ?? null);
     }
     return Promise.resolve(null);
   });
@@ -184,11 +184,11 @@ beforeAll(async () => {
   testDb.users.findUnique = jest.fn().mockImplementation((params: { where?: { email?: string; id?: string } }) => {
     if (params?.where?.email) {
       const user = mockUsers.find(u => u.email === params.where!.email);
-      return Promise.resolve(user || null);
+      return Promise.resolve(user ?? null);
     }
     if (params?.where?.id) {
       const user = mockUsers.find(u => u.id === params.where!.id);
-      return Promise.resolve(user || null);
+      return Promise.resolve(user ?? null);
     }
     return Promise.resolve(null);
   });
@@ -245,14 +245,14 @@ let membershipCounter = 0;
 // Test utilities
 export const createTestUser = async (overrides: Record<string, unknown> = {}) => {
   const userId = uuidv4();
-  const membershipId = overrides.membershipId || `TEST-${Date.now()}-${++membershipCounter}`;
+  const membershipId = overrides.membershipId ?? `TEST-${Date.now()}-${++membershipCounter}`;
   const email = overrides.email !== undefined ? overrides.email : `test-${uuidv4()}@example.com`;
   
   // Create the user object
   const userData = {
     id: userId,
     email: email,
-    role: overrides.role || 'customer',
+    role: overrides.role ?? 'customer',
     is_active: true,
     email_verified: false,
     created_at: new Date(),
@@ -286,9 +286,9 @@ export const createTestUser = async (overrides: Record<string, unknown> = {}) =>
     
     // Success case
     const user = { 
-      id: userData.id || uuidv4(), 
-      created_at: userData.created_at || new Date(),
-      updated_at: userData.updated_at || new Date(),
+      id: userData.id ?? uuidv4(), 
+      created_at: userData.created_at ?? new Date(),
+      updated_at: userData.updated_at ?? new Date(),
       ...userData 
     } as MockUser;
     mockUsers.push(user);
@@ -303,10 +303,10 @@ export const createTestUser = async (overrides: Record<string, unknown> = {}) =>
   // Mock profile creation
   const profileData = {
     user_id: userId,
-    first_name: overrides.firstName || 'Test',
-    last_name: overrides.lastName || 'User',
-    phone: overrides.phone || null,
-    membership_id: overrides.membershipId || membershipId,
+    first_name: overrides.firstName ?? 'Test',
+    last_name: overrides.lastName ?? 'User',
+    phone: overrides.phone ?? null,
+    membership_id: overrides.membershipId ?? membershipId,
     created_at: new Date(),
     updated_at: new Date(),
   };
@@ -330,8 +330,8 @@ export const createTestUser = async (overrides: Record<string, unknown> = {}) =>
   const returnUser = {
     id: userId,
     email: email,
-    firstName: overrides.firstName || 'Test',
-    lastName: overrides.lastName || 'User',
+    firstName: overrides.firstName ?? 'Test',
+    lastName: overrides.lastName ?? 'User',
     membershipId: membershipId,
     loyaltyPoints: 0, // Default
     createdAt: new Date(),
@@ -346,8 +346,8 @@ export const createTestCoupon = async (userId: string, overrides: Record<string,
     id: uuidv4(),
     user_id: userId,
     coupon_id: uuidv4(),
-    status: overrides.status || 'available',
-    qr_code: overrides.qr_code || `TEST-QR-${uuidv4().substring(0, 8).toUpperCase()}`,
+    status: overrides.status ?? 'available',
+    qr_code: overrides.qr_code ?? `TEST-QR-${uuidv4().substring(0, 8).toUpperCase()}`,
     expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
     created_at: new Date(),
     updated_at: new Date(),
@@ -362,7 +362,7 @@ export const createTestCoupon = async (userId: string, overrides: Record<string,
       return Promise.reject(new Error('Foreign key constraint failed on the field: `user_id`'));
     }
     
-    const qrCode = params?.data?.qr_code || `TEST-QR-${uuidv4().substring(0, 8).toUpperCase()}`;
+    const qrCode = params?.data?.qr_code ?? `TEST-QR-${uuidv4().substring(0, 8).toUpperCase()}`;
     
     // Check for QR code uniqueness
     const existingCoupon = mockCoupons.find(c => c.qr_code === qrCode);
@@ -392,9 +392,9 @@ export const createTestLoyaltyTransaction = async (userId: string, overrides: Re
   const transactionData = {
     id: uuidv4(),
     user_id: userId,
-    type: overrides.type || 'earned_stay',
-    points: overrides.points || 100,
-    description: overrides.description || 'Test hotel stay',
+    type: overrides.type ?? 'earned_stay',
+    points: overrides.points ?? 100,
+    description: overrides.description ?? 'Test hotel stay',
     created_at: new Date(),
     ...overrides,
   };
@@ -412,8 +412,8 @@ export const createTestLoyaltyTransaction = async (userId: string, overrides: Re
     
     // Success case
     const transaction = { 
-      id: params.data.id || uuidv4(), 
-      created_at: params.data.created_at || new Date(),
+      id: params.data.id ?? uuidv4(), 
+      created_at: params.data.created_at ?? new Date(),
       ...params.data 
     } as MockTransaction;
     mockTransactions.push(transaction);

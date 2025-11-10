@@ -253,8 +253,8 @@ export class AnalyticsService {
       return acc;
     }, {} as Record<string, number>);
 
-    const assignments = (eventTypeMap.assign || 0);
-    const redemptions = (eventTypeMap.redeem_success || 0);
+    const assignments = (eventTypeMap.assign ?? 0);
+    const redemptions = (eventTypeMap.redeem_success ?? 0);
     const conversionRate = assignments > 0 ? (redemptions / assignments) * 100 : 0;
 
     // Get daily statistics
@@ -465,7 +465,7 @@ export class AnalyticsService {
 
         return {
           ...day,
-          topField: topField?.field || 'none'
+          topField: topField?.field ?? 'none'
         };
       })
     );
@@ -682,8 +682,8 @@ export class AnalyticsService {
     return {
       activeUsers: overallMetrics.activeUsers,
       totalSessions: overallMetrics.totalSessions,
-      avgCouponsPerUser: Number(overallMetrics.avgCouponsPerUser?.toFixed(2) || 0),
-      avgProfileChangesPerUser: Number(overallMetrics.avgProfileChangesPerUser?.toFixed(2) || 0),
+      avgCouponsPerUser: Number(overallMetrics.avgCouponsPerUser?.toFixed(2) ?? 0),
+      avgProfileChangesPerUser: Number(overallMetrics.avgProfileChangesPerUser?.toFixed(2) ?? 0),
       userSegments,
       topUsers
     };

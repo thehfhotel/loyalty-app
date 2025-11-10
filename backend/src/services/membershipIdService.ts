@@ -175,7 +175,7 @@ export class MembershipIdService {
       [membershipId]
     );
     
-    return result?.exists || false;
+    return result?.exists ?? false;
   }
 
   /**
@@ -272,7 +272,7 @@ export class MembershipIdService {
       [newMembershipId, userId]
     );
 
-    if (!result || result.length === 0) {
+    if (!result ?? result.length === 0) {
       throw new AppError(404, 'User profile not found');
     }
 
@@ -311,7 +311,7 @@ export class MembershipIdService {
       'SELECT current_user_count FROM membership_id_sequence LIMIT 1'
     );
 
-    const currentUserCount = sequenceInfo?.current_user_count || 0;
+    const currentUserCount = sequenceInfo?.current_user_count ?? 0;
     const currentBlock = Math.floor((currentUserCount - 1) / 100);
     const blockStart = currentBlock * 100 + 1;
     const blockEnd = (currentBlock + 1) * 100;

@@ -765,7 +765,7 @@ export class SurveyService {
             const key = Array.isArray(response) ? response.join(', ') : String(response);
             // Safe: key is stringified response data used only for counting
             // eslint-disable-next-line security/detect-object-injection
-            acc[key] = (acc[key] || 0) + 1;
+            acc[key] = (acc[key] ?? 0) + 1;
             return acc;
           }, {});
         }
