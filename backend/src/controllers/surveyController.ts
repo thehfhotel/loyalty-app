@@ -13,13 +13,14 @@ export class SurveyController {
   // Create a new survey (Admin only)
   async createSurvey(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
-      
+      const user = req.user;
+
       // Check if user is admin
-      if (!user || !['admin', 'super_admin'].includes(user.role)) {
+      if (!user || !user.id || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
         return;
       }
+      const userId: string = user.id;
 
       const surveyData: CreateSurveyRequest = req.body;
       
@@ -109,7 +110,7 @@ export class SurveyController {
         return;
       }
 
-      const survey = await surveyService.createSurvey(surveyData, user.id);
+      const survey = await surveyService.createSurvey(surveyData, userId);
       res.status(201).json({ survey });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -132,18 +133,19 @@ export class SurveyController {
   async getSurvey(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { user } = req as any;
-      
-      const survey = await surveyService.getSurveyById(id);
-      
+      const user = req.user;
+
+      const survey = await surveyService.getSurveyById(id!);
+
       if (!survey) {
         res.status(404).json({ message: 'Survey not found' });
         return;
       }
 
       // For non-admin users, check access permissions
-      if (user && !['admin', 'super_admin'].includes(user.role)) {
-        const hasAccess = await surveyService.canUserAccessSurvey(user.id, id);
+      if (user && user.id && !['admin', 'super_admin'].includes(user.role)) {
+        const userId: string = user.id;
+        const hasAccess = await surveyService.canUserAccessSurvey(userId, id!);
         if (!hasAccess) {
           res.status(403).json({ 
             message: 'Access denied. You do not have permission to access this survey.' 
@@ -163,7 +165,7 @@ export class SurveyController {
   // Get all surveys with pagination (Admin only)
   async getSurveys(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
@@ -197,7 +199,7 @@ export class SurveyController {
   // Update survey (Admin only)
   async updateSurvey(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { id } = req.params;
       
       // Check if user is admin
@@ -209,8 +211,8 @@ export class SurveyController {
       const updateData: UpdateSurveyRequest = req.body;
       
       // Enhanced logging for update operations too
-      
-      const survey = await surveyService.updateSurvey(id, updateData);
+
+      const survey = await surveyService.updateSurvey(id!, updateData);
       
       if (!survey) {
         res.status(404).json({ message: 'Survey not found' });
@@ -227,7 +229,7 @@ export class SurveyController {
   // Delete survey (Admin only)
   async deleteSurvey(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { id } = req.params;
       
       // Check if user is admin
@@ -236,7 +238,7 @@ export class SurveyController {
         return;
       }
 
-      const deleted = await surveyService.deleteSurvey(id);
+      const deleted = await surveyService.deleteSurvey(id!);
       
       if (!deleted) {
         res.status(404).json({ message: 'Survey not found' });
@@ -253,7 +255,7 @@ export class SurveyController {
   // Submit survey response (Customer)
   async submitResponse(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       
       if (!user) {
         res.status(401).json({ message: 'Authentication required' });
@@ -269,7 +271,7 @@ export class SurveyController {
       }
 
       // Check if user has access to this survey
-      const hasAccess = await surveyService.canUserAccessSurvey(user.id, responseData.survey_id);
+      const hasAccess = await surveyService.canUserAccessSurvey(user.id!, responseData.survey_id);
       if (!hasAccess) {
         res.status(403).json({ 
           message: 'Access denied. You do not have permission to respond to this survey.' 
@@ -277,7 +279,7 @@ export class SurveyController {
         return;
       }
 
-      const response = await surveyService.submitResponse(user.id, responseData);
+      const response = await surveyService.submitResponse(user.id!, responseData);
       res.json({ response });
     } catch (error: any) {
       logger.error('Error submitting response:', error);
@@ -288,7 +290,7 @@ export class SurveyController {
   // Get user's response to a survey
   async getUserResponse(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { surveyId } = req.params;
       
       if (!user) {
@@ -296,7 +298,7 @@ export class SurveyController {
         return;
       }
 
-      const response = await surveyService.getUserResponse(user.id, surveyId);
+      const response = await surveyService.getUserResponse(user.id!, surveyId!);
       res.json({ response });
     } catch (error: any) {
       logger.error('Error fetching user response:', error);
@@ -307,7 +309,7 @@ export class SurveyController {
   // Get all responses for a survey (Admin only)
   async getSurveyResponses(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { surveyId } = req.params;
       
       // Check if user is admin
@@ -319,7 +321,7 @@ export class SurveyController {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
 
-      const result = await surveyService.getSurveyResponses(surveyId, page, limit);
+      const result = await surveyService.getSurveyResponses(surveyId!, page, limit);
       
       res.json({
         responses: result.responses,
@@ -339,14 +341,14 @@ export class SurveyController {
   // Get surveys available to current user
   async getAvailableSurveys(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       
       if (!user) {
         res.status(401).json({ message: 'Authentication required' });
         return;
       }
 
-      const surveys = await surveyService.getAvailableSurveys(user.id);
+      const surveys = await surveyService.getAvailableSurveys(user.id!);
       res.json({ surveys });
     } catch (error: any) {
       logger.error('Error fetching available surveys:', error);
@@ -357,14 +359,14 @@ export class SurveyController {
   // Get public surveys available to current user
   async getPublicSurveys(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       
       if (!user) {
         res.status(401).json({ message: 'Authentication required' });
         return;
       }
 
-      const surveys = await surveyService.getPublicSurveys(user.id);
+      const surveys = await surveyService.getPublicSurveys(user.id!);
       res.json({ surveys });
     } catch (error: any) {
       logger.error('Error fetching public surveys:', error);
@@ -375,14 +377,14 @@ export class SurveyController {
   // Get invited surveys available to current user
   async getInvitedSurveys(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       
       if (!user) {
         res.status(401).json({ message: 'Authentication required' });
         return;
       }
 
-      const surveys = await surveyService.getInvitedSurveys(user.id);
+      const surveys = await surveyService.getInvitedSurveys(user.id!);
       res.json({ surveys });
     } catch (error: any) {
       logger.error('Error fetching invited surveys:', error);
@@ -393,7 +395,7 @@ export class SurveyController {
   // Get survey analytics (Admin only)
   async getSurveyAnalytics(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { surveyId } = req.params;
       
       // Check if user is admin
@@ -402,7 +404,7 @@ export class SurveyController {
         return;
       }
 
-      const analytics = await surveyService.getSurveyAnalytics(surveyId);
+      const analytics = await surveyService.getSurveyAnalytics(surveyId!);
       
       if (!analytics) {
         res.status(404).json({ message: 'Survey not found' });
@@ -419,7 +421,7 @@ export class SurveyController {
   // Export survey responses as CSV (Admin only)
   async exportSurveyResponses(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { surveyId } = req.params;
       
       // Check if user is admin
@@ -429,14 +431,14 @@ export class SurveyController {
       }
 
       // Get survey and all responses
-      const survey = await surveyService.getSurveyById(surveyId);
+      const survey = await surveyService.getSurveyById(surveyId!);
       if (!survey) {
         res.status(404).json({ message: 'Survey not found' });
         return;
       }
 
       // Get all responses (without pagination)
-      const result = await surveyService.getSurveyResponses(surveyId, 1, 10000);
+      const result = await surveyService.getSurveyResponses(surveyId!, 1, 10000);
       const responses = result.responses;
 
       // Generate CSV header
@@ -489,7 +491,7 @@ export class SurveyController {
   // Get survey invitations (Admin only)
   async getSurveyInvitations(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { surveyId } = req.params;
       
       // Check if user is admin
@@ -498,7 +500,7 @@ export class SurveyController {
         return;
       }
 
-      const invitations = await surveyService.getSurveyInvitations(surveyId);
+      const invitations = await surveyService.getSurveyInvitations(surveyId!);
       res.json({ invitations });
     } catch (error: any) {
       logger.error('Error fetching survey invitations:', error);
@@ -509,7 +511,7 @@ export class SurveyController {
   // Send survey invitations (Admin only)
   async sendSurveyInvitations(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { surveyId } = req.params;
       
       // Check if user is admin
@@ -518,7 +520,7 @@ export class SurveyController {
         return;
       }
 
-      const result = await surveyService.sendSurveyInvitations(surveyId);
+      const result = await surveyService.sendSurveyInvitations(surveyId!);
       res.json(result);
     } catch (error: any) {
       logger.error('Error sending survey invitations:', error);
@@ -529,7 +531,7 @@ export class SurveyController {
   // Send survey invitations to specific users (Admin only)
   async sendSurveyInvitationsToUsers(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { surveyId } = req.params;
       const { userIds } = req.body;
       
@@ -545,7 +547,7 @@ export class SurveyController {
         return;
       }
 
-      const result = await surveyService.sendSurveyInvitationsToUsers(surveyId, userIds);
+      const result = await surveyService.sendSurveyInvitationsToUsers(surveyId!, userIds);
       res.json(result);
     } catch (error: any) {
       logger.error('Error sending survey invitations to users:', error);
@@ -556,7 +558,7 @@ export class SurveyController {
   // Resend invitation (Admin only)
   async resendInvitation(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { invitationId } = req.params;
       
       // Check if user is admin
@@ -565,7 +567,7 @@ export class SurveyController {
         return;
       }
 
-      await surveyService.resendInvitation(invitationId);
+      await surveyService.resendInvitation(invitationId!);
       res.json({ success: true });
     } catch (error: any) {
       logger.error('Error resending invitation:', error);
@@ -578,7 +580,7 @@ export class SurveyController {
   // Assign coupon to survey (Admin only)
   async assignCouponToSurvey(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
@@ -612,7 +614,7 @@ export class SurveyController {
         return;
       }
 
-      const assignment = await surveyService.assignCouponToSurvey(assignmentData, user.id);
+      const assignment = await surveyService.assignCouponToSurvey(assignmentData, user.id!);
       res.status(201).json({ assignment });
     } catch (error: any) {
       logger.error('Error assigning coupon to survey:', error);
@@ -629,7 +631,7 @@ export class SurveyController {
   // Get survey coupon assignments (Admin only)
   async getSurveyCouponAssignments(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { surveyId } = req.params;
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
@@ -640,7 +642,7 @@ export class SurveyController {
         return;
       }
 
-      const result = await surveyService.getSurveyCouponAssignments(surveyId, page, limit);
+      const result = await surveyService.getSurveyCouponAssignments(surveyId!, page, limit);
       res.json(result);
     } catch (error: any) {
       logger.error('Error fetching survey coupon assignments:', error);
@@ -651,7 +653,7 @@ export class SurveyController {
   // Update survey coupon assignment (Admin only)
   async updateSurveyCouponAssignment(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { surveyId, couponId } = req.params;
       
       // Check if user is admin
@@ -675,7 +677,7 @@ export class SurveyController {
         return;
       }
 
-      const assignment = await surveyService.updateSurveyCouponAssignment(surveyId, couponId, updateData);
+      const assignment = await surveyService.updateSurveyCouponAssignment(surveyId!, couponId!, updateData);
       
       if (!assignment) {
         res.status(404).json({ message: 'Assignment not found' });
@@ -692,7 +694,7 @@ export class SurveyController {
   // Remove coupon assignment from survey (Admin only)
   async removeCouponFromSurvey(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { surveyId, couponId } = req.params;
       
       // Check if user is admin
@@ -701,7 +703,7 @@ export class SurveyController {
         return;
       }
 
-      const removed = await surveyService.removeCouponFromSurvey(surveyId, couponId, user.id);
+      const removed = await surveyService.removeCouponFromSurvey(surveyId!, couponId!, user.id!);
       
       if (!removed) {
         res.status(404).json({ message: 'Assignment not found or already inactive' });
@@ -718,7 +720,7 @@ export class SurveyController {
   // Get survey reward history (Admin only)
   async getSurveyRewardHistory(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const { surveyId } = req.params;
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
@@ -729,7 +731,7 @@ export class SurveyController {
         return;
       }
 
-      const result = await surveyService.getSurveyRewardHistory(surveyId, page, limit);
+      const result = await surveyService.getSurveyRewardHistory(surveyId!, page, limit);
       res.json(result);
     } catch (error: any) {
       logger.error('Error fetching survey reward history:', error);
@@ -740,7 +742,7 @@ export class SurveyController {
   // Get all survey coupon assignments (Admin overview)
   async getAllSurveyCouponAssignments(req: Request, res: Response): Promise<void> {
     try {
-      const { user } = req as any;
+      const user = req.user;
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
       

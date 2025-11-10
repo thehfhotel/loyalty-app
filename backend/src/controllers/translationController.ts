@@ -41,17 +41,17 @@ export const translationController = {
       }
 
       // Get the survey first
-      const survey = await surveyService.getSurveyById(id);
+      const survey = await surveyService.getSurveyById(id!);
       if (!survey) {
         return res.status(404).json({ error: 'Survey not found' });
       }
 
       const translationJob = await translationService.translateSurvey(
-        id,
+        id!,
         sourceLanguage,
         targetLanguages,
         provider,
-        req.user?.id
+        req.user!.id
       );
 
       return res.json(translationJob);
@@ -65,7 +65,7 @@ export const translationController = {
     try {
       const { id } = req.params;
 
-      const translations = await surveyService.getAllSurveyTranslations(id);
+      const translations = await surveyService.getAllSurveyTranslations(id!);
       if (!translations) {
         return res.status(404).json({ error: 'Survey not found' });
       }
@@ -87,17 +87,17 @@ export const translationController = {
       }
 
       // Get the coupon first
-      const coupon = await couponService.getCouponById(id);
+      const coupon = await couponService.getCouponById(id!);
       if (!coupon) {
         return res.status(404).json({ error: 'Coupon not found' });
       }
 
       const translationJob = await translationService.translateCoupon(
-        id,
+        id!,
         sourceLanguage,
         targetLanguages,
         provider,
-        req.user?.id
+        req.user!.id
       );
 
       return res.json(translationJob);
@@ -112,7 +112,7 @@ export const translationController = {
       const { id } = req.params;
       const { language } = req.query;
 
-      const coupon = await couponService.getCouponWithTranslations(id, language as string);
+      const coupon = await couponService.getCouponWithTranslations(id!, language as string);
       if (!coupon) {
         return res.status(404).json({ error: 'Coupon not found' });
       }
@@ -128,7 +128,7 @@ export const translationController = {
     try {
       const { id } = req.params;
 
-      const job = await translationService.getTranslationJobById(id);
+      const job = await translationService.getTranslationJobById(id!);
       if (!job) {
         return res.status(404).json({ error: 'Translation job not found' });
       }
@@ -149,7 +149,7 @@ export const translationController = {
         limit: parseInt(limit as string),
         status: status as string,
         entityType: entityType as string,
-        userId: req.user?.id
+        userId: req.user!.id
       });
 
       return res.json(jobs);

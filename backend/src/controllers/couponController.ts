@@ -15,13 +15,13 @@ export class CouponController {
   // Create new coupon (Admin only)
   async createCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
+      if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
       }
+      const userId = req.user.id as string;
 
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
+      if (!['admin', 'super_admin'].includes(req.user.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
@@ -73,13 +73,12 @@ export class CouponController {
   // Update coupon (Admin only)
   async updateCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
+      if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
       }
 
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
+      if (!['admin', 'super_admin'].includes(req.user.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
@@ -107,7 +106,7 @@ export class CouponController {
         throw new AppError(400, 'Percentage value cannot exceed 100');
       }
 
-      const coupon = await couponService.updateCoupon(couponId, data, userId);
+      const coupon = await couponService.updateCoupon(couponId!, data, req.user!.id);
 
       res.json({
         success: true,
@@ -134,7 +133,7 @@ export class CouponController {
   async getCoupon(req: Request, res: Response): Promise<void> {
     try {
       const { couponId } = req.params;
-      const coupon = await couponService.getCouponById(couponId);
+      const coupon = await couponService.getCouponById(couponId!);
 
       if (!coupon) {
         throw new AppError(404, 'Coupon not found');
@@ -204,13 +203,13 @@ export class CouponController {
   // Assign coupon to users (Admin only)
   async assignCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
+      if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
       }
+      const userId = req.user.id as string;
 
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
+      if (!['admin', 'super_admin'].includes(req.user.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
@@ -287,10 +286,10 @@ export class CouponController {
   // Get user's active coupons
   async getUserCoupons(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
+      if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
       }
+      const userId = req.user.id as string;
 
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
@@ -298,7 +297,7 @@ export class CouponController {
 
       // Admin can view any user's coupons
       let targetUserId = userId;
-      if (['admin', 'super_admin'].includes(req.user?.role ?? '') && req.query.userId) {
+      if (['admin', 'super_admin'].includes(req.user.role ?? '') && req.query.userId) {
         targetUserId = req.query.userId as string;
       }
 
@@ -343,7 +342,7 @@ export class CouponController {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
 
-      const result = await couponService.getCouponRedemptions(couponId, page, limit);
+      const result = await couponService.getCouponRedemptions(couponId!, page, limit);
 
       res.json({
         success: true,
@@ -428,18 +427,17 @@ export class CouponController {
   // Delete coupon (Admin only)
   async deleteCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
+      if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
       }
 
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
+      if (!['admin', 'super_admin'].includes(req.user.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
       const { couponId } = req.params;
-      const success = await couponService.deleteCoupon(couponId, userId);
+      const success = await couponService.deleteCoupon(couponId!, req.user!.id);
 
       if (!success) {
         throw new AppError(404, 'Coupon not found or already deleted');
@@ -468,20 +466,19 @@ export class CouponController {
   // Revoke user coupon (Admin only)
   async revokeUserCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
+      if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
       }
 
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
+      if (!['admin', 'super_admin'].includes(req.user.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
       const { userCouponId } = req.params;
       const { reason } = req.body;
 
-      const success = await couponService.revokeUserCoupon(userCouponId, userId, reason);
+      const success = await couponService.revokeUserCoupon(userCouponId!, req.user!.id, reason);
 
       if (!success) {
         throw new AppError(404, 'User coupon not found or not available for revocation');
@@ -510,20 +507,19 @@ export class CouponController {
   // Revoke all user coupons for a specific coupon (Admin only)
   async revokeUserCouponsForCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
+      if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
       }
 
       // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
+      if (!['admin', 'super_admin'].includes(req.user.role ?? '')) {
         throw new AppError(403, 'Admin access required');
       }
 
       const { couponId, targetUserId } = req.params;
       const { reason } = req.body;
 
-      const revokedCount = await couponService.revokeUserCouponsForCoupon(targetUserId, couponId, userId, reason);
+      const revokedCount = await couponService.revokeUserCouponsForCoupon(targetUserId!, couponId!, req.user!.id, reason);
 
       if (revokedCount === 0) {
         throw new AppError(404, 'No available coupons found for this user');
@@ -562,7 +558,7 @@ export class CouponController {
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
 
-      const result = await couponService.getCouponAssignments(couponId, page, limit);
+      const result = await couponService.getCouponAssignments(couponId!, page, limit);
 
       res.json({
         success: true,
