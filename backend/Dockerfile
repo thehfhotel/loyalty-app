@@ -90,17 +90,27 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
 COPY package*.json tsconfig.json ./
 
-# Ensure Prisma client is available in both src and dist directories for runtime
+# Ensure Prisma client is available for runtime
+# Prisma generates to src/generated/prisma, compiled JS expects ../generated/prisma from dist/config/
 RUN if [ -d "src/generated" ]; then \
       echo "✅ Prisma client found in src/generated"; \
-      # Copy generated client to dist for compiled JS files \
-      mkdir -p dist/generated && cp -r src/generated/* dist/generated/; \
-      echo "✅ Prisma client copied to dist/generated"; \
     else \
       echo "⚠️ Prisma client not found, generating..."; \
       npm run db:generate; \
-      mkdir -p dist/generated && cp -r src/generated/* dist/generated/; \
-      echo "✅ Prisma client generated and copied to dist/generated"; \
+      echo "✅ Prisma client generated"; \
+    fi && \
+    # Copy generated client to dist location for compiled JS module resolution \
+    mkdir -p dist/generated && cp -r src/generated/* dist/generated/ && \
+    echo "✅ Prisma client copied to dist/generated" && \
+    # Verify the Prisma client exists at expected location \
+    if [ -d "dist/generated/prisma" ]; then \
+      echo "✅ Prisma client verified at dist/generated/prisma"; \
+      ls -la dist/generated/prisma | head -5; \
+    else \
+      echo "❌ ERROR: Prisma client not found at dist/generated/prisma"; \
+      echo "Contents of dist/generated:"; \
+      ls -la dist/generated/ || echo "dist/generated/ does not exist"; \
+      exit 1; \
     fi
 
 # Set ownership
