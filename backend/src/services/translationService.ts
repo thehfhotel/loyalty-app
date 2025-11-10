@@ -661,7 +661,7 @@ class TranslationService {
         available: false,
         provider: 'none'
       };
-    } catch (error) {
+    } catch (_error) {
       return {
         available: false,
         provider: 'error'

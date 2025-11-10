@@ -76,7 +76,7 @@ export class AnalyticsController {
       await analyticsService.trackProfileChange({
         userId,
         field,
-        oldValue: oldValue || null,
+        oldValue: oldValue ?? null,
         newValue,
         changeSource,
         metadata,

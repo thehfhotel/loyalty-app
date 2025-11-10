@@ -118,11 +118,11 @@ export class SurveyController {
       const errorHint = error && typeof error === 'object' && 'hint' in error ? (error as any).hint : undefined;
       const errorCode = error && typeof error === 'object' && 'code' in error ? (error as any).code : undefined;
       const errorConstraint = error && typeof error === 'object' && 'constraint' in error ? (error as any).constraint : undefined;
-      
-      res.status(500).json({ 
-        message: 'Failed to create survey', 
+
+      res.status(500).json({
+        message: 'Failed to create survey',
         error: errorMessage,
-        details: errorDetail || errorHint || 'Internal server error',
+        details: errorDetail ?? errorHint ?? 'Internal server error',
         errorCode: errorCode,
         constraint: errorConstraint
       });

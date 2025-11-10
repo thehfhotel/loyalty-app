@@ -112,7 +112,7 @@ export class OAuthService {
           'SELECT id, email, role, is_active AS "isActive" FROM users WHERE id = $1',
           [id]
         );
-        done(null, user as any || null);
+        done(null, (user as any) ?? null);
       } catch (error) {
         done(error as Error, null);
       }

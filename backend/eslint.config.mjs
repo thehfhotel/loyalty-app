@@ -1,6 +1,7 @@
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import security from 'eslint-plugin-security';
+import globals from 'globals';
 
 export default tseslint.config(
   // Base ESLint recommended rules
@@ -12,29 +13,16 @@ export default tseslint.config(
   // Global configuration
   {
     languageOptions: {
-      ecmaVersion: 2020,
+      ecmaVersion: 2024,
       sourceType: 'module',
       parser: tseslint.parser,
       parserOptions: {
         project: './tsconfig.json',
       },
       globals: {
+        ...globals.node,
+        ...globals.jest,
         NodeJS: 'readonly',
-        process: 'readonly',
-        console: 'readonly',
-        Buffer: 'readonly',
-        __dirname: 'readonly',
-        __filename: 'readonly',
-        // Jest globals
-        describe: 'readonly',
-        it: 'readonly',
-        test: 'readonly',
-        expect: 'readonly',
-        beforeEach: 'readonly',
-        afterEach: 'readonly',
-        beforeAll: 'readonly',
-        afterAll: 'readonly',
-        jest: 'readonly',
       },
     },
 

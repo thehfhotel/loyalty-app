@@ -167,7 +167,7 @@ const createSessionConfig = (req?: express.Request) => {
       });
       return { ...baseConfig, store: redisStore };
     }
-  } catch (error) {
+  } catch (_error) {
     logger.warn('Redis not available for session store, using MemoryStore');
   }
 

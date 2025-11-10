@@ -134,17 +134,17 @@ export class OAuthStateService {
     try {
       const redisClient = getRedisClient();
       const pattern = `${this.KEY_PREFIX}:*`;
-      
-      let cursor = 0;
+
+      let cursor: number = 0;
       let deletedCount = 0;
-      
+
       do {
-        const result = await redisClient.scan(cursor, {
+        const result = await redisClient.scan(String(cursor), {
           MATCH: pattern,
           COUNT: 100
         });
-        
-        cursor = result.cursor;
+
+        cursor = Number(result.cursor);
         const keys = result.keys;
         
         for (const key of keys) {
@@ -157,7 +157,7 @@ export class OAuthStateService {
               await redisClient.del(key);
               deletedCount++;
             }
-          } catch (error) {
+          } catch (_error) {
             // Invalid data, delete it
             await redisClient.del(key);
             deletedCount++;
@@ -194,14 +194,14 @@ export class OAuthStateService {
         byProvider: { google: 0, line: 0 },
         oldestTimestamp: undefined as number | undefined
       };
-      
+
       do {
-        const result = await redisClient.scan(cursor, {
+        const result = await redisClient.scan(String(cursor), {
           MATCH: pattern,
           COUNT: 100
         });
-        
-        cursor = result.cursor;
+
+        cursor = Number(result.cursor);
         const keys = result.keys;
         
         for (const key of keys) {
@@ -217,11 +217,11 @@ export class OAuthStateService {
             } else if (key.includes(':line:')) {
               stats.byProvider.line++;
             }
-            
+
             if (!stats.oldestTimestamp || stateData.timestamp < stats.oldestTimestamp) {
               stats.oldestTimestamp = stateData.timestamp;
             }
-          } catch (error) {
+          } catch (_error) {
             // Invalid data, don't count it
           }
         }

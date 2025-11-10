@@ -364,7 +364,7 @@ export class AuthService {
   async verifyToken(token: string): Promise<JWTPayload> {
     try {
       return jwt.verify(token, JWT_SECRET) as JWTPayload;
-    } catch (error) {
+    } catch (_error) {
       throw new AppError(401, 'Invalid token');
     }
   }

@@ -147,9 +147,9 @@ export class SurveyService {
           const row = translationResult.rows[0];
           survey = {
             ...row,
-            title: row.translated_title || row.title,
-            description: row.translated_description || row.description,
-            questions: row.translated_questions || row.questions
+            title: row.translated_title ?? row.title,
+            description: row.translated_description ?? row.description,
+            questions: row.translated_questions ?? row.questions
           };
         }
       }

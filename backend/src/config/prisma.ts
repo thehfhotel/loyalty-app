@@ -13,11 +13,9 @@ export function getPrismaClient(): PrismaClient {
   if (!prisma) {
     // In development, store in global to prevent multiple instances during hot reloads
     if (process.env.NODE_ENV === 'development') {
-      if (!global.__prisma) {
-        global.__prisma = new PrismaClient({
-          log: ['query', 'info', 'warn', 'error'],
-        });
-      }
+      global.__prisma ??= new PrismaClient({
+        log: ['query', 'info', 'warn', 'error'],
+      });
       prisma = global.__prisma;
     } else {
       // In production, create a new instance

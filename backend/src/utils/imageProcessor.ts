@@ -84,7 +84,7 @@ export class ImageProcessor {
         await fs.unlink(filepath);
         logger.info(`Deleted old avatar for user ${userId}: ${filename}`);
         break; // Stop after deleting the first match
-      } catch (error) {
+      } catch (_error) {
         // File doesn't exist, continue checking other extensions
       }
     }
@@ -129,7 +129,7 @@ export class ImageProcessor {
             totalSize += stats.size;
             fileCount++;
           }
-        } catch (error) {
+        } catch (_error) {
           // Skip files that can't be accessed
         }
       }
@@ -213,7 +213,7 @@ export class ImageProcessor {
             await fs.rm(backupPath, { recursive: true, force: true });
             logger.info(`Deleted old backup: ${backup}`);
           }
-        } catch (error) {
+        } catch (_error) {
           // Skip invalid directory names
         }
       }

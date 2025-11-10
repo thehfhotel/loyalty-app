@@ -237,7 +237,7 @@ export class LoyaltyController {
         userId,
         points,
         'admin_award',
-        description || 'Points awarded by admin',
+        description ?? 'Points awarded by admin',
         referenceId,
         adminUserId,
         `Points awarded by admin user ${adminUserId}` // adminReason
@@ -431,10 +431,10 @@ export class LoyaltyController {
 
       const result = await loyaltyService.addStayNightsAndPoints(
         userId,
-        nightsStayed || 0,
+        nightsStayed ?? 0,
         amountSpent,
         referenceId,
-        description || 'Spending points with nights awarded by admin'
+        description ?? 'Spending points with nights awarded by admin'
       );
 
       // Get updated loyalty status

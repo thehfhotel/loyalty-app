@@ -246,17 +246,14 @@ export class CouponService {
         if (translatedCoupon) {
           coupon = {
             ...translatedCoupon,
-            name: translatedCoupon.translated_name || translatedCoupon.name,
-            description: translatedCoupon.translated_description || translatedCoupon.description,
-            termsAndConditions: translatedCoupon.translated_terms_and_conditions || translatedCoupon.terms_and_conditions
+            name: translatedCoupon.translated_name ?? translatedCoupon.name,
+            description: translatedCoupon.translated_description ?? translatedCoupon.description,
+            termsAndConditions: translatedCoupon.translated_terms_and_conditions ?? translatedCoupon.terms_and_conditions
           };
         }
       }
-      
-      if (!coupon) {
-        // Fallback to original coupon
-        coupon = await this.getCouponById(couponId);
-      }
+
+      coupon ??= await this.getCouponById(couponId);
 
       return coupon;
     } catch (error) {

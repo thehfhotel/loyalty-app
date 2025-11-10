@@ -248,7 +248,7 @@ export class LoyaltyService {
         [userId]
       );
 
-      return result.rows[0] || { current_points: 0, expiring_points: 0, next_expiry_date: null };
+      return result.rows[0] ?? { current_points: 0, expiring_points: 0, next_expiry_date: null };
     } catch (error) {
       logger.error('Error calculating user points:', error);
       throw new Error('Failed to calculate user points');
@@ -396,9 +396,9 @@ export class LoyaltyService {
 
       const rule = rules[0]; // Use first active rule
       const basePoints = Math.floor(amountSpent * rule.points_per_unit);
-      
+
       // Apply tier multiplier
-      const tierMultiplier = rule.multiplier_by_tier[loyaltyStatus.tier_name] || 1.0;
+      const tierMultiplier = rule.multiplier_by_tier[loyaltyStatus.tier_name] ?? 1.0;
       const finalPoints = Math.floor(basePoints * tierMultiplier);
 
       // Set expiration to 2 years from now
