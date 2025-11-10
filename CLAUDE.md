@@ -850,6 +850,103 @@ Before implementing frontend API calls:
 
 **Rationale**: AxiosError 404 errors frequently occur when frontend services use incorrect API paths. Backend routes defined in router files are mounted under specific paths in index.ts, creating nested URLs that must be matched exactly in frontend services.
 
+### 18. 🐳 Docker Production Configuration Rules
+**MANDATORY: Production Must Use Optimized Runner Stage**
+
+#### ❌ FORBIDDEN - Using Development Stage in Production
+```yaml
+# ❌ docker-compose.yml with development target
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development  # WRONG for production
+
+# ❌ docker-compose.prod.yml WITHOUT build.target override
+services:
+  backend:
+    environment:
+      NODE_ENV: production
+      # Missing build.target override - inherits development!
+```
+
+#### ✅ REQUIRED - Production Configuration Best Practices
+
+**1. docker-compose.yml (Base Configuration)**
+```yaml
+# ✅ Base configuration can specify development as default
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development  # Default for local development
+```
+
+**2. docker-compose.prod.yml (Production Override)**
+```yaml
+# ✅ REQUIRED - Override build.target for production
+services:
+  backend:
+    build:
+      target: runner  # Use production-optimized runner stage
+    environment:
+      NODE_ENV: production
+      # ... production environment variables
+```
+
+**3. Dockerfile Multi-Stage Structure**
+```dockerfile
+# ✅ REQUIRED - Separate development and production stages
+
+# Development stage - includes dev dependencies, tsx, hot-reload
+FROM base AS development
+COPY --from=dev-deps /app/node_modules ./node_modules
+CMD ["npm", "run", "dev"]
+
+# Runner stage - production-only dependencies, compiled code
+FROM base AS runner
+COPY --from=deps /app/node_modules ./node_modules  # Production deps only
+COPY --from=builder /app/dist ./dist
+CMD ["npm", "start"]  # Run compiled JavaScript
+```
+
+#### 📊 Development vs Runner Stage Comparison
+
+| Aspect | Development Stage | Runner Stage | Impact |
+|--------|-------------------|--------------|--------|
+| Dependencies | ALL (dev + prod) | Production ONLY | 200-300MB smaller |
+| Image Size | ~800-1000MB | ~500-700MB | Faster pulls |
+| Security | Dev tools included | Minimal surface | Reduced attack vectors |
+| Startup | tsx overhead | Compiled JS | Faster startup |
+| Performance | Hot-reload enabled | Direct execution | Lower CPU/memory |
+
+#### 🔍 Production Configuration Validation Checklist
+Before deploying to production:
+- [ ] docker-compose.prod.yml has `build.target: runner` override
+- [ ] Runner stage in Dockerfile is production-optimized
+- [ ] Runner stage has production-only dependencies (`npm ci --only=production`)
+- [ ] Runner stage uses compiled JavaScript (dist/index.js)
+- [ ] Health checks and environment variables configured in runner stage
+- [ ] Test production build locally: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build`
+
+#### 🚨 Common Docker Configuration Pitfalls
+1. **Missing Target Override**: docker-compose.prod.yml doesn't override build.target
+2. **Development in Production**: Production runs with dev dependencies and tsx
+3. **Image Size Bloat**: 30-40% larger images due to unnecessary dev tools
+4. **Security Risk**: Dev dependencies increase attack surface
+5. **Performance Impact**: tsx overhead vs compiled JavaScript execution
+
+#### 🎯 Benefits of Proper Production Configuration
+- ✅ **300MB smaller images**: Faster deployment and less storage
+- ✅ **Better security**: No dev tools or testing frameworks in production
+- ✅ **Faster startup**: Compiled JavaScript executes directly
+- ✅ **Lower resource usage**: No hot-reload or development tooling overhead
+- ✅ **Best practices compliance**: Follows Docker multi-stage production guidelines
+
+**Rationale**: Production deployments must use the runner stage to ensure optimal image size, security, and performance. Using the development stage in production violates Docker best practices, includes unnecessary dev dependencies (~300MB), exposes dev tools that increase attack surface, and causes slower startup due to tsx overhead instead of compiled JavaScript execution.
+
 ---
 
 **Last Updated**: August 2025  
