@@ -2007,7 +2007,69 @@ jobs:
           echo "Memory: $(free -h 2>/dev/null || vm_stat | head -10)"
           echo "Disk: $(df -h / | tail -1)"
           echo "✅ Runner health check passed"
-      
+
+      - name: "⚠️ Automatic Rollback on Failure"
+        if: failure()
+        timeout-minutes: 3
+        run: |
+          echo "⚠️ Deployment failed - initiating automatic rollback..."
+
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          cd "$DEPLOY_DIR"
+
+          # Find previous working images (excluding current SHA)
+          CURRENT_SHA="${{ github.sha }}"
+          echo "🔍 Looking for previous working images (excluding $CURRENT_SHA)..."
+
+          PREV_BACKEND=$(docker images loyalty-app-backend --format "{{.Tag}}" | grep -v "latest" | grep -v "$CURRENT_SHA" | head -1)
+          PREV_FRONTEND=$(docker images loyalty-app-frontend --format "{{.Tag}}" | grep -v "latest" | grep -v "$CURRENT_SHA" | head -1)
+
+          if [ -n "$PREV_BACKEND" ] && [ -n "$PREV_FRONTEND" ]; then
+            echo "📦 Rolling back to previous images:"
+            echo "  Backend: loyalty-app-backend:$PREV_BACKEND"
+            echo "  Frontend: loyalty-app-frontend:$PREV_FRONTEND"
+
+            # Export previous image tags
+            export BACKEND_IMAGE="loyalty-app-backend:$PREV_BACKEND"
+            export FRONTEND_IMAGE="loyalty-app-frontend:$PREV_FRONTEND"
+
+            # Perform rollback with same hot-swap strategy
+            echo "🔄 Rolling back backend..."
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+              up -d --no-build --no-deps backend
+
+            sleep 10
+
+            echo "🔄 Rolling back frontend..."
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+              up -d --no-build --no-deps frontend
+
+            sleep 10
+
+            # Verify rollback
+            echo "🏥 Verifying rollback health..."
+            if timeout 30s bash -c 'until curl -f -s http://localhost:4001/api/health >/dev/null 2>&1; do sleep 2; done'; then
+              echo "✅ Rollback successful - service health check passed"
+              echo "📊 Rollback summary:"
+              echo "  Rolled back from: $CURRENT_SHA"
+              echo "  Rolled back to: $PREV_BACKEND"
+              docker compose ps
+            else
+              echo "❌ Rollback health check failed"
+              echo "📄 Backend logs after rollback:"
+              docker compose logs --tail=20 backend
+            fi
+          else
+            echo "⚠️ No previous images found for rollback"
+            echo "Available backend images:"
+            docker images loyalty-app-backend
+            echo "Available frontend images:"
+            docker images loyalty-app-frontend
+          fi
+
+          echo "🔴 Deployment failed and rollback attempted"
+          echo "Please review the logs above for details"
+
       - name: "📊 Deployment summary (reporting only)"
         timeout-minutes: 1
         run: |
