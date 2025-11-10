@@ -48,8 +48,21 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
 COPY package*.json tsconfig.json ./
 
-# Generate Prisma client for development
-RUN npm run db:generate
+# Generate Prisma client for development (CACHE BUST: 2025-11-10-v3)
+RUN npm run db:generate && \
+    # Copy generated client to dist location for compiled JS module resolution \
+    mkdir -p dist/generated && cp -r src/generated/* dist/generated/ && \
+    echo "✅ Prisma client copied to dist/generated (development)" && \
+    # Verify the Prisma client exists at expected location \
+    if [ -d "dist/generated/prisma" ]; then \
+      echo "✅ Prisma client verified at dist/generated/prisma (development)"; \
+      ls -la dist/generated/prisma | head -5; \
+    else \
+      echo "❌ ERROR: Prisma client not found at dist/generated/prisma (development)"; \
+      echo "Contents of dist/generated:"; \
+      ls -la dist/generated/ || echo "dist/generated/ does not exist"; \
+      exit 1; \
+    fi
 
 # Set ownership
 RUN chown -R nodejs:nodejs /app
