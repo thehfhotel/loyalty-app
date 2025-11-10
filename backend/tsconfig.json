@@ -39,5 +39,5 @@
     "declarationMap": false
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "tests", "**/*.backup.ts", "**/*.minimal.ts", "src/generated/**/*"]
+  "exclude": ["node_modules", "dist", "tests", "**/*.backup.ts", "**/*.minimal.ts"]
 }
