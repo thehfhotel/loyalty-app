@@ -288,7 +288,12 @@ router.get('/admin/stats', requireAdmin, async (_req, res, next) => {
 // Get specific user details
 router.get('/admin/users/:userId', requireAdmin, async (req, res, next) => {
   try {
-    const user = await userService.getUserById(req.params.userId);
+    const { userId } = req.params;
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    const user = await userService.getUserById(userId);
     res.json({ success: true, data: user });
   } catch (error) {
     return next(error);
@@ -298,17 +303,22 @@ router.get('/admin/users/:userId', requireAdmin, async (req, res, next) => {
 // Update user status (activate/deactivate)
 router.patch('/admin/users/:userId/status', requireAdmin, async (req, res, next) => {
   try {
+    const { userId } = req.params;
     const { isActive } = req.body;
-    
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
     if (typeof isActive !== 'boolean') {
       return res.status(400).json({ error: 'isActive must be a boolean' });
     }
 
-    await userService.updateUserStatus(req.params.userId, isActive);
-    
-    res.json({ 
-      success: true, 
-      message: `User ${isActive ? 'activated' : 'deactivated'} successfully` 
+    await userService.updateUserStatus(userId, isActive);
+
+    res.json({
+      success: true,
+      message: `User ${isActive ? 'activated' : 'deactivated'} successfully`
     });
   } catch (error) {
     return next(error);
@@ -318,13 +328,18 @@ router.patch('/admin/users/:userId/status', requireAdmin, async (req, res, next)
 // Update user role
 router.patch('/admin/users/:userId/role', requireAdmin, async (req, res, next) => {
   try {
+    const { userId } = req.params;
     const { role } = req.body;
-    
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
     if (!role || typeof role !== 'string') {
       return res.status(400).json({ error: 'Role is required' });
     }
 
-    await userService.updateUserRole(req.params.userId, role);
+    await userService.updateUserRole(userId, role);
     
     res.json({ 
       success: true, 
@@ -338,20 +353,26 @@ router.patch('/admin/users/:userId/role', requireAdmin, async (req, res, next) =
 // Delete user (super admin only)
 router.delete('/admin/users/:userId', requireAdmin, async (req, res, next) => {
   try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
     if (req.user?.role !== 'super_admin') {
       return res.status(403).json({ error: 'Super admin access required' });
     }
 
     // Prevent self-deletion
-    if (req.params.userId === req.user.id) {
+    if (userId === req.user.id) {
       return res.status(400).json({ error: 'Cannot delete your own account' });
     }
 
-    await userService.deleteUser(req.params.userId);
-    
-    res.json({ 
-      success: true, 
-      message: 'User deleted successfully' 
+    await userService.deleteUser(userId);
+
+    res.json({
+      success: true,
+      message: 'User deleted successfully'
     });
   } catch (error) {
     return next(error);
@@ -387,10 +408,16 @@ router.put('/admin/new-member-coupon-settings', requireAdmin, async (req, res, n
 // Get coupon status for admin validation
 router.get('/admin/coupon-status/:couponId', requireAdmin, async (req, res, next) => {
   try {
-    const couponStatus = await userService.getCouponStatusForAdmin(req.params.couponId);
-    res.json({ 
-      success: true, 
-      data: couponStatus 
+    const { couponId } = req.params;
+
+    if (!couponId) {
+      return res.status(400).json({ error: 'Coupon ID is required' });
+    }
+
+    const couponStatus = await userService.getCouponStatusForAdmin(couponId);
+    res.json({
+      success: true,
+      data: couponStatus
     });
   } catch (error) {
     return next(error);

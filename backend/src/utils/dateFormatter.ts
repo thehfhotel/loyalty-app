@@ -70,13 +70,25 @@ export const parseDDMMYYYY = (dateString: string): Date | null => {
     return null;
   }
 
-  const [day, month, year] = dateString.split('/').map(Number);
+  const parts = dateString.split('/').map(Number);
+  if (parts.length !== 3) {
+    return null;
+  }
+
+  const day = parts[0];
+  const month = parts[1];
+  const year = parts[2];
+
+  if (day === undefined || month === undefined || year === undefined) {
+    return null;
+  }
+
   const date = new Date(year, month - 1, day); // month is 0-indexed in Date constructor
-  
+
   // Validate the date is correct (handles invalid dates like 31/02/2025)
   if (date.getDate() !== day || date.getMonth() !== month - 1 || date.getFullYear() !== year) {
     return null;
   }
-  
+
   return date;
 };

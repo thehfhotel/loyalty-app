@@ -50,7 +50,7 @@ export interface SurveyResponse {
   id: string;
   survey_id: string | null;
   user_id: string | null;
-  answers: Record<string, string | number | boolean | null>;
+  answers: Record<string, string | number | boolean | string[] | null>;
   is_completed: boolean | null;
   progress: number | null;
   started_at: Date | null;
@@ -89,7 +89,7 @@ export interface UpdateSurveyRequest extends Partial<CreateSurveyRequest> {
 
 export interface SubmitResponseRequest {
   survey_id: string;
-  answers: Record<string, string | number | boolean | null>;
+  answers: Record<string, string | number | boolean | string[] | null>;
   is_completed?: boolean;
 }
 

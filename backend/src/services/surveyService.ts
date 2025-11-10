@@ -2,6 +2,7 @@ import { getPool } from '../config/database';
 import { db } from '../config/prisma';
 import { logger } from '../utils/logger';
 import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
+import { AppError } from '../middleware/errorHandler';
 import {
   Survey,
   SurveyResponse,
@@ -159,9 +160,14 @@ export class SurveyService {
           'SELECT * FROM surveys WHERE id = $1',
           [id]
         );
-        
+
         if (result.rows.length === 0) return null;
         survey = result.rows[0];
+      }
+
+      // TypeScript null check - survey is guaranteed to be non-null here
+      if (!survey) {
+        throw new AppError(404, 'Survey not found');
       }
 
       return {
@@ -656,7 +662,7 @@ export class SurveyService {
 
     // Check tier restrictions
     if (targetSegment.tier_restrictions && targetSegment.tier_restrictions.length > 0) {
-      if (!user.tier_id || !targetSegment.tier_restrictions.includes(user.tier_id)) {
+      if (!user.tier_id || !targetSegment.tier_restrictions.includes(String(user.tier_id))) {
         return false;
       }
     }

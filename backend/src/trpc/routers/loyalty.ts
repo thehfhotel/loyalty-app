@@ -111,12 +111,15 @@ export const loyaltyRouter = router({
    */
   updateTierConfig: adminProcedure
     .input(z.object({
-      bronzeThreshold: z.number().int().nonnegative(),
-      silverThreshold: z.number().int().nonnegative(),
-      goldThreshold: z.number().int().nonnegative(),
-      platinumThreshold: z.number().int().nonnegative(),
+      tierId: z.string().uuid(),
+      name: z.string().optional(),
+      required_points: z.number().int().nonnegative().optional(),
+      benefits: z.array(z.string()).optional(),
+      color: z.string().optional(),
+      icon: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      return await loyaltyService.updateTierConfiguration(input);
+      const { tierId, ...config } = input;
+      return await loyaltyService.updateTierConfiguration(tierId, config);
     }),
 });

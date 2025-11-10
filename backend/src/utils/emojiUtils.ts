@@ -54,7 +54,11 @@ export const PROFILE_EMOJIS = [
  * Get a random emoji for new user registration
  */
 export function getRandomEmojiAvatar(): string {
-  return PROFILE_EMOJIS[Math.floor(Math.random() * PROFILE_EMOJIS.length)];
+  const emoji = PROFILE_EMOJIS[Math.floor(Math.random() * PROFILE_EMOJIS.length)];
+  if (!emoji) {
+    throw new Error('Failed to generate random emoji avatar');
+  }
+  return emoji;
 }
 
 /**

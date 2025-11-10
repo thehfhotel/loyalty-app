@@ -23,15 +23,22 @@ router.get('/lookup/:membershipId',
   async (req, res, next) => {
     try {
       const { membershipId } = req.params;
-      
+
+      if (!membershipId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Membership ID is required'
+        });
+      }
+
       const userInfo = await membershipIdService.getUserByMembershipId(membershipId);
-      
-      res.json({
+
+      return res.json({
         success: true,
         data: userInfo
       });
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 );

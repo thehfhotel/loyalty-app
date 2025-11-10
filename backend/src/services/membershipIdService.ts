@@ -272,7 +272,7 @@ export class MembershipIdService {
       [newMembershipId, userId]
     );
 
-    if (!result ?? result.length === 0) {
+    if (!result || result.length === 0) {
       throw new AppError(404, 'User profile not found');
     }
 
@@ -317,10 +317,15 @@ export class MembershipIdService {
     const blockEnd = (currentBlock + 1) * 100;
     const blocksInUse = Math.floor((currentUserCount - 1) / 100) + 1;
 
+    // Provide default values if stats is undefined
+    const totalUsers = stats?.totalUsers ? parseInt(stats.totalUsers) : 0;
+    const usersWithMembershipId = stats?.usersWithMembershipId ? parseInt(stats.usersWithMembershipId) : 0;
+    const usersWithoutMembershipId = stats?.usersWithoutMembershipId ? parseInt(stats.usersWithoutMembershipId) : 0;
+
     return {
-      totalUsers: parseInt(stats.totalUsers),
-      usersWithMembershipId: parseInt(stats.usersWithMembershipId),
-      usersWithoutMembershipId: parseInt(stats.usersWithoutMembershipId),
+      totalUsers,
+      usersWithMembershipId,
+      usersWithoutMembershipId,
       currentUserCount,
       currentBlock,
       currentBlockRange: `${blockStart}-${blockEnd}`,

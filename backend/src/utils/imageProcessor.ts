@@ -24,6 +24,10 @@ export class ImageProcessor {
       logger.info(`Created avatar storage directory: ${this.storageDir}`);
     }
 
+    if (!this.backupDir) {
+      throw new Error('Backup directory path is not configured');
+    }
+
     try {
       await fs.access(this.backupDir);
     } catch {
@@ -144,8 +148,15 @@ export class ImageProcessor {
   // Simple backup solution
   static async backupAvatars(): Promise<void> {
     await this.ensureDirectories();
-    
+
+    if (!this.backupDir) {
+      throw new Error('Backup directory path is not configured');
+    }
+
     const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    if (!timestamp) {
+      throw new Error('Failed to generate timestamp for backup');
+    }
     const backupPath = path.join(this.backupDir, timestamp);
 
     try {
@@ -182,13 +193,18 @@ export class ImageProcessor {
 
   // Clean backups older than 7 days
   private static async cleanOldBackups(): Promise<void> {
+    if (!this.backupDir) {
+      logger.warn('Backup directory not configured, skipping cleanup');
+      return;
+    }
+
     try {
       // Safe: backupDir is from config, not user input
       // eslint-disable-next-line security/detect-non-literal-fs-filename
       const backups = await fs.readdir(this.backupDir);
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - 7);
-      
+
       for (const backup of backups) {
         try {
           const backupDate = new Date(backup);

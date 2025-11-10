@@ -453,6 +453,139 @@ export class LoyaltyService {
       throw new Error('Failed to expire old points');
     }
   }
+
+  /**
+   * Get paginated transaction history (for tRPC)
+   * @param userId - User UUID
+   * @param page - Page number (1-indexed)
+   * @param pageSize - Items per page
+   * @returns Paginated transaction list
+   */
+  async getTransactionHistory(
+    userId: string,
+    page: number,
+    pageSize: number
+  ): Promise<{
+    transactions: PointsTransaction[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }> {
+    const offset = (page - 1) * pageSize;
+
+    // Reuse existing method with adapted parameters
+    const { transactions, total } = await this.getUserPointsHistory(userId, pageSize, offset);
+
+    const totalPages = Math.ceil(total / pageSize);
+
+    return {
+      transactions,
+      total,
+      page,
+      pageSize,
+      totalPages
+    };
+  }
+
+  /**
+   * Get loyalty tier configuration
+   * @returns Array of tier configurations
+   */
+  async getTierConfiguration(): Promise<Array<{
+    id: string;
+    name: string;
+    required_points: number;
+    benefits: string[];
+    color: string;
+    icon: string;
+  }>> {
+    try {
+      const result = await getPool().query(
+        `SELECT id, name, min_points as required_points, benefits, color, 'star' as icon
+         FROM tiers
+         WHERE is_active = true
+         ORDER BY sort_order ASC`
+      );
+
+      return result.rows;
+    } catch (error) {
+      logger.error('Error fetching tier configuration:', error);
+      throw new Error('Failed to fetch tier configuration');
+    }
+  }
+
+  /**
+   * Update tier configuration (admin only)
+   * @param tierId - Tier UUID
+   * @param config - Updated tier configuration
+   * @returns Updated tier
+   */
+  async updateTierConfiguration(
+    tierId: string,
+    config: {
+      name?: string;
+      required_points?: number;
+      benefits?: string[];
+      color?: string;
+      icon?: string;
+    }
+  ): Promise<{
+    id: string;
+    name: string;
+    required_points: number;
+    benefits: string[];
+    color: string;
+    icon: string;
+  }> {
+    try {
+      // Build dynamic UPDATE query
+      const updates: string[] = [];
+      const values: unknown[] = [];
+      let paramCount = 1;
+
+      if (config.name !== undefined) {
+        updates.push(`name = $${paramCount++}`);
+        values.push(config.name);
+      }
+      if (config.required_points !== undefined) {
+        updates.push(`min_points = $${paramCount++}`);
+        values.push(config.required_points);
+      }
+      if (config.benefits !== undefined) {
+        updates.push(`benefits = $${paramCount++}`);
+        values.push(JSON.stringify(config.benefits));
+      }
+      if (config.color !== undefined) {
+        updates.push(`color = $${paramCount++}`);
+        values.push(config.color);
+      }
+
+      if (updates.length === 0) {
+        throw new Error('No fields to update');
+      }
+
+      updates.push(`updated_at = NOW()`);
+      values.push(tierId);
+
+      const result = await getPool().query(
+        `UPDATE tiers
+         SET ${updates.join(', ')}
+         WHERE id = $${paramCount}
+         RETURNING id, name, min_points as required_points, benefits, color, 'star' as icon`,
+        values
+      );
+
+      if (result.rows.length === 0) {
+        throw new Error('Tier not found');
+      }
+
+      return result.rows[0];
+    } catch (error) {
+      logger.error('Error updating tier configuration:', error);
+      throw new Error('Failed to update tier configuration');
+    }
+  }
 }
 
 // Export singleton instance for use in other services
