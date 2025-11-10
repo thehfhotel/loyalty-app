@@ -708,11 +708,45 @@ jobs:
           echo "🗄️ Starting isolated database services..."
           docker compose -f docker-compose.e2e-test.yml up -d postgres redis
           
-          # Wait for database services to be ready
+          # Wait for database services to be ready using healthcheck status
           echo "⏳ Waiting for isolated database services to be ready..."
-          timeout 60 bash -c 'until docker compose -f docker-compose.e2e-test.yml exec -T postgres pg_isready -U loyalty -d loyalty_db; do echo "Waiting for isolated postgres..."; sleep 2; done'
-          timeout 30 bash -c 'until docker compose -f docker-compose.e2e-test.yml exec -T redis redis-cli ping | grep -q PONG; do echo "Waiting for isolated redis..."; sleep 2; done'
-          
+
+          # Wait for postgres healthcheck to pass
+          POSTGRES_READY=false
+          for i in {1..30}; do
+            if docker compose -f docker-compose.e2e-test.yml ps postgres | grep -q "healthy"; then
+              echo "✅ Postgres is healthy"
+              POSTGRES_READY=true
+              break
+            fi
+            echo "Waiting for postgres healthcheck... ($i/30)"
+            sleep 2
+          done
+
+          if [ "$POSTGRES_READY" = false ]; then
+            echo "❌ Postgres failed to become healthy"
+            docker compose -f docker-compose.e2e-test.yml logs postgres
+            exit 1
+          fi
+
+          # Wait for redis healthcheck to pass
+          REDIS_READY=false
+          for i in {1..30}; do
+            if docker compose -f docker-compose.e2e-test.yml ps redis | grep -q "healthy"; then
+              echo "✅ Redis is healthy"
+              REDIS_READY=true
+              break
+            fi
+            echo "Waiting for redis healthcheck... ($i/30)"
+            sleep 2
+          done
+
+          if [ "$REDIS_READY" = false ]; then
+            echo "❌ Redis failed to become healthy"
+            docker compose -f docker-compose.e2e-test.yml logs redis
+            exit 1
+          fi
+
           echo "✅ Isolated database services are ready"
           
           # Run database migrations before starting the backend
