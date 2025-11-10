@@ -172,6 +172,11 @@ jobs:
           name: ci-workspace-${{ github.run_id }}
           path: .
 
+      - name: "⚡ Setup Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: "♻️ Restore dependencies from local cache"
         run: |
           LOCAL_CACHE_BASE="/home/nut/.cache/loyalty-app"
@@ -234,15 +239,20 @@ jobs:
     outputs:
       tests-passed: ${{ steps.test-results.outputs.passed }}
       coverage-percent: ${{ steps.test-results.outputs.coverage }}
-    
+
     # Use isolated test environment to prevent conflicts with E2E tests
-    
+
     steps:
       - name: "📥 Download shared workspace"
         uses: actions/download-artifact@v4
         with:
           name: ci-workspace-${{ github.run_id }}
           path: .
+
+      - name: "⚡ Setup Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: "♻️ Restore dependencies from local cache"
         run: |
@@ -467,6 +477,11 @@ jobs:
         with:
           name: ci-workspace-${{ github.run_id }}
           path: .
+
+      - name: "⚡ Setup Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: "♻️ Restore dependencies from local cache"
         run: |
