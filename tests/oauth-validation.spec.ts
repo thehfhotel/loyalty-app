@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { retryRequest, retryPageGoto } from './helpers/retry';
 
 /**
  * OAuth Flow Validation Tests
@@ -22,8 +23,8 @@ test.describe('OAuth Flow Validation', () => {
 
   test.describe('OAuth Configuration Validation', () => {
     test('should have properly configured OAuth endpoints', async ({ request }) => {
-      // Test Google OAuth endpoint accessibility
-      const googleResponse = await request.get(`${baseUrl}/api/oauth/google`);
+      // Test Google OAuth endpoint accessibility with retry
+      const googleResponse = await retryRequest(request, `${baseUrl}/api/oauth/google`, 3);
       
       // Should either redirect to Google (if configured) or redirect to login with error (if not configured)
       expect([302, 301, 200]).toContain(googleResponse.status());
@@ -38,8 +39,8 @@ test.describe('OAuth Flow Validation', () => {
     });
 
     test('should handle LINE OAuth endpoint properly', async ({ request }) => {
-      // Test LINE OAuth endpoint accessibility
-      const lineResponse = await request.get(`${baseUrl}/api/oauth/line`);
+      // Test LINE OAuth endpoint accessibility with retry
+      const lineResponse = await retryRequest(request, `${baseUrl}/api/oauth/line`, 3);
       
       // Should either redirect to LINE (if configured) or redirect to login with error (if not configured)
       expect([302, 301, 200]).toContain(lineResponse.status());
@@ -54,8 +55,8 @@ test.describe('OAuth Flow Validation', () => {
     });
 
     test('should not expose sensitive OAuth configuration', async ({ request }) => {
-      // Test that OAuth endpoints don't expose sensitive configuration details
-      const googleResponse = await request.get(`${baseUrl}/api/oauth/google`);
+      // Test that OAuth endpoints don't expose sensitive configuration details with retry
+      const googleResponse = await retryRequest(request, `${baseUrl}/api/oauth/google`, 3);
       const responseText = await googleResponse.text();
       
       // Should not contain client secrets in response
@@ -67,8 +68,8 @@ test.describe('OAuth Flow Validation', () => {
 
   test.describe('OAuth Callback Validation', () => {
     test('should handle OAuth callback errors gracefully', async ({ request }) => {
-      // Test Google OAuth callback with error
-      const googleCallbackResponse = await request.get(`${baseUrl}/api/oauth/google/callback?error=access_denied&error_description=User%20denied%20access`);
+      // Test Google OAuth callback with error and retry
+      const googleCallbackResponse = await retryRequest(request, `${baseUrl}/api/oauth/google/callback?error=access_denied&error_description=User%20denied%20access`, 3);
       
       expect([302, 301, 200]).toContain(googleCallbackResponse.status());
       
@@ -79,8 +80,8 @@ test.describe('OAuth Flow Validation', () => {
     });
 
     test('should reject invalid OAuth callback attempts', async ({ request }) => {
-      // Test callback without proper OAuth state/code
-      const invalidCallbackResponse = await request.get(`${baseUrl}/api/oauth/google/callback?code=invalid_code&state=invalid_state`);
+      // Test callback without proper OAuth state/code with retry
+      const invalidCallbackResponse = await retryRequest(request, `${baseUrl}/api/oauth/google/callback?code=invalid_code&state=invalid_state`, 3);
       
       expect([302, 301, 200]).toContain(invalidCallbackResponse.status());
       
@@ -98,7 +99,7 @@ test.describe('OAuth Flow Validation', () => {
       ];
 
       for (const endpoint of endpoints) {
-        const response = await request.get(`${baseUrl}${endpoint}`);
+        const response = await retryRequest(request, `${baseUrl}${endpoint}`, 3);
         
         // Should handle GET requests (even if they fail auth, they shouldn't 404)
         expect(response.status()).not.toBe(404);
@@ -118,7 +119,7 @@ test.describe('OAuth Flow Validation', () => {
 
   test.describe('OAuth Me Endpoint Validation', () => {
     test('should require authentication for /oauth/me endpoint', async ({ request }) => {
-      const response = await request.get(`${baseUrl}/api/oauth/me`);
+      const response = await retryRequest(request, `${baseUrl}/api/oauth/me`, 3);
       
       expect(response.status()).toBe(401);
       const body = await response.json();
@@ -126,7 +127,7 @@ test.describe('OAuth Flow Validation', () => {
     });
 
     test('should reject invalid tokens', async ({ request }) => {
-      const response = await request.get(`${baseUrl}/api/oauth/me`, {
+      const response = await retryRequest(request, `${baseUrl}/api/oauth/me`, 3, {
         headers: {
           'Authorization': 'Bearer invalid_token_here'
         }
@@ -147,7 +148,7 @@ test.describe('OAuth Flow Validation', () => {
       ];
 
       for (const authHeader of malformedHeaders) {
-        const response = await request.get(`${baseUrl}/api/oauth/me`, {
+        const response = await retryRequest(request, `${baseUrl}/api/oauth/me`, 3, {
           headers: {
             'Authorization': authHeader
           }
@@ -165,8 +166,8 @@ test.describe('OAuth Flow Validation', () => {
         test.skip('Skipping HTTPS test for localhost');
       }
 
-      // In production, OAuth endpoints should redirect to HTTPS
-      const response = await request.get(`${baseUrl}/api/oauth/google`);
+      // In production, OAuth endpoints should redirect to HTTPS with retry
+      const response = await retryRequest(request, `${baseUrl}/api/oauth/google`, 3);
       
       if (response.status() === 302) {
         const location = response.headers()['location'];
@@ -187,7 +188,7 @@ test.describe('OAuth Flow Validation', () => {
         'X-Real-IP': '1.2.3.4'
       };
 
-      const response = await request.get(`${baseUrl}/api/oauth/google`, {
+      const response = await retryRequest(request, `${baseUrl}/api/oauth/google`, 3, {
         headers: cloudflareHeaders
       });
 
@@ -212,7 +213,7 @@ test.describe('OAuth Flow Validation', () => {
       ];
 
       for (const redirect of maliciousRedirects) {
-        const response = await request.get(`${baseUrl}/api/oauth/google/callback?redirect_uri=${encodeURIComponent(redirect)}`);
+        const response = await retryRequest(request, `${baseUrl}/api/oauth/google/callback?redirect_uri=${encodeURIComponent(redirect)}`, 3);
         
         // Should not redirect to external malicious URLs
         if (response.status() === 302) {
@@ -227,8 +228,8 @@ test.describe('OAuth Flow Validation', () => {
 
   test.describe('OAuth Error Handling', () => {
     test('should provide meaningful error messages', async ({ page }) => {
-      // Test OAuth error flow
-      await page.goto(`${frontendUrl}/login?error=oauth_error`);
+      // Test OAuth error flow with retry
+      await retryPageGoto(page, `${frontendUrl}/login?error=oauth_error`, 3);
       
       // Should display user-friendly error message
       const errorMessage = await page.locator('[data-testid="error-message"], .error-message, .alert-error').first();
@@ -246,8 +247,8 @@ test.describe('OAuth Flow Validation', () => {
     });
 
     test('should handle OAuth timeout scenarios', async ({ request }) => {
-      // Test OAuth endpoints with timeout
-      const timeoutPromise = request.get(`${baseUrl}/api/oauth/google`, {
+      // Test OAuth endpoints with timeout and retry
+      const timeoutPromise = retryRequest(request, `${baseUrl}/api/oauth/google`, 2, {
         timeout: 5000
       });
 
@@ -267,7 +268,7 @@ test.describe('OAuth Flow Validation', () => {
     test('should prevent OAuth redirect loops', async ({ page }) => {
       // Track redirects to detect loops
       const redirectHistory: string[] = [];
-      
+
       page.on('response', (response) => {
         if ([301, 302].includes(response.status())) {
           const location = response.headers()['location'];
@@ -279,9 +280,9 @@ test.describe('OAuth Flow Validation', () => {
 
       try {
         // Attempt OAuth flow (will likely fail without credentials, but shouldn't loop)
-        await page.goto(`${baseUrl}/api/oauth/google`, { 
+        await retryPageGoto(page, `${baseUrl}/api/oauth/google`, 2, {
           timeout: 10000,
-          waitUntil: 'networkidle' 
+          waitUntil: 'networkidle'
         });
       } catch (error) {
         // Expected to fail, but check for redirect loops
@@ -303,7 +304,7 @@ test.describe('OAuth Flow Validation', () => {
       const requests = contexts.map(async (context) => {
         const page = await context.newPage();
         try {
-          const response = await page.request.get(`${baseUrl}/api/oauth/google`);
+          const response = await retryRequest(page.request, `${baseUrl}/api/oauth/google`, 2);
           return response.status();
         } catch (error) {
           return 500;
