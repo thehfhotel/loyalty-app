@@ -83,6 +83,10 @@ export class CouponService {
 
       await client.query('COMMIT');
 
+      if (!coupon) {
+        throw new AppError(500, 'Failed to create coupon');
+      }
+
       logger.info(`Coupon created: ${coupon.code} by user ${createdBy}`);
       return coupon;
     } catch (error) {
@@ -187,6 +191,10 @@ export class CouponService {
       ).then(res => res.rows);
 
       await client.query('COMMIT');
+
+      if (!updatedCoupon) {
+        throw new AppError(500, 'Failed to update coupon');
+      }
 
       logger.info(`Coupon updated: ${updatedCoupon.code} by user ${updatedBy}`);
       return updatedCoupon;
@@ -327,6 +335,10 @@ export class CouponService {
       whereValues
     );
 
+    if (!countResult) {
+      throw new AppError(500, 'Failed to get coupon count');
+    }
+
     const total = countResult.count;
     const totalPages = Math.ceil(total / limit);
 
@@ -374,9 +386,13 @@ export class CouponService {
             [data.couponId, userId, assignedBy, data.assignedReason, data.customExpiry]
           ).then(res => res.rows);
 
+          if (!userCouponId) {
+            throw new AppError(500, 'Failed to assign coupon to user');
+          }
+
           // Get the created user coupon
           const [userCoupon] = await client.query<UserCoupon>(
-            `SELECT 
+            `SELECT
                id, user_id as "userId", coupon_id as "couponId",
                status, qr_code as "qrCode", used_at as "usedAt",
                used_by_admin as "usedByAdmin", redemption_location as "redemptionLocation",
@@ -386,6 +402,10 @@ export class CouponService {
              FROM user_coupons WHERE id = $1`,
             [userCouponId.assign_coupon_to_user]
           ).then(res => res.rows);
+
+          if (!userCoupon) {
+            throw new AppError(500, 'Failed to retrieve assigned coupon');
+          }
 
           userCoupons.push(userCoupon);
         } catch (error: unknown) {
@@ -415,7 +435,7 @@ export class CouponService {
       await client.query('BEGIN');
 
       const [result] = await client.query<RedeemCouponResponse>(
-        `SELECT 
+        `SELECT
            success, message, discount_amount as "discountAmount",
            final_amount as "finalAmount", user_coupon_id as "userCouponId"
          FROM redeem_coupon($1, $2, $3, $4, $5, $6)`,
@@ -428,6 +448,10 @@ export class CouponService {
           JSON.stringify(data.metadata ?? {})
         ]
       ).then(res => res.rows);
+
+      if (!result) {
+        throw new AppError(500, 'Failed to redeem coupon');
+      }
 
       await client.query('COMMIT');
 
@@ -478,6 +502,10 @@ export class CouponService {
       'SELECT COUNT(*) as count FROM user_active_coupons WHERE user_id = $1',
       [userId]
     );
+
+    if (!countResult) {
+      throw new AppError(500, 'Failed to get user coupon count');
+    }
 
     const total = countResult.count;
     const totalPages = Math.ceil(total / limit);
@@ -543,12 +571,16 @@ export class CouponService {
 
     // Get total count
     const [countResult] = await query<{ count: number }>(
-      `SELECT COUNT(*) as count 
-       FROM user_coupons uc 
+      `SELECT COUNT(*) as count
+       FROM user_coupons uc
        JOIN coupons c ON uc.coupon_id = c.id
        WHERE uc.user_id = $1 ${statusCondition}`,
       statusParams
     );
+
+    if (!countResult) {
+      throw new AppError(500, 'Failed to get user coupon count by status');
+    }
 
     const total = countResult.count;
     const totalPages = Math.ceil(total / limit);
@@ -627,12 +659,16 @@ export class CouponService {
 
     // Get total count
     const [countResult] = await query<{ count: number }>(
-      `SELECT COUNT(*) as count 
+      `SELECT COUNT(*) as count
        FROM coupon_redemptions cr
        JOIN user_coupons uc ON cr.user_coupon_id = uc.id
        WHERE uc.coupon_id = $1`,
       [couponId]
     );
+
+    if (!countResult) {
+      throw new AppError(500, 'Failed to get redemption count');
+    }
 
     const total = countResult.count;
     const totalPages = Math.ceil(total / limit);
@@ -705,6 +741,10 @@ export class CouponService {
       whereValues
     );
 
+    if (!countResult) {
+      throw new AppError(500, 'Failed to get analytics count');
+    }
+
     const total = countResult.count;
     const totalPages = Math.ceil(total / limit);
 
@@ -743,7 +783,7 @@ export class CouponService {
       totalAssigned: number;
       totalRedeemed: number;
     }>(
-      `SELECT 
+      `SELECT
          COUNT(*) as "totalCoupons",
          COUNT(*) FILTER (WHERE status = 'active') as "activeCoupons",
          COALESCE(SUM(used_count), 0) as "totalRedeemed",
@@ -751,8 +791,12 @@ export class CouponService {
        FROM coupons`
     );
 
+    if (!overallStats) {
+      throw new AppError(500, 'Failed to get overall coupon stats');
+    }
+
     // Calculate conversion rate
-    const conversionRate = overallStats.totalAssigned > 0 
+    const conversionRate = overallStats.totalAssigned > 0
       ? Number(((overallStats.totalRedeemed / overallStats.totalAssigned) * 100).toFixed(2))
       : 0;
 
@@ -761,6 +805,10 @@ export class CouponService {
       `SELECT COALESCE(SUM(discount_amount), 0) as "totalRevenueImpact"
        FROM coupon_redemptions`
     );
+
+    if (!revenueResult) {
+      throw new AppError(500, 'Failed to get revenue impact');
+    }
 
     // Get top performing coupons
     const topCoupons = await query<{
@@ -804,8 +852,12 @@ export class CouponService {
       [analyticsDate]
     );
 
+    if (!result) {
+      throw new AppError(500, 'Failed to update coupon analytics');
+    }
+
     logger.info(`Updated coupon analytics for ${analyticsDate.toISOString().split('T')[0]}: ${result.update_coupon_analytics} coupons processed`);
-    
+
     return result.update_coupon_analytics;
   }
 
@@ -858,11 +910,15 @@ export class CouponService {
 
     // Get total count of unique users assigned this coupon
     const [countResult] = await query<{ count: number }>(
-      `SELECT COUNT(DISTINCT uc.user_id) as count 
+      `SELECT COUNT(DISTINCT uc.user_id) as count
        FROM user_coupons uc
        WHERE uc.coupon_id = $1`,
       [couponId]
     );
+
+    if (!countResult) {
+      throw new AppError(500, 'Failed to get assignment count');
+    }
 
     const total = countResult.count;
     const totalPages = Math.ceil(total / limit);
@@ -874,7 +930,7 @@ export class CouponService {
       totalUsed: number;
       totalAvailable: number;
     }>(
-      `SELECT 
+      `SELECT
          COUNT(DISTINCT uc.user_id) as "totalUsers",
          COUNT(*) as "totalAssigned",
          COUNT(*) FILTER (WHERE uc.status = 'used') as "totalUsed",
@@ -883,6 +939,10 @@ export class CouponService {
        WHERE uc.coupon_id = $1`,
       [couponId]
     );
+
+    if (!summaryResult) {
+      throw new AppError(500, 'Failed to get assignment summary');
+    }
 
     // Get user assignments with aggregated statistics
     const assignments = await query<{

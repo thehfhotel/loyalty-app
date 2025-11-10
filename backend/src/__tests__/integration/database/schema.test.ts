@@ -349,6 +349,9 @@ describe('Database Schema Integration', () => {
         }
         if (params?.orderBy) {
           const orderKey = Object.keys(params.orderBy)[0];
+          if (!orderKey) {
+            throw new Error('orderBy key is required');
+          }
           const orderDir = params.orderBy[orderKey];
           transactions.sort((a, b) => {
             if (orderDir === 'desc') {

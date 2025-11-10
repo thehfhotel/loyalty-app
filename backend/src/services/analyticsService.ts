@@ -1,5 +1,6 @@
 import { query, getClient } from '../config/database';
 import { logger } from '../utils/logger';
+import { AppError } from '../middleware/errorHandler';
 
 interface CouponUsageEvent {
   userId: string;
@@ -281,6 +282,10 @@ export class AnalyticsService {
       conversionRate: day.assignments > 0 ? (day.redemptions / day.assignments) * 100 : 0
     }));
 
+    if (!totalStats) {
+      throw new AppError(500, 'Failed to get usage analytics stats');
+    }
+
     return {
       totalEvents: totalStats.totalEvents,
       eventsByType: eventTypeMap,
@@ -476,6 +481,10 @@ export class AnalyticsService {
       return acc;
     }, {} as Record<string, number>);
 
+    if (!totalStats) {
+      throw new AppError(500, 'Failed to get profile change analytics stats');
+    }
+
     return {
       totalChanges: totalStats.totalChanges,
       uniqueUsers: totalStats.uniqueUsers,
@@ -666,12 +675,16 @@ export class AnalyticsService {
       whereValues
     );
 
+    if (!overallMetrics) {
+      throw new AppError(500, 'Failed to get user engagement metrics');
+    }
+
     return {
       activeUsers: overallMetrics.activeUsers,
       totalSessions: overallMetrics.totalSessions,
       avgCouponsPerUser: Number(overallMetrics.avgCouponsPerUser?.toFixed(2) || 0),
       avgProfileChangesPerUser: Number(overallMetrics.avgProfileChangesPerUser?.toFixed(2) || 0),
-      userSegments,  
+      userSegments,
       topUsers
     };
   }
