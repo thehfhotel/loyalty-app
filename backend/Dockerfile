@@ -90,7 +90,7 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
 COPY package*.json tsconfig.json ./
 
-# Ensure Prisma client is available for runtime
+# Ensure Prisma client is available for runtime (CACHE BUST: 2025-11-10-v2)
 # Prisma generates to src/generated/prisma, compiled JS expects ../generated/prisma from dist/config/
 RUN if [ -d "src/generated" ]; then \
       echo "✅ Prisma client found in src/generated"; \
