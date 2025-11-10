@@ -133,20 +133,27 @@ function validateEnvironmentConfig() {
 
 function validateESLintSecurity() {
   console.log('\n🔍 Validating ESLint Security Configuration...\n');
-  
-  // Check ESLint configuration
-  const eslintPath = path.join(__dirname, '../.eslintrc.js');
-  const eslintContent = validateFile(eslintPath, 'ESLint configuration file');
-  
+
+  // Check for ESLint configuration (flat config or legacy)
+  let eslintPath = path.join(__dirname, '../eslint.config.mjs');
+  let eslintContent = validateFile(eslintPath, 'ESLint flat config file (eslint.config.mjs)');
+
+  // Fallback to legacy config if flat config doesn't exist
+  if (!eslintContent) {
+    eslintPath = path.join(__dirname, '../.eslintrc.js');
+    eslintContent = validateFile(eslintPath, 'ESLint configuration file (.eslintrc.js)');
+  }
+
   if (eslintContent) {
     // Check for security plugin (multiple configuration approaches)
-    if (eslintContent.includes('plugin:security/recommended') || 
-        (eslintContent.includes("'security'") && eslintContent.includes('plugins:'))) {
+    if (eslintContent.includes('plugin:security/recommended') ||
+        (eslintContent.includes("'security'") && eslintContent.includes('plugins:')) ||
+        (eslintContent.includes('eslint-plugin-security') && eslintContent.includes('security'))) {
       log('info', 'ESLint security plugin configured');
     } else {
       log('error', 'ESLint security plugin not configured');
     }
-    
+
     // Check for specific security rules
     const securityRules = [
       'security/detect-eval-with-expression',
@@ -154,7 +161,7 @@ function validateESLintSecurity() {
       'security/detect-buffer-noassert',
       'security/detect-child-process'
     ];
-    
+
     securityRules.forEach(rule => {
       if (eslintContent.includes(rule)) {
         log('info', `ESLint security rule '${rule}' configured`);

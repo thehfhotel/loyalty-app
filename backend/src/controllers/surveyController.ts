@@ -114,10 +114,17 @@ export class SurveyController {
       res.status(201).json({ survey });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorDetail = error && typeof error === 'object' && 'detail' in error ? (error as any).detail : undefined;
-      const errorHint = error && typeof error === 'object' && 'hint' in error ? (error as any).hint : undefined;
-      const errorCode = error && typeof error === 'object' && 'code' in error ? (error as any).code : undefined;
-      const errorConstraint = error && typeof error === 'object' && 'constraint' in error ? (error as any).constraint : undefined;
+
+      // Type guard for PostgreSQL error properties
+      const isPostgresError = (err: unknown): err is { detail?: string; hint?: string; code?: string; constraint?: string } => {
+        return typeof err === 'object' && err !== null;
+      };
+
+      const pgError = isPostgresError(error) ? error : {};
+      const errorDetail = pgError.detail;
+      const errorHint = pgError.hint;
+      const errorCode = pgError.code;
+      const errorConstraint = pgError.constraint;
 
       res.status(500).json({
         message: 'Failed to create survey',
