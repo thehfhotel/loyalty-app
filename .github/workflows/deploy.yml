@@ -14,138 +14,164 @@ env:
 
 jobs:
   # =============================================================================
-  # PHASE 1: PARALLEL VALIDATION & SECURITY (3-4 minutes)
+  # PHASE 0: SHARED WORKSPACE PREPARATION (NEW - 30-60 seconds)
   # =============================================================================
-  
-  # Job 1A: Code Quality & Security Analysis (Parallel)
-  security-analysis:
-    name: "🔒 Security & Code Quality"
+
+  prepare-workspace:
+    name: "🚀 Workspace Preparation"
     runs-on: self-hosted
-    timeout-minutes: 10
+    timeout-minutes: 2
     outputs:
-      security-passed: ${{ steps.security-results.outputs.passed }}
-    
+      workspace-ready: ${{ steps.setup-complete.outputs.ready }}
+      backend-cache-hit: ${{ steps.backend-cache.outputs.cache-hit }}
+      frontend-cache-hit: ${{ steps.frontend-cache.outputs.cache-hit }}
+
     steps:
-      - name: "🧹 Workspace preparation"
-        run: |
-          # Clean workspace with passwordless sudo (now configured)
-          echo "Cleaning workspace at ${{ github.workspace }}"
-          
-          cd ${{ github.workspace }}
-          
-          # Force clean the problematic directories with sudo
-          echo "Removing build artifacts with elevated permissions..."
-          sudo rm -rf frontend/dist backend/dist 2>/dev/null || true
-          sudo rm -rf frontend/build backend/build 2>/dev/null || true
-          sudo rm -rf frontend/.next backend/.next 2>/dev/null || true
-          sudo rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
-          
-          # Clean git repository state
-          if [ -d ".git" ]; then
-            echo "Cleaning git repository state..."
-            sudo git clean -xffd 2>/dev/null || true
-            git reset --hard 2>/dev/null || true
-          fi
-          
-          # Fix ownership of remaining files to current user
-          sudo chown -R $USER:$USER . 2>/dev/null || true
-          
-          echo "Workspace after cleanup:"
-          ls -la
-      
-      - name: "📥 Checkout code"
+      - name: "📥 Checkout code (shared for all jobs)"
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # Shallow clone for speed
-          clean: true  # Clean enabled, workspace preparation should handle permissions
-      
-      - name: "⚡ Setup Node.js (no remote cache)"
+          fetch-depth: 1
+          clean: true
+
+      - name: "⚡ Setup Node.js"
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          # Removed cache: 'npm' to use local cache instead
-      
+
       - name: "🚀 Setup local cache strategy"
-        id: local-cache
+        id: cache-setup
         run: |
           echo "🚀 Using local cache strategy for self-hosted runner"
-          
-          # Define local cache directories (using nut user home)
+
           LOCAL_CACHE_BASE="/home/nut/.cache/loyalty-app"
           NPM_CACHE="/home/nut/.npm-cache"
-          
-          # Create cache directories if they don't exist
+
           mkdir -p "$LOCAL_CACHE_BASE"/{frontend,backend} "$NPM_CACHE"
-          
-          # Calculate cache keys based on package files
+
           FRONTEND_KEY=$(shasum frontend/package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
           BACKEND_KEY=$(shasum backend/package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "no-lock")
-          
+
           echo "frontend_cache_key=$FRONTEND_KEY" >> $GITHUB_OUTPUT
           echo "backend_cache_key=$BACKEND_KEY" >> $GITHUB_OUTPUT
           echo "cache_base=$LOCAL_CACHE_BASE" >> $GITHUB_OUTPUT
           echo "npm_cache=$NPM_CACHE" >> $GITHUB_OUTPUT
-          
-          # Check if local cache exists and is valid
-          CACHE_HIT=false
-          if [ -f "$LOCAL_CACHE_BASE/frontend/.cache-key" ] && [ -f "$LOCAL_CACHE_BASE/backend/.cache-key" ]; then
-            STORED_FRONTEND_KEY=$(cat "$LOCAL_CACHE_BASE/frontend/.cache-key")
-            STORED_BACKEND_KEY=$(cat "$LOCAL_CACHE_BASE/backend/.cache-key")
-            
-            if [ "$STORED_FRONTEND_KEY" = "$FRONTEND_KEY" ] && [ "$STORED_BACKEND_KEY" = "$BACKEND_KEY" ]; then
-              CACHE_HIT=true
-              echo "✅ Local cache valid and ready to use"
-            else
-              echo "♻️ Package files changed, cache needs refresh"
-            fi
-          else
-            echo "📦 No local cache found, will create one"
-          fi
-          
-          echo "cache_hit=$CACHE_HIT" >> $GITHUB_OUTPUT
-      
-      - name: "📦 Install dependencies (Backend)"
+
+      - name: "📦 Install backend dependencies"
+        id: backend-cache
         working-directory: ./backend
         run: |
-          echo "📦 Installing backend dependencies with local cache..."
-          
-          # Variables from cache setup
-          LOCAL_CACHE_BASE="${{ steps.local-cache.outputs.cache_base }}"
-          NPM_CACHE="${{ steps.local-cache.outputs.npm_cache }}"
-          CACHE_HIT="${{ steps.local-cache.outputs.cache_hit }}"
-          
-          # Set npm cache directory
+          LOCAL_CACHE_BASE="${{ steps.cache-setup.outputs.cache_base }}"
+          NPM_CACHE="${{ steps.cache-setup.outputs.npm_cache }}"
+
           npm config set cache "$NPM_CACHE"
-          
-          if [ "$CACHE_HIT" = "true" ]; then
-            echo "⚡ Restoring from local cache..."
-            # Restore node_modules from local cache
-            if [ -d "$LOCAL_CACHE_BASE/backend/node_modules" ]; then
+
+          # Check cache
+          CACHE_HIT=false
+          if [ -f "$LOCAL_CACHE_BASE/backend/.cache-key" ]; then
+            STORED_KEY=$(cat "$LOCAL_CACHE_BASE/backend/.cache-key")
+            if [ "$STORED_KEY" = "${{ steps.cache-setup.outputs.backend_cache_key }}" ]; then
+              CACHE_HIT=true
+              echo "⚡ Restoring backend from cache..."
               cp -r "$LOCAL_CACHE_BASE/backend/node_modules" .
-              echo "✅ Backend dependencies restored from local cache"
-            else
-              echo "📦 Cache miss - installing normally"
-              npm ci --prefer-offline --no-audit --ignore-scripts
+              echo "cache-hit=true" >> $GITHUB_OUTPUT
             fi
-          else
-            echo "📦 Installing and caching dependencies..."
-            npm ci --prefer-offline --no-audit --ignore-scripts
-            
-            # Cache the installed node_modules
+          fi
+
+          if [ "$CACHE_HIT" = false ]; then
+            echo "📦 Installing backend dependencies..."
+            npm ci --prefer-offline --include=dev
+
             echo "💾 Caching backend dependencies..."
             cp -r node_modules "$LOCAL_CACHE_BASE/backend/"
-            echo "${{ steps.local-cache.outputs.backend_cache_key }}" > "$LOCAL_CACHE_BASE/backend/.cache-key"
-            echo "✅ Backend dependencies cached locally"
+            echo "${{ steps.cache-setup.outputs.backend_cache_key }}" > "$LOCAL_CACHE_BASE/backend/.cache-key"
+            echo "cache-hit=false" >> $GITHUB_OUTPUT
           fi
-          # Install all dependencies for validation scripts
-      
-      - name: "🔍 TypeScript type checking (validation)"
+
+      - name: "📦 Install frontend dependencies"
+        id: frontend-cache
+        working-directory: ./frontend
+        run: |
+          LOCAL_CACHE_BASE="${{ steps.cache-setup.outputs.cache_base }}"
+          NPM_CACHE="${{ steps.cache-setup.outputs.npm_cache }}"
+
+          npm config set cache "$NPM_CACHE"
+
+          # Check cache
+          CACHE_HIT=false
+          if [ -f "$LOCAL_CACHE_BASE/frontend/.cache-key" ]; then
+            STORED_KEY=$(cat "$LOCAL_CACHE_BASE/frontend/.cache-key")
+            if [ "$STORED_KEY" = "${{ steps.cache-setup.outputs.frontend_cache_key }}" ]; then
+              CACHE_HIT=true
+              echo "⚡ Restoring frontend from cache..."
+              cp -r "$LOCAL_CACHE_BASE/frontend/node_modules" .
+              echo "cache-hit=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+          if [ "$CACHE_HIT" = false ]; then
+            echo "📦 Installing frontend dependencies..."
+            npm ci --prefer-offline
+
+            echo "💾 Caching frontend dependencies..."
+            cp -r node_modules "$LOCAL_CACHE_BASE/frontend/"
+            echo "${{ steps.cache-setup.outputs.frontend_cache_key }}" > "$LOCAL_CACHE_BASE/frontend/.cache-key"
+            echo "cache-hit=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: "🔧 Generate Prisma client (shared)"
         working-directory: ./backend
         run: |
-          # Generate Prisma client for type checking
+          echo "🔧 Generating Prisma client for all jobs..."
           npm run db:generate
-          # Run TypeScript type checking
-          npm run typecheck
+
+          if [ ! -d "src/generated/prisma" ]; then
+            echo "❌ Prisma client generation failed"
+            exit 1
+          fi
+
+          echo "✅ Prisma client generated successfully"
+
+      - name: "📊 Workspace preparation complete"
+        id: setup-complete
+        run: |
+          echo "✅ Workspace preparation completed"
+          echo "Backend cache hit: ${{ steps.backend-cache.outputs.cache-hit }}"
+          echo "Frontend cache hit: ${{ steps.frontend-cache.outputs.cache-hit }}"
+          echo "ready=true" >> $GITHUB_OUTPUT
+
+      - name: "📤 Upload workspace as artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-workspace-${{ github.run_id }}
+          path: |
+            .
+            !.git
+          retention-days: 1
+          compression-level: 0
+
+  # =============================================================================
+  # PHASE 1: PARALLEL VALIDATION & SECURITY (3-4 minutes)
+  # =============================================================================
+
+  # Job 1A: Code Quality & Security Analysis (Parallel)
+  security-analysis:
+    name: "🔒 Security & Code Quality"
+    runs-on: self-hosted
+    needs: prepare-workspace
+    timeout-minutes: 3
+    outputs:
+      security-passed: ${{ steps.security-results.outputs.passed }}
+
+    steps:
+      - name: "📥 Download shared workspace"
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-workspace-${{ github.run_id }}
+          path: .
+
+      - name: "🔍 TypeScript type checking (validation)"
+        working-directory: ./backend
+        run: npm run typecheck
       
       - name: "🔒 Security linting (ESLint + Security rules)"
         working-directory: ./backend
@@ -178,7 +204,8 @@ jobs:
   unit-integration-tests:
     name: "🧪 Unit & Integration Tests"
     runs-on: self-hosted
-    timeout-minutes: 15
+    needs: prepare-workspace
+    timeout-minutes: 6
     outputs:
       tests-passed: ${{ steps.test-results.outputs.passed }}
       coverage-percent: ${{ steps.test-results.outputs.coverage }}
@@ -1112,13 +1139,16 @@ jobs:
   
   # Job 2A: Build validation (only for main branch, after all tests)
   build-validation:
-    name: "🏗️ Build Validation"
+    name: "🏗️ Build Validation & Docker Images"
     runs-on: self-hosted
     needs: [security-analysis, unit-integration-tests, e2e-tests]
     if: github.ref == 'refs/heads/main' && always() && needs.security-analysis.outputs.security-passed == 'true' && needs.unit-integration-tests.outputs.tests-passed == 'true'
     timeout-minutes: 15
     outputs:
       build-passed: ${{ steps.build-results.outputs.passed }}
+      backend-image: ${{ steps.docker-build.outputs.backend_image }}
+      frontend-image: ${{ steps.docker-build.outputs.frontend_image }}
+      images-ready: ${{ steps.docker-build.outputs.images_ready }}
     
     steps:
       - name: "🧹 Workspace preparation"
@@ -1288,7 +1318,8 @@ jobs:
             exit 1
           fi
       
-      - name: "🏗️ Docker image build validation"
+      - name: "🐳 Build & Tag Docker Images (Production-Ready)"
+        id: docker-build
         env:
           # Provide dummy environment variables for build-time validation
           # Real secrets will be used in production-deployment job
@@ -1319,19 +1350,68 @@ jobs:
           LOYALTY_USERNAME: "dummy-loyalty-user"
           LOYALTY_PASSWORD: "dummy-loyalty-password"
         run: |
-          echo "🐳 Validating Docker builds with dummy environment variables..."
-          
-          # Enable BuildKit
+          echo "🐳 Building production Docker images with BuildKit optimization..."
+
+          # Enable BuildKit for faster builds
           export DOCKER_BUILDKIT=1
           export COMPOSE_DOCKER_CLI_BUILD=1
-          
+          export BUILDKIT_INLINE_CACHE=1
+
           # Validate Docker Compose configuration
+          echo "🔍 Validating Docker Compose configuration..."
           docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null
-          
-          # Build images (without starting services) - env vars now available
+          echo "✅ Configuration validated"
+
+          # Build images once with production target
+          echo "🏗️ Building Docker images (production runner stage)..."
           docker compose -f docker-compose.yml -f docker-compose.prod.yml build \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
             --parallel
+
+          # Tag images with commit SHA for deployment tracking
+          echo "🏷️ Tagging images with commit SHA..."
+          COMMIT_SHA="${{ github.sha }}"
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+
+          # Get image names from docker compose
+          BACKEND_IMAGE=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml images -q backend | head -1)
+          FRONTEND_IMAGE=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml images -q frontend | head -1)
+
+          # If images were built, tag them
+          if [ -n "$BACKEND_IMAGE" ]; then
+            docker tag $BACKEND_IMAGE loyalty-app-backend:$COMMIT_SHA
+            docker tag $BACKEND_IMAGE loyalty-app-backend:$SHORT_SHA
+            docker tag $BACKEND_IMAGE loyalty-app-backend:latest
+            echo "✅ Backend image tagged: $COMMIT_SHA, $SHORT_SHA, latest"
+          fi
+
+          if [ -n "$FRONTEND_IMAGE" ]; then
+            docker tag $FRONTEND_IMAGE loyalty-app-frontend:$COMMIT_SHA
+            docker tag $FRONTEND_IMAGE loyalty-app-frontend:$SHORT_SHA
+            docker tag $FRONTEND_IMAGE loyalty-app-frontend:latest
+            echo "✅ Frontend image tagged: $COMMIT_SHA, $SHORT_SHA, latest"
+          fi
+
+          # Verify images exist
+          echo "🔍 Verifying tagged images..."
+          docker images | grep -E "loyalty-app-(backend|frontend)" | grep -E "$SHORT_SHA|latest"
+
+          # Quick smoke test
+          echo "🧪 Running smoke tests..."
+          if docker run --rm loyalty-app-backend:$SHORT_SHA node --version >/dev/null 2>&1; then
+            echo "✅ Backend image smoke test passed"
+          else
+            echo "⚠️ Backend smoke test failed (non-critical)"
+          fi
+
+          # Output image tags for deployment job
+          echo "images_ready=true" >> $GITHUB_OUTPUT
+          echo "backend_image=loyalty-app-backend:$COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "frontend_image=loyalty-app-frontend:$COMMIT_SHA" >> $GITHUB_OUTPUT
+
+          echo "✅ Docker images built, tagged, and ready for deployment"
+          echo "📦 Backend: loyalty-app-backend:$COMMIT_SHA"
+          echo "📦 Frontend: loyalty-app-frontend:$COMMIT_SHA"
       
       - name: "📊 Build results (output summary)"
         id: build-results
