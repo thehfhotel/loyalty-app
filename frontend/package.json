@@ -64,5 +64,8 @@
     "typescript-eslint": "^8.46.4",
     "vite": "^6.1.6",
     "vite-plugin-pwa": "^0.21.2"
+  },
+  "overrides": {
+    "glob": "^11.0.3"
   }
 }
