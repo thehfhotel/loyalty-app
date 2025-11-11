@@ -7,8 +7,10 @@ module.exports = {
   transform: {
     '^.+\\.ts$': 'ts-jest',
   },
+  // Use v8 coverage provider instead of babel/istanbul (Node 24 compatible)
+  coverageProvider: 'v8',
   collectCoverageFrom: [
-    // Include all source files to show accurate 0% coverage
+    // Include all source files to show accurate coverage
     'src/**/*.ts',
     // Standard exclusions
     '!src/**/*.d.ts',
@@ -19,15 +21,15 @@ module.exports = {
     '!src/__tests__/setup.ts',
     '!src/types/**',
   ],
-  // Disable coverage thresholds until real unit tests are implemented
-  // coverageThreshold: {
-  //   global: {
-  //     statements: 70,
-  //     branches: 60,
-  //     functions: 70,
-  //     lines: 70,
-  //   },
-  // },
+  // Re-enable coverage thresholds after fixing coverage tool
+  coverageThreshold: {
+    global: {
+      statements: 42,
+      branches: 35,
+      functions: 42,
+      lines: 42,
+    },
+  },
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
   setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
