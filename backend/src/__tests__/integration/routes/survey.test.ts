@@ -14,35 +14,33 @@ import { surveyController } from '../../../controllers/surveyController';
 
 // Mock dependencies
 jest.mock('../../../controllers/surveyController');
+jest.mock('../../../middleware/auth', () => ({
+  authenticate: (req: Request, _res: Response, next: NextFunction) => {
+    req.user = {
+      id: 'test-user-id',
+      email: 'test@example.com',
+      role: 'customer',
+    };
+    next();
+  },
+  requireAdmin: (req: Request, _res: Response, next: NextFunction) => {
+    req.user = {
+      id: 'admin-user-id',
+      email: 'admin@example.com',
+      role: 'admin',
+    };
+    next();
+  },
+}));
 
 describe('Survey Routes Integration Tests', () => {
   let app: Express;
   let mockSurveyController: jest.Mocked<typeof surveyController>;
 
-  // Mock authenticate middleware
-  const mockAuthenticate = (role: 'customer' | 'admin' | 'super_admin' = 'customer') => (
-    req: Request,
-    _res: Response,
-    next: NextFunction
-  ) => {
-    req.user = {
-      id: 'test-user-id',
-      email: 'test@example.com',
-      role: role,
-    };
-    next();
-  };
-
   beforeAll(() => {
     // Create Express app with routes
     app = express();
     app.use(express.json());
-
-    // Mock authentication middleware
-    jest.mock('../../../middleware/auth', () => ({
-      authenticate: mockAuthenticate('customer'),
-    }));
-
     app.use('/api/surveys', surveyRoutes);
     app.use(errorHandler);
   });

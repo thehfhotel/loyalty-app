@@ -14,35 +14,33 @@ import { couponController } from '../../../controllers/couponController';
 
 // Mock dependencies
 jest.mock('../../../controllers/couponController');
+jest.mock('../../../middleware/auth', () => ({
+  authenticate: (req: Request, _res: Response, next: NextFunction) => {
+    req.user = {
+      id: 'test-user-id',
+      email: 'test@example.com',
+      role: 'customer',
+    };
+    next();
+  },
+  requireAdmin: (req: Request, _res: Response, next: NextFunction) => {
+    req.user = {
+      id: 'admin-user-id',
+      email: 'admin@example.com',
+      role: 'admin',
+    };
+    next();
+  },
+}));
 
 describe('Coupon Routes Integration Tests', () => {
   let app: Express;
   let mockCouponController: jest.Mocked<typeof couponController>;
 
-  // Mock authenticate middleware
-  const mockAuthenticate = (role: 'customer' | 'admin' | 'super_admin' = 'customer') => (
-    req: Request,
-    _res: Response,
-    next: NextFunction
-  ) => {
-    req.user = {
-      id: 'test-user-id',
-      email: 'test@example.com',
-      role: role,
-    };
-    next();
-  };
-
   beforeAll(() => {
     // Create Express app with routes
     app = express();
     app.use(express.json());
-
-    // Mock authentication middleware
-    jest.mock('../../../middleware/auth', () => ({
-      authenticate: mockAuthenticate('customer'),
-    }));
-
     app.use('/api/coupons', couponRoutes);
     app.use(errorHandler);
   });
