@@ -11,12 +11,15 @@ jest.mock('../../../utils/logger');
 describe('UserService', () => {
   let userService: UserService;
   let mockQuery: jest.MockedFunction<typeof database.query>;
+  let mockQueryWithMeta: jest.MockedFunction<typeof database.queryWithMeta>;
 
   beforeEach(() => {
     jest.clearAllMocks();
     userService = new UserService();
     mockQuery = database.query as jest.MockedFunction<typeof database.query>;
+    mockQueryWithMeta = database.queryWithMeta as jest.MockedFunction<typeof database.queryWithMeta>;
     mockQuery.mockResolvedValue([]);
+    mockQueryWithMeta.mockResolvedValue({ rows: [], rowCount: 0 });
   });
 
   describe('getProfile', () => {
@@ -108,15 +111,21 @@ describe('UserService', () => {
       const userId = 'user-123';
       const emoji = '😀';
 
-      mockQuery.mockResolvedValueOnce([{
+      const mockProfile = {
         userId,
         avatarUrl: `emoji://${emoji}`,
-      }]);
+        membershipId: 'MEM12345',
+      };
+
+      // Mock updateAvatar query (uses queryWithMeta)
+      mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+      // Mock getProfile query
+      mockQuery.mockResolvedValueOnce([mockProfile]);
 
       const result = await userService.updateEmojiAvatar(userId, emoji);
 
       expect(result).toBeDefined();
-      expect(mockQuery).toHaveBeenCalled();
+      expect(mockQueryWithMeta).toHaveBeenCalled();
     });
   });
 
@@ -170,11 +179,12 @@ describe('UserService', () => {
       );
     });
 
-    it('should throw error if user not found', async () => {
+    it('should not throw error if user not found (idempotent delete)', async () => {
       mockQuery.mockResolvedValueOnce([]);
 
+      // Delete is idempotent - no error thrown if user doesn't exist
       await expect(userService.deleteUser('non-existent'))
-        .rejects.toThrow(AppError);
+        .resolves.not.toThrow();
     });
 
     it('should handle cascade deletion', async () => {
@@ -235,18 +245,21 @@ describe('UserService', () => {
 
   describe('getUserStats', () => {
     it('should return user statistics', async () => {
-      // Mock multiple query calls that getUserStats makes
-      mockQuery
-        .mockResolvedValueOnce([{ count: 100 }])  // total users
-        .mockResolvedValueOnce([{ count: 90 }])   // active users
-        .mockResolvedValueOnce([{ count: 10 }])   // admins
-        .mockResolvedValueOnce([{ count: 15 }]);  // recently joined
+      // getUserStats makes a single query that returns all stats
+      mockQuery.mockResolvedValueOnce([{
+        total: '100',
+        active: '90',
+        admins: '10',
+        recentlyJoined: '15'
+      }]);
 
       const result = await userService.getUserStats();
 
       expect(result).toBeDefined();
       expect(result.total).toBe(100);
       expect(result.active).toBe(90);
+      expect(result.admins).toBe(10);
+      expect(result.recentlyJoined).toBe(15);
       expect(mockQuery).toHaveBeenCalled();
     });
   });

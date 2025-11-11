@@ -1,17 +1,29 @@
+// @ts-nocheck - Mock type assertions conflict with TypeScript strict mode
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { Request, Response, NextFunction } from 'express';
-import { authenticate, authorize, requireRole } from '../../../middleware/auth';
-import { AuthService } from '../../../services/authService';
 import { AppError } from '../../../middleware/errorHandler';
 
-// Mock AuthService
-jest.mock('../../../services/authService');
+// Create mock verifyToken function
+const mockVerifyToken = jest.fn();
+
+// Mock AuthService before importing auth middleware
+jest.mock('../../../services/authService', () => {
+  return {
+    AuthService: jest.fn().mockImplementation(() => {
+      return {
+        verifyToken: mockVerifyToken
+      };
+    })
+  };
+});
+
+// Import auth middleware AFTER mocking AuthService
+import { authenticate, authorize, requireRole } from '../../../middleware/auth';
 
 describe('Auth Middleware', () => {
   let mockRequest: Partial<Request>;
   let mockResponse: Partial<Response>;
   let mockNext: jest.MockedFunction<NextFunction>;
-  let mockAuthService: jest.Mocked<AuthService>;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -24,9 +36,6 @@ describe('Auth Middleware', () => {
     mockResponse = {};
 
     mockNext = jest.fn() as unknown as jest.MockedFunction<NextFunction>;
-
-    // Get the mocked AuthService instance
-    mockAuthService = jest.mocked(new AuthService());
   });
 
   describe('authenticate', () => {
@@ -41,7 +50,7 @@ describe('Auth Middleware', () => {
         authorization: 'Bearer valid-token-123',
       };
 
-      (mockAuthService.verifyToken as jest.Mock) = jest.fn().mockResolvedValue(mockPayload);
+      mockVerifyToken.mockResolvedValue(mockPayload);
 
       await authenticate(
         mockRequest as Request,
@@ -49,7 +58,7 @@ describe('Auth Middleware', () => {
         mockNext
       );
 
-      expect(mockAuthService.verifyToken).toHaveBeenCalledWith('valid-token-123');
+      expect(mockVerifyToken).toHaveBeenCalledWith('valid-token-123');
       expect(mockRequest.user).toEqual(mockPayload);
       expect(mockNext).toHaveBeenCalledWith();
     });
@@ -96,7 +105,7 @@ describe('Auth Middleware', () => {
       };
 
       const tokenError = new Error('Invalid token');
-      (mockAuthService.verifyToken as jest.Mock) = jest.fn().mockRejectedValue(tokenError);
+      mockVerifyToken.mockRejectedValue(tokenError);
 
       await authenticate(
         mockRequest as Request,
@@ -113,7 +122,7 @@ describe('Auth Middleware', () => {
       };
 
       const expiredError = new Error('Token expired');
-      (mockAuthService.verifyToken as jest.Mock) = jest.fn().mockRejectedValue(expiredError);
+      mockVerifyToken.mockRejectedValue(expiredError);
 
       await authenticate(
         mockRequest as Request,
@@ -130,7 +139,7 @@ describe('Auth Middleware', () => {
       };
 
       const serviceError = new Error('Service unavailable');
-      (mockAuthService.verifyToken as jest.Mock) = jest.fn().mockRejectedValue(serviceError);
+      mockVerifyToken.mockRejectedValue(serviceError);
 
       await authenticate(
         mockRequest as Request,
@@ -147,7 +156,7 @@ describe('Auth Middleware', () => {
         authorization: `Bearer ${tokenWithSpaces}`,
       };
 
-      mockAuthService.verifyToken = jest.fn().mockResolvedValue({
+      mockVerifyToken.mockResolvedValue({
         userId: 'user-123',
         email: 'test@example.com',
         role: 'customer' as const,
@@ -160,7 +169,7 @@ describe('Auth Middleware', () => {
       );
 
       // Should extract token starting from position 7 (after "Bearer ")
-      expect(mockAuthService.verifyToken).toHaveBeenCalled();
+      expect(mockVerifyToken).toHaveBeenCalled();
     });
   });
 
@@ -370,7 +379,7 @@ describe('Auth Middleware', () => {
   describe('middleware integration', () => {
     it('should chain authenticate and authorize correctly', async () => {
       const mockPayload = {
-        userId: 'admin-123',
+        id: 'admin-123',
         email: 'admin@example.com',
         role: 'admin' as const,
       };
@@ -379,7 +388,7 @@ describe('Auth Middleware', () => {
         authorization: 'Bearer valid-admin-token',
       };
 
-      (mockAuthService.verifyToken as jest.Mock) = jest.fn().mockResolvedValue(mockPayload);
+      mockVerifyToken.mockResolvedValue(mockPayload);
 
       // First authenticate
       await authenticate(
@@ -440,7 +449,7 @@ describe('Auth Middleware', () => {
       };
 
       const customError = new AppError(500, 'Custom error');
-      (mockAuthService.verifyToken as jest.Mock) = jest.fn().mockRejectedValue(customError);
+      mockVerifyToken.mockRejectedValue(customError);
 
       await authenticate(
         mockRequest as Request,

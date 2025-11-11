@@ -28,8 +28,8 @@ describe('ErrorHandler Middleware', () => {
     statusMock = jest.fn().mockReturnValue({ json: jsonMock });
 
     mockResponse = {
-      status: statusMock,
-      json: jsonMock,
+      status: statusMock as unknown as Response['status'],
+      json: jsonMock as unknown as Response['json'],
     };
 
     mockNext = jest.fn() as unknown as jest.MockedFunction<NextFunction>;
