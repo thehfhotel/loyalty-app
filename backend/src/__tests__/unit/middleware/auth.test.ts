@@ -1,10 +1,28 @@
-// @ts-nocheck - Mock type assertions conflict with TypeScript strict mode
+// ESLint suppressed for mock dependencies with ES2015+ requirements
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { Request, Response, NextFunction } from 'express';
 import { AppError } from '../../../middleware/errorHandler';
 
-// Create mock verifyToken function
-const mockVerifyToken = jest.fn();
+// Create mock verifyToken function with proper typing
+const mockVerifyToken = jest.fn() as jest.MockedFunction<(token: string) => Promise<any>>;
+
+// Mock environment configuration to prevent process.exit during tests
+jest.mock('../../../config/environment', () => ({
+  env: {
+    NODE_ENV: 'test',
+    PORT: '4000',
+    HOST: 'localhost',
+    JWT_SECRET: 'test-jwt-secret-that-is-at-least-32-characters-long',
+    JWT_REFRESH_SECRET: 'test-jwt-refresh-secret-that-is-at-least-32-characters',
+    DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
+    REDIS_URL: 'redis://localhost:6379',
+    GOOGLE_CLIENT_ID: 'test-google-client-id',
+    GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+    LINE_CHANNEL_ID: 'test-line-channel-id',
+    LINE_CHANNEL_SECRET: 'test-line-channel-secret',
+    LOG_LEVEL: 'error'
+  }
+}));
 
 // Mock AuthService before importing auth middleware
 jest.mock('../../../services/authService', () => {

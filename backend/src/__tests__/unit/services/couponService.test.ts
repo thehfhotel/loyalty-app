@@ -1,4 +1,4 @@
-// @ts-nocheck - Mock type assertions conflict with TypeScript strict mode
+// ESLint suppressed for mock dependencies with ES2015+ requirements
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { CouponService } from '../../../services/couponService';
 import { AppError } from '../../../middleware/errorHandler';
@@ -13,8 +13,7 @@ describe('CouponService', () => {
   let mockQuery: jest.MockedFunction<typeof database.query>;
   let mockGetClient: jest.MockedFunction<typeof database.getClient>;
   let mockClient: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query: jest.Mock;
+        query: jest.Mock;
     release: jest.Mock;
   };
 
@@ -25,12 +24,12 @@ describe('CouponService', () => {
     mockGetClient = database.getClient as jest.MockedFunction<typeof database.getClient>;
 
     mockClient = {
-      query: jest.fn(),
-      release: jest.fn(),
+      query: jest.fn() as unknown as jest.Mock,
+      release: jest.fn() as unknown as jest.Mock,
     };
 
     mockGetClient.mockResolvedValue(mockClient as never);
-    mockQuery.mockResolvedValue([]);
+    mockQuery.mockResolvedValue([] as never);
   });
 
   describe('createCoupon', () => {
@@ -60,12 +59,11 @@ describe('CouponService', () => {
         updatedAt: new Date(),
       };
 
-      mockQuery.mockResolvedValueOnce([]); // Check existing code
-      // @ts-expect-error Mock typing
+      mockQuery.mockResolvedValueOnce([] as never); // Check existing code
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as any) // BEGIN
-        .mockResolvedValueOnce({ rows: [createdCoupon], command: 'INSERT' } as any) // INSERT
-        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' } as any); // COMMIT
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as { rows: unknown[]; command: string } as never) // BEGIN
+        .mockResolvedValueOnce({ rows: [createdCoupon], command: 'INSERT' } as { rows: unknown[]; command: string } as never) // INSERT
+        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' } as { rows: unknown[]; command: string } as never); // COMMIT
 
       const result = await couponService.createCoupon(couponData, 'admin-123');
 
@@ -84,14 +82,14 @@ describe('CouponService', () => {
 
       // Mock client.query for BEGIN
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' });
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never);
 
       // Mock standalone query() for duplicate check - returns existing coupon
-      mockQuery.mockResolvedValueOnce([{ id: 'existing-id' }]);
+      mockQuery.mockResolvedValueOnce([{ id: 'existing-id' }] as never);
 
       // Mock client.query for ROLLBACK
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'ROLLBACK' });
+        .mockResolvedValueOnce({ rows: [], command: 'ROLLBACK' } as never);
 
       await expect(couponService.createCoupon(couponData, 'admin-123'))
         .rejects.toMatchObject({
@@ -108,11 +106,10 @@ describe('CouponService', () => {
         value: 10,
       };
 
-      mockQuery.mockResolvedValueOnce([]); // No existing code
-      // @ts-expect-error Mock typing
+      mockQuery.mockResolvedValueOnce([] as never); // No existing code
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' }as any)
-        .mockRejectedValueOnce(new Error('Database error'));
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
+        .mockRejectedValueOnce(new Error('Database error') as never);
 
       await expect(couponService.createCoupon(couponData, 'admin-123'))
         .rejects.toThrow('Database error');
@@ -135,10 +132,9 @@ describe('CouponService', () => {
           value: type === 'bogo' ? 0 : 100,
         };
 
-        mockQuery.mockResolvedValueOnce([]);
-        // @ts-expect-error Mock typing
+        mockQuery.mockResolvedValueOnce([] as never);
         (mockClient.query as unknown as jest.Mock)
-          .mockResolvedValueOnce({ rows: [], command: 'BEGIN' }as any)
+          .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
           .mockResolvedValueOnce({
             rows: [{
               id: 'coupon-123',
@@ -147,8 +143,8 @@ describe('CouponService', () => {
               status: 'draft'
             }],
             command: 'INSERT'
-          })
-          .mockResolvedValueOnce({ rows: [], command: 'COMMIT' }) as any;
+          } as never)
+          .mockResolvedValueOnce({ rows: [], command: 'COMMIT' } as never);
 
         const result = await couponService.createCoupon(couponData, 'admin-123');
         expect(result.type).toBe(type);
@@ -167,7 +163,7 @@ describe('CouponService', () => {
         status: 'active',
       };
 
-      mockQuery.mockResolvedValueOnce([mockCoupon]);
+      mockQuery.mockResolvedValueOnce([mockCoupon] as never);
 
       const result = await couponService.getCouponById('coupon-123');
 
@@ -179,7 +175,7 @@ describe('CouponService', () => {
     });
 
     it('should return null if coupon not found', async () => {
-      mockQuery.mockResolvedValueOnce([]);
+      mockQuery.mockResolvedValueOnce([] as never);
 
       const result = await couponService.getCouponById('non-existent');
 
@@ -197,7 +193,7 @@ describe('CouponService', () => {
         value: 20,
       };
 
-      mockQuery.mockResolvedValueOnce([mockCoupon]);
+      mockQuery.mockResolvedValueOnce([mockCoupon] as never);
 
       const result = await couponService.getCouponByCode('SUMMER20');
 
@@ -209,7 +205,7 @@ describe('CouponService', () => {
     });
 
     it('should return null if code not found', async () => {
-      mockQuery.mockResolvedValueOnce([]);
+      mockQuery.mockResolvedValueOnce([] as never);
 
       const result = await couponService.getCouponByCode('NONEXISTENT');
 
@@ -217,7 +213,7 @@ describe('CouponService', () => {
     });
 
     it('should be case-sensitive for coupon codes', async () => {
-      mockQuery.mockResolvedValueOnce([]);
+      mockQuery.mockResolvedValueOnce([] as never);
 
       const result = await couponService.getCouponByCode('summer20');
 
@@ -237,7 +233,7 @@ describe('CouponService', () => {
       ];
 
       mockQuery
-        .mockResolvedValueOnce([{ count: 25 }]) // COUNT query first
+        .mockResolvedValueOnce([{ count: 25 }] as never) // COUNT query first
         .mockResolvedValueOnce(mockCoupons); // SELECT query second
 
       const result = await couponService.listCoupons(1, 10);
@@ -250,8 +246,8 @@ describe('CouponService', () => {
 
     it('should filter by status', async () => {
       mockQuery
-        .mockResolvedValueOnce([{ count: 0 }]) // COUNT query first
-        .mockResolvedValueOnce([]); // SELECT query second
+        .mockResolvedValueOnce([{ count: 0 }] as never) // COUNT query first
+        .mockResolvedValueOnce([] as never); // SELECT query second
 
       await couponService.listCoupons(1, 10, { status: 'active' });
 
@@ -263,8 +259,8 @@ describe('CouponService', () => {
 
     it('should filter by type', async () => {
       mockQuery
-        .mockResolvedValueOnce([{ count: 0 }]) // COUNT query first
-        .mockResolvedValueOnce([]); // SELECT query second
+        .mockResolvedValueOnce([{ count: 0 }] as never) // COUNT query first
+        .mockResolvedValueOnce([] as never); // SELECT query second
 
       await couponService.listCoupons(1, 10, { type: 'percentage' });
 
@@ -276,8 +272,8 @@ describe('CouponService', () => {
 
     it('should search by code or name', async () => {
       mockQuery
-        .mockResolvedValueOnce([{ count: 0 }]) // COUNT query first
-        .mockResolvedValueOnce([]); // SELECT query second
+        .mockResolvedValueOnce([{ count: 0 }] as never) // COUNT query first
+        .mockResolvedValueOnce([] as never); // SELECT query second
 
       await couponService.listCoupons(1, 10, { search: 'SUMMER' });
 
@@ -296,35 +292,35 @@ describe('CouponService', () => {
 
       // Mock transaction BEGIN
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' })
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
         // For user-1: call assign_coupon_to_user stored procedure
-        .mockResolvedValueOnce({ rows: [{ assign_coupon_to_user: 'uc-1' }], command: 'SELECT' })
+        .mockResolvedValueOnce({ rows: [{ assign_coupon_to_user: 'uc-1' }], command: 'SELECT' } as never)
         // For user-1: get assigned user coupon
         .mockResolvedValueOnce({
           rows: [{ id: 'uc-1', userId: 'user-1', couponId: 'coupon-123', qrCode: 'QR1', status: 'available' }],
           command: 'SELECT'
-        })
+        } as never)
         // For user-2: call assign_coupon_to_user stored procedure
-        .mockResolvedValueOnce({ rows: [{ assign_coupon_to_user: 'uc-2' }], command: 'SELECT' })
+        .mockResolvedValueOnce({ rows: [{ assign_coupon_to_user: 'uc-2' }], command: 'SELECT' } as never)
         // For user-2: get assigned user coupon
         .mockResolvedValueOnce({
           rows: [{ id: 'uc-2', userId: 'user-2', couponId: 'coupon-123', qrCode: 'QR2', status: 'available' }],
           command: 'SELECT'
-        })
+        } as never)
         // For user-3: call assign_coupon_to_user stored procedure
-        .mockResolvedValueOnce({ rows: [{ assign_coupon_to_user: 'uc-3' }], command: 'SELECT' })
+        .mockResolvedValueOnce({ rows: [{ assign_coupon_to_user: 'uc-3' }], command: 'SELECT' } as never)
         // For user-3: get assigned user coupon
         .mockResolvedValueOnce({
           rows: [{ id: 'uc-3', userId: 'user-3', couponId: 'coupon-123', qrCode: 'QR3', status: 'available' }],
           command: 'SELECT'
-        })
+        } as never)
         // COMMIT transaction
-        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' });
+        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' } as never);
 
       const result = await couponService.assignCouponToUsers(assignData, 'admin-123');
 
       expect(result).toHaveLength(3);
-      expect(result[0].couponId).toBe('coupon-123');
+      expect(result[0]?.couponId).toBe('coupon-123');
       expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
     });
 
@@ -336,16 +332,16 @@ describe('CouponService', () => {
 
       // Mock transaction BEGIN
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' })
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
         // Mock stored procedure throwing error for non-existent coupon
-        .mockRejectedValueOnce(new AppError(404, 'Coupon not found'))
+        .mockRejectedValueOnce(new AppError(404, 'Coupon not found') as never)
         // Mock COMMIT (service continues after error)
-        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' });
+        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' } as never);
 
       const result = await couponService.assignCouponToUsers(assignData, 'admin-123');
 
       // Service catches individual errors and continues, returns empty array
-      expect(result).toEqual([]);
+      expect(result).toEqual([] as never);
     });
 
     it('should handle error if coupon not active', async () => {
@@ -356,16 +352,16 @@ describe('CouponService', () => {
 
       // Mock transaction BEGIN
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' })
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
         // Mock stored procedure throwing error for inactive coupon
-        .mockRejectedValueOnce(new AppError(400, 'Coupon is not active'))
+        .mockRejectedValueOnce(new AppError(400, 'Coupon is not active') as never)
         // Mock COMMIT (service continues after error)
-        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' });
+        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' } as never);
 
       const result = await couponService.assignCouponToUsers(assignData, 'admin-123');
 
       // Service catches individual errors and continues, returns empty array
-      expect(result).toEqual([]);
+      expect(result).toEqual([] as never);
     });
   });
 
@@ -380,7 +376,7 @@ describe('CouponService', () => {
 
       // Mock transaction BEGIN
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' })
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
         // Mock redeem_coupon stored procedure response
         .mockResolvedValueOnce({
           rows: [{
@@ -391,9 +387,9 @@ describe('CouponService', () => {
             userCouponId: 'uc-123',
           }],
           command: 'SELECT',
-        })
+        } as never)
         // Mock COMMIT
-        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' });
+        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' } as never);
 
       const result = await couponService.redeemCoupon(redeemData);
 
@@ -411,11 +407,11 @@ describe('CouponService', () => {
 
       // Mock transaction BEGIN
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' })
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
         // Mock redeem_coupon stored procedure failure (no result)
-        .mockResolvedValueOnce({ rows: [], command: 'SELECT' })
+        .mockResolvedValueOnce({ rows: [], command: 'SELECT' } as never)
         // Mock ROLLBACK after error
-        .mockResolvedValueOnce({ rows: [], command: 'ROLLBACK' });
+        .mockResolvedValueOnce({ rows: [], command: 'ROLLBACK' } as never);
 
       await expect(couponService.redeemCoupon(redeemData))
         .rejects.toMatchObject({
@@ -432,7 +428,7 @@ describe('CouponService', () => {
 
       // Mock transaction BEGIN
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' })
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
         // Mock redeem_coupon stored procedure response with failure
         .mockResolvedValueOnce({
           rows: [{
@@ -443,9 +439,9 @@ describe('CouponService', () => {
             userCouponId: null,
           }],
           command: 'SELECT',
-        })
+        } as never)
         // Mock COMMIT (stored procedure completed, but returned failure)
-        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' });
+        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' } as never);
 
       const result = await couponService.redeemCoupon(redeemData);
 
@@ -461,7 +457,7 @@ describe('CouponService', () => {
 
       // Mock transaction BEGIN
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' })
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
         // Mock redeem_coupon stored procedure with fixed amount discount
         .mockResolvedValueOnce({
           rows: [{
@@ -472,9 +468,9 @@ describe('CouponService', () => {
             userCouponId: 'uc-123',
           }],
           command: 'SELECT',
-        })
+        } as never)
         // Mock COMMIT
-        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' });
+        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' } as never);
 
       const result = await couponService.redeemCoupon(redeemData);
 
@@ -505,7 +501,7 @@ describe('CouponService', () => {
       ];
 
       mockQuery
-        .mockResolvedValueOnce([{ count: 2 }]) // COUNT query first
+        .mockResolvedValueOnce([{ count: 2 }] as never) // COUNT query first
         .mockResolvedValueOnce(mockCoupons); // SELECT query second
 
       const result = await couponService.getUserActiveCoupons('user-123', 1, 10);
@@ -514,14 +510,14 @@ describe('CouponService', () => {
       expect(result.total).toBe(2);
       expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('user_id = $1'),
-        expect.arrayContaining(['user-123'])
+        expect.arrayContaining(['user-123'] as never)
       );
     });
 
     it('should return empty array if no active coupons', async () => {
       mockQuery
-        .mockResolvedValueOnce([{ count: 0 }]) // COUNT query first
-        .mockResolvedValueOnce([]); // SELECT query second
+        .mockResolvedValueOnce([{ count: 0 }] as never) // COUNT query first
+        .mockResolvedValueOnce([] as never); // SELECT query second
 
       const result = await couponService.getUserActiveCoupons('user-123', 1, 10);
 
@@ -562,8 +558,8 @@ describe('CouponService', () => {
 
       // Mock the 3 queries that getCouponStats makes
       mockQuery
-        .mockResolvedValueOnce([mockOverallStats]) // Overall stats query
-        .mockResolvedValueOnce([mockRevenueResult]) // Revenue impact query
+        .mockResolvedValueOnce([mockOverallStats] as never) // Overall stats query
+        .mockResolvedValueOnce([mockRevenueResult] as never) // Revenue impact query
         .mockResolvedValueOnce(mockTopCoupons); // Top coupons query
 
       const result = await couponService.getCouponStats();
@@ -581,7 +577,7 @@ describe('CouponService', () => {
 
   describe('deleteCoupon', () => {
     it('should soft delete a coupon', async () => {
-      mockQuery.mockResolvedValueOnce([{ updated: true }]);
+      mockQuery.mockResolvedValueOnce([{ updated: true }] as never);
 
       const result = await couponService.deleteCoupon('coupon-123', 'admin-123');
 
@@ -593,7 +589,7 @@ describe('CouponService', () => {
     });
 
     it('should return false if coupon not found', async () => {
-      mockQuery.mockResolvedValueOnce([]); // No rows returned, coupon not found
+      mockQuery.mockResolvedValueOnce([] as never); // No rows returned, coupon not found
 
       const result = await couponService.deleteCoupon('non-existent', 'admin-123');
 
@@ -603,19 +599,19 @@ describe('CouponService', () => {
 
   describe('revokeUserCoupon', () => {
     it('should revoke user coupon successfully', async () => {
-      mockQuery.mockResolvedValueOnce([{ updated: true }]);
+      mockQuery.mockResolvedValueOnce([{ updated: true }] as never);
 
       const result = await couponService.revokeUserCoupon('uc-123', 'admin-123', 'Policy violation');
 
       expect(result).toBe(true);
       expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE user_coupons'),
-        expect.arrayContaining(['uc-123'])
+        expect.arrayContaining(['uc-123'] as never)
       );
     });
 
     it('should return false if user coupon not found', async () => {
-      mockQuery.mockResolvedValueOnce([]); // No rows returned
+      mockQuery.mockResolvedValueOnce([] as never); // No rows returned
 
       const result = await couponService.revokeUserCoupon('non-existent', 'admin-123');
 
@@ -623,7 +619,7 @@ describe('CouponService', () => {
     });
 
     it('should return false if coupon already used', async () => {
-      mockQuery.mockResolvedValueOnce([]); // UPDATE returns no rows (status != 'available')
+      mockQuery.mockResolvedValueOnce([] as never); // UPDATE returns no rows (status != 'available')
 
       const result = await couponService.revokeUserCoupon('uc-123', 'admin-123');
 
@@ -633,7 +629,7 @@ describe('CouponService', () => {
 
   describe('error handling', () => {
     it('should handle database connection errors', async () => {
-      mockQuery.mockRejectedValueOnce(new Error('Database connection failed'));
+      mockQuery.mockRejectedValueOnce(new Error('Database connection failed') as never);
 
       await expect(couponService.getCouponById('coupon-123'))
         .rejects.toThrow('Database connection failed');
@@ -647,11 +643,10 @@ describe('CouponService', () => {
         value: 10,
       };
 
-      mockQuery.mockResolvedValueOnce([]);
-      // @ts-expect-error Mock typing
+      mockQuery.mockResolvedValueOnce([] as never);
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' }as any)
-        .mockRejectedValueOnce(new Error('Insert failed'));
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
+        .mockRejectedValueOnce(new Error('Insert failed') as never);
 
       await expect(couponService.createCoupon(couponData, 'admin-123'))
         .rejects.toThrow();
@@ -670,7 +665,7 @@ describe('CouponService', () => {
 
       // Mock transaction BEGIN
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' })
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
         // Mock redeem_coupon stored procedure returning failure for expired coupon
         .mockResolvedValueOnce({
           rows: [{
@@ -681,9 +676,9 @@ describe('CouponService', () => {
             userCouponId: null,
           }],
           command: 'SELECT',
-        })
+        } as never)
         // Mock COMMIT
-        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' });
+        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' } as never);
 
       const result = await couponService.redeemCoupon(redeemData);
 
@@ -700,7 +695,7 @@ describe('CouponService', () => {
 
       // Mock transaction BEGIN
       (mockClient.query as unknown as jest.Mock)
-        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' })
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
         // Mock redeem_coupon stored procedure returning failure for exhausted coupon
         .mockResolvedValueOnce({
           rows: [{
@@ -711,9 +706,9 @@ describe('CouponService', () => {
             userCouponId: null,
           }],
           command: 'SELECT',
-        })
+        } as never)
         // Mock COMMIT
-        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' });
+        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' } as never);
 
       const result = await couponService.redeemCoupon(redeemData);
 

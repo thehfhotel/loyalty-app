@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
+import { PoolClient } from 'pg';
 import { query, getClient } from '../config/database';
 // import { getRedisClient } from '../config/redis'; // Unused
 import { AppError } from '../middleware/errorHandler';
@@ -301,8 +302,7 @@ export class AuthService {
     await this.logUserAction(resetToken.userId, 'password_reset_complete');
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async generateTokens(user: User, client?: any, rememberMe = false): Promise<AuthTokens> {
+    async generateTokens(user: User, client?: PoolClient, rememberMe = false): Promise<AuthTokens> {
     const payload: JWTPayload = {
       id: user.id,
       email: user.email,
@@ -340,13 +340,11 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async logUserAction(
+    private async logUserAction(
     userId: string,
     action: string,
     details: Record<string, unknown> = {},
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    client?: any
+        client?: PoolClient
   ): Promise<void> {
     if (client) {
       await client.query(

@@ -223,31 +223,39 @@ export const securityHeaders = helmet({
 
 // Custom security headers middleware
 export const customSecurityHeaders = (req: Request, res: Response, next: NextFunction) => {
-  // Add custom security headers
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'same-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  
-  // Remove potentially sensitive headers
-  res.removeHeader('X-Powered-By');
-  res.removeHeader('Server');
-  
-  // Add security headers for API responses
-  if (req.path.startsWith('/api')) {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.setHeader('Surrogate-Control', 'no-store');
+  try {
+    // Add custom security headers
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'same-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+
+    // Remove potentially sensitive headers
+    res.removeHeader('X-Powered-By');
+    res.removeHeader('Server');
+
+    // Add security headers for API responses
+    if (req.path.startsWith('/api')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('Surrogate-Control', 'no-store');
+    }
+  } catch (error) {
+    // Log error but continue - security headers are non-critical for request processing
+    logger.warn('Failed to set security headers', { error });
   }
-  
+
   next();
 };
 
 // Input validation middleware to prevent injection attacks
 export const inputSanitization = (req: Request, _res: Response, next: NextFunction) => {
-  // Basic input sanitization
+  // Track visited objects to detect circular references
+  const visited = new WeakSet<object>();
+
+  // Basic input sanitization with circular reference detection
   const sanitizeValue = (value: unknown): unknown => {
     if (typeof value === 'string') {
       // Remove potentially dangerous characters
@@ -258,9 +266,20 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
         .trim();
     }
     if (Array.isArray(value)) {
+      // Check for circular reference in arrays
+      if (visited.has(value)) {
+        return '[Circular Reference]';
+      }
+      visited.add(value);
       return value.map(sanitizeValue);
     }
     if (value && typeof value === 'object' && value !== null) {
+      // Check for circular reference in objects
+      if (visited.has(value)) {
+        return '[Circular Reference]';
+      }
+      visited.add(value);
+
       const sanitized: Record<string, unknown> = {};
       // Use known safe method for object iteration to avoid injection
       const entries = Object.entries(value as Record<string, unknown>);

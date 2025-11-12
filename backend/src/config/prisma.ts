@@ -5,7 +5,6 @@ let prisma: PrismaClient;
 
 declare global {
   // Allow global `var` declarations
-  // eslint-disable-next-line no-var
   var __prisma: PrismaClient | undefined;
 }
 

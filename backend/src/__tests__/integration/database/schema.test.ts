@@ -348,10 +348,8 @@ describe('Database Schema Integration', () => {
         if (params?.where) {
           transactions = transactions.filter(t => {
             return Object.keys(params.where!).every(key => {
-              // eslint-disable-next-line security/detect-object-injection
-              const transactionValue = (t as Record<string, unknown>)[key];
-              // eslint-disable-next-line security/detect-object-injection
-              const whereValue = (params.where! as Record<string, unknown>)[key];
+                            const transactionValue = (t as Record<string, unknown>)[key];
+                            const whereValue = (params.where! as Record<string, unknown>)[key];
               return transactionValue === whereValue;
             });
           });
@@ -361,15 +359,12 @@ describe('Database Schema Integration', () => {
           if (!orderKey) {
             throw new Error('orderBy key is required');
           }
-          // eslint-disable-next-line security/detect-object-injection
-          const orderDir = params.orderBy[orderKey];
+                    const orderDir = params.orderBy[orderKey];
           transactions.sort((a, b) => {
             if (orderDir === 'desc') {
-              // eslint-disable-next-line security/detect-object-injection
-              return new Date((b as Record<string, unknown>)[orderKey] as string).getTime() - new Date((a as Record<string, unknown>)[orderKey] as string).getTime();
+                            return new Date((b as Record<string, unknown>)[orderKey] as string).getTime() - new Date((a as Record<string, unknown>)[orderKey] as string).getTime();
             }
-            // eslint-disable-next-line security/detect-object-injection
-            return new Date((a as Record<string, unknown>)[orderKey] as string).getTime() - new Date((b as Record<string, unknown>)[orderKey] as string).getTime();
+                        return new Date((a as Record<string, unknown>)[orderKey] as string).getTime() - new Date((b as Record<string, unknown>)[orderKey] as string).getTime();
           });
         }
         if (params?.take) {
