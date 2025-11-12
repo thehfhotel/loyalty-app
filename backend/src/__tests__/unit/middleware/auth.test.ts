@@ -4,7 +4,7 @@ import { Request, Response, NextFunction } from 'express';
 import { AppError } from '../../../middleware/errorHandler';
 
 // Create mock verifyToken function with proper typing
-const mockVerifyToken = jest.fn() as jest.MockedFunction<(token: string) => Promise<any>>;
+const mockVerifyToken = jest.fn() as jest.MockedFunction<(token: string) => Promise<{ userId: string; email: string; role: string }>>;
 
 // Mock environment configuration to prevent process.exit during tests
 jest.mock('../../../config/environment', () => ({

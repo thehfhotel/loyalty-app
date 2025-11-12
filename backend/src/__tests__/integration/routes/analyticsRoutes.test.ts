@@ -23,7 +23,7 @@ jest.mock('../../../utils/logger', () => ({
 }));
 
 // Mock authentication and authorization middleware
-const mockAuthMiddleware = (role: string = 'customer') => {
+const mockAuthMiddleware = (role = 'customer') => {
   return (req: express.Request, _res: express.Response, next: express.NextFunction) => {
     req.user = {
       id: 'test-user-123',
@@ -67,7 +67,7 @@ describe('Analytics Routes Integration Tests', () => {
         metadata: { platform: 'iOS' }
       };
 
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.trackCouponUsage.mockResolvedValue(undefined);
 
       const response = await request(app)
@@ -108,7 +108,7 @@ describe('Analytics Routes Integration Tests', () => {
     });
 
     test('should accept all valid event types', async () => {
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.trackCouponUsage.mockResolvedValue(undefined);
 
       const validTypes = ['view', 'assign', 'redeem_attempt', 'redeem_success', 'redeem_fail', 'expire', 'revoke'];
@@ -129,7 +129,7 @@ describe('Analytics Routes Integration Tests', () => {
         eventType: 'view'
       };
 
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.trackCouponUsage.mockResolvedValue(undefined);
 
       await request(app)
@@ -165,7 +165,7 @@ describe('Analytics Routes Integration Tests', () => {
         metadata: { verificationRequired: true }
       };
 
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.trackProfileChange.mockResolvedValue(undefined);
 
       const response = await request(app)
@@ -206,7 +206,7 @@ describe('Analytics Routes Integration Tests', () => {
     });
 
     test('should accept all valid change sources', async () => {
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.trackProfileChange.mockResolvedValue(undefined);
 
       const validSources = ['user', 'admin', 'system'];
@@ -228,7 +228,7 @@ describe('Analytics Routes Integration Tests', () => {
         changeSource: 'user'
       };
 
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.trackProfileChange.mockResolvedValue(undefined);
 
       await request(app)
@@ -267,7 +267,7 @@ describe('Analytics Routes Integration Tests', () => {
         dateRange: { start: '2024-01-01', end: '2024-01-31' }
       };
 
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.getCouponUsageAnalytics.mockResolvedValue(mockAnalytics);
 
       const response = await request(app)
@@ -279,7 +279,7 @@ describe('Analytics Routes Integration Tests', () => {
     });
 
     test('should filter by date range', async () => {
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.getCouponUsageAnalytics.mockResolvedValue({});
 
       await request(app)
@@ -295,7 +295,7 @@ describe('Analytics Routes Integration Tests', () => {
     });
 
     test('should filter by couponId', async () => {
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.getCouponUsageAnalytics.mockResolvedValue({});
 
       await request(app)
@@ -355,7 +355,7 @@ describe('Analytics Routes Integration Tests', () => {
         ]
       };
 
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.getProfileChangeAnalytics.mockResolvedValue(mockAnalytics);
 
       const response = await request(app)
@@ -367,7 +367,7 @@ describe('Analytics Routes Integration Tests', () => {
     });
 
     test('should filter by date range and userId', async () => {
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.getProfileChangeAnalytics.mockResolvedValue({});
 
       await request(app)
@@ -406,7 +406,7 @@ describe('Analytics Routes Integration Tests', () => {
         ]
       };
 
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.getUserEngagementMetrics.mockResolvedValue(mockMetrics);
 
       const response = await request(app)
@@ -418,7 +418,7 @@ describe('Analytics Routes Integration Tests', () => {
     });
 
     test('should filter by date range', async () => {
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.getUserEngagementMetrics.mockResolvedValue({});
 
       await request(app)
@@ -442,7 +442,7 @@ describe('Analytics Routes Integration Tests', () => {
     });
 
     test('should return comprehensive dashboard data', async () => {
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
 
       analyticsService.getCouponUsageAnalytics.mockResolvedValue({
         totalEvents: 1500,
@@ -479,7 +479,7 @@ describe('Analytics Routes Integration Tests', () => {
     });
 
     test('should accept custom period parameter', async () => {
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
 
       analyticsService.getCouponUsageAnalytics.mockResolvedValue({});
       analyticsService.getProfileChangeAnalytics.mockResolvedValue({});
@@ -517,7 +517,7 @@ describe('Analytics Routes Integration Tests', () => {
     });
 
     test('should update daily analytics for admin', async () => {
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.updateDailyUserAnalytics.mockResolvedValue(150);
 
       const response = await request(app)
@@ -531,7 +531,7 @@ describe('Analytics Routes Integration Tests', () => {
     });
 
     test('should accept custom date parameter', async () => {
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.updateDailyUserAnalytics.mockResolvedValue(100);
 
       const response = await request(app)
@@ -569,7 +569,7 @@ describe('Analytics Routes Integration Tests', () => {
     });
 
     test('should handle service errors gracefully', async () => {
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.getCouponUsageAnalytics.mockRejectedValue(new Error('Database error'));
 
       const response = await request(app)
@@ -580,7 +580,7 @@ describe('Analytics Routes Integration Tests', () => {
     });
 
     test('should handle invalid date formats', async () => {
-      const { analyticsService } = require('../../../services/analyticsService');
+      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
       analyticsService.getCouponUsageAnalytics.mockResolvedValue({});
 
       // Invalid date should still be processed (Date constructor handles it)

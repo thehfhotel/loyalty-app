@@ -31,7 +31,7 @@ jest.mock('../../../utils/imageProcessor', () => ({
 }));
 
 // Mock authentication middleware
-const mockAuthMiddleware = (role: string = 'customer') => {
+const mockAuthMiddleware = (role = 'customer') => {
   return (req: express.Request, _res: express.Response, next: express.NextFunction) => {
     req.user = {
       id: 'test-user-123',
@@ -68,7 +68,7 @@ describe('Storage Routes Integration Tests', () => {
           }
         };
 
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.getStorageReport.mockResolvedValue(mockReport);
 
         const response = await request(app)
@@ -95,7 +95,7 @@ describe('Storage Routes Integration Tests', () => {
           }
         };
 
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.getStorageReport.mockResolvedValue(mockReport);
 
         const response = await request(app)
@@ -168,7 +168,7 @@ describe('Storage Routes Integration Tests', () => {
           }
         };
 
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.getStorageReport.mockResolvedValue(mockReport);
 
         const response = await request(app)
@@ -192,7 +192,7 @@ describe('Storage Routes Integration Tests', () => {
           }
         };
 
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.getStorageReport.mockResolvedValue(mockReport);
 
         const response = await request(app)
@@ -213,7 +213,7 @@ describe('Storage Routes Integration Tests', () => {
           }
         };
 
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.getStorageReport.mockResolvedValue(mockReport);
 
         const response = await request(app)
@@ -233,7 +233,7 @@ describe('Storage Routes Integration Tests', () => {
           }
         };
 
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.getStorageReport.mockResolvedValue(mockReport);
 
         const response = await request(app)
@@ -254,7 +254,7 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should handle storage service errors gracefully', async () => {
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.getStorageReport.mockRejectedValue(new Error('Storage unavailable'));
 
         const response = await request(app)
@@ -265,7 +265,7 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should handle database connection errors', async () => {
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.getStorageReport.mockRejectedValue(new Error('Database connection lost'));
 
         const response = await request(app)
@@ -276,7 +276,7 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should handle file system errors', async () => {
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.getStorageReport.mockRejectedValue(new Error('EACCES: permission denied'));
 
         const response = await request(app)
@@ -297,7 +297,7 @@ describe('Storage Routes Integration Tests', () => {
         app.use('/api/storage', storageRoutes);
         app.use(errorHandler);
 
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.performBackup.mockResolvedValue(undefined);
 
         const response = await request(app)
@@ -314,7 +314,7 @@ describe('Storage Routes Integration Tests', () => {
         app.use('/api/storage', storageRoutes);
         app.use(errorHandler);
 
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.performBackup.mockResolvedValue(undefined);
 
         const response = await request(app)
@@ -377,7 +377,7 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should trigger backup successfully', async () => {
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.performBackup.mockResolvedValue(undefined);
 
         const response = await request(app)
@@ -388,7 +388,7 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should return immediately without waiting for backup completion', async () => {
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
 
         // Simulate long-running backup
         StorageService.performBackup.mockImplementation(() => {
@@ -409,7 +409,7 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should handle multiple concurrent backup requests', async () => {
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.performBackup.mockResolvedValue(undefined);
 
         const requests = Array(5).fill(null).map(() =>
@@ -435,7 +435,7 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should handle backup startup errors', async () => {
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.performBackup.mockRejectedValue(new Error('Backup service unavailable'));
 
         const response = await request(app)
@@ -446,7 +446,7 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should handle insufficient disk space errors', async () => {
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.performBackup.mockRejectedValue(new Error('ENOSPC: no space left on device'));
 
         const response = await request(app)
@@ -457,7 +457,7 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should handle permission errors during backup', async () => {
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.performBackup.mockRejectedValue(new Error('EACCES: permission denied'));
 
         const response = await request(app)
@@ -468,8 +468,8 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should log backup errors without affecting response', async () => {
-        const { logger } = require('../../../utils/logger');
-        const { StorageService } = require('../../../services/storageService');
+        const { logger } = jest.requireMock('../../../utils/logger');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
 
         // Backup starts successfully but fails during execution
         StorageService.performBackup.mockImplementation(() => {
@@ -500,7 +500,7 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should handle backup with empty storage', async () => {
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.performBackup.mockResolvedValue(undefined);
 
         const response = await request(app)
@@ -511,7 +511,7 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should handle backup with large storage volumes', async () => {
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.performBackup.mockResolvedValue(undefined);
 
         const response = await request(app)
@@ -522,7 +522,7 @@ describe('Storage Routes Integration Tests', () => {
       });
 
       test('should handle rapid successive backup requests', async () => {
-        const { StorageService } = require('../../../services/storageService');
+        const { StorageService } = jest.requireMock('../../../services/storageService');
         StorageService.performBackup.mockResolvedValue(undefined);
 
         const response1 = await request(app).post('/api/storage/backup');
@@ -546,7 +546,7 @@ describe('Storage Routes Integration Tests', () => {
     });
 
     test('should get stats, trigger backup, and verify both work independently', async () => {
-      const { StorageService } = require('../../../services/storageService');
+      const { StorageService } = jest.requireMock('../../../services/storageService');
 
       const mockReport = {
         storage: {
@@ -576,7 +576,7 @@ describe('Storage Routes Integration Tests', () => {
     });
 
     test('should handle stats request during active backup', async () => {
-      const { StorageService } = require('../../../services/storageService');
+      const { StorageService } = jest.requireMock('../../../services/storageService');
 
       const mockReport = {
         storage: {

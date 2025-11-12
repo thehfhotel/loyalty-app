@@ -8,6 +8,7 @@
 
 import request from 'supertest';
 import express, { Express } from 'express';
+import { Session, SessionData } from 'express-session';
 import oauthRoutes from '../../../routes/oauth';
 import { errorHandler } from '../../../middleware/errorHandler';
 import { oauthStateService } from '../../../services/oauthStateService';
@@ -63,7 +64,7 @@ describe('OAuth Routes Integration Tests', () => {
         save: jest.fn((callback) => callback(null)),
         touch: jest.fn(),
         resetMaxAge: jest.fn(),
-      } as any;
+      } as Session & Partial<SessionData>;
       req.sessionID = 'test-session-id';
       next();
     });
@@ -346,7 +347,7 @@ describe('OAuth Routes Integration Tests', () => {
           save: jest.fn((callback) => callback(null)),
           touch: jest.fn(),
           resetMaxAge: jest.fn(),
-        } as any;
+        } as Session & Partial<SessionData>;
         next();
       });
       appWithAuth.use('/api/oauth', oauthRoutes);

@@ -40,7 +40,7 @@ jest.mock('../../../middleware/auth', () => ({
 
 // Mock validateRequest middleware
 jest.mock('../../../middleware/validateRequest', () => ({
-  validateRequest: (_schema: any) => (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  validateRequest: (_schema: unknown) => (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
     next();
   }
 }));
@@ -67,7 +67,7 @@ describe('Membership Routes Integration Tests', () => {
         joinDate: '2023-01-15'
       };
 
-      const { membershipIdService } = require('../../../services/membershipIdService');
+      const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.getUserByMembershipId.mockResolvedValue(mockUserInfo);
 
       const response = await request(app)
@@ -89,7 +89,7 @@ describe('Membership Routes Integration Tests', () => {
     });
 
     test('should return 404 for non-existent membership ID', async () => {
-      const { membershipIdService } = require('../../../services/membershipIdService');
+      const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.getUserByMembershipId.mockResolvedValue(null);
 
       const response = await request(app)
@@ -101,7 +101,7 @@ describe('Membership Routes Integration Tests', () => {
     });
 
     test('should handle membership ID service errors', async () => {
-      const { membershipIdService } = require('../../../services/membershipIdService');
+      const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.getUserByMembershipId.mockRejectedValue(new Error('Database error'));
 
       const response = await request(app)
@@ -151,7 +151,7 @@ describe('Membership Routes Integration Tests', () => {
         expiringThisMonth: 12
       };
 
-      const { membershipIdService } = require('../../../services/membershipIdService');
+      const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.getMembershipStats.mockResolvedValue(mockStats);
 
       const response = await request(app)
@@ -164,7 +164,7 @@ describe('Membership Routes Integration Tests', () => {
     });
 
     test('should handle statistics service errors', async () => {
-      const { membershipIdService } = require('../../../services/membershipIdService');
+      const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.getMembershipStats.mockRejectedValue(new Error('Stats service error'));
 
       const response = await request(app)
@@ -175,7 +175,7 @@ describe('Membership Routes Integration Tests', () => {
     });
 
     test('should cache statistics results', async () => {
-      const { membershipIdService } = require('../../../services/membershipIdService');
+      const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.getMembershipStats.mockResolvedValue({
         totalMembers: 1000,
         activeMembers: 950
@@ -205,7 +205,7 @@ describe('Membership Routes Integration Tests', () => {
         benefits: ['discounts', 'priority_support', 'exclusive_events']
       };
 
-      const { membershipIdService } = require('../../../services/membershipIdService');
+      const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.getUserTier.mockResolvedValue(mockUser);
 
       const response = await request(app)
@@ -218,7 +218,7 @@ describe('Membership Routes Integration Tests', () => {
     });
 
     test('should return null for user without membership', async () => {
-      const { membershipIdService } = require('../../../services/membershipIdService');
+      const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.getUserTier.mockResolvedValue(null);
 
       const response = await request(app)
@@ -235,7 +235,7 @@ describe('Membership Routes Integration Tests', () => {
         membershipId: '26912345'
       };
 
-      const { membershipIdService } = require('../../../services/membershipIdService');
+      const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.upgradeTier.mockResolvedValue({
         success: true,
         newTier: 'platinum',
@@ -275,7 +275,7 @@ describe('Membership Routes Integration Tests', () => {
         platinum: ['all_above', 'unlimited_discounts', 'vip_events', 'personal_manager']
       };
 
-      const { membershipIdService } = require('../../../services/membershipIdService');
+      const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.getTierBenefits.mockResolvedValue(mockBenefits);
 
       const response = await request(app)
@@ -288,7 +288,7 @@ describe('Membership Routes Integration Tests', () => {
     });
 
     test('should get benefits for specific tier', async () => {
-      const { membershipIdService } = require('../../../services/membershipIdService');
+      const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.getTierBenefits.mockResolvedValue({
         gold: ['priority_support', 'discounts', 'exclusive_events']
       });
@@ -330,7 +330,7 @@ describe('Membership Routes Integration Tests', () => {
     });
 
     test('should handle service timeouts', async () => {
-      const { membershipIdService } = require('../../../services/membershipIdService');
+      const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.getUserByMembershipId.mockImplementation(() => {
         return new Promise((resolve) => {
           setTimeout(() => resolve(null), 60000); // 60 second timeout

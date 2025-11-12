@@ -39,7 +39,7 @@ jest.mock('../../../middleware/auth', () => ({
 
 // Mock validateRequest middleware
 jest.mock('../../../middleware/validateRequest', () => ({
-  validateRequest: (_schema: any) => (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  validateRequest: (_schema: unknown) => (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
     next();
   }
 }));
@@ -64,7 +64,7 @@ describe('Translation Routes Integration Tests', () => {
         provider: 'azure'
       };
 
-      const { translationService } = require('../../../services/translationService');
+      const { translationService } = jest.requireMock('../../../services/translationService');
       translationService.translateTexts.mockResolvedValue({
         translations: {
           es: ['Hola mundo', 'Bienvenido a nuestra aplicación'],
@@ -151,7 +151,7 @@ describe('Translation Routes Integration Tests', () => {
         targetLanguages: ['es']
       };
 
-      const { translationService } = require('../../../services/translationService');
+      const { translationService } = jest.requireMock('../../../services/translationService');
       translationService.translateTexts.mockResolvedValue({
         translations: { es: ['Hola'] }
       });
@@ -177,8 +177,8 @@ describe('Translation Routes Integration Tests', () => {
         provider: 'azure'
       };
 
-      const { surveyService } = require('../../../services/surveyService');
-      const { translationService } = require('../../../services/translationService');
+      const { surveyService } = jest.requireMock('../../../services/surveyService');
+      const { translationService } = jest.requireMock('../../../services/translationService');
 
       surveyService.getSurveyById.mockResolvedValue({
         id: surveyId,
@@ -218,7 +218,7 @@ describe('Translation Routes Integration Tests', () => {
         targetLanguages: ['es']
       };
 
-      const { surveyService } = require('../../../services/surveyService');
+      const { surveyService } = jest.requireMock('../../../services/surveyService');
       surveyService.getSurveyById.mockResolvedValue(null);
 
       const response = await request(app)
@@ -242,7 +242,7 @@ describe('Translation Routes Integration Tests', () => {
         }
       };
 
-      const { surveyService } = require('../../../services/surveyService');
+      const { surveyService } = jest.requireMock('../../../services/surveyService');
       surveyService.getAllSurveyTranslations.mockResolvedValue(mockTranslations);
 
       const response = await request(app)
@@ -256,7 +256,7 @@ describe('Translation Routes Integration Tests', () => {
     test('should return 404 when getting translations for non-existent survey', async () => {
       const surveyId = 'non-existent';
 
-      const { surveyService } = require('../../../services/surveyService');
+      const { surveyService } = jest.requireMock('../../../services/surveyService');
       surveyService.getAllSurveyTranslations.mockResolvedValue(null);
 
       const response = await request(app)
@@ -276,8 +276,8 @@ describe('Translation Routes Integration Tests', () => {
         provider: 'azure'
       };
 
-      const { couponService } = require('../../../services/couponService');
-      const { translationService } = require('../../../services/translationService');
+      const { couponService } = jest.requireMock('../../../services/couponService');
+      const { translationService } = jest.requireMock('../../../services/translationService');
 
       couponService.getCouponById.mockResolvedValue({
         id: couponId,
@@ -317,7 +317,7 @@ describe('Translation Routes Integration Tests', () => {
         targetLanguages: ['es']
       };
 
-      const { couponService } = require('../../../services/couponService');
+      const { couponService } = jest.requireMock('../../../services/couponService');
       couponService.getCouponById.mockResolvedValue(null);
 
       const response = await request(app)
@@ -343,7 +343,7 @@ describe('Translation Routes Integration Tests', () => {
         }
       };
 
-      const { couponService } = require('../../../services/couponService');
+      const { couponService } = jest.requireMock('../../../services/couponService');
       couponService.getCouponWithTranslations.mockResolvedValue(mockCoupon);
 
       const response = await request(app)
@@ -357,7 +357,7 @@ describe('Translation Routes Integration Tests', () => {
     test('should return 404 when getting translations for non-existent coupon', async () => {
       const couponId = 'non-existent';
 
-      const { couponService } = require('../../../services/couponService');
+      const { couponService } = jest.requireMock('../../../services/couponService');
       couponService.getCouponWithTranslations.mockResolvedValue(null);
 
       const response = await request(app)
@@ -381,7 +381,7 @@ describe('Translation Routes Integration Tests', () => {
         completedAt: new Date().toISOString()
       };
 
-      const { translationService } = require('../../../services/translationService');
+      const { translationService } = jest.requireMock('../../../services/translationService');
       translationService.getTranslationJobById.mockResolvedValue(mockJob);
 
       const response = await request(app)
@@ -395,7 +395,7 @@ describe('Translation Routes Integration Tests', () => {
     test('should return 404 for non-existent translation job', async () => {
       const jobId = 'non-existent';
 
-      const { translationService } = require('../../../services/translationService');
+      const { translationService } = jest.requireMock('../../../services/translationService');
       translationService.getTranslationJobById.mockResolvedValue(null);
 
       const response = await request(app)
@@ -429,7 +429,7 @@ describe('Translation Routes Integration Tests', () => {
         }
       };
 
-      const { translationService } = require('../../../services/translationService');
+      const { translationService } = jest.requireMock('../../../services/translationService');
       translationService.getTranslationJobs.mockResolvedValue(mockJobs);
 
       const response = await request(app)
@@ -458,7 +458,7 @@ describe('Translation Routes Integration Tests', () => {
         pagination: { page: 1, limit: 10, total: 1, pages: 1 }
       };
 
-      const { translationService } = require('../../../services/translationService');
+      const { translationService } = jest.requireMock('../../../services/translationService');
       translationService.getTranslationJobs.mockResolvedValue(mockJobs);
 
       await request(app)
@@ -487,7 +487,7 @@ describe('Translation Routes Integration Tests', () => {
     });
 
     test('should handle translation service errors', async () => {
-      const { translationService } = require('../../../services/translationService');
+      const { translationService } = jest.requireMock('../../../services/translationService');
       translationService.translateTexts.mockRejectedValue(new Error('Azure API error'));
 
       const translateData = {
@@ -541,7 +541,7 @@ describe('Translation Routes Integration Tests', () => {
         targetLanguages: ['es']
       };
 
-      const { translationService } = require('../../../services/translationService');
+      const { translationService } = jest.requireMock('../../../services/translationService');
       translationService.translateTexts.mockResolvedValue({
         translations: { es: largeTexts.map(text => `Translated: ${text}`) }
       });
@@ -561,7 +561,7 @@ describe('Translation Routes Integration Tests', () => {
         targetLanguages: ['es']
       };
 
-      const { translationService } = require('../../../services/translationService');
+      const { translationService } = jest.requireMock('../../../services/translationService');
       translationService.translateTexts.mockResolvedValue({
         translations: { es: ['¡Hola! @#$%^&*()', 'Café naïve currículum'] }
       });
@@ -581,7 +581,7 @@ describe('Translation Routes Integration Tests', () => {
         targetLanguages: ['es']
       };
 
-      const { surveyService } = require('../../../services/surveyService');
+      const { surveyService } = jest.requireMock('../../../services/surveyService');
       surveyService.getSurveyById.mockResolvedValue({ id: surveyId, title: 'Test' });
 
       const response = await request(app)
