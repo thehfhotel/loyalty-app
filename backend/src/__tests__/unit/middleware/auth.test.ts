@@ -59,7 +59,7 @@ describe('Auth Middleware', () => {
   describe('authenticate', () => {
     it('should authenticate valid Bearer token', async () => {
       const mockPayload = {
-        id: 'user-123',
+        userId: 'user-123',
         email: 'test@example.com',
         role: 'customer' as const,
       };
@@ -397,7 +397,7 @@ describe('Auth Middleware', () => {
   describe('middleware integration', () => {
     it('should chain authenticate and authorize correctly', async () => {
       const mockPayload = {
-        id: 'admin-123',
+        userId: 'admin-123',
         email: 'admin@example.com',
         role: 'admin' as const,
       };

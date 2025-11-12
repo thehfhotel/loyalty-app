@@ -64,7 +64,7 @@ describe('OAuth Routes Integration Tests', () => {
         save: jest.fn((callback) => callback(null)),
         touch: jest.fn(),
         resetMaxAge: jest.fn(),
-      } as Session & Partial<SessionData>;
+      } as unknown as Session & Partial<SessionData>;
       req.sessionID = 'test-session-id';
       next();
     });
@@ -347,7 +347,7 @@ describe('OAuth Routes Integration Tests', () => {
           save: jest.fn((callback) => callback(null)),
           touch: jest.fn(),
           resetMaxAge: jest.fn(),
-        } as Session & Partial<SessionData>;
+        } as unknown as Session & Partial<SessionData>;
         next();
       });
       appWithAuth.use('/api/oauth', oauthRoutes);
