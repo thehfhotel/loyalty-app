@@ -24,7 +24,7 @@ jest.mock('../../../utils/logger', () => ({
 
 // Mock authentication middleware
 jest.mock('../../../middleware/auth', () => ({
-  authenticate: (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  authenticate: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
     // Mock authenticated user
     req.user = {
       id: 'test-user-123',
@@ -279,7 +279,7 @@ describe('Notifications Routes Integration Tests', () => {
 
     test('should handle service layer errors', async () => {
       // This would be tested by mocking NotificationService to throw errors
-      const response = await request(app)
+      await request(app)
         .get('/api/notifications/')
         .expect(500);
     });

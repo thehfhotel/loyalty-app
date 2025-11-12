@@ -57,12 +57,13 @@ describe('OAuth Routes Integration Tests', () => {
           httpOnly: true,
           path: '/',
         },
-        regenerate: jest.fn(),
-        destroy: jest.fn(),
-        reload: jest.fn(),
-        save: jest.fn(),
+        regenerate: jest.fn((callback) => callback(null)),
+        destroy: jest.fn((callback) => callback(null)),
+        reload: jest.fn((callback) => callback(null)),
+        save: jest.fn((callback) => callback(null)),
         touch: jest.fn(),
-      } as unknown as Record<string, jest.Mock>;
+        resetMaxAge: jest.fn(),
+      } as any;
       req.sessionID = 'test-session-id';
       next();
     });
@@ -339,12 +340,13 @@ describe('OAuth Routes Integration Tests', () => {
             httpOnly: true,
             path: '/',
           },
-          regenerate: jest.fn(),
-          destroy: jest.fn(),
-          reload: jest.fn(),
-          save: jest.fn(),
+          regenerate: jest.fn((callback) => callback(null)),
+          destroy: jest.fn((callback) => callback(null)),
+          reload: jest.fn((callback) => callback(null)),
+          save: jest.fn((callback) => callback(null)),
           touch: jest.fn(),
-        } as unknown as Record<string, jest.Mock>;
+          resetMaxAge: jest.fn(),
+        } as any;
         next();
       });
       appWithAuth.use('/api/oauth', oauthRoutes);

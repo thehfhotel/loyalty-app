@@ -24,29 +24,19 @@ jest.mock('../../../utils/logger', () => ({
 
 // Mock authentication and authorization middleware
 const mockAuthMiddleware = (role: string = 'customer') => {
-  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  return (req: express.Request, _res: express.Response, next: express.NextFunction) => {
     req.user = {
       id: 'test-user-123',
       email: 'test@example.com',
-      role: role
+      role: role as 'customer' | 'admin' | 'super_admin'
     };
     next();
   };
 };
 
-const mockAuthorizeMiddleware = (...allowedRoles: string[]) => {
-  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (req.user && allowedRoles.includes(req.user.role)) {
-      next();
-    } else {
-      res.status(403).json({ error: 'Insufficient permissions' });
-    }
-  };
-};
-
 // Mock requestLogger middleware
 jest.mock('../../../middleware/requestLogger', () => ({
-  requestLogger: (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  requestLogger: (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
     next();
   }
 }));
@@ -320,13 +310,14 @@ describe('Analytics Routes Integration Tests', () => {
       );
     });
 
-    test('should deny access to non-admin users', async () => {
+    test('should deny access to non-admin users', async (): Promise<void> => {
       app = express();
       app.use(express.json());
       app.use(mockAuthMiddleware('customer'));
-      app.use((req, res, next) => {
+      app.use((req, res, next): void => {
         if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
-          return res.status(403).json({ error: 'Insufficient permissions' });
+          res.status(403).json({ error: 'Insufficient permissions' });
+          return;
         }
         next();
       });

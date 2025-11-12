@@ -24,7 +24,7 @@ jest.mock('../../../utils/logger', () => ({
 
 // Mock authentication middleware for admin routes
 jest.mock('../../../middleware/auth', () => ({
-  authenticate: (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  authenticate: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
     req.user = {
       id: 'admin-user-123',
       email: 'admin@example.com',
@@ -32,7 +32,7 @@ jest.mock('../../../middleware/auth', () => ({
     };
     next();
   },
-  authorize: (roles: string | string[]) => (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  authorize: (_roles: string | string[]) => (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
     // For testing, allow all authorized roles
     next();
   }
@@ -40,7 +40,7 @@ jest.mock('../../../middleware/auth', () => ({
 
 // Mock validateRequest middleware
 jest.mock('../../../middleware/validateRequest', () => ({
-  validateRequest: (schema: any) => (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  validateRequest: (_schema: any) => (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
     next();
   }
 }));
@@ -337,7 +337,7 @@ describe('Membership Routes Integration Tests', () => {
         });
       });
 
-      const response = await request(app)
+      await request(app)
         .get('/api/membership/lookup/26912345')
         .timeout(1000)
         .expect(408);

@@ -26,7 +26,7 @@ jest.mock('../../../utils/logger', () => ({
 
 // Mock authentication middleware
 jest.mock('../../../middleware/auth', () => ({
-  authenticate: (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  authenticate: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
     // Mock authenticated user
     req.user = {
       id: 'test-user-123',
@@ -39,7 +39,7 @@ jest.mock('../../../middleware/auth', () => ({
 
 // Mock validateRequest middleware
 jest.mock('../../../middleware/validateRequest', () => ({
-  validateRequest: (schema: any) => (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  validateRequest: (_schema: any) => (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
     next();
   }
 }));
@@ -461,7 +461,7 @@ describe('Translation Routes Integration Tests', () => {
       const { translationService } = require('../../../services/translationService');
       translationService.getTranslationJobs.mockResolvedValue(mockJobs);
 
-      const response = await request(app)
+      await request(app)
         .get('/api/translation/jobs?status=completed&entityType=survey')
         .expect(200);
 
