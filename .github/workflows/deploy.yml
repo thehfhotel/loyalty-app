@@ -472,6 +472,22 @@ jobs:
           key: frontend-${{ hashFiles('frontend/package-lock.json') }}
           fail-on-cache-miss: true
 
+      - name: "🧹 Cleanup E2E ports"
+        run: |
+          echo "🧹 Cleaning up E2E ports before starting tests..."
+          # Kill any processes using E2E ports
+          for port in 5436 6381 3201 4202; do
+            pid=$(lsof -ti:$port 2>/dev/null || true)
+            if [ ! -z "$pid" ]; then
+              echo "⚠️ Killing process on port $port (PID: $pid)"
+              kill -9 $pid 2>/dev/null || true
+            fi
+          done
+
+          # Wait for ports to be released
+          sleep 2
+          echo "✅ Port cleanup completed"
+
       - name: "🔧 Setup isolated E2E environment"
         run: |
           # Use unique project name and ports to avoid conflicts with unit tests
@@ -480,9 +496,9 @@ jobs:
           export REDIS_PORT="6381"
           export BACKEND_PORT="4202"
           export FRONTEND_PORT="3201"
-          
+
           echo "🚀 Setting up isolated E2E environment on custom ports..."
-          
+
           # Database services will be started with the complete compose file after build
       
       - name: "🏗️ Build and start isolated application for E2E"
@@ -628,25 +644,27 @@ jobs:
           docker compose -f docker-compose.e2e-test.yml up -d postgres redis
           
           # Wait for database services to be ready using healthcheck status
-          echo "⏳ Waiting for isolated database services to be ready..."
+          echo "🔍 Waiting for postgres (max 60 seconds)..."
 
-          # Wait for postgres healthcheck to pass
-          POSTGRES_READY=false
-          for i in {1..30}; do
-            if docker compose -f docker-compose.e2e-test.yml ps postgres | grep -q "healthy"; then
-              echo "✅ Postgres is healthy"
-              POSTGRES_READY=true
+          # Improved postgres healthcheck with debugging
+          for i in {1..20}; do
+            if docker compose -f docker-compose.e2e-test.yml exec -T postgres pg_isready -U loyalty -d loyalty_db 2>&1; then
+              echo "✅ Postgres is ready!"
               break
             fi
-            echo "Waiting for postgres healthcheck... ($i/30)"
-            sleep 2
-          done
 
-          if [ "$POSTGRES_READY" = false ]; then
-            echo "❌ Postgres failed to become healthy"
-            docker compose -f docker-compose.e2e-test.yml logs postgres
-            exit 1
-          fi
+            if [ $i -eq 20 ]; then
+              echo "❌ Postgres healthcheck timeout after 60 seconds"
+              echo "📋 Container logs:"
+              docker compose -f docker-compose.e2e-test.yml logs postgres
+              echo "📋 Container status:"
+              docker compose -f docker-compose.e2e-test.yml ps
+              exit 1
+            fi
+
+            echo "⏳ Attempt $i/20 - waiting 3s..."
+            sleep 3
+          done
 
           # Wait for redis healthcheck to pass
           REDIS_READY=false
@@ -667,10 +685,15 @@ jobs:
           fi
 
           echo "✅ Isolated database services are ready"
-          
-          # Run database migrations before starting the backend
-          echo "🔄 Running database migrations for E2E tests..."
-      
+
+      - name: "🔍 Validate database connection"
+        run: |
+          echo "Testing database connection..."
+          docker compose -f docker-compose.e2e-test.yml exec -T postgres psql -U loyalty -d loyalty_db -c "SELECT version();"
+
+          echo "Testing from host machine..."
+          PGPASSWORD=loyalty psql -h localhost -p 5436 -U loyalty -d loyalty_db -c "SELECT 1;"
+
       - name: "🔄 E2E Database Migration Setup"
         working-directory: ./backend
         env:
