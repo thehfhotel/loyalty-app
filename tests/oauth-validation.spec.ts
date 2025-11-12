@@ -1,6 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { retryRequest, retryPageGoto } from './helpers/retry';
 
+// Get E2E URLs from environment or use E2E defaults
+const backendUrl = process.env.BACKEND_URL || 'http://localhost:4202';
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3201';
+
 /**
  * OAuth Flow Validation Tests
  * Based on git history analysis of recurring OAuth issues:
@@ -11,8 +15,7 @@ import { retryRequest, retryPageGoto } from './helpers/retry';
  */
 
 test.describe('OAuth Flow Validation', () => {
-  const baseUrl = process.env.BACKEND_URL || 'http://localhost:4001';
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4001';
+  const baseUrl = backendUrl;
 
   test.beforeEach(async ({ page }) => {
     // Set up common headers and context

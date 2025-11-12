@@ -18,7 +18,7 @@ describe('UserService', () => {
     userService = new UserService();
     mockQuery = database.query as jest.MockedFunction<typeof database.query>;
     mockQueryWithMeta = database.queryWithMeta as jest.MockedFunction<typeof database.queryWithMeta>;
-    mockQuery.mockResolvedValue([]);
+    mockQuery.mockResolvedValue([] as never);
     mockQueryWithMeta.mockResolvedValue({ rows: [], rowCount: 0 });
   });
 
@@ -37,7 +37,7 @@ describe('UserService', () => {
         updatedAt: new Date(),
       };
 
-      mockQuery.mockResolvedValueOnce([mockProfile]);
+      mockQuery.mockResolvedValueOnce([mockProfile] as never);
 
       const result = await userService.getProfile('user-123');
 
@@ -49,7 +49,7 @@ describe('UserService', () => {
     });
 
     it('should throw error if profile not found', async () => {
-      mockQuery.mockResolvedValueOnce([]);
+      mockQuery.mockResolvedValueOnce([] as never);
 
       await expect(userService.getProfile('non-existent'))
         .rejects.toThrow(AppError);
@@ -78,14 +78,14 @@ describe('UserService', () => {
         updatedAt: new Date(),
       };
 
-      mockQuery.mockResolvedValueOnce([mockUpdatedProfile]);
+      mockQuery.mockResolvedValueOnce([mockUpdatedProfile] as never);
 
       const result = await userService.updateProfile(userId, updateData);
 
       expect(result).toBeDefined();
       expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE user_profiles'),
-        expect.arrayContaining([...Object.values(updateData), userId])
+        expect.arrayContaining([...Object.values(updateData), userId] as never)
       );
     });
 
@@ -99,7 +99,7 @@ describe('UserService', () => {
         userId,
         firstName: 'Jane',
         membershipId: 'MEM12345',
-      }]);
+      }] as never);
 
       const result = await userService.updateProfile(userId, updateData);
 
@@ -120,7 +120,7 @@ describe('UserService', () => {
       // Mock updateAvatar query (uses queryWithMeta)
       mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
       // Mock getProfile query
-      mockQuery.mockResolvedValueOnce([mockProfile]);
+      mockQuery.mockResolvedValueOnce([mockProfile] as never);
 
       const result = await userService.updateEmojiAvatar(userId, emoji);
 
@@ -148,7 +148,7 @@ describe('UserService', () => {
         },
       ];
 
-      mockQuery.mockResolvedValueOnce(mockUsers).mockResolvedValueOnce([{ count: 2 }]);
+      mockQuery.mockResolvedValueOnce(mockUsers).mockResolvedValueOnce([{ count: 2 }] as never);
 
       const result = await userService.getAllUsers(1, 10);
 
@@ -157,7 +157,7 @@ describe('UserService', () => {
     });
 
     it('should apply search filter', async () => {
-      mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([{ count: 0 }]);
+      mockQuery.mockResolvedValueOnce([] as never).mockResolvedValueOnce([{ count: 0 }] as never);
 
       await userService.getAllUsers(1, 10, 'john');
 
@@ -169,7 +169,7 @@ describe('UserService', () => {
     it('should delete user successfully', async () => {
       const userId = 'user-123';
 
-      mockQuery.mockResolvedValueOnce([{ userId }]);
+      mockQuery.mockResolvedValueOnce([{ userId }] as never);
 
       await userService.deleteUser(userId);
 
@@ -180,7 +180,7 @@ describe('UserService', () => {
     });
 
     it('should not throw error if user not found (idempotent delete)', async () => {
-      mockQuery.mockResolvedValueOnce([]);
+      mockQuery.mockResolvedValueOnce([] as never);
 
       // Delete is idempotent - no error thrown if user doesn't exist
       await expect(userService.deleteUser('non-existent'))
@@ -190,7 +190,7 @@ describe('UserService', () => {
     it('should handle cascade deletion', async () => {
       const userId = 'user-123';
 
-      mockQuery.mockResolvedValueOnce([{ userId }]);
+      mockQuery.mockResolvedValueOnce([{ userId }] as never);
 
       await userService.deleteUser(userId);
 
@@ -203,20 +203,20 @@ describe('UserService', () => {
       const userId = 'user-123';
       const newRole = 'admin';
 
-      mockQuery.mockResolvedValueOnce([{ userId, role: newRole }]);
+      mockQuery.mockResolvedValueOnce([{ userId, role: newRole }] as never);
 
       await userService.updateUserRole(userId, newRole);
 
       expect(mockQuery).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE users'),
-        expect.arrayContaining([newRole, userId])
+        expect.arrayContaining([newRole, userId] as never)
       );
     });
 
     it('should validate role enum', async () => {
       const userId = 'user-123';
 
-      await expect(userService.updateUserRole(userId, 'invalid_role' as any))
+      await expect(userService.updateUserRole(userId, 'invalid_role' as never))
         .rejects.toThrow();
     });
   });
@@ -225,7 +225,7 @@ describe('UserService', () => {
     it('should activate inactive user', async () => {
       const userId = 'user-123';
 
-      mockQuery.mockResolvedValueOnce([{ userId, isActive: true }]);
+      mockQuery.mockResolvedValueOnce([{ userId, isActive: true }] as never);
 
       await userService.updateUserStatus(userId, true);
 
@@ -235,7 +235,7 @@ describe('UserService', () => {
     it('should deactivate active user', async () => {
       const userId = 'user-123';
 
-      mockQuery.mockResolvedValueOnce([{ userId, isActive: false }]);
+      mockQuery.mockResolvedValueOnce([{ userId, isActive: false }] as never);
 
       await userService.updateUserStatus(userId, false);
 
@@ -251,7 +251,7 @@ describe('UserService', () => {
         active: '90',
         admins: '10',
         recentlyJoined: '15'
-      }]);
+      }] as never);
 
       const result = await userService.getUserStats();
 
@@ -284,7 +284,7 @@ describe('UserService', () => {
           profileCompleted: false,
           newMemberCouponAwarded: false,
           membershipId: 'MEM12345',
-        }])
+        }] as never)
         .mockResolvedValueOnce([{  // 2. UPDATE query - update profile
           userId,
           firstName: 'John',
@@ -294,14 +294,14 @@ describe('UserService', () => {
           profileCompleted: false,
           membershipId: 'MEM12345',
           newMemberCouponAwarded: false,
-        }])
+        }] as never)
         .mockResolvedValueOnce([{  // 3. getProfileCompletionStatus - check completion
           userId,
           firstName: 'John',
           lastName: 'Doe',
           phone: '+1234567890',
           dateOfBirth: new Date('1990-01-01'),
-        }]);
+        }] as never);
 
       const result = await userService.completeProfile(userId, profileData);
 
@@ -325,7 +325,7 @@ describe('UserService', () => {
           profileCompleted: false,
           newMemberCouponAwarded: false,
           membershipId: 'MEM12345',
-        }])
+        }] as never)
         .mockResolvedValueOnce([{  // 2. UPDATE profile
           userId,
           firstName: 'John',
@@ -335,14 +335,14 @@ describe('UserService', () => {
           profileCompleted: false,
           membershipId: 'MEM12345',
           newMemberCouponAwarded: false,
-        }])
+        }] as never)
         .mockResolvedValueOnce([{  // 3. getProfileCompletionStatus
           userId,
           firstName: 'John',
           lastName: 'Doe',
           phone: '+1234567890',
           dateOfBirth: new Date('1990-01-01'),
-        }]);
+        }] as never);
 
       const result = await userService.completeProfile(userId, profileData);
 
@@ -352,7 +352,7 @@ describe('UserService', () => {
 
   describe('error handling', () => {
     it('should handle database connection errors', async () => {
-      mockQuery.mockRejectedValueOnce(new Error('Database connection failed'));
+      mockQuery.mockRejectedValueOnce(new Error('Database connection failed') as never);
 
       await expect(userService.getProfile('user-123'))
         .rejects.toThrow('Database connection failed');
@@ -361,10 +361,10 @@ describe('UserService', () => {
     it('should handle invalid data format', async () => {
       const userId = 'user-123';
       const invalidData = {
-        dateOfBirth: 'invalid-date' as any,
+        dateOfBirth: 'invalid-date',
       };
 
-      await expect(userService.updateProfile(userId, invalidData))
+      await expect(userService.updateProfile(userId, invalidData as never))
         .rejects.toThrow();
     });
   });

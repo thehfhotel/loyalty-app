@@ -137,7 +137,11 @@ export const userLoyaltyFactory = {
       Platinum: faker.number.int({ min: 10000, max: 24999 }),
       Diamond: faker.number.int({ min: 25000, max: 50000 }),
     };
-    return userLoyaltyFactory.build({ current_points: pointsByTier[tierName], ...overrides });
+    const validTiers: ReadonlyArray<string> = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond'];
+    if (!validTiers.includes(tierName)) {
+      throw new Error(`Invalid tier: ${tierName}`);
+    }
+    return userLoyaltyFactory.build({ current_points: pointsByTier[tierName as keyof typeof pointsByTier], ...overrides });
   },
 
   /**

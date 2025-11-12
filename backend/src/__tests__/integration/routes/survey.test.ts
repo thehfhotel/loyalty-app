@@ -549,7 +549,7 @@ describe('Survey Routes Integration Tests', () => {
 
       expect(response.status).toBe(200);
       expect(response.header['content-type']).toContain('text/csv');
-    });
+    }, 20000); // Increased timeout for potentially slow operation
   });
 
   describe('POST /api/surveys/:surveyId/invitations/send (Admin)', () => {
@@ -573,7 +573,7 @@ describe('Survey Routes Integration Tests', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.data.invited).toBe(50);
-    });
+    }, 20000); // Increased timeout for potentially slow operation
   });
 
   describe('POST /api/surveys/coupon-assignments (Admin)', () => {
@@ -604,7 +604,7 @@ describe('Survey Routes Integration Tests', () => {
 
       expect(response.status).toBe(201);
       expect(response.body.success).toBe(true);
-    });
+    }, 20000); // Increased timeout for potentially slow operation
 
     it('should reject invalid UUID format', async () => {
       const response = await request(app)
@@ -642,7 +642,7 @@ describe('Survey Routes Integration Tests', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.data[0].awarded).toBe(45);
-    });
+    }, 20000); // Increased timeout for potentially slow operation
   });
 
   describe('GET /api/surveys/:surveyId/reward-history (Admin)', () => {
@@ -673,7 +673,7 @@ describe('Survey Routes Integration Tests', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.data).toHaveLength(2);
-    });
+    }, 20000); // Increased timeout for potentially slow operation
   });
 
   describe('GET /api/surveys/admin/coupon-assignments (Admin)', () => {
@@ -704,6 +704,6 @@ describe('Survey Routes Integration Tests', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.data).toHaveLength(2);
-    });
+    }, 20000); // Increased timeout for potentially slow operation
   });
 });

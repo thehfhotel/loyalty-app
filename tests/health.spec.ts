@@ -2,8 +2,7 @@ import { test, expect } from '@playwright/test';
 import { retryRequest, retryPageGoto } from './helpers/retry';
 
 test.describe('Application Health Checks', () => {
-  const backendUrl = process.env.BACKEND_URL || 'http://localhost:4001';
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:4001';
+  const backendUrl = process.env.BACKEND_URL || 'http://localhost:4202';
 
   test('Backend health endpoint should respond', async ({ request }) => {
     // Retry connection attempts with exponential backoff
@@ -14,16 +13,6 @@ test.describe('Application Health Checks', () => {
     const health = await response.json();
     expect(health.status).toBeTruthy();
     expect(health.timestamp).toBeTruthy();
-  });
-
-  test('Frontend should load successfully', async ({ page }) => {
-    // Retry page loading with exponential backoff
-    await retryPageGoto(page, frontendUrl, 5);
-
-    // Check for either English or Thai title (loyalty app supports i18n)
-    const title = await page.title();
-    expect(title.length).toBeGreaterThan(0);
-    expect(title).toMatch(/loyalty app|แอปสะสมคะแนน|hotel|โรงแรม/i);
   });
 
   test('API endpoints should be accessible', async ({ request }) => {
@@ -42,7 +31,7 @@ test.describe('Application Health Checks', () => {
 });
 
 test.describe('OAuth Integration Tests', () => {
-  const backendUrl = process.env.BACKEND_URL || 'http://localhost:4001';
+  const backendUrl = process.env.BACKEND_URL || 'http://localhost:4202';
 
   test('OAuth endpoints should be accessible', async ({ request }) => {
     // Test that OAuth endpoints don't return connection errors

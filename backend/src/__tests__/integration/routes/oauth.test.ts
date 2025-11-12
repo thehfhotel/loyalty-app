@@ -62,7 +62,7 @@ describe('OAuth Routes Integration Tests', () => {
         reload: jest.fn(),
         save: jest.fn(),
         touch: jest.fn(),
-      } as any;
+      } as unknown as Record<string, jest.Mock>;
       req.sessionID = 'test-session-id';
       next();
     });
@@ -344,7 +344,7 @@ describe('OAuth Routes Integration Tests', () => {
           reload: jest.fn(),
           save: jest.fn(),
           touch: jest.fn(),
-        } as any;
+        } as unknown as Record<string, jest.Mock>;
         next();
       });
       appWithAuth.use('/api/oauth', oauthRoutes);
