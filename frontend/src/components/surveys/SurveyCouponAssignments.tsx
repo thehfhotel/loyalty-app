@@ -363,10 +363,10 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
         surveyService.getSurveyCouponAssignments(surveyId),
         couponService.listCoupons(1, 100, { status: 'active' })
       ]);
-      
+
       setAssignments(assignmentsResponse.assignments);
       setCoupons(couponsResponse.coupons);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error loading survey coupon assignments:', error);
       toast.error(t('surveys.admin.couponAssignment.loadError'));
     } finally {
@@ -380,9 +380,12 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
       toast.success(t('surveys.admin.couponAssignment.assignSuccess'));
       setShowAssignModal(false);
       loadData();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error assigning coupon:', error);
-      toast.error(error.response?.data?.message || t('surveys.admin.couponAssignment.assignError'));
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      toast.error(errorMessage || t('surveys.admin.couponAssignment.assignError'));
     }
   };
 
@@ -399,9 +402,12 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
       setShowEditModal(false);
       setEditingAssignment(null);
       loadData();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating assignment:', error);
-      toast.error(error.response?.data?.message || t('surveys.admin.couponAssignment.updateError'));
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      toast.error(errorMessage || t('surveys.admin.couponAssignment.updateError'));
     }
   };
 
@@ -412,9 +418,12 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
       await surveyService.removeCouponFromSurvey(assignment.survey_id, assignment.coupon_id);
       toast.success(t('surveys.admin.couponAssignment.removeSuccess'));
       loadData();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error removing assignment:', error);
-      toast.error(error.response?.data?.message || t('surveys.admin.couponAssignment.removeError'));
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      toast.error(errorMessage || t('surveys.admin.couponAssignment.removeError'));
     }
   };
 
