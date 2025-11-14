@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
-import { 
-  FiFileText, 
-  FiStar, 
-  FiUsers, 
-  FiShoppingCart, 
+import {
+  FiFileText,
+  FiStar,
+  FiUsers,
   FiHelpCircle,
   FiPlus,
   FiCopy,
@@ -253,7 +252,6 @@ const SurveyTemplates: React.FC = () => {
   const [templates, setTemplates] = useState<SurveyTemplate[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [customTemplates, setCustomTemplates] = useState<Survey[]>([]);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     try {

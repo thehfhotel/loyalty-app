@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { FiPlus, FiSave, FiEye } from 'react-icons/fi';
-import { Survey, SurveyQuestion, CreateSurveyRequest, QuestionType, SurveyAccessType, SurveyStatus } from '../../types/survey';
-import { SupportedLanguage, MultilingualSurvey } from '../../types/multilingual';
+import { Survey, SurveyQuestion, CreateSurveyRequest, SurveyAccessType, SurveyStatus } from '../../types/survey';
+import { SupportedLanguage } from '../../types/multilingual';
 import { surveyService } from '../../services/surveyService';
 import { translationService } from '../../services/translationService';
 import DashboardButton from '../../components/navigation/DashboardButton';
@@ -503,7 +503,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
                   questionNumber={index + 1}
                   onUpdate={(updates) => updateQuestion(question.id, updates)}
                   onRemove={() => deleteQuestion(question.id)}
-                  onReorder={(fromIndex, toIndex) => {}} 
+                  onReorder={(_fromIndex, _toIndex) => {}}
                   canMove={false}
                 />
               ))}

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FiGift } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { 
   loyaltyService, 

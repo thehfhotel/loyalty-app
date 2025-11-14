@@ -1,17 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Coupon, CreateCouponRequest, CouponType, CouponStatus } from '../../types/coupon';
+import { Coupon, CreateCouponRequest, CouponType } from '../../types/coupon';
 import { SupportedLanguage } from '../../types/multilingual';
 import { couponService } from '../../services/couponService';
 import { translationService } from '../../services/translationService';
-import { loyaltyService, AdminUserLoyalty } from '../../services/loyaltyService';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageTabs from '../../components/translation/LanguageTabs';
 import TranslationButton from '../../components/translation/TranslationButton';
 import CouponAssignmentsModal from '../../components/admin/CouponAssignmentsModal';
 import toast from 'react-hot-toast';
-
-// Use AdminUserLoyalty type from loyaltyService instead of local interface
 
 const CouponManagementMultilingual: React.FC = () => {
   const { t } = useTranslation();
@@ -19,13 +16,10 @@ const CouponManagementMultilingual: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showAssignModal, setShowAssignModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showAssignmentsModal, setShowAssignmentsModal] = useState(false);
   const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
-  const [users, setUsers] = useState<AdminUserLoyalty[]>([]);
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [createModalError, setCreateModalError] = useState<string | null>(null);
@@ -66,7 +60,6 @@ const CouponManagementMultilingual: React.FC = () => {
 
   useEffect(() => {
     loadCoupons();
-    loadUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
@@ -94,15 +87,6 @@ const CouponManagementMultilingual: React.FC = () => {
       console.error('Failed to load coupons:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadUsers = async () => {
-    try {
-      const usersData = await loyaltyService.getUsers();
-      setUsers(usersData.users ?? []);
-    } catch (err) {
-      console.error('Failed to load users:', err);
     }
   };
 

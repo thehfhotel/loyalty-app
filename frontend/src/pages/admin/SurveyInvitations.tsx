@@ -42,7 +42,6 @@ const SurveyInvitations: React.FC = () => {
   });
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [selectedTier, setSelectedTier] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [showUserSelection, setShowUserSelection] = useState(false);
   const [users, setUsers] = useState<User[]>([]);

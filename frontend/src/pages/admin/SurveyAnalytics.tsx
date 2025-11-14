@@ -157,7 +157,7 @@ const SurveyAnalytics: React.FC = () => {
     };
   };
 
-  const getQuestionChartData = (question: QuestionAnalytics, chartType: 'bar' | 'pie' = 'bar'): ChartData<'bar'> | ChartData<'pie'> => {
+  const getQuestionChartData = (question: QuestionAnalytics, _chartType: 'bar' | 'pie' = 'bar'): ChartData<'bar'> | ChartData<'pie'> => {
     const labels = Object.keys(question.responses);
     const data = Object.values(question.responses) as number[];
     

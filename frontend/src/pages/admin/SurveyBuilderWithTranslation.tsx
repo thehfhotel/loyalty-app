@@ -159,7 +159,7 @@ const handleQuestionValidationErrors = (validationResult: SurveyValidationResult
 };
 
 const SurveyBuilderWithTranslation: React.FC = () => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams<{ id: string }>();
@@ -452,100 +452,6 @@ const SurveyBuilderWithTranslation: React.FC = () => {
       ...prev,
       [field]: value
     }));
-  };
-
-  const handleTranslate = async (targetLanguages: SupportedLanguage[]) => {
-    if (!id) {
-      toast.error('Please save the survey before translating');
-      return;
-    }
-
-    try {
-      setIsTranslating(true);
-      
-      // Update status to pending for target languages
-      const newStatus = { ...translationStatus };
-      targetLanguages.forEach(lang => {
-        newStatus[lang] = 'pending';
-      });
-      setTranslationStatus(newStatus);
-
-      const result = await translationService.translateSurvey(id, selectedLanguage, targetLanguages);
-      
-      toast.success(`Translation started! Job ID: ${result.id}`, {
-        duration: 5000,
-        icon: '🌐'
-      });
-
-      // Poll for translation completion
-      const pollInterval = setInterval(async () => {
-        try {
-          const jobStatus = await translationService.getTranslationJob(result.id);
-          
-          if (jobStatus.status === 'completed') {
-            clearInterval(pollInterval);
-            
-            // Show refreshing indicator
-            toast.loading('Refreshing survey with new translations...', {
-              duration: 2000,
-              icon: '🔄'
-            });
-            
-            // Reload survey with translations
-            await loadSurvey();
-            
-            // Show refresh indicator
-            setJustRefreshed(true);
-            setTimeout(() => setJustRefreshed(false), 5000);
-            
-            // Success notification with auto-refresh info
-            toast.success('Translation completed! The page has been automatically refreshed with the translated content.', {
-              duration: 7000,
-              icon: '✅'
-            });
-            
-            // Force a brief UI update to highlight the change
-            setTimeout(() => {
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }, 1000);
-          } else if (jobStatus.status === 'failed') {
-            clearInterval(pollInterval);
-            
-            // Update status to error
-            const errorStatus = { ...translationStatus };
-            targetLanguages.forEach(lang => {
-              errorStatus[lang] = 'error';
-            });
-            setTranslationStatus(errorStatus);
-            
-            toast.error(`Translation failed: ${jobStatus.error ?? 'Unknown error'}`, {
-              duration: 7000,
-              icon: '❌'
-            });
-          }
-        } catch (error) {
-          console.error('Error polling translation job:', error);
-        }
-      }, 3000); // Poll every 3 seconds
-
-      // Stop polling after 2 minutes
-      setTimeout(() => {
-        clearInterval(pollInterval);
-      }, 120000);
-
-    } catch (err) {
-      console.error('Translation error:', err);
-      toast.error('Failed to start translation');
-
-      // Reset status on error
-      const errorStatus = { ...translationStatus };
-      targetLanguages.forEach(lang => {
-        errorStatus[lang] = 'error';
-      });
-      setTranslationStatus(errorStatus);
-    } finally {
-      setIsTranslating(false);
-    }
   };
 
   const addQuestion = (type: QuestionType) => {
