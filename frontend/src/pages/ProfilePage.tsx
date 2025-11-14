@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { userService, UserProfile } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
-import { FiCalendar, FiCamera, FiLink, FiCopy, FiSettings, FiGift } from 'react-icons/fi';
+import { FiLink, FiCopy, FiSettings, FiGift } from 'react-icons/fi';
 import EmailDisplay from '../components/common/EmailDisplay';
 import DashboardButton from '../components/navigation/DashboardButton';
 import MainLayout from '../components/layout/MainLayout';

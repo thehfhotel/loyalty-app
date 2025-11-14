@@ -37,8 +37,6 @@ export function GenderField({ register, errors, showRequiredAsterisk = false, is
     if (value !== 'other') {
       setCustomGender('');
     }
-    // Use the custom gender text if 'other' is selected and custom text is provided
-    const finalValue = value === 'other' && customGender ? customGender : value;
     // Trigger the register onChange
     register('gender').onChange(e);
   };

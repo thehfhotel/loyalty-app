@@ -35,7 +35,6 @@ type ProfileCompletionFormData = z.infer<typeof profileCompletionSchema>;
 export default function ProfileCompletionBanner({ className = '' }: ProfileCompletionBannerProps) {
   const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
-  const updateUser = useAuthStore((state) => state.updateUser);
   const [profileStatus, setProfileStatus] = useState<ProfileStatus | null>(null);
   const [isDismissed, setIsDismissed] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
