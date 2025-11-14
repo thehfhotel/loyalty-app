@@ -38,11 +38,11 @@ export function getUserDisplayName(user: User | null): string {
         return 'LINE User';
       case 'google':
         // For Google users, try to extract name from email before @
-        const emailPart = user.email.split('@')[0];
+        const emailPart = user.email.split('@')[0] ?? 'Google User';
         return emailPart.replace(/[._]/g, ' ');
       case 'facebook':
         // For Facebook users, similar logic
-        const fbEmailPart = user.email.split('@')[0];
+        const fbEmailPart = user.email.split('@')[0] ?? 'Facebook User';
         return fbEmailPart.replace(/[._]/g, ' ');
       default:
         break;
@@ -50,7 +50,7 @@ export function getUserDisplayName(user: User | null): string {
   }
 
   // Fallback to email username part
-  const emailUsername = user.email.split('@')[0];
+  const emailUsername = user.email.split('@')[0] ?? 'User';
   return emailUsername.replace(/[._]/g, ' ');
 }
 

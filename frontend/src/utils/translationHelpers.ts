@@ -167,7 +167,8 @@ export const extractTextForTranslation = (
     fields.forEach(field => {
       // Safe property access using hasOwnProperty check
       if (Object.prototype.hasOwnProperty.call(item, field) && item[field]) {
-        const text = getTextInLanguage(item[field], currentLanguage);
+        const fieldValue = item[field] as string | MultilingualText | undefined;
+        const text = getTextInLanguage(fieldValue, currentLanguage);
         if (text && text.trim().length > 0) {
           texts.push(text);
         }
@@ -207,7 +208,10 @@ export const applyTranslations = (
         if (typeof currentText === 'string') {
           // Convert to multilingual format
           result[field] = createMultilingualText(currentText, originalLanguage);
-          (result[field] as MultilingualText)[targetLanguage] = translations[translationIndex];
+          const translatedText = translations[translationIndex];
+          if (translatedText) {
+            (result[field] as MultilingualText)[targetLanguage] = translatedText;
+          }
         } else if (currentText && typeof currentText === 'object') {
           // Already multilingual
           result[field] = {

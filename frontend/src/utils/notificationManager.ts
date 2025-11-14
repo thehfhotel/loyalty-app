@@ -7,7 +7,10 @@ interface NotificationOptions {
   position?: 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
   style?: React.CSSProperties;
   className?: string;
-  ariaProps?: Record<string, string>;
+  ariaProps?: {
+    role: 'status' | 'alert';
+    'aria-live': 'assertive' | 'off' | 'polite';
+  };
 }
 
 class NotificationManager {
