@@ -1,11 +1,10 @@
 import axios from 'axios';
 import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
-
-const API_URL = import.meta.env?.VITE_API_URL ?? 'http://localhost:4000/api';
+import { API_BASE_URL } from '../utils/apiConfig';
 
 // Create axios instance with unified auth interceptor
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },

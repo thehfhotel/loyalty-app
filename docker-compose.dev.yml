@@ -1,0 +1,85 @@
+# Development docker-compose override
+# Used for local development to avoid port conflicts with production
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# IMPORTANT: This file reads from .env.development automatically
+# Make sure .env.development exists before starting
+
+services:
+  postgres:
+    env_file:
+      - .env.development
+    ports:
+      - "5435:5432"  # Dev port 5435 (prod uses 5434)
+    environment:
+      POSTGRES_USER: loyalty_dev
+      POSTGRES_PASSWORD: loyalty_dev_pass
+      POSTGRES_DB: loyalty_dev_db
+    volumes:
+      # Override to exclude SQL migrations - Prisma handles schema in development
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    env_file:
+      - .env.development
+    ports:
+      - "6380:6379"  # Dev port 6380 (prod uses 6379)
+
+  backend:
+    env_file:
+      - .env.development
+    environment:
+      NODE_ENV: development
+      PORT: ${BACKEND_PORT:-4000}
+      DATABASE_URL: postgresql://loyalty_dev:loyalty_dev_pass@postgres:5432/loyalty_dev_db
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_not_for_production_use_only_minimum_64_characters}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev_refresh_secret_not_for_production_use_only_minimum_64_characters}
+      SESSION_SECRET: ${SESSION_SECRET:-dev_session_secret_not_for_production_use_only_minimum_64_characters}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost:5001/api/oauth/google/callback}
+      LINE_CHANNEL_ID: ${LINE_CHANNEL_ID}
+      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET}
+      LINE_CALLBACK_URL: ${LINE_CALLBACK_URL:-http://localhost:5001/api/oauth/line/callback}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5001}
+      LOYALTY_USERNAME: ${LOYALTY_USERNAME:-admin@dev.local}
+      LOYALTY_PASSWORD: ${LOYALTY_PASSWORD:-admin123}
+      AZURE_TRANSLATION_TEXT_URI: ${AZURE_TRANSLATION_TEXT_URI}
+      AZURE_TRANSLATION_KEY_1: ${AZURE_TRANSLATION_KEY_1}
+      AZURE_TRANSLATION_KEY_2: ${AZURE_TRANSLATION_KEY_2}
+      AZURE_TRANSLATION_REGION: ${AZURE_TRANSLATION_REGION}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5001,http://127.0.0.1:3000,http://127.0.0.1:5001}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - backend_dev_logs:/app/logs
+      - backend_dev_storage:/app/storage
+
+  frontend:
+    env_file:
+      - .env.development
+    environment:
+      NODE_ENV: development
+      VITE_API_URL: ${VITE_API_URL:-/api}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - frontend_dev_logs:/app/logs
+
+  nginx:
+    env_file:
+      - .env.development
+    ports:
+      - "5001:80"  # Dev port 5001 (prod uses 4001)
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_dev_logs:/var/log/nginx
+
+# Development-specific volumes
+volumes:
+  backend_dev_logs:
+  backend_dev_storage:
+  frontend_dev_logs:
+  nginx_dev_logs:

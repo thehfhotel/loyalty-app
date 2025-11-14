@@ -1,14 +1,13 @@
 import axios from 'axios';
 import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
-import { 
-  TranslationRequest, 
-  TranslationResponse, 
-  SupportedLanguage, 
+import { API_BASE_URL } from '../utils/apiConfig';
+import {
+  TranslationRequest,
+  TranslationResponse,
+  SupportedLanguage,
   TranslationServiceConfig,
-  TranslationJob 
+  TranslationJob
 } from '../types/multilingual';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4001/api';
 
 // Create axios instance with auth interceptor
 const api = axios.create({

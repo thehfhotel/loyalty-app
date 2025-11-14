@@ -117,18 +117,28 @@ export class AuthService {
     );
 
     if (!user) {
-      throw new AppError(401, 'Invalid credentials');
+      // In development, provide helpful error messages
+      // In production, use generic message to prevent account enumeration
+      const isDevelopment = process.env.NODE_ENV !== 'production';
+      const errorMessage = isDevelopment
+        ? 'No account found with this email address. Please check your email or register a new account.'
+        : 'Invalid email or password';
+      throw new AppError(401, errorMessage);
     }
 
     // Check if user is active
     if (!user.isActive) {
-      throw new AppError(403, 'Account is disabled');
+      throw new AppError(403, 'Account is disabled. Please contact support.');
     }
 
     // Verify password
     const isValidPassword = await bcrypt.compare(password, user.passwordHash);
     if (!isValidPassword) {
-      throw new AppError(401, 'Invalid credentials');
+      const isDevelopment = process.env.NODE_ENV !== 'production';
+      const errorMessage = isDevelopment
+        ? 'Incorrect password. Please try again or use "Forgot Password" to reset.'
+        : 'Invalid email or password';
+      throw new AppError(401, errorMessage);
     }
 
     // Check if email should have elevated role and update if necessary
@@ -203,7 +213,7 @@ export class AuthService {
   async refreshToken(refreshToken: string): Promise<AuthTokens> {
     try {
       // Verify refresh token
-      const payload = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as JWTPayload;
+      const payload = jwt.verify(refreshToken, JWT_REFRESH_SECRET!) as JWTPayload;
 
       // Check if token exists in database
       const [storedToken] = await query<{ userId: string }>(
@@ -327,11 +337,11 @@ export class AuthService {
     const refreshTokenExpire = rememberMe ? '30d' : REFRESH_TOKEN_EXPIRE; // 30 days vs 7 days
     const refreshTokenDbInterval = rememberMe ? '30 days' : '7 days';
 
-    const accessToken = jwt.sign(payload, JWT_SECRET, {
+    const accessToken = jwt.sign(payload, JWT_SECRET!, {
       expiresIn: accessTokenExpire,
     });
 
-    const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, {
+    const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET!, {
       expiresIn: refreshTokenExpire,
     });
 
@@ -374,7 +384,7 @@ export class AuthService {
 
   async verifyToken(token: string): Promise<JWTPayload> {
     try {
-      return jwt.verify(token, JWT_SECRET) as JWTPayload;
+      return jwt.verify(token, JWT_SECRET!) as JWTPayload;
     } catch {
       throw new AppError(401, 'Invalid token');
     }

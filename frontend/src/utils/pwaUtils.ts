@@ -3,6 +3,8 @@
  * Handles OAuth flows in PWA standalone mode to maintain app context
  */
 
+import { API_BASE_URL } from './apiConfig';
+
 export interface PWAInfo {
   isPWA: boolean;
   isStandalone: boolean;
@@ -40,10 +42,9 @@ export function detectPWA(): PWAInfo {
  */
 export function createPWAOAuthURL(provider: 'google' | 'line'): string {
   const pwaInfo = detectPWA();
-  const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:4001/api';
-  
+
   // Base OAuth URL
-  const oauthUrl = `${apiUrl}/oauth/${provider}`;
+  const oauthUrl = `${API_BASE_URL}/oauth/${provider}`;
   
   // Add PWA context parameters
   const params = new URLSearchParams();

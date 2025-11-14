@@ -4,6 +4,7 @@
  */
 
 import { detectPWA } from '../utils/pwaUtils';
+import { API_BASE_URL } from '../utils/apiConfig';
 
 export interface NotificationOptions {
   title: string;
@@ -60,7 +61,7 @@ export class NotificationService {
    */
   private async fetchVapidPublicKey(): Promise<void> {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/notifications/vapid-key`);
+      const response = await fetch(`${API_BASE_URL}/notifications/vapid-key`);
       if (response.ok) {
         const data = await response.json();
         this.vapidPublicKey = data.publicKey;
@@ -170,7 +171,7 @@ export class NotificationService {
    */
   private async sendSubscriptionToBackend(userId: string, subscription: PushSubscription): Promise<void> {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/notifications/push/subscribe`, {
+      const response = await fetch(`${API_BASE_URL}/notifications/push/subscribe`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -197,7 +198,7 @@ export class NotificationService {
    */
   private async removeSubscriptionFromBackend(subscription: PushSubscription): Promise<void> {
     try {
-      await fetch(`${import.meta.env.VITE_API_URL}/notifications/push/unsubscribe`, {
+      await fetch(`${API_BASE_URL}/notifications/push/unsubscribe`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

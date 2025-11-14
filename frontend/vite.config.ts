@@ -44,7 +44,12 @@ export default defineConfig({
         // The sw-custom.js file is already included in the build process
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/loyalty\.saichon\.com\/api\/(?!oauth).*/i,
+            // Dynamic pattern - matches API calls in any environment (dev/prod)
+            // Excludes OAuth endpoints to prevent caching auth flows
+            urlPattern: ({ url }) => {
+              return url.pathname.startsWith('/api/') &&
+                     !url.pathname.startsWith('/api/oauth');
+            },
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
@@ -68,7 +73,8 @@ export default defineConfig({
     ],
     proxy: {
       '/api': {
-        target: 'http://localhost:4001',
+        // Use environment variable or default to dev port 5001
+        target: process.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5001',
         changeOrigin: true,
         secure: false
       }

@@ -48,6 +48,7 @@ export default function LoyaltyAdminPage() {
   });
   const [pointsForm, setPointsForm] = useState({
     points: '',
+    nights: '',
     description: '',
     referenceId: ''
   });
@@ -106,12 +107,12 @@ export default function LoyaltyAdminPage() {
 
   const openPointsModal = (user: AdminUserLoyalty, type: 'award' | 'deduct') => {
     setPointsModal({ isOpen: true, user, type });
-    setPointsForm({ points: '', description: '', referenceId: '' });
+    setPointsForm({ points: '', nights: '', description: '', referenceId: '' });
   };
 
   const closePointsModal = () => {
     setPointsModal({ isOpen: false, user: null, type: 'award' });
-    setPointsForm({ points: '', description: '', referenceId: '' });
+    setPointsForm({ points: '', nights: '', description: '', referenceId: '' });
   };
 
   const handlePointsSubmit = async (e: React.FormEvent) => {
@@ -121,20 +122,46 @@ export default function LoyaltyAdminPage() {
     try {
       setIsLoadingAction(true);
       const points = parseInt(pointsForm.points);
-      
+      const nights = pointsForm.nights ? parseInt(pointsForm.nights) : 0;
+
+      // Build description with nights information if provided
+      let finalDescription = pointsForm.description ?? '';
+      if (nights > 0 && !finalDescription.includes('night')) {
+        finalDescription = finalDescription
+          ? `${finalDescription} (${nights} ${nights === 1 ? 'night' : 'nights'})`
+          : `${nights} ${nights === 1 ? 'night' : 'nights'}`;
+      }
+
       if (pointsModal.type === 'award') {
-        await loyaltyService.awardPoints(
-          pointsModal.user.user_id,
-          points,
-          pointsForm.description ?? undefined,
-          pointsForm.referenceId ?? undefined
-        );
-        toast.success(t('admin.loyalty.success.pointsAwarded', { points }));
+        // If nights are provided, use the spending-with-nights endpoint
+        if (nights > 0) {
+          // Calculate amount spent (points / 10 = THB)
+          const amountSpent = points / 10;
+          await loyaltyService.awardSpendingWithNights(
+            pointsModal.user.user_id,
+            amountSpent,
+            nights,
+            pointsForm.referenceId ?? `MANUAL-${Date.now()}`,
+            finalDescription || `Manual award: ${points} points and ${nights} nights`
+          );
+          toast.success(`Awarded ${points} points and ${nights} ${nights === 1 ? 'night' : 'nights'}`);
+        } else {
+          // Regular points-only award
+          await loyaltyService.awardPoints(
+            pointsModal.user.user_id,
+            points,
+            finalDescription || undefined,
+            pointsForm.referenceId ?? undefined
+          );
+          toast.success(t('admin.loyalty.success.pointsAwarded', { points }));
+        }
       } else {
+        // For deduct: we don't support nights deduction through this UI
+        // (nights are only added via hotel stays, never removed)
         await loyaltyService.deductPoints(
           pointsModal.user.user_id,
           points,
-          pointsForm.description ?? `Points deducted by admin`
+          finalDescription || `Points deducted by admin`
         );
         toast.success(t('admin.loyalty.success.pointsDeducted', { points }));
       }
@@ -643,7 +670,29 @@ export default function LoyaltyAdminPage() {
                   required
                 />
               </div>
-              
+
+              {/* Nights field - only show for award type */}
+              {pointsModal.type === 'award' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    จำนวนคืน ({t('common.optional')})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={pointsForm.nights}
+                    onChange={(e) => setPointsForm({ ...pointsForm, nights: e.target.value })}
+                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="0"
+                  />
+                  {pointsForm.nights && parseInt(pointsForm.nights) > 0 && (
+                    <p className="mt-1 text-sm text-blue-600">
+                      จะเพิ่ม {pointsForm.nights} คืน (tier จะปรับตามจำนวนคืนทั้งหมด)
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   {t('admin.loyalty.description')}

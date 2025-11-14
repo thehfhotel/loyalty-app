@@ -361,12 +361,58 @@ This ESLint migration is **TOP PRIORITY** for codebase security and reliability.
 ### 6. Project Structure
 ```
 loyalty-app/
-├── backend/          # Node.js/Express API
-├── frontend/         # React/TypeScript SPA
-├── scripts/          # Production scripts
-├── tests/           # E2E tests
-└── manage.sh        # Centralized management script
+├── backend/                   # Node.js/Express API
+├── frontend/                  # React/TypeScript SPA
+├── scripts/                   # Production scripts
+├── tests/                     # E2E tests
+├── docker-compose.yml         # Base Docker configuration
+├── docker-compose.dev.yml     # Development overrides
+├── docker-compose.prod.yml    # Production overrides
+├── DEV_SETUP.md              # Development setup guide
+└── manage.sh                  # Centralized management script
 ```
+
+### 6.1 Docker Compose Configuration & Port Assignments
+**CRITICAL**: Development and production use **different ports** to coexist on the same machine.
+
+#### Port Assignments
+
+| Service | Dev Port | Prod Port | Access |
+|---------|----------|-----------|--------|
+| **Nginx** | **5001** | **4001** | Main application access |
+| **PostgreSQL** | **5435** | **5434** | Database (external) |
+| **Redis** | **6380** | **6379** | Cache (external) |
+
+#### Starting Environments
+
+```bash
+# ✅ DEVELOPMENT (port 5001)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+# ✅ PRODUCTION (port 4001 - normally via GitHub Actions)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# ❌ WRONG - Missing environment-specific override
+docker compose up -d  # Undefined behavior
+```
+
+#### Environment-Specific Features
+
+**Development (docker-compose.dev.yml)**:
+- Port 5001 for nginx
+- Separate database: `loyalty_dev_db`
+- Volume mounts for hot-reload
+- Debug logging enabled
+- External DB/Redis access for debugging
+
+**Production (docker-compose.prod.yml)**:
+- Port 4001 for nginx
+- Production database: `loyalty_db`
+- Optimized builds (runner stage)
+- No external DB/Redis exposure (security)
+- Deployed via GitHub Actions
+
+**Rationale**: Using different ports prevents conflicts when both dev and prod run on the same machine, ensuring safe parallel operation and isolated databases.
 
 ### 7. Environment Variables
 - **Production**: Always use `.env.production`
@@ -554,13 +600,18 @@ These rules are enforced through:
 ## 📝 Quick Reference Commands
 
 ```bash
-# Docker operations (CORRECT SYNTAX)
-docker compose up -d
-docker compose down
+# Docker operations (CORRECT SYNTAX with environment overrides)
+# Development (port 5001)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down
 docker compose ps
 docker compose logs -f backend
 docker compose exec backend bash
 docker compose restart backend
+
+# Production (port 4001 - normally via GitHub Actions)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down
 
 # Git operations (WITH HOOKS)
 git add .

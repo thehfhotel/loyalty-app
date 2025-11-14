@@ -4,7 +4,7 @@ import { UserProfile } from '../types/auth';
 import { ProfileUpdate } from '../types/user';
 import { validateEmojiAvatar, generateEmojiAvatarUrl } from '../utils/emojiUtils';
 import { logger } from '../utils/logger';
-import { NotificationService } from './notificationService';
+// import { NotificationService } from './notificationService'; // Disabled until profile completion rewards re-enabled
 import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
 
 interface CouponData {
@@ -17,11 +17,12 @@ interface CouponData {
   isActive: boolean;
 }
 
-interface NewMemberRewardResult {
-  success: boolean;
-  coupon?: CouponData | null;
-  pointsAwarded?: number;
-}
+// Note: Disabled until profile completion columns are added
+// interface NewMemberRewardResult {
+//   success: boolean;
+//   coupon?: CouponData | null;
+//   pointsAwarded?: number;
+// }
 
 interface ProfileUpdateResult {
   profile: UserProfile;
@@ -55,10 +56,12 @@ interface UserWithProfile {
 }
 
 export class UserService {
-  private notificationService = new NotificationService();
+  // Note: Notification service disabled until profile completion rewards are re-enabled
+  // private notificationService = new NotificationService();
+
   async getProfile(userId: string): Promise<UserProfile> {
     const [profile] = await query<UserProfile>(
-      `SELECT 
+      `SELECT
         user_id AS "userId",
         first_name AS "firstName",
         last_name AS "lastName",
@@ -67,12 +70,6 @@ export class UserService {
         preferences,
         avatar_url AS "avatarUrl",
         membership_id AS "membershipId",
-        gender,
-        occupation,
-        interests,
-        profile_completed AS "profileCompleted",
-        profile_completed_at AS "profileCompletedAt",
-        new_member_coupon_awarded AS "newMemberCouponAwarded",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM user_profiles
@@ -216,48 +213,20 @@ export class UserService {
   }> {
     try {
       const profile = await this.getProfile(userId);
-    
+
     const missingFields: string[] = [];
 
-    // Check each required field
+    // Check each required field (only fields that exist in the database)
     if (!profile.firstName) missingFields.push('firstName');
-    if (!profile.dateOfBirth) missingFields.push('date_of_birth');
-    if (!profile.gender) missingFields.push('gender');
-    if (!profile.occupation) missingFields.push('occupation');
-    if (!profile.interests || profile.interests.length === 0) missingFields.push('interests');
+    if (!profile.lastName) missingFields.push('lastName');
+    if (!profile.phone) missingFields.push('phone');
+    if (!profile.dateOfBirth) missingFields.push('dateOfBirth');
 
     const isComplete = missingFields.length === 0;
-    
-    // Check if new member rewards are available
-    // Available if profile is not complete AND rewards haven't been awarded yet AND admin has enabled rewards
-    let newMemberCouponAvailable = false;
-    
-    if (!isComplete && !profile.newMemberCouponAwarded) {
-      // Check if admin has enabled new member rewards (either coupons or points)
-      const [rewardSettings] = await query<{
-        isEnabled: boolean;
-        selectedCouponId: string | null;
-        pointsEnabled: boolean;
-        pointsAmount: number | null;
-      }>(
-        `SELECT 
-          is_enabled AS "isEnabled",
-          selected_coupon_id AS "selectedCouponId",
-          points_enabled AS "pointsEnabled",
-          points_amount AS "pointsAmount"
-        FROM new_member_coupon_settings 
-        ORDER BY created_at DESC 
-        LIMIT 1`
-      );
 
-      if (rewardSettings) {
-        // Available if either coupons are enabled with a selected coupon OR points are enabled with an amount
-        const couponRewardsEnabled = !!(rewardSettings.isEnabled && rewardSettings.selectedCouponId);
-        const pointsRewardsEnabled = !!(rewardSettings.pointsEnabled && rewardSettings.pointsAmount && rewardSettings.pointsAmount > 0);
-        
-        newMemberCouponAvailable = couponRewardsEnabled || pointsRewardsEnabled;
-      }
-    }
+    // Check if new member rewards are available
+    // Note: Profile completion rewards will be handled separately when implemented
+    let newMemberCouponAvailable = false;
 
     return {
       isComplete,
@@ -275,15 +244,7 @@ export class UserService {
     lastName?: string;
     phone?: string;
     dateOfBirth?: string;
-    gender?: string;
-    occupation?: string;
-    interests?: string[];
   }): Promise<ProfileUpdateResult> {
-    const currentProfile = await this.getProfile(userId);
-    
-    // Check if profile was already completed
-    const wasAlreadyCompleted = currentProfile.profileCompleted;
-    
     // Update profile with new data
     const updateFields: string[] = [];
     const values: unknown[] = [];
@@ -305,27 +266,25 @@ export class UserService {
       updateFields.push(`date_of_birth = $${paramCount++}`);
       values.push(data.dateOfBirth);
     }
-    if (data.gender !== undefined) {
-      updateFields.push(`gender = $${paramCount++}`);
-      values.push(data.gender);
-    }
-    if (data.occupation !== undefined) {
-      updateFields.push(`occupation = $${paramCount++}`);
-      values.push(data.occupation);
-    }
-    if (data.interests !== undefined) {
-      updateFields.push(`interests = $${paramCount++}`);
-      values.push(JSON.stringify(data.interests));
+
+    if (updateFields.length === 0) {
+      const currentProfile = await this.getProfile(userId);
+      return {
+        profile: currentProfile,
+        couponAwarded: false,
+        coupon: null as CouponData | null,
+        pointsAwarded: 0
+      };
     }
 
     values.push(userId);
 
     // Get updated profile to check completion status
     const [updatedProfile] = await query<UserProfile>(
-      `UPDATE user_profiles 
+      `UPDATE user_profiles
       SET ${updateFields.join(', ')}, updated_at = NOW()
       WHERE user_id = $${paramCount}
-      RETURNING 
+      RETURNING
         user_id AS "userId",
         first_name AS "firstName",
         last_name AS "lastName",
@@ -334,12 +293,6 @@ export class UserService {
         preferences,
         avatar_url AS "avatarUrl",
         membership_id AS "membershipId",
-        gender,
-        occupation,
-        interests,
-        profile_completed AS "profileCompleted",
-        profile_completed_at AS "profileCompletedAt",
-        new_member_coupon_awarded AS "newMemberCouponAwarded",
         created_at AS "createdAt",
         updated_at AS "updatedAt"`,
       values
@@ -349,76 +302,7 @@ export class UserService {
       throw new AppError(404, 'Profile not found');
     }
 
-    // Check if profile is now complete
-    const status = await this.getProfileCompletionStatus(userId);
-    let rewardsAwarded = false;
-    let coupon = null;
-    let pointsAwarded = 0;
-
-    if (status.isComplete && !wasAlreadyCompleted && !currentProfile.newMemberCouponAwarded) {
-      // Profile is now complete for the first time - award new member rewards
-      const rewardResult = await this.awardNewMemberRewards(userId);
-      rewardsAwarded = rewardResult.success;
-      coupon = rewardResult.coupon;
-      pointsAwarded = rewardResult.pointsAwarded ?? 0;
-
-      // Mark profile as completed
-      await query(
-        'UPDATE user_profiles SET profile_completed = true, profile_completed_at = NOW() WHERE user_id = $1',
-        [userId]
-      );
-
-      // Get final updated profile
-      const finalProfile = await this.getProfile(userId);
-
-      // Create notification for profile completion with rewards
-      try {
-        // Convert CouponData to Coupon format for notification service
-        const couponForNotification = coupon ? {
-          id: coupon.id,
-          code: coupon.code,
-          name: coupon.title,
-          description: coupon.description,
-          termsAndConditions: undefined,
-          type: 'fixed_amount' as const,
-          value: coupon.discountValue,
-          currency: 'THB',
-          minimumSpend: undefined,
-          maximumDiscount: undefined,
-          validFrom: new Date(),
-          validUntil: undefined,
-          usageLimit: undefined,
-          usageLimitPerUser: 1,
-          usedCount: 0,
-          tierRestrictions: [],
-          customerSegment: {},
-          status: 'active' as const,
-          createdBy: undefined,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        } : undefined;
-
-        await this.notificationService.createProfileCompletionNotification(
-          userId,
-          rewardsAwarded && coupon !== null,
-          couponForNotification,
-          pointsAwarded
-        );
-      } catch (error) {
-        logger.warn('Failed to create profile completion notification', {
-          userId,
-          error: error instanceof Error ? error.message : String(error)
-        });
-      }
-
-      return {
-        profile: finalProfile,
-        couponAwarded: rewardsAwarded && coupon !== null,
-        coupon,
-        pointsAwarded
-      };
-    }
-
+    // Note: Profile completion rewards will be implemented when the feature columns are added
     return {
       profile: updatedProfile,
       couponAwarded: false,
@@ -427,134 +311,11 @@ export class UserService {
     };
   }
 
-  private async awardNewMemberRewards(userId: string): Promise<NewMemberRewardResult> {
-    try {
-      // Get active new member reward settings
-      const [rewardSettings] = await query<{
-        id: string;
-        isEnabled: boolean;
-        selectedCouponId: string | null;
-        pointsEnabled: boolean;
-        pointsAmount: number | null;
-      }>(
-        `SELECT 
-          id,
-          is_enabled AS "isEnabled",
-          selected_coupon_id AS "selectedCouponId",
-          points_enabled AS "pointsEnabled",
-          points_amount AS "pointsAmount"
-        FROM new_member_coupon_settings 
-        WHERE (is_enabled = true AND selected_coupon_id IS NOT NULL) 
-           OR (points_enabled = true AND points_amount IS NOT NULL)
-        ORDER BY created_at DESC 
-        LIMIT 1`
-      );
-
-      if (!rewardSettings || (!rewardSettings.isEnabled && !rewardSettings.pointsEnabled)) {
-        logger.warn(`No active new member reward settings found for user ${userId}`);
-        return { success: false };
-      }
-
-      let coupon: CouponData | null = null;
-      let pointsAwarded = 0;
-
-      // Award coupon if configured
-      if (rewardSettings.isEnabled && rewardSettings.selectedCouponId) {
-        const couponId = rewardSettings.selectedCouponId;
-
-        // Verify the coupon exists, is active, and hasn't expired
-        const [couponData] = await query<{
-          id: string;
-          code: string;
-          name: string;
-          description: string;
-          validUntil: string;
-        }>(
-          `SELECT 
-            id, code, name, description,
-            valid_until AS "validUntil"
-          FROM coupons 
-          WHERE id = $1 AND status = 'active' AND valid_until > NOW()`,
-          [couponId]
-        );
-
-        if (!couponData) {
-          logger.warn(`Selected coupon not found, inactive, or expired for user ${userId}`, {
-            selectedCouponId: couponId
-          });
-        } else {
-          // Generate QR code for the user coupon
-          const qrCode = `NM${userId.substring(0, 8).toUpperCase()}${Date.now().toString(36).toUpperCase()}`;
-
-          // Award the coupon to the user
-          await query(
-            `INSERT INTO user_coupons (
-              user_id, coupon_id, status, qr_code, assigned_reason, 
-              expires_at, assigned_by
-            ) VALUES ($1, $2, 'available', $3, 'New member profile completion reward', 
-              $4, $1)`,
-            [userId, couponId, qrCode, couponData.validUntil]
-          );
-
-          coupon = {
-            id: couponData.id,
-            code: couponData.code,
-            title: couponData.name,
-            description: couponData.description,
-            discountType: 'unknown',
-            discountValue: 0,
-            isActive: true
-          };
-
-          logger.info(`New member coupon awarded to user ${userId}`, {
-            couponId: couponData.id,
-            couponCode: couponData.code,
-            couponName: couponData.name,
-            qrCode
-          });
-        }
-      }
-
-      // Award points if configured
-      if (rewardSettings.pointsEnabled && rewardSettings.pointsAmount && rewardSettings.pointsAmount > 0) {
-        // Add points to user's loyalty account
-        await query(
-          `INSERT INTO points_transactions (
-            user_id, points, type, description, reference_id
-          ) VALUES ($1, $2, 'earned_bonus', $3, $4)`,
-          [
-            userId, 
-            rewardSettings.pointsAmount, 
-            `New member profile completion bonus: ${rewardSettings.pointsAmount} points`,
-            rewardSettings.id
-          ]
-        );
-
-        pointsAwarded = rewardSettings.pointsAmount;
-
-        logger.info(`New member points awarded to user ${userId}`, {
-          pointsAwarded: rewardSettings.pointsAmount
-        });
-      }
-
-      // Mark the new member rewards as awarded (if any rewards were given)
-      if (coupon !== null || pointsAwarded > 0) {
-        await query(
-          'UPDATE user_profiles SET new_member_coupon_awarded = true, new_member_coupon_awarded_at = NOW() WHERE user_id = $1',
-          [userId]
-        );
-      }
-
-      return {
-        success: coupon !== null || pointsAwarded > 0,
-        coupon: coupon,
-        pointsAwarded: pointsAwarded > 0 ? pointsAwarded : undefined
-      };
-    } catch (error) {
-      logger.error(`Failed to award new member rewards to user ${userId}`, error);
-      return { success: false };
-    }
-  }
+  // Note: This method is disabled until profile completion columns are added to the database
+  // private async awardNewMemberRewards(userId: string): Promise<NewMemberRewardResult> {
+  //   // Method implementation commented out until database schema is updated
+  //   return { success: false };
+  // }
 
   // Admin-only methods
   async getAllUsers(page = 1, limit = 10, search = ''): Promise<{ users: UserWithProfile[], total: number }> {

@@ -6,8 +6,7 @@
 
 import type { inferAsyncReturnType } from '@trpc/server';
 import type { CreateExpressContextOptions } from '@trpc/server/adapters/express';
-// Import Express type augmentation to ensure Request.user is recognized
-import '../types/express';
+// Express type augmentation from ../types/express.d.ts is automatically applied by TypeScript
 
 /**
  * Create context from Express request/response

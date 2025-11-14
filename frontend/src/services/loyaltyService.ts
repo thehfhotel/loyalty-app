@@ -1,11 +1,10 @@
 import axios from 'axios';
 import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
-
-const API_URL = import.meta.env?.VITE_API_URL ?? 'http://localhost:4000/api';
+import { API_BASE_URL } from '../utils/apiConfig';
 
 // Create axios instance with unified auth interceptor
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -17,8 +16,8 @@ addAuthTokenInterceptor(api);
 export interface Tier {
   id: string;
   name: string;
-  min_points: number; // This will represent min_nights in the new system
-  min_nights?: number; // Explicit nights field for clarity
+  min_points: number; // Not used - kept for legacy compatibility (always 0)
+  min_nights: number; // ONLY requirement for tier - membership based on nights stayed
   benefits: {
     description: string;
     perks: string[];
@@ -29,8 +28,8 @@ export interface Tier {
 
 export interface UserLoyaltyStatus {
   user_id: string;
-  current_points: number;
-  total_nights?: number;
+  current_points: number; // Points for redemption only
+  total_nights: number; // Total nights stayed - ONLY factor determining tier
   tier_name: string;
   tier_color: string;
   tier_benefits: {
@@ -38,13 +37,10 @@ export interface UserLoyaltyStatus {
     perks: string[];
   };
   tier_level: number;
-  progress_percentage: number;
-  next_tier_points: number | null;
+  progress_percentage: number; // Progress to next tier based on nights only
+  next_tier_nights: number | null; // Nights needed for next tier
   next_tier_name: string | null;
-  points_to_next_tier: number | null;
-  // New nights-based fields
-  next_tier_nights?: number | null;
-  nights_to_next_tier?: number | null;
+  nights_to_next_tier: number | null; // Remaining nights to next tier
 }
 
 export interface PointsTransaction {

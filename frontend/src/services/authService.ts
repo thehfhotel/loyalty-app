@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
+import { API_BASE_URL } from '../utils/apiConfig';
 import type {
   LoginResponse,
   RegisterResponse,
@@ -10,10 +11,8 @@ import type {
   UserProfile,
 } from '../types/api';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api';
-
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },

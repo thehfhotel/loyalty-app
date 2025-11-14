@@ -12,3 +12,6 @@ declare global {
     interface User extends JWTPayload {}
   }
 }
+
+// Required for ambient module declarations to be importable
+export {};

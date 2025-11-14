@@ -28,7 +28,7 @@ import {
 } from './middleware/security';
 import { connectDatabase } from './config/database';
 import { connectRedis, getRedisClient } from './config/redis';
-import { seedSurveys } from './utils/seedDatabase';
+import { seedMembershipSequence, seedTiers, seedSurveys } from './utils/seedDatabase';
 import { initializeStorage } from './config/storage';
 import { StorageService } from './services/storageService';
 import authRoutes from './routes/auth';
@@ -97,12 +97,18 @@ app.use(cors({
     if (!origin) return callback(null, true);
     
     const allowedOrigins = [
+      // Production port (4001)
       'http://localhost:4001',
       'http://127.0.0.1:4001',
-      // Allow any IP address on port 4001 for local network access
       /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:4001$/,
       /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:4001$/,
       /^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}:4001$/,
+      // Development port (5001)
+      'http://localhost:5001',
+      'http://127.0.0.1:5001',
+      /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:5001$/,
+      /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:5001$/,
+      /^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}:5001$/,
     ];
     
     // If FRONTEND_URL is set, use it as the primary origin
@@ -322,8 +328,13 @@ async function startServer() {
     await initializeStorage();
     StorageService.initialize();
 
-    // Seed database with sample surveys only in development
+    // Seed database in development mode
     if (process.env.NODE_ENV === 'development') {
+      // Initialize membership sequence (required for registration)
+      await seedMembershipSequence();
+      // Seed tiers (required for loyalty program)
+      await seedTiers();
+      // Seed sample surveys
       await seedSurveys();
     }
 

@@ -94,35 +94,23 @@ RUN mkdir -p /app/storage /app/storage/backup /app/storage/avatars /app/logs && 
     chown -R nodejs:nodejs /app && \
     chmod 755 /app/logs
 
-# Copy production dependencies
-COPY --from=deps /app/node_modules ./node_modules
+# Copy development dependencies (needed for tsx)
+COPY --from=dev-deps /app/node_modules ./node_modules
 
-# Copy built application (if available), source files, and generated Prisma client
-COPY --from=builder /app/dist ./dist
+# Copy source files and generated Prisma client
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
 COPY package*.json tsconfig.json ./
 
-# Ensure Prisma client is available for runtime (CACHE BUST: 2025-11-10-v2)
-# Prisma generates to src/generated/prisma, compiled JS expects ../generated/prisma from dist/config/
-RUN if [ -d "src/generated" ]; then \
-      echo "✅ Prisma client found in src/generated"; \
+# Ensure Prisma client is available for development (CACHE BUST: 2025-11-14-v3)
+# Development uses tsx with src/ directly, so Prisma client stays in src/generated/
+RUN npm run db:generate && \
+    echo "✅ Prisma client generated to src/generated" && \
+    if [ -d "src/generated/prisma" ]; then \
+      echo "✅ Prisma client verified at src/generated/prisma (development)"; \
+      ls -la src/generated/prisma | head -5; \
     else \
-      echo "⚠️ Prisma client not found, generating..."; \
-      npm run db:generate; \
-      echo "✅ Prisma client generated"; \
-    fi && \
-    # Copy generated client to dist location for compiled JS module resolution \
-    mkdir -p dist/generated && cp -r src/generated/* dist/generated/ && \
-    echo "✅ Prisma client copied to dist/generated" && \
-    # Verify the Prisma client exists at expected location \
-    if [ -d "dist/generated/prisma" ]; then \
-      echo "✅ Prisma client verified at dist/generated/prisma"; \
-      ls -la dist/generated/prisma | head -5; \
-    else \
-      echo "❌ ERROR: Prisma client not found at dist/generated/prisma"; \
-      echo "Contents of dist/generated:"; \
-      ls -la dist/generated/ || echo "dist/generated/ does not exist"; \
+      echo "❌ ERROR: Prisma client not found at src/generated/prisma"; \
       exit 1; \
     fi
 
@@ -138,5 +126,5 @@ EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:4000/api/health || exit 1
 
-# Start the application - prefer compiled version, fallback to tsx
-CMD ["sh", "-c", "if [ -f dist/index.js ]; then npm start; else npx tsx src/index.ts; fi"]
+# Start the application in development mode with tsx (no dist directory in development)
+CMD ["npm", "run", "dev"]

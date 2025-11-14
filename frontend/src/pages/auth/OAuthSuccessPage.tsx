@@ -2,10 +2,11 @@ import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { notify } from '../../utils/notificationManager';
-import { 
-  handlePWAOAuthSuccess, 
-  recoverPWAOAuthState, 
-  detectPWA, 
+import { API_BASE_URL } from '../../utils/apiConfig';
+import {
+  handlePWAOAuthSuccess,
+  recoverPWAOAuthState,
+  detectPWA,
   requestPWANotificationPermission,
   debugPWAOAuth,
   restoreIOSPWAManifest
@@ -69,8 +70,8 @@ export default function OAuthSuccessPage() {
         setTokens(token, refreshToken);
 
         // Get user data using the token
-        const meUrl = `${import.meta.env.VITE_API_URL}/oauth/me`;
-        
+        const meUrl = `${API_BASE_URL}/oauth/me`;
+
         const response = await fetch(meUrl, {
           headers: {
             'Authorization': `Bearer ${token}`,

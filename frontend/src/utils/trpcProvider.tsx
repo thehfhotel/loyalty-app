@@ -7,8 +7,7 @@ import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
 import { trpc } from './trpc';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4001/api';
+import { API_BASE_URL } from './apiConfig';
 
 export function TRPCProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -25,7 +24,7 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
     trpc.createClient({
       links: [
         httpBatchLink({
-          url: `${API_URL}/trpc`,
+          url: `${API_BASE_URL}/trpc`,
           // Include credentials (cookies) in requests
           fetch(url, options) {
             return fetch(url, {

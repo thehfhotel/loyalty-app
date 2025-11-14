@@ -4,7 +4,8 @@ import { logger } from '../utils/logger';
 export interface Tier {
   id: string;
   name: string;
-  min_points: number;
+  min_points: number; // Not used for tier calculation - kept for legacy compatibility
+  min_nights: number; // ACTUAL tier requirement - membership based on nights only
   benefits: {
     description: string;
     perks: string[];
@@ -28,15 +29,16 @@ export interface PointsTransaction {
 
 export interface UserLoyaltyStatus {
   user_id: string;
-  current_points: number;
+  current_points: number; // For redemption only
+  total_nights: number; // Determines tier membership
   tier_name: string;
   tier_color: string;
   tier_benefits: Record<string, unknown>;
   tier_level: number;
-  progress_percentage: number;
-  next_tier_points: number | null;
+  progress_percentage: number; // Based on nights, not points
+  next_tier_nights: number | null;
   next_tier_name: string | null;
-  points_to_next_tier: number | null;
+  nights_to_next_tier: number | null;
 }
 
 export interface PointsCalculation {
@@ -67,7 +69,30 @@ export class LoyaltyService {
   async getUserLoyaltyStatus(userId: string): Promise<UserLoyaltyStatus | null> {
     try {
       const result = await getPool().query(
-        'SELECT * FROM user_tier_info WHERE user_id = $1',
+        `SELECT
+          ul.user_id,
+          ul.current_points,
+          ul.total_nights,
+          t.name as tier_name,
+          t.color as tier_color,
+          t.benefits as tier_benefits,
+          t.sort_order as tier_level,
+          CASE
+            WHEN next_tier.min_nights IS NOT NULL
+            THEN ROUND((ul.total_nights::numeric / next_tier.min_nights) * 100)
+            ELSE 100
+          END as progress_percentage,
+          next_tier.min_nights as next_tier_nights,
+          next_tier.name as next_tier_name,
+          CASE
+            WHEN next_tier.min_nights IS NOT NULL
+            THEN (next_tier.min_nights - ul.total_nights)
+            ELSE NULL
+          END as nights_to_next_tier
+        FROM user_loyalty ul
+        JOIN tiers t ON ul.tier_id = t.id
+        LEFT JOIN tiers next_tier ON next_tier.sort_order = t.sort_order + 1 AND next_tier.is_active = true
+        WHERE ul.user_id = $1`,
         [userId]
       );
 
@@ -244,7 +269,27 @@ export class LoyaltyService {
   async calculateUserPoints(userId: string): Promise<PointsCalculation> {
     try {
       const result = await getPool().query(
-        'SELECT * FROM calculate_user_points($1)',
+        `SELECT
+          COALESCE(ul.current_points, 0) as current_points,
+          COALESCE(
+            (SELECT SUM(points)
+             FROM points_transactions
+             WHERE user_id = $1
+               AND expires_at IS NOT NULL
+               AND expires_at <= NOW() + INTERVAL '30 days'
+               AND expires_at > NOW()
+               AND points > 0),
+            0
+          ) as expiring_points,
+          (SELECT MIN(expires_at)
+           FROM points_transactions
+           WHERE user_id = $1
+             AND expires_at IS NOT NULL
+             AND expires_at > NOW()
+             AND points > 0
+          ) as next_expiry_date
+        FROM user_loyalty ul
+        WHERE ul.user_id = $1`,
         [userId]
       );
 
@@ -265,8 +310,26 @@ export class LoyaltyService {
   ): Promise<{ users: UserLoyaltyStatus[]; total: number }> {
     try {
       let query = `
-        SELECT 
-          uti.*,
+        SELECT
+          ul.user_id,
+          ul.current_points,
+          ul.total_nights,
+          t.name as tier_name,
+          t.color as tier_color,
+          t.benefits as tier_benefits,
+          t.sort_order as tier_level,
+          CASE
+            WHEN next_tier.min_nights IS NOT NULL AND next_tier.min_nights > 0
+            THEN ROUND((ul.total_nights::numeric / next_tier.min_nights) * 100)
+            ELSE 100
+          END as progress_percentage,
+          next_tier.min_nights as next_tier_nights,
+          next_tier.name as next_tier_name,
+          CASE
+            WHEN next_tier.min_nights IS NOT NULL
+            THEN (next_tier.min_nights - ul.total_nights)
+            ELSE NULL
+          END as nights_to_next_tier,
           up.first_name,
           up.last_name,
           up.membership_id,
@@ -274,11 +337,13 @@ export class LoyaltyService {
           u.oauth_provider,
           u.oauth_provider_id,
           u.created_at as user_created_at
-        FROM user_tier_info uti
-        JOIN users u ON uti.user_id = u.id
+        FROM user_loyalty ul
+        JOIN tiers t ON ul.tier_id = t.id
+        LEFT JOIN tiers next_tier ON next_tier.sort_order = t.sort_order + 1 AND next_tier.is_active = true
+        JOIN users u ON ul.user_id = u.id
         LEFT JOIN user_profiles up ON u.id = up.user_id
       `;
-      
+
       const params: (string | number)[] = [];
       let paramIndex = 1;
 
@@ -288,7 +353,7 @@ export class LoyaltyService {
         paramIndex++;
       }
 
-      query += ` ORDER BY uti.current_points DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      query += ` ORDER BY ul.total_nights DESC, ul.current_points DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
       const usersResult = await getPool().query(query, params);
@@ -296,11 +361,11 @@ export class LoyaltyService {
       // Get total count
       let countQuery = `
         SELECT COUNT(*) as total
-        FROM user_tier_info uti
-        JOIN users u ON uti.user_id = u.id
+        FROM user_loyalty ul
+        JOIN users u ON ul.user_id = u.id
         LEFT JOIN user_profiles up ON u.id = up.user_id
       `;
-      
+
       const countParams: string[] = [];
       if (searchTerm) {
         countQuery += ` WHERE (u.email ILIKE $1 OR up.first_name ILIKE $1 OR up.last_name ILIKE $1 OR u.id::text ILIKE $1 OR up.membership_id ILIKE $1)`;
@@ -350,26 +415,81 @@ export class LoyaltyService {
     newTotalNights: number;
     newTierName: string;
   }> {
+    const client = await getPool().connect();
     try {
-      const result = await getPool().query(
-        'SELECT * FROM add_stay_nights_and_points($1, $2, $3, $4, $5)',
-        [userId, nights, amountSpent, referenceId, description]
+      await client.query('BEGIN');
+
+      // Calculate points (10 points per 1 THB spent)
+      const pointsEarned = Math.floor(amountSpent * 10);
+
+      // Ensure user has loyalty status
+      await client.query(
+        `INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights)
+         SELECT $1, t.id, 0, 0
+         FROM loyalty_tiers t
+         WHERE t.name = 'Bronze'
+         ON CONFLICT (user_id) DO NOTHING`,
+        [userId]
       );
 
-      if (result.rows.length === 0) {
-        throw new Error('Failed to process stay');
-      }
+      // Create points transaction
+      const transactionResult = await client.query(
+        `INSERT INTO points_transactions (
+           user_id, points, type, description, reference_id, created_at, expires_at
+         ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW() + INTERVAL '1 year')
+         RETURNING id`,
+        [
+          userId,
+          pointsEarned,
+          'hotel_stay',
+          description || `Hotel stay: ${nights} night(s), ${amountSpent.toFixed(2)} THB spent`,
+          referenceId || `STAY-${Date.now()}`
+        ]
+      );
 
-      const row = result.rows[0];
+      const transactionId = transactionResult.rows[0].id;
+
+      // Update user_loyalty: add points and nights
+      await client.query(
+        `UPDATE user_loyalty
+         SET current_points = current_points + $2,
+             total_nights = total_nights + $3,
+             updated_at = NOW()
+         WHERE user_id = $1`,
+        [userId, pointsEarned, nights]
+      );
+
+      // Get updated total nights for tier recalculation
+      const loyaltyResult = await client.query(
+        'SELECT total_nights FROM user_loyalty WHERE user_id = $1',
+        [userId]
+      );
+      const newTotalNights = loyaltyResult.rows[0].total_nights;
+
+      // Recalculate tier based on total_nights
+      const tierResult = await client.query(
+        `SELECT * FROM recalculate_user_tier_by_nights($1)`,
+        [userId]
+      );
+
+      const newTierName = tierResult.rows[0]?.new_tier_name || 'Bronze';
+
+      await client.query('COMMIT');
+
+      logger.info(`Added ${nights} nights and ${pointsEarned} points to user ${userId}`);
+
       return {
-        transactionId: row.transaction_id,
-        pointsEarned: row.points_earned,
-        newTotalNights: row.new_total_nights,
-        newTierName: row.new_tier_name
+        transactionId,
+        pointsEarned,
+        newTotalNights,
+        newTierName
       };
     } catch (error) {
+      await client.query('ROLLBACK');
       logger.error('Error adding stay nights and points:', error);
       throw new Error('Failed to add stay nights and points');
+    } finally {
+      client.release();
     }
   }
 

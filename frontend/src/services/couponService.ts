@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
+import { API_BASE_URL } from '../utils/apiConfig';
 import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
 import type {
   Coupon,
@@ -16,11 +17,9 @@ import type {
   CouponStatus
 } from '../types/coupon';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api';
-
 // Create axios instance with auth interceptor
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },

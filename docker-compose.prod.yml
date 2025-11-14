@@ -1,11 +1,14 @@
 # Production docker-compose override
 # Used for production deployments via GitHub Actions
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
-# version: '3.8'  # Version is inherited from docker-compose.yml
+#
+# IMPORTANT: This file reads from .env.production automatically
+# Make sure .env.production exists before deploying
 
 services:
   backend:
+    env_file:
+      - .env.production
     build:
       target: runner  # Use production-optimized runner stage instead of development
     environment:
@@ -56,6 +59,8 @@ services:
     restart: unless-stopped
 
   frontend:
+    env_file:
+      - .env.production
     environment:
       NODE_ENV: production
       VITE_API_URL: ${VITE_API_URL}
@@ -66,16 +71,22 @@ services:
     restart: unless-stopped
 
   postgres:
+    env_file:
+      - .env.production
     restart: unless-stopped
     # Remove port exposure for production security
     ports: []
 
   redis:
+    env_file:
+      - .env.production
     restart: unless-stopped
     # Remove port exposure for production security  
     ports: []
 
   nginx:
+    env_file:
+      - .env.production
     restart: unless-stopped
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
