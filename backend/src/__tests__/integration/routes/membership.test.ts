@@ -32,6 +32,7 @@ jest.mock('../../../middleware/auth', () => ({
     };
     next();
   },
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   authorize: (_roles: string | string[]) => (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
     // For testing, allow all authorized roles
     next();
@@ -40,6 +41,7 @@ jest.mock('../../../middleware/auth', () => ({
 
 // Mock validateRequest middleware
 jest.mock('../../../middleware/validateRequest', () => ({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   validateRequest: (_schema: unknown) => (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
     next();
   }

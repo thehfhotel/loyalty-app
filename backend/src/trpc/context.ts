@@ -4,10 +4,10 @@
  * Includes authenticated user information from Express middleware
  */
 
-/// <reference path="../types/express.d.ts" />
-
 import type { inferAsyncReturnType } from '@trpc/server';
 import type { CreateExpressContextOptions } from '@trpc/server/adapters/express';
+// Import Express type augmentation to ensure Request.user is recognized
+import '../types/express';
 
 /**
  * Create context from Express request/response
