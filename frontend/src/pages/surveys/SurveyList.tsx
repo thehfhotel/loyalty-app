@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { FiUsers, FiEye, FiCalendar, FiRefreshCw } from 'react-icons/fi';
 import { Survey } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
-import { useAuthStore } from '../../store/authStore';
 import { useAuthRedirect } from '../../hooks/useAuthRedirect';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';

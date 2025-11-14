@@ -9,7 +9,7 @@ import SurveyPreview from '../../components/surveys/SurveyPreview';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import LanguageTabs from '../../components/translation/LanguageTabs';
-import { MultilingualSurvey, SupportedLanguage, TranslationStatus } from '../../types/multilingual';
+import { MultilingualSurvey, SupportedLanguage } from '../../types/multilingual';
 import toast from 'react-hot-toast';
 
 const SurveyDetailsPage: React.FC = () => {

@@ -11,7 +11,6 @@ import {
 import PointsBalance from '../../components/loyalty/PointsBalance';
 import TierStatus from '../../components/loyalty/TierStatus';
 import TransactionList from '../../components/loyalty/TransactionList';
-import { useAuthStore } from '../../store/authStore';
 import DashboardButton from '../../components/navigation/DashboardButton';
 
 export default function LoyaltyDashboard() {

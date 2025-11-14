@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Survey, SurveyResponse } from '../../types/survey';
+import { Survey } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 import { translationService } from '../../services/translationService';
 import QuestionRenderer from '../../components/surveys/QuestionRenderer';
@@ -9,7 +9,7 @@ import SurveyProgress from '../../components/surveys/SurveyProgress';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import LanguageTabs from '../../components/translation/LanguageTabs';
-import { MultilingualSurvey, SupportedLanguage, TranslationStatus } from '../../types/multilingual';
+import { MultilingualSurvey, SupportedLanguage } from '../../types/multilingual';
 
 const TakeSurvey: React.FC = () => {
   const { t } = useTranslation();
