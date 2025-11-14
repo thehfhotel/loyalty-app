@@ -224,12 +224,4 @@ export default tseslint.config(
     },
   },
 
-  // More permissive for complex components
-  {
-    files: ['src/components/**/*.tsx', 'src/pages/**/*.tsx'],
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': 'warn',
-    },
-  },
 );
