@@ -257,8 +257,8 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
               
               {validationResult && validationResult.valid && validationResult.data ? (
                 <div className="mt-2 text-sm text-green-700">
-                  <div className="font-medium">{(validationResult.data as any)?.name || ''}</div>
-                  <div>{(validationResult.data as any)?.description || ''}</div>
+                  <div className="font-medium">{(validationResult.data as Coupon | UserActiveCoupon)?.name || ''}</div>
+                  <div>{(validationResult.data as Coupon | UserActiveCoupon)?.description || ''}</div>
                   <div className="mt-1">
                     {t('coupons.value')}: {couponService.formatCouponValue(validationResult.data as Coupon | UserActiveCoupon)}
                   </div>

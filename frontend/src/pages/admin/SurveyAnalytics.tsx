@@ -123,7 +123,7 @@ const SurveyAnalytics: React.FC = () => {
     }
   };
 
-  const getChartOptions = (title: string): ChartOptions<any> => ({
+  const getChartOptions = (title: string): ChartOptions<'bar' | 'line' | 'pie'> => ({
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -195,7 +195,7 @@ const SurveyAnalytics: React.FC = () => {
     );
   }
 
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+   
   if (error || !analytics) {
     return (
       <div className="min-h-screen bg-gray-50">

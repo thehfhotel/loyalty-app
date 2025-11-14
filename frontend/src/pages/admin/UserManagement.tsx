@@ -26,7 +26,7 @@ const UserManagement: React.FC = () => {
       const response = await userManagementService.getUsers(page, pageSize, search);
       setUsers(response.data);
       setTotalPages(response.pagination.pages);
-    } catch (error) {
+    } catch (_error) {
       toast.error(t('userManagement.messages.fetchUsersFailed'));
     }
   }, [t]);
@@ -35,7 +35,7 @@ const UserManagement: React.FC = () => {
     try {
       const response = await userManagementService.getUserStats();
       setStats(response.data);
-    } catch (error) {
+    } catch (_error) {
       toast.error(t('userManagement.messages.fetchStatsFailed'));
     }
   }, [t]);
@@ -67,7 +67,7 @@ const UserManagement: React.FC = () => {
         : t('userManagement.messages.userActivated')
       );
       fetchUsers(currentPage, searchTerm);
-    } catch (error) {
+    } catch (_error) {
       toast.error(t('userManagement.messages.updateStatusFailed'));
     }
   }, [currentPage, searchTerm, fetchUsers, t]);
@@ -77,7 +77,7 @@ const UserManagement: React.FC = () => {
       await userManagementService.updateUserRole(user.userId, newRole);
       toast.success(t('userManagement.messages.roleUpdated'));
       fetchUsers(currentPage, searchTerm);
-    } catch (error) {
+    } catch (_error) {
       toast.error(t('userManagement.messages.updateRoleFailed'));
     }
   };
@@ -92,7 +92,7 @@ const UserManagement: React.FC = () => {
       setUserToDelete(null);
       fetchUsers(currentPage, searchTerm);
       fetchStats();
-    } catch (error) {
+    } catch (_error) {
       toast.error(t('userManagement.messages.deleteFailed'));
     }
   };
@@ -107,7 +107,7 @@ const UserManagement: React.FC = () => {
       const response = await userManagementService.getUserById(user.userId);
       setSelectedUser(response.data);
       setShowUserModal(true);
-    } catch (error) {
+    } catch (_error) {
       toast.error(t('userManagement.messages.fetchDetailsFailed'));
     }
   };

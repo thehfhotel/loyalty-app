@@ -98,7 +98,7 @@ export const useAuthStore = create<AuthState>()(
           if (refreshToken) {
             await authService.logout(refreshToken);
           }
-        } catch (error) {
+        } catch (_error) {
           // Logout error - continue with local logout
         } finally {
           get().clearAuth();

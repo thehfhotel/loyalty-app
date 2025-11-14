@@ -245,7 +245,7 @@ class SurveyService {
     return 'opt_' + Math.random().toString(36).substr(2, 9);
   }
 
-  calculateProgress(answers: Record<string, any>, totalQuestions: number): number {
+  calculateProgress(answers: Record<string, unknown>, totalQuestions: number): number {
     const answeredQuestions = Object.keys(answers).length;
     return Math.round((answeredQuestions / totalQuestions) * 100);
   }
@@ -277,8 +277,8 @@ class SurveyService {
     }
   }
 
-  isResponseComplete(survey: Survey, answers: Record<string, any>): boolean {
-    return survey.questions.every(question => 
+  isResponseComplete(survey: Survey, answers: Record<string, unknown>): boolean {
+    return survey.questions.every(question =>
       this.validateAnswer(question, answers[question.id])
     );
   }

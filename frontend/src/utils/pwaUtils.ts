@@ -21,7 +21,7 @@ export function detectPWA(): PWAInfo {
   
   // Check if running in standalone mode (PWA)
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-                      (window.navigator as any).standalone === true || // iOS Safari
+                      (window.navigator as Navigator & { standalone?: boolean }).standalone === true || // iOS Safari
                       document.referrer.includes('android-app://'); // Android Chrome
 
   const isPWA = isStandalone && ('serviceWorker' in navigator);

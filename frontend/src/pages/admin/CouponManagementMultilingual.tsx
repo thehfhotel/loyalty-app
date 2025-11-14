@@ -286,7 +286,7 @@ const CouponManagementMultilingual: React.FC = () => {
   };
 
   const handleDeleteCoupon = async () => {
-    if (!selectedCoupon || deleteConfirmText !== selectedCoupon.code) {
+    if (deleteConfirmText !== selectedCoupon?.code) {
       return;
     }
 

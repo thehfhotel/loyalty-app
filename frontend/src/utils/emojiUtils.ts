@@ -83,7 +83,7 @@ export function formatEmojiAvatar(avatar: string | null | undefined, size: 'sm' 
 } {
   // Extract emoji from URL format (emoji:😀) or use direct emoji
   let actualEmoji = avatar;
-  if (avatar && avatar.startsWith('emoji:')) {
+  if (avatar?.startsWith('emoji:')) {
     actualEmoji = avatar.replace('emoji:', '');
   }
   

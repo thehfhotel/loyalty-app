@@ -39,10 +39,10 @@ export default function RegisterPage() {
 
   const onSubmit = async (data: RegisterFormData) => {
     try {
-      const { confirmPassword, ...registerData } = data;
+      const { confirmPassword: _confirmPassword, ...registerData } = data;
       await register(registerData);
       navigate('/dashboard');
-    } catch (error) {
+    } catch (_error) {
       // Error is handled in the store
     }
   };

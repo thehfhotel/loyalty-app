@@ -66,7 +66,7 @@ export default function LoginPage() {
       } else {
         navigate('/dashboard');
       }
-    } catch (error) {
+    } catch (_error) {
       // Error is handled in the store
     }
   };

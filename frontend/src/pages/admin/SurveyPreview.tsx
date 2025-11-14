@@ -58,7 +58,7 @@ const SurveyPreviewPage: React.FC = () => {
     );
   }
 
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+   
   if (error || !survey) {
     return (
       <div className="min-h-screen bg-gray-50">

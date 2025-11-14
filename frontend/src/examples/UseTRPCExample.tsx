@@ -16,9 +16,9 @@ export function LoyaltyStatusExample() {
     userId: undefined // Will use current user
   });
 
-  if (isLoading) return <div>Loading loyalty status...</div>;
-  if (error) return <div>Error: {error.message}</div>;
-  if (!data) return <div>No loyalty data found</div>;
+  if (isLoading) {return <div>Loading loyalty status...</div>;}
+  if (error) {return <div>Error: {error.message}</div>;}
+  if (!data) {return <div>No loyalty data found</div>;}
 
   return (
     <div className="p-4 bg-white rounded-lg shadow">
@@ -82,14 +82,14 @@ export function TransactionHistoryExample() {
     pageSize: 10
   });
 
-  if (isLoading) return <div>Loading transactions...</div>;
-  if (!data) return <div>No transactions found</div>;
+  if (isLoading) {return <div>Loading transactions...</div>;}
+  if (!data) {return <div>No transactions found</div>;}
 
   return (
     <div>
       <h3>Transaction History</h3>
       <ul>
-        {data.transactions?.map((tx: any) => (
+        {data.transactions?.map((tx: { id: string; points: number; reason: string; created_at: string }) => (
           <li key={tx.id}>
             {tx.points} points - {tx.reason} ({new Date(tx.created_at).toLocaleDateString()})
           </li>

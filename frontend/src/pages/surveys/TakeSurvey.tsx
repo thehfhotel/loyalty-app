@@ -42,11 +42,12 @@ const TakeSurvey: React.FC = () => {
       return survey;
     }
 
+    type Translation = { title?: string; description?: string; questions?: unknown[] };
     return {
       ...survey,
-      title: (translation as any)?.title ?? survey?.title,
-      description: (translation as any)?.description ?? survey?.description,
-      questions: (translation as any)?.questions ?? survey?.questions
+      title: (translation as Translation)?.title ?? survey?.title,
+      description: (translation as Translation)?.description ?? survey?.description,
+      questions: (translation as Translation)?.questions ?? survey?.questions
     };
   }, [multilingualSurvey, selectedLanguage, survey]);
 
