@@ -1,4 +1,3 @@
-import React from 'react';
 import { formatEmojiAvatar } from '../../utils/emojiUtils';
 
 interface EmojiAvatarProps {

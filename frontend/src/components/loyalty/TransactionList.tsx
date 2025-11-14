@@ -36,26 +36,8 @@ export default function TransactionList({
     }
   };
 
-  const sanitizeDescription = (description: string | null) => {
-    if (!description) {return null;}
-    
-    // Remove any text that mentions spending amounts or THB
-    const lowercaseDesc = description.toLowerCase();
-    if (lowercaseDesc.includes('thb') || 
-        lowercaseDesc.includes('baht') || 
-        lowercaseDesc.includes('฿') ||
-        /\d+\s*(baht|thb)/i.test(description) ||
-        /spent.*\d+/i.test(description)) {
-      return null; // Hide descriptions containing spending amounts
-    }
-    
-    return description;
-  };
-
   const getPointsFocusedDescription = (transaction: PointsTransaction) => {
     // Always focus on points gained/lost rather than any spending amounts
-    const points = Math.abs(transaction.points);
-    
     if (transaction.points > 0) {
       // Positive points - focus on earning
       switch (transaction.type) {
@@ -82,20 +64,6 @@ export default function TransactionList({
           return `${t('loyalty.pointsDeducted')}`;
       }
     }
-  };
-
-  const formatTransactionType = (type: string) => {
-    const typeMap: { [key: string]: string } = {
-      'earned_stay': t('loyalty.transactionTypes.earnedStay'),
-      'stay_earning': t('loyalty.transactionTypes.earnedStay'),
-      'earned_bonus': t('loyalty.transactionTypes.earnedBonus'),
-      'redeemed': t('loyalty.transactionTypes.redeemed'),
-      'expired': t('loyalty.transactionTypes.expired'),
-      'admin_adjustment': t('loyalty.transactionTypes.adminAdjustment'),
-      'admin_award': t('loyalty.transactionTypes.adminAward'),
-      'admin_deduction': t('loyalty.transactionTypes.adminDeduction'),
-    };
-    return typeMap[type] ?? type;
   };
 
   const formatDate = (dateString: string) => {

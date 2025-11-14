@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { FiBell, FiCheck, FiX, FiTrash2, FiCheckCircle } from 'react-icons/fi';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { FiBell, FiCheck, FiX, FiTrash2 } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
 import { formatDistanceToNow } from 'date-fns';

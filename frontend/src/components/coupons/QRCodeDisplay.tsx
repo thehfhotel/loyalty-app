@@ -18,29 +18,6 @@ const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
   const { t } = useTranslation();
   const qrCodeRef = useRef<HTMLDivElement>(null);
 
-  // Generate QR code data URL (simplified implementation)
-  // In a real implementation, you would use a QR code library like qrcode or react-qr-code
-  const generateQRCodeDataURL = (text: string): string => {
-    // This is a placeholder. In production, use a proper QR code library
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {return '';}
-
-    canvas.width = 200;
-    canvas.height = 200;
-    
-    // Simple placeholder pattern
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, 200, 200);
-    ctx.fillStyle = '#fff';
-    ctx.font = '12px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(text, 100, 100);
-    
-    return canvas.toDataURL();
-  };
-
-
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(coupon.qrCode);

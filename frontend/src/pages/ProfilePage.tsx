@@ -10,7 +10,6 @@ import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
 import { FiUser, FiPhone, FiCalendar, FiCamera, FiLink, FiCopy, FiSettings, FiGift } from 'react-icons/fi';
 import EmailDisplay from '../components/common/EmailDisplay';
-import { getUserDisplayName, getOAuthProviderName, isOAuthUser } from '../utils/userHelpers';
 import DashboardButton from '../components/navigation/DashboardButton';
 import MainLayout from '../components/layout/MainLayout';
 import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
