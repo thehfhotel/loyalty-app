@@ -32,15 +32,15 @@ addAuthTokenInterceptor(api);
 export class CouponService {
   // Customer coupon management
   async getUserCoupons(
-    page: number = 1, 
+    page: number = 1,
     limit: number = 20,
     status?: 'used' | 'expired' | 'revoked' | 'available'
   ): Promise<UserCouponListResponse> {
-    const params: Record<string, any> = { page, limit };
+    const params: Record<string, string | number> = { page, limit };
     if (status) {
       params.status = status;
     }
-    
+
     const response = await api.get(`/coupons/my-coupons`, { params });
     return response.data.data;
   }
@@ -165,7 +165,7 @@ export class CouponService {
       startDate?: string;
       endDate?: string;
     } = {}
-  ): Promise<{data: any[]; total: number; page: number; limit: number; totalPages: number}> {
+  ): Promise<{data: Record<string, unknown>[]; total: number; page: number; limit: number; totalPages: number}> {
     const response = await api.get(`/coupons/analytics/data`, {
       params: { page, limit, ...filters }
     });
@@ -176,7 +176,15 @@ export class CouponService {
     couponId: string,
     page: number = 1,
     limit: number = 20
-  ): Promise<{redemptions: any[]; total: number; page: number; limit: number; totalPages: number}> {
+  ): Promise<{redemptions: Array<{
+    id: string;
+    userId: string;
+    couponId: string;
+    userCouponId: string;
+    orderTotal: number;
+    discountAmount: number;
+    redeemedAt: string;
+  }>; total: number; page: number; limit: number; totalPages: number}> {
     const response = await api.get(`/coupons/${couponId}/redemptions`, {
       params: { page, limit }
     });

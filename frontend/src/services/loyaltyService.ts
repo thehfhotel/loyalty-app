@@ -172,7 +172,7 @@ export class LoyaltyService {
     searchTerm?: string
   ): Promise<AdminUsersResponse> {
     try {
-      const params: any = { limit, offset };
+      const params: Record<string, number | string> = { limit, offset };
       if (searchTerm) {
         params.search = searchTerm;
       }
@@ -268,7 +268,7 @@ export class LoyaltyService {
   /**
    * Get points earning rules (admin only)
    */
-  async getEarningRules(): Promise<any[]> {
+  async getEarningRules(): Promise<Array<Record<string, unknown>>> {
     try {
       const response = await api.get('/loyalty/admin/earning-rules');
       return response.data.data;
