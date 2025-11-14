@@ -162,10 +162,11 @@ export const extractTextForTranslation = (
   currentLanguage: SupportedLanguage
 ): string[] => {
   const texts: string[] = [];
-  
+
   const extractFromObject = (item: any, fields: string[]) => {
     fields.forEach(field => {
-      if (item[field]) {
+      // Safe property access using hasOwnProperty check
+      if (Object.prototype.hasOwnProperty.call(item, field) && item[field]) {
         const text = getTextInLanguage(item[field], currentLanguage);
         if (text && text.trim().length > 0) {
           texts.push(text);
@@ -173,13 +174,13 @@ export const extractTextForTranslation = (
       }
     });
   };
-  
+
   if (Array.isArray(obj)) {
     obj.forEach(item => extractFromObject(item, textFields));
   } else {
     extractFromObject(obj, textFields);
   }
-  
+
   return texts;
 };
 
@@ -194,14 +195,15 @@ export const applyTranslations = (
   originalLanguage: SupportedLanguage
 ): any => {
   let translationIndex = 0;
-  
+
   const applyToObject = (item: any, fields: string[]) => {
     const result = { ...item };
-    
+
     fields.forEach(field => {
-      if (item[field] && translationIndex < translations.length) {
+      // Safe property access using hasOwnProperty check
+      if (Object.prototype.hasOwnProperty.call(item, field) && item[field] && translationIndex < translations.length) {
         const currentText = item[field];
-        
+
         if (typeof currentText === 'string') {
           // Convert to multilingual format
           result[field] = createMultilingualText(currentText, originalLanguage);
@@ -213,14 +215,14 @@ export const applyTranslations = (
             [targetLanguage]: translations[translationIndex]
           };
         }
-        
+
         translationIndex++;
       }
     });
-    
+
     return result;
   };
-  
+
   if (Array.isArray(originalObj)) {
     return originalObj.map(item => applyToObject(item, textFields));
   } else {
