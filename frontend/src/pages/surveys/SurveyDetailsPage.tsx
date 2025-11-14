@@ -18,11 +18,6 @@ const SurveyDetailsPage: React.FC = () => {
   const [survey, setSurvey] = useState<Survey | null>(null);
   const [multilingualSurvey, setMultilingualSurvey] = useState<MultilingualSurvey | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('th');
-  const [translationStatus, setTranslationStatus] = useState<Record<SupportedLanguage, TranslationStatus>>({
-    th: 'original',
-    en: 'pending',
-    'zh-CN': 'pending'
-  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [translationLoading, setTranslationLoading] = useState(false);
@@ -64,22 +59,6 @@ const SurveyDetailsPage: React.FC = () => {
         
         setMultilingualSurvey(multilingualData);
         
-        // Update translation status
-        const newStatus: Record<SupportedLanguage, TranslationStatus> = {
-          th: 'original',
-          en: 'pending',
-          'zh-CN': 'pending'
-        };
-        
-        if (translationsData.translations && typeof translationsData.translations === 'object') {
-          Object.keys(translationsData.translations).forEach((lang) => {
-            if (lang !== translationsData.original_language) {
-              newStatus[lang as SupportedLanguage] = 'translated';
-            }
-          });
-        }
-        
-        setTranslationStatus(newStatus);
         setSelectedLanguage(translationsData.original_language || 'th');
       }
     } catch (err) {

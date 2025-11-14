@@ -19,19 +19,12 @@ const TakeSurvey: React.FC = () => {
   const [survey, setSurvey] = useState<Survey | null>(null);
   const [multilingualSurvey, setMultilingualSurvey] = useState<MultilingualSurvey | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('th');
-  const [translationStatus, setTranslationStatus] = useState<Record<SupportedLanguage, TranslationStatus>>({
-    th: 'original',
-    en: 'pending',
-    'zh-CN': 'pending'
-  });
-  const [existingResponse, setExistingResponse] = useState<SurveyResponse | null>(null);
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isCompleted, setIsCompleted] = useState(false);
 
   // Get display content based on selected language
   const getDisplayContent = useCallback(() => {
@@ -69,7 +62,6 @@ const TakeSurvey: React.FC = () => {
       ]);
 
       setSurvey(surveyData);
-      setExistingResponse(responseData);
 
       // Load translations if available
       if (translationsData) {
@@ -82,30 +74,12 @@ const TakeSurvey: React.FC = () => {
         };
         
         setMultilingualSurvey(multilingualData);
-        
-        // Update translation status
-        const newStatus: Record<SupportedLanguage, TranslationStatus> = {
-          th: 'original',
-          en: 'pending',
-          'zh-CN': 'pending'
-        };
-        
-        if (translationsData.translations && typeof translationsData.translations === 'object') {
-          Object.keys(translationsData.translations).forEach((lang) => {
-            if (lang !== translationsData.original_language) {
-              newStatus[lang as SupportedLanguage] = 'translated';
-            }
-          });
-        }
-        
-        setTranslationStatus(newStatus);
         setSelectedLanguage(translationsData.original_language ?? 'th');
       }
 
       if (responseData) {
         // Allow retaking surveys - always start fresh for multiple submissions
         setAnswers({});
-        setIsCompleted(false);
         setCurrentQuestion(0);
       }
     } catch (err) {
@@ -134,7 +108,6 @@ const TakeSurvey: React.FC = () => {
       });
 
       if (isComplete && isCompletingNow) {
-        setIsCompleted(true);
         const displayContent = getDisplayContent();
         setCurrentQuestion(displayContent?.questions?.length ?? 0);
       }

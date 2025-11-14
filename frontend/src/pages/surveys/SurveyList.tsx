@@ -11,7 +11,6 @@ import LanguageSwitcher from '../../components/LanguageSwitcher';
 
 const SurveyList: React.FC = () => {
   const { t } = useTranslation();
-  const user = useAuthStore((state) => state.user);
   const { isAuthenticated } = useAuthRedirect(); // Additional auth check
   const [publicSurveys, setPublicSurveys] = useState<Survey[]>([]);
   const [invitedSurveys, setInvitedSurveys] = useState<Survey[]>([]);

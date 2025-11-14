@@ -16,8 +16,7 @@ import DashboardButton from '../../components/navigation/DashboardButton';
 
 export default function LoyaltyDashboard() {
   const { t } = useTranslation();
-  const user = useAuthStore((state) => state.user);
-  
+
   const [loyaltyStatus, setLoyaltyStatus] = useState<UserLoyaltyStatus | null>(null);
   const [allTiers, setAllTiers] = useState<Tier[]>([]);
   const [pointsCalculation, setPointsCalculation] = useState<PointsCalculation | null>(null);
