@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
  */
 const ThaiSurveyDebug: React.FC = () => {
   const [isCreating, setIsCreating] = useState(false);
-  const [lastError, setLastError] = useState<any>(null);
+  const [lastError, setLastError] = useState<unknown>(null);
 
   // Pre-filled Thai survey data matching the test scenario
   const [surveyData, setSurveyData] = useState<CreateSurveyRequest>({
@@ -86,11 +86,13 @@ const ThaiSurveyDebug: React.FC = () => {
       console.log('✅ Survey created successfully:', result);
       toast.success('Thai survey created successfully!');
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('❌ THAI SURVEY CREATION ERROR:', error);
       setLastError(error);
-      
-      const errorMessage = error.response?.data?.message ?? error.message ?? 'Unknown error';
+
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? (error as Error).message
+        : 'Unknown error';
       toast.error(`Failed to create survey: ${errorMessage}`);
     } finally {
       setIsCreating(false);
@@ -109,6 +111,17 @@ const ThaiSurveyDebug: React.FC = () => {
         unicode: `U+${char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`
       }))
     };
+  };
+
+  // Type guard for axios-like error
+  const getAxiosError = (error: unknown) => {
+    if (error && typeof error === 'object' && 'response' in error) {
+      return error as { response?: { status?: number; statusText?: string; data?: Record<string, unknown> }; message?: string };
+    }
+    if (error instanceof Error) {
+      return { message: error.message };
+    }
+    return null;
   };
 
   return (
@@ -241,45 +254,50 @@ const ThaiSurveyDebug: React.FC = () => {
           </div>
 
           {/* Error Display */}
-          {lastError && (
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold text-red-900 mb-4">❌ Last Error</h2>
-              <div className="bg-red-50 border border-red-200 rounded p-4">
-                <div className="mb-4">
-                  <strong>Status:</strong> {lastError.response?.status} {lastError.response?.statusText}
-                </div>
-                
-                <div className="mb-4">
-                  <strong>Message:</strong> {lastError.response?.data?.message ?? lastError.message}
-                </div>
+          {lastError && (() => {
+            const err = getAxiosError(lastError);
+            if (!err) {return null;}
 
-                {lastError.response?.data?.validationErrors && (
+            return (
+              <div className="mb-6">
+                <h2 className="text-lg font-semibold text-red-900 mb-4">❌ Last Error</h2>
+                <div className="bg-red-50 border border-red-200 rounded p-4">
                   <div className="mb-4">
-                    <strong>Validation Errors:</strong>
-                    <pre className="text-xs mt-2 bg-white p-2 rounded border overflow-auto max-h-40">
-                      {JSON.stringify(lastError.response.data.validationErrors, null, 2)}
+                    <strong>Status:</strong> {err.response?.status} {err.response?.statusText}
+                  </div>
+
+                  <div className="mb-4">
+                    <strong>Message:</strong> {(err.response?.data?.message as string) ?? err.message ?? 'Unknown error'}
+                  </div>
+
+                  {err.response?.data?.validationErrors && (
+                    <div className="mb-4">
+                      <strong>Validation Errors:</strong>
+                      <pre className="text-xs mt-2 bg-white p-2 rounded border overflow-auto max-h-40">
+                        {JSON.stringify(err.response.data.validationErrors, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+
+                  {err.response?.data?.receivedData && (
+                    <div className="mb-4">
+                      <strong>Backend Received:</strong>
+                      <pre className="text-xs mt-2 bg-white p-2 rounded border overflow-auto max-h-40">
+                        {JSON.stringify(err.response.data.receivedData, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+
+                  <div>
+                    <strong>Full Error:</strong>
+                    <pre className="text-xs mt-2 bg-white p-2 rounded border overflow-auto max-h-60">
+                      {JSON.stringify(err.response?.data ?? err, null, 2)}
                     </pre>
                   </div>
-                )}
-
-                {lastError.response?.data?.receivedData && (
-                  <div className="mb-4">
-                    <strong>Backend Received:</strong>
-                    <pre className="text-xs mt-2 bg-white p-2 rounded border overflow-auto max-h-40">
-                      {JSON.stringify(lastError.response.data.receivedData, null, 2)}
-                    </pre>
-                  </div>
-                )}
-
-                <div>
-                  <strong>Full Error:</strong>
-                  <pre className="text-xs mt-2 bg-white p-2 rounded border overflow-auto max-h-60">
-                    {JSON.stringify(lastError.response?.data ?? lastError, null, 2)}
-                  </pre>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Instructions */}
           <div className="bg-yellow-50 border border-yellow-200 rounded p-4">

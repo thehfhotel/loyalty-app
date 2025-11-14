@@ -52,9 +52,12 @@ const CouponWallet: React.FC = () => {
       setTotalPages(response.totalPages);
       setHasMore(pageNum < response.totalPages);
       setPage(pageNum);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error loading coupons:', err);
-      setError(err.response?.data?.message || t('errors.failedToLoadCoupons'));
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setError(errorMessage || t('errors.failedToLoadCoupons'));
     } finally {
       setLoading(false);
     }

@@ -82,9 +82,12 @@ const SurveyDetailsPage: React.FC = () => {
         setTranslationStatus(newStatus);
         setSelectedLanguage(translationsData.original_language || 'th');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error loading survey:', err);
-      setError(err.response?.data?.message || t('surveys.errors.loadFailed'));
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setError(errorMessage || t('surveys.errors.loadFailed'));
       toast.error(t('surveys.errors.loadFailed'));
     } finally {
       setLoading(false);
