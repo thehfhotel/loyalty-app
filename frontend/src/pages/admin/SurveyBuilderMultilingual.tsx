@@ -11,7 +11,6 @@ import LanguageTabs from '../../components/translation/LanguageTabs';
 import TranslationButton from '../../components/translation/TranslationButton';
 import QuestionEditor from '../../components/surveys/QuestionEditor';
 import SurveyPreview from '../../components/surveys/SurveyPreview';
-import { getTextInLanguage, createMultilingualText, updateMultilingualText } from '../../utils/translationHelpers';
 import toast from 'react-hot-toast';
 
 const SurveyBuilderMultilingual: React.FC = () => {
