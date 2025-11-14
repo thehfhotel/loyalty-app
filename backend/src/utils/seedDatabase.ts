@@ -88,7 +88,8 @@ export const SAMPLE_SURVEYS: SeedSurvey[] = [
 
 export interface SeedTier {
   name: string;
-  min_points: number;
+  min_points: number; // Legacy - kept for compatibility but not used for tier calculation
+  min_nights: number; // ONLY requirement for tier - determines membership level
   benefits: Record<string, unknown>;
   color: string;
   sort_order: number;
@@ -97,7 +98,8 @@ export interface SeedTier {
 export const SAMPLE_TIERS: SeedTier[] = [
   {
     name: 'Bronze',
-    min_points: 0,
+    min_points: 0, // Legacy field - not used
+    min_nights: 0, // New members start at Bronze
     benefits: {
       description: 'Welcome tier for new members',
       perks: ['5% discount on services', 'Birthday bonus', 'Member newsletter']
@@ -107,7 +109,8 @@ export const SAMPLE_TIERS: SeedTier[] = [
   },
   {
     name: 'Silver',
-    min_points: 1000,
+    min_points: 0, // Legacy field - not used
+    min_nights: 1, // Unlocked after 1+ nights
     benefits: {
       description: 'Elevated benefits for active members',
       perks: ['10% discount on services', 'Priority check-in', 'Free room upgrade (subject to availability)', 'Birthday bonus']
@@ -117,7 +120,8 @@ export const SAMPLE_TIERS: SeedTier[] = [
   },
   {
     name: 'Gold',
-    min_points: 5000,
+    min_points: 0, // Legacy field - not used
+    min_nights: 10, // Unlocked after 10+ nights
     benefits: {
       description: 'Premium benefits for valued members',
       perks: ['15% discount on services', 'Complimentary breakfast', 'Late checkout', 'Free room upgrade', 'Priority support']
@@ -127,7 +131,8 @@ export const SAMPLE_TIERS: SeedTier[] = [
   },
   {
     name: 'Platinum',
-    min_points: 10000,
+    min_points: 0, // Legacy field - not used
+    min_nights: 20, // Unlocked after 20+ nights
     benefits: {
       description: 'Exclusive benefits for our most loyal members',
       perks: ['20% discount on services', 'Complimentary spa service', 'Airport transfer', 'Guaranteed room upgrade', 'Personal concierge', 'VIP lounge access']
@@ -156,20 +161,21 @@ export async function seedTiers(): Promise<void> {
           continue;
         }
 
-        // Insert tier
+        // Insert tier with nights-based thresholds
         await pool.query(`
-          INSERT INTO tiers (name, min_points, benefits, color, sort_order, is_active, created_at, updated_at)
-          VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+          INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
         `, [
           tier.name,
-          tier.min_points,
+          tier.min_points, // Legacy field
+          tier.min_nights, // Primary tier requirement
           JSON.stringify(tier.benefits),
           tier.color,
           tier.sort_order,
           true
         ]);
 
-        logger.info(`✅ Seeded tier: ${tier.name} (${tier.min_points}+ points)`);
+        logger.info(`✅ Seeded tier: ${tier.name} (${tier.min_nights}+ nights)`);
       } catch (error) {
         logger.error(`Failed to seed tier ${tier.name}:`, error);
       }
@@ -283,6 +289,13 @@ export async function seedSurveys(): Promise<void> {
   }
 }
 
+// Admin user seeding is NOT needed because:
+// 1. Admin users register normally through the app
+// 2. On login, authService.ts automatically upgrades their role
+// 3. Role upgrade is based on email match in adminConfigService.ts
+// 4. This approach is more secure than storing admin passwords in environment variables
+// 5. See authService.ts lines 144-196 for automatic role upgrade logic
+
 // Main seed function
 async function seedDatabase() {
   logger.info('🌱 Starting database seeding...');
@@ -299,6 +312,8 @@ async function seedDatabase() {
 
   // Then seed surveys
   await seedSurveys();
+
+  // Admin users don't need seeding - they register normally and get auto-upgraded on login
 
   logger.info('✅ Database seeding completed successfully');
   process.exit(0);

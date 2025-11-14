@@ -319,7 +319,7 @@ export class LoyaltyService {
           t.benefits as tier_benefits,
           t.sort_order as tier_level,
           CASE
-            WHEN next_tier.min_nights IS NOT NULL AND next_tier.min_nights > 0
+            WHEN next_tier.min_nights IS NOT NULL
             THEN ROUND((ul.total_nights::numeric / next_tier.min_nights) * 100)
             ELSE 100
           END as progress_percentage,

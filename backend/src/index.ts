@@ -336,6 +336,7 @@ async function startServer() {
       await seedTiers();
       // Seed sample surveys
       await seedSurveys();
+      // Note: Admin users register normally and get auto-upgraded on login
     }
 
     // Start OAuth state cleanup service

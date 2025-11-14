@@ -27,8 +27,8 @@ RUN npm run build || echo "TypeScript compilation failed, will use tsx at runtim
 # Development stage (for docker-compose dev)
 FROM base AS development
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Install curl for health checks and netcat for database connectivity checks
+RUN apk add --no-cache curl netcat-openbsd
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
@@ -48,6 +48,9 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
 COPY package*.json tsconfig.json ./
 
+# Copy entrypoint script BEFORE generating Prisma client
+COPY entrypoint.sh /app/
+
 # Generate Prisma client for development (CACHE BUST: 2025-11-10-v3)
 RUN npm run db:generate && \
     # Copy generated client to dist location for compiled JS module resolution \
@@ -64,8 +67,8 @@ RUN npm run db:generate && \
       exit 1; \
     fi
 
-# Set ownership
-RUN chown -R nodejs:nodejs /app
+# Make entrypoint executable and set ownership
+RUN chmod +x /app/entrypoint.sh && chown -R nodejs:nodejs /app
 
 USER nodejs
 
@@ -76,14 +79,17 @@ EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:4000/api/health || exit 1
 
+# Use entrypoint script for automatic migrations
+ENTRYPOINT ["/app/entrypoint.sh"]
+
 # Development command (tsx is available)
 CMD ["npm", "run", "dev"]
 
 # Production stage
 FROM base AS runner
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Install curl for health checks and netcat for database connectivity checks
+RUN apk add --no-cache curl netcat-openbsd
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
@@ -102,6 +108,9 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/prisma ./prisma
 COPY package*.json tsconfig.json ./
 
+# Copy entrypoint script BEFORE generating Prisma client
+COPY entrypoint.sh /app/
+
 # Ensure Prisma client is available for development (CACHE BUST: 2025-11-14-v3)
 # Development uses tsx with src/ directly, so Prisma client stays in src/generated/
 RUN npm run db:generate && \
@@ -114,8 +123,8 @@ RUN npm run db:generate && \
       exit 1; \
     fi
 
-# Set ownership
-RUN chown -R nodejs:nodejs /app
+# Make entrypoint executable and set ownership
+RUN chmod +x /app/entrypoint.sh && chown -R nodejs:nodejs /app
 
 USER nodejs
 
@@ -125,6 +134,9 @@ EXPOSE 4000
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:4000/api/health || exit 1
+
+# Use entrypoint script for automatic migrations
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Start the application in development mode with tsx (no dist directory in development)
 CMD ["npm", "run", "dev"]

@@ -373,7 +373,7 @@ loyalty-app/
 ```
 
 ### 6.1 Docker Compose Configuration & Port Assignments
-**CRITICAL**: Development and production use **different ports** to coexist on the same machine.
+**CRITICAL**: Development and production use **different ports AND container names** to coexist on the same machine.
 
 #### Port Assignments
 
@@ -383,36 +383,79 @@ loyalty-app/
 | **PostgreSQL** | **5435** | **5434** | Database (external) |
 | **Redis** | **6380** | **6379** | Cache (external) |
 
+#### Container Names (Allows Simultaneous Dev + Prod)
+
+| Service | Dev Container | Prod Container |
+|---------|---------------|----------------|
+| **Postgres** | `loyalty_postgres_dev` | `loyalty_postgres` |
+| **Redis** | `loyalty_redis_dev` | `loyalty_redis` |
+| **Backend** | `loyalty_backend_dev` | `loyalty_backend` |
+| **Frontend** | `loyalty_frontend_dev` | `loyalty_frontend` |
+| **Nginx** | `loyalty_nginx_dev` | `loyalty_nginx` |
+
+#### Volume Names (Data Isolation)
+
+| Volume Type | Dev Volume | Prod Volume |
+|-------------|-----------|-------------|
+| **Postgres Data** | `postgres_dev_data` | `postgres_data` |
+| **Backend Logs** | `backend_dev_logs` | `backend_logs` |
+| **Backend Storage** | `backend_dev_storage` | `backend_storage` |
+| **Frontend Logs** | `frontend_dev_logs` | `frontend_logs` |
+| **Nginx Logs** | `nginx_dev_logs` | `nginx_logs` |
+
 #### Starting Environments
 
 ```bash
-# ✅ DEVELOPMENT (port 5001)
+# ✅ DEVELOPMENT (port 5001, _dev containers)
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
-# ✅ PRODUCTION (port 4001 - normally via GitHub Actions)
+# ✅ PRODUCTION (port 4001, base containers)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# ✅ BOTH SIMULTANEOUSLY (fully isolated)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 # ❌ WRONG - Missing environment-specific override
 docker compose up -d  # Undefined behavior
 ```
 
+#### Verifying Both Environments Running
+
+```bash
+# Check all loyalty containers
+docker ps --format "table {{.Names}}\t{{.Ports}}" | grep loyalty
+
+# Expected output when both running:
+# loyalty_postgres_dev     0.0.0.0:5435->5432/tcp
+# loyalty_postgres         0.0.0.0:5434->5432/tcp
+# loyalty_redis_dev        0.0.0.0:6380->6379/tcp
+# loyalty_redis            0.0.0.0:6379->6379/tcp
+# loyalty_nginx_dev        0.0.0.0:5001->80/tcp
+# loyalty_nginx            0.0.0.0:4001->80/tcp
+```
+
 #### Environment-Specific Features
 
 **Development (docker-compose.dev.yml)**:
 - Port 5001 for nginx
+- Container names: `loyalty_*_dev`
 - Separate database: `loyalty_dev_db`
+- Separate volumes: `*_dev_*`
 - Volume mounts for hot-reload
 - Debug logging enabled
 - External DB/Redis access for debugging
 
 **Production (docker-compose.prod.yml)**:
 - Port 4001 for nginx
+- Container names: `loyalty_*` (no suffix)
 - Production database: `loyalty_db`
+- Production volumes: base names
 - Optimized builds (runner stage)
 - No external DB/Redis exposure (security)
 - Deployed via GitHub Actions
 
-**Rationale**: Using different ports prevents conflicts when both dev and prod run on the same machine, ensuring safe parallel operation and isolated databases.
+**Rationale**: Using different ports, container names, and volumes prevents ALL conflicts when both dev and prod run on the same machine, ensuring safe parallel operation with complete isolation of databases, logs, and storage.
 
 ### 7. Environment Variables
 - **Production**: Always use `.env.production`
@@ -433,15 +476,133 @@ All code changes must:
 - ❌ **NEVER** mock critical functionality without proper validation
 
 ### 9. Database Operations
-- **Always use migrations**: Never modify database directly
-- **Migration command**: `npm run db:migrate`
-- **Generate Prisma client**: `npm run db:generate`
+
+#### 9.1 Migration Strategy
+**MANDATORY: Consolidated Single Migration Approach**
+
+The database uses a **consolidated single migration file** instead of sequential migrations:
+- **Location**: `backend/prisma/migrations/0_init/migration.sql`
+- **Size**: 857 lines (complete schema)
+- **Approach**: Single comprehensive migration with all tables, indexes, constraints, and stored procedures
+- **Idempotency**: Uses `IF NOT EXISTS` and `CREATE OR REPLACE` where possible
+- **Tracking**: Prisma's `_prisma_migrations` table prevents re-execution
+
+**Rationale**: Better maintainability, less chance of failure, single source of truth for complete database schema.
+
+#### 9.2 Nights-Based Tier System Architecture
+**CRITICAL: Tier Membership Determined by Nights Stayed, NOT Points**
+
+The loyalty system uses a **nights-based tier progression** where:
+- **Tier Calculation**: Based on `user_loyalty.total_nights` column
+- **Points System**: `user_loyalty.current_points` used ONLY for rewards/redemption
+- **Automatic Tier Upgrades**: Handled by `recalculate_user_tier_by_nights()` stored procedure
+
+**Tier Thresholds:**
+```
+Bronze:   0+ nights  (new members start here)
+Silver:   1+ nights  (first stay unlocks Silver)
+Gold:     10+ nights (loyal customers)
+Platinum: 20+ nights (VIP members)
+```
+
+**Database Schema:**
+```sql
+-- Tiers table
+CREATE TABLE tiers (
+  id UUID PRIMARY KEY,
+  name VARCHAR(50) UNIQUE,
+  min_points INT DEFAULT 0,        -- Legacy field (not used)
+  min_nights INT NOT NULL DEFAULT 0, -- PRIMARY tier requirement
+  benefits JSONB DEFAULT '{}',
+  color VARCHAR(7),
+  sort_order INT,
+  is_active BOOLEAN DEFAULT true
+);
+
+-- User loyalty table
+CREATE TABLE user_loyalty (
+  user_id UUID PRIMARY KEY,
+  current_points INT DEFAULT 0,    -- For rewards only
+  total_nights INT DEFAULT 0,      -- For tier calculation
+  tier_id UUID REFERENCES tiers(id),
+  tier_updated_at TIMESTAMPTZ,
+  points_updated_at TIMESTAMPTZ
+);
+```
+
+**Indexes for Performance:**
+- `idx_tiers_min_nights` on `tiers.min_nights`
+- `idx_user_loyalty_total_nights` on `user_loyalty.total_nights`
+
+#### 9.3 Stored Procedures
+
+**1. recalculate_user_tier_by_nights(p_user_id UUID)**
+- **Purpose**: Recalculates and updates user tier based on total_nights
+- **Returns**: `TABLE(new_tier_id UUID, new_tier_name VARCHAR(50), tier_changed BOOLEAN)`
+- **Logic**: Finds highest tier where `min_nights <= total_nights`
+- **Audit**: Logs tier changes to `user_audit_log` table
+- **Usage**: Called automatically after updating `total_nights`
+
+**2. award_points(p_user_id, p_points, p_transaction_type, p_nights_stayed, ...)**
+- **Purpose**: Awards points and nights, automatically recalculates tier
+- **Returns**: `JSONB` with transaction details
+- **Logic**:
+  1. Inserts points transaction record
+  2. Updates `current_points` and `total_nights`
+  3. If `p_nights_stayed > 0`, triggers `recalculate_user_tier_by_nights()`
+- **Usage**: ALWAYS use this function instead of direct UPDATE queries
+
+#### 9.4 Migration Commands
+```bash
+# Generate Prisma client (after schema changes)
+npm run db:generate
+
+# Apply migrations (consolidated migration)
+npm run db:migrate
+
+# Reset database (development only - DESTRUCTIVE)
+docker compose exec postgres psql -U loyalty_dev -d loyalty_dev_db \
+  -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+npm run db:migrate
+
+# Seed database (tiers, surveys, membership sequence)
+# Automatic on backend startup in development mode
+```
+
+#### 9.5 Database Interaction Rules
+**MANDATORY: Never Direct Database Access for Data Operations**
+
+✅ **CORRECT - Always Use Backend APIs:**
+```bash
+# Award points via API
+curl -X POST http://localhost:4001/api/loyalty/award-points \
+  -H "Content-Type: application/json" \
+  -d '{"userId": "...", "points": 100, "nights": 1}'
+```
+
+❌ **FORBIDDEN - Direct Database Manipulation:**
+```bash
+# NEVER do this - bypasses business logic and stored procedures
+psql -c "UPDATE user_loyalty SET total_nights = 5 WHERE user_id = '...'"
+```
+
+**Rationale**: Direct database access bypasses:
+- Business logic validation
+- Data integrity functions (`award_points()`, `recalculate_user_tier_by_nights()`)
+- Transaction management
+- Audit logging
+- Consistency between `points_transactions` and `user_loyalty` tables
+
+**If API Doesn't Exist**: Create proper backend API endpoint with service layer validation before performing operation.
+
+**Emergency Exception Protocol**: Document reason, create GitHub issue for proper API, implement API as immediate next priority.
 
 ### 10. Security Best Practices
 - **Never log sensitive data**: passwords, tokens, keys
 - **Always validate input**: Use Zod schemas
 - **Sanitize user content**: Prevent XSS attacks
 - **Use parameterized queries**: Prevent SQL injection
+- **Use stored procedures**: For complex operations to maintain data integrity
 
 ### 11. Git Commit Convention
 ```bash
@@ -601,17 +762,30 @@ These rules are enforced through:
 
 ```bash
 # Docker operations (CORRECT SYNTAX with environment overrides)
-# Development (port 5001)
+# Development (port 5001, _dev containers)
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.dev.yml down
-docker compose ps
-docker compose logs -f backend
-docker compose exec backend bash
-docker compose restart backend
+docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
+docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f backend
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec backend bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml restart backend
 
-# Production (port 4001 - normally via GitHub Actions)
+# Production (port 4001, base containers - normally via GitHub Actions)
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+
+# Verify both dev and prod running simultaneously
+docker ps --format "table {{.Names}}\t{{.Ports}}" | grep loyalty
+
+# Database operations
+npm run db:generate      # Generate Prisma client after schema changes
+npm run db:migrate       # Apply consolidated migration (0_init/migration.sql)
+
+# Database reset (development only - DESTRUCTIVE)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec postgres \
+  psql -U loyalty_dev -d loyalty_dev_db \
+  -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec backend npm run db:migrate
 
 # Git operations (WITH HOOKS)
 git add .
@@ -640,9 +814,15 @@ npm run test
 3. **NEVER** bypass, skip, or fake any tests (test integrity is ABSOLUTE)
 4. **ALWAYS** prefer absolute paths and validate relative paths with `../` or `../../`
 5. **NEVER** interact directly with database - always use backend APIs (if API doesn't exist, create one)
-6. **ALWAYS** maintain code quality standards
-7. **ALWAYS** follow security best practices
-8. **ALWAYS** write meaningful tests that validate actual functionality
+6. **ALWAYS** use environment-specific compose files (`-f docker-compose.yml -f docker-compose.dev.yml`)
+7. **ALWAYS** use stored procedures for complex database operations (`award_points()`, `recalculate_user_tier_by_nights()`)
+8. **ALWAYS** maintain code quality standards
+9. **ALWAYS** follow security best practices
+10. **ALWAYS** write meaningful tests that validate actual functionality
+
+**Container Naming**: Dev uses `loyalty_*_dev`, Prod uses `loyalty_*` (allows simultaneous operation)
+**Tier System**: Based on `total_nights` NOT `current_points` (points are for rewards only)
+**Migration**: Single consolidated file at `backend/prisma/migrations/0_init/migration.sql`
 
 ### 15. 🎭 E2E Testing Infrastructure Rules
 **MANDATORY: Comprehensive E2E Test Isolation and Validation**

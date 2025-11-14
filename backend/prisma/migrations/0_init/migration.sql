@@ -19,7 +19,7 @@ CREATE TYPE "public"."user_coupon_status" AS ENUM ('available', 'used', 'expired
 -- CreateEnum
 CREATE TYPE "public"."user_role" AS ENUM ('customer', 'admin', 'super_admin');
 
--- CreateTable
+-- CreateTable: account_link_requests
 CREATE TABLE "public"."account_link_requests" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "requester_user_id" UUID NOT NULL,
@@ -35,7 +35,7 @@ CREATE TABLE "public"."account_link_requests" (
     CONSTRAINT "account_link_requests_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: account_linking_audit
 CREATE TABLE "public"."account_linking_audit" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "user_id" UUID NOT NULL,
@@ -51,7 +51,7 @@ CREATE TABLE "public"."account_linking_audit" (
     CONSTRAINT "account_linking_audit_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: coupon_analytics
 CREATE TABLE "public"."coupon_analytics" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "coupon_id" UUID NOT NULL,
@@ -69,7 +69,7 @@ CREATE TABLE "public"."coupon_analytics" (
     CONSTRAINT "coupon_analytics_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: coupon_redemptions
 CREATE TABLE "public"."coupon_redemptions" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "user_coupon_id" UUID NOT NULL,
@@ -87,7 +87,7 @@ CREATE TABLE "public"."coupon_redemptions" (
     CONSTRAINT "coupon_redemptions_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: coupon_translations
 CREATE TABLE "public"."coupon_translations" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "coupon_id" UUID NOT NULL,
@@ -101,7 +101,7 @@ CREATE TABLE "public"."coupon_translations" (
     CONSTRAINT "coupon_translations_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: coupons
 CREATE TABLE "public"."coupons" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "code" VARCHAR(20) NOT NULL,
@@ -132,7 +132,7 @@ CREATE TABLE "public"."coupons" (
     CONSTRAINT "coupons_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: feature_toggle_audit
 CREATE TABLE "public"."feature_toggle_audit" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "feature_toggle_id" UUID NOT NULL,
@@ -147,7 +147,7 @@ CREATE TABLE "public"."feature_toggle_audit" (
     CONSTRAINT "feature_toggle_audit_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: feature_toggles
 CREATE TABLE "public"."feature_toggles" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "feature_key" VARCHAR(100) NOT NULL,
@@ -162,7 +162,7 @@ CREATE TABLE "public"."feature_toggles" (
     CONSTRAINT "feature_toggles_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: linked_accounts
 CREATE TABLE "public"."linked_accounts" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "primary_user_id" UUID NOT NULL,
@@ -173,7 +173,8 @@ CREATE TABLE "public"."linked_accounts" (
     CONSTRAINT "linked_accounts_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: membership_id_sequence
+-- This sequence table is used to generate unique membership IDs for users
 CREATE TABLE "public"."membership_id_sequence" (
     "id" SERIAL NOT NULL,
     "current_user_count" INTEGER DEFAULT 0,
@@ -183,7 +184,9 @@ CREATE TABLE "public"."membership_id_sequence" (
     CONSTRAINT "reception_id_sequence_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+COMMENT ON TABLE "public"."membership_id_sequence" IS 'Sequence for generating unique 8-character membership IDs';
+
+-- CreateTable: password_reset_tokens
 CREATE TABLE "public"."password_reset_tokens" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "user_id" UUID NOT NULL,
@@ -195,7 +198,7 @@ CREATE TABLE "public"."password_reset_tokens" (
     CONSTRAINT "password_reset_tokens_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: points_earning_rules
 CREATE TABLE "public"."points_earning_rules" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "name" VARCHAR(100) NOT NULL,
@@ -212,7 +215,7 @@ CREATE TABLE "public"."points_earning_rules" (
     CONSTRAINT "points_earning_rules_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: points_transactions
 CREATE TABLE "public"."points_transactions" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "user_id" UUID NOT NULL,
@@ -229,7 +232,7 @@ CREATE TABLE "public"."points_transactions" (
     CONSTRAINT "points_transactions_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: refresh_tokens
 CREATE TABLE "public"."refresh_tokens" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "user_id" UUID NOT NULL,
@@ -240,7 +243,7 @@ CREATE TABLE "public"."refresh_tokens" (
     CONSTRAINT "refresh_tokens_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: survey_coupon_assignments
 CREATE TABLE "public"."survey_coupon_assignments" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "survey_id" UUID NOT NULL,
@@ -257,7 +260,9 @@ CREATE TABLE "public"."survey_coupon_assignments" (
     CONSTRAINT "survey_coupon_assignments_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+COMMENT ON TABLE "public"."survey_coupon_assignments" IS 'Links surveys to coupons that should be awarded upon completion';
+
+-- CreateTable: survey_invitations
 CREATE TABLE "public"."survey_invitations" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "survey_id" UUID,
@@ -272,7 +277,9 @@ CREATE TABLE "public"."survey_invitations" (
     CONSTRAINT "survey_invitations_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+COMMENT ON TABLE "public"."survey_invitations" IS 'Tracks survey invitations sent to specific users';
+
+-- CreateTable: survey_responses
 CREATE TABLE "public"."survey_responses" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "survey_id" UUID,
@@ -288,7 +295,9 @@ CREATE TABLE "public"."survey_responses" (
     CONSTRAINT "survey_responses_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+COMMENT ON TABLE "public"."survey_responses" IS 'Stores user responses to surveys';
+
+-- CreateTable: survey_reward_history
 CREATE TABLE "public"."survey_reward_history" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "survey_coupon_assignment_id" UUID NOT NULL,
@@ -303,7 +312,9 @@ CREATE TABLE "public"."survey_reward_history" (
     CONSTRAINT "survey_reward_history_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+COMMENT ON TABLE "public"."survey_reward_history" IS 'Audit trail of survey completion rewards';
+
+-- CreateTable: survey_translations
 CREATE TABLE "public"."survey_translations" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "survey_id" UUID NOT NULL,
@@ -317,7 +328,7 @@ CREATE TABLE "public"."survey_translations" (
     CONSTRAINT "survey_translations_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: surveys
 CREATE TABLE "public"."surveys" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "title" VARCHAR(255) NOT NULL,
@@ -339,11 +350,14 @@ CREATE TABLE "public"."surveys" (
     CONSTRAINT "surveys_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+COMMENT ON TABLE "public"."surveys" IS 'Stores survey definitions and configurations';
+
+-- CreateTable: tiers (NIGHTS-BASED TIER SYSTEM)
 CREATE TABLE "public"."tiers" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "name" VARCHAR(50) NOT NULL,
-    "min_points" INTEGER NOT NULL,
+    "min_points" INTEGER NOT NULL DEFAULT 0,
+    "min_nights" INTEGER NOT NULL DEFAULT 0,
     "benefits" JSONB DEFAULT '{}',
     "color" VARCHAR(7) NOT NULL,
     "sort_order" INTEGER NOT NULL,
@@ -354,7 +368,10 @@ CREATE TABLE "public"."tiers" (
     CONSTRAINT "tiers_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+COMMENT ON COLUMN "public"."tiers"."min_points" IS 'Legacy field - kept for compatibility but NOT used for tier calculation';
+COMMENT ON COLUMN "public"."tiers"."min_nights" IS 'ONLY requirement for tier - determines membership level based on total nights stayed';
+
+-- CreateTable: translation_jobs
 CREATE TABLE "public"."translation_jobs" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "entity_type" VARCHAR(20) NOT NULL,
@@ -374,7 +391,7 @@ CREATE TABLE "public"."translation_jobs" (
     CONSTRAINT "translation_jobs_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: user_audit_log
 CREATE TABLE "public"."user_audit_log" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "user_id" UUID,
@@ -387,7 +404,7 @@ CREATE TABLE "public"."user_audit_log" (
     CONSTRAINT "user_audit_log_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+-- CreateTable: user_coupons
 CREATE TABLE "public"."user_coupons" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "user_id" UUID NOT NULL,
@@ -407,21 +424,26 @@ CREATE TABLE "public"."user_coupons" (
     CONSTRAINT "user_coupons_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
+COMMENT ON TABLE "public"."user_coupons" IS 'User-specific coupon assignments with QR codes for redemption';
+
+-- CreateTable: user_loyalty (NIGHTS-BASED TIER TRACKING)
 CREATE TABLE "public"."user_loyalty" (
     "user_id" UUID NOT NULL,
     "current_points" INTEGER DEFAULT 0,
+    "total_nights" INTEGER DEFAULT 0,
     "tier_id" UUID,
     "tier_updated_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
     "points_updated_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
     "created_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
-    "total_nights" INTEGER DEFAULT 0,
 
     CONSTRAINT "user_loyalty_pkey" PRIMARY KEY ("user_id")
 );
 
--- CreateTable
+COMMENT ON COLUMN "public"."user_loyalty"."current_points" IS 'Points for rewards/redemption only - NOT used for tier calculation';
+COMMENT ON COLUMN "public"."user_loyalty"."total_nights" IS 'Total nights stayed - ONLY factor determining tier membership';
+
+-- CreateTable: user_profiles
 CREATE TABLE "public"."user_profiles" (
     "user_id" UUID NOT NULL,
     "first_name" VARCHAR(100),
@@ -437,7 +459,7 @@ CREATE TABLE "public"."user_profiles" (
     CONSTRAINT "user_profiles_pkey" PRIMARY KEY ("user_id")
 );
 
--- CreateTable
+-- CreateTable: users
 CREATE TABLE "public"."users" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
     "email" VARCHAR(255),
@@ -453,384 +475,382 @@ CREATE TABLE "public"."users" (
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
+-- CreateIndex: account_link_requests
 CREATE INDEX "idx_account_link_requests_expires" ON "public"."account_link_requests"("expires_at");
-
--- CreateIndex
 CREATE INDEX "idx_account_link_requests_requester" ON "public"."account_link_requests"("requester_user_id");
-
--- CreateIndex
 CREATE INDEX "idx_account_link_requests_status" ON "public"."account_link_requests"("status");
-
--- CreateIndex
 CREATE INDEX "idx_account_link_requests_target" ON "public"."account_link_requests"("target_user_id");
-
--- CreateIndex
 CREATE INDEX "idx_account_link_requests_target_email" ON "public"."account_link_requests"("target_email");
 
--- CreateIndex
+-- CreateIndex: account_linking_audit
 CREATE INDEX "idx_account_linking_audit_created" ON "public"."account_linking_audit"("created_at");
-
--- CreateIndex
 CREATE INDEX "idx_account_linking_audit_user" ON "public"."account_linking_audit"("user_id");
 
--- CreateIndex
+-- CreateIndex: coupon_analytics
 CREATE INDEX "idx_coupon_analytics_coupon_id" ON "public"."coupon_analytics"("coupon_id");
-
--- CreateIndex
 CREATE INDEX "idx_coupon_analytics_date" ON "public"."coupon_analytics"("analytics_date");
-
--- CreateIndex
 CREATE UNIQUE INDEX "coupon_analytics_coupon_id_analytics_date_key" ON "public"."coupon_analytics"("coupon_id", "analytics_date");
 
--- CreateIndex
+-- CreateIndex: coupon_redemptions
 CREATE INDEX "idx_coupon_redemptions_created_at" ON "public"."coupon_redemptions"("created_at");
-
--- CreateIndex
 CREATE INDEX "idx_coupon_redemptions_transaction_ref" ON "public"."coupon_redemptions"("transaction_reference");
-
--- CreateIndex
 CREATE INDEX "idx_coupon_redemptions_user_coupon_id" ON "public"."coupon_redemptions"("user_coupon_id");
 
--- CreateIndex
+-- CreateIndex: coupon_translations
 CREATE INDEX "idx_coupon_translations_coupon_lang" ON "public"."coupon_translations"("coupon_id", "language");
-
--- CreateIndex
 CREATE UNIQUE INDEX "coupon_translations_coupon_id_language_key" ON "public"."coupon_translations"("coupon_id", "language");
 
--- CreateIndex
+-- CreateIndex: coupons
+CREATE INDEX "idx_coupons_code" ON "public"."coupons"("code");
+CREATE INDEX "idx_coupons_created_by" ON "public"."coupons"("created_by");
+CREATE INDEX "idx_coupons_status" ON "public"."coupons"("status");
+CREATE INDEX "idx_coupons_type" ON "public"."coupons"("type");
+CREATE INDEX "idx_coupons_valid_dates" ON "public"."coupons"("valid_from", "valid_until");
 CREATE UNIQUE INDEX "coupons_code_key" ON "public"."coupons"("code");
 
--- CreateIndex
-CREATE INDEX "idx_coupons_code" ON "public"."coupons"("code");
-
--- CreateIndex
-CREATE INDEX "idx_coupons_created_by" ON "public"."coupons"("created_by");
-
--- CreateIndex
-CREATE INDEX "idx_coupons_status" ON "public"."coupons"("status");
-
--- CreateIndex
-CREATE INDEX "idx_coupons_type" ON "public"."coupons"("type");
-
--- CreateIndex
-CREATE INDEX "idx_coupons_valid_dates" ON "public"."coupons"("valid_from", "valid_until");
-
--- CreateIndex
+-- CreateIndex: feature_toggle_audit
 CREATE INDEX "idx_feature_toggle_audit_changed_at" ON "public"."feature_toggle_audit"("changed_at");
-
--- CreateIndex
 CREATE INDEX "idx_feature_toggle_audit_feature_id" ON "public"."feature_toggle_audit"("feature_toggle_id");
 
--- CreateIndex
+-- CreateIndex: feature_toggles
+CREATE INDEX "idx_feature_toggles_enabled" ON "public"."feature_toggles"("is_enabled");
+CREATE INDEX "idx_feature_toggles_key" ON "public"."feature_toggles"("feature_key");
 CREATE UNIQUE INDEX "feature_toggles_feature_key_key" ON "public"."feature_toggles"("feature_key");
 
--- CreateIndex
-CREATE INDEX "idx_feature_toggles_enabled" ON "public"."feature_toggles"("is_enabled");
-
--- CreateIndex
-CREATE INDEX "idx_feature_toggles_key" ON "public"."feature_toggles"("feature_key");
-
--- CreateIndex
+-- CreateIndex: linked_accounts
 CREATE INDEX "idx_linked_accounts_linked" ON "public"."linked_accounts"("linked_user_id");
-
--- CreateIndex
 CREATE INDEX "idx_linked_accounts_primary" ON "public"."linked_accounts"("primary_user_id");
-
--- CreateIndex
 CREATE UNIQUE INDEX "linked_accounts_primary_user_id_linked_user_id_key" ON "public"."linked_accounts"("primary_user_id", "linked_user_id");
 
--- CreateIndex
+-- CreateIndex: password_reset_tokens
+CREATE INDEX "idx_password_reset_tokens_token" ON "public"."password_reset_tokens"("token");
+CREATE INDEX "idx_password_reset_tokens_user_id" ON "public"."password_reset_tokens"("user_id");
 CREATE UNIQUE INDEX "password_reset_tokens_token_key" ON "public"."password_reset_tokens"("token");
 
--- CreateIndex
-CREATE INDEX "idx_password_reset_tokens_token" ON "public"."password_reset_tokens"("token");
-
--- CreateIndex
-CREATE INDEX "idx_password_reset_tokens_user_id" ON "public"."password_reset_tokens"("user_id");
-
--- CreateIndex
+-- CreateIndex: points_earning_rules
 CREATE INDEX "idx_points_earning_rules_active" ON "public"."points_earning_rules"("is_active");
 
--- CreateIndex
+-- CreateIndex: points_transactions
 CREATE INDEX "idx_points_transactions_created_at" ON "public"."points_transactions"("created_at");
-
--- CreateIndex
 CREATE INDEX "idx_points_transactions_expires_at" ON "public"."points_transactions"("expires_at");
-
--- CreateIndex
 CREATE INDEX "idx_points_transactions_type" ON "public"."points_transactions"("type");
-
--- CreateIndex
 CREATE INDEX "idx_points_transactions_user_id" ON "public"."points_transactions"("user_id");
 
--- CreateIndex
+-- CreateIndex: refresh_tokens
+CREATE INDEX "idx_refresh_tokens_token" ON "public"."refresh_tokens"("token");
+CREATE INDEX "idx_refresh_tokens_user_id" ON "public"."refresh_tokens"("user_id");
 CREATE UNIQUE INDEX "refresh_tokens_token_key" ON "public"."refresh_tokens"("token");
 
--- CreateIndex
-CREATE INDEX "idx_refresh_tokens_token" ON "public"."refresh_tokens"("token");
-
--- CreateIndex
-CREATE INDEX "idx_refresh_tokens_user_id" ON "public"."refresh_tokens"("user_id");
-
--- CreateIndex
+-- CreateIndex: survey_coupon_assignments
 CREATE INDEX "idx_survey_coupon_assignments_active" ON "public"."survey_coupon_assignments"("is_active");
-
--- CreateIndex
 CREATE INDEX "idx_survey_coupon_assignments_coupon_id" ON "public"."survey_coupon_assignments"("coupon_id");
-
--- CreateIndex
 CREATE INDEX "idx_survey_coupon_assignments_survey_id" ON "public"."survey_coupon_assignments"("survey_id");
-
--- CreateIndex
 CREATE UNIQUE INDEX "survey_coupon_assignments_survey_id_coupon_id_key" ON "public"."survey_coupon_assignments"("survey_id", "coupon_id");
 
--- CreateIndex
+-- CreateIndex: survey_invitations
 CREATE INDEX "idx_survey_invitations_status" ON "public"."survey_invitations"("status");
-
--- CreateIndex
 CREATE INDEX "idx_survey_invitations_survey_id" ON "public"."survey_invitations"("survey_id");
-
--- CreateIndex
 CREATE INDEX "idx_survey_invitations_user_id" ON "public"."survey_invitations"("user_id");
-
--- CreateIndex
 CREATE UNIQUE INDEX "idx_survey_invitations_unique" ON "public"."survey_invitations"("survey_id", "user_id");
 
--- CreateIndex
+-- CreateIndex: survey_responses
 CREATE INDEX "idx_survey_responses_completed" ON "public"."survey_responses"("is_completed");
-
--- CreateIndex
 CREATE INDEX "idx_survey_responses_survey_id" ON "public"."survey_responses"("survey_id");
-
--- CreateIndex
 CREATE INDEX "idx_survey_responses_user_id" ON "public"."survey_responses"("user_id");
-
--- CreateIndex
 CREATE UNIQUE INDEX "idx_survey_responses_unique" ON "public"."survey_responses"("survey_id", "user_id");
 
--- CreateIndex
+-- CreateIndex: survey_reward_history
 CREATE INDEX "idx_survey_reward_history_assignment_id" ON "public"."survey_reward_history"("survey_coupon_assignment_id");
-
--- CreateIndex
 CREATE INDEX "idx_survey_reward_history_awarded_at" ON "public"."survey_reward_history"("awarded_at");
-
--- CreateIndex
 CREATE INDEX "idx_survey_reward_history_user_id" ON "public"."survey_reward_history"("user_id");
-
--- CreateIndex
 CREATE UNIQUE INDEX "survey_reward_history_survey_coupon_assignment_id_user_id_key" ON "public"."survey_reward_history"("survey_coupon_assignment_id", "user_id");
 
--- CreateIndex
+-- CreateIndex: survey_translations
 CREATE INDEX "idx_survey_translations_survey_lang" ON "public"."survey_translations"("survey_id", "language");
-
--- CreateIndex
 CREATE UNIQUE INDEX "survey_translations_survey_id_language_key" ON "public"."survey_translations"("survey_id", "language");
 
--- CreateIndex
+-- CreateIndex: surveys
 CREATE INDEX "idx_surveys_access_type" ON "public"."surveys"("access_type");
-
--- CreateIndex
 CREATE INDEX "idx_surveys_created_at" ON "public"."surveys"("created_at");
-
--- CreateIndex
 CREATE INDEX "idx_surveys_created_by" ON "public"."surveys"("created_by");
-
--- CreateIndex
 CREATE INDEX "idx_surveys_status" ON "public"."surveys"("status");
-
--- CreateIndex
 CREATE INDEX "idx_surveys_status_access_type" ON "public"."surveys"("status", "access_type");
 
--- CreateIndex
+-- CreateIndex: tiers (NIGHTS-BASED INDEXING)
+CREATE INDEX "idx_tiers_min_points" ON "public"."tiers"("min_points");
+CREATE INDEX "idx_tiers_min_nights" ON "public"."tiers"("min_nights");
+CREATE INDEX "idx_tiers_sort_order" ON "public"."tiers"("sort_order");
 CREATE UNIQUE INDEX "tiers_name_key" ON "public"."tiers"("name");
 
--- CreateIndex
-CREATE INDEX "idx_tiers_min_points" ON "public"."tiers"("min_points");
-
--- CreateIndex
-CREATE INDEX "idx_tiers_sort_order" ON "public"."tiers"("sort_order");
-
--- CreateIndex
+-- CreateIndex: translation_jobs
 CREATE INDEX "idx_translation_jobs_created_by" ON "public"."translation_jobs"("created_by");
-
--- CreateIndex
 CREATE INDEX "idx_translation_jobs_entity" ON "public"."translation_jobs"("entity_type", "entity_id");
-
--- CreateIndex
 CREATE INDEX "idx_translation_jobs_status" ON "public"."translation_jobs"("status");
 
--- CreateIndex
+-- CreateIndex: user_audit_log
 CREATE INDEX "idx_user_audit_log_created_at" ON "public"."user_audit_log"("created_at");
-
--- CreateIndex
 CREATE INDEX "idx_user_audit_log_user_id" ON "public"."user_audit_log"("user_id");
 
--- CreateIndex
+-- CreateIndex: user_coupons
+CREATE INDEX "idx_user_coupons_coupon_id" ON "public"."user_coupons"("coupon_id");
+CREATE INDEX "idx_user_coupons_expires_at" ON "public"."user_coupons"("expires_at");
+CREATE INDEX "idx_user_coupons_qr_code" ON "public"."user_coupons"("qr_code");
+CREATE INDEX "idx_user_coupons_status" ON "public"."user_coupons"("status");
+CREATE INDEX "idx_user_coupons_user_id" ON "public"."user_coupons"("user_id");
 CREATE UNIQUE INDEX "user_coupons_qr_code_key" ON "public"."user_coupons"("qr_code");
 
--- CreateIndex
-CREATE INDEX "idx_user_coupons_coupon_id" ON "public"."user_coupons"("coupon_id");
-
--- CreateIndex
-CREATE INDEX "idx_user_coupons_expires_at" ON "public"."user_coupons"("expires_at");
-
--- CreateIndex
-CREATE INDEX "idx_user_coupons_qr_code" ON "public"."user_coupons"("qr_code");
-
--- CreateIndex
-CREATE INDEX "idx_user_coupons_status" ON "public"."user_coupons"("status");
-
--- CreateIndex
-CREATE INDEX "idx_user_coupons_user_id" ON "public"."user_coupons"("user_id");
-
--- CreateIndex
+-- CreateIndex: user_loyalty (NIGHTS-BASED INDEXING)
 CREATE INDEX "idx_user_loyalty_current_points" ON "public"."user_loyalty"("current_points");
-
--- CreateIndex
+CREATE INDEX "idx_user_loyalty_total_nights" ON "public"."user_loyalty"("total_nights");
 CREATE INDEX "idx_user_loyalty_tier_id" ON "public"."user_loyalty"("tier_id");
 
--- CreateIndex
+-- CreateIndex: user_profiles
+CREATE INDEX "idx_user_profiles_user_id" ON "public"."user_profiles"("user_id");
 CREATE UNIQUE INDEX "idx_user_profiles_membership_id" ON "public"."user_profiles"("membership_id");
 
--- CreateIndex
-CREATE INDEX "idx_user_profiles_user_id" ON "public"."user_profiles"("user_id");
-
--- CreateIndex
+-- CreateIndex: users
 CREATE INDEX "idx_users_email" ON "public"."users"("email");
-
--- CreateIndex
 CREATE INDEX "idx_users_oauth_provider_id" ON "public"."users"("oauth_provider", "oauth_provider_id");
-
--- CreateIndex
 CREATE INDEX "idx_users_role" ON "public"."users"("role");
 
--- AddForeignKey
+-- AddForeignKey: account_link_requests
 ALTER TABLE "public"."account_link_requests" ADD CONSTRAINT "account_link_requests_requester_user_id_fkey" FOREIGN KEY ("requester_user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
-
--- AddForeignKey
 ALTER TABLE "public"."account_link_requests" ADD CONSTRAINT "account_link_requests_target_user_id_fkey" FOREIGN KEY ("target_user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
-ALTER TABLE "public"."account_linking_audit" ADD CONSTRAINT "account_linking_audit_request_id_fkey" FOREIGN KEY ("request_id") REFERENCES "public"."account_link_requests"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
-
--- AddForeignKey
+-- AddForeignKey: account_linking_audit
+ALTER TABLE "public"."account_linking_audit" ADD CONSTRAINT "account_linking_audit_request_id_fkey" FOREIGN KEY ("request_id") REFERENCES "public"."account_link_requests"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 ALTER TABLE "public"."account_linking_audit" ADD CONSTRAINT "account_linking_audit_target_user_id_fkey" FOREIGN KEY ("target_user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
-
--- AddForeignKey
 ALTER TABLE "public"."account_linking_audit" ADD CONSTRAINT "account_linking_audit_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: coupon_analytics
 ALTER TABLE "public"."coupon_analytics" ADD CONSTRAINT "coupon_analytics_coupon_id_fkey" FOREIGN KEY ("coupon_id") REFERENCES "public"."coupons"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
-ALTER TABLE "public"."coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_staff_member_id_fkey" FOREIGN KEY ("staff_member_id") REFERENCES "public"."users"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
-
--- AddForeignKey
+-- AddForeignKey: coupon_redemptions
+ALTER TABLE "public"."coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_staff_member_id_fkey" FOREIGN KEY ("staff_member_id") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 ALTER TABLE "public"."coupon_redemptions" ADD CONSTRAINT "coupon_redemptions_user_coupon_id_fkey" FOREIGN KEY ("user_coupon_id") REFERENCES "public"."user_coupons"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: coupon_translations
 ALTER TABLE "public"."coupon_translations" ADD CONSTRAINT "coupon_translations_coupon_id_fkey" FOREIGN KEY ("coupon_id") REFERENCES "public"."coupons"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
-ALTER TABLE "public"."coupons" ADD CONSTRAINT "coupons_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
+-- AddForeignKey: coupons
+ALTER TABLE "public"."coupons" ADD CONSTRAINT "coupons_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: feature_toggle_audit
 ALTER TABLE "public"."feature_toggle_audit" ADD CONSTRAINT "feature_toggle_audit_changed_by_fkey" FOREIGN KEY ("changed_by") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
-
--- AddForeignKey
 ALTER TABLE "public"."feature_toggle_audit" ADD CONSTRAINT "feature_toggle_audit_feature_toggle_id_fkey" FOREIGN KEY ("feature_toggle_id") REFERENCES "public"."feature_toggles"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: feature_toggles
 ALTER TABLE "public"."feature_toggles" ADD CONSTRAINT "feature_toggles_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
-
--- AddForeignKey
 ALTER TABLE "public"."feature_toggles" ADD CONSTRAINT "feature_toggles_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: linked_accounts
 ALTER TABLE "public"."linked_accounts" ADD CONSTRAINT "linked_accounts_linked_by_fkey" FOREIGN KEY ("linked_by") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
-
--- AddForeignKey
 ALTER TABLE "public"."linked_accounts" ADD CONSTRAINT "linked_accounts_linked_user_id_fkey" FOREIGN KEY ("linked_user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
-
--- AddForeignKey
 ALTER TABLE "public"."linked_accounts" ADD CONSTRAINT "linked_accounts_primary_user_id_fkey" FOREIGN KEY ("primary_user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: password_reset_tokens
 ALTER TABLE "public"."password_reset_tokens" ADD CONSTRAINT "password_reset_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
-ALTER TABLE "public"."points_transactions" ADD CONSTRAINT "points_transactions_admin_user_id_fkey" FOREIGN KEY ("admin_user_id") REFERENCES "public"."users"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
-
--- AddForeignKey
+-- AddForeignKey: points_transactions
+ALTER TABLE "public"."points_transactions" ADD CONSTRAINT "points_transactions_admin_user_id_fkey" FOREIGN KEY ("admin_user_id") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 ALTER TABLE "public"."points_transactions" ADD CONSTRAINT "points_transactions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: refresh_tokens
 ALTER TABLE "public"."refresh_tokens" ADD CONSTRAINT "refresh_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
-ALTER TABLE "public"."survey_coupon_assignments" ADD CONSTRAINT "survey_coupon_assignments_assigned_by_fkey" FOREIGN KEY ("assigned_by") REFERENCES "public"."users"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
-
--- AddForeignKey
+-- AddForeignKey: survey_coupon_assignments
+ALTER TABLE "public"."survey_coupon_assignments" ADD CONSTRAINT "survey_coupon_assignments_assigned_by_fkey" FOREIGN KEY ("assigned_by") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 ALTER TABLE "public"."survey_coupon_assignments" ADD CONSTRAINT "survey_coupon_assignments_coupon_id_fkey" FOREIGN KEY ("coupon_id") REFERENCES "public"."coupons"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
-
--- AddForeignKey
 ALTER TABLE "public"."survey_coupon_assignments" ADD CONSTRAINT "survey_coupon_assignments_survey_id_fkey" FOREIGN KEY ("survey_id") REFERENCES "public"."surveys"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: survey_invitations
 ALTER TABLE "public"."survey_invitations" ADD CONSTRAINT "survey_invitations_survey_id_fkey" FOREIGN KEY ("survey_id") REFERENCES "public"."surveys"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
-
--- AddForeignKey
 ALTER TABLE "public"."survey_invitations" ADD CONSTRAINT "survey_invitations_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: survey_responses
 ALTER TABLE "public"."survey_responses" ADD CONSTRAINT "survey_responses_survey_id_fkey" FOREIGN KEY ("survey_id") REFERENCES "public"."surveys"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
-
--- AddForeignKey
 ALTER TABLE "public"."survey_responses" ADD CONSTRAINT "survey_responses_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: survey_reward_history
 ALTER TABLE "public"."survey_reward_history" ADD CONSTRAINT "survey_reward_history_survey_coupon_assignment_id_fkey" FOREIGN KEY ("survey_coupon_assignment_id") REFERENCES "public"."survey_coupon_assignments"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
-
--- AddForeignKey
 ALTER TABLE "public"."survey_reward_history" ADD CONSTRAINT "survey_reward_history_survey_response_id_fkey" FOREIGN KEY ("survey_response_id") REFERENCES "public"."survey_responses"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
-
--- AddForeignKey
 ALTER TABLE "public"."survey_reward_history" ADD CONSTRAINT "survey_reward_history_user_coupon_id_fkey" FOREIGN KEY ("user_coupon_id") REFERENCES "public"."user_coupons"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
-
--- AddForeignKey
 ALTER TABLE "public"."survey_reward_history" ADD CONSTRAINT "survey_reward_history_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: survey_translations
 ALTER TABLE "public"."survey_translations" ADD CONSTRAINT "survey_translations_survey_id_fkey" FOREIGN KEY ("survey_id") REFERENCES "public"."surveys"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
-ALTER TABLE "public"."surveys" ADD CONSTRAINT "surveys_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
+-- AddForeignKey: surveys
+ALTER TABLE "public"."surveys" ADD CONSTRAINT "surveys_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: translation_jobs
 ALTER TABLE "public"."translation_jobs" ADD CONSTRAINT "translation_jobs_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
--- AddForeignKey
-ALTER TABLE "public"."user_audit_log" ADD CONSTRAINT "user_audit_log_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
+-- AddForeignKey: user_audit_log
+ALTER TABLE "public"."user_audit_log" ADD CONSTRAINT "user_audit_log_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
--- AddForeignKey
-ALTER TABLE "public"."user_coupons" ADD CONSTRAINT "user_coupons_assigned_by_fkey" FOREIGN KEY ("assigned_by") REFERENCES "public"."users"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
-
--- AddForeignKey
+-- AddForeignKey: user_coupons
+ALTER TABLE "public"."user_coupons" ADD CONSTRAINT "user_coupons_assigned_by_fkey" FOREIGN KEY ("assigned_by") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 ALTER TABLE "public"."user_coupons" ADD CONSTRAINT "user_coupons_coupon_id_fkey" FOREIGN KEY ("coupon_id") REFERENCES "public"."coupons"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
-
--- AddForeignKey
-ALTER TABLE "public"."user_coupons" ADD CONSTRAINT "user_coupons_used_by_admin_fkey" FOREIGN KEY ("used_by_admin") REFERENCES "public"."users"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
-
--- AddForeignKey
+ALTER TABLE "public"."user_coupons" ADD CONSTRAINT "user_coupons_used_by_admin_fkey" FOREIGN KEY ("used_by_admin") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 ALTER TABLE "public"."user_coupons" ADD CONSTRAINT "user_coupons_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
-ALTER TABLE "public"."user_loyalty" ADD CONSTRAINT "user_loyalty_tier_id_fkey" FOREIGN KEY ("tier_id") REFERENCES "public"."tiers"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
-
--- AddForeignKey
+-- AddForeignKey: user_loyalty
+ALTER TABLE "public"."user_loyalty" ADD CONSTRAINT "user_loyalty_tier_id_fkey" FOREIGN KEY ("tier_id") REFERENCES "public"."tiers"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 ALTER TABLE "public"."user_loyalty" ADD CONSTRAINT "user_loyalty_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
--- AddForeignKey
+-- AddForeignKey: user_profiles
 ALTER TABLE "public"."user_profiles" ADD CONSTRAINT "user_profiles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
 
+-- Add CHECK constraints
+ALTER TABLE "public"."account_link_requests" ADD CONSTRAINT "check_request_type" CHECK (request_type IN ('family_link', 'account_merge'));
+ALTER TABLE "public"."account_link_requests" ADD CONSTRAINT "check_status" CHECK (status IN ('pending', 'accepted', 'rejected', 'expired', 'cancelled'));
+ALTER TABLE "public"."coupons" ADD CONSTRAINT "check_coupon_validity" CHECK (valid_until IS NULL OR valid_until > valid_from);
+ALTER TABLE "public"."coupon_translations" ADD CONSTRAINT "check_language_code" CHECK (language ~ '^[a-z]{2}(-[A-Z]{2})?$');
+ALTER TABLE "public"."linked_accounts" ADD CONSTRAINT "check_different_users" CHECK (primary_user_id != linked_user_id);
+ALTER TABLE "public"."survey_invitations" ADD CONSTRAINT "check_invitation_status" CHECK (status IN ('pending', 'sent', 'viewed', 'completed', 'expired'));
+ALTER TABLE "public"."survey_responses" ADD CONSTRAINT "check_progress_range" CHECK (progress >= 0 AND progress <= 100);
+ALTER TABLE "public"."survey_translations" ADD CONSTRAINT "check_survey_language_code" CHECK (language ~ '^[a-z]{2}(-[A-Z]{2})?$');
+ALTER TABLE "public"."surveys" ADD CONSTRAINT "check_access_type" CHECK (access_type IN ('public', 'invite_only'));
+ALTER TABLE "public"."surveys" ADD CONSTRAINT "check_survey_status" CHECK (status IN ('draft', 'active', 'paused', 'completed', 'archived'));
+ALTER TABLE "public"."translation_jobs" ADD CONSTRAINT "check_entity_type" CHECK (entity_type IN ('coupon', 'survey'));
+ALTER TABLE "public"."translation_jobs" ADD CONSTRAINT "check_job_status" CHECK (status IN ('pending', 'processing', 'completed', 'failed'));
+ALTER TABLE "public"."translation_jobs" ADD CONSTRAINT "check_progress" CHECK (progress >= 0 AND progress <= 100);
+ALTER TABLE "public"."translation_jobs" ADD CONSTRAINT "check_provider" CHECK (provider IN ('azure', 'google', 'manual'));
+ALTER TABLE "public"."translation_jobs" ADD CONSTRAINT "check_translation_language_code" CHECK (source_language ~ '^[a-z]{2}(-[A-Z]{2})?$');
+
+-- ========================================
+-- NIGHTS-BASED TIER SYSTEM STORED PROCEDURES
+-- ========================================
+
+-- Stored Procedure: recalculate_user_tier_by_nights
+-- This function automatically recalculates and updates user tier based on total_nights
+CREATE OR REPLACE FUNCTION recalculate_user_tier_by_nights(p_user_id UUID)
+RETURNS TABLE (
+  new_tier_id UUID,
+  new_tier_name VARCHAR(50),
+  tier_changed BOOLEAN
+) AS $$
+DECLARE
+  v_total_nights INTEGER;
+  v_current_tier_id UUID;
+  v_new_tier_id UUID;
+  v_new_tier_name VARCHAR(50);
+  v_tier_changed BOOLEAN := FALSE;
+BEGIN
+  -- Get user's current total nights and tier
+  SELECT ul.total_nights, ul.tier_id
+  INTO v_total_nights, v_current_tier_id
+  FROM user_loyalty ul
+  WHERE ul.user_id = p_user_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'User loyalty record not found for user_id: %', p_user_id;
+  END IF;
+
+  -- Find the appropriate tier based on total nights
+  -- Select the highest tier where min_nights <= user's total_nights
+  SELECT t.id, t.name
+  INTO v_new_tier_id, v_new_tier_name
+  FROM tiers t
+  WHERE t.is_active = TRUE
+    AND t.min_nights <= v_total_nights
+  ORDER BY t.min_nights DESC, t.sort_order DESC
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    -- If no tier found, assign Bronze (lowest tier)
+    SELECT t.id, t.name
+    INTO v_new_tier_id, v_new_tier_name
+    FROM tiers t
+    WHERE t.is_active = TRUE
+    ORDER BY t.sort_order ASC
+    LIMIT 1;
+  END IF;
+
+  -- Check if tier changed
+  IF v_current_tier_id IS DISTINCT FROM v_new_tier_id THEN
+    v_tier_changed := TRUE;
+
+    -- Update user's tier
+    UPDATE user_loyalty
+    SET tier_id = v_new_tier_id,
+        tier_updated_at = NOW(),
+        updated_at = NOW()
+    WHERE user_id = p_user_id;
+
+    -- Log tier change in audit log (if table exists)
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'user_audit_log') THEN
+      INSERT INTO user_audit_log (user_id, action, details, created_at)
+      VALUES (
+        p_user_id,
+        'tier_upgrade_by_nights',
+        jsonb_build_object(
+          'old_tier_id', v_current_tier_id,
+          'new_tier_id', v_new_tier_id,
+          'new_tier_name', v_new_tier_name,
+          'total_nights', v_total_nights,
+          'upgrade_reason', 'nights_threshold_met'
+        ),
+        NOW()
+      );
+    END IF;
+  END IF;
+
+  -- Return results
+  RETURN QUERY SELECT v_new_tier_id, v_new_tier_name, v_tier_changed;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Add comment explaining the stored procedure
+COMMENT ON FUNCTION recalculate_user_tier_by_nights IS 'Recalculates and updates user tier based on total_nights. Returns new tier info and whether tier changed. Call this function after updating total_nights in user_loyalty table.';
+
+-- Stored Procedure: award_points
+-- This maintains the existing award_points function for points transactions
+CREATE OR REPLACE FUNCTION award_points(
+    p_user_id UUID,
+    p_points INTEGER,
+    p_transaction_type VARCHAR(50),
+    p_description TEXT DEFAULT NULL,
+    p_reference_id VARCHAR(100) DEFAULT NULL,
+    p_admin_user_id UUID DEFAULT NULL,
+    p_admin_reason TEXT DEFAULT NULL,
+    p_nights_stayed INTEGER DEFAULT 0
+) RETURNS JSONB AS $$
+DECLARE
+    v_new_points INTEGER;
+    v_transaction_id UUID;
+BEGIN
+    -- Insert the points transaction
+    INSERT INTO points_transactions (
+        user_id, points, type, description, reference_id,
+        admin_user_id, admin_reason, nights_stayed, created_at
+    ) VALUES (
+        p_user_id, p_points, p_transaction_type::points_transaction_type,
+        p_description, p_reference_id, p_admin_user_id, p_admin_reason,
+        p_nights_stayed, NOW()
+    ) RETURNING id INTO v_transaction_id;
+
+    -- Update user's current points and total_nights in user_loyalty
+    UPDATE user_loyalty
+    SET current_points = current_points + p_points,
+        total_nights = COALESCE(total_nights, 0) + p_nights_stayed,
+        points_updated_at = NOW(),
+        updated_at = NOW()
+    WHERE user_id = p_user_id
+    RETURNING current_points INTO v_new_points;
+
+    -- If nights were awarded, recalculate tier
+    IF p_nights_stayed > 0 THEN
+        PERFORM recalculate_user_tier_by_nights(p_user_id);
+    END IF;
+
+    RETURN jsonb_build_object(
+        'transaction_id', v_transaction_id,
+        'new_points_balance', v_new_points,
+        'nights_added', p_nights_stayed
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION award_points IS 'Awards points to a user and updates their total_nights. Automatically recalculates tier when nights are awarded.';

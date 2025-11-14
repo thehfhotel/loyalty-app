@@ -412,6 +412,7 @@ model tiers {
   id           String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   name         String         @unique @db.VarChar(50)
   min_points   Int
+  min_nights   Int            @default(0)
   benefits     Json?          @default("{}")
   color        String         @db.VarChar(7)
   sort_order   Int
@@ -421,6 +422,7 @@ model tiers {
   user_loyalty user_loyalty[]
 
   @@index([min_points], map: "idx_tiers_min_points")
+  @@index([min_nights], map: "idx_tiers_min_nights")
   @@index([sort_order], map: "idx_tiers_sort_order")
 }
 
@@ -494,6 +496,7 @@ model user_coupons {
 model user_loyalty {
   user_id           String    @id @db.Uuid
   current_points    Int?      @default(0)
+  total_nights      Int?      @default(0)
   tier_id           String?   @db.Uuid
   tier_updated_at   DateTime? @default(now()) @db.Timestamptz(6)
   points_updated_at DateTime? @default(now()) @db.Timestamptz(6)
@@ -503,6 +506,7 @@ model user_loyalty {
   users             users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([current_points], map: "idx_user_loyalty_current_points")
+  @@index([total_nights], map: "idx_user_loyalty_total_nights")
   @@index([tier_id], map: "idx_user_loyalty_tier_id")
 }
 

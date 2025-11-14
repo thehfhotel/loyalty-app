@@ -7,6 +7,7 @@
 
 services:
   postgres:
+    container_name: loyalty_postgres_dev
     env_file:
       - .env.development
     ports:
@@ -15,17 +16,24 @@ services:
       POSTGRES_USER: loyalty_dev
       POSTGRES_PASSWORD: loyalty_dev_pass
       POSTGRES_DB: loyalty_dev_db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loyalty_dev -d loyalty_dev_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       # Override to exclude SQL migrations - Prisma handles schema in development
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_dev_data:/var/lib/postgresql/data
 
   redis:
+    container_name: loyalty_redis_dev
     env_file:
       - .env.development
     ports:
       - "6380:6379"  # Dev port 6380 (prod uses 6379)
 
   backend:
+    container_name: loyalty_backend_dev
     env_file:
       - .env.development
     environment:
@@ -58,6 +66,7 @@ services:
       - backend_dev_storage:/app/storage
 
   frontend:
+    container_name: loyalty_frontend_dev
     env_file:
       - .env.development
     environment:
@@ -69,6 +78,7 @@ services:
       - frontend_dev_logs:/app/logs
 
   nginx:
+    container_name: loyalty_nginx_dev
     env_file:
       - .env.development
     ports:
@@ -79,6 +89,7 @@ services:
 
 # Development-specific volumes
 volumes:
+  postgres_dev_data:
   backend_dev_logs:
   backend_dev_storage:
   frontend_dev_logs:
