@@ -17,6 +17,15 @@ describe('StorageService', () => {
   });
 
   describe('Storage Initialization', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    });
+
     test('should initialize storage service with backup scheduling', () => {
       const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
 
@@ -29,14 +38,11 @@ describe('StorageService', () => {
     });
 
     test('should schedule backup for 2 AM next day', () => {
-      jest.useFakeTimers();
       const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
 
       StorageService.initialize();
 
       expect(setTimeoutSpy).toHaveBeenCalled();
-
-      jest.useRealTimers();
     });
   });
 
@@ -257,6 +263,7 @@ describe('StorageService', () => {
       expect(setTimeoutSpy).toHaveBeenCalled();
 
       setTimeoutSpy.mockRestore();
+      jest.clearAllTimers();
       jest.useRealTimers();
     });
 

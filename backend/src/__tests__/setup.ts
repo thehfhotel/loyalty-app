@@ -229,14 +229,14 @@ afterEach(async () => {
 });
 
 // Cleanup after all tests
-afterAll(async () => {
-  // Clear timers
+afterAll(() => {
+  // Use real timers for cleanup
+  jest.useRealTimers();
+
+  // Clear any remaining timers
   jest.clearAllTimers();
 
-  // Wait for pending operations
-  await new Promise(resolve => setTimeout(resolve, 100));
-
-  // Test cleanup completed - logging removed for cleaner output
+  // Test cleanup completed - no async wait needed
 });
 
 // Counter for unique membership IDs
