@@ -666,21 +666,25 @@ jobs:
             sleep 3
           done
 
-          # Wait for redis healthcheck to pass
+          # Wait for redis to be ready by testing actual connection
+          echo "🔍 Waiting for redis (max 60 seconds)..."
           REDIS_READY=false
-          for i in {1..30}; do
-            if docker compose -f docker-compose.e2e-test.yml ps redis | grep -q "healthy"; then
-              echo "✅ Redis is healthy"
+          for i in {1..20}; do
+            if docker compose -f docker-compose.e2e-test.yml exec -T redis redis-cli ping 2>&1 | grep -q "PONG"; then
+              echo "✅ Redis is ready!"
               REDIS_READY=true
               break
             fi
-            echo "Waiting for redis healthcheck... ($i/30)"
-            sleep 2
+            echo "⏳ Attempt $i/20 - waiting 3s..."
+            sleep 3
           done
 
           if [ "$REDIS_READY" = false ]; then
-            echo "❌ Redis failed to become healthy"
+            echo "❌ Redis failed to respond to ping after 60 seconds"
+            echo "📋 Container logs:"
             docker compose -f docker-compose.e2e-test.yml logs redis
+            echo "📋 Container status:"
+            docker compose -f docker-compose.e2e-test.yml ps
             exit 1
           fi
 
