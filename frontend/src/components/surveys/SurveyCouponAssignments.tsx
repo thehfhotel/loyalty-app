@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FiPlus, FiEdit, FiTrash2, FiGift, FiUsers, FiCalendar } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiTrash2, FiGift, FiUsers } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { 
   SurveyCouponDetails, 
@@ -340,7 +340,7 @@ const EditAssignmentModal: React.FC<EditAssignmentModalProps> = ({
 
 const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
   surveyId,
-  surveyTitle,
+  surveyTitle: _surveyTitle,
   surveyStatus
 }) => {
   const { t } = useTranslation();

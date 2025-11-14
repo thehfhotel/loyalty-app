@@ -18,7 +18,7 @@ interface QuestionEditorProps {
 const QuestionEditor: React.FC<QuestionEditorProps> = ({
   question,
   index,
-  questionNumber,
+  questionNumber: _questionNumber,
   onUpdate,
   onRemove,
   onReorder,

@@ -12,7 +12,7 @@ interface SurveyRewardHistoryProps {
 
 const SurveyRewardHistoryComponent: React.FC<SurveyRewardHistoryProps> = ({
   surveyId,
-  surveyTitle
+  surveyTitle: _surveyTitle
 }) => {
   const { t } = useTranslation();
   const [rewards, setRewards] = useState<SurveyRewardHistory[]>([]);

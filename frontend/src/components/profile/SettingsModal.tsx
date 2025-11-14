@@ -50,7 +50,6 @@ export default function SettingsModal({
 }: SettingsModalProps) {
   const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
-  const updateUser = useAuthStore((state) => state.updateUser);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showEmojiSelector, setShowEmojiSelector] = React.useState(false);
   const [updatingEmoji, setUpdatingEmoji] = React.useState(false);

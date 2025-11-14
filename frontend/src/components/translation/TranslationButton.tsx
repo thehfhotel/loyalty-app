@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { FiGlobe, FiRefreshCw } from 'react-icons/fi';
 import { SupportedLanguage } from '../../types/multilingual';
 
@@ -18,7 +17,6 @@ const TranslationButton: React.FC<TranslationButtonProps> = ({
   availableLanguages = ['th'],
   originalLanguage
 }) => {
-  const { t } = useTranslation();
   const [showLanguageSelection, setShowLanguageSelection] = useState(false);
   const [selectedLanguages, setSelectedLanguages] = useState<SupportedLanguage[]>([]);
 
