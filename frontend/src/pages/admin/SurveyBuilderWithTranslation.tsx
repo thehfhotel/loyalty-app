@@ -307,10 +307,10 @@ const SurveyBuilderWithTranslation: React.FC = () => {
         // Create a MultilingualSurvey-compatible object from backend response
         const multilingualData: MultilingualSurvey = {
           ...translationsData,
-          originalLanguage: translationsData.original_language ?? 'th',
+          originalLanguage: (translationsData.original_language ?? 'th') as SupportedLanguage,
           availableLanguages: translationsData.available_languages ?? ['th'],
           translationStatus: 'none',
-          translations: translationsData.translations ?? {}
+          translations: (translationsData.translations ?? {}) as { [language: string]: unknown }
         };
         
         setMultilingualSurvey(multilingualData);
@@ -332,7 +332,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
         }
         
         setTranslationStatus(newStatus);
-        setSelectedLanguage(translationsData.original_language ?? 'th');
+        setSelectedLanguage((translationsData.original_language ?? 'th') as SupportedLanguage);
       }
     } catch (err) {
       console.error('Error loading survey:', err);
@@ -590,6 +590,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
   const reorderQuestions = (fromIndex: number, toIndex: number) => {
     const questions = [...(survey.questions ?? [])];
     const [removed] = questions.splice(fromIndex, 1);
+    if (!removed) {return;}
     questions.splice(toIndex, 0, removed);
     
     const reorderedQuestions = questions.map((q, index) => ({
