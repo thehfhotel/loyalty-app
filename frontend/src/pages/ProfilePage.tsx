@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { userService, UserProfile } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
-import { FiUser, FiPhone, FiCalendar, FiCamera, FiLink, FiCopy, FiSettings, FiGift } from 'react-icons/fi';
+import { FiCalendar, FiCamera, FiLink, FiCopy, FiSettings, FiGift } from 'react-icons/fi';
 import EmailDisplay from '../components/common/EmailDisplay';
 import DashboardButton from '../components/navigation/DashboardButton';
 import MainLayout from '../components/layout/MainLayout';

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getAllEmojiOptions, isValidEmojiAvatar, formatEmojiAvatar } from '../../utils/emojiUtils';
+import { getAllEmojiOptions } from '../../utils/emojiUtils';
 
 interface EmojiSelectorProps {
   currentEmoji?: string | null;
