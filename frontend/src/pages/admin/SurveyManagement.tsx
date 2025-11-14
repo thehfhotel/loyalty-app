@@ -27,9 +27,12 @@ const SurveyManagement: React.FC = () => {
       const response = await surveyService.getSurveys(currentPage, 10, statusFilter);
       setSurveys(response.surveys);
       setTotalPages(response.pagination.totalPages);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error loading surveys:', err);
-      setError(err.response?.data?.message || 'Failed to load surveys');
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setError(errorMessage || 'Failed to load surveys');
       toast.error('Failed to load surveys');
     } finally {
       setLoading(false);
@@ -49,9 +52,12 @@ const SurveyManagement: React.FC = () => {
       await surveyService.deleteSurvey(surveyId);
       toast.success('Survey deleted successfully');
       loadSurveys();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error deleting survey:', err);
-      toast.error(err.response?.data?.message || 'Failed to delete survey');
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      toast.error(errorMessage || 'Failed to delete survey');
     }
   };
 
@@ -67,7 +73,7 @@ const SurveyManagement: React.FC = () => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       toast.success('Survey responses exported successfully');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error exporting responses:', err);
       toast.error('Failed to export survey responses');
     }

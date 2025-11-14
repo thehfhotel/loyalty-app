@@ -99,7 +99,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
 
   const loadTranslations = async (surveyId: string, languages: SupportedLanguage[]) => {
     try {
-      const translations: { [key in SupportedLanguage]?: any } = {};
+      const translations: { [key in SupportedLanguage]?: Survey } = {};
       
       for (const language of languages) {
         try {

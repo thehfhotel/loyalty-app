@@ -43,6 +43,14 @@ ChartJS.register(
   Legend
 );
 
+interface QuestionAnalytics {
+  questionId: string;
+  question: string;
+  type: string;
+  responses: Record<string, number>;
+  averageRating?: number;
+}
+
 interface AnalyticsData {
   survey: Survey;
   responses: SurveyResponse[];
@@ -50,13 +58,7 @@ interface AnalyticsData {
   completionRate: number;
   averageCompletionTime: number;
   responsesByDate: { date: string; count: number }[];
-  questionAnalytics: {
-    questionId: string;
-    question: string;
-    type: string;
-    responses: Record<string, number>;
-    averageRating?: number;
-  }[];
+  questionAnalytics: QuestionAnalytics[];
 }
 
 const SurveyAnalytics: React.FC = () => {
@@ -86,9 +88,12 @@ const SurveyAnalytics: React.FC = () => {
       
       const analyticsData = await surveyService.getSurveyAnalytics(id);
       setAnalytics(analyticsData);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error loading analytics:', err);
-      setError(err.response?.data?.message || 'Failed to load analytics');
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setError(errorMessage || 'Failed to load analytics');
       toast.error('Failed to load survey analytics');
     } finally {
       setLoading(false);
@@ -112,7 +117,7 @@ const SurveyAnalytics: React.FC = () => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       toast.success('Analytics exported successfully');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error exporting analytics:', err);
       toast.error('Failed to export analytics');
     }
@@ -152,7 +157,7 @@ const SurveyAnalytics: React.FC = () => {
     };
   };
 
-  const getQuestionChartData = (question: any, chartType: 'bar' | 'pie' = 'bar'): ChartData<'bar'> | ChartData<'pie'> => {
+  const getQuestionChartData = (question: QuestionAnalytics, chartType: 'bar' | 'pie' = 'bar'): ChartData<'bar'> | ChartData<'pie'> => {
     const labels = Object.keys(question.responses);
     const data = Object.values(question.responses) as number[];
     
