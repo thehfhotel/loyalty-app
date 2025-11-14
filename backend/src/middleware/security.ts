@@ -42,17 +42,17 @@ export const createRateLimiter = () => {
 
 // API-specific rate limiter with user-aware rate limiting
 export const createApiRateLimiter = () => {
-  // Very generous limits for development to handle React StrictMode and hot reloading
+  // Safe rate limits for development (still generous for React StrictMode)
   const developmentLimits = {
     windowMs: 1 * 60 * 1000, // 1 minute window in development
-    max: 20000, // 100x increase: 200 -> 20,000 requests per minute
+    max: 200, // Safe development limit: 200 requests per minute
   };
-  
+
   const productionLimits = {
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 30000, // 100x increase: 300 -> 30,000 requests per 15 minutes
+    max: 300, // Safe production limit: 300 requests per 15 minutes
   };
-  
+
   const limits = isProduction() ? productionLimits : developmentLimits;
   
   return rateLimit({

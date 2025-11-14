@@ -12,10 +12,23 @@ import { loyaltyService } from './loyaltyService';
 import { membershipIdService } from './membershipIdService';
 import { getRandomEmojiAvatar, generateEmojiAvatarUrl } from '../utils/emojiUtils';
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'your-secret-key';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET ?? 'your-refresh-secret';
+// Cryptographic secrets - NO fallback defaults for security
+// Environment validation is enforced by config/environment.ts
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 const ACCESS_TOKEN_EXPIRE = '15m';
 const REFRESH_TOKEN_EXPIRE = '7d';
+
+// Startup validation - fail fast if secrets are not configured
+if (!JWT_SECRET || JWT_SECRET.length < 64) {
+  logger.error('🔐 Security Error: JWT_SECRET must be at least 64 characters');
+  throw new Error('JWT_SECRET must be configured and at least 64 characters long');
+}
+
+if (!JWT_REFRESH_SECRET || JWT_REFRESH_SECRET.length < 64) {
+  logger.error('🔐 Security Error: JWT_REFRESH_SECRET must be at least 64 characters');
+  throw new Error('JWT_REFRESH_SECRET must be configured and at least 64 characters long');
+}
 
 export class AuthService {
   async register(data: {
