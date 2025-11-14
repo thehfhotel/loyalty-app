@@ -25,7 +25,7 @@ interface SurveyValidationResult {
   isValid: boolean;
 }
 
-const validateSurveyQuestions = (questions: SurveyQuestion[], t: any): SurveyValidationResult => {
+const validateSurveyQuestions = (questions: SurveyQuestion[], t: (key: string) => string): SurveyValidationResult => {
   const emptyQuestions: QuestionValidationError[] = [];
   const emptyOptions: QuestionValidationError[] = [];
 
@@ -200,7 +200,7 @@ const SurveyBuilder: React.FC = () => {
       setLoading(true);
       const surveyData = await surveyService.getSurveyById(id);
       setSurvey(surveyData);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error loading survey:', err);
       toast.error(t('surveys.admin.messages.loadError'));
       navigate('/admin/surveys');
@@ -310,7 +310,7 @@ const SurveyBuilder: React.FC = () => {
     };
   }, []);
 
-  const handleSurveyChange = (field: string, value: any) => {
+  const handleSurveyChange = (field: string, value: unknown) => {
     setSurvey(prev => ({
       ...prev,
       [field]: value
@@ -415,16 +415,23 @@ const SurveyBuilder: React.FC = () => {
         toast.success(t('surveys.admin.messages.createSuccess'));
         navigate(`/admin/surveys/${newSurvey.id}/edit`);
       }
-    } catch (err: any) {
+    } catch (err) {
       // Enhanced error handling with graceful degradation
-      const isValidationError = err.response?.status === 400;
-      const errorMessage = err.response?.data?.message ?? err.message ?? 'Failed to save survey';
-      
+      const axiosError = err instanceof Error && 'response' in err
+        ? (err as { response?: { status?: number; data?: { message?: string; validationErrors?: unknown[] } }; message?: string })
+        : null;
+
+      const isValidationError = axiosError?.response?.status === 400;
+      const errorMessage = axiosError?.response?.data?.message ?? (err instanceof Error ? err.message : undefined) ?? 'Failed to save survey';
+
       if (isValidationError) {
         // Handle backend validation errors gracefully
-        const backendErrors = err.response?.data?.validationErrors ?? [];
+        const backendErrors = axiosError?.response?.data?.validationErrors ?? [];
         if (backendErrors.length > 0) {
-          const fieldErrors = backendErrors.map((error: any) => error.message ?? error.field).join(', ');
+          const fieldErrors = backendErrors.map((error: unknown) => {
+            const e = error as { message?: string; field?: string };
+            return e.message ?? e.field;
+          }).join(', ');
           toast.error(t('surveys.admin.messages.validationFailed', { errors: fieldErrors }), {
             duration: 6000,
             icon: '⚠️'
@@ -432,11 +439,11 @@ const SurveyBuilder: React.FC = () => {
         } else {
           toast.error(errorMessage, { duration: 5000, icon: '⚠️' });
         }
-        
+
         // Log only essential info for debugging
         if (process.env.NODE_ENV === 'development') {
           console.warn('Survey validation failed:', {
-            status: err.response?.status,
+            status: axiosError?.response?.status,
             message: errorMessage,
             validationErrors: backendErrors
           });
