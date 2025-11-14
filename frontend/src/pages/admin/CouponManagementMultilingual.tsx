@@ -108,7 +108,7 @@ const CouponManagementMultilingual: React.FC = () => {
 
   const loadCouponTranslations = async (couponId: string, languages: SupportedLanguage[]) => {
     try {
-      const translations: { [key in SupportedLanguage]?: any } = {};
+      const translations: { [key in SupportedLanguage]?: Coupon } = {};
       
       for (const language of languages) {
         try {
@@ -266,9 +266,12 @@ const CouponManagementMultilingual: React.FC = () => {
       setShowCreateModal(false);
       resetCreateForm();
       loadCoupons(page);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to create coupon:', err);
-      setCreateModalError(err.response?.data?.error ?? t('coupons.admin.errors.createFailed'));
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+        : undefined;
+      setCreateModalError(errorMessage ?? t('coupons.admin.errors.createFailed'));
     }
   };
 

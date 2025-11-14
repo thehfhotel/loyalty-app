@@ -42,8 +42,11 @@ export default function ResetPasswordPage() {
       await authService.resetPasswordRequest(data.email);
       setIsSubmitted(true);
       toast.success('Password reset link sent to your email');
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to send reset link');
+    } catch (error) {
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
+        : undefined;
+      toast.error(errorMessage || 'Failed to send reset link');
     } finally {
       setIsLoading(false);
     }
@@ -57,8 +60,11 @@ export default function ResetPasswordPage() {
       await authService.resetPassword(token, data.password);
       toast.success('Password reset successfully');
       window.location.href = '/login';
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to reset password');
+    } catch (error) {
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
+        : undefined;
+      toast.error(errorMessage || 'Failed to reset password');
     } finally {
       setIsLoading(false);
     }

@@ -13,7 +13,7 @@ import {
   FiEdit
 } from 'react-icons/fi';
 import DashboardButton from '../../components/navigation/DashboardButton';
-import { Survey } from '../../types/survey';
+import { Survey, SurveyQuestion } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 import toast from 'react-hot-toast';
 
@@ -23,11 +23,11 @@ interface SurveyTemplate {
   description: string;
   icon: React.ReactNode;
   category: string;
-  questions: any[];
+  questions: SurveyQuestion[];
   popularity: number;
 }
 
-const getPredefinedTemplates = (t: any): SurveyTemplate[] => [
+const getPredefinedTemplates = (t: (key: string) => string): SurveyTemplate[] => [
   {
     id: 'satisfaction',
     name: t('surveys.admin.templates.predefinedTemplates.satisfaction.name'),
