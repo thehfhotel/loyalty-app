@@ -161,7 +161,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
           </span>
           {activeTab !== 'en' && value['en'] && (
             <button
-              onClick={() => handleTextChange(activeTab, value['en'])}
+              onClick={() => handleTextChange(activeTab, value['en'] || '')}
               className="text-xs text-blue-600 hover:text-blue-800"
             >
               Copy from English

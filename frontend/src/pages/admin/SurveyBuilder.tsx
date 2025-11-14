@@ -359,6 +359,7 @@ const SurveyBuilder: React.FC = () => {
   const reorderQuestions = (fromIndex: number, toIndex: number) => {
     const questions = [...(survey.questions ?? [])];
     const [removed] = questions.splice(fromIndex, 1);
+    if (!removed) {return;}
     questions.splice(toIndex, 0, removed);
     
     // Update order numbers

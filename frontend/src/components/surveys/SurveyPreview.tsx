@@ -89,7 +89,7 @@ const SurveyPreview: React.FC<SurveyPreviewProps> = ({ survey, onClose }) => {
               {survey.questions[currentQuestion] && (
                 <QuestionRenderer
                   question={survey.questions[currentQuestion]}
-                  answer={answers[survey.questions[currentQuestion].id]}
+                  answer={answers[survey.questions[currentQuestion].id] ?? null}
                   onAnswerChange={handleAnswerChange}
                   error=""
                 />
