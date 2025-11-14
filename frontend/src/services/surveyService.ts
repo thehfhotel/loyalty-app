@@ -4,6 +4,7 @@ import {
   Survey,
   SurveyResponse,
   SurveyInvitation,
+  SurveyQuestion,
   CreateSurveyRequest,
   UpdateSurveyRequest,
   SubmitResponseRequest,
@@ -54,10 +55,13 @@ class SurveyService {
 
       const response = await surveyAxios.get(`/surveys?${params}`);
       return response.data;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error in getSurveys:', error);
-      if (error.response) {
-        console.error('Response error:', error.response.status, error.response.data);
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status: number; data: unknown } };
+        if (axiosError.response) {
+          console.error('Response error:', axiosError.response.status, axiosError.response.data);
+        }
       }
       throw error;
     }
@@ -108,9 +112,12 @@ class SurveyService {
     try {
       const response = await surveyAxios.get(`/surveys/responses/${surveyId}/user`);
       return response.data.response;
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        return null;
+    } catch (error) {
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status: number } };
+        if (axiosError.response?.status === 404) {
+          return null;
+        }
       }
       throw error;
     }
@@ -243,7 +250,7 @@ class SurveyService {
     return Math.round((answeredQuestions / totalQuestions) * 100);
   }
 
-  validateAnswer(question: any, answer: any): boolean {
+  validateAnswer(question: SurveyQuestion, answer: unknown): boolean {
     if (question.required && (answer === undefined || answer === null || answer === '')) {
       return false;
     }

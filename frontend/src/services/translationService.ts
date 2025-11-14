@@ -152,13 +152,16 @@ class TranslationService {
   /**
    * Get survey with translations
    */
-  async getSurveyTranslations(surveyId: string): Promise<any> {
+  async getSurveyTranslations(surveyId: string): Promise<Record<string, unknown> | null> {
     try {
       const response = await api.get(`/translation/survey/${surveyId}/translations`);
       return response.data;
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        return null;
+    } catch (error) {
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status: number } };
+        if (axiosError.response?.status === 404) {
+          return null;
+        }
       }
       console.error('Survey translations error:', error);
       return null;
@@ -168,13 +171,16 @@ class TranslationService {
   /**
    * Get coupon with translations
    */
-  async getCouponTranslations(couponId: string): Promise<any> {
+  async getCouponTranslations(couponId: string): Promise<Record<string, unknown> | null> {
     try {
       const response = await api.get(`/translation/coupon/${couponId}/translations`);
       return response.data;
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        return null;
+    } catch (error) {
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status: number } };
+        if (axiosError.response?.status === 404) {
+          return null;
+        }
       }
       console.error('Coupon translations error:', error);
       return null;
@@ -256,34 +262,44 @@ class TranslationService {
   /**
    * Extract translatable texts from survey
    */
-  extractSurveyTexts(survey: any): string[] {
+  extractSurveyTexts(survey: Record<string, unknown>): string[] {
     const texts: string[] = [];
-    
-    if (survey.title) {texts.push(survey.title);}
-    if (survey.description) {texts.push(survey.description);}
-    
-    survey.questions?.forEach((question: any) => {
-      if (question.text) {texts.push(question.text);}
-      if (question.description) {texts.push(question.description);}
-      
-      question.options?.forEach((option: any) => {
-        if (option.text) {texts.push(option.text);}
+
+    if (typeof survey.title === 'string') {texts.push(survey.title);}
+    if (typeof survey.description === 'string') {texts.push(survey.description);}
+
+    if (Array.isArray(survey.questions)) {
+      survey.questions.forEach((question: unknown) => {
+        if (question && typeof question === 'object') {
+          const q = question as Record<string, unknown>;
+          if (typeof q.text === 'string') {texts.push(q.text);}
+          if (typeof q.description === 'string') {texts.push(q.description);}
+
+          if (Array.isArray(q.options)) {
+            q.options.forEach((option: unknown) => {
+              if (option && typeof option === 'object') {
+                const opt = option as Record<string, unknown>;
+                if (typeof opt.text === 'string') {texts.push(opt.text);}
+              }
+            });
+          }
+        }
       });
-    });
-    
+    }
+
     return texts.filter(text => this.needsTranslation(text));
   }
 
   /**
    * Extract translatable texts from coupon
    */
-  extractCouponTexts(coupon: any): string[] {
+  extractCouponTexts(coupon: Record<string, unknown>): string[] {
     const texts: string[] = [];
-    
-    if (coupon.name) {texts.push(coupon.name);}
-    if (coupon.description) {texts.push(coupon.description);}
-    if (coupon.termsAndConditions) {texts.push(coupon.termsAndConditions);}
-    
+
+    if (typeof coupon.name === 'string') {texts.push(coupon.name);}
+    if (typeof coupon.description === 'string') {texts.push(coupon.description);}
+    if (typeof coupon.termsAndConditions === 'string') {texts.push(coupon.termsAndConditions);}
+
     return texts.filter(text => this.needsTranslation(text));
   }
 }

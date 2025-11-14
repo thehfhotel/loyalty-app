@@ -1,4 +1,5 @@
 import api from './authService';
+import type { Coupon } from '../types/coupon';
 
 export interface UserProfile {
   userId: string;
@@ -6,7 +7,7 @@ export interface UserProfile {
   lastName: string;
   phone?: string;
   dateOfBirth?: string;
-  preferences: Record<string, any>;
+  preferences: Record<string, unknown>;
   avatarUrl?: string;
   membershipId?: string;
   gender?: string;
@@ -93,7 +94,7 @@ export const userService = {
     gender?: string;
     occupation?: string;
     interests?: string[];
-  }): Promise<{ profile: UserProfile; couponAwarded: boolean; coupon?: any; pointsAwarded?: number }> {
+  }): Promise<{ profile: UserProfile; couponAwarded: boolean; coupon?: Coupon; pointsAwarded?: number }> {
     const response = await api.put('/users/complete-profile', data);
     return response.data.data;
   },
