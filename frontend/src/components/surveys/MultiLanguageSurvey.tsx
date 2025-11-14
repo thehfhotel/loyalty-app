@@ -27,7 +27,7 @@ const MultiLanguageSurvey: React.FC<MultiLanguageSurveyProps> = ({
 }) => {
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
 
-  const currentLang = availableLanguages.find(lang => lang.code === currentLanguage) ?? availableLanguages[0];
+  const currentLang = availableLanguages.find(lang => lang.code === currentLanguage) ?? availableLanguages[0]!;
 
   const getTranslatedText = (textObj: Record<string, string> | string, fallback = '') => {
     if (typeof textObj === 'string') {return textObj;}

@@ -78,7 +78,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
     }
   };
 
-  const currentLang = supportedLanguages.find(lang => lang.code === activeTab) ?? supportedLanguages[0];
+  const currentLang = supportedLanguages.find(lang => lang.code === activeTab) ?? supportedLanguages[0]!;
   const currentText = value[activeTab] || '';
 
   return (
