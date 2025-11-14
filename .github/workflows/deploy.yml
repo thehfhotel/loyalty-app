@@ -138,9 +138,10 @@ jobs:
     name: "🔒 Security & Code Quality"
     runs-on: self-hosted
     needs: prepare-workspace
-    timeout-minutes: 3
+    timeout-minutes: 5
     outputs:
       security-passed: ${{ steps.security-results.outputs.passed }}
+      audit-passed: ${{ steps.security-audit.outputs.passed }}
 
     steps:
       - name: "📥 Download shared workspace"
@@ -173,19 +174,19 @@ jobs:
       - name: "🔍 TypeScript type checking (validation)"
         working-directory: ./backend
         run: npm run typecheck
-      
+
       - name: "🔒 Security linting (ESLint + Security rules)"
         working-directory: ./backend
         run: npm run lint:security
-      
+
       - name: "🛡️ Security audit (npm audit)"
         working-directory: ./backend
         run: npm run security:audit
-      
+
       - name: "🔒 Run custom security validation"
         working-directory: ./backend
         run: node scripts/validate-security.js
-      
+
       - name: "🛡️ Test integrity validation"
         run: |
           echo "🛡️ Running test integrity validation..."
@@ -194,24 +195,36 @@ jobs:
           else
             echo "⚠️ Test integrity script not found - skipping"
           fi
-      
+
+      - name: "🔐 Enhanced Security Audit (20-User Prototype)"
+        id: security-audit
+        run: |
+          echo "🔐 Running comprehensive security audit..."
+          if ./scripts/security-audit.sh; then
+            echo "✅ Security audit passed"
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Security audit failed - see details above"
+            echo "passed=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
       - name: "📊 Security results summary (reporting only)"
         id: security-results
+        if: always()
         run: |
-          echo "Security analysis completed successfully"
+          echo "Security analysis completed"
           echo "passed=true" >> $GITHUB_OUTPUT
 
-  # Job 1B: Unit & Integration Tests (Parallel)
-  unit-integration-tests:
-    name: "🧪 Unit & Integration Tests"
+  # Job 1B: Unit Tests (Parallel with Integration Tests)
+  unit-tests:
+    name: "🧪 Unit Tests"
     runs-on: self-hosted
     needs: prepare-workspace
-    timeout-minutes: 6
+    timeout-minutes: 4
     outputs:
       tests-passed: ${{ steps.test-results.outputs.passed }}
       coverage-percent: ${{ steps.test-results.outputs.coverage }}
-
-    # Use isolated test environment to prevent conflicts with E2E tests
 
     steps:
       - name: "📥 Download shared workspace"
@@ -350,59 +363,14 @@ jobs:
           JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
           SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
         run: npm run test:unit -- --coverage --passWithNoTests
-      
-      - name: "🧪 Run integration tests (isolated)"
-        working-directory: ./backend
-        env:
-          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5435/loyalty_test_db
-          REDIS_URL: redis://localhost:6380
-          NODE_ENV: test
-          JWT_SECRET: test-jwt-secret-for-testing-only-min-32-chars
-          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
-          SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
-        run: npm run test:integration -- --passWithNoTests
-      
-      - name: "🧪 Run database schema tests (isolated)"
-        working-directory: ./backend
-        env:
-          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5435/loyalty_test_db
-          NODE_ENV: test
-        run: npm run test:db -- --passWithNoTests
-      
+
       - name: "📊 Upload coverage reports"
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: coverage-reports
+          name: unit-coverage-reports
           path: backend/coverage/
           retention-days: 7
-      
-      - name: "🔐 OAuth validation tests"
-        run: |
-          echo "🔐 Running OAuth validation tests..."
-          # Check if services are running
-          if curl -s http://localhost:4001/api/health >/dev/null 2>&1; then
-            echo "✅ Backend service is running, performing OAuth validation"
-            if [ -f "./scripts/validate-oauth-health.sh" ]; then
-              ./scripts/validate-oauth-health.sh || echo "⚠️ OAuth validation failed (non-blocking in CI)"
-            else
-              echo "⚠️ OAuth validation script not found - skipping"
-            fi
-          else
-            echo "⚠️ Backend not running - skipping OAuth validation"
-          fi
-      
-      - name: "🗄️ Database migration validation (isolated)"
-        env:
-          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5435/loyalty_test_db
-          NODE_ENV: test
-        run: |
-          echo "🗄️ Running database migration validation on isolated environment..."
-          if [ -f "./scripts/validate-db-migration.sh" ]; then
-            ./scripts/validate-db-migration.sh || echo "⚠️ DB migration validation failed (non-blocking in CI)"
-          else
-            echo "⚠️ Database migration validation script not found - skipping"
-          fi
       
       - name: "📈 Test results summary (reporting only)"
         id: test-results
@@ -420,13 +388,209 @@ jobs:
       - name: "🧹 Cleanup isolated test environment"
         if: always()
         run: |
-          echo "🧹 Cleaning up isolated test services..."
+          echo "🧹 Cleaning up isolated unit test services..."
           docker compose -f docker-compose.unit-test.yml down -v --remove-orphans || true
           docker system prune -f --volumes || true
           rm -f docker-compose.unit-test.yml || true
-          echo "✅ Isolated test environment cleaned up"
+          echo "✅ Isolated unit test environment cleaned up"
 
-  # Job 1C: E2E Tests (Conditional - only on main branch or PR to main, after unit tests)
+  # Job 1C: Integration Tests (Parallel with Unit Tests)
+  integration-tests:
+    name: "🔗 Integration Tests"
+    runs-on: self-hosted
+    needs: prepare-workspace
+    timeout-minutes: 5
+    outputs:
+      tests-passed: ${{ steps.test-results.outputs.passed }}
+
+    steps:
+      - name: "📥 Download shared workspace"
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-workspace-${{ github.run_id }}
+          path: .
+
+      - name: "⚡ Setup Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: "📦 Restore backend dependencies"
+        uses: actions/cache/restore@v4
+        id: backend-cache-restore
+        with:
+          path: backend/node_modules
+          key: backend-${{ hashFiles('backend/package-lock.json') }}
+          fail-on-cache-miss: true
+
+      - name: "📦 Restore frontend dependencies"
+        uses: actions/cache/restore@v4
+        id: frontend-cache-restore
+        with:
+          path: frontend/node_modules
+          key: frontend-${{ hashFiles('frontend/package-lock.json') }}
+          fail-on-cache-miss: true
+
+      - name: "🐳 Start isolated test services"
+        run: |
+          # Use unique project name and ports to avoid conflicts with Unit and E2E tests
+          export COMPOSE_PROJECT_NAME="loyalty-integration-tests"
+          export POSTGRES_PORT="5437"
+          export REDIS_PORT="6382"
+
+          # Start test services with isolated configuration
+          echo "🚀 Starting isolated integration test services on custom ports..."
+
+          # Create temporary compose file for integration tests with isolated ports
+          cat > docker-compose.integration-test.yml << 'EOF'
+          version: '3.8'
+          services:
+            postgres:
+              image: postgres:15-alpine
+              container_name: loyalty_postgres_integration
+              environment:
+                POSTGRES_USER: loyalty
+                POSTGRES_PASSWORD: loyalty_password
+                POSTGRES_DB: loyalty_db
+              ports:
+                - "5437:5432"
+              volumes:
+                - loyalty_postgres_integration_data:/var/lib/postgresql/data
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
+                interval: 5s
+                timeout: 5s
+                retries: 5
+
+            redis:
+              image: redis:7-alpine
+              container_name: loyalty_redis_integration
+              ports:
+                - "6382:6379"
+              volumes:
+                - loyalty_redis_integration_data:/data
+              healthcheck:
+                test: ["CMD", "redis-cli", "ping"]
+                interval: 5s
+                timeout: 3s
+                retries: 5
+
+          volumes:
+            loyalty_postgres_integration_data:
+            loyalty_redis_integration_data:
+          EOF
+
+          # Start isolated test services
+          docker compose -f docker-compose.integration-test.yml up -d
+
+          # Wait for services to be ready with health checks
+          echo "⏳ Waiting for isolated integration test services to be ready..."
+          timeout 60 bash -c 'until docker compose -f docker-compose.integration-test.yml exec -T postgres pg_isready -U loyalty -d loyalty_db; do echo "Waiting for isolated postgres..."; sleep 2; done'
+          timeout 30 bash -c 'until docker compose -f docker-compose.integration-test.yml exec -T redis redis-cli ping | grep -q PONG; do echo "Waiting for isolated redis..."; sleep 2; done'
+
+          # Configure isolated test database
+          echo "🗄️ Setting up isolated integration test database..."
+          docker exec loyalty_postgres_integration psql -U loyalty -d postgres -c "DROP DATABASE IF EXISTS loyalty_integration_db;" || true
+          docker exec loyalty_postgres_integration psql -U loyalty -d postgres -c "DROP USER IF EXISTS loyalty_integration;" || true
+          docker exec loyalty_postgres_integration psql -U loyalty -d postgres -c "CREATE USER loyalty_integration WITH PASSWORD 'integration_password';" || true
+          docker exec loyalty_postgres_integration psql -U loyalty -d postgres -c "CREATE DATABASE loyalty_integration_db OWNER loyalty_integration;" || true
+          docker exec loyalty_postgres_integration psql -U loyalty -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE loyalty_integration_db TO loyalty_integration;" || true
+
+          # Enable UUID extension in isolated test database
+          docker exec loyalty_postgres_integration psql -U loyalty_integration -d loyalty_integration_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
+
+          echo "✅ Isolated integration test services are ready on ports 5437 (postgres) and 6382 (redis)"
+
+      - name: "🔧 Setup isolated integration test environment"
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5437/loyalty_integration_db
+          REDIS_URL: redis://localhost:6382
+          NODE_ENV: test
+          JWT_SECRET: test-jwt-secret-for-testing-only-min-32-chars
+          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
+          SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
+        run: |
+          # Generate Prisma client for tests
+          npm run db:generate
+
+          # Validate Prisma client was generated successfully
+          if [ ! -d "src/generated/prisma" ]; then
+            echo "❌ Prisma client generation failed - directory not found"
+            exit 1
+          fi
+
+          if [ ! -f "src/generated/prisma/index.js" ]; then
+            echo "❌ Prisma client generation failed - index.js not found"
+            exit 1
+          fi
+
+          echo "✅ Prisma client validated successfully"
+
+          # Run database migrations for integration test DB
+          npm run db:migrate:deploy
+
+      - name: "🔗 Run integration tests (isolated)"
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5437/loyalty_integration_db
+          REDIS_URL: redis://localhost:6382
+          NODE_ENV: test
+          JWT_SECRET: test-jwt-secret-for-testing-only-min-32-chars
+          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
+          SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
+        run: npm run test:integration -- --passWithNoTests
+
+      - name: "🧪 Run database schema tests (isolated)"
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5437/loyalty_integration_db
+          NODE_ENV: test
+        run: npm run test:db -- --passWithNoTests
+
+      - name: "🔐 OAuth validation tests"
+        run: |
+          echo "🔐 Running OAuth validation tests..."
+          # Check if services are running
+          if curl -s http://localhost:4001/api/health >/dev/null 2>&1; then
+            echo "✅ Backend service is running, performing OAuth validation"
+            if [ -f "./scripts/validate-oauth-health.sh" ]; then
+              ./scripts/validate-oauth-health.sh || echo "⚠️ OAuth validation failed (non-blocking in CI)"
+            else
+              echo "⚠️ OAuth validation script not found - skipping"
+            fi
+          else
+            echo "⚠️ Backend not running - skipping OAuth validation"
+          fi
+
+      - name: "🗄️ Database migration validation (isolated)"
+        env:
+          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5437/loyalty_integration_db
+          NODE_ENV: test
+        run: |
+          echo "🗄️ Running database migration validation on isolated environment..."
+          if [ -f "./scripts/validate-db-migration.sh" ]; then
+            ./scripts/validate-db-migration.sh || echo "⚠️ DB migration validation failed (non-blocking in CI)"
+          else
+            echo "⚠️ Database migration validation script not found - skipping"
+          fi
+
+      - name: "📈 Test results summary (reporting only)"
+        id: test-results
+        run: |
+          echo "Integration tests completed successfully"
+          echo "passed=true" >> $GITHUB_OUTPUT
+
+      - name: "🧹 Cleanup isolated integration test environment"
+        if: always()
+        run: |
+          echo "🧹 Cleaning up isolated integration test services..."
+          docker compose -f docker-compose.integration-test.yml down -v --remove-orphans || true
+          docker system prune -f --volumes || true
+          rm -f docker-compose.integration-test.yml || true
+          echo "✅ Isolated integration test environment cleaned up"
+
+  # Job 1D: E2E Tests (Conditional - only on main branch or PR to main)
   e2e-tests:
     name: "🎭 E2E Tests"
     runs-on: self-hosted
@@ -1032,8 +1196,8 @@ jobs:
   build-validation:
     name: "🏗️ Build Validation & Docker Images"
     runs-on: self-hosted
-    needs: [security-analysis, unit-integration-tests, e2e-tests]
-    if: github.ref == 'refs/heads/main' && always() && needs.security-analysis.outputs.security-passed == 'true' && needs.unit-integration-tests.outputs.tests-passed == 'true'
+    needs: [security-analysis, unit-tests, integration-tests, e2e-tests]
+    if: github.ref == 'refs/heads/main' && always() && needs.security-analysis.outputs.security-passed == 'true' && needs.unit-tests.outputs.tests-passed == 'true' && needs.integration-tests.outputs.tests-passed == 'true'
     timeout-minutes: 15
     outputs:
       build-passed: ${{ steps.build-results.outputs.passed }}
@@ -1279,36 +1443,50 @@ jobs:
     name: "🚀 Production Deployment"
     runs-on: self-hosted
     environment: production
-    needs: [security-analysis, unit-integration-tests, build-validation]
-    if: github.ref == 'refs/heads/main' && needs.security-analysis.outputs.security-passed == 'true' && needs.unit-integration-tests.outputs.tests-passed == 'true' && needs.build-validation.outputs.build-passed == 'true'
+    needs: [security-analysis, unit-tests, integration-tests, build-validation]
+    if: github.ref == 'refs/heads/main' && needs.security-analysis.outputs.security-passed == 'true' && needs.security-analysis.outputs.audit-passed == 'true' && needs.unit-tests.outputs.tests-passed == 'true' && needs.integration-tests.outputs.tests-passed == 'true' && needs.build-validation.outputs.build-passed == 'true'
     timeout-minutes: 15
-    
+
     steps:
       - name: "📊 Pre-deployment validation (quality gates)"
         run: |
           echo "🔍 Pre-deployment checks..."
           echo "Security Analysis: ${{ needs.security-analysis.outputs.security-passed }}"
-          echo "Unit/Integration Tests: ${{ needs.unit-integration-tests.outputs.tests-passed }}"
+          echo "Security Audit: ${{ needs.security-analysis.outputs.audit-passed }}"
+          echo "Unit Tests: ${{ needs.unit-tests.outputs.tests-passed }}"
+          echo "Integration Tests: ${{ needs.integration-tests.outputs.tests-passed }}"
           echo "Build Validation: ${{ needs.build-validation.outputs.build-passed }}"
-          echo "Test Coverage: ${{ needs.unit-integration-tests.outputs.coverage-percent }}%"
-          
+          echo "Test Coverage: ${{ needs.unit-tests.outputs.coverage-percent }}%"
+
           # Verify all requirements are met
           if [ "${{ needs.security-analysis.outputs.security-passed }}" != "true" ]; then
             echo "❌ Security validation failed"
             exit 1
           fi
-          
-          if [ "${{ needs.unit-integration-tests.outputs.tests-passed }}" != "true" ]; then
-            echo "❌ Tests failed"
+
+          if [ "${{ needs.security-analysis.outputs.audit-passed }}" != "true" ]; then
+            echo "❌ Security audit failed - deployment blocked"
+            echo "🚨 Critical security requirements not met for 20-user prototype"
             exit 1
           fi
-          
+
+          if [ "${{ needs.unit-tests.outputs.tests-passed }}" != "true" ]; then
+            echo "❌ Unit tests failed"
+            exit 1
+          fi
+
+          if [ "${{ needs.integration-tests.outputs.tests-passed }}" != "true" ]; then
+            echo "❌ Integration tests failed"
+            exit 1
+          fi
+
           if [ "${{ needs.build-validation.outputs.build-passed }}" != "true" ]; then
-            echo "❌ Build validation failed"  
+            echo "❌ Build validation failed"
             exit 1
           fi
-          
+
           echo "✅ All pre-deployment checks passed"
+          echo "🔐 Security requirements met for 20-user prototype deployment"
       
       - name: "💾 Smart database backup (pre-shutdown)"
         id: backup
@@ -1934,13 +2112,14 @@ jobs:
           echo ""
           echo "🎯 Job Results:"
           echo "Security Analysis: ${{ needs.security-analysis.result }}"
-          echo "Unit/Integration Tests: ${{ needs.unit-integration-tests.result }}"
+          echo "Unit Tests: ${{ needs.unit-tests.result }}"
+          echo "Integration Tests: ${{ needs.integration-tests.result }}"
           echo "E2E Tests: ${{ needs.e2e-tests.result || 'skipped' }}"
           echo "Build Validation: ${{ needs.build-validation.result }}"
           echo "Production Deployment: ${{ needs.production-deployment.result }}"
           echo ""
           echo "📈 Metrics:"
-          echo "Test Coverage: ${{ needs.unit-integration-tests.outputs.coverage-percent }}%"
+          echo "Test Coverage: ${{ needs.unit-tests.outputs.coverage-percent }}%"
           echo ""
           echo "🌐 Service Endpoints:"
           echo "Application: https://loyalty.saichon.com"
@@ -2007,45 +2186,49 @@ jobs:
 
 # =============================================================================
 # PIPELINE SUMMARY:
-# 
+#
 # 📊 PERFORMANCE OPTIMIZATIONS:
-# - Sequential job execution with isolated environments (prevents conflicts)
-# - Port isolation strategy (Unit: 5435/6380, E2E: 5436/6381/4002/3001)
+# - Parallel job execution with isolated environments (prevents conflicts)
+# - Port isolation strategy (Unit: 5435/6380, Integration: 5437/6382, E2E: 5436/6381/4202/3201)
 # - Container isolation with unique project names and containers
 # - Intelligent caching (npm, Docker BuildKit)
 # - Conditional jobs (E2E only on main/PR to main)
 # - Smart dependency installation
 # - Shallow git clones
 # - Optimized Docker builds
-# 
+#
 # 🔒 SECURITY & QUALITY:
 # - ESLint security rules
 # - npm audit
 # - Custom security validation
 # - Test integrity validation (prevents test bypassing)
 # - TypeScript type checking
-# - Unit tests
-# - Integration tests
+# - Unit tests (parallel)
+# - Integration tests (parallel)
 # - E2E tests (conditional)
 # - Database schema tests
 # - OAuth health validation (pre & post deployment)
 # - Database migration validation & rollback safety
 # - OAuth E2E validation tests
-# 
+#
 # ⚡ ESTIMATED TIMES:
-# - Phase 1A (Security): 3-4 minutes (parallel with Unit Tests)
-# - Phase 1B (Unit/Integration): 5-8 minutes (isolated environment)
-# - Phase 1C (E2E Tests): 8-12 minutes (after unit tests, isolated environment)
+# - Phase 0 (Workspace Prep): 30-60 seconds
+# - Phase 1A (Security): 3-4 minutes (parallel)
+# - Phase 1B (Unit Tests): 3-4 minutes (parallel)
+# - Phase 1C (Integration Tests): 4-5 minutes (parallel)
+# - Phase 1D (E2E Tests): 8-12 minutes (conditional, after workspace prep)
 # - Phase 2 (Build): 2-3 minutes (only on main, after all tests)
 # - Phase 3 (Deploy): 3-5 minutes (only on main, production)
-# - Total: 13-18 minutes (sequential for reliability)
-# 
+# - Total: 11-15 minutes (improved from 13-18 minutes due to parallel tests)
+#
 # 🎯 IMPROVEMENTS:
 # - 100% environment isolation (prevents race conditions)
+# - PARALLEL unit and integration tests (saves 2-3 minutes)
 # - Comprehensive test coverage with parallel security analysis
 # - Enhanced security validation
 # - Better error handling and reporting
 # - Smart caching for dependencies
 # - Conditional execution to save resources
 # - Reliable testing environments with port separation
+# - Independent test job outputs for better visibility
 # =============================================================================
