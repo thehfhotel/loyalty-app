@@ -157,13 +157,13 @@ export const getTranslationCompleteness = (
  * Extract all text content that needs translation from an object
  */
 export const extractTextForTranslation = (
-  obj: any,
+  obj: Record<string, unknown> | Array<Record<string, unknown>>,
   textFields: string[],
   currentLanguage: SupportedLanguage
 ): string[] => {
   const texts: string[] = [];
 
-  const extractFromObject = (item: any, fields: string[]) => {
+  const extractFromObject = (item: Record<string, unknown>, fields: string[]) => {
     fields.forEach(field => {
       // Safe property access using hasOwnProperty check
       if (Object.prototype.hasOwnProperty.call(item, field) && item[field]) {
@@ -188,15 +188,15 @@ export const extractTextForTranslation = (
  * Apply translations back to multilingual object
  */
 export const applyTranslations = (
-  originalObj: any,
+  originalObj: Record<string, unknown> | Array<Record<string, unknown>>,
   translations: string[],
   textFields: string[],
   targetLanguage: SupportedLanguage,
   originalLanguage: SupportedLanguage
-): any => {
+): Record<string, unknown> | Array<Record<string, unknown>> => {
   let translationIndex = 0;
 
-  const applyToObject = (item: any, fields: string[]) => {
+  const applyToObject = (item: Record<string, unknown>, fields: string[]) => {
     const result = { ...item };
 
     fields.forEach(field => {
@@ -207,11 +207,11 @@ export const applyTranslations = (
         if (typeof currentText === 'string') {
           // Convert to multilingual format
           result[field] = createMultilingualText(currentText, originalLanguage);
-          result[field][targetLanguage] = translations[translationIndex];
+          (result[field] as MultilingualText)[targetLanguage] = translations[translationIndex];
         } else if (currentText && typeof currentText === 'object') {
           // Already multilingual
           result[field] = {
-            ...currentText,
+            ...(currentText as object),
             [targetLanguage]: translations[translationIndex]
           };
         }

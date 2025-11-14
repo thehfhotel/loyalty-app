@@ -59,7 +59,7 @@ export const formatDateTimeToEuropean = (date: Date | string | null | undefined)
  */
 export const formatExpiryDateWithRelative = (
   date: Date | string | null | undefined,
-  t: (key: string, options?: any) => string
+  t: (key: string, options?: Record<string, unknown>) => string
 ): string | null => {
   if (!date) {return null;}
   

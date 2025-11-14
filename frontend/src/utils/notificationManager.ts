@@ -3,7 +3,11 @@ import toast from 'react-hot-toast';
 interface NotificationOptions {
   duration?: number;
   id?: string;
-  [key: string]: any;
+  icon?: string;
+  position?: 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+  style?: React.CSSProperties;
+  className?: string;
+  ariaProps?: Record<string, string>;
 }
 
 class NotificationManager {

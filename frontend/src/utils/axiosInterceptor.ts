@@ -5,6 +5,11 @@ import { notify } from './notificationManager';
 // Track if we've already shown the session expired message
 let sessionExpiredShown = false;
 
+// Extend InternalAxiosRequestConfig to include retry tracking
+interface RetryableRequestConfig extends InternalAxiosRequestConfig {
+  _retry?: boolean;
+}
+
 export function setupAxiosInterceptors() {
   // Response interceptor to handle 401 errors globally
   axios.interceptors.response.use(
@@ -25,9 +30,9 @@ export function setupAxiosInterceptors() {
         if (refreshToken) {
           try {
             await authStore.refreshAuth();
-            
+
             // If refresh successful, retry the original request
-            const originalRequest = error.config as any;
+            const originalRequest = error.config as RetryableRequestConfig;
             if (originalRequest && !originalRequest._retry) {
               originalRequest._retry = true; // Prevent infinite retry loops
               // Update the Authorization header with the new token
@@ -119,7 +124,7 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
   axiosInstance.interceptors.response.use(
     (response) => response,
     async (error: AxiosError) => {
-      const originalRequest = error.config as any;
+      const originalRequest = error.config as RetryableRequestConfig;
 
       if (error.response?.status === 401 && !originalRequest._retry) {
         originalRequest._retry = true;

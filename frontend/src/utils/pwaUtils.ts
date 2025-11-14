@@ -301,27 +301,33 @@ export async function requestPWANotificationPermission(): Promise<boolean> {
   }
 }
 
+// Type for beforeinstallprompt event
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+}
+
 /**
  * Check PWA installation status and prompt if needed
  */
 export function checkPWAInstallPrompt(): void {
-  let deferredPrompt: any;
-  
+  let deferredPrompt: BeforeInstallPromptEvent | null = null;
+
   window.addEventListener('beforeinstallprompt', (e) => {
     // Stash the event so it can be triggered later
-    deferredPrompt = e;
-    
+    deferredPrompt = e as BeforeInstallPromptEvent;
+
     // Check if we should show the install prompt
     const showInstallPrompt = localStorage.getItem('show_pwa_install_prompt');
     if (showInstallPrompt === 'true') {
       // Prevent the automatic prompt and show custom one
       e.preventDefault();
       localStorage.removeItem('show_pwa_install_prompt');
-      
+
       setTimeout(() => {
         if (deferredPrompt) {
           deferredPrompt.prompt();
-          deferredPrompt.userChoice.then((choiceResult: any) => {
+          deferredPrompt.userChoice.then((choiceResult) => {
             if (choiceResult.outcome === 'accepted') {
               console.log('User accepted the PWA install prompt');
             }
