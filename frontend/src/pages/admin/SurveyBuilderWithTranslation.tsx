@@ -27,7 +27,7 @@ interface SurveyValidationResult {
   isValid: boolean;
 }
 
-const validateSurveyQuestions = (questions: SurveyQuestion[], t: any): SurveyValidationResult => {
+const validateSurveyQuestions = (questions: SurveyQuestion[], t: (key: string) => string): SurveyValidationResult => {
   const emptyQuestions: QuestionValidationError[] = [];
   const emptyOptions: QuestionValidationError[] = [];
 
@@ -334,7 +334,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
         setTranslationStatus(newStatus);
         setSelectedLanguage(translationsData.original_language ?? 'th');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error loading survey:', err);
       toast.error(t('surveys.admin.messages.loadError'));
       navigate('/admin/surveys');
@@ -349,11 +349,12 @@ const SurveyBuilderWithTranslation: React.FC = () => {
     try {
       // Get recent translation jobs for this survey
       const jobs = await translationService.getTranslationJobs();
-      const surveyJobs = jobs.filter((job: any) => 
-        job.entityId === id && 
-        job.entityType === 'survey' &&
-        (job.status === 'pending' || job.status === 'processing')
-      );
+      const surveyJobs = jobs.filter((job: unknown) => {
+        const j = job as { entityId?: string; entityType?: string; status?: string };
+        return j.entityId === id &&
+          j.entityType === 'survey' &&
+          (j.status === 'pending' || j.status === 'processing');
+      });
       
       if (surveyJobs.length > 0) {
         // Show notification that translations are in progress
@@ -364,8 +365,9 @@ const SurveyBuilderWithTranslation: React.FC = () => {
         
         // Update status to pending for languages being translated
         const newStatus = { ...translationStatus };
-        surveyJobs.forEach((job: any) => {
-          job.target_languages?.forEach((lang: string) => {
+        surveyJobs.forEach((job: unknown) => {
+          const j = job as { target_languages?: string[] };
+          j.target_languages?.forEach((lang: string) => {
             newStatus[lang as SupportedLanguage] = 'pending';
           });
         });
@@ -445,7 +447,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
     }
   };
 
-  const handleSurveyChange = (field: string, value: any) => {
+  const handleSurveyChange = (field: string, value: unknown) => {
     setSurvey(prev => ({
       ...prev,
       [field]: value
@@ -531,10 +533,10 @@ const SurveyBuilderWithTranslation: React.FC = () => {
         clearInterval(pollInterval);
       }, 120000);
 
-    } catch (err: any) {
+    } catch (err) {
       console.error('Translation error:', err);
       toast.error('Failed to start translation');
-      
+
       // Reset status on error
       const errorStatus = { ...translationStatus };
       targetLanguages.forEach(lang => {
@@ -667,14 +669,21 @@ const SurveyBuilderWithTranslation: React.FC = () => {
           setIsTranslating(false);
         }
       }
-    } catch (err: any) {
-      const isValidationError = err.response?.status === 400;
-      const errorMessage = err.response?.data?.message ?? err.message ?? 'Failed to save survey';
-      
+    } catch (err) {
+      const axiosError = err instanceof Error && 'response' in err
+        ? (err as { response?: { status?: number; data?: { message?: string; validationErrors?: unknown[] } }; message?: string })
+        : null;
+
+      const isValidationError = axiosError?.response?.status === 400;
+      const errorMessage = axiosError?.response?.data?.message ?? (err instanceof Error ? err.message : undefined) ?? 'Failed to save survey';
+
       if (isValidationError) {
-        const backendErrors = err.response?.data?.validationErrors ?? [];
+        const backendErrors = axiosError?.response?.data?.validationErrors ?? [];
         if (backendErrors.length > 0) {
-          const fieldErrors = backendErrors.map((error: any) => error.message ?? error.field).join(', ');
+          const fieldErrors = backendErrors.map((error: unknown) => {
+            const e = error as { message?: string; field?: string };
+            return e.message ?? e.field;
+          }).join(', ');
           toast.error(t('surveys.admin.messages.validationFailed', { errors: fieldErrors }), {
             duration: 6000,
             icon: '⚠️'
@@ -898,7 +907,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
               </div>
 
               <div className="space-y-4">
-                {displayContent.questions?.map((question: any, index: number) => (
+                {displayContent.questions?.map((question, index: number) => (
                   <QuestionEditor
                     key={question.id}
                     question={question}
