@@ -25,7 +25,7 @@ const TakeSurvey: React.FC = () => {
     'zh-CN': 'pending'
   });
   const [existingResponse, setExistingResponse] = useState<SurveyResponse | null>(null);
-  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -108,9 +108,12 @@ const TakeSurvey: React.FC = () => {
         setIsCompleted(false);
         setCurrentQuestion(0);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error loading survey:', err);
-      setError(err.response?.data?.message ?? t('surveys.errors.loadFailed'));
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setError(errorMessage ?? t('surveys.errors.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -135,9 +138,12 @@ const TakeSurvey: React.FC = () => {
         const displayContent = getDisplayContent();
         setCurrentQuestion(displayContent?.questions?.length ?? 0);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error saving progress:', err);
-      setError(err.response?.data?.message ?? t('surveys.errors.saveFailed'));
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setError(errorMessage ?? t('surveys.errors.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -168,7 +174,7 @@ const TakeSurvey: React.FC = () => {
     }
   }, [survey, answers, saveProgress]);
 
-  const handleAnswerChange = (questionId: string, answer: any) => {
+  const handleAnswerChange = (questionId: string, answer: unknown) => {
     setAnswers(prev => ({
       ...prev,
       [questionId]: answer
@@ -376,7 +382,7 @@ const TakeSurvey: React.FC = () => {
 
             {/* Question navigation dots */}
             <div className="flex justify-center mt-6 space-x-2">
-              {displayContent?.questions?.map((question: any, index: number) => (
+              {displayContent?.questions?.map((question, index: number) => (
                 <button
                   key={index}
                   onClick={() => goToQuestion(index)}

@@ -86,7 +86,7 @@ const SurveyInvitations: React.FC = () => {
       };
       setStats(newStats);
       
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error loading data:', err);
       toast.error('Failed to load survey invitations');
     } finally {
@@ -109,9 +109,12 @@ const SurveyInvitations: React.FC = () => {
       const result = await surveyService.sendSurveyInvitations(id);
       toast.success(`Successfully sent ${result.sent} invitations`);
       loadData();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error sending invitations:', err);
-      toast.error(err.response?.data?.message || 'Failed to send invitations');
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      toast.error(errorMessage || 'Failed to send invitations');
     } finally {
       setSending(false);
     }
@@ -122,7 +125,7 @@ const SurveyInvitations: React.FC = () => {
       await surveyService.resendInvitation(invitationId);
       toast.success('Invitation resent successfully');
       loadData();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error resending invitation:', err);
       toast.error('Failed to resend invitation');
     }
@@ -134,7 +137,7 @@ const SurveyInvitations: React.FC = () => {
       const result = await userService.getAllUsers(1, 100, userSearch);
       const customerUsers = result.users.filter(user => user.role === 'customer');
       setUsers(customerUsers);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error loading users:', err);
       toast.error('Failed to load users');
     } finally {
@@ -189,9 +192,12 @@ const SurveyInvitations: React.FC = () => {
       setShowUserSelection(false);
       setSelectedUsers(new Set());
       loadData();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error sending invitations to users:', err);
-      toast.error(err.response?.data?.message || 'Failed to send invitations');
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      toast.error(errorMessage || 'Failed to send invitations');
     } finally {
       setSendingToUsers(false);
     }
