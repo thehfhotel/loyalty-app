@@ -1,5 +1,14 @@
 import axios from 'axios';
 import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
+import type {
+  LoginResponse,
+  RegisterResponse,
+  RefreshTokenResponse,
+  LogoutResponse,
+  ApiResponse,
+  User,
+  UserProfile,
+} from '../types/api';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api';
 
@@ -13,15 +22,23 @@ const api = axios.create({
 // Use the unified auth token interceptor
 addAuthTokenInterceptor(api);
 
+interface RegisterData {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+}
+
 export const authService = {
-  async login(email: string, password: string, rememberMe?: boolean) {
+  async login(email: string, password: string, rememberMe?: boolean): Promise<LoginResponse> {
     console.log('[Auth Debug] Login attempt', { email, rememberMe });
-    const response = await api.post('/auth/login', { 
-      email, 
+    const response = await api.post<LoginResponse>('/auth/login', {
+      email,
       password,
       rememberMe: rememberMe ?? false
     });
-    console.log('[Auth Debug] Login response', { 
+    console.log('[Auth Debug] Login response', {
       success: response.data.success,
       hasUser: !!response.data.user,
       hasTokens: !!response.data.tokens,
@@ -30,73 +47,71 @@ export const authService = {
     return response.data;
   },
 
-  async register(data: {
-    email: string;
-    password: string;
-    firstName: string;
-    lastName: string;
-    phone?: string;
-  }) {
-    const response = await api.post('/auth/register', data);
+  async register(data: RegisterData): Promise<RegisterResponse> {
+    const response = await api.post<RegisterResponse>('/auth/register', data);
     return response.data;
   },
 
-  async logout(refreshToken: string) {
-    await api.post('/auth/logout', { refreshToken });
+  async logout(refreshToken: string): Promise<void> {
+    await api.post<LogoutResponse>('/auth/logout', { refreshToken });
   },
 
-  async refreshToken(refreshToken: string) {
+  async refreshToken(refreshToken: string): Promise<RefreshTokenResponse> {
     console.log('[Auth Debug] Token refresh attempt');
-    const response = await api.post('/auth/refresh', { refreshToken });
-    console.log('[Auth Debug] Token refresh response', { 
+    const response = await api.post<RefreshTokenResponse>('/auth/refresh', { refreshToken });
+    console.log('[Auth Debug] Token refresh response', {
       success: !!response.data.tokens,
       hasNewAccessToken: !!response.data.tokens?.accessToken
     });
     return response.data;
   },
 
-  async resetPasswordRequest(email: string) {
-    const response = await api.post('/auth/reset-password/request', { email });
+  async resetPasswordRequest(email: string): Promise<ApiResponse> {
+    const response = await api.post<ApiResponse>('/auth/reset-password/request', { email });
     return response.data;
   },
 
-  async resetPassword(token: string, password: string) {
-    const response = await api.post('/auth/reset-password', { token, password });
+  async resetPassword(token: string, password: string): Promise<ApiResponse> {
+    const response = await api.post<ApiResponse>('/auth/reset-password', { token, password });
     return response.data;
   },
 
-  async getCurrentUser() {
-    const response = await api.get('/auth/me');
-    return response.data;
-  },
-  
-  async getMe() {
-    const response = await api.get('/auth/me');
+  async getCurrentUser(): Promise<ApiResponse<User & { profile?: UserProfile }>> {
+    const response = await api.get<ApiResponse<User & { profile?: UserProfile }>>('/auth/me');
     return response.data;
   },
 
-  async apiCall(url: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', data?: any) {
+  async getMe(): Promise<ApiResponse<User & { profile?: UserProfile }>> {
+    const response = await api.get<ApiResponse<User & { profile?: UserProfile }>>('/auth/me');
+    return response.data;
+  },
+
+  async apiCall<T = unknown>(url: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET', data?: unknown): Promise<T> {
     try {
       let response;
       switch (method) {
         case 'GET':
-          response = await api.get(url);
+          response = await api.get<T>(url);
           break;
         case 'POST':
-          response = await api.post(url, data);
+          response = await api.post<T>(url, data);
           break;
         case 'PUT':
-          response = await api.put(url, data);
+          response = await api.put<T>(url, data);
           break;
         case 'DELETE':
-          response = await api.delete(url);
+          response = await api.delete<T>(url);
           break;
         default:
           throw new Error(`Unsupported HTTP method: ${method}`);
       }
       return response.data;
-    } catch (error: any) {
-      console.error(`[Auth Debug] API call failed: ${method} ${url}`, error);
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error(`[Auth Debug] API call failed: ${method} ${url}`, error.message);
+      } else {
+        console.error(`[Auth Debug] API call failed: ${method} ${url}`, String(error));
+      }
       throw error;
     }
   },
