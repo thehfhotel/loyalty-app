@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useState, useEffect } from 'react';
 import { FiGift, FiCheck, FiX, FiInfo, FiAlertTriangle, FiAlertCircle } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import MainLayout from '../../components/layout/MainLayout';
@@ -18,7 +17,6 @@ interface NewMemberCouponSettings {
 }
 
 export default function NewMemberCouponSettings() {
-  const { t } = useTranslation();
   const [settings, setSettings] = useState<NewMemberCouponSettings | null>(null);
   const [availableCoupons, setAvailableCoupons] = useState<Coupon[]>([]);
   const [couponStatus, setCouponStatus] = useState<CouponStatusForAdmin | null>(null);

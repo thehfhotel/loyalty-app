@@ -8,9 +8,8 @@ import toast from 'react-hot-toast';
 import { userService, UserProfile } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
-import { FiLink, FiCopy, FiSettings, FiGift } from 'react-icons/fi';
+import { FiCopy, FiSettings, FiGift } from 'react-icons/fi';
 import EmailDisplay from '../components/common/EmailDisplay';
-import DashboardButton from '../components/navigation/DashboardButton';
 import MainLayout from '../components/layout/MainLayout';
 import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
 import { getTranslatedInterest } from '../utils/interestUtils';
@@ -61,9 +60,9 @@ export default function ProfilePage() {
   
 
   const {
-    register,
-    handleSubmit,
-    formState: { errors },
+    register: _register,
+    handleSubmit: _handleSubmit,
+    formState: { errors: _errors },
     reset,
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
