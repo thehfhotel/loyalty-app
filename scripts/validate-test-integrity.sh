@@ -81,13 +81,27 @@ check_file_violations() {
     fi
     
     # Check for conditional test bypassing
-    if grep -n "if.*process\.env\.SKIP_TESTS\|if.*isTestEnvironment.*return\|if.*Date\.now()" "$file" >/dev/null 2>&1; then
+    # Note: Excludes legitimate timeout checks that throw errors
+    if grep -n "if.*process\.env\.SKIP_TESTS\|if.*isTestEnvironment.*return" "$file" >/dev/null 2>&1; then
         print_violation "Conditional test bypassing found in $file:"
-        grep -n "if.*process\.env\.SKIP_TESTS\|if.*isTestEnvironment.*return\|if.*Date\.now()" "$file" | while read -r line; do
+        grep -n "if.*process\.env\.SKIP_TESTS\|if.*isTestEnvironment.*return" "$file" | while read -r line; do
             echo "  → $line"
         done
         violations_found=1
         ((VIOLATIONS++))
+    fi
+
+    # Check for Date.now() test bypasses (but exclude legitimate timeout checks that throw errors)
+    if grep -n "if.*Date\.now().*return" "$file" >/dev/null 2>&1; then
+        # Only flag if it's a return without throw
+        if ! grep -A1 "if.*Date\.now()" "$file" | grep -q "throw"; then
+            print_violation "Conditional test bypassing with Date.now() found in $file:"
+            grep -n "if.*Date\.now().*return" "$file" | while read -r line; do
+                echo "  → $line"
+            done
+            violations_found=1
+            ((VIOLATIONS++))
+        fi
     fi
     
     # Check for early returns that bypass tests
