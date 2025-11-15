@@ -2,6 +2,7 @@
  * Mock NotificationService for testing
  */
 
+/* eslint-disable @typescript-eslint/no-unused-vars */
 export class NotificationService {
   async getUserNotifications(_userId: string, _page: number, _limit: number, _includeRead: boolean) {
     return {
@@ -55,3 +56,4 @@ export class NotificationService {
     return 0;
   }
 }
+/* eslint-enable @typescript-eslint/no-unused-vars */

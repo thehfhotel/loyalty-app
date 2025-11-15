@@ -23,7 +23,12 @@ export function errorHandler(
   // NextFunction parameter required by Express error handler signature
 
   // Handle malformed JSON from express.json() middleware
-  if (err instanceof SyntaxError && 'body' in err && 'status' in err && (err as any).status === 400) {
+  if (
+    err instanceof SyntaxError &&
+    'body' in err &&
+    'status' in err &&
+    (err as SyntaxError & { status: number }).status === 400
+  ) {
     res.status(400).json({
       error: 'Invalid JSON format',
     });
