@@ -117,7 +117,6 @@ router.post('/avatar', uploadAvatar, async (req, res, next) => {
       // Process and save new avatar (automatically deletes old one)
       const avatarUrl = await ImageProcessor.processAvatar(
         req.file.buffer,
-        req.file.originalname,
         req.user.id
       );
 

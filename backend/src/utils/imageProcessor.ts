@@ -39,7 +39,7 @@ export class ImageProcessor {
   }
 
   // Process and save avatar image (single version)
-  static async processAvatar(buffer: Buffer, originalName: string, userId: string): Promise<string> {
+  static async processAvatar(buffer: Buffer, userId: string): Promise<string> {
     await this.ensureDirectories();
 
     // Generate filename using user ID for easy management
