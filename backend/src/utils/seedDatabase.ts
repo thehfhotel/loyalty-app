@@ -126,7 +126,7 @@ export const SAMPLE_TIERS: SeedTier[] = [
       description: 'สิทธิพิเศษระดับพรีเมียมสำหรับสมาชิกที่มีค่า',
       perks: ['อัพเกรดห้องฟรี', 'ได้รับคะแนนเพิ่ม']
     },
-    color: '#FFD700',
+    color: '#D4AF37', // Darker, more sophisticated gold
     sort_order: 3
   },
   {
@@ -137,7 +137,7 @@ export const SAMPLE_TIERS: SeedTier[] = [
       description: 'สิทธิพิเศษสุดพิเศษสำหรับสมาชิกระดับสูงสุด',
       perks: ['ส่วนลดพิเศษสำหรับสมาชิกขั้นสูงสุด']
     },
-    color: '#E5E4E2',
+    color: '#6B7280',
     sort_order: 4
   }
 ];

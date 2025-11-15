@@ -171,9 +171,28 @@ export default function LoyaltyAdminPage() {
           toast.success(t('admin.loyalty.success.pointsAwarded', { points }));
         }
       } else {
-        // For deduct: we don't support nights deduction through this UI
-        // (nights are only added via hotel stays, never removed)
-        if (points > 0) {
+        // For deduct: support both points and nights deduction
+        if (nights > 0) {
+          // Deduct nights (use negative value)
+          const amountSpent = -(points / 10); // Negative amount for deduction
+          await loyaltyService.awardSpendingWithNights(
+            pointsModal.user.user_id,
+            amountSpent,
+            -nights, // Negative nights for deduction
+            pointsForm.referenceId ?? `MANUAL-DEDUCT-${Date.now()}`,
+            finalDescription || `${-nights} nights` // Use negative value in description
+          );
+
+          // Build success message
+          let successMsg = '';
+          if (points > 0 && nights > 0) {
+            successMsg = `Deducted ${points} points and ${nights} ${nights === 1 ? 'night' : 'nights'}`;
+          } else if (nights > 0) {
+            successMsg = `Deducted ${nights} ${nights === 1 ? 'night' : 'nights'}`;
+          }
+          toast.success(successMsg);
+        } else if (points > 0) {
+          // Regular points-only deduction
           await loyaltyService.deductPoints(
             pointsModal.user.user_id,
             points,
@@ -693,27 +712,28 @@ export default function LoyaltyAdminPage() {
                 )}
               </div>
 
-              {/* Nights field - only show for award type */}
-              {pointsModal.type === 'award' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    จำนวนคืน
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={pointsForm.nights}
-                    onChange={(e) => setPointsForm({ ...pointsForm, nights: e.target.value })}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="0"
-                  />
-                  {pointsForm.nights && parseInt(pointsForm.nights) > 0 && (
-                    <p className="mt-1 text-sm text-blue-600">
-                      จะเพิ่ม {pointsForm.nights} คืน (tier จะปรับตามจำนวนคืนทั้งหมด)
-                    </p>
-                  )}
-                </div>
-              )}
+              {/* Nights field - show for both award and deduct */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  จำนวนคืน
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={pointsForm.nights}
+                  onChange={(e) => setPointsForm({ ...pointsForm, nights: e.target.value })}
+                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="0"
+                />
+                {pointsForm.nights && parseInt(pointsForm.nights) > 0 && (
+                  <p className={`mt-1 text-sm ${pointsModal.type === 'award' ? 'text-blue-600' : 'text-red-600'}`}>
+                    {pointsModal.type === 'award'
+                      ? `จะเพิ่ม ${pointsForm.nights} คืน (tier จะปรับตามจำนวนคืนทั้งหมด)`
+                      : `จะหัก ${pointsForm.nights} คืน (tier อาจลดลงหากคืนต่ำกว่าเกณฑ์)`
+                    }
+                  </p>
+                )}
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">

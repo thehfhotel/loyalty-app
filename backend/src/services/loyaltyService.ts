@@ -432,6 +432,9 @@ export class LoyaltyService {
         [userId]
       );
 
+      // Determine transaction type based on whether it's adding or removing nights/points
+      const transactionType = (nights < 0 || pointsEarned < 0) ? 'admin_deduction' : 'earned_stay';
+
       // Create points transaction
       const transactionResult = await client.query(
         `INSERT INTO points_transactions (
@@ -441,7 +444,7 @@ export class LoyaltyService {
         [
           userId,
           pointsEarned,
-          'hotel_stay',
+          transactionType,
           description || `Hotel stay: ${nights} night(s), ${amountSpent.toFixed(2)} THB spent`,
           referenceId || `STAY-${Date.now()}`
         ]

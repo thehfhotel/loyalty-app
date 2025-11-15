@@ -21,7 +21,7 @@ export default function PointsAndTierCard({ loyaltyStatus }: PointsAndTierCardPr
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 border-l-4 h-full flex flex-col"
+    <div className="bg-white rounded-lg shadow-md p-6 border-l-4 h-auto"
          style={{ borderLeftColor: loyaltyStatus.tier_color }}
     >
       {/* Points Balance Section */}

@@ -356,7 +356,7 @@
     "noTransactions": "暂无交易记录",
     "expires": "过期",
     "transactionTypes": {
-      "earnedStay": "酒店住宿",
+      "earnedStay": "管理员调整积分和夜数",
       "earnedBonus": "奖励积分",
       "redeemed": "积分兑换",
       "expired": "积分过期",

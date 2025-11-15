@@ -372,7 +372,7 @@
     "noTransactions": "No transactions yet",
     "expires": "Expires",
     "transactionTypes": {
-      "earnedStay": "Hotel Stay",
+      "earnedStay": "Admin Adjusted Points and Nights",
       "earnedBonus": "Bonus Points",
       "redeemed": "Points Redeemed",
       "expired": "Points Expired",

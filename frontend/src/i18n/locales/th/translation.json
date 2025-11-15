@@ -366,7 +366,7 @@
     "noTransactions": "ยังไม่มีรายการ",
     "expires": "หมดอายุ",
     "transactionTypes": {
-      "earnedStay": "การเข้าพักโรงแรม",
+      "earnedStay": "แอดมินปรับปรุงคะแนนและจำนวนคืน",
       "earnedBonus": "คะแนนโบนัส",
       "redeemed": "แลกคะแนน",
       "expired": "คะแนนหมดอายุ",

@@ -427,19 +427,8 @@ export class LoyaltyController {
         });
       }
 
-      if (amount < 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Amount spent must be non-negative'
-        });
-      }
-
-      if (nights < 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Nights stayed must be non-negative'
-        });
-      }
+      // Allow negative values for deductions (admin can deduct points/nights)
+      // The service layer handles both positive (award) and negative (deduct) values
 
       const result = await loyaltyService.addStayNightsAndPoints(
         userId,

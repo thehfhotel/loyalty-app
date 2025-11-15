@@ -20,28 +20,29 @@ export default function TransactionList({
 }: TransactionListProps) {
   const { t } = useTranslation();
 
-  const getTransactionIcon = (points: number) => {
-    if (points > 0) {
+  const getTransactionIcon = (transaction: PointsTransaction) => {
+    // earned_stay with 0 points should still show as positive (nights awarded)
+    // admin_deduction can show as positive if nights were deducted but points weren't
+    if (transaction.points > 0 || (transaction.points === 0 && transaction.type === 'earned_stay')) {
       return <FiPlus className="w-4 h-4 text-green-600" />;
+    } else if (transaction.points < 0 || transaction.type === 'admin_deduction' || transaction.type === 'redeemed') {
+      return <FiMinus className="w-4 h-4 text-red-600" />;
     } else {
       return <FiMinus className="w-4 h-4 text-red-600" />;
     }
   };
 
-  const getTransactionColor = (points: number) => {
-    if (points > 0) {
-      return 'text-green-600';
-    } else {
-      return 'text-red-600';
-    }
-  };
-
   const getPointsFocusedDescription = (transaction: PointsTransaction) => {
     // Always focus on points gained/lost rather than any spending amounts
-    if (transaction.points > 0) {
-      // Positive points - focus on earning
+    // Both earned_stay and admin_deduction should show the same admin adjustment text
+    if (transaction.type === 'earned_stay' || transaction.type === 'admin_deduction') {
+      return `${t('loyalty.transactionTypes.earnedStay')}`; // แอดมินปรับปรุงคะแนนและจำนวนคืน
+    }
+
+    // earned_stay with 0 points should still show as positive (nights awarded)
+    if (transaction.points > 0 || (transaction.points === 0 && transaction.type === 'earned_stay')) {
+      // Positive points or nights awarded - focus on earning
       switch (transaction.type) {
-        case 'earned_stay':
         case 'stay_earning':
           return `${t('loyalty.transactionTypes.earnedStay')}`;
         case 'earned_bonus':
@@ -58,8 +59,6 @@ export default function TransactionList({
           return `${t('loyalty.transactionTypes.redeemed')}`;
         case 'expired':
           return `${t('loyalty.transactionTypes.expired')}`;
-        case 'admin_deduction':
-          return `${t('loyalty.transactionTypes.adminDeduction')}`;
         default:
           return `${t('loyalty.pointsDeducted')}`;
       }
@@ -103,7 +102,7 @@ export default function TransactionList({
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6 flex flex-col h-full">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+      <h3 className="text-lg font-semibold text-gray-900 mb-4 flex-shrink-0">
         {t('loyalty.transactionHistory')}
       </h3>
 
@@ -113,16 +112,17 @@ export default function TransactionList({
           <p>{t('loyalty.noTransactions')}</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {transactions.map((transaction) => (
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="space-y-4">
+            {transactions.map((transaction) => (
             <div key={transaction.id} className="flex items-center space-x-4 py-3 border-b border-gray-100 last:border-b-0">
               {/* Transaction Icon */}
               <div className={`
                 w-10 h-10 rounded-lg flex items-center justify-center
-                ${transaction.points > 0 ? 'bg-green-50' : 'bg-red-50'}
+                ${(transaction.points > 0 || (transaction.points === 0 && transaction.type === 'earned_stay')) ? 'bg-green-50' : 'bg-red-50'}
               `}
               >
-                {getTransactionIcon(transaction.points)}
+                {getTransactionIcon(transaction)}
               </div>
 
               {/* Transaction Details */}
@@ -131,26 +131,40 @@ export default function TransactionList({
                   <p className="font-medium text-gray-900 truncate">
                     {getPointsFocusedDescription(transaction)}
                   </p>
-                  <p className={`font-semibold ${getTransactionColor(transaction.points)}`}>
-                    {transaction.points > 0 ? '+' : ''}{transaction.points.toLocaleString()} {t('loyalty.points')}
-                  </p>
+                  <div className="text-right">
+                    <p className="font-semibold text-gray-900">
+                      {(transaction.points > 0 || (transaction.points === 0 && transaction.type === 'earned_stay')) ? '+' : ''}{transaction.points.toLocaleString()} {t('loyalty.points')}
+                    </p>
+                    {(transaction.type === 'earned_stay' || transaction.type === 'admin_deduction') && transaction.description && (() => {
+                      const nightsMatch = transaction.description.match(/(-?\d+)\s*night/i);
+                      let nights = nightsMatch && nightsMatch[1] ? parseInt(nightsMatch[1]) : null;
+
+                      // Force negative for admin_deduction if not already negative
+                      if (nights !== null && transaction.type === 'admin_deduction' && nights > 0) {
+                        nights = -nights;
+                      }
+
+                      if (nights !== null && nights !== 0) {
+                        return (
+                          <p className="text-sm text-gray-900">
+                            {nights > 0 ? '+' : ''}{nights} {Math.abs(nights) === 1 ? t('loyalty.night') : t('loyalty.nights')}
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
                 </div>
                 
                 <div className="flex items-center space-x-4 mt-1">
                   <p className="text-sm text-gray-600">
                     {formatDate(transaction.created_at)}
                   </p>
-                  
+
                   {showAdminInfo && transaction.admin_email && (
                     <div className="flex items-center space-x-1 text-xs text-gray-500">
                       <FiUser className="w-3 h-3" />
                       <span>{transaction.admin_email}</span>
-                    </div>
-                  )}
-                  
-                  {transaction.expires_at && (
-                    <div className="text-xs text-yellow-600">
-                      {t('loyalty.expires')} {formatDate(transaction.expires_at)}
                     </div>
                   )}
                 </div>
@@ -164,16 +178,17 @@ export default function TransactionList({
             </div>
           ))}
 
-          {showLoadMore && (
-            <div className="text-center pt-4">
-              <button
-                onClick={onLoadMore}
-                className="px-4 py-2 text-sm font-medium text-primary-600 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors"
-              >
-                {t('common.loadMore')}
-              </button>
-            </div>
-          )}
+            {showLoadMore && (
+              <div className="text-center pt-4">
+                <button
+                  onClick={onLoadMore}
+                  className="px-4 py-2 text-sm font-medium text-primary-600 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors"
+                >
+                  {t('common.loadMore')}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -77,7 +77,7 @@ export default function DashboardPage() {
                       </h2>
                       <p className="text-sm text-gray-600 mt-1">
                         {t('loyalty.currentTier')}
-                        {loyaltyStatus.total_nights !== undefined && (
+                        {(loyaltyStatus.total_nights !== undefined && loyaltyStatus.total_nights !== null) && (
                           <> • {loyaltyStatus.total_nights} {loyaltyStatus.total_nights === 1 ? t('loyalty.night') : t('loyalty.nights')} {t('profile.stayed')}</>
                         )}
                         <> • {loyaltyStatus.current_points.toLocaleString()} {t('loyalty.availablePoints')}</>
@@ -86,19 +86,17 @@ export default function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <div className="grid grid-cols-2 gap-4">
-                      {loyaltyStatus.total_nights !== undefined && (
-                        <div>
-                          <div className="text-2xl font-bold" style={{ color: loyaltyStatus.tier_color }}>
-                            {loyaltyStatus.total_nights}
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            {loyaltyStatus.total_nights === 1 ? t('loyalty.night') : t('loyalty.nights')}
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {t('loyalty.tierEligibility')}
-                          </div>
+                      <div>
+                        <div className="text-2xl font-bold" style={{ color: loyaltyStatus.tier_color }}>
+                          {loyaltyStatus.total_nights ?? 0}
                         </div>
-                      )}
+                        <div className="text-sm text-gray-600">
+                          {(loyaltyStatus.total_nights ?? 0) === 1 ? t('loyalty.night') : t('loyalty.nights')}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {t('loyalty.tierEligibility')}
+                        </div>
+                      </div>
                       <div>
                         <div className="text-2xl font-bold" style={{ color: loyaltyStatus.tier_color }}>
                           {loyaltyStatus.current_points.toLocaleString()}
