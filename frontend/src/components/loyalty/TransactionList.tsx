@@ -102,14 +102,14 @@ export default function TransactionList({
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg shadow-md p-6 flex flex-col h-full">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">
         {t('loyalty.transactionHistory')}
       </h3>
 
       {transactions.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
-          <FiClock className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+        <div className="flex-1 flex flex-col items-center justify-center text-gray-500 min-h-[200px]">
+          <FiClock className="w-12 h-12 mb-3 text-gray-400" />
           <p>{t('loyalty.noTransactions')}</p>
         </div>
       ) : (

@@ -113,7 +113,7 @@
     "continueWithLine": "通过 LINE 继续"
   },
   "dashboard": {
-    "title": "会员积分仪表板",
+    "title": "欢迎回来，{{name}}",
     "welcome": "欢迎回来，{{name}}",
     "myProfile": "我的资料",
     "manageProfile": "查看和更新您的个人信息及偏好设置",

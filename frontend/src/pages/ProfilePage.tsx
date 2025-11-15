@@ -4,25 +4,14 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
-import toast from 'react-hot-toast';
 import { userService, UserProfile } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
-import { FiCopy, FiSettings, FiGift } from 'react-icons/fi';
+import { FiCopy, FiSettings } from 'react-icons/fi';
 import EmailDisplay from '../components/common/EmailDisplay';
 import MainLayout from '../components/layout/MainLayout';
 import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
 import { getTranslatedInterest } from '../utils/interestUtils';
-import { 
-  loyaltyService, 
-  UserLoyaltyStatus, 
-  Tier, 
-  PointsTransaction,
-  PointsCalculation
-} from '../services/loyaltyService';
-import PointsBalance from '../components/loyalty/PointsBalance';
-import TierStatus from '../components/loyalty/TierStatus';
-import TransactionList from '../components/loyalty/TransactionList';
 import SettingsModal from '../components/profile/SettingsModal';
 import EmojiAvatar from '../components/profile/EmojiAvatar';
 
@@ -50,14 +39,7 @@ export default function ProfilePage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Loyalty data states
-  const [loyaltyStatus, setLoyaltyStatus] = useState<UserLoyaltyStatus | null>(null);
-  const [allTiers, setAllTiers] = useState<Tier[]>([]);
-  const [pointsCalculation, setPointsCalculation] = useState<PointsCalculation | null>(null);
-  const [transactions, setTransactions] = useState<PointsTransaction[]>([]);
-  const [loyaltyLoading, setLoyaltyLoading] = useState(true);
-  
+
 
   const {
     register: _register,
@@ -70,7 +52,6 @@ export default function ProfilePage() {
 
   useEffect(() => {
     loadProfile();
-    loadLoyaltyData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -92,13 +73,13 @@ export default function ProfilePage() {
         firstName: profileData.firstName,
         lastName: profileData.lastName,
         phone: profileData.phone ?? '',
-        dateOfBirth: profileData.dateOfBirth 
-          ? new Date(profileData.dateOfBirth).toISOString().split('T')[0] 
+        dateOfBirth: profileData.dateOfBirth
+          ? new Date(profileData.dateOfBirth).toISOString().split('T')[0]
           : '',
         gender: profileData.gender ?? '',
         occupation: profileData.occupation ?? '',
-        interests: Array.isArray(profileData.interests) 
-          ? profileData.interests.join(', ') 
+        interests: Array.isArray(profileData.interests)
+          ? profileData.interests.join(', ')
           : '',
       });
     } catch (error: unknown) {
@@ -106,30 +87,6 @@ export default function ProfilePage() {
       console.error('Profile load error:', error);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const loadLoyaltyData = async () => {
-    try {
-      setLoyaltyLoading(true);
-      
-      // Load all loyalty data in parallel
-      const [statusResult, tiersResult, calculationResult, historyResult] = await Promise.all([
-        loyaltyService.getUserLoyaltyStatus(),
-        loyaltyService.getTiers(),
-        loyaltyService.getPointsCalculation(),
-        loyaltyService.getPointsHistory(10, 0)
-      ]);
-
-      setLoyaltyStatus(statusResult);
-      setAllTiers(tiersResult);
-      setPointsCalculation(calculationResult);
-      setTransactions(historyResult.transactions);
-    } catch (error) {
-      console.error('Error loading loyalty data:', error);
-      toast.error(t('errors.networkError'));
-    } finally {
-      setLoyaltyLoading(false);
     }
   };
 
@@ -168,9 +125,6 @@ export default function ProfilePage() {
             `🎉 Profile completed! You received: ${rewards.join(' and ')}`,
             { duration: 8000 }
           );
-          
-          // Refresh loyalty data to show new rewards
-          loadLoyaltyData();
         } else {
           notify.success(t('profile.profileCompleted'));
         }
@@ -284,7 +238,7 @@ export default function ProfilePage() {
     }
   };
 
-  if (isLoading || loyaltyLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -297,87 +251,6 @@ export default function ProfilePage() {
 
   return (
     <MainLayout title={t('profile.title')} showProfileBanner={false} showDashboardButton={true}>
-        {/* Membership Tier Display */}
-        {loyaltyStatus && (
-          <div className="mb-6 bg-white shadow rounded-lg border-l-4" style={{ borderLeftColor: loyaltyStatus.tier_color }}>
-            <div className="px-4 py-5 sm:p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="p-3 rounded-lg" style={{ backgroundColor: `${loyaltyStatus.tier_color}20` }}>
-                    <FiGift className="w-8 h-8" style={{ color: loyaltyStatus.tier_color }} />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900">
-                      {loyaltyStatus.tier_name} {t('loyalty.member')}
-                    </h2>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {t('loyalty.currentTier')}
-                      {loyaltyStatus.total_nights !== undefined && (
-                        <> • {loyaltyStatus.total_nights} {loyaltyStatus.total_nights === 1 ? t('loyalty.night') : t('loyalty.nights')} {t('profile.stayed')}</>
-                      )}
-                      <> • {loyaltyStatus.current_points.toLocaleString()} {t('loyalty.availablePoints')}</>
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="grid grid-cols-2 gap-4">
-                    {loyaltyStatus.total_nights !== undefined && (
-                      <div>
-                        <div className="text-2xl font-bold" style={{ color: loyaltyStatus.tier_color }}>
-                          {loyaltyStatus.total_nights}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {loyaltyStatus.total_nights === 1 ? t('loyalty.night') : t('loyalty.nights')}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {t('loyalty.tierEligibility')}
-                        </div>
-                      </div>
-                    )}
-                    <div>
-                      <div className="text-2xl font-bold" style={{ color: loyaltyStatus.tier_color }}>
-                        {loyaltyStatus.current_points.toLocaleString()}
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        {t('loyalty.points')}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {t('loyalty.forRewards')}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Progress to next tier */}
-              {loyaltyStatus.next_tier_name && loyaltyStatus.progress_percentage !== null && (
-                <div className="mt-4">
-                  <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-                    <span>
-                      {t('loyalty.progressToNextTier', { tier: loyaltyStatus.next_tier_name })}
-                    </span>
-                    <span>
-                      {loyaltyStatus.nights_to_next_tier !== undefined && loyaltyStatus.nights_to_next_tier !== null
-                        ? `${loyaltyStatus.nights_to_next_tier} ${loyaltyStatus.nights_to_next_tier === 1 ? t('loyalty.nightToGo') : t('loyalty.nightsToGo')}`
-                        : `${loyaltyStatus.points_to_next_tier?.toLocaleString()} ${t('loyalty.pointsToGo')}`
-                      }
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="h-2 rounded-full transition-all duration-300"
-                      style={{ 
-                        width: `${loyaltyStatus.progress_percentage}%`,
-                        backgroundColor: loyaltyStatus.tier_color
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Profile Information Section */}
         <div className="mb-6 bg-white shadow rounded-lg">
           <div className="px-4 py-5 sm:p-6">
@@ -527,43 +400,6 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
-
-        {/* Loyalty Information Section */}
-        {loyaltyStatus && pointsCalculation && (
-          <div className="mb-6">
-            <div className="flex items-center space-x-2 mb-4">
-              <FiGift className="h-6 w-6 text-primary-600" />
-              <h2 className="text-xl font-semibold text-gray-900">
-                {t('loyalty.dashboard.title')}
-              </h2>
-            </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left Column - Points & Transactions */}
-              <div className="lg:col-span-2 space-y-6">
-                {/* Points Balance */}
-                <PointsBalance
-                  loyaltyStatus={loyaltyStatus}
-                />
-
-                {/* Transaction History */}
-                <TransactionList
-                  transactions={transactions}
-                  isLoading={false}
-                />
-              </div>
-
-              {/* Right Column - Tier Status */}
-              <div className="space-y-6">
-                <TierStatus
-                  loyaltyStatus={loyaltyStatus}
-                  allTiers={allTiers}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
 
         {/* Settings Modal */}
         <SettingsModal

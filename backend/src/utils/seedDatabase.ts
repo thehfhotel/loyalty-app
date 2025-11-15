@@ -101,8 +101,8 @@ export const SAMPLE_TIERS: SeedTier[] = [
     min_points: 0, // Legacy field - not used
     min_nights: 0, // New members start at Bronze
     benefits: {
-      description: 'Welcome tier for new members',
-      perks: ['5% discount on services', 'Birthday bonus', 'Member newsletter']
+      description: 'ระดับต้อนรับสำหรับสมาชิกใหม่',
+      perks: ['ราคาพิเศษสำหรับสมาชิก', 'บริการแต่งห้องวันเกิด', 'ได้รับคะแนนเพิ่ม']
     },
     color: '#CD7F32',
     sort_order: 1
@@ -112,8 +112,8 @@ export const SAMPLE_TIERS: SeedTier[] = [
     min_points: 0, // Legacy field - not used
     min_nights: 1, // Unlocked after 1+ nights
     benefits: {
-      description: 'Elevated benefits for active members',
-      perks: ['10% discount on services', 'Priority check-in', 'Free room upgrade (subject to availability)', 'Birthday bonus']
+      description: 'สิทธิพิเศษระดับกลางสำหรับสมาชิกที่ใช้บริการ',
+      perks: ['ส่วนลดเครื่องดื่ม 10%', 'ได้รับคะแนนเพิ่ม']
     },
     color: '#C0C0C0',
     sort_order: 2
@@ -123,8 +123,8 @@ export const SAMPLE_TIERS: SeedTier[] = [
     min_points: 0, // Legacy field - not used
     min_nights: 10, // Unlocked after 10+ nights
     benefits: {
-      description: 'Premium benefits for valued members',
-      perks: ['15% discount on services', 'Complimentary breakfast', 'Late checkout', 'Free room upgrade', 'Priority support']
+      description: 'สิทธิพิเศษระดับพรีเมียมสำหรับสมาชิกที่มีค่า',
+      perks: ['อัพเกรดห้องฟรี', 'ได้รับคะแนนเพิ่ม']
     },
     color: '#FFD700',
     sort_order: 3
@@ -134,8 +134,8 @@ export const SAMPLE_TIERS: SeedTier[] = [
     min_points: 0, // Legacy field - not used
     min_nights: 20, // Unlocked after 20+ nights
     benefits: {
-      description: 'Exclusive benefits for our most loyal members',
-      perks: ['20% discount on services', 'Complimentary spa service', 'Airport transfer', 'Guaranteed room upgrade', 'Personal concierge', 'VIP lounge access']
+      description: 'สิทธิพิเศษสุดพิเศษสำหรับสมาชิกระดับสูงสุด',
+      perks: ['ส่วนลดพิเศษสำหรับสมาชิกขั้นสูงสุด']
     },
     color: '#E5E4E2',
     sort_order: 4

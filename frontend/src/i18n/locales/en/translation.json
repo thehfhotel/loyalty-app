@@ -113,7 +113,7 @@
     "continueWithLine": "Continue with LINE"
   },
   "dashboard": {
-    "title": "Loyalty Dashboard",
+    "title": "Welcome Back, {{name}}",
     "welcome": "Welcome back, {{name}}",
     "myProfile": "My Profile",
     "manageProfile": "View and update your personal information and preferences",
