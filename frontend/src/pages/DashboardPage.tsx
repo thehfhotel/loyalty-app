@@ -42,6 +42,7 @@ export default function DashboardPage() {
       setLoyaltyStatus(statusResult);
       setTransactions(historyResult.transactions);
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('Error loading loyalty data:', error);
       toast.error(t('errors.networkError'));
     } finally {
@@ -73,15 +74,8 @@ export default function DashboardPage() {
                     </div>
                     <div>
                       <h2 className="text-xl font-bold text-gray-900">
-                        {loyaltyStatus.tier_name} {t('loyalty.member')}
+                        {t('loyalty.tier')} {loyaltyStatus.tier_name}
                       </h2>
-                      <p className="text-sm text-gray-600 mt-1">
-                        {t('loyalty.currentTier')}
-                        {(loyaltyStatus.total_nights !== undefined && loyaltyStatus.total_nights !== null) && (
-                          <> • {loyaltyStatus.total_nights} {loyaltyStatus.total_nights === 1 ? t('loyalty.night') : t('loyalty.nights')} {t('profile.stayed')}</>
-                        )}
-                        <> • {loyaltyStatus.current_points.toLocaleString()} {t('loyalty.availablePoints')}</>
-                      </p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -121,7 +115,7 @@ export default function DashboardPage() {
                       </span>
                       <span>
                         {loyaltyStatus.nights_to_next_tier !== undefined && loyaltyStatus.nights_to_next_tier !== null
-                          ? `${loyaltyStatus.nights_to_next_tier} ${loyaltyStatus.nights_to_next_tier === 1 ? t('loyalty.nightToGo') : t('loyalty.nightsToGo')}`
+                          ? t('loyalty.nightsToGo', { count: loyaltyStatus.nights_to_next_tier })
                           : `${loyaltyStatus.points_to_next_tier?.toLocaleString()} ${t('loyalty.pointsToGo')}`
                         }
                       </span>
@@ -159,230 +153,264 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {/* Profile & Loyalty Card */}
-            <Link
-              to="/profile"
-              className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
-            >
-              <div className="p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0">
-                      <FiUser className="h-6 w-6 text-primary-600" />
-                    </div>
-                    <div className="ml-3">
-                      <dt className="text-lg font-semibold text-gray-900">
-                        {t('dashboard.myProfile')}
-                      </dt>
-                    </div>
-                  </div>
-                  <div className="flex-shrink-0">
-                    <div className="h-6 w-6 bg-gold-500 rounded-full flex items-center justify-center">
-                      <span className="text-xs text-white font-bold">★</span>
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <dd className="text-sm font-medium text-gray-500 mb-1">
-                    {t('dashboard.manageProfile')}
-                  </dd>
-                  <dd className="text-sm font-medium text-gray-500">
-                    {t('dashboard.manageLoyalty')}
-                  </dd>
-                </div>
-              </div>
-            </Link>
-
-            {/* Coupons Card */}
-            <Link
-              to="/coupons"
-              className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
-            >
-              <div className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <div className="h-6 w-6 bg-green-500 rounded flex items-center justify-center">
-                      <span className="text-xs text-white font-bold">🎫</span>
-                    </div>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-lg font-semibold text-gray-900 truncate">
-                        {t('dashboard.myCoupons')}
-                      </dt>
-                      <dd className="mt-1 text-sm font-medium text-gray-500">
-                        {t('dashboard.manageCoupons')}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-            </Link>
-
-            {/* Surveys Card */}
-            <Link
-              to="/surveys"
-              className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
-            >
-              <div className="p-5">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0">
-                    <div className="h-6 w-6 bg-purple-500 rounded flex items-center justify-center">
-                      <span className="text-xs text-white font-bold">📝</span>
-                    </div>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-lg font-semibold text-gray-900 truncate">
-                        {t('dashboard.surveys')}
-                      </dt>
-                      <dd className="mt-1 text-sm font-medium text-gray-500">
-                        {t('dashboard.takeSurveys')}
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
-            </Link>
-
-            {/* Loyalty Management Card (Admin+ Only) */}
-            {isAdmin && (
+          {/* User Menu Section */}
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+              {t('dashboard.myServices')}
+            </h2>
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {/* Profile & Loyalty Card */}
               <Link
-                to="/admin/loyalty"
+                to="/profile"
                 className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
               >
                 <div className="p-5">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0">
-                      <FiAward className="h-6 w-6 text-blue-600" />
-                    </div>
-                    <div className="ml-5 w-0 flex-1">
-                      <dl>
-                        <dt className="text-lg font-semibold text-gray-900 truncate">
-                          {t('dashboard.loyaltyManagement')}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <FiUser className="h-6 w-6 text-primary-600" />
+                      </div>
+                      <div className="ml-3">
+                        <dt className="text-lg font-semibold text-gray-900">
+                          {t('dashboard.myProfile')}
                         </dt>
-                        <dd className="mt-1 text-sm font-medium text-gray-500">
-                          {t('dashboard.manageLoyaltyAdmin')}
-                        </dd>
-                      </dl>
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            )}
-
-            {/* Coupon Management Card (Admin+ Only) */}
-            {isAdmin && (
-              <Link
-                to="/admin/coupons"
-                className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
-              >
-                <div className="p-5">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0">
-                      <div className="h-6 w-6 bg-yellow-500 rounded flex items-center justify-center">
-                        <span className="text-xs text-white font-bold">🎫</span>
                       </div>
                     </div>
-                    <div className="ml-5 w-0 flex-1">
-                      <dl>
-                        <dt className="text-lg font-semibold text-gray-900 truncate">
-                          {t('dashboard.couponManagement')}
-                        </dt>
-                        <dd className="mt-1 text-sm font-medium text-gray-500">
-                          {t('dashboard.manageCouponsAdmin')}
-                        </dd>
-                      </dl>
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            )}
-
-            {/* Survey Management Card (Admin+ Only) */}
-            {isAdmin && (
-              <Link
-                to="/admin/surveys"
-                className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
-              >
-                <div className="p-5">
-                  <div className="flex items-center">
                     <div className="flex-shrink-0">
-                      <div className="h-6 w-6 bg-purple-500 rounded flex items-center justify-center">
-                        <span className="text-xs text-white font-bold">📊</span>
+                      <div className="h-6 w-6 bg-gold-500 rounded-full flex items-center justify-center">
+                        <span className="text-xs text-white font-bold">★</span>
                       </div>
                     </div>
-                    <div className="ml-5 w-0 flex-1">
-                      <dl>
-                        <dt className="text-lg font-semibold text-gray-900 truncate">
-                          {t('dashboard.surveyManagement')}
-                        </dt>
-                        <dd className="mt-1 text-sm font-medium text-gray-500">
-                          {t('dashboard.manageSurveysAdmin')}
-                        </dd>
-                      </dl>
-                    </div>
+                  </div>
+                  <div>
+                    <dd className="text-sm font-medium text-gray-500 mb-1">
+                      {t('dashboard.manageProfile')}
+                    </dd>
+                    <dd className="text-sm font-medium text-gray-500">
+                      {t('dashboard.manageLoyalty')}
+                    </dd>
                   </div>
                 </div>
               </Link>
-            )}
 
-            {/* User Management Card (Admin+ Only) */}
-            {isAdmin && (
+              {/* Coupons Card */}
               <Link
-                to="/admin/users"
-                className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
-              >
-                <div className="p-5">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0">
-                      <FiUsers className="h-6 w-6 text-blue-600" />
-                    </div>
-                    <div className="ml-5 w-0 flex-1">
-                      <dl>
-                        <dt className="text-lg font-semibold text-gray-900 truncate">
-                          {t('dashboard.userManagement')}
-                        </dt>
-                        <dd className="mt-1 text-sm font-medium text-gray-500">
-                          {t('dashboard.manageUsersAdmin')}
-                        </dd>
-                      </dl>
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            )}
-
-            {/* New Member Coupons Card (Admin+ Only) */}
-            {isAdmin && (
-              <Link
-                to="/admin/new-member-coupons"
+                to="/coupons"
                 className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
               >
                 <div className="p-5">
                   <div className="flex items-center">
                     <div className="flex-shrink-0">
                       <div className="h-6 w-6 bg-green-500 rounded flex items-center justify-center">
-                        <span className="text-xs text-white font-bold">🎁</span>
+                        <span className="text-xs text-white font-bold">🎫</span>
                       </div>
                     </div>
                     <div className="ml-5 w-0 flex-1">
                       <dl>
                         <dt className="text-lg font-semibold text-gray-900 truncate">
-                          New Member Coupons
+                          {t('dashboard.myCoupons')}
                         </dt>
                         <dd className="mt-1 text-sm font-medium text-gray-500">
-                          Configure welcome coupons
+                          {t('dashboard.manageCoupons')}
                         </dd>
                       </dl>
                     </div>
                   </div>
                 </div>
               </Link>
-            )}
 
+              {/* Surveys Card */}
+              <Link
+                to="/surveys"
+                className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+              >
+                <div className="p-5">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <div className="h-6 w-6 bg-purple-500 rounded flex items-center justify-center">
+                        <span className="text-xs text-white font-bold">📝</span>
+                      </div>
+                    </div>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-lg font-semibold text-gray-900 truncate">
+                          {t('dashboard.surveys')}
+                        </dt>
+                        <dd className="mt-1 text-sm font-medium text-gray-500">
+                          {t('dashboard.takeSurveys')}
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            </div>
           </div>
+
+          {/* Admin Menu Section (Admin+ Only) */}
+          {isAdmin && (
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+                <FiUsers className="h-5 w-5 mr-2 text-blue-600" />
+                {t('dashboard.adminMenu')}
+              </h2>
+
+              {/* Admin Cards */}
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {/* Loyalty Management Card */}
+                <Link
+                  to="/admin/loyalty"
+                  className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                >
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <FiAward className="h-6 w-6 text-blue-600" />
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-lg font-semibold text-gray-900 truncate">
+                            {t('dashboard.loyaltyManagement')}
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium text-gray-500">
+                            {t('dashboard.manageLoyaltyAdmin')}
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+
+                {/* Coupon Management Card */}
+                <Link
+                  to="/admin/coupons"
+                  className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                >
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <div className="h-6 w-6 bg-yellow-500 rounded flex items-center justify-center">
+                          <span className="text-xs text-white font-bold">🎫</span>
+                        </div>
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-lg font-semibold text-gray-900 truncate">
+                            {t('dashboard.couponManagement')}
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium text-gray-500">
+                            {t('dashboard.manageCouponsAdmin')}
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+
+                {/* Survey Management Card */}
+                <Link
+                  to="/admin/surveys"
+                  className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                >
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <div className="h-6 w-6 bg-purple-500 rounded flex items-center justify-center">
+                          <span className="text-xs text-white font-bold">📊</span>
+                        </div>
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-lg font-semibold text-gray-900 truncate">
+                            {t('dashboard.surveyManagement')}
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium text-gray-500">
+                            {t('dashboard.manageSurveysAdmin')}
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+
+                {/* User Management Card */}
+                <Link
+                  to="/admin/users"
+                  className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                >
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <FiUsers className="h-6 w-6 text-blue-600" />
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-lg font-semibold text-gray-900 truncate">
+                            {t('dashboard.userManagement')}
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium text-gray-500">
+                            {t('dashboard.manageUsersAdmin')}
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+
+                {/* New Member Coupons Card */}
+                <Link
+                  to="/admin/new-member-coupons"
+                  className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                >
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <div className="h-6 w-6 bg-green-500 rounded flex items-center justify-center">
+                          <span className="text-xs text-white font-bold">🎁</span>
+                        </div>
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-lg font-semibold text-gray-900 truncate">
+                            New Member Coupons
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium text-gray-500">
+                            Configure welcome coupons
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+
+                {/* Transaction History Card */}
+                <Link
+                  to="/admin/transaction-history"
+                  className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                >
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <div className="h-6 w-6 bg-indigo-500 rounded flex items-center justify-center">
+                          <span className="text-xs text-white font-bold">📊</span>
+                        </div>
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-lg font-semibold text-gray-900 truncate">
+                            {t('admin.loyalty.transactionHistory')}
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium text-gray-500">
+                            {t('admin.loyalty.viewTransactionHistory')}
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              </div>
+            </div>
+          )}
 
           {/* Welcome Message */}
           <div className="mt-8 bg-white shadow rounded-lg">

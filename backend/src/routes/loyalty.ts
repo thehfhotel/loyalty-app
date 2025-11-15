@@ -244,6 +244,33 @@ router.post('/admin/deduct-points', requireAdmin, loyaltyController.deductPoints
 
 /**
  * @swagger
+ * /api/loyalty/admin/transactions:
+ *   get:
+ *     summary: Get all admin award and deduction transactions (Admin only)
+ *     tags: [Loyalty Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *     responses:
+ *       200:
+ *         description: List of admin transactions
+ *       403:
+ *         description: Admin access required
+ */
+router.get('/admin/transactions', requireAdmin, loyaltyController.getAdminTransactions.bind(loyaltyController));
+
+/**
+ * @swagger
  * /api/loyalty/admin/user/{userId}/history:
  *   get:
  *     summary: Get specific user's points history (Admin only)
@@ -372,5 +399,127 @@ router.post('/admin/expire-points', requireAdmin, loyaltyController.expirePoints
  *         description: Admin access required
  */
 router.post('/admin/award-spending-with-nights', requireAdmin, loyaltyController.awardSpendingWithNights.bind(loyaltyController));
+
+/**
+ * @swagger
+ * /api/loyalty/admin/award-nights:
+ *   post:
+ *     summary: Award nights to a user (Admin only) - nights only, no points
+ *     tags: [Loyalty Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - nights
+ *               - reason
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: User ID to award nights to
+ *               nights:
+ *                 type: integer
+ *                 minimum: 1
+ *                 description: Number of nights to award
+ *               reason:
+ *                 type: string
+ *                 description: Reason for awarding nights
+ *               referenceId:
+ *                 type: string
+ *                 description: Optional reference ID for the transaction
+ *     responses:
+ *       200:
+ *         description: Nights awarded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     transactionId:
+ *                       type: string
+ *                     newTotalNights:
+ *                       type: number
+ *                     newTierName:
+ *                       type: string
+ *                     loyaltyStatus:
+ *                       $ref: '#/components/schemas/UserLoyaltyStatus'
+ *       403:
+ *         description: Admin access required
+ */
+router.post('/admin/award-nights', requireAdmin, loyaltyController.awardNights.bind(loyaltyController));
+
+/**
+ * @swagger
+ * /api/loyalty/admin/deduct-nights:
+ *   post:
+ *     summary: Deduct nights from a user (Admin only) - nights only, no points
+ *     tags: [Loyalty Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - nights
+ *               - reason
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: User ID to deduct nights from
+ *               nights:
+ *                 type: integer
+ *                 minimum: 1
+ *                 description: Number of nights to deduct
+ *               reason:
+ *                 type: string
+ *                 description: Reason for deducting nights
+ *               referenceId:
+ *                 type: string
+ *                 description: Optional reference ID for the transaction
+ *     responses:
+ *       200:
+ *         description: Nights deducted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     transactionId:
+ *                       type: string
+ *                     newTotalNights:
+ *                       type: number
+ *                     newTierName:
+ *                       type: string
+ *                     loyaltyStatus:
+ *                       $ref: '#/components/schemas/UserLoyaltyStatus'
+ *       403:
+ *         description: Admin access required
+ */
+router.post('/admin/deduct-nights', requireAdmin, loyaltyController.deductNights.bind(loyaltyController));
 
 export default router;

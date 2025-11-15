@@ -326,6 +326,30 @@ export class LoyaltyController {
   }
 
   /**
+   * GET /api/loyalty/admin/transactions
+   * Get all admin award and deduction transactions (admin only)
+   */
+  async getAdminTransactions(req: Request, res: Response) {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      const transactions = await loyaltyService.getAdminTransactions(limit, offset);
+
+      res.json({
+        success: true,
+        data: transactions
+      });
+    } catch (error) {
+      logger.error('Error in getAdminTransactions:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch admin transactions'
+      });
+    }
+  }
+
+  /**
    * GET /api/loyalty/admin/user/:userId/history
    * Get specific user's points history (admin only)
    */
@@ -336,7 +360,7 @@ export class LoyaltyController {
       const offset = parseInt(req.query.offset as string) || 0;
 
       const history = await loyaltyService.getUserPointsHistory(userId!, limit, offset);
-      
+
       res.json({
         success: true,
         data: history
@@ -435,7 +459,9 @@ export class LoyaltyController {
         nights,
         amount,
         referenceId,
-        description ?? 'Spending points with nights awarded by admin'
+        description ?? 'Spending points with nights awarded by admin',
+        req.user.id, // Admin user ID
+        `Admin ${req.user.email} awarded ${nights} nights and ${amount} THB spending` // Admin reason
       );
 
       // Get updated loyalty status
@@ -452,6 +478,122 @@ export class LoyaltyController {
     } catch (error) {
       logger.error('Error in awardSpendingWithNights:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to award spending with nights';
+      res.status(500).json({
+        success: false,
+        message: errorMessage
+      });
+    }
+  }
+
+  /**
+   * POST /api/loyalty/admin/award-nights
+   * Award nights to a user (admin only) - nights only, no points
+   */
+  async awardNights(req: Request, res: Response): Promise<Response | void> {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+
+      const { userId, nights, reason, referenceId } = req.body;
+
+      if (!userId || !nights || !reason) {
+        return res.status(400).json({
+          success: false,
+          message: 'User ID, nights, and reason are required'
+        });
+      }
+
+      if (nights <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Nights must be greater than 0'
+        });
+      }
+
+      const result = await loyaltyService.awardNights(
+        userId,
+        nights,
+        req.user.id,
+        reason,
+        referenceId
+      );
+
+      // Get updated loyalty status
+      const updatedStatus = await loyaltyService.getUserLoyaltyStatus(userId);
+
+      res.json({
+        success: true,
+        message: 'Nights awarded successfully',
+        data: {
+          ...result,
+          loyaltyStatus: updatedStatus
+        }
+      });
+    } catch (error) {
+      logger.error('Error in awardNights:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to award nights';
+      res.status(500).json({
+        success: false,
+        message: errorMessage
+      });
+    }
+  }
+
+  /**
+   * POST /api/loyalty/admin/deduct-nights
+   * Deduct nights from a user (admin only) - nights only, no points
+   */
+  async deductNights(req: Request, res: Response): Promise<Response | void> {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required'
+        });
+      }
+
+      const { userId, nights, reason, referenceId } = req.body;
+
+      if (!userId || !nights || !reason) {
+        return res.status(400).json({
+          success: false,
+          message: 'User ID, nights, and reason are required'
+        });
+      }
+
+      if (nights <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Nights must be greater than 0'
+        });
+      }
+
+      const result = await loyaltyService.deductNights(
+        userId,
+        nights,
+        req.user.id,
+        reason,
+        referenceId
+      );
+
+      // Get updated loyalty status
+      const updatedStatus = await loyaltyService.getUserLoyaltyStatus(userId);
+
+      res.json({
+        success: true,
+        message: 'Nights deducted successfully',
+        data: {
+          ...result,
+          loyaltyStatus: updatedStatus
+        }
+      });
+    } catch (error) {
+      logger.error('Error in deductNights:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to deduct nights';
       res.status(500).json({
         success: false,
         message: errorMessage

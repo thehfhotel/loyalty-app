@@ -155,18 +155,48 @@ export const createUserRateLimiter = () => {
   });
 };
 
-// Authentication rate limiter (very strict)
+// Authentication rate limiter (strict for production, lenient for development)
 export const createAuthRateLimiter = () => {
-  return rateLimit({
+  const developmentLimits = {
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 100, // 100 auth attempts per minute in development (React StrictMode friendly)
+  };
+
+  const productionLimits = {
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // limit each IP to 5 login attempts per windowMs
+    max: 10, // 10 auth attempts per 15 minutes in production
+  };
+
+  const limits = isProduction() ? productionLimits : developmentLimits;
+
+  return rateLimit({
+    windowMs: limits.windowMs,
+    max: limits.max,
     message: {
       error: 'Authentication rate limit exceeded',
-      message: 'Too many login attempts from this IP, please try again later.',
+      message: `Too many login attempts from this IP, please try again later. ${!isProduction() ? '(Development mode - limits are more lenient)' : ''}`,
     },
     standardHeaders: true,
     legacyHeaders: false,
     skipSuccessfulRequests: true, // Don't count successful requests
+    skip: (req) => {
+      // In development, skip rate limiting for localhost and Docker network requests
+      if (!isProduction()) {
+        const devBypassIPs = [
+          '127.0.0.1',           // IPv4 localhost
+          '::1',                 // IPv6 localhost
+          '::ffff:127.0.0.1',    // IPv4-mapped IPv6 localhost
+          '192.168.65.1',        // Docker Desktop network gateway
+          '172.17.0.1',          // Default Docker bridge network gateway
+          '172.18.0.1',          // Docker Compose network gateway
+          '10.0.0.1'             // Common Docker network gateway
+        ];
+        if (req.ip && (devBypassIPs.includes(req.ip) || req.ip.startsWith('192.168.') || req.ip.startsWith('172.'))) {
+          return true;
+        }
+      }
+      return false;
+    },
     handler: (req: Request, res: Response) => {
       logger.warn('Authentication rate limit reached', {
         ip: req.ip,
@@ -175,7 +205,7 @@ export const createAuthRateLimiter = () => {
       });
       res.status(429).json({
         error: 'Authentication rate limit exceeded',
-        message: 'Too many login attempts from this IP, please try again later.',
+        message: `Too many login attempts from this IP, please try again later. ${!isProduction() ? '(Development mode)' : ''}`,
       });
     },
   });

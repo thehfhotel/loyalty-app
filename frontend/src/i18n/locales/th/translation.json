@@ -37,7 +37,10 @@
     "inactive": "ปิดใช้งาน",
     "remove": "นำออก",
     "create": "สร้าง",
-    "pageOf": "หน้า {{current}} จาก {{total}}"
+    "pageOf": "หน้า {{current}} จาก {{total}}",
+    "showing": "แสดง",
+    "of": "จาก",
+    "unknown": "ไม่ทราบ"
   },
   "notifications": {
     "title": "การแจ้งเตือน",
@@ -112,6 +115,8 @@
   "dashboard": {
     "title": "ยินดีต้อนรับกลับ คุณ {{name}}",
     "welcome": "ยินดีต้อนรับ, {{name}}",
+    "myServices": "บริการของฉัน",
+    "adminMenu": "เมนูผู้ดูแลระบบ",
     "myProfile": "ข้อมูลส่วนตัว",
     "manageProfile": "จัดการข้อมูลส่วนบุคคลของคุณ",
     "loyaltyPoints": "คะแนนสะสม",
@@ -345,12 +350,13 @@
     "night": "คืน",
     "nights": "คืน",
     "nightToGo": "คืนที่เหลือ",
-    "nightsToGo": "คืนที่เหลือ",
+    "nightsToGo": "อีก {{count}} คืน",
     "newMember": "สมาชิกใหม่",
-    "tierEligibility": "สำหรับระดับสมาชิก",
+    "tierEligibility": "สะสมเพื่อสถานะสมาชิก",
     "forRewards": "สำหรับรางวัล",
     "currentTier": "ระดับปัจจุบัน",
-    "progressToNextTier": "ความก้าวหน้าสู่ระดับ {{tier}}",
+    "progressToNextTier": "สู่ระดับ {{tier}}",
+    "tier": "ระดับ",
     "nextTierBenefits": "สิทธิประโยชน์ระดับ {{tier}}",
     "unlockBenefits": "เก็บคะแนนอีก {{points}} คะแนนเพื่อปลดล็อก",
     "unlockBenefitsNights": "เข้าพักอีก {{nights}} คืนเพื่อปลดล็อก",
@@ -425,7 +431,11 @@
         "transactionsFailed": "โหลดข้อมูลธุรกรรมไม่สำเร็จ",
         "pointsOperationFailed": "การดำเนินการคะแนนไม่สำเร็จ",
         "expireFailed": "ทำให้คะแนนหมดอายุไม่สำเร็จ"
-      }
+      },
+      "transactionHistory": "ประวัติธุรกรรม",
+      "transactions": "ธุรกรรม",
+      "viewTransactionHistory": "ดูประวัติธุรกรรม",
+      "noTransactions": "ไม่มีธุรกรรม"
     },
     "coupons": {
       "title": "จัดการคูปอง",

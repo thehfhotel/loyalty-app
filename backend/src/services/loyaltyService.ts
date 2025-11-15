@@ -264,6 +264,54 @@ export class LoyaltyService {
   }
 
   /**
+   * Get all admin award and deduction transactions
+   */
+  async getAdminTransactions(
+    limit = 50,
+    offset = 0
+  ): Promise<{ transactions: PointsTransaction[]; total: number }> {
+    try {
+      // Get admin transactions (admin_award and admin_deduction, earned_stay types) with user and admin info
+      const transactionsResult = await getPool().query(
+        `SELECT
+          pt.*,
+          u.email as user_email,
+          up.membership_id as user_membership_id,
+          up.first_name as user_first_name,
+          up.last_name as user_last_name,
+          admin.email as admin_email,
+          admin_profile.first_name as admin_first_name,
+          admin_profile.last_name as admin_last_name,
+          admin_profile.membership_id as admin_membership_id
+         FROM points_transactions pt
+         LEFT JOIN users u ON pt.user_id = u.id
+         LEFT JOIN user_profiles up ON u.id = up.user_id
+         LEFT JOIN users admin ON pt.admin_user_id = admin.id
+         LEFT JOIN user_profiles admin_profile ON admin.id = admin_profile.user_id
+         WHERE pt.type IN ('admin_award', 'admin_deduction', 'earned_stay')
+         ORDER BY pt.created_at DESC
+         LIMIT $1 OFFSET $2`,
+        [limit, offset]
+      );
+
+      // Get total count
+      const countResult = await getPool().query(
+        `SELECT COUNT(*) as total
+         FROM points_transactions
+         WHERE type IN ('admin_award', 'admin_deduction', 'earned_stay')`
+      );
+
+      return {
+        transactions: transactionsResult.rows,
+        total: parseInt(countResult.rows[0].total)
+      };
+    } catch (error) {
+      logger.error('Error fetching admin transactions:', error);
+      throw new Error('Failed to fetch admin transactions');
+    }
+  }
+
+  /**
    * Calculate user's current points with expiration info
    */
   async calculateUserPoints(userId: string): Promise<PointsCalculation> {
@@ -408,7 +456,9 @@ export class LoyaltyService {
     nights: number,
     amountSpent: number,
     referenceId?: string,
-    description?: string
+    description?: string,
+    adminUserId?: string,
+    adminReason?: string
   ): Promise<{
     transactionId: string;
     pointsEarned: number;
@@ -435,18 +485,22 @@ export class LoyaltyService {
       // Determine transaction type based on whether it's adding or removing nights/points
       const transactionType = (nights < 0 || pointsEarned < 0) ? 'admin_deduction' : 'earned_stay';
 
-      // Create points transaction
+      // Create points transaction WITH nights_stayed, admin_user_id, and admin_reason
       const transactionResult = await client.query(
         `INSERT INTO points_transactions (
-           user_id, points, type, description, reference_id, created_at, expires_at
-         ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW() + INTERVAL '1 year')
+           user_id, points, type, description, reference_id, nights_stayed,
+           admin_user_id, admin_reason, created_at, expires_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW() + INTERVAL '1 year')
          RETURNING id`,
         [
           userId,
           pointsEarned,
           transactionType,
           description || `Hotel stay: ${nights} night(s), ${amountSpent.toFixed(2)} THB spent`,
-          referenceId || `STAY-${Date.now()}`
+          referenceId || `STAY-${Date.now()}`,
+          nights, // Store nights_stayed
+          adminUserId, // Store admin who performed the action
+          adminReason // Store admin reason
         ]
       );
 
@@ -493,6 +547,96 @@ export class LoyaltyService {
       throw new Error('Failed to add stay nights and points');
     } finally {
       client.release();
+    }
+  }
+
+  /**
+   * Award nights to a user (admin only) - nights only, no points
+   */
+  async awardNights(
+    userId: string,
+    nights: number,
+    adminUserId: string,
+    adminReason: string,
+    referenceId?: string
+  ): Promise<{
+    transactionId: string;
+    newTotalNights: number;
+    newTierName: string;
+  }> {
+    try {
+      if (nights <= 0) {
+        throw new Error('Nights to award must be greater than 0');
+      }
+
+      const result = await this.addStayNightsAndPoints(
+        userId,
+        nights,
+        0, // No spending amount, only nights
+        referenceId,
+        `Admin awarded ${nights} night(s)`,
+        adminUserId,
+        adminReason
+      );
+
+      logger.info(`Awarded ${nights} nights to user ${userId} by admin ${adminUserId}`);
+
+      return {
+        transactionId: result.transactionId,
+        newTotalNights: result.newTotalNights,
+        newTierName: result.newTierName
+      };
+    } catch (error) {
+      logger.error('Error awarding nights:', error);
+      throw new Error('Failed to award nights');
+    }
+  }
+
+  /**
+   * Deduct nights from a user (admin only) - nights only, no points
+   */
+  async deductNights(
+    userId: string,
+    nights: number,
+    adminUserId: string,
+    adminReason: string,
+    referenceId?: string
+  ): Promise<{
+    transactionId: string;
+    newTotalNights: number;
+    newTierName: string;
+  }> {
+    try {
+      if (nights <= 0) {
+        throw new Error('Nights to deduct must be greater than 0');
+      }
+
+      // Check if user has enough nights
+      const loyaltyStatus = await this.getUserLoyaltyStatus(userId);
+      if (!loyaltyStatus || loyaltyStatus.total_nights < nights) {
+        throw new Error('Insufficient nights for deduction');
+      }
+
+      const result = await this.addStayNightsAndPoints(
+        userId,
+        -nights, // Negative nights for deduction
+        0, // No spending amount, only nights
+        referenceId,
+        `Admin deducted ${nights} night(s)`,
+        adminUserId,
+        adminReason
+      );
+
+      logger.info(`Deducted ${nights} nights from user ${userId} by admin ${adminUserId}`);
+
+      return {
+        transactionId: result.transactionId,
+        newTotalNights: result.newTotalNights,
+        newTierName: result.newTierName
+      };
+    } catch (error) {
+      logger.error('Error deducting nights:', error);
+      throw new Error('Failed to deduct nights');
     }
   }
 

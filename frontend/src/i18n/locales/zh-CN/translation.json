@@ -40,7 +40,10 @@
     "inactive": "未激活",
     "remove": "移除",
     "create": "创建",
-    "pageOf": "第 {{current}} 页，共 {{total}} 页"
+    "pageOf": "第 {{current}} 页，共 {{total}} 页",
+    "showing": "显示",
+    "of": "共",
+    "unknown": "未知"
   },
   "notifications": {
     "title": "通知",
@@ -115,6 +118,8 @@
   "dashboard": {
     "title": "欢迎回来，{{name}}",
     "welcome": "欢迎回来，{{name}}",
+    "myServices": "我的服务",
+    "adminMenu": "管理员菜单",
     "myProfile": "我的资料",
     "manageProfile": "查看和更新您的个人信息及偏好设置",
     "loyaltyPoints": "积分余额",
@@ -347,7 +352,14 @@
     "tierStatus": "等级状态",
     "points": "积分",
     "pointsToGo": "分差距升级",
+    "night": "晚",
+    "nights": "晚",
+    "nightToGo": "晚剩余",
+    "nightsToGo": "还需 {{count}} 晚",
+    "tierEligibility": "积累会员资格",
     "currentTier": "当前等级",
+    "progressToNextTier": "至 {{tier}} 等级",
+    "tier": "等级",
     "nextTierBenefits": "{{tier}} 福利",
     "unlockBenefits": "再获得 {{points}} 积分即可解锁",
     "topTierMessage": "恭喜！您已达到我们的最高会员等级！",
@@ -415,7 +427,11 @@
         "transactionsFailed": "加载交易记录失败",
         "pointsOperationFailed": "积分操作失败",
         "expireFailed": "积分过期操作失败"
-      }
+      },
+      "transactionHistory": "交易历史",
+      "transactions": "笔交易",
+      "viewTransactionHistory": "查看交易历史",
+      "noTransactions": "没有交易记录"
     },
     "coupons": {
       "title": "数字优惠券管理",

@@ -40,7 +40,10 @@
     "inactive": "Inactive",
     "remove": "Remove",
     "create": "Create",
-    "pageOf": "Page {{current}} of {{total}}"
+    "pageOf": "Page {{current}} of {{total}}",
+    "showing": "Showing",
+    "of": "of",
+    "unknown": "Unknown"
   },
   "notifications": {
     "title": "Notifications",
@@ -115,6 +118,8 @@
   "dashboard": {
     "title": "Welcome Back, {{name}}",
     "welcome": "Welcome back, {{name}}",
+    "myServices": "My Services",
+    "adminMenu": "Admin Management",
     "myProfile": "My Profile",
     "manageProfile": "View and update your personal information and preferences",
     "loyaltyPoints": "Loyalty Points",
@@ -351,12 +356,13 @@
     "night": "night",
     "nights": "nights",
     "nightToGo": "night to go",
-    "nightsToGo": "nights to go",
+    "nightsToGo": "{{count}} more nights",
     "newMember": "New Member",
-    "tierEligibility": "For tier status",
+    "tierEligibility": "Accumulate for membership status",
     "forRewards": "For rewards",
     "currentTier": "Current Tier",
-    "progressToNextTier": "Progress to {{tier}}",
+    "progressToNextTier": "To {{tier}} tier",
+    "tier": "Tier",
     "nextTierBenefits": "{{tier}} Benefits",
     "unlockBenefits": "Earn {{points}} more points to unlock",
     "unlockBenefitsNights": "Stay {{nights}} more nights to unlock",
@@ -431,7 +437,11 @@
         "transactionsFailed": "Failed to load transactions",
         "pointsOperationFailed": "Points operation failed",
         "expireFailed": "Failed to expire points"
-      }
+      },
+      "transactionHistory": "Transaction History",
+      "transactions": "transactions",
+      "viewTransactionHistory": "View transaction history",
+      "noTransactions": "No transactions available"
     },
     "coupons": {
       "title": "Digital Coupon Management",

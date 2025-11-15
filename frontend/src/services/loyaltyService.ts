@@ -57,6 +57,18 @@ export interface PointsTransaction {
   created_at: string;
 }
 
+export interface AdminTransaction extends PointsTransaction {
+  user_email?: string;
+  user_membership_id?: string | null;
+  user_first_name?: string | null;
+  user_last_name?: string | null;
+  admin_email?: string;
+  admin_first_name?: string | null;
+  admin_last_name?: string | null;
+  admin_membership_id?: string | null;
+  nights_stayed?: number | null;
+}
+
 export interface PointsCalculation {
   current_points: number;
   expiring_points: number;
@@ -239,6 +251,24 @@ export class LoyaltyService {
     } catch (error) {
       console.error('Error deducting points:', error);
       throw new Error('Failed to deduct points');
+    }
+  }
+
+  /**
+   * Get all admin transactions (admin only)
+   */
+  async getAdminTransactions(
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<{ transactions: AdminTransaction[]; total: number }> {
+    try {
+      const response = await api.get('/loyalty/admin/transactions', {
+        params: { limit, offset }
+      });
+      return response.data.data;
+    } catch (error) {
+      console.error('Error fetching admin transactions:', error);
+      throw new Error('Failed to fetch admin transactions');
     }
   }
 

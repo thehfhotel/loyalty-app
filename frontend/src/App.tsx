@@ -28,6 +28,7 @@ import SurveyInvitations from './pages/admin/SurveyInvitations';
 import ThaiSurveyDebug from './pages/admin/ThaiSurveyDebug';
 import UserManagement from './pages/admin/UserManagement';
 import NewMemberCouponSettings from './pages/admin/NewMemberCouponSettings';
+import AdminTransactionHistoryPage from './pages/admin/AdminTransactionHistoryPage';
 import { useEffect, useState, useRef } from 'react';
 import { checkPWAInstallPrompt } from './utils/pwaUtils';
 import { notificationService } from './services/notificationService';
@@ -375,6 +376,14 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin">
               <NewMemberCouponSettings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/transaction-history"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <AdminTransactionHistoryPage />
             </ProtectedRoute>
           }
         />
