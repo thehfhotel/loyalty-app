@@ -10,6 +10,12 @@
  * - Pattern necessary for dynamic Prisma mock implementations
  */
 
+// ⚠️ CRITICAL: Set environment variables BEFORE any module imports
+// These must be set here because authService.ts validates them at module load time
+process.env.NODE_ENV = 'test';
+process.env.JWT_SECRET = 'test-jwt-secret-key-that-is-at-least-sixty-four-characters-long-for-security';
+process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-key-that-is-at-least-sixty-four-characters-long';
+
 import { v4 as uuidv4 } from 'uuid';
 
 // Type definitions for test data with index signature for flexible access
@@ -88,12 +94,8 @@ export const testDb: MockPrismaClient = {
 
 // Setup before all tests
 beforeAll(async () => {
-  // Set test environment
-  process.env.NODE_ENV = 'test';
-
-  // Configure JWT secrets for authentication tests (must be 64+ characters)
-  process.env.JWT_SECRET = 'test-jwt-secret-key-that-is-at-least-sixty-four-characters-long-for-security';
-  process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-key-that-is-at-least-sixty-four-characters-long';
+  // Environment variables are already set at the top of this file
+  // (before any module imports) to avoid authService validation errors
 
   // Test logging removed to reduce noise - setup complete
   

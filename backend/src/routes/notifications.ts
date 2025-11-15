@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import { NotificationService } from '../services/notificationService';
-import { MarkReadRequest, NotificationType } from '../types/notification';
+import { NotificationType } from '../types/notification';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -41,20 +41,24 @@ router.get('/', async (req, res, next) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50); // Max 50 per page
+    const requestedPage = parseInt(req.query.page as string);
+    const requestedLimit = parseInt(req.query.limit as string);
+
+    // Ensure page is at least 1 (handle negative, zero, decimal, and NaN)
+    const page = Math.max(1, Math.floor(requestedPage)) || 1;
+    // Ensure limit is between 1 and 50 (handle negative, zero, decimal, and NaN)
+    const limit = Math.min(50, Math.max(1, Math.floor(requestedLimit))) || 20;
     const includeRead = req.query.includeRead !== 'false'; // Default to true
 
     const result = await notificationService.getUserNotifications(
-      req.user.id, 
-      page, 
-      limit, 
+      req.user.id,
+      page,
+      limit,
       includeRead
     );
 
     return res.json({
-      success: true,
-      data: result,
+      notifications: result.notifications || [],
       pagination: {
         page,
         limit,
@@ -85,33 +89,48 @@ router.get('/unread-count', async (req, res, next) => {
   }
 });
 
-// Mark notifications as read
-router.patch('/mark-read', async (req, res, next) => {
+// Mark notifications as read (single or multiple)
+router.post('/mark-read', async (req, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const { notificationIds, markAll }: MarkReadRequest = req.body;
+    const { notificationIds }: { notificationIds: string[] } = req.body;
 
-    if (!markAll && (!notificationIds || !Array.isArray(notificationIds))) {
-      return res.status(400).json({ 
-        error: 'Either provide notificationIds array or set markAll to true' 
+    if (!notificationIds || !Array.isArray(notificationIds)) {
+      return res.status(400).json({
+        error: 'notificationIds array is required'
       });
     }
 
     let markedCount = 0;
 
-    if (markAll) {
-      markedCount = await notificationService.markAllNotificationsRead(req.user.id);
-    } else if (notificationIds && notificationIds.length > 0) {
+    if (notificationIds.length > 0) {
       markedCount = await notificationService.markNotificationsRead(req.user.id, notificationIds);
     }
 
     return res.json({
       success: true,
-      data: { markedCount },
-      message: `${markedCount} notification${markedCount !== 1 ? 's' : ''} marked as read`
+      markedRead: markedCount
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Mark all notifications as read
+router.post('/mark-all-read', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const markedCount = await notificationService.markAllNotificationsRead(req.user.id);
+
+    return res.json({
+      success: true,
+      markedRead: markedCount
     });
   } catch (error) {
     return next(error);
@@ -157,7 +176,7 @@ router.get('/preferences', async (req, res, next) => {
 
     return res.json({
       success: true,
-      data: preferences
+      preferences
     });
   } catch (error) {
     return next(error);
@@ -171,21 +190,13 @@ router.put('/preferences', async (req, res, next) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const { preferences } = req.body;
+    const preferences = req.body;
 
-    if (!preferences || !Array.isArray(preferences)) {
-      return res.status(400).json({ 
-        error: 'Preferences array is required' 
+    // Allow both object format and array format for backward compatibility
+    if (!preferences || typeof preferences !== 'object') {
+      return res.status(400).json({
+        error: 'Preferences object is required'
       });
-    }
-
-    // Validate preferences format
-    for (const pref of preferences) {
-      if (!pref.type || typeof pref.enabled !== 'boolean') {
-        return res.status(400).json({ 
-          error: 'Each preference must have type (string) and enabled (boolean)' 
-        });
-      }
     }
 
     const updatedPreferences = await notificationService.updateUserPreferences(
@@ -195,8 +206,7 @@ router.put('/preferences', async (req, res, next) => {
 
     return res.json({
       success: true,
-      data: updatedPreferences,
-      message: 'Notification preferences updated successfully'
+      preferences: updatedPreferences
     });
   } catch (error) {
     return next(error);

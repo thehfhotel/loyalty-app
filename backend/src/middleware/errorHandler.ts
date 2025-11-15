@@ -22,12 +22,20 @@ export function errorHandler(
 ): void {
   // NextFunction parameter required by Express error handler signature
 
+  // Handle malformed JSON from express.json() middleware
+  if (err instanceof SyntaxError && 'body' in err && 'status' in err && (err as any).status === 400) {
+    res.status(400).json({
+      error: 'Invalid JSON format',
+    });
+    return;
+  }
+
   if (err instanceof ZodError) {
     const errorMessage = err.errors.map((e) => ({
       field: e.path.join('.'),
       message: e.message,
     }));
-    
+
     res.status(400).json({
       error: 'Validation failed',
       details: errorMessage,
@@ -52,8 +60,8 @@ export function errorHandler(
   });
 
   // Don't expose internal errors in production
-  const message = process.env.NODE_ENV === 'production' 
-    ? 'Internal server error' 
+  const message = process.env.NODE_ENV === 'production'
+    ? 'Internal server error'
     : err.message;
 
   res.status(500).json({
