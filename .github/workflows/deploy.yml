@@ -133,18 +133,21 @@ jobs:
           echo "Frontend cache hit: ${{ steps.frontend-cache.outputs.cache-hit }}"
           echo "ready=true" >> $GITHUB_OUTPUT
 
-      - name: "📤 Upload workspace as artifact"
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-workspace-${{ github.run_id }}
-          path: |
-            .
-            !.git
-            !node_modules
-            !backend/node_modules
-            !frontend/node_modules
-          retention-days: 1
-          compression-level: 0
+      - name: "📤 Copy workspace to shared location"
+        run: |
+          SHARED_WORKSPACE="/tmp/runner-workspace/${{ github.run_id }}"
+          echo "📦 Creating shared workspace directory at: $SHARED_WORKSPACE"
+          mkdir -p "$SHARED_WORKSPACE"
+
+          echo "📋 Copying workspace files (excluding .git and node_modules)..."
+          rsync -av --exclude='.git' \
+                    --exclude='node_modules' \
+                    --exclude='backend/node_modules' \
+                    --exclude='frontend/node_modules' \
+                    . "$SHARED_WORKSPACE/"
+
+          echo "✅ Workspace copied to shared location"
+          echo "workspace-path=$SHARED_WORKSPACE" >> $GITHUB_OUTPUT
 
   # =============================================================================
   # PHASE 1: PARALLEL VALIDATION & SECURITY (3-4 minutes)
@@ -161,11 +164,21 @@ jobs:
       audit-passed: ${{ steps.security-audit.outputs.passed }}
 
     steps:
-      - name: "📥 Download shared workspace"
-        uses: actions/download-artifact@v4
-        with:
-          name: ci-workspace-${{ github.run_id }}
-          path: .
+      - name: "📥 Copy shared workspace from local storage"
+        run: |
+          SHARED_WORKSPACE="/tmp/runner-workspace/${{ github.run_id }}"
+          echo "📦 Copying workspace from shared location: $SHARED_WORKSPACE"
+
+          if [ ! -d "$SHARED_WORKSPACE" ]; then
+            echo "❌ CRITICAL: Shared workspace not found at $SHARED_WORKSPACE"
+            echo "This job depends on the prepare-workspace job completing successfully"
+            exit 1
+          fi
+
+          echo "📋 Copying workspace files..."
+          rsync -av "$SHARED_WORKSPACE/" .
+
+          echo "✅ Workspace copied from shared location"
 
       - name: "⚡ Setup Node.js"
         uses: actions/setup-node@v4
@@ -252,11 +265,21 @@ jobs:
       coverage-percent: ${{ steps.test-results.outputs.coverage }}
 
     steps:
-      - name: "📥 Download shared workspace"
-        uses: actions/download-artifact@v4
-        with:
-          name: ci-workspace-${{ github.run_id }}
-          path: .
+      - name: "📥 Copy shared workspace from local storage"
+        run: |
+          SHARED_WORKSPACE="/tmp/runner-workspace/${{ github.run_id }}"
+          echo "📦 Copying workspace from shared location: $SHARED_WORKSPACE"
+
+          if [ ! -d "$SHARED_WORKSPACE" ]; then
+            echo "❌ CRITICAL: Shared workspace not found at $SHARED_WORKSPACE"
+            echo "This job depends on the prepare-workspace job completing successfully"
+            exit 1
+          fi
+
+          echo "📋 Copying workspace files..."
+          rsync -av "$SHARED_WORKSPACE/" .
+
+          echo "✅ Workspace copied from shared location"
 
       - name: "⚡ Setup Node.js"
         uses: actions/setup-node@v4
@@ -397,13 +420,19 @@ jobs:
           SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
         run: npm run test:unit -- --coverage --passWithNoTests
 
-      - name: "📊 Upload coverage reports"
-        uses: actions/upload-artifact@v4
+      - name: "📊 Save coverage reports to local storage"
         if: always()
-        with:
-          name: unit-coverage-reports
-          path: backend/coverage/
-          retention-days: 7
+        run: |
+          COVERAGE_DIR="/tmp/runner-reports/coverage/${{ github.run_id }}"
+          mkdir -p "$COVERAGE_DIR"
+
+          if [ -d "backend/coverage" ]; then
+            echo "📋 Copying coverage reports to: $COVERAGE_DIR"
+            cp -r backend/coverage/* "$COVERAGE_DIR/" || echo "⚠️ No coverage files to copy"
+            echo "✅ Coverage reports saved locally"
+          else
+            echo "⚠️ No coverage directory found"
+          fi
       
       - name: "📈 Test results summary (reporting only)"
         id: test-results
@@ -437,11 +466,21 @@ jobs:
       tests-passed: ${{ steps.test-results.outputs.passed }}
 
     steps:
-      - name: "📥 Download shared workspace"
-        uses: actions/download-artifact@v4
-        with:
-          name: ci-workspace-${{ github.run_id }}
-          path: .
+      - name: "📥 Copy shared workspace from local storage"
+        run: |
+          SHARED_WORKSPACE="/tmp/runner-workspace/${{ github.run_id }}"
+          echo "📦 Copying workspace from shared location: $SHARED_WORKSPACE"
+
+          if [ ! -d "$SHARED_WORKSPACE" ]; then
+            echo "❌ CRITICAL: Shared workspace not found at $SHARED_WORKSPACE"
+            echo "This job depends on the prepare-workspace job completing successfully"
+            exit 1
+          fi
+
+          echo "📋 Copying workspace files..."
+          rsync -av "$SHARED_WORKSPACE/" .
+
+          echo "✅ Workspace copied from shared location"
 
       - name: "⚡ Setup Node.js"
         uses: actions/setup-node@v4
@@ -642,11 +681,21 @@ jobs:
       e2e-passed: ${{ steps.e2e-results.outputs.passed }}
 
     steps:
-      - name: "📥 Download shared workspace"
-        uses: actions/download-artifact@v4
-        with:
-          name: ci-workspace-${{ github.run_id }}
-          path: .
+      - name: "📥 Copy shared workspace from local storage"
+        run: |
+          SHARED_WORKSPACE="/tmp/runner-workspace/${{ github.run_id }}"
+          echo "📦 Copying workspace from shared location: $SHARED_WORKSPACE"
+
+          if [ ! -d "$SHARED_WORKSPACE" ]; then
+            echo "❌ CRITICAL: Shared workspace not found at $SHARED_WORKSPACE"
+            echo "This job depends on the prepare-workspace job completing successfully"
+            exit 1
+          fi
+
+          echo "📋 Copying workspace files..."
+          rsync -av "$SHARED_WORKSPACE/" .
+
+          echo "✅ Workspace copied from shared location"
 
       - name: "⚡ Setup Node.js"
         uses: actions/setup-node@v4
