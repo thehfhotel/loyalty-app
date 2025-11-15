@@ -135,7 +135,7 @@ jobs:
 
       - name: "📤 Copy workspace to shared location"
         run: |
-          SHARED_WORKSPACE="/tmp/runner-workspace/${{ github.run_id }}"
+          SHARED_WORKSPACE="/tmp/runner-cache/workspace/${{ github.run_id }}"
           echo "📦 Creating shared workspace directory at: $SHARED_WORKSPACE"
           mkdir -p "$SHARED_WORKSPACE"
 
@@ -166,7 +166,7 @@ jobs:
     steps:
       - name: "📥 Copy shared workspace from local storage"
         run: |
-          SHARED_WORKSPACE="/tmp/runner-workspace/${{ github.run_id }}"
+          SHARED_WORKSPACE="/tmp/runner-cache/workspace/${{ github.run_id }}"
           echo "📦 Copying workspace from shared location: $SHARED_WORKSPACE"
 
           if [ ! -d "$SHARED_WORKSPACE" ]; then
@@ -267,7 +267,7 @@ jobs:
     steps:
       - name: "📥 Copy shared workspace from local storage"
         run: |
-          SHARED_WORKSPACE="/tmp/runner-workspace/${{ github.run_id }}"
+          SHARED_WORKSPACE="/tmp/runner-cache/workspace/${{ github.run_id }}"
           echo "📦 Copying workspace from shared location: $SHARED_WORKSPACE"
 
           if [ ! -d "$SHARED_WORKSPACE" ]; then
@@ -423,7 +423,7 @@ jobs:
       - name: "📊 Save coverage reports to local storage"
         if: always()
         run: |
-          COVERAGE_DIR="/tmp/runner-reports/coverage/${{ github.run_id }}"
+          COVERAGE_DIR="/tmp/runner-cache/reports/coverage/${{ github.run_id }}"
           mkdir -p "$COVERAGE_DIR"
 
           if [ -d "backend/coverage" ]; then
@@ -468,7 +468,7 @@ jobs:
     steps:
       - name: "📥 Copy shared workspace from local storage"
         run: |
-          SHARED_WORKSPACE="/tmp/runner-workspace/${{ github.run_id }}"
+          SHARED_WORKSPACE="/tmp/runner-cache/workspace/${{ github.run_id }}"
           echo "📦 Copying workspace from shared location: $SHARED_WORKSPACE"
 
           if [ ! -d "$SHARED_WORKSPACE" ]; then
@@ -683,7 +683,7 @@ jobs:
     steps:
       - name: "📥 Copy shared workspace from local storage"
         run: |
-          SHARED_WORKSPACE="/tmp/runner-workspace/${{ github.run_id }}"
+          SHARED_WORKSPACE="/tmp/runner-cache/workspace/${{ github.run_id }}"
           echo "📦 Copying workspace from shared location: $SHARED_WORKSPACE"
 
           if [ ! -d "$SHARED_WORKSPACE" ]; then
