@@ -62,14 +62,21 @@ else
 fi
 
 # Check if .env.example has proper templates
-if [ -f "backend/.env.example" ]; then
-    if grep -q "JWT_SECRET=.*[a-z0-9A-Z]\{64,\}" backend/.env.example 2>/dev/null; then
+if [ -f "backend/.env.example" ] || [ -f ".env.example" ]; then
+    ENV_EXAMPLE_FILE=""
+    if [ -f "backend/.env.example" ]; then
+        ENV_EXAMPLE_FILE="backend/.env.example"
+    elif [ -f ".env.example" ]; then
+        ENV_EXAMPLE_FILE=".env.example"
+    fi
+
+    if grep -q "JWT_SECRET=.*[a-z0-9A-Z]\{64,\}" "$ENV_EXAMPLE_FILE" 2>/dev/null; then
         log_pass ".env.example has proper secret templates"
     else
         log_warn ".env.example should include 64+ character secret examples"
     fi
 else
-    log_warn ".env.example not found"
+    log_warn ".env.example not found in backend/ or project root"
 fi
 
 # =============================================================================
@@ -268,11 +275,20 @@ else
     log_warn "docker-compose.prod.yml not found"
 fi
 
-# Check for .env.production template
-if [ -f "backend/.env.production" ] || [ -f ".env.production" ]; then
-    log_pass "Production environment template exists"
+# Check for .env.production.example template
+if [ -f "backend/.env.production.example" ] || [ -f ".env.production.example" ]; then
+    log_pass "Production environment template exists (.env.production.example)"
 else
-    log_warn ".env.production template not found"
+    log_warn ".env.production.example template not found (developers need environment variable reference)"
+fi
+
+# Verify .env.production is NOT in git (security best practice)
+if git ls-files --error-unmatch .env.production >/dev/null 2>&1; then
+    log_fail "SECURITY: .env.production is tracked in git (should be in .gitignore)"
+elif git ls-files --error-unmatch backend/.env.production >/dev/null 2>&1; then
+    log_fail "SECURITY: backend/.env.production is tracked in git (should be in .gitignore)"
+else
+    log_pass ".env.production correctly excluded from git (security best practice)"
 fi
 
 # =============================================================================
