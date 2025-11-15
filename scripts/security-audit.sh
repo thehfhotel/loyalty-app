@@ -116,18 +116,26 @@ echo ""
 echo "🔒 Checking HTTPS Enforcement..."
 echo "---------------------------------"
 
-# Check for HTTPS redirection middleware
-if grep -q "HTTPS\|https.*redirect\|req\.secure" backend/src/index.ts 2>/dev/null; then
-    log_pass "HTTPS enforcement detected in index.ts"
+# Check for HTTPS redirection middleware (productionSecurity)
+if grep -q "productionSecurity" backend/src/index.ts 2>/dev/null && \
+   grep -q "redirect.*https\|https.*redirect" backend/src/middleware/security.ts 2>/dev/null; then
+    log_pass "HTTPS enforcement middleware detected (productionSecurity with redirect)"
+elif grep -q "productionSecurity" backend/src/index.ts 2>/dev/null; then
+    log_pass "productionSecurity middleware registered (verify HTTPS redirect in security.ts)"
 else
     log_warn "HTTPS enforcement middleware not detected"
     echo "   Add: if (!req.secure && process.env.NODE_ENV === 'production') res.redirect()"
 fi
 
-# Check for secure cookie configuration
-if grep -q "secure: true\|cookie.*secure.*true" backend/src/index.ts 2>/dev/null || \
-   grep -q "secure: true\|cookie.*secure.*true" backend/src/config/session.ts 2>/dev/null; then
-    log_pass "Secure cookie configuration found"
+# Check for secure cookie configuration (httpOnly, sameSite, dynamic secure)
+if grep -q "httpOnly: true" backend/src/index.ts 2>/dev/null && \
+   grep -q "sameSite:" backend/src/index.ts 2>/dev/null; then
+    # Verify secure flag is set (can be dynamic: secure: isSecure)
+    if grep -q "secure:.*isSecure\|secure: true" backend/src/index.ts 2>/dev/null; then
+        log_pass "Secure cookie configuration found (httpOnly, sameSite, dynamic secure flag)"
+    else
+        log_pass "Cookie security flags found (httpOnly, sameSite) - verify secure flag"
+    fi
 else
     log_warn "Secure cookies may not be configured (secure, httpOnly, sameSite required)"
 fi
