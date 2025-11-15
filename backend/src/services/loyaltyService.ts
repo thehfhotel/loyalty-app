@@ -426,7 +426,7 @@ export class LoyaltyService {
       await client.query(
         `INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights)
          SELECT $1, t.id, 0, 0
-         FROM loyalty_tiers t
+         FROM tiers t
          WHERE t.name = 'Bronze'
          ON CONFLICT (user_id) DO NOTHING`,
         [userId]

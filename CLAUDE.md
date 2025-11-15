@@ -2,1184 +2,235 @@
 
 ## ⚠️ MANDATORY RULES - NEVER VIOLATE
 
-These rules are **ABSOLUTE** and must be followed in all circumstances. No exceptions.
-
-### 1. ✅ Docker Compose Command Syntax
-**ALWAYS USE:** `docker compose` (with space)  
-**NEVER USE:** `docker-compose` (with hyphen)
+### 1. Docker Compose Syntax
+**Use:** `docker compose` (space) **Never:** `docker-compose` (hyphen)
 
 ```bash
 # ✅ CORRECT
-docker compose up -d
-docker compose down
-docker compose ps
-docker compose logs
-docker compose exec backend npm test
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
-# ❌ WRONG - NEVER USE
-docker-compose up -d     # VIOLATION
-docker-compose down      # VIOLATION
+# ❌ WRONG
+docker-compose up -d
 ```
 
-**Rationale**: Docker Compose V2 uses `docker compose` as a Docker CLI plugin. The hyphenated version is deprecated.
+### 2. Git Hooks are MANDATORY
+```bash
+# ❌ FORBIDDEN
+git commit --no-verify
+git push --no-verify
 
-### 2. 🚫 Git Hooks are MANDATORY
-**NEVER bypass pre-commit or pre-push hooks**
+# ✅ CORRECT - Let hooks run
+git commit -m "feat: description"
+git push
+```
+
+### 3. Testing Integrity is ABSOLUTE
+```bash
+# ❌ FORBIDDEN
+test.skip('test')
+expect(true).toBe(true)  # Meaningless
+if (process.env.SKIP_TESTS) return;
+
+# ✅ CORRECT
+expect(actualResult).toBe(expectedResult)
+```
+
+### 4. Path Handling
+- **Prefer absolute paths** in CI/CD
+- **Validate relative paths** (especially `../` and `../../`)
+- Test paths work in both local and CI/CD environments
+
+### 5. Database Access
+**NEVER direct database access - ALWAYS use backend APIs**
 
 ```bash
-# ❌ ABSOLUTELY FORBIDDEN
-git commit --no-verify   # NEVER DO THIS
-git push --no-verify     # NEVER DO THIS
+# ❌ FORBIDDEN
+psql -c "UPDATE user_loyalty..."
 
-# ✅ ALWAYS allow hooks to run
-git commit -m "message"  # Let pre-commit run
-git push                 # Let pre-push run
+# ✅ CORRECT
+curl -X POST http://localhost:4001/api/loyalty/award-points
 ```
 
-**Rationale**: Git hooks ensure code quality, security, and prevent broken code from entering the repository. Bypassing them compromises the entire quality assurance system.
+**If API doesn't exist, CREATE IT first.**
 
-### 3. 🧪 Testing Integrity is ABSOLUTE
-**NEVER bypass, skip, or fake any test**
+## 📋 Project Architecture
 
-```bash
-# ❌ ABSOLUTELY FORBIDDEN - TEST BYPASSING EXAMPLES
-if (true === true) { /* skip test logic */ }    # NEVER DO THIS
-test.skip('important test')                     # FORBIDDEN
-xit('critical test', () => {})                 # FORBIDDEN
-it.skip('security test', () => {})             # FORBIDDEN
-describe.skip('auth tests', () => {})          # FORBIDDEN
-beforeAll(() => { process.exit(0); })         # FORBIDDEN
-return true; // bypass test validation        # FORBIDDEN
-jest.mock('critical-module', () => ({}))      # WITHOUT PROPER IMPLEMENTATION
-
-# ❌ FORBIDDEN - FAKE TEST IMPLEMENTATIONS
-expect(true).toBe(true)  // meaningless assertion
-expect(1).toBe(1)        // trivial bypass
-// TODO: implement test   // incomplete test
-
-# ❌ FORBIDDEN - CONDITIONAL TEST BYPASSING
-if (process.env.SKIP_TESTS) return;           # NEVER DO THIS
-if (!isTestEnvironment) return;               # FORBIDDEN
-if (Date.now() > someDate) return;            # TIME-BASED BYPASS FORBIDDEN
-
-# ✅ CORRECT - ALL TESTS MUST RUN AND VALIDATE
-expect(actualResult).toBe(expectedResult)     # Real validation
-expect(userService.createUser).toHaveReturned() # Proper assertion
-await expectAsync(promise).toBeRejected()     # Proper async testing
-```
-
-**Rationale**: Tests are the foundation of code reliability. Any bypassing, skipping, or fake implementations compromise system integrity and can hide critical bugs, security vulnerabilities, or breaking changes.
-
-### 4. 🛣️ Path Handling Requirements
-**MANDATORY: Absolute Path Preference and Relative Path Validation**
-
-**ALWAYS PREFER:** Absolute paths in CI/CD configurations  
-**BE EXTREMELY CAREFUL:** With relative paths, especially `../` and `../../`
-
-#### ❌ FORBIDDEN - Risky Relative Path Usage
-```yaml
-# ❌ HIGH RISK - Different behavior between local and CI/CD
-backend:
-  build:
-    context: ./backend        # May fail on CI/CD runners
-    dockerfile: Dockerfile
-    
-frontend:
-  build:
-    context: ./frontend       # Context mismatch in different environments
-    dockerfile: Dockerfile
-
-# ❌ DANGEROUS - Parent directory references without validation
-COPY ../shared /app/shared   # Dockerfile - may break in different build contexts
-cd ../scripts && ./deploy.sh  # Shell script - working directory dependent
-```
-
-#### ✅ REQUIRED - Safe Path Practices
-```yaml
-# ✅ CORRECT - Absolute or carefully validated relative paths
-backend:
-  build:
-    context: .                # Current directory context (validated)
-    dockerfile: Dockerfile
-    
-frontend:
-  build:
-    context: ../frontend      # Parent reference with validation
-    dockerfile: Dockerfile
-
-# ✅ CORRECT - Explicit working directory management
-- name: "Deploy from scripts directory"
-  run: |
-    cd /absolute/path/to/scripts
-    ./deploy.sh
-    
-# ✅ CORRECT - Environment-aware path resolution
-BACKEND_URL: ${BACKEND_URL:-http://localhost:4001}
-FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-```
-
-#### 🧪 Path Validation Requirements
-**MANDATORY: Validate paths work in both environments**
-
-Before using relative paths with `../` or `../../`:
-1. **Test locally**: Verify path resolution from project root
-2. **Test in CI/CD**: Verify path resolution from runner working directory
-3. **Document assumptions**: Comment on expected working directory
-4. **Add validation**: Include path existence checks where possible
-
-```bash
-# ✅ REQUIRED - Path validation in scripts
-if [ ! -f "../frontend/package.json" ]; then
-  echo "❌ Frontend directory not found at expected relative path"
-  exit 1
-fi
-
-# ✅ REQUIRED - Working directory awareness
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cd "${PROJECT_ROOT}" || exit 1
-```
-
-#### 🐳 Docker Build Context Path Rules
-**CRITICAL: Build context must match file structure**
-
-```yaml
-# ✅ CORRECT - Context matches Dockerfile location
-services:
-  backend:
-    build:
-      context: .              # From backend/ directory
-      dockerfile: Dockerfile  # backend/Dockerfile exists
-      
-  frontend:
-    build:
-      context: ../frontend    # From backend/ to frontend/
-      dockerfile: Dockerfile  # frontend/Dockerfile exists
-
-# ❌ FORBIDDEN - Context/Dockerfile mismatch
-services:
-  backend:
-    build:
-      context: ./backend      # From project root
-      dockerfile: Dockerfile  # Would look for project-root/backend/Dockerfile
-```
-
-#### 🔍 Common Path Issues to Avoid
-Based on actual CI/CD failures encountered:
-
-1. **Docker Build Context Mismatch**:
-   - Error: `failed to read dockerfile: open Dockerfile: no such file or directory`
-   - Cause: Build context pointing to wrong directory relative to Dockerfile
-   - Solution: Ensure context path + dockerfile path resolves correctly
-
-2. **Workflow File Deletion**:
-   - Error: `no such file or directory` after validation
-   - Cause: File deleted after validation but before use
-   - Solution: Proper cleanup timing and file lifecycle management
-
-3. **Cross-Platform Path Differences**:
-   - Error: Different path resolution between local and CI/CD
-   - Cause: Working directory assumptions don't match between environments
-   - Solution: Explicit working directory management and path validation
-
-**Rationale**: Path mismatches are a leading cause of CI/CD failures. Different working directories between local development and CI/CD runners can cause relative paths to resolve incorrectly, leading to "file not found" errors and build failures.
-
-### 5. 🗄️ Database Interaction Rules
-**MANDATORY: Never Directly Interact with Database - Always Use Backend APIs**
-
-#### ❌ ABSOLUTELY FORBIDDEN - Direct Database Access
-```bash
-# ❌ NEVER connect directly to database for data operations
-docker compose exec postgres psql -U loyalty -d loyalty_db
-psql -h localhost -U user -d database
-
-# ❌ NEVER run raw SQL for business operations
-UPDATE user_loyalty SET current_points = 500 WHERE user_id = '...';
-INSERT INTO points_transactions (...) VALUES (...);
-DELETE FROM users WHERE id = '...';
-
-# ❌ NEVER bypass backend APIs for data manipulation
-# Even for debugging, testing, or "quick fixes"
-```
-
-#### ✅ REQUIRED - API-First Database Interactions
-```bash
-# ✅ CORRECT - Use backend APIs for ALL data operations
-curl -X POST "http://localhost:4001/api/loyalty/award-points" \
-     -H "Content-Type: application/json" \
-     -d '{"userId": "...", "points": 500, "reason": "Profile completion"}'
-
-# ✅ CORRECT - Create API endpoints if they don't exist
-# 1. Create backend route in appropriate router file
-# 2. Implement service method with proper validation
-# 3. Test API endpoint thoroughly
-# 4. Use API from frontend or tools
-```
-
-#### 🔧 API Development Requirements
-**When backend API doesn't exist, CREATE IT:**
-
-```typescript
-// ✅ REQUIRED - Create proper backend API endpoint
-// backend/src/routes/loyalty.ts
-router.post('/admin/fix-user-points', requireAdmin, async (req, res, next) => {
-  try {
-    const { userId, correctPoints, reason } = req.body;
-    
-    // Validate input
-    if (!userId || typeof correctPoints !== 'number') {
-      return res.status(400).json({ error: 'Invalid input parameters' });
-    }
-    
-    // Use service layer with proper business logic
-    const result = await loyaltyService.fixUserPointsBalance(userId, correctPoints, reason);
-    
-    return res.json({ success: true, data: result });
-  } catch (error) {
-    return next(error);
-  }
-});
-
-// ✅ REQUIRED - Implement in service layer
-async fixUserPointsBalance(userId: string, correctPoints: number, reason: string) {
-  // Validate user exists
-  const user = await this.getUserLoyaltyStatus(userId);
-  if (!user) throw new Error('User not found');
-  
-  // Calculate difference and create adjustment transaction
-  const pointsDifference = correctPoints - user.current_points;
-  
-  if (pointsDifference !== 0) {
-    // Use proper award_points function that maintains integrity
-    return this.awardPoints(
-      userId, 
-      pointsDifference, 
-      'admin_adjustment', 
-      reason,
-      undefined, 
-      adminUserId, 
-      'Points balance correction'
-    );
-  }
-  
-  return { message: 'Points already correct', currentPoints: user.current_points };
-}
-```
-
-#### 🛡️ Database Protection Measures
-
-**1. Access Control**
-```bash
-# ✅ REQUIRED - Database access only for schema operations
-# Direct database access permitted ONLY for:
-- Schema migrations (npm run db:migrate)
-- Database setup/initialization
-- Schema debugging (read-only inspection)
-- Emergency disaster recovery (with documented approval)
-```
-
-**2. API Completeness**
-```typescript
-// ✅ REQUIRED - Comprehensive API coverage
-// Every database operation must have corresponding API:
-- Create: POST /api/resource
-- Read: GET /api/resource/:id
-- Update: PUT/PATCH /api/resource/:id  
-- Delete: DELETE /api/resource/:id
-- Admin operations: POST /api/resource/admin/:operation
-- Bulk operations: POST /api/resource/bulk
-```
-
-**3. Data Integrity Protection**
-```typescript
-// ✅ REQUIRED - Use database functions for complex operations
-await loyaltyService.awardPoints(userId, points);  // Uses award_points() function
-await loyaltyService.deductPoints(userId, points); // Maintains balance integrity
-await userService.completeProfile(userId, data);   // Handles rewards properly
-```
-
-#### 🔍 Database Interaction Checklist
-Before ANY database-related operation:
-- [ ] Check if backend API endpoint exists for the operation
-- [ ] If no API exists, create one following proper patterns
-- [ ] Test API endpoint thoroughly with validation
-- [ ] Use API instead of direct database access
-- [ ] Document new API in appropriate documentation
-- [ ] Never bypass APIs even for "quick fixes" or debugging
-
-#### 🚨 Common Database Interaction Violations
-1. **Direct SQL for Data Fixes**: Running UPDATE/INSERT commands directly
-2. **Bypassing Business Logic**: Skipping validation and integrity checks
-3. **Missing Transaction Context**: Not using proper database functions
-4. **Emergency Shortcuts**: Using direct access during troubleshooting
-5. **Development Convenience**: Quick data manipulation during testing
-
-#### ⚡ Emergency Exception Protocol
-**ONLY in extreme emergencies with proper documentation:**
-
-```bash
-# ✅ EMERGENCY PROTOCOL - Document everything
-1. Document the emergency reason and timeline pressure
-2. Document exactly what direct database operation was performed
-3. Create GitHub issue to implement proper API endpoint
-4. Add TODO comments linking to the issue
-5. Implement proper API as immediate next priority
-6. Test that new API produces same results as direct operation
-```
-
-**Rationale**: Direct database manipulation bypasses critical business logic, validation, transaction management, and data integrity functions. The recent points balance issue occurred because direct INSERT bypassed the `award_points()` stored procedure that maintains consistency between `points_transactions` and `user_loyalty` tables. All database interactions must go through properly designed APIs that maintain data integrity and business rules.
-
-## 🔧 ESLint Migration Priority Plan
-
-### ⚠️ CRITICAL PRIORITY: ESLint Configuration Technical Debt
-
-The ESLint configuration has been systematically weakened by downgrading critical errors to warnings to allow pipeline passage. This represents **significant technical debt** and **security vulnerabilities** that must be addressed immediately.
-
-**Security Rules Improperly Suppressed:**
-- `security/detect-object-injection: 'warn'` → **~130 injection points** 
-- `security/detect-child-process: 'warn'` → **Process injection risk**
-- `security/detect-non-literal-fs-filename: 'warn'` → **File system attacks**
-
-**Type Safety Issues:**
-- `@typescript-eslint/no-explicit-any: 'warn'` → **~300 unsafe types**
-- `@typescript-eslint/no-unused-vars: 'warn'` → **Dead code**
-
-**React Critical Issues:**
-- `react-hooks/exhaustive-deps: 'warn'` → **~28 stale closures**
-
-### Implementation Plan Location
-📋 **Full migration plan**: `/Users/nut/loyalty-app/ESLINT_MIGRATION_PLAN.md`
-
-**Phase 1 (Week 1)**: Security Critical Rules → errors
-**Phase 2 (Week 2)**: Type Safety Rules → errors  
-**Phase 3 (Week 3)**: React Critical Rules → errors
-
-This ESLint migration is **TOP PRIORITY** for codebase security and reliability.
-
-## 📋 Additional Project Conventions
-
-### 6. Project Structure
+### Structure
 ```
 loyalty-app/
-├── backend/                   # Node.js/Express API
-├── frontend/                  # React/TypeScript SPA
-├── scripts/                   # Production scripts
-├── tests/                     # E2E tests
-├── docker-compose.yml         # Base Docker configuration
-├── docker-compose.dev.yml     # Development overrides
-├── docker-compose.prod.yml    # Production overrides
-├── DEV_SETUP.md              # Development setup guide
-└── manage.sh                  # Centralized management script
+├── backend/          # Node.js/Express API
+├── frontend/         # React/TypeScript SPA
+├── scripts/          # Production scripts
+├── tests/            # E2E tests
+└── docker-compose.*  # Environment configs
 ```
 
-### 6.1 Docker Compose Configuration & Port Assignments
-**CRITICAL**: Development and production use **different ports AND container names** to coexist on the same machine.
+### Environment Configuration
 
-#### Port Assignments
-
-| Service | Dev Port | Prod Port | Access |
-|---------|----------|-----------|--------|
-| **Nginx** | **5001** | **4001** | Main application access |
-| **PostgreSQL** | **5435** | **5434** | Database (external) |
-| **Redis** | **6380** | **6379** | Cache (external) |
-
-#### Container Names (Allows Simultaneous Dev + Prod)
-
-| Service | Dev Container | Prod Container |
-|---------|---------------|----------------|
-| **Postgres** | `loyalty_postgres_dev` | `loyalty_postgres` |
-| **Redis** | `loyalty_redis_dev` | `loyalty_redis` |
-| **Backend** | `loyalty_backend_dev` | `loyalty_backend` |
-| **Frontend** | `loyalty_frontend_dev` | `loyalty_frontend` |
-| **Nginx** | `loyalty_nginx_dev` | `loyalty_nginx` |
-
-#### Volume Names (Data Isolation)
-
-| Volume Type | Dev Volume | Prod Volume |
-|-------------|-----------|-------------|
-| **Postgres Data** | `postgres_dev_data` | `postgres_data` |
-| **Backend Logs** | `backend_dev_logs` | `backend_logs` |
-| **Backend Storage** | `backend_dev_storage` | `backend_storage` |
-| **Frontend Logs** | `frontend_dev_logs` | `frontend_logs` |
-| **Nginx Logs** | `nginx_dev_logs` | `nginx_logs` |
-
-#### Starting Environments
+| Component | Development | Production |
+|-----------|-------------|------------|
+| **Nginx Port** | 5001 | 4001 |
+| **PostgreSQL Port** | 5435 | 5434 |
+| **Redis Port** | 6380 | 6379 |
+| **Container Suffix** | `_dev` | (none) |
+| **Database Name** | `loyalty_dev_db` | `loyalty_db` |
+| **Docker Target** | `development` | `runner` |
 
 ```bash
-# ✅ DEVELOPMENT (port 5001, _dev containers)
+# Development
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
-# ✅ PRODUCTION (port 4001, base containers)
+# Production (self-contained, no --env-file needed)
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
-# ✅ BOTH SIMULTANEOUSLY (fully isolated)
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
-# ❌ WRONG - Missing environment-specific override
-docker compose up -d  # Undefined behavior
 ```
 
-#### Verifying Both Environments Running
+**Production Deployment:**
+- All environment variables are hardcoded in `docker-compose.prod.yml`
+- No manual steps or flags needed - deployment is fully self-contained
+- GitHub Actions and manual deployments use the same command
+- Environment variables are read from `.env.production` and baked into `docker-compose.prod.yml`
 
-```bash
-# Check all loyalty containers
-docker ps --format "table {{.Names}}\t{{.Ports}}" | grep loyalty
+### Database Operations
 
-# Expected output when both running:
-# loyalty_postgres_dev     0.0.0.0:5435->5432/tcp
-# loyalty_postgres         0.0.0.0:5434->5432/tcp
-# loyalty_redis_dev        0.0.0.0:6380->6379/tcp
-# loyalty_redis            0.0.0.0:6379->6379/tcp
-# loyalty_nginx_dev        0.0.0.0:5001->80/tcp
-# loyalty_nginx            0.0.0.0:4001->80/tcp
+**Migration:**
+- Single file: `backend/prisma/migrations/0_init/migration.sql`
+- Commands: `npm run db:generate` → `npm run db:migrate`
+
+**Automatic Seeding:**
+- **Essential data** (runs in ALL environments on startup):
+  - `membership_id_sequence` - Required for user registration
+  - `tiers` - Required for loyalty system (Bronze/Silver/Gold/Platinum)
+- **Sample data** (development only):
+  - `surveys` - Test survey data
+- Seeding is **automatic** on backend startup, no manual steps needed
+
+**Tier System (Nights-Based):**
+```
+Bronze: 0+, Silver: 1+, Gold: 10+, Platinum: 20+ nights
 ```
 
-#### Environment-Specific Features
+**Key Functions:**
+- `recalculate_user_tier_by_nights(user_id)` - Auto tier updates
+- `award_points(...)` - Awards points/nights, triggers tier recalc
 
-**Development (docker-compose.dev.yml)**:
-- Port 5001 for nginx
-- Container names: `loyalty_*_dev`
-- Separate database: `loyalty_dev_db`
-- Separate volumes: `*_dev_*`
-- Volume mounts for hot-reload
-- Debug logging enabled
-- External DB/Redis access for debugging
+**Use stored procedures, never direct UPDATE queries.**
 
-**Production (docker-compose.prod.yml)**:
-- Port 4001 for nginx
-- Container names: `loyalty_*` (no suffix)
-- Production database: `loyalty_db`
-- Production volumes: base names
-- Optimized builds (runner stage)
-- No external DB/Redis exposure (security)
-- Deployed via GitHub Actions
+### TypeScript Error Handling
 
-**Rationale**: Using different ports, container names, and volumes prevents ALL conflicts when both dev and prod run on the same machine, ensuring safe parallel operation with complete isolation of databases, logs, and storage.
-
-### 7. Environment Variables
-- **Production**: Always use `.env.production`
-- **Development**: Use `.env` or `.env.development`
-- **Never commit**: `.env` files with real secrets
-
-### 8. Testing Requirements
-All code changes must:
-- ✅ Pass TypeScript compilation
-- ✅ Pass ESLint checks (warnings acceptable, errors not)
-- ✅ Pass all unit tests **WITHOUT BYPASSING**
-- ✅ Pass all integration tests **WITHOUT SKIPPING**
-- ✅ Pass all E2E tests (when applicable)
-- ✅ Maintain or improve code coverage
-- ✅ Have meaningful assertions that validate actual functionality
-- ❌ **NEVER** use trivial tests like `expect(true).toBe(true)`
-- ❌ **NEVER** skip tests with `.skip()`, `xit()`, or conditional returns
-- ❌ **NEVER** mock critical functionality without proper validation
-
-### 9. Database Operations
-
-#### 9.1 Migration Strategy
-**MANDATORY: Consolidated Single Migration Approach**
-
-The database uses a **consolidated single migration file** instead of sequential migrations:
-- **Location**: `backend/prisma/migrations/0_init/migration.sql`
-- **Size**: 857 lines (complete schema)
-- **Approach**: Single comprehensive migration with all tables, indexes, constraints, and stored procedures
-- **Idempotency**: Uses `IF NOT EXISTS` and `CREATE OR REPLACE` where possible
-- **Tracking**: Prisma's `_prisma_migrations` table prevents re-execution
-
-**Rationale**: Better maintainability, less chance of failure, single source of truth for complete database schema.
-
-#### 9.2 Nights-Based Tier System Architecture
-**CRITICAL: Tier Membership Determined by Nights Stayed, NOT Points**
-
-The loyalty system uses a **nights-based tier progression** where:
-- **Tier Calculation**: Based on `user_loyalty.total_nights` column
-- **Points System**: `user_loyalty.current_points` used ONLY for rewards/redemption
-- **Automatic Tier Upgrades**: Handled by `recalculate_user_tier_by_nights()` stored procedure
-
-**Tier Thresholds:**
-```
-Bronze:   0+ nights  (new members start here)
-Silver:   1+ nights  (first stay unlocks Silver)
-Gold:     10+ nights (loyal customers)
-Platinum: 20+ nights (VIP members)
-```
-
-**Database Schema:**
-```sql
--- Tiers table
-CREATE TABLE tiers (
-  id UUID PRIMARY KEY,
-  name VARCHAR(50) UNIQUE,
-  min_points INT DEFAULT 0,        -- Legacy field (not used)
-  min_nights INT NOT NULL DEFAULT 0, -- PRIMARY tier requirement
-  benefits JSONB DEFAULT '{}',
-  color VARCHAR(7),
-  sort_order INT,
-  is_active BOOLEAN DEFAULT true
-);
-
--- User loyalty table
-CREATE TABLE user_loyalty (
-  user_id UUID PRIMARY KEY,
-  current_points INT DEFAULT 0,    -- For rewards only
-  total_nights INT DEFAULT 0,      -- For tier calculation
-  tier_id UUID REFERENCES tiers(id),
-  tier_updated_at TIMESTAMPTZ,
-  points_updated_at TIMESTAMPTZ
-);
-```
-
-**Indexes for Performance:**
-- `idx_tiers_min_nights` on `tiers.min_nights`
-- `idx_user_loyalty_total_nights` on `user_loyalty.total_nights`
-
-#### 9.3 Stored Procedures
-
-**1. recalculate_user_tier_by_nights(p_user_id UUID)**
-- **Purpose**: Recalculates and updates user tier based on total_nights
-- **Returns**: `TABLE(new_tier_id UUID, new_tier_name VARCHAR(50), tier_changed BOOLEAN)`
-- **Logic**: Finds highest tier where `min_nights <= total_nights`
-- **Audit**: Logs tier changes to `user_audit_log` table
-- **Usage**: Called automatically after updating `total_nights`
-
-**2. award_points(p_user_id, p_points, p_transaction_type, p_nights_stayed, ...)**
-- **Purpose**: Awards points and nights, automatically recalculates tier
-- **Returns**: `JSONB` with transaction details
-- **Logic**:
-  1. Inserts points transaction record
-  2. Updates `current_points` and `total_nights`
-  3. If `p_nights_stayed > 0`, triggers `recalculate_user_tier_by_nights()`
-- **Usage**: ALWAYS use this function instead of direct UPDATE queries
-
-#### 9.4 Migration Commands
-```bash
-# Generate Prisma client (after schema changes)
-npm run db:generate
-
-# Apply migrations (consolidated migration)
-npm run db:migrate
-
-# Reset database (development only - DESTRUCTIVE)
-docker compose exec postgres psql -U loyalty_dev -d loyalty_dev_db \
-  -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-npm run db:migrate
-
-# Seed database (tiers, surveys, membership sequence)
-# Automatic on backend startup in development mode
-```
-
-#### 9.5 Database Interaction Rules
-**MANDATORY: Never Direct Database Access for Data Operations**
-
-✅ **CORRECT - Always Use Backend APIs:**
-```bash
-# Award points via API
-curl -X POST http://localhost:4001/api/loyalty/award-points \
-  -H "Content-Type: application/json" \
-  -d '{"userId": "...", "points": 100, "nights": 1}'
-```
-
-❌ **FORBIDDEN - Direct Database Manipulation:**
-```bash
-# NEVER do this - bypasses business logic and stored procedures
-psql -c "UPDATE user_loyalty SET total_nights = 5 WHERE user_id = '...'"
-```
-
-**Rationale**: Direct database access bypasses:
-- Business logic validation
-- Data integrity functions (`award_points()`, `recalculate_user_tier_by_nights()`)
-- Transaction management
-- Audit logging
-- Consistency between `points_transactions` and `user_loyalty` tables
-
-**If API Doesn't Exist**: Create proper backend API endpoint with service layer validation before performing operation.
-
-**Emergency Exception Protocol**: Document reason, create GitHub issue for proper API, implement API as immediate next priority.
-
-### 10. Security Best Practices
-- **Never log sensitive data**: passwords, tokens, keys
-- **Always validate input**: Use Zod schemas
-- **Sanitize user content**: Prevent XSS attacks
-- **Use parameterized queries**: Prevent SQL injection
-- **Use stored procedures**: For complex operations to maintain data integrity
-
-### 11. Git Commit Convention
-```bash
-# Format: <type>: <description>
-feat: Add new feature
-fix: Fix bug
-improve: Enhance existing functionality
-refactor: Code restructuring
-test: Add or update tests
-docs: Documentation changes
-chore: Maintenance tasks
-```
-
-### 12. Pipeline & CI/CD
-- **Single pipeline**: `deploy.yml` handles everything
-- **Quality gates**: All tests must pass before deployment
-- **Automatic deployment**: Only from main branch
-- **Manual approval**: Required for production
-
-### 13. Development Workflow
-1. **Before starting**: Pull latest changes
-2. **During development**: Run tests locally
-3. **Before committing**: Ensure hooks pass
-4. **Before pushing**: Run full quality check
-5. **After merging**: Monitor pipeline status
-
-### 14. 🚨 TypeScript Error Prevention Rules
-**MANDATORY: Proper Error Handling to Prevent Build Failures**
-
-#### ❌ FORBIDDEN - Unknown Error Types
 ```typescript
-// ❌ WILL CAUSE: error TS18046: 'error' is of type 'unknown'
-try {
-  // some operation
-} catch (error) {
-  console.log(error.message);  // TypeScript error!
-  throw new Error(error);      // TypeScript error!
-}
-```
-
-#### ✅ REQUIRED - Proper Error Type Handling
-```typescript
-// ✅ CORRECT - Explicit type checking
-try {
-  // some operation
-} catch (error) {
+// ✅ CORRECT
+catch (error) {
   if (error instanceof Error) {
     console.log(error.message);
-    throw new AppError(500, error.message);
   } else {
     console.log('Unknown error:', String(error));
-    throw new AppError(500, `Unknown error: ${String(error)}`);
   }
 }
-
-// ✅ CORRECT - Type assertion (when you're certain)
-try {
-  // some operation
-} catch (error) {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  throw new AppError(500, `Operation failed: ${errorMessage}`);
-}
-
-// ✅ CORRECT - Unknown parameter with proper handling
-export const handleError = (error: unknown) => {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-};
 ```
 
-#### 🔧 Build System Requirements
-**MANDATORY: Prisma Client Generation Before Build**
+### Frontend Dependencies
 
-#### ❌ FORBIDDEN - Building Without Prisma Generation
-```bash
-# ❌ WILL CAUSE: Cannot find module '../generated/prisma'
-npm run build  # Without generating Prisma client first
+```dockerfile
+# ✅ CORRECT - Install deps directly in target stage
+FROM base AS development
+RUN npm ci && npm cache clean --force
+
+# ❌ FORBIDDEN - Multi-stage node_modules copying
+COPY --from=dev-deps /app/node_modules ./node_modules
 ```
 
-#### ✅ REQUIRED - Proper Build Sequence
-```bash
-# ✅ CORRECT - Always generate Prisma client first
-npm run db:generate  # Generate Prisma client
-npm run build       # Then build application
+**CSS Framework:** Tailwind plugins in correct package.json section, validate before build.
 
-# ✅ CORRECT - CI/CD pipeline must include:
-- name: "Generate Prisma Client"
-  run: cd backend && npm run db:generate
-- name: "Build Application"  
-  run: npm run build
+### API Routes
+
+Before creating frontend API calls:
+1. Find backend route in router file
+2. Check router mount path in `index.ts`
+3. Construct full path: `/api/{mount-path}/{route-path}`
+4. Test with curl
+
+```typescript
+// Example: router.get('/admin/settings') in user.ts
+// Mounted: app.use('/api/users', userRoutes)
+// Frontend: api.get('/users/admin/settings')
 ```
 
-#### 🐳 Docker Compose Validation Rules
-**MANDATORY: Proper Docker Compose Syntax**
+### E2E Testing
 
-#### ❌ FORBIDDEN - Invalid Docker Compose Properties
-```yaml
-# ❌ WILL CAUSE: Additional property container_name is not allowed
-volumes:
-  backend:
-    container_name: backend_container  # INVALID - containers only!
+**Ports:** Frontend: 3201, Backend: 4202, DB: 5436, Redis: 6381
+
+**Requirements:** Clean ports before tests, health checks with retry logic, clean volumes between runs.
+
+## 🔧 Development Standards
+
+### Security
+- Never log sensitive data (passwords, tokens, keys)
+- Validate input (Zod schemas)
+- Sanitize user content (prevent XSS)
+- Parameterized queries (prevent SQL injection)
+- Use stored procedures for complex operations
+
+### Git Commits
+```
+feat: Add feature
+fix: Fix bug
+improve: Enhance functionality
+refactor: Restructure code
+test: Add/update tests
+docs: Update documentation
+chore: Maintenance
 ```
 
-#### ✅ REQUIRED - Correct Docker Compose Structure
-```yaml
-# ✅ CORRECT - container_name only in services
-services:
-  backend:
-    container_name: backend_container  # Valid location
-    
-volumes:
-  backend_data:  # No container_name property allowed here
-```
+### Testing Requirements
+- Pass TypeScript compilation
+- Pass ESLint (warnings OK, errors NOT OK)
+- Pass ALL tests without bypassing
+- Maintain code coverage
+- Meaningful assertions only
 
-#### 🧪 Build Validation Testing
-**MANDATORY: Tests to Prevent Build Failures**
+### Environment Variables
+- **Production:** `.env.production`
+- **Development:** `.env` or `.env.development`
+- **Never commit secrets**
 
-All projects must include `tests/build-validation.spec.ts` with:
-- ✅ Prisma client generation validation
-- ✅ TypeScript compilation validation  
-- ✅ Docker Compose syntax validation
-- ✅ Error handling pattern detection
-- ✅ CI/CD configuration validation
-
-#### 🚨 Enforcement in CI/CD
-**REQUIRED: Pipeline Build Validation Steps**
-
-```yaml
-# MANDATORY CI/CD steps to prevent build failures:
-- name: "Validate Prisma Generation"
-  run: |
-    if [ ! -d "backend/src/generated/prisma" ]; then
-      echo "❌ Prisma client not generated!"
-      exit 1
-    fi
-
-- name: "Validate TypeScript Compilation"  
-  run: |
-    cd backend && npx tsc --noEmit
-    cd ../frontend && npx tsc --noEmit
-
-- name: "Validate Docker Compose"
-  run: docker compose config
-```
-
-## 🚨 Enforcement
-
-These rules are enforced through:
-- **Git hooks**: Automatic validation on commit/push
-- **CI/CD pipeline**: GitHub Actions validation
-- **Code reviews**: Manual verification
-- **manage.sh script**: Standardized operations
-
-## 📝 Quick Reference Commands
+## 📝 Quick Reference
 
 ```bash
-# Docker operations (CORRECT SYNTAX with environment overrides)
-# Development (port 5001, _dev containers)
+# Development
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-docker compose -f docker-compose.yml -f docker-compose.dev.yml down
-docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
-docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f backend
-docker compose -f docker-compose.yml -f docker-compose.dev.yml exec backend bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml restart backend
+npm run db:generate && npm run db:migrate
+npm run quality:check
 
-# Production (port 4001, base containers - normally via GitHub Actions)
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down
-
-# Verify both dev and prod running simultaneously
-docker ps --format "table {{.Names}}\t{{.Ports}}" | grep loyalty
-
-# Database operations
-npm run db:generate      # Generate Prisma client after schema changes
-npm run db:migrate       # Apply consolidated migration (0_init/migration.sql)
-
-# Database reset (development only - DESTRUCTIVE)
-docker compose -f docker-compose.yml -f docker-compose.dev.yml exec postgres \
-  psql -U loyalty_dev -d loyalty_dev_db \
-  -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-docker compose -f docker-compose.yml -f docker-compose.dev.yml exec backend npm run db:migrate
-
-# Git operations (WITH HOOKS)
-git add .
-git commit -m "feat: description"  # Pre-commit runs
-git push origin main               # Pre-push runs
+# Git workflow
+git commit -m "feat: description"  # Hooks run automatically
+git push
 
 # Quality checks
-npm run quality:check
 npm run lint
 npm run typecheck
 npm run test
-
-# Project management
-./manage.sh              # Interactive menu
-./manage.sh start        # Start services
-./manage.sh test         # Run tests
-./manage.sh quality      # Run quality checks
 ```
 
-## ⚠️ REMINDER
+## ⚠️ NON-NEGOTIABLE
 
-**THESE RULES ARE NON-NEGOTIABLE**
+1. Use `docker compose` (never `docker-compose`)
+2. Never bypass git hooks
+3. Never bypass, skip, or fake tests
+4. Prefer absolute paths, validate relative paths
+5. Never direct database access - use APIs
+6. Use environment-specific compose files
+7. Use stored procedures for complex DB ops
+8. Maintain code quality standards
+9. Follow security best practices
+10. Write meaningful tests
 
-1. **ALWAYS** use `docker compose` (never `docker-compose`)
-2. **NEVER** bypass git hooks (`--no-verify` is FORBIDDEN)
-3. **NEVER** bypass, skip, or fake any tests (test integrity is ABSOLUTE)
-4. **ALWAYS** prefer absolute paths and validate relative paths with `../` or `../../`
-5. **NEVER** interact directly with database - always use backend APIs (if API doesn't exist, create one)
-6. **ALWAYS** use environment-specific compose files (`-f docker-compose.yml -f docker-compose.dev.yml`)
-7. **ALWAYS** use stored procedures for complex database operations (`award_points()`, `recalculate_user_tier_by_nights()`)
-8. **ALWAYS** maintain code quality standards
-9. **ALWAYS** follow security best practices
-10. **ALWAYS** write meaningful tests that validate actual functionality
-
-**Container Naming**: Dev uses `loyalty_*_dev`, Prod uses `loyalty_*` (allows simultaneous operation)
-**Tier System**: Based on `total_nights` NOT `current_points` (points are for rewards only)
-**Migration**: Single consolidated file at `backend/prisma/migrations/0_init/migration.sql`
-
-### 15. 🎭 E2E Testing Infrastructure Rules
-**MANDATORY: Comprehensive E2E Test Isolation and Validation**
-
-#### ❌ FORBIDDEN - E2E Testing Anti-patterns
-```bash
-# ❌ NEVER use production ports for E2E tests
-FRONTEND_PORT: 3000    # FORBIDDEN - conflicts with production
-BACKEND_PORT: 4000     # FORBIDDEN - conflicts with production
-
-# ❌ NEVER assume port availability without cleanup
-docker compose up -d   # WITHOUT port cleanup
-
-# ❌ NEVER create duplicate configurations
-cat > docker-compose.yml << EOF   # Multiple times with different content
-
-# ❌ NEVER skip container health validation
-curl http://localhost:port  # WITHOUT proper retry logic
-```
-
-#### ✅ REQUIRED - E2E Testing Best Practices
-
-**1. Port Allocation Strategy**
-```bash
-# ✅ CORRECT - Use non-conflicting E2E ports
-E2E_FRONTEND_PORT: 3201   # Safe high port for frontend
-E2E_BACKEND_PORT: 4202    # Safe high port for backend
-E2E_DB_PORT: 5436        # Different from production 5434
-E2E_REDIS_PORT: 6381     # Different from production 6379
-
-# ✅ REQUIRED - Port cleanup before E2E tests
-for port in 3201 4202 5436 6381; do
-  pid=$(lsof -ti:$port 2>/dev/null || true)
-  if [ ! -z "$pid" ]; then
-    kill -9 $pid 2>/dev/null || true
-  fi
-done
-```
-
-**2. Configuration File Management**
-```bash
-# ✅ REQUIRED - Single source of truth for configurations
-# If creating Docker compose files dynamically:
-1. Create file ONCE at the beginning
-2. Use variables for ALL port references
-3. Validate file exists before use
-4. Clean up after tests complete
-
-# ✅ CORRECT - Consistent port usage
-export E2E_FRONTEND_PORT="3201"
-export E2E_BACKEND_PORT="4202"
-# Use these variables EVERYWHERE
-```
-
-**3. Container Health Validation**
-```bash
-# ✅ REQUIRED - Proper health check dependencies
-# For Alpine containers:
-RUN apk add --no-cache curl
-
-# ✅ REQUIRED - Robust connection testing
-for i in {1..40}; do
-  if curl -s http://localhost:${PORT}/health; then
-    echo "✅ Service ready"
-    break
-  fi
-  sleep 3
-done
-```
-
-**4. Volume and State Management**
-```bash
-# ✅ REQUIRED - Clean state between runs
-docker compose -f docker-compose.e2e.yml down -v
-docker volume rm $(docker volume ls -q -f name=e2e) 2>/dev/null || true
-```
-
-**5. Path Resolution**
-```bash
-# ✅ REQUIRED - Explicit working directory
-cd "${GITHUB_WORKSPACE}" || exit 1
-# Use absolute paths or validate relative paths
-```
-
-#### 🔍 E2E Configuration Validation Checklist
-Before running E2E tests, validate:
-- [ ] All E2E ports are different from production ports
-- [ ] Port variables are used consistently across ALL configurations
-- [ ] Docker compose files are created exactly ONCE
-- [ ] Container health checks have required tools (curl)
-- [ ] Previous test volumes are cleaned up
-- [ ] Retry logic exists for service readiness
-- [ ] Working directories are explicitly set
-
-#### 🚨 Common E2E Pitfalls to Avoid
-1. **Port Assumption**: Never assume ports are free - always clean up
-2. **Configuration Duplication**: Never create the same config file multiple times
-3. **Partial Updates**: When changing ports, update ALL occurrences
-4. **State Persistence**: Always clean volumes between test runs
-5. **Path Ambiguity**: Always use absolute paths or validate context
-
-**Rationale**: E2E tests failed repeatedly due to port conflicts, configuration inconsistencies, missing health check tools, and state persistence. These rules ensure complete isolation, consistent configuration, and reliable test execution.
-
-### 16. 🎨 Frontend Dependency Management Rules
-**MANDATORY: Consistent CSS Framework and Build Dependencies**
-
-#### ❌ FORBIDDEN - Dependency Management Anti-patterns
-```dockerfile
-# ❌ NEVER rely on multi-stage node_modules copying for dev environments
-COPY --from=dev-deps /app/node_modules ./node_modules  # UNRELIABLE
-
-# ❌ NEVER mix production and development dependency stages
-RUN npm ci --only=production  # Then expect dev tools to work
-
-# ❌ NEVER assume CSS framework plugins are available without explicit installation
-require('@tailwindcss/forms')  # WITHOUT ensuring it's installed in current stage
-```
-
-#### ✅ REQUIRED - Frontend Dependency Best Practices
-
-**1. Dockerfile Multi-Stage Strategy**
-```dockerfile
-# ✅ CORRECT - Install dependencies directly in target stage
-FROM base AS development
-COPY package*.json ./
-RUN npm ci && npm cache clean --force  # All deps in development
-COPY . .
-
-# ✅ CORRECT - Separate stages for different purposes
-FROM base AS production
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
-```
-
-**2. CSS Framework Dependencies**
-```bash
-# ✅ REQUIRED - Explicit CSS framework plugin installation
-# Always ensure Tailwind plugins are in correct dependency section:
-"dependencies": {
-  "@tailwindcss/forms": "^0.5.10",    # PRODUCTION dependency
-  "@tailwindcss/typography": "^0.5.10" # If used in production builds
-}
-
-# ✅ REQUIRED - Validate CSS framework dependencies before build
-npm ls @tailwindcss/forms @tailwindcss/typography
-```
-
-**3. Container Dependency Verification**
-```bash
-# ✅ REQUIRED - Pre-flight dependency check in containers
-RUN npm ls || (echo "❌ Missing dependencies detected" && exit 1)
-
-# ✅ REQUIRED - CSS framework plugin verification
-RUN node -e "require('@tailwindcss/forms')" || (echo "❌ Tailwind plugins missing" && exit 1)
-```
-
-**4. Development Environment Consistency**
-```bash
-# ✅ REQUIRED - Consistent development setup
-1. Use same Node version in Docker and local development
-2. Install ALL dependencies in development stage (not just production)
-3. Verify CSS framework plugins before starting dev server
-4. Clear Docker build cache when dependency issues occur
-```
-
-#### 🔍 Frontend Dependency Validation Checklist
-Before starting development or building:
-- [ ] All CSS framework plugins are in correct package.json section
-- [ ] Docker development stage installs ALL dependencies (not just production)
-- [ ] Tailwind config plugins match installed packages
-- [ ] Build process validates required dependencies exist
-- [ ] Development containers don't rely on multi-stage node_modules copying
-
-#### 🚨 Common Frontend Dependency Pitfalls
-1. **Multi-Stage Confusion**: Copying node_modules between Docker stages causes inconsistencies
-2. **Dependency Section Mismatch**: CSS plugins in wrong package.json section (dev vs prod)
-3. **Build Cache Issues**: Stale Docker layers with outdated dependencies
-4. **Runtime vs Build Environment**: Different dependency availability between build and runtime
-5. **Plugin Configuration**: Requiring plugins that aren't installed in current stage
-
-**Rationale**: Tailwind CSS plugin errors occurred repeatedly when multi-stage Docker builds created inconsistent dependency environments. Direct dependency installation in target stages prevents module resolution failures and ensures CSS framework plugins are available when needed.
-
-### 17. 🔗 API Route Path Consistency Rules
-**MANDATORY: Frontend Service Paths Must Match Backend Route Definitions**
-
-#### ❌ FORBIDDEN - API Path Mismatches
-```typescript
-// ❌ FRONTEND assumes direct admin routes
-adminService.get('/admin/new-member-coupon-settings')
-
-// ❌ BACKEND defines routes under user router
-router.get('/admin/new-member-coupon-settings')  // Actually at /api/users/admin/...
-```
-
-#### ✅ REQUIRED - API Path Best Practices
-
-**1. Route Definition Verification**
-```bash
-# ✅ REQUIRED - Before creating frontend service calls:
-1. Check which router file contains the endpoint
-2. Check how the router is mounted in index.ts
-3. Construct full path: /api/{mount-path}/{route-path}
-
-# Example:
-# If user.ts has: router.get('/admin/settings')
-# And index.ts has: app.use('/api/users', userRoutes)
-# Then frontend must use: '/users/admin/settings'
-```
-
-**2. Frontend Service Implementation**
-```typescript
-// ✅ CORRECT - Match actual backend route structure
-export const adminService = {
-  async getSettings() {
-    // Check backend route mounting first!
-    return api.get('/users/admin/settings');  // NOT '/admin/settings'
-  }
-}
-```
-
-**3. Route Testing Protocol**
-```bash
-# ✅ REQUIRED - Test routes before implementing frontend
-curl -s http://localhost:4001/api/admin/endpoint  # Try direct path
-curl -s http://localhost:4001/api/users/admin/endpoint  # Try nested path
-curl -s http://localhost:4001/api/[router]/admin/endpoint  # Check router mounting
-```
-
-**4. Common Route Patterns**
-```typescript
-// Backend route definitions typically follow:
-// router.ts: router.get('/admin/feature')
-// index.ts: app.use('/api/entity', router)
-// Result: /api/entity/admin/feature
-
-// Admin routes commonly found in:
-- /api/users/admin/*     # User management admin routes
-- /api/coupons/admin/*   # Coupon admin routes
-- /api/loyalty/admin/*   # Loyalty admin routes
-```
-
-#### 🔍 API Path Validation Checklist
-Before implementing frontend API calls:
-- [ ] Locate the backend route definition file
-- [ ] Check how the router is mounted in index.ts
-- [ ] Construct the full API path including mount point
-- [ ] Test the endpoint with curl before coding
-- [ ] Update frontend service to use correct full path
-
-#### 🚨 Common API Path Pitfalls
-1. **Assuming Direct Routes**: Frontend assumes `/api/admin/*` when routes are nested
-2. **Missing Mount Path**: Forgetting router mount path from index.ts
-3. **Inconsistent Patterns**: Different routers use different admin path patterns
-4. **Documentation Gaps**: API paths not clearly documented
-5. **Testing Shortcuts**: Implementing without testing actual endpoint
-
-**Rationale**: AxiosError 404 errors frequently occur when frontend services use incorrect API paths. Backend routes defined in router files are mounted under specific paths in index.ts, creating nested URLs that must be matched exactly in frontend services.
-
-### 18. 🐳 Docker Production Configuration Rules
-**MANDATORY: Production Must Use Optimized Runner Stage**
-
-#### ❌ FORBIDDEN - Using Development Stage in Production
-```yaml
-# ❌ docker-compose.yml with development target
-services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: development  # WRONG for production
-
-# ❌ docker-compose.prod.yml WITHOUT build.target override
-services:
-  backend:
-    environment:
-      NODE_ENV: production
-      # Missing build.target override - inherits development!
-```
-
-#### ✅ REQUIRED - Production Configuration Best Practices
-
-**1. docker-compose.yml (Base Configuration)**
-```yaml
-# ✅ Base configuration can specify development as default
-services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: development  # Default for local development
-```
-
-**2. docker-compose.prod.yml (Production Override)**
-```yaml
-# ✅ REQUIRED - Override build.target for production
-services:
-  backend:
-    build:
-      target: runner  # Use production-optimized runner stage
-    environment:
-      NODE_ENV: production
-      # ... production environment variables
-```
-
-**3. Dockerfile Multi-Stage Structure**
-```dockerfile
-# ✅ REQUIRED - Separate development and production stages
-
-# Development stage - includes dev dependencies, tsx, hot-reload
-FROM base AS development
-COPY --from=dev-deps /app/node_modules ./node_modules
-CMD ["npm", "run", "dev"]
-
-# Runner stage - production-only dependencies, compiled code
-FROM base AS runner
-COPY --from=deps /app/node_modules ./node_modules  # Production deps only
-COPY --from=builder /app/dist ./dist
-CMD ["npm", "start"]  # Run compiled JavaScript
-```
-
-#### 📊 Development vs Runner Stage Comparison
-
-| Aspect | Development Stage | Runner Stage | Impact |
-|--------|-------------------|--------------|--------|
-| Dependencies | ALL (dev + prod) | Production ONLY | 200-300MB smaller |
-| Image Size | ~800-1000MB | ~500-700MB | Faster pulls |
-| Security | Dev tools included | Minimal surface | Reduced attack vectors |
-| Startup | tsx overhead | Compiled JS | Faster startup |
-| Performance | Hot-reload enabled | Direct execution | Lower CPU/memory |
-
-#### 🔍 Production Configuration Validation Checklist
-Before deploying to production:
-- [ ] docker-compose.prod.yml has `build.target: runner` override
-- [ ] Runner stage in Dockerfile is production-optimized
-- [ ] Runner stage has production-only dependencies (`npm ci --only=production`)
-- [ ] Runner stage uses compiled JavaScript (dist/index.js)
-- [ ] Health checks and environment variables configured in runner stage
-- [ ] Test production build locally: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build`
-
-#### 🚨 Common Docker Configuration Pitfalls
-1. **Missing Target Override**: docker-compose.prod.yml doesn't override build.target
-2. **Development in Production**: Production runs with dev dependencies and tsx
-3. **Image Size Bloat**: 30-40% larger images due to unnecessary dev tools
-4. **Security Risk**: Dev dependencies increase attack surface
-5. **Performance Impact**: tsx overhead vs compiled JavaScript execution
-
-#### 🎯 Benefits of Proper Production Configuration
-- ✅ **300MB smaller images**: Faster deployment and less storage
-- ✅ **Better security**: No dev tools or testing frameworks in production
-- ✅ **Faster startup**: Compiled JavaScript executes directly
-- ✅ **Lower resource usage**: No hot-reload or development tooling overhead
-- ✅ **Best practices compliance**: Follows Docker multi-stage production guidelines
-
-**Rationale**: Production deployments must use the runner stage to ensure optimal image size, security, and performance. Using the development stage in production violates Docker best practices, includes unnecessary dev dependencies (~300MB), exposes dev tools that increase attack surface, and causes slower startup due to tsx overhead instead of compiled JavaScript execution.
+**Critical Facts:**
+- Tiers based on `total_nights` NOT `current_points`
+- Production uses `runner` stage, dev uses `development` stage
+- Container names: Dev has `_dev` suffix, prod has none
 
 ---
 
-**Last Updated**: August 2025  
-**Enforced By**: Git hooks, CI/CD pipeline, and project conventions  
+**Last Updated**: November 15, 2025
+**Enforced By**: Git hooks, CI/CD pipeline, project conventions
 **Compliance**: MANDATORY for all contributors

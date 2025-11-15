@@ -328,14 +328,18 @@ async function startServer() {
     await initializeStorage();
     StorageService.initialize();
 
-    // Seed database in development mode
+    // Seed essential database data (runs in ALL environments)
+    // These are required for core functionality and must always be present
+    logger.info('🌱 Initializing essential database data...');
+    await seedMembershipSequence(); // Required: User registration needs membership ID generation
+    await seedTiers();              // Required: Loyalty system needs tier definitions
+    logger.info('✅ Essential database data initialized');
+
+    // Seed sample data (development only)
     if (process.env.NODE_ENV === 'development') {
-      // Initialize membership sequence (required for registration)
-      await seedMembershipSequence();
-      // Seed tiers (required for loyalty program)
-      await seedTiers();
-      // Seed sample surveys
-      await seedSurveys();
+      logger.info('🌱 Seeding sample data for development...');
+      await seedSurveys(); // Optional: Sample surveys for testing
+      logger.info('✅ Sample data seeded');
       // Note: Admin users register normally and get auto-upgraded on login
     }
 

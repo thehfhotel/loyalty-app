@@ -22,11 +22,11 @@ export const storageConfig: StorageConfig = {
   baseDir: process.env.STORAGE_PATH ?? path.join(process.cwd(), 'storage'),
   avatarsDir: 'avatars',
   backupDir: (process.env.BACKUP_PATH ?? path.join(process.cwd(), 'storage', 'backup')) as string,
-  
+
   // Storage limits
-  maxFileSize: 5 * 1024 * 1024, // 5MB
+  maxFileSize: 15 * 1024 * 1024, // 15MB - allows large images that will be processed and compressed
   maxStorageSize: 10 * 1024 * 1024 * 1024, // 10GB total
-  
+
   // Avatar settings - single version only
   avatarSize: 200, // 200x200 pixels as used in app
   avatarQuality: 90 // High quality since we only store one version

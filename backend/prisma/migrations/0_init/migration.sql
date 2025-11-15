@@ -232,6 +232,21 @@ CREATE TABLE "public"."points_transactions" (
     CONSTRAINT "points_transactions_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable: new_member_coupon_settings
+CREATE TABLE IF NOT EXISTS "public"."new_member_coupon_settings" (
+    "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
+    "is_enabled" BOOLEAN NOT NULL DEFAULT false,
+    "selected_coupon_id" UUID,
+    "points_enabled" BOOLEAN NOT NULL DEFAULT false,
+    "points_amount" INTEGER,
+    "created_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(6) DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "new_member_coupon_settings_pkey" PRIMARY KEY ("id")
+);
+
+COMMENT ON TABLE "public"."new_member_coupon_settings" IS 'Configuration for new member welcome rewards (coupons and/or points)';
+
 -- CreateTable: refresh_tokens
 CREATE TABLE "public"."refresh_tokens" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),
@@ -634,6 +649,9 @@ ALTER TABLE "public"."coupon_translations" ADD CONSTRAINT "coupon_translations_c
 
 -- AddForeignKey: coupons
 ALTER TABLE "public"."coupons" ADD CONSTRAINT "coupons_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+-- AddForeignKey: new_member_coupon_settings
+ALTER TABLE "public"."new_member_coupon_settings" ADD CONSTRAINT "new_member_coupon_settings_selected_coupon_id_fkey" FOREIGN KEY ("selected_coupon_id") REFERENCES "public"."coupons"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
 
 -- AddForeignKey: feature_toggle_audit
 ALTER TABLE "public"."feature_toggle_audit" ADD CONSTRAINT "feature_toggle_audit_changed_by_fkey" FOREIGN KEY ("changed_by") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;

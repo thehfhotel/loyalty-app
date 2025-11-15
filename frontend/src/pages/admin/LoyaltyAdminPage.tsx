@@ -117,12 +117,19 @@ export default function LoyaltyAdminPage() {
 
   const handlePointsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pointsModal.user || !pointsForm.points) {return;}
+    if (!pointsModal.user) {return;}
+
+    // Validate that at least one of points or nights is provided
+    const points = pointsForm.points ? parseInt(pointsForm.points) : 0;
+    const nights = pointsForm.nights ? parseInt(pointsForm.nights) : 0;
+
+    if (points === 0 && nights === 0) {
+      toast.error('Please provide at least points or nights');
+      return;
+    }
 
     try {
       setIsLoadingAction(true);
-      const points = parseInt(pointsForm.points);
-      const nights = pointsForm.nights ? parseInt(pointsForm.nights) : 0;
 
       // Build description with nights information if provided
       let finalDescription = pointsForm.description ?? '';
@@ -144,8 +151,16 @@ export default function LoyaltyAdminPage() {
             pointsForm.referenceId ?? `MANUAL-${Date.now()}`,
             finalDescription || `Manual award: ${points} points and ${nights} nights`
           );
-          toast.success(`Awarded ${points} points and ${nights} ${nights === 1 ? 'night' : 'nights'}`);
-        } else {
+
+          // Build success message
+          let successMsg = '';
+          if (points > 0 && nights > 0) {
+            successMsg = `Awarded ${points} points and ${nights} ${nights === 1 ? 'night' : 'nights'}`;
+          } else if (nights > 0) {
+            successMsg = `Awarded ${nights} ${nights === 1 ? 'night' : 'nights'}`;
+          }
+          toast.success(successMsg);
+        } else if (points > 0) {
           // Regular points-only award
           await loyaltyService.awardPoints(
             pointsModal.user.user_id,
@@ -158,12 +173,14 @@ export default function LoyaltyAdminPage() {
       } else {
         // For deduct: we don't support nights deduction through this UI
         // (nights are only added via hotel stays, never removed)
-        await loyaltyService.deductPoints(
-          pointsModal.user.user_id,
-          points,
-          finalDescription || `Points deducted by admin`
-        );
-        toast.success(t('admin.loyalty.success.pointsDeducted', { points }));
+        if (points > 0) {
+          await loyaltyService.deductPoints(
+            pointsModal.user.user_id,
+            points,
+            finalDescription || `Points deducted by admin`
+          );
+          toast.success(t('admin.loyalty.success.pointsDeducted', { points }));
+        }
       }
 
       closePointsModal();
@@ -217,7 +234,7 @@ export default function LoyaltyAdminPage() {
       setUserSearchResults(result.users);
     } catch (error) {
       console.error('Failed to search users:', error);
-      toast.error('Failed to search users');
+      toast.error('ไม่สามารถค้นหาผู้ใช้ได้');
     } finally {
       setIsSearchingUsers(false);
     }
@@ -282,9 +299,9 @@ export default function LoyaltyAdminPage() {
         );
       }
       
-      let successMessage = `Awarded ${pointsToAward} points for ${spendingAmount} THB spending`;
+      let successMessage = `มอบคะแนน ${pointsToAward} จากการใช้จ่าย ${spendingAmount} บาท`;
       if (nightsStayed > 0) {
-        successMessage += ` and ${nightsStayed} ${nightsStayed === 1 ? 'night' : 'nights'}`;
+        successMessage += ` และ ${nightsStayed} คืน`;
       }
       toast.success(successMessage);
       
@@ -294,7 +311,7 @@ export default function LoyaltyAdminPage() {
         loadUserTransactions(spendingForm.selectedUser.user_id);
       }
     } catch (error) {
-      toast.error('Failed to award spending points');
+      toast.error('ไม่สามารถมอบคะแนนได้');
       console.error('Spending points operation failed:', error);
     } finally {
       setIsLoadingAction(false);
@@ -331,7 +348,7 @@ export default function LoyaltyAdminPage() {
                 className="inline-flex items-center font-medium border border-blue-300 bg-blue-50 text-blue-700 px-4 py-2 text-sm rounded-md hover:bg-blue-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 <FiDollarSign className="w-4 h-4 mr-2" />
-                Award Spending Points
+                มอบคะแนนจากการใช้จ่าย
               </button>
               
               <button
@@ -663,19 +680,24 @@ export default function LoyaltyAdminPage() {
                 </label>
                 <input
                   type="number"
-                  min="1"
+                  min="0"
                   value={pointsForm.points}
                   onChange={(e) => setPointsForm({ ...pointsForm, points: e.target.value })}
                   className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  required
+                  placeholder="0"
                 />
+                {pointsForm.points && parseInt(pointsForm.points) > 0 && (
+                  <p className="mt-1 text-sm text-green-600">
+                    Will award {pointsForm.points} points
+                  </p>
+                )}
               </div>
 
               {/* Nights field - only show for award type */}
               {pointsModal.type === 'award' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    จำนวนคืน ({t('common.optional')})
+                    จำนวนคืน
                   </label>
                   <input
                     type="number"
@@ -707,7 +729,7 @@ export default function LoyaltyAdminPage() {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  {t('admin.loyalty.referenceId')} ({t('common.optional')})
+                  {t('admin.loyalty.referenceId')}
                 </label>
                 <input
                   type="text"
@@ -752,21 +774,21 @@ export default function LoyaltyAdminPage() {
           <div className="bg-white rounded-lg p-6 w-full max-w-lg">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               <FiDollarSign className="w-5 h-5 inline mr-2" />
-              Award Spending Points
+              มอบคะแนนจากการใช้จ่าย
             </h3>
-            
+
             <form onSubmit={handleSpendingSubmit} className="space-y-4">
               {/* User Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Select Customer
+                  เลือกลูกค้า
                 </label>
                 <div className="relative">
                   <input
                     type="text"
                     value={spendingForm.userSearchTerm}
                     onChange={(e) => handleUserSearchChange(e.target.value)}
-                    placeholder="Search by name or email..."
+                    placeholder="ค้นหาด้วยชื่อหรืออีเมล..."
                     className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     required
                   />
@@ -796,10 +818,10 @@ export default function LoyaltyAdminPage() {
                           }
                         </div>
                         <div className="text-xs text-gray-500">
-                          {user.oauth_provider === 'line' && user.first_name ? 'LINE User' : user.email}
+                          {user.oauth_provider === 'line' && user.first_name ? 'ผู้ใช้ LINE' : user.email}
                         </div>
                         <div className="text-xs text-gray-400">
-                          {user.tier_name} • {user.current_points} points • {t('profile.membershipId')}: {user.membership_id ?? 'N/A'}
+                          {user.tier_name} • {user.current_points} คะแนน • {t('profile.membershipId')}: {user.membership_id ?? 'N/A'}
                         </div>
                       </button>
                     ))}
@@ -820,10 +842,10 @@ export default function LoyaltyAdminPage() {
                           }
                         </div>
                         <div className="text-xs text-blue-700">
-                          {spendingForm.selectedUser.oauth_provider === 'line' && spendingForm.selectedUser.first_name ? 'LINE User' : spendingForm.selectedUser.email}
+                          {spendingForm.selectedUser.oauth_provider === 'line' && spendingForm.selectedUser.first_name ? 'ผู้ใช้ LINE' : spendingForm.selectedUser.email}
                         </div>
                         <div className="text-xs text-blue-600">
-                          {spendingForm.selectedUser.tier_name} • {spendingForm.selectedUser.current_points} points
+                          {spendingForm.selectedUser.tier_name} • {spendingForm.selectedUser.current_points} คะแนน
                         </div>
                       </div>
                       <button
@@ -831,7 +853,7 @@ export default function LoyaltyAdminPage() {
                         onClick={() => setSpendingForm({ ...spendingForm, selectedUser: null, userSearchTerm: '' })}
                         className="text-blue-600 hover:text-blue-800"
                       >
-                        Change
+                        เปลี่ยน
                       </button>
                     </div>
                   </div>
@@ -841,7 +863,7 @@ export default function LoyaltyAdminPage() {
               {/* Spending Amount */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Spending Amount (THB)
+                  ยอดการใช้จ่าย (บาท)
                 </label>
                 <input
                   type="number"
@@ -855,7 +877,7 @@ export default function LoyaltyAdminPage() {
                 />
                 {spendingForm.spendingAmount && (
                   <div className="mt-1 text-sm text-green-600">
-                    Points to award: {calculatePoints(parseFloat(spendingForm.spendingAmount) ?? 0)}
+                    คะแนนที่จะได้รับ: {calculatePoints(parseFloat(spendingForm.spendingAmount) ?? 0)}
                   </div>
                 )}
               </div>
@@ -863,7 +885,7 @@ export default function LoyaltyAdminPage() {
               {/* Nights Stayed */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Nights Stayed (Optional)
+                  จำนวนคืน
                 </label>
                 <input
                   type="number"
@@ -875,7 +897,7 @@ export default function LoyaltyAdminPage() {
                 />
                 {spendingForm.nightsStayed && parseInt(spendingForm.nightsStayed) > 0 && (
                   <div className="mt-1 text-sm text-blue-600">
-                    Will add {spendingForm.nightsStayed} {parseInt(spendingForm.nightsStayed) === 1 ? 'night' : 'nights'} to user's total
+                    จะเพิ่ม {spendingForm.nightsStayed} คืนให้ผู้ใช้
                   </div>
                 )}
               </div>
@@ -883,32 +905,32 @@ export default function LoyaltyAdminPage() {
               {/* Check-in ID */}
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Check-in ID (Reference)
+                  รหัสเช็คอิน (อ้างอิง)
                 </label>
                 <input
                   type="text"
                   value={spendingForm.checkinId}
                   onChange={(e) => setSpendingForm({ ...spendingForm, checkinId: e.target.value })}
                   className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="e.g., CHK-2024-001"
+                  placeholder="เช่น CHK-2024-001"
                   required
                 />
               </div>
-              
+
               <div className="flex justify-end space-x-3 pt-4">
                 <button
                   type="button"
                   onClick={closeSpendingConsole}
                   className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
                 >
-                  Cancel
+                  ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={isLoadingAction || !spendingForm.selectedUser || !spendingForm.spendingAmount || !spendingForm.checkinId}
                   className="px-4 py-2 text-sm font-medium text-white rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {isLoadingAction ? 'Processing...' : 'Award Points'}
+                  {isLoadingAction ? 'กำลังดำเนินการ...' : 'มอบคะแนน'}
                 </button>
               </div>
             </form>

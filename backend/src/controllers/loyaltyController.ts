@@ -408,21 +408,33 @@ export class LoyaltyController {
 
       const { userId, amountSpent, nightsStayed, referenceId, description } = req.body;
 
-      if (!userId || !amountSpent) {
+      // Validate userId is provided
+      if (!userId) {
         return res.status(400).json({
           success: false,
-          message: 'User ID and amount spent are required'
+          message: 'User ID is required'
         });
       }
 
-      if (amountSpent < 0) {
+      // Validate that at least one of amountSpent or nightsStayed is provided
+      const amount = amountSpent ?? 0;
+      const nights = nightsStayed ?? 0;
+
+      if (amount === 0 && nights === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'At least one of amount spent or nights stayed must be provided'
+        });
+      }
+
+      if (amount < 0) {
         return res.status(400).json({
           success: false,
           message: 'Amount spent must be non-negative'
         });
       }
 
-      if (nightsStayed !== undefined && nightsStayed < 0) {
+      if (nights < 0) {
         return res.status(400).json({
           success: false,
           message: 'Nights stayed must be non-negative'
@@ -431,8 +443,8 @@ export class LoyaltyController {
 
       const result = await loyaltyService.addStayNightsAndPoints(
         userId,
-        nightsStayed ?? 0,
-        amountSpent,
+        nights,
+        amount,
         referenceId,
         description ?? 'Spending points with nights awarded by admin'
       );

@@ -43,8 +43,8 @@ export class ImageProcessor {
     await this.ensureDirectories();
 
     // Generate filename using user ID for easy management
-    const ext = path.extname(originalName).toLowerCase() || '.jpg';
-    const filename = `${userId}_avatar${ext}`;
+    // Always use .jpg extension since we convert to JPEG format
+    const filename = `${userId}_avatar.jpg`;
     const filepath = path.join(this.storageDir, filename);
     
     // Delete old avatar if exists

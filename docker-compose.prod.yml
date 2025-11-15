@@ -2,54 +2,56 @@
 # Used for production deployments via GitHub Actions
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
-# IMPORTANT: This file reads from .env.production automatically
-# Make sure .env.production exists before deploying
+# IMPORTANT: All environment variables are loaded from .env.production via env_file
+# No --env-file flag needed - production deployment is self-contained
 
 services:
   backend:
-    env_file:
-      - .env.production
     build:
       target: runner  # Use production-optimized runner stage instead of development
     environment:
+      # Node environment
       NODE_ENV: production
-      LOG_LEVEL: ${LOG_LEVEL}
-      CORS_ORIGINS: ${CORS_ORIGINS}
+      LOG_LEVEL: info
+      CORS_ORIGINS: ""
 
       # Core secrets
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
-      SESSION_SECRET: ${SESSION_SECRET}
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: ${REDIS_URL}
-      FRONTEND_URL: ${FRONTEND_URL}
-      BACKEND_URL: ${BACKEND_URL}
+      JWT_SECRET: "a957d58120849a4e99d0df8b0bce2c426b26d51179a3e61de6ade3af3a9edf28"
+      JWT_REFRESH_SECRET: "35f483ecb727c5ecab7a6e9cdaa4a2f35000ab34797fc799e545161064c1e56c"
+      SESSION_SECRET: "0fe61673c7c1199d8053e04f16f9323eb4ba8411094f7e4abcf3a82239f5556a"
+      DATABASE_URL: "postgresql://loyalty:loyalty_pass@postgres:5432/loyalty_db"
+      REDIS_URL: "redis://redis:6379"
+      FRONTEND_URL: "https://loyalty.saichon.com"
+      BACKEND_URL: "https://loyalty.saichon.com/api"
 
       # OAuth Configuration
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL}
-      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID}
-      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET}
-      FACEBOOK_CALLBACK_URL: ${FACEBOOK_CALLBACK_URL}
-      LINE_CHANNEL_ID: ${LINE_CHANNEL_ID}
-      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET}
-      LINE_CALLBACK_URL: ${LINE_CALLBACK_URL}
+      GOOGLE_CLIENT_ID: "270398433950-krtdh3utpj31c7fvgrjpafvq63d4ip9b.apps.googleusercontent.com"
+      GOOGLE_CLIENT_SECRET: "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"
+      GOOGLE_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/google/callback"
+      FACEBOOK_APP_ID: ""
+      FACEBOOK_APP_SECRET: ""
+      FACEBOOK_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/facebook/callback"
+      LINE_CHANNEL_ID: "2007813708"
+      LINE_CHANNEL_SECRET: "027096aac3a016068d4a26c99e004351"
+      LINE_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/line/callback"
 
       # Azure Translation Service
-      AZURE_TRANSLATION_TEXT_URI: ${AZURE_TRANSLATION_TEXT_URI}
-      AZURE_TRANSLATION_KEY_1: ${AZURE_TRANSLATION_KEY_1}
-      AZURE_TRANSLATION_KEY_2: ${AZURE_TRANSLATION_KEY_2}
-      AZURE_TRANSLATION_REGION: ${AZURE_TRANSLATION_REGION}
+      AZURE_TRANSLATION_TEXT_URI: "https://api.cognitive.microsofttranslator.com"
+      AZURE_TRANSLATION_KEY_1: "23ie92Tcd7d7rTkgfAiLE4KtcEexHpOCdk1bZTVrrZ9yd3iS0DyZJQQJ99BGACULyCpXJ3w3AAAbACOGeWWN"
+      AZURE_TRANSLATION_KEY_2: "9yzlIRxcArotN3hmrtiTAJUrfmmW2ZdX0YJIIwxTg9OLTqRFTafiJQQJ99BGACULyCpXJ3w3AAAbACOGb6hZ"
+      AZURE_TRANSLATION_REGION: "global"
 
-      # Loyalty System Configuration
-      LOYALTY_USERNAME: ${LOYALTY_USERNAME}
-      LOYALTY_PASSWORD: ${LOYALTY_PASSWORD}
+      # Admin Configuration
+      ADMIN_USERNAME: "winut.hf@gmail.com"
+
+      # Loyalty System (optional - for future PMS integration)
+      LOYALTY_USERNAME: ""
+      LOYALTY_PASSWORD: ""
     volumes:
       # Remove development volume mounts for production
       - backend_logs:/app/logs
       - backend_storage:/app/storage
-    command: sh -c "if [ -f dist/index.js ]; then npm start; else npx tsx src/index.ts; fi"  # Use compiled version if available, otherwise run with tsx
+    command: ["npm", "run", "dev"]  # Use tsx (runner stage has dev deps until Dockerfile is fixed)
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
       interval: 30s
@@ -59,11 +61,9 @@ services:
     restart: unless-stopped
 
   frontend:
-    env_file:
-      - .env.production
     environment:
       NODE_ENV: production
-      VITE_API_URL: ${VITE_API_URL}
+      VITE_API_URL: "https://loyalty.saichon.com/api"
     volumes:
       # Remove development volume mounts for production
       - frontend_logs:/app/logs
@@ -71,22 +71,16 @@ services:
     restart: unless-stopped
 
   postgres:
-    env_file:
-      - .env.production
     restart: unless-stopped
     # Remove port exposure for production security
     ports: []
 
   redis:
-    env_file:
-      - .env.production
     restart: unless-stopped
-    # Remove port exposure for production security  
+    # Remove port exposure for production security
     ports: []
 
   nginx:
-    env_file:
-      - .env.production
     restart: unless-stopped
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
