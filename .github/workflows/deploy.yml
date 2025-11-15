@@ -386,8 +386,8 @@ jobs:
           DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5435/loyalty_test_db
           REDIS_URL: redis://localhost:6380
           NODE_ENV: test
-          JWT_SECRET: test-jwt-secret-for-testing-only-min-32-chars
-          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
+          JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
+          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
           SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
         run: |
           # Generate Prisma client for tests
@@ -415,8 +415,8 @@ jobs:
           DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5435/loyalty_test_db
           REDIS_URL: redis://localhost:6380
           NODE_ENV: test
-          JWT_SECRET: test-jwt-secret-for-testing-only-min-32-chars
-          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
+          JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
+          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
           SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
         run: npm run test:unit -- --coverage --passWithNoTests
 
@@ -587,8 +587,8 @@ jobs:
           DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5437/loyalty_integration_db
           REDIS_URL: redis://localhost:6382
           NODE_ENV: test
-          JWT_SECRET: test-jwt-secret-for-testing-only-min-32-chars
-          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
+          JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
+          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
           SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
         run: |
           # Generate Prisma client for tests
@@ -616,8 +616,8 @@ jobs:
           DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5437/loyalty_integration_db
           REDIS_URL: redis://localhost:6382
           NODE_ENV: test
-          JWT_SECRET: test-jwt-secret-for-testing-only-min-32-chars
-          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-min-32-chars
+          JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
+          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
           SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
         run: npm run test:integration -- --passWithNoTests
 
@@ -772,8 +772,8 @@ jobs:
           DATABASE_URL: postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db
           REDIS_URL: redis://localhost:6381
           NODE_ENV: development
-          JWT_SECRET: e2e-jwt-secret-for-testing-only-min-32-chars
-          JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-min-32-chars
+          JWT_SECRET: e2e-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
+          JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
           SESSION_SECRET: e2e-session-secret-for-testing-only-min-32-chars
           FRONTEND_URL: http://localhost:3201
           BACKEND_URL: http://localhost:4202
@@ -856,8 +856,8 @@ jobs:
                 NODE_ENV: development
                 DATABASE_URL: postgresql://loyalty:loyalty_password@postgres:5432/loyalty_db
                 REDIS_URL: redis://redis:6379
-                JWT_SECRET: e2e-jwt-secret-for-testing-only-min-32-chars
-                JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-min-32-chars
+                JWT_SECRET: e2e-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
+                JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
                 SESSION_SECRET: e2e-session-secret-for-testing-only-min-32-chars
                 FRONTEND_URL: http://localhost:3201
                 BACKEND_URL: http://localhost:4202
@@ -1056,8 +1056,8 @@ jobs:
                 NODE_ENV: development
                 DATABASE_URL: postgresql://loyalty:loyalty_password@postgres:5432/loyalty_db
                 REDIS_URL: redis://redis:6379
-                JWT_SECRET: e2e-jwt-secret-for-testing-only-min-32-chars
-                JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-min-32-chars
+                JWT_SECRET: e2e-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
+                JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
                 SESSION_SECRET: e2e-session-secret-for-testing-only-min-32-chars
                 FRONTEND_URL: http://localhost:3201
                 BACKEND_URL: http://localhost:4202
@@ -1452,8 +1452,8 @@ jobs:
           NODE_ENV: production
           LOG_LEVEL: info
           CORS_ORIGINS: "https://loyalty.saichon.com"
-          JWT_SECRET: "dummy-build-validation-secret-min-32-chars"
-          JWT_REFRESH_SECRET: "dummy-build-validation-refresh-secret-min-32-chars"
+          JWT_SECRET: "dummy-build-validation-secret-must-be-64-chars-minimum-xxxxxx"
+          JWT_REFRESH_SECRET: "dummy-build-validation-refresh-secret-must-be-64-chars-minimum-xx"
           SESSION_SECRET: "dummy-build-validation-session-secret-min-32-chars"
           DATABASE_URL: "postgresql://dummy:dummy@dummy:5432/dummy"
           REDIS_URL: "redis://redis:6379"
