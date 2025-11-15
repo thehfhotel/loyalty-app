@@ -807,12 +807,9 @@ jobs:
           
           # Build backend and frontend
           echo "🏗️ Building application for isolated E2E testing..."
-          npm run build &
-          cd ../frontend && npm run build &
+          (cd backend && npm run build) &
+          (cd frontend && npm run build) &
           wait
-          
-          # Return to project root to create Docker Compose file
-          cd ..
           
           # Create complete E2E compose file (replace the initial file with complete version)
           cat > docker-compose.e2e-test.yml << 'EOF'
