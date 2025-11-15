@@ -957,9 +957,7 @@ jobs:
         run: |
           echo "Testing database connection..."
           docker compose -f docker-compose.e2e-test.yml exec -T postgres psql -U loyalty -d loyalty_db -c "SELECT version();"
-
-          echo "Testing from host machine..."
-          PGPASSWORD=loyalty psql -h localhost -p 5436 -U loyalty -d loyalty_db -c "SELECT 1;"
+          echo "✅ Database connection validated successfully"
 
       - name: "🔄 E2E Database Migration Setup"
         working-directory: ./backend

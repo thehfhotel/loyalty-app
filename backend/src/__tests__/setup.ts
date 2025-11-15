@@ -90,6 +90,11 @@ export const testDb: MockPrismaClient = {
 beforeAll(async () => {
   // Set test environment
   process.env.NODE_ENV = 'test';
+
+  // Configure JWT secrets for authentication tests (must be 64+ characters)
+  process.env.JWT_SECRET = 'test-jwt-secret-key-that-is-at-least-sixty-four-characters-long-for-security';
+  process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-key-that-is-at-least-sixty-four-characters-long';
+
   // Test logging removed to reduce noise - setup complete
   
   // Initialize mocks properly within Jest context

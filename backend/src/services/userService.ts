@@ -226,7 +226,7 @@ export class UserService {
 
     // Check if new member rewards are available
     // Note: Profile completion rewards will be handled separately when implemented
-    let newMemberCouponAvailable = false;
+    const newMemberCouponAvailable = false;
 
     return {
       isComplete,

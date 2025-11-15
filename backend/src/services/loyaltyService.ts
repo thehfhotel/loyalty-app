@@ -496,8 +496,8 @@ export class LoyaltyService {
           userId,
           pointsEarned,
           transactionType,
-          description || `Hotel stay: ${nights} night(s), ${amountSpent.toFixed(2)} THB spent`,
-          referenceId || `STAY-${Date.now()}`,
+          description ?? `Hotel stay: ${nights} night(s), ${amountSpent.toFixed(2)} THB spent`,
+          referenceId ?? `STAY-${Date.now()}`,
           nights, // Store nights_stayed
           adminUserId, // Store admin who performed the action
           adminReason // Store admin reason
@@ -529,7 +529,7 @@ export class LoyaltyService {
         [userId]
       );
 
-      const newTierName = tierResult.rows[0]?.new_tier_name || 'Bronze';
+      const newTierName = tierResult.rows[0]?.new_tier_name ?? 'Bronze';
 
       await client.query('COMMIT');
 

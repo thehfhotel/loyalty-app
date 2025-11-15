@@ -3,11 +3,18 @@
  * Tests OAuth authentication with Google and LINE providers
  */
 
+// Configure environment before any imports
+process.env.JWT_SECRET = 'test-jwt-secret-key-that-is-at-least-sixty-four-characters-long-for-security';
+process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-key-that-is-at-least-sixty-four-characters-long';
+
+jest.mock('../../../services/loyaltyService');
+
 import { describe, expect, jest, beforeEach } from '@jest/globals';
 import { oauthService } from '../../../services/oauthService';
 import { User } from '../../../types/auth';
 import * as database from '../../../config/database';
 import { adminConfigService } from '../../../services/adminConfigService';
+import { LoyaltyService } from '../../../services/loyaltyService';
 
 // Type helper for accessing private OAuth methods in tests
 type OAuthServiceWithPrivates = {
@@ -41,6 +48,9 @@ jest.mock('../../../services/adminConfigService', () => ({
   }
 } as never));
 
+// Create mock type for LoyaltyService
+const mockLoyaltyService = LoyaltyService as jest.MockedClass<typeof LoyaltyService>;
+
 describe('OAuthService', () => {
   let testUser: { id: string; email: string | null };
   let mockQuery: jest.MockedFunction<typeof database.query>;
@@ -48,6 +58,11 @@ describe('OAuthService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockQuery = database.query as jest.MockedFunction<typeof database.query>;
+
+    // Mock loyalty enrollment to prevent Prisma calls
+    (mockLoyaltyService.prototype.ensureUserLoyaltyEnrollment as jest.Mock) = jest
+      .fn()
+      .mockImplementation(async () => {});
 
     // Mock test user
     testUser = {
