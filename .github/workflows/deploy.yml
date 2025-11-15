@@ -38,62 +38,79 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: "📦 Cache npm dependencies (GitHub Actions Cache)"
-        uses: actions/cache@v4
-        id: npm-cache
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
+      - name: "📦 Setup local cache directories"
+        run: |
+          mkdir -p /tmp/runner-cache/npm
+          mkdir -p /tmp/runner-cache/backend-node_modules
+          mkdir -p /tmp/runner-cache/frontend-node_modules
+          mkdir -p /tmp/runner-cache/root-node_modules
+          echo "✅ Cache directories prepared"
 
-      - name: "📦 Cache backend node_modules"
-        uses: actions/cache@v4
+      - name: "📦 Restore backend node_modules from local cache"
         id: backend-cache
-        with:
-          path: backend/node_modules
-          key: backend-${{ hashFiles('backend/package-lock.json') }}
-          restore-keys: |
-            backend-
+        run: |
+          if [ -d "/tmp/runner-cache/backend-node_modules/node_modules" ]; then
+            echo "✅ Restoring backend node_modules from local cache..."
+            cp -r /tmp/runner-cache/backend-node_modules/node_modules ./backend/
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ No backend cache found"
+            echo "cache-hit=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: "📦 Install backend dependencies"
         if: steps.backend-cache.outputs.cache-hit != 'true'
         working-directory: ./backend
         run: |
-          echo "📦 Installing backend dependencies..."
-          npm ci --prefer-offline --include=dev
+          echo "📦 Installing backend dependencies with local npm cache..."
+          npm ci --cache /tmp/runner-cache/npm --prefer-offline --include=dev
+          echo "💾 Saving backend node_modules to local cache..."
+          rm -rf /tmp/runner-cache/backend-node_modules/node_modules
+          cp -r node_modules /tmp/runner-cache/backend-node_modules/
 
-      - name: "📦 Cache frontend node_modules"
-        uses: actions/cache@v4
+      - name: "📦 Restore frontend node_modules from local cache"
         id: frontend-cache
-        with:
-          path: frontend/node_modules
-          key: frontend-${{ hashFiles('frontend/package-lock.json') }}
-          restore-keys: |
-            frontend-
+        run: |
+          if [ -d "/tmp/runner-cache/frontend-node_modules/node_modules" ]; then
+            echo "✅ Restoring frontend node_modules from local cache..."
+            cp -r /tmp/runner-cache/frontend-node_modules/node_modules ./frontend/
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ No frontend cache found"
+            echo "cache-hit=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: "📦 Install frontend dependencies"
         if: steps.frontend-cache.outputs.cache-hit != 'true'
         working-directory: ./frontend
         run: |
-          echo "📦 Installing frontend dependencies..."
-          npm ci --prefer-offline
+          echo "📦 Installing frontend dependencies with local npm cache..."
+          npm ci --cache /tmp/runner-cache/npm --prefer-offline
+          echo "💾 Saving frontend node_modules to local cache..."
+          rm -rf /tmp/runner-cache/frontend-node_modules/node_modules
+          cp -r node_modules /tmp/runner-cache/frontend-node_modules/
 
-      - name: "📦 Cache root node_modules (Playwright)"
-        uses: actions/cache@v4
+      - name: "📦 Restore root node_modules from local cache (Playwright)"
         id: root-cache
-        with:
-          path: node_modules
-          key: root-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            root-
+        run: |
+          if [ -d "/tmp/runner-cache/root-node_modules/node_modules" ]; then
+            echo "✅ Restoring root node_modules from local cache..."
+            cp -r /tmp/runner-cache/root-node_modules/node_modules ./
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ No root cache found"
+            echo "cache-hit=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: "📦 Install root dependencies (Playwright)"
         if: steps.root-cache.outputs.cache-hit != 'true'
         run: |
-          echo "📦 Installing root dependencies (Playwright)..."
-          npm ci --prefer-offline
+          echo "📦 Installing root dependencies (Playwright) with local npm cache..."
+          npm ci --cache /tmp/runner-cache/npm --prefer-offline
           echo "✅ Root dependencies installed (includes @playwright/test)"
+          echo "💾 Saving root node_modules to local cache..."
+          rm -rf /tmp/runner-cache/root-node_modules/node_modules
+          cp -r node_modules /tmp/runner-cache/root-node_modules/
 
       - name: "🔧 Generate Prisma client (shared)"
         working-directory: ./backend
@@ -155,21 +172,29 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: "📦 Restore backend dependencies"
-        uses: actions/cache/restore@v4
+      - name: "📦 Restore backend dependencies from local cache"
         id: backend-cache-restore
-        with:
-          path: backend/node_modules
-          key: backend-${{ hashFiles('backend/package-lock.json') }}
-          fail-on-cache-miss: true
+        run: |
+          if [ -d "/tmp/runner-cache/backend-node_modules/node_modules" ]; then
+            echo "✅ Restoring backend node_modules from local cache..."
+            cp -r /tmp/runner-cache/backend-node_modules/node_modules ./backend/
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ CRITICAL: Backend cache missing - should have been prepared by prepare-workspace job"
+            exit 1
+          fi
 
-      - name: "📦 Restore frontend dependencies"
-        uses: actions/cache/restore@v4
+      - name: "📦 Restore frontend dependencies from local cache"
         id: frontend-cache-restore
-        with:
-          path: frontend/node_modules
-          key: frontend-${{ hashFiles('frontend/package-lock.json') }}
-          fail-on-cache-miss: true
+        run: |
+          if [ -d "/tmp/runner-cache/frontend-node_modules/node_modules" ]; then
+            echo "✅ Restoring frontend node_modules from local cache..."
+            cp -r /tmp/runner-cache/frontend-node_modules/node_modules ./frontend/
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ CRITICAL: Frontend cache missing - should have been prepared by prepare-workspace job"
+            exit 1
+          fi
 
       - name: "🔍 TypeScript type checking (validation)"
         working-directory: ./backend
@@ -238,21 +263,29 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: "📦 Restore backend dependencies"
-        uses: actions/cache/restore@v4
+      - name: "📦 Restore backend dependencies from local cache"
         id: backend-cache-restore
-        with:
-          path: backend/node_modules
-          key: backend-${{ hashFiles('backend/package-lock.json') }}
-          fail-on-cache-miss: true
+        run: |
+          if [ -d "/tmp/runner-cache/backend-node_modules/node_modules" ]; then
+            echo "✅ Restoring backend node_modules from local cache..."
+            cp -r /tmp/runner-cache/backend-node_modules/node_modules ./backend/
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ CRITICAL: Backend cache missing - should have been prepared by prepare-workspace job"
+            exit 1
+          fi
 
-      - name: "📦 Restore frontend dependencies"
-        uses: actions/cache/restore@v4
+      - name: "📦 Restore frontend dependencies from local cache"
         id: frontend-cache-restore
-        with:
-          path: frontend/node_modules
-          key: frontend-${{ hashFiles('frontend/package-lock.json') }}
-          fail-on-cache-miss: true
+        run: |
+          if [ -d "/tmp/runner-cache/frontend-node_modules/node_modules" ]; then
+            echo "✅ Restoring frontend node_modules from local cache..."
+            cp -r /tmp/runner-cache/frontend-node_modules/node_modules ./frontend/
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ CRITICAL: Frontend cache missing - should have been prepared by prepare-workspace job"
+            exit 1
+          fi
 
       - name: "🐳 Start isolated test services"
         run: |
@@ -415,21 +448,29 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: "📦 Restore backend dependencies"
-        uses: actions/cache/restore@v4
+      - name: "📦 Restore backend dependencies from local cache"
         id: backend-cache-restore
-        with:
-          path: backend/node_modules
-          key: backend-${{ hashFiles('backend/package-lock.json') }}
-          fail-on-cache-miss: true
+        run: |
+          if [ -d "/tmp/runner-cache/backend-node_modules/node_modules" ]; then
+            echo "✅ Restoring backend node_modules from local cache..."
+            cp -r /tmp/runner-cache/backend-node_modules/node_modules ./backend/
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ CRITICAL: Backend cache missing - should have been prepared by prepare-workspace job"
+            exit 1
+          fi
 
-      - name: "📦 Restore frontend dependencies"
-        uses: actions/cache/restore@v4
+      - name: "📦 Restore frontend dependencies from local cache"
         id: frontend-cache-restore
-        with:
-          path: frontend/node_modules
-          key: frontend-${{ hashFiles('frontend/package-lock.json') }}
-          fail-on-cache-miss: true
+        run: |
+          if [ -d "/tmp/runner-cache/frontend-node_modules/node_modules" ]; then
+            echo "✅ Restoring frontend node_modules from local cache..."
+            cp -r /tmp/runner-cache/frontend-node_modules/node_modules ./frontend/
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ CRITICAL: Frontend cache missing - should have been prepared by prepare-workspace job"
+            exit 1
+          fi
 
       - name: "🐳 Start isolated test services"
         run: |
@@ -612,29 +653,41 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: "📦 Restore root dependencies (Playwright)"
-        uses: actions/cache/restore@v4
+      - name: "📦 Restore root dependencies (Playwright) from local cache"
         id: root-cache-restore
-        with:
-          path: node_modules
-          key: root-${{ hashFiles('package-lock.json') }}
-          fail-on-cache-miss: true
+        run: |
+          if [ -d "/tmp/runner-cache/root-node_modules/node_modules" ]; then
+            echo "✅ Restoring root node_modules from local cache..."
+            cp -r /tmp/runner-cache/root-node_modules/node_modules ./
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ CRITICAL: Root cache missing - should have been prepared by prepare-workspace job"
+            exit 1
+          fi
 
-      - name: "📦 Restore backend dependencies"
-        uses: actions/cache/restore@v4
+      - name: "📦 Restore backend dependencies from local cache"
         id: backend-cache-restore
-        with:
-          path: backend/node_modules
-          key: backend-${{ hashFiles('backend/package-lock.json') }}
-          fail-on-cache-miss: true
+        run: |
+          if [ -d "/tmp/runner-cache/backend-node_modules/node_modules" ]; then
+            echo "✅ Restoring backend node_modules from local cache..."
+            cp -r /tmp/runner-cache/backend-node_modules/node_modules ./backend/
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ CRITICAL: Backend cache missing - should have been prepared by prepare-workspace job"
+            exit 1
+          fi
 
-      - name: "📦 Restore frontend dependencies"
-        uses: actions/cache/restore@v4
+      - name: "📦 Restore frontend dependencies from local cache"
         id: frontend-cache-restore
-        with:
-          path: frontend/node_modules
-          key: frontend-${{ hashFiles('frontend/package-lock.json') }}
-          fail-on-cache-miss: true
+        run: |
+          if [ -d "/tmp/runner-cache/frontend-node_modules/node_modules" ]; then
+            echo "✅ Restoring frontend node_modules from local cache..."
+            cp -r /tmp/runner-cache/frontend-node_modules/node_modules ./frontend/
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ CRITICAL: Frontend cache missing - should have been prepared by prepare-workspace job"
+            exit 1
+          fi
 
       - name: "🧹 Cleanup E2E ports"
         run: |
@@ -1244,46 +1297,56 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: "📦 Cache npm dependencies"
-        uses: actions/cache@v4
-        id: npm-cache
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
+      - name: "📦 Setup local cache directories"
+        run: |
+          mkdir -p /tmp/runner-cache/npm
+          mkdir -p /tmp/runner-cache/backend-node_modules
+          mkdir -p /tmp/runner-cache/frontend-node_modules
+          echo "✅ Cache directories prepared"
 
-      - name: "📦 Cache backend node_modules"
-        uses: actions/cache@v4
+      - name: "📦 Restore backend node_modules from local cache"
         id: backend-cache
-        with:
-          path: backend/node_modules
-          key: backend-${{ hashFiles('backend/package-lock.json') }}
-          restore-keys: |
-            backend-
+        run: |
+          if [ -d "/tmp/runner-cache/backend-node_modules/node_modules" ]; then
+            echo "✅ Restoring backend node_modules from local cache..."
+            cp -r /tmp/runner-cache/backend-node_modules/node_modules ./backend/
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ No backend cache found"
+            echo "cache-hit=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: "📦 Install backend dependencies"
         if: steps.backend-cache.outputs.cache-hit != 'true'
         working-directory: ./backend
         run: |
-          echo "📦 Installing backend dependencies..."
-          npm ci --prefer-offline --include=dev
+          echo "📦 Installing backend dependencies with local npm cache..."
+          npm ci --cache /tmp/runner-cache/npm --prefer-offline --include=dev
+          echo "💾 Saving backend node_modules to local cache..."
+          rm -rf /tmp/runner-cache/backend-node_modules/node_modules
+          cp -r node_modules /tmp/runner-cache/backend-node_modules/
 
-      - name: "📦 Cache frontend node_modules"
-        uses: actions/cache@v4
+      - name: "📦 Restore frontend node_modules from local cache"
         id: frontend-cache
-        with:
-          path: frontend/node_modules
-          key: frontend-${{ hashFiles('frontend/package-lock.json') }}
-          restore-keys: |
-            frontend-
+        run: |
+          if [ -d "/tmp/runner-cache/frontend-node_modules/node_modules" ]; then
+            echo "✅ Restoring frontend node_modules from local cache..."
+            cp -r /tmp/runner-cache/frontend-node_modules/node_modules ./frontend/
+            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ No frontend cache found"
+            echo "cache-hit=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: "📦 Install frontend dependencies"
         if: steps.frontend-cache.outputs.cache-hit != 'true'
         working-directory: ./frontend
         run: |
-          echo "📦 Installing frontend dependencies..."
-          npm ci --prefer-offline
+          echo "📦 Installing frontend dependencies with local npm cache..."
+          npm ci --cache /tmp/runner-cache/npm --prefer-offline
+          echo "💾 Saving frontend node_modules to local cache..."
+          rm -rf /tmp/runner-cache/frontend-node_modules/node_modules
+          cp -r node_modules /tmp/runner-cache/frontend-node_modules/
       
       - name: "🔧 Generate Prisma client (build phase)"
         run: |
