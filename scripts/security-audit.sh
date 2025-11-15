@@ -104,7 +104,9 @@ fi
 
 # Verify rate limiter is applied to auth routes
 if grep -q "authRateLimiter\|createAuthRateLimiter" backend/src/routes/auth.ts 2>/dev/null; then
-    log_pass "Auth rate limiter applied to auth routes"
+    log_pass "Auth rate limiter applied in auth routes (route-level)"
+elif grep -q "\/api\/auth.*authRateLimit\|authRateLimit.*authRoutes" backend/src/index.ts 2>/dev/null; then
+    log_pass "Auth rate limiter applied at app level (before auth routes mount)"
 else
     log_warn "Auth routes may not have dedicated rate limiting"
 fi
