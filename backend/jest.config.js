@@ -1,7 +1,8 @@
 /** @type {import('jest').Config} */
 module.exports = {
   preset: 'ts-jest',
-  testEnvironment: 'node',
+  // Allure reporting integration - use allure-jest environment
+  testEnvironment: 'allure-jest/node',
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.test.ts', '**/*.test.ts'],
   transform: {
@@ -35,17 +36,6 @@ module.exports = {
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html', 'json', 'json-summary'],
   setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
-  // Allure reporting integration
-  reporters: [
-    'default',
-    [
-      'jest-allure',
-      {
-        outputDirectory: 'allure-results',
-        disableMentions: true,
-      },
-    ],
-  ],
   testTimeout: 5000,
   verbose: true,
   forceExit: true,
