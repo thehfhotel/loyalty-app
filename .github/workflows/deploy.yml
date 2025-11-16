@@ -428,11 +428,12 @@ jobs:
           name: coverage-report-${{ github.run_id }}
           path: |
             backend/coverage/
+            backend/allure-results/
             !backend/coverage/**/*.tmp
           retention-days: 30
           if-no-files-found: warn
           compression-level: 6
-      
+
       - name: "📈 Test results summary (reporting only)"
         id: test-results
         if: always()

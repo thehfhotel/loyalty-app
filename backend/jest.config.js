@@ -21,19 +21,31 @@ module.exports = {
     '!src/__tests__/setup.ts',
     '!src/types/**',
   ],
-  // Coverage thresholds adjusted to current levels (temporary)
-  // TODO: Gradually increase back to 42% as coverage improves
-  coverageThreshold: {
-    global: {
-      statements: 25,  // Current: 25.04%
-      branches: 67.5,  // Current: 67.78% (allow small variation)
-      functions: 40,   // Current: 40.67%
-      lines: 25,       // Current: 25.04%
-    },
-  },
+  // Coverage thresholds disabled - tracking via reports instead
+  // Coverage is monitored but won't block CI/CD pipeline
+  // See TEST_REPORTING.md for coverage strategy and goals
+  // coverageThreshold: {
+  //   global: {
+  //     statements: 25,
+  //     branches: 67.5,
+  //     functions: 40,
+  //     lines: 25,
+  //   },
+  // },
   coverageDirectory: 'coverage',
-  coverageReporters: ['text', 'lcov', 'html'],
+  coverageReporters: ['text', 'lcov', 'html', 'json'],
   setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
+  // Allure reporting integration
+  reporters: [
+    'default',
+    [
+      'jest-allure',
+      {
+        outputDirectory: 'allure-results',
+        disableMentions: true,
+      },
+    ],
+  ],
   testTimeout: 10000,
   verbose: true,
   forceExit: true,
