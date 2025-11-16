@@ -1139,12 +1139,12 @@ jobs:
                 FRONTEND_URL: http://localhost:3201
                 BACKEND_URL: http://localhost:4202
                 CORS_ORIGINS: "http://localhost:3201"
-                # OAuth Configuration (from GitHub Secrets via environment variables)
-                GOOGLE_CLIENT_ID: \${GOOGLE_CLIENT_ID}
-                GOOGLE_CLIENT_SECRET: \${GOOGLE_CLIENT_SECRET}
+                # OAuth Configuration (from GitHub Secrets)
+                GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+                GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
                 GOOGLE_CALLBACK_URL: http://localhost:4202/api/oauth/google/callback
-                LINE_CHANNEL_ID: \${LINE_CHANNEL_ID}
-                LINE_CHANNEL_SECRET: \${LINE_CHANNEL_SECRET}
+                LINE_CHANNEL_ID: ${LINE_CHANNEL_ID}
+                LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET}
                 LINE_CALLBACK_URL: http://localhost:4202/api/oauth/line/callback
               depends_on:
                 postgres:
