@@ -11,7 +11,7 @@ async function globalTeardown(config: FullConfig) {
   try {
     // Stop and remove E2E containers
     console.log('🐳 Stopping E2E containers...');
-    execSync('docker compose -f docker-compose.e2e.yml down -v --remove-orphans', {
+    execSync('docker compose -f docker-compose.e2e.local.yml down -v --remove-orphans', {
       stdio: 'inherit',
       cwd: process.cwd()
     });

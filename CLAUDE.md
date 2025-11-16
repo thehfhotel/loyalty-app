@@ -161,6 +161,62 @@ Before creating frontend API calls:
 
 **Requirements:** Clean ports before tests, health checks with retry logic, clean volumes between runs.
 
+#### Docker Compose Files
+
+The project uses **two distinct** E2E docker-compose configurations:
+
+**1. docker-compose.e2e.local.yml** - Local Development
+- **Purpose**: Playwright test development and debugging
+- **Usage**: `npm run test:e2e` (via Playwright's global-setup.ts)
+- **Services**: postgres, redis, backend only
+- **Frontend**: Run separately with `npm run dev` for hot-reload
+- **Volume Mounts**: Yes (`./backend:/app`) for live code changes
+- **Lifecycle**: Persistent (manually managed)
+- **Location**: Committed to repository
+
+**2. docker-compose.e2e.ci.yml** - CI/CD
+- **Purpose**: GitHub Actions automated testing
+- **Usage**: Generated inline in `.github/workflows/deploy.yml`
+- **Services**: postgres, redis, backend, frontend (all containerized)
+- **Frontend**: Containerized build (no hot-reload needed)
+- **Volume Mounts**: No (immutable builds)
+- **Lifecycle**: Generated → Used → Deleted per workflow run
+- **Location**: NOT committed (generated, in .gitignore)
+
+**CRITICAL: Both files MUST use identical network configuration:**
+```yaml
+# Required for Docker-in-Docker (GitHub self-hosted runners)
+services:
+  postgres:
+    network_mode: host
+    environment:
+      PGPORT: 5436
+  redis:
+    network_mode: host
+    command: redis-server --port 6381
+  backend:
+    network_mode: host
+    environment:
+      PORT: 4202
+      DATABASE_URL: postgresql://...@localhost:5436/...
+      REDIS_URL: redis://localhost:6381
+```
+
+**Why host network?**
+- GitHub self-hosted runners run in Docker Compose (Docker-in-Docker)
+- Host network ensures E2E containers can communicate reliably
+- tmpfs mount (`/dev/shm:size=256m`) more reliable than `shm_size` in DinD
+
+**Why two files?**
+- Different services: Local dev doesn't need containerized frontend
+- Different lifecycles: Local persistent, CI ephemeral
+- Different volume needs: Local needs hot-reload, CI needs immutability
+
+**Concurrency Control:**
+- E2E tests run sequentially (one at a time) to prevent port conflicts
+- Configured via `concurrency: { group: e2e-tests, cancel-in-progress: false }`
+- Other jobs (unit, integration, security) still run in parallel
+
 ## 🔧 Development Standards
 
 ### Security
