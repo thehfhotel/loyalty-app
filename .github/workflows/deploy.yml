@@ -928,6 +928,12 @@ jobs:
   e2e-tests:
     name: "🎭 E2E Tests"
     runs-on: self-hosted
+
+    # Prevent parallel E2E runs to avoid port conflicts with host network
+    concurrency:
+      group: e2e-tests
+      cancel-in-progress: false
+
     needs: [prepare-workspace, security-analysis]
     timeout-minutes: 8
     if: (github.ref == 'refs/heads/main' || github.base_ref == 'main')
@@ -1189,70 +1195,72 @@ jobs:
         run: |
           echo "🚀 Starting isolated application stack for E2E tests..."
           
-          # Create the E2E Docker Compose file
-          echo "📝 Creating E2E Docker Compose configuration..."
+          # Create the E2E Docker Compose file with host networking
+          echo "📝 Creating E2E Docker Compose configuration with host network..."
           cat > docker-compose.e2e-test.yml << 'EOF'
           services:
             postgres:
               image: postgres:15-alpine
               container_name: loyalty_postgres_e2e
+              network_mode: host
               environment:
                 POSTGRES_USER: loyalty
                 POSTGRES_PASSWORD: loyalty_password
                 POSTGRES_DB: loyalty_db
-              ports:
-                - "5436:5432"
+                PGPORT: 5436
+              tmpfs:
+                - /dev/shm:size=256m
               volumes:
                 - loyalty_postgres_e2e_data:/var/lib/postgresql/data
-              shm_size: 128mb
               healthcheck:
-                test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
+                test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db -p 5436"]
                 interval: 5s
                 timeout: 5s
                 retries: 5
                 start_period: 10s
-            
+
             redis:
               image: redis:7-alpine
               container_name: loyalty_redis_e2e
-              ports:
-                - "6381:6379"
+              network_mode: host
+              command: redis-server --port 6381
               volumes:
                 - loyalty_redis_e2e_data:/data
               healthcheck:
-                test: ["CMD", "redis-cli", "ping"]
+                test: ["CMD", "redis-cli", "-p", "6381", "ping"]
                 interval: 5s
                 timeout: 3s
                 retries: 5
-            
+
             backend:
               build:
                 context: ./backend
                 dockerfile: Dockerfile
               container_name: loyalty_backend_e2e
+              network_mode: host
               environment:
                 NODE_ENV: development
-                DATABASE_URL: postgresql://loyalty:loyalty_password@postgres:5432/loyalty_db
-                REDIS_URL: redis://redis:6379
+                PORT: 4202
+                DATABASE_URL: postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db
+                REDIS_URL: redis://localhost:6381
                 JWT_SECRET: e2e-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxxx
                 JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-must-be-64-chars-minimum-xxx
                 SESSION_SECRET: e2e-session-secret-for-testing-only-min-32-chars
                 FRONTEND_URL: http://localhost:3201
                 BACKEND_URL: http://localhost:4202
                 CORS_ORIGINS: "http://localhost:3201"
-              ports:
-                - "4202:4000"
               depends_on:
                 postgres:
                   condition: service_healthy
                 redis:
                   condition: service_healthy
               healthcheck:
-                test: ["CMD-SHELL", "curl -f http://localhost:4000/api/health || exit 1"]
+                test: ["CMD-SHELL", "curl -f http://localhost:4202/api/health || exit 1"]
                 interval: 10s
                 timeout: 5s
                 retries: 5
-            
+                start_period: 30s
+
             frontend:
               build:
                 context: ./frontend
@@ -1260,19 +1268,19 @@ jobs:
                 args:
                   VITE_API_URL: http://localhost:4202/api
               container_name: loyalty_frontend_e2e
+              network_mode: host
               environment:
                 NODE_ENV: development
-              ports:
-                - "3201:3000"
+                PORT: 3201
               depends_on:
                 backend:
                   condition: service_healthy
               healthcheck:
-                test: ["CMD-SHELL", "curl -f http://localhost:3000 || exit 1"]
+                test: ["CMD-SHELL", "curl -f http://localhost:3201 || exit 1"]
                 interval: 10s
                 timeout: 5s
                 retries: 3
-          
+
           volumes:
             loyalty_postgres_e2e_data:
               driver: local

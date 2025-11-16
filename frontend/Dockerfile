@@ -50,4 +50,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
 EXPOSE 3000
 
 # Start Vite dev server or preview based on environment
-CMD ["sh", "-c", "if [ \"$NODE_ENV\" = \"production\" ] && [ -d dist ]; then npm run preview -- --host 0.0.0.0 --port 3000; else npm run dev -- --host 0.0.0.0; fi"]
+# Use PORT env var if set, otherwise default to 3000
+CMD ["sh", "-c", "if [ \"$NODE_ENV\" = \"production\" ] && [ -d dist ]; then npm run preview -- --host 0.0.0.0 --port ${PORT:-3000}; else npm run dev -- --host 0.0.0.0 --port ${PORT:-3000}; fi"]
