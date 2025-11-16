@@ -7,10 +7,10 @@
  */
 
 import request from 'supertest';
-import express, { Express, Request, Response, NextFunction } from 'express';
+import { Express, Request, Response, NextFunction } from 'express';
 import surveyRoutes from '../../../routes/survey';
-import { errorHandler } from '../../../middleware/errorHandler';
 import { surveyController } from '../../../controllers/surveyController';
+import { createTestApp } from '../../fixtures';
 
 // Mock dependencies
 jest.mock('../../../controllers/surveyController');
@@ -38,11 +38,7 @@ describe('Survey Routes Integration Tests', () => {
   let mockSurveyController: jest.Mocked<typeof surveyController>;
 
   beforeAll(() => {
-    // Create Express app with routes
-    app = express();
-    app.use(express.json());
-    app.use('/api/surveys', surveyRoutes);
-    app.use(errorHandler);
+    app = createTestApp(surveyRoutes, '/api/surveys');
   });
 
   beforeEach(() => {

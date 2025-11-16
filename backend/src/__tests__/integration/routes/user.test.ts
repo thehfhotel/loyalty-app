@@ -7,11 +7,11 @@
  */
 
 import request from 'supertest';
-import express, { Express, Request, Response, NextFunction } from 'express';
+import { Express, Request, Response, NextFunction } from 'express';
 import userRoutes from '../../../routes/user';
-import { errorHandler } from '../../../middleware/errorHandler';
 import { UserService } from '../../../services/userService';
 import { ImageProcessor } from '../../../utils/imageProcessor';
+import { createTestApp } from '../../fixtures';
 
 // Mock dependencies
 jest.mock('../../../services/userService');
@@ -61,17 +61,12 @@ describe('User Routes Integration Tests', () => {
   };
 
   beforeAll(() => {
-    // Create Express app with routes
-    app = express();
-    app.use(express.json());
-
     // Mock authentication middleware before routes
     jest.mock('../../../middleware/auth', () => ({
       authenticate: mockAuthenticate('customer'),
     }));
 
-    app.use('/api/users', userRoutes);
-    app.use(errorHandler);
+    app = createTestApp(userRoutes, '/api/users');
   });
 
   beforeEach(() => {

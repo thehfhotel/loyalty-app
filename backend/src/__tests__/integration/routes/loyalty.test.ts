@@ -7,10 +7,10 @@
  */
 
 import request from 'supertest';
-import express, { Express, Request, Response, NextFunction } from 'express';
+import { Express, Request, Response, NextFunction } from 'express';
 import loyaltyRoutes from '../../../routes/loyalty';
-import { errorHandler } from '../../../middleware/errorHandler';
 import { LoyaltyController } from '../../../controllers/loyaltyController';
+import { createTestApp } from '../../fixtures';
 
 // Mock dependencies
 jest.mock('../../../controllers/loyaltyController');
@@ -34,17 +34,12 @@ describe('Loyalty Routes Integration Tests', () => {
   };
 
   beforeAll(() => {
-    // Create Express app with routes
-    app = express();
-    app.use(express.json());
-
     // Mock authentication middleware
     jest.mock('../../../middleware/auth', () => ({
       authenticate: mockAuthenticate('customer'),
     }));
 
-    app.use('/api/loyalty', loyaltyRoutes);
-    app.use(errorHandler);
+    app = createTestApp(loyaltyRoutes, '/api/loyalty');
   });
 
   beforeEach(() => {

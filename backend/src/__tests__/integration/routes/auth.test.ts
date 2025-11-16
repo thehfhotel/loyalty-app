@@ -12,11 +12,8 @@ import authRoutes from '../../../routes/auth';
 import { AuthService } from '../../../services/authService';
 import {
   createTestApp,
-  createTestCustomer,
-  createTestTokens,
   createMockAuthService,
   setupAuthServiceMocks,
-  resetServiceMocks,
 } from '../../fixtures';
 
 // Mock dependencies

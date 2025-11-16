@@ -9,7 +9,7 @@
 import request from 'supertest';
 import express, { Express } from 'express';
 import notificationsRoutes from '../../../routes/notifications';
-import { errorHandler } from '../../../middleware/errorHandler';
+import { createTestApp } from '../../fixtures';
 
 // Mock NotificationService
 jest.mock('../../../services/notificationService');
@@ -39,11 +39,7 @@ describe('Notifications Routes Integration Tests', () => {
   let app: Express;
 
   beforeAll(() => {
-    // Create Express app with routes
-    app = express();
-    app.use(express.json());
-    app.use('/api/notifications', notificationsRoutes);
-    app.use(errorHandler);
+    app = createTestApp(notificationsRoutes, '/api/notifications');
   });
 
   describe('VAPID Key Management', () => {

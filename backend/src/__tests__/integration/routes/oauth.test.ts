@@ -10,7 +10,7 @@ import request from 'supertest';
 import express, { Express } from 'express';
 import { Session, SessionData } from 'express-session';
 import oauthRoutes from '../../../routes/oauth';
-import { errorHandler } from '../../../middleware/errorHandler';
+import { createTestApp } from '../../fixtures';
 import { oauthStateService } from '../../../services/oauthStateService';
 
 // Mock dependencies
@@ -43,12 +43,13 @@ describe('OAuth Routes Integration Tests', () => {
     process.env.LINE_CALLBACK_URL = 'http://localhost:4001/api/oauth/line/callback';
     process.env.FRONTEND_URL = 'http://localhost:3000';
 
-    // Create Express app with routes
-    app = express();
-    app.use(express.json());
+    // Create base app with createTestApp
+    app = createTestApp(oauthRoutes, '/api/oauth');
 
-    // Mock session middleware
-    app.use((req, _res, next) => {
+    // Add session middleware after base setup (OAuth requires session)
+    const appWithoutError = express();
+    appWithoutError.use(express.json());
+    appWithoutError.use((req, _res, next) => {
       req.session = {
         id: 'test-session-id',
         cookie: {
@@ -68,9 +69,8 @@ describe('OAuth Routes Integration Tests', () => {
       req.sessionID = 'test-session-id';
       next();
     });
-
-    app.use('/api/oauth', oauthRoutes);
-    app.use(errorHandler);
+    appWithoutError.use('/api/oauth', oauthRoutes);
+    app = appWithoutError;
   });
 
   beforeEach(() => {

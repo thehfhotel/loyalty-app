@@ -9,7 +9,7 @@
 import request from 'supertest';
 import express, { Express } from 'express';
 import translationRoutes from '../../../routes/translation';
-import { errorHandler } from '../../../middleware/errorHandler';
+import { createTestApp } from '../../fixtures';
 
 // Mock translationService
 jest.mock('../../../services/translationService');
@@ -49,11 +49,7 @@ describe('Translation Routes Integration Tests', () => {
   let app: Express;
 
   beforeAll(() => {
-    // Create Express app with routes
-    app = express();
-    app.use(express.json());
-    app.use('/api/translation', translationRoutes);
-    app.use(errorHandler);
+    app = createTestApp(translationRoutes, '/api/translation');
   });
 
   describe('Text Translation', () => {

@@ -55,7 +55,6 @@ describe('Analytics Routes Integration Tests', () => {
       app.use(express.json());
       app.use(mockAuthMiddleware('customer'));
       app.use('/api/analytics', analyticsRoutes);
-      app.use(errorHandler);
     });
 
     test('should track coupon usage event successfully', async () => {

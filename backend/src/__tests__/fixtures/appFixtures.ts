@@ -30,7 +30,6 @@ export const createMockAuthMiddleware = (
       id: userId,
       email: `${role}@test.com`,
       role,
-      membershipId: '26912345',
     };
     next();
   };

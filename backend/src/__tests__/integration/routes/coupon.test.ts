@@ -7,10 +7,10 @@
  */
 
 import request from 'supertest';
-import express, { Express, Request, Response, NextFunction } from 'express';
+import { Express, Request, Response, NextFunction } from 'express';
 import couponRoutes from '../../../routes/coupon';
-import { errorHandler } from '../../../middleware/errorHandler';
 import { couponController } from '../../../controllers/couponController';
+import { createTestApp } from '../../fixtures';
 
 // Mock dependencies
 jest.mock('../../../controllers/couponController');
@@ -38,11 +38,7 @@ describe('Coupon Routes Integration Tests', () => {
   let mockCouponController: jest.Mocked<typeof couponController>;
 
   beforeAll(() => {
-    // Create Express app with routes
-    app = express();
-    app.use(express.json());
-    app.use('/api/coupons', couponRoutes);
-    app.use(errorHandler);
+    app = createTestApp(couponRoutes, '/api/coupons');
   });
 
   beforeEach(() => {

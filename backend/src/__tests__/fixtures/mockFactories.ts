@@ -45,9 +45,15 @@ export const setupAuthServiceMocks = (mockService: jest.Mocked<AuthService>) => 
       id: 'test-user-123',
       email: 'test@example.com',
       role: 'customer',
+      isActive: true,
+      emailVerified: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any,
+    tokens: {
+      accessToken: 'mock-access-token',
+      refreshToken: 'mock-refresh-token',
     },
-    accessToken: 'mock-access-token',
-    refreshToken: 'mock-refresh-token',
   });
 
   mockService.register.mockResolvedValue({
@@ -55,9 +61,15 @@ export const setupAuthServiceMocks = (mockService: jest.Mocked<AuthService>) => 
       id: 'new-user-123',
       email: 'newuser@example.com',
       role: 'customer',
+      isActive: true,
+      emailVerified: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any,
+    tokens: {
+      accessToken: 'mock-access-token',
+      refreshToken: 'mock-refresh-token',
     },
-    accessToken: 'mock-access-token',
-    refreshToken: 'mock-refresh-token',
   });
 
   mockService.verifyToken.mockResolvedValue({
@@ -74,37 +86,22 @@ export const setupAuthServiceMocks = (mockService: jest.Mocked<AuthService>) => 
  */
 export const setupUserServiceMocks = (mockService: jest.Mocked<UserService>) => {
   mockService.getUserById.mockResolvedValue({
-    id: 'test-user-123',
     email: 'test@example.com',
-    firstName: 'Test',
-    lastName: 'User',
     role: 'customer',
-    membershipId: '26912345',
-    currentPoints: 1000,
-    totalNights: 5,
-  });
-
-  mockService.getUserByEmail.mockResolvedValue({
-    id: 'test-user-123',
-    email: 'test@example.com',
-    firstName: 'Test',
-    lastName: 'User',
-    role: 'customer',
-    membershipId: '26912345',
-    currentPoints: 1000,
-    totalNights: 5,
-  });
-
-  mockService.updateUser.mockResolvedValue({
-    id: 'test-user-123',
-    email: 'test@example.com',
-    firstName: 'Updated',
-    lastName: 'User',
-    role: 'customer',
-    membershipId: '26912345',
-    currentPoints: 1000,
-    totalNights: 5,
-  });
+    isActive: true,
+    emailVerified: true,
+    password: 'hashed-password',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    user_profiles: {
+      firstName: 'Test',
+      lastName: 'User',
+      phoneNumber: null,
+      dateOfBirth: null,
+      preferredLanguage: 'en',
+      avatarUrl: null,
+    },
+  } as any);
 
   return mockService;
 };

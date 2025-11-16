@@ -9,7 +9,7 @@
 import request from 'supertest';
 import express, { Express } from 'express';
 import membershipRoutes from '../../../routes/membership';
-import { errorHandler } from '../../../middleware/errorHandler';
+import { createTestApp } from '../../fixtures';
 
 // Mock membershipIdService
 jest.mock('../../../services/membershipIdService');
@@ -51,11 +51,7 @@ describe('Membership Routes Integration Tests', () => {
   let app: Express;
 
   beforeAll(() => {
-    // Create Express app with routes
-    app = express();
-    app.use(express.json());
-    app.use('/api/membership', membershipRoutes);
-    app.use(errorHandler);
+    app = createTestApp(membershipRoutes, '/api/membership');
   });
 
   describe('Membership ID Lookup', () => {
