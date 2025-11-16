@@ -106,13 +106,19 @@ async function globalSetup(config: FullConfig) {
 
       console.log(`Services ready: ${healthyServices.length}/${services.length}`);
 
-      if (healthyServices.length === 3) { // postgres, redis, backend
+      // CI has 4 services (postgres, redis, backend, frontend), local has 3 (no frontend)
+      const expectedServices = isCI ? 4 : 3;
+      if (healthyServices.length === expectedServices) {
         console.log('✅ All E2E services are healthy!');
         break;
       }
 
       if (Date.now() - startTime > maxWaitTime) {
-        throw new Error('Services did not become healthy within timeout period');
+        console.error('❌ Services failed to become healthy within timeout period');
+        console.error(`Expected ${expectedServices} healthy services, got ${healthyServices.length}`);
+        console.error('Service status:');
+        services.forEach(line => console.error(`  ${line}`));
+        throw new Error(`Services did not become healthy: ${healthyServices.length}/${expectedServices} ready`);
       }
 
       await new Promise(resolve => setTimeout(resolve, 5000));
