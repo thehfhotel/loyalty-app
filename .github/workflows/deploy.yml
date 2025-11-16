@@ -512,40 +512,53 @@ jobs:
           fi
 
           # Extract and display coverage metrics
-          if [ -f backend/coverage/lcov.info ]; then
-            # Extract detailed coverage metrics
-            LINES_FOUND=$(grep -o "LF:[0-9]*" backend/coverage/lcov.info | head -1 | cut -d: -f2 || echo "0")
-            LINES_HIT=$(grep -o "LH:[0-9]*" backend/coverage/lcov.info | head -1 | cut -d: -f2 || echo "0")
+          if [ -f backend/coverage/coverage-summary.json ]; then
+            # Extract coverage metrics from JSON summary (accurate totals across all files)
+            LINES_FOUND=$(jq '.total.lines.total' backend/coverage/coverage-summary.json)
+            LINES_HIT=$(jq '.total.lines.covered' backend/coverage/coverage-summary.json)
+            COVERAGE_PERCENT=$(jq '.total.lines.pct' backend/coverage/coverage-summary.json)
 
-            # Calculate percentage
-            if [ "$LINES_FOUND" -gt 0 ]; then
-              COVERAGE_PERCENT=$(awk "BEGIN {printf \"%.2f\", ($LINES_HIT / $LINES_FOUND) * 100}")
-            else
-              COVERAGE_PERCENT="0"
-            fi
+            # Additional metrics for comprehensive reporting
+            STATEMENTS_TOTAL=$(jq '.total.statements.total' backend/coverage/coverage-summary.json)
+            STATEMENTS_COVERED=$(jq '.total.statements.covered' backend/coverage/coverage-summary.json)
+            STATEMENTS_PCT=$(jq '.total.statements.pct' backend/coverage/coverage-summary.json)
 
-            echo "coverage=$LINES_FOUND" >> $GITHUB_OUTPUT
+            FUNCTIONS_TOTAL=$(jq '.total.functions.total' backend/coverage/coverage-summary.json)
+            FUNCTIONS_COVERED=$(jq '.total.functions.covered' backend/coverage/coverage-summary.json)
+            FUNCTIONS_PCT=$(jq '.total.functions.pct' backend/coverage/coverage-summary.json)
+
+            BRANCHES_TOTAL=$(jq '.total.branches.total' backend/coverage/coverage-summary.json)
+            BRANCHES_COVERED=$(jq '.total.branches.covered' backend/coverage/coverage-summary.json)
+            BRANCHES_PCT=$(jq '.total.branches.pct' backend/coverage/coverage-summary.json)
+
+            echo "coverage=$COVERAGE_PERCENT" >> $GITHUB_OUTPUT
 
             # Display coverage summary
             echo "📊 Coverage Summary:"
-            echo "  Lines covered: $LINES_HIT / $LINES_FOUND ($COVERAGE_PERCENT%)"
+            echo "  Lines:      $LINES_HIT / $LINES_FOUND ($COVERAGE_PERCENT%)"
+            echo "  Statements: $STATEMENTS_COVERED / $STATEMENTS_TOTAL ($STATEMENTS_PCT%)"
+            echo "  Functions:  $FUNCTIONS_COVERED / $FUNCTIONS_TOTAL ($FUNCTIONS_PCT%)"
+            echo "  Branches:   $BRANCHES_COVERED / $BRANCHES_TOTAL ($BRANCHES_PCT%)"
             echo "  Coverage report: Available in workflow artifacts"
 
             # Add to job summary for GitHub UI
             {
               echo "## 📊 Test Coverage Report"
               echo ""
-              echo "| Metric | Value |"
-              echo "|--------|-------|"
-              echo "| **Lines Covered** | $LINES_HIT / $LINES_FOUND |"
-              echo "| **Coverage Percentage** | $COVERAGE_PERCENT% |"
+              echo "| Metric | Covered | Total | Percentage |"
+              echo "|--------|---------|-------|------------|"
+              echo "| **Lines** | $LINES_HIT | $LINES_FOUND | $COVERAGE_PERCENT% |"
+              echo "| **Statements** | $STATEMENTS_COVERED | $STATEMENTS_TOTAL | $STATEMENTS_PCT% |"
+              echo "| **Functions** | $FUNCTIONS_COVERED | $FUNCTIONS_TOTAL | $FUNCTIONS_PCT% |"
+              echo "| **Branches** | $BRANCHES_COVERED | $BRANCHES_TOTAL | $BRANCHES_PCT% |"
+              echo ""
               echo "| **Test Status** | $TEST_OUTCOME |"
               echo ""
               echo "### 📥 Download Reports"
               echo "Coverage reports are available as workflow artifacts for 30 days."
               echo "- HTML Report: \`backend/coverage/lcov-report/index.html\`"
               echo "- LCOV Data: \`backend/coverage/lcov.info\`"
-              echo "- JSON Report: \`backend/coverage/coverage-final.json\`"
+              echo "- JSON Summary: \`backend/coverage/coverage-summary.json\`"
             } >> $GITHUB_STEP_SUMMARY
           else
             echo "coverage=0" >> $GITHUB_OUTPUT
@@ -560,28 +573,27 @@ jobs:
           script: >-
             const fs = require('fs');
 
-            const lcovPath = 'backend/coverage/lcov.info';
+            const coveragePath = 'backend/coverage/coverage-summary.json';
 
-            if (!fs.existsSync(lcovPath)) {
+            if (!fs.existsSync(coveragePath)) {
               console.log('No coverage file found, skipping PR comment');
               return;
             }
 
-            const lcov = fs.readFileSync(lcovPath, 'utf8');
+            const coverageData = JSON.parse(fs.readFileSync(coveragePath, 'utf8'));
 
-            const linesFound = (lcov.match(/LF:(\d+)/) || ['', '0'])[1];
-
-            const linesHit = (lcov.match(/LH:(\d+)/) || ['', '0'])[1];
-
-            const coveragePercent = linesFound > 0 ? ((linesHit / linesFound) * 100).toFixed(2) : '0';
+            const total = coverageData.total;
 
             const commentLines = [
               '## 📊 Test Coverage Report',
               '',
-              '| Metric | Value |',
-              '|--------|-------|',
-              `| **Lines Covered** | ${linesHit} / ${linesFound} |`,
-              `| **Coverage Percentage** | ${coveragePercent}% |`,
+              '| Metric | Covered | Total | Percentage |',
+              '|--------|---------|-------|------------|',
+              `| **Lines** | ${total.lines.covered} | ${total.lines.total} | ${total.lines.pct}% |`,
+              `| **Statements** | ${total.statements.covered} | ${total.statements.total} | ${total.statements.pct}% |`,
+              `| **Functions** | ${total.functions.covered} | ${total.functions.total} | ${total.functions.pct}% |`,
+              `| **Branches** | ${total.branches.covered} | ${total.branches.total} | ${total.branches.pct}% |`,
+              '',
               `| **Commit** | ${context.sha.substring(0, 7)} |`,
               '',
               '### 📥 Artifacts',
