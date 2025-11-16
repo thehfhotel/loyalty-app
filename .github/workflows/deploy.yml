@@ -281,7 +281,19 @@ jobs:
 
       - name: "🔒 Security linting (ESLint + Security rules)"
         working-directory: ./backend
-        run: npm run lint:security
+        run: |
+          echo "🔒 Running security linting with ESLint..."
+          npm run lint:security 2>&1 | tee lint-output.txt
+
+          # Check if any errors were found (not just warnings)
+          if grep -q "error" lint-output.txt; then
+            echo "❌ ESLint found errors - build must fail"
+            rm -f lint-output.txt
+            exit 1
+          else
+            echo "✅ No ESLint errors found (warnings are acceptable)"
+            rm -f lint-output.txt
+          fi
 
       - name: "🛡️ Security audit (npm audit)"
         working-directory: ./backend
@@ -992,6 +1004,8 @@ jobs:
             echo "Integration tests: $INTEGRATION_RESULT"
             echo "DB schema tests: $DB_TEST_RESULT"
             echo "passed=false" >> $GITHUB_OUTPUT
+            echo "🚨 BLOCKING: Integration tests must pass for deployment"
+            exit 1
           fi
 
       - name: "🧹 Cleanup isolated integration test environment"

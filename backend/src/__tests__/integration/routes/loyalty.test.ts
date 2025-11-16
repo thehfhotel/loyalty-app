@@ -446,7 +446,7 @@ describe('Loyalty Routes Integration Tests', () => {
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
       // Response format depends on route implementation
-      if (response.body.data && response.body.data.transactions) {
+      if (response.body.data?.transactions) {
         expect(response.body.data.transactions).toHaveLength(1);
       }
       // Service may or may not be called based on route existence
