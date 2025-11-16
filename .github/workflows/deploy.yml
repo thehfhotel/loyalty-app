@@ -470,21 +470,21 @@ jobs:
             echo "  Coverage report: Available in workflow artifacts"
 
             # Add to job summary for GitHub UI
-            cat >> $GITHUB_STEP_SUMMARY <<EOF
-## 📊 Test Coverage Report
-
-| Metric | Value |
-|--------|-------|
-| **Lines Covered** | $LINES_HIT / $LINES_FOUND |
-| **Coverage Percentage** | $COVERAGE_PERCENT% |
-| **Test Status** | $TEST_OUTCOME |
-
-### 📥 Download Reports
-Coverage reports are available as workflow artifacts for 30 days.
-- HTML Report: \`backend/coverage/lcov-report/index.html\`
-- LCOV Data: \`backend/coverage/lcov.info\`
-- JSON Report: \`backend/coverage/coverage-final.json\`
-EOF
+            {
+              echo "## 📊 Test Coverage Report"
+              echo ""
+              echo "| Metric | Value |"
+              echo "|--------|-------|"
+              echo "| **Lines Covered** | $LINES_HIT / $LINES_FOUND |"
+              echo "| **Coverage Percentage** | $COVERAGE_PERCENT% |"
+              echo "| **Test Status** | $TEST_OUTCOME |"
+              echo ""
+              echo "### 📥 Download Reports"
+              echo "Coverage reports are available as workflow artifacts for 30 days."
+              echo "- HTML Report: \`backend/coverage/lcov-report/index.html\`"
+              echo "- LCOV Data: \`backend/coverage/lcov.info\`"
+              echo "- JSON Report: \`backend/coverage/coverage-final.json\`"
+            } >> $GITHUB_STEP_SUMMARY
           else
             echo "coverage=0" >> $GITHUB_OUTPUT
             echo "⚠️ No coverage data available"
