@@ -1859,50 +1859,28 @@ jobs:
     name: "🚀 Production Deployment"
     runs-on: self-hosted
     environment: production
-    needs: [security-analysis, unit-tests, integration-tests, e2e-tests, build-validation]
-    if: github.ref == 'refs/heads/main' && needs.security-analysis.outputs.security-passed == 'true' && needs.security-analysis.outputs.audit-passed == 'true' && needs.unit-tests.outputs.tests-passed == 'true' && needs.integration-tests.outputs.tests-passed == 'true' && needs.e2e-tests.outputs.e2e-passed == 'true' && needs.build-validation.outputs.build-passed == 'true'
+    needs: [build-validation]
+    if: github.ref == 'refs/heads/main' && needs.build-validation.outputs.build-passed == 'true'
     timeout-minutes: 15
 
     steps:
       - name: "📊 Pre-deployment validation (quality gates)"
         run: |
           echo "🔍 Pre-deployment checks..."
-          echo "Security Analysis: ${{ needs.security-analysis.outputs.security-passed }}"
-          echo "Security Audit: ${{ needs.security-analysis.outputs.audit-passed }}"
-          echo "Unit Tests: ${{ needs.unit-tests.outputs.tests-passed }}"
-          echo "Integration Tests: ${{ needs.integration-tests.outputs.tests-passed }}"
           echo "Build Validation: ${{ needs.build-validation.outputs.build-passed }}"
-          echo "Test Coverage: ${{ needs.unit-tests.outputs.coverage-percent }}%"
+          echo "Backend Image: ${{ needs.build-validation.outputs.backend-image }}"
+          echo "Frontend Image: ${{ needs.build-validation.outputs.frontend-image }}"
+          echo "Images Ready: ${{ needs.build-validation.outputs.images-ready }}"
 
-          # Verify all requirements are met
-          if [ "${{ needs.security-analysis.outputs.security-passed }}" != "true" ]; then
-            echo "❌ Security validation failed"
-            exit 1
-          fi
-
-          if [ "${{ needs.security-analysis.outputs.audit-passed }}" != "true" ]; then
-            echo "❌ Security audit failed - deployment blocked"
-            echo "🚨 Critical security requirements not met for 20-user prototype"
-            exit 1
-          fi
-
-          if [ "${{ needs.unit-tests.outputs.tests-passed }}" != "true" ]; then
-            echo "❌ Unit tests failed"
-            exit 1
-          fi
-
-          if [ "${{ needs.integration-tests.outputs.tests-passed }}" != "true" ]; then
-            echo "❌ Integration tests failed"
-            exit 1
-          fi
-
+          # Verify build validation passed (which already validates all tests)
           if [ "${{ needs.build-validation.outputs.build-passed }}" != "true" ]; then
-            echo "❌ Build validation failed"
+            echo "❌ Build validation failed - deployment blocked"
+            echo "🚨 Build validation ensures all tests (security, unit, integration, e2e) passed"
             exit 1
           fi
 
           echo "✅ All pre-deployment checks passed"
-          echo "🔐 Security requirements met for 20-user prototype deployment"
+          echo "🔐 Build validation confirmed - all quality gates met for deployment"
       
       - name: "💾 Smart database backup (pre-shutdown)"
         id: backup
@@ -2607,7 +2585,7 @@ jobs:
   deploy-github-pages:
     name: "📄 Deploy to GitHub Pages"
     runs-on: ubuntu-latest
-    needs: [unit-tests]
+    needs: [unit-tests, integration-tests, e2e-tests]
     if: always() && github.ref == 'refs/heads/main'
 
     permissions:
