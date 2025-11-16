@@ -1122,8 +1122,8 @@ jobs:
           DATABASE_URL: postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db
           REDIS_URL: redis://localhost:6381
           NODE_ENV: development
-          JWT_SECRET: e2e-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
-          JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
+          JWT_SECRET: e2e-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxxx
+          JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-must-be-64-chars-minimum-xxx
           SESSION_SECRET: e2e-session-secret-for-testing-only-min-32-chars
           FRONTEND_URL: http://localhost:3201
           BACKEND_URL: http://localhost:4202
@@ -1203,8 +1203,8 @@ jobs:
                 NODE_ENV: development
                 DATABASE_URL: postgresql://loyalty:loyalty_password@postgres:5432/loyalty_db
                 REDIS_URL: redis://redis:6379
-                JWT_SECRET: e2e-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
-                JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
+                JWT_SECRET: e2e-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxxx
+                JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-must-be-64-chars-minimum-xxx
                 SESSION_SECRET: e2e-session-secret-for-testing-only-min-32-chars
                 FRONTEND_URL: http://localhost:3201
                 BACKEND_URL: http://localhost:4202
@@ -1360,8 +1360,8 @@ jobs:
                 NODE_ENV: development
                 DATABASE_URL: postgresql://loyalty:loyalty_password@postgres:5432/loyalty_db
                 REDIS_URL: redis://redis:6379
-                JWT_SECRET: e2e-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
-                JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
+                JWT_SECRET: e2e-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxxx
+                JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-must-be-64-chars-minimum-xxx
                 SESSION_SECRET: e2e-session-secret-for-testing-only-min-32-chars
                 FRONTEND_URL: http://localhost:3201
                 BACKEND_URL: http://localhost:4202
