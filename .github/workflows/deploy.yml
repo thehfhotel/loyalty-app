@@ -10,7 +10,7 @@ on:
 env:
   DEPLOY_PATH: /home/nut/loyalty-app
   NODE_VERSION: 24
-  CACHE_VERSION: v1
+  CACHE_VERSION: v2
 
 jobs:
   # =============================================================================
