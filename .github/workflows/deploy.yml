@@ -410,6 +410,7 @@ jobs:
           npm run db:migrate:deploy
       
       - name: "🧪 Run unit tests (isolated)"
+        id: run-tests
         working-directory: ./backend
         env:
           DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5435/loyalty_test_db
@@ -436,8 +437,17 @@ jobs:
       
       - name: "📈 Test results summary (reporting only)"
         id: test-results
+        if: always()
         run: |
-          echo "Unit and integration tests completed"
+          # Check if tests actually passed
+          if [ "${{ steps.run-tests.outcome }}" == "success" ]; then
+            echo "✅ Unit tests passed"
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Unit tests failed"
+            echo "passed=false" >> $GITHUB_OUTPUT
+          fi
+
           # Extract coverage percentage if available
           if [ -f backend/coverage/lcov.info ]; then
             COVERAGE=$(grep -o "LF:[0-9]*" backend/coverage/lcov.info | head -1 | cut -d: -f2 || echo "0")
@@ -445,7 +455,6 @@ jobs:
           else
             echo "coverage=0" >> $GITHUB_OUTPUT
           fi
-          echo "passed=true" >> $GITHUB_OUTPUT
       
       - name: "🧹 Cleanup isolated test environment"
         if: always()
@@ -611,6 +620,7 @@ jobs:
           npm run db:migrate:deploy
 
       - name: "🔗 Run integration tests (isolated)"
+        id: run-integration-tests
         working-directory: ./backend
         env:
           DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5437/loyalty_integration_db
@@ -622,6 +632,7 @@ jobs:
         run: npm run test:integration -- --passWithNoTests
 
       - name: "🧪 Run database schema tests (isolated)"
+        id: run-db-tests
         working-directory: ./backend
         env:
           DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5437/loyalty_integration_db
@@ -657,9 +668,21 @@ jobs:
 
       - name: "📈 Test results summary (reporting only)"
         id: test-results
+        if: always()
         run: |
-          echo "Integration tests completed successfully"
-          echo "passed=true" >> $GITHUB_OUTPUT
+          # Check if all critical integration tests passed
+          INTEGRATION_RESULT="${{ steps.run-integration-tests.outcome }}"
+          DB_TEST_RESULT="${{ steps.run-db-tests.outcome }}"
+
+          if [ "$INTEGRATION_RESULT" == "success" ] && [ "$DB_TEST_RESULT" == "success" ]; then
+            echo "✅ All integration tests passed"
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Integration tests failed"
+            echo "Integration tests: $INTEGRATION_RESULT"
+            echo "DB schema tests: $DB_TEST_RESULT"
+            echo "passed=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: "🧹 Cleanup isolated integration test environment"
         if: always()
