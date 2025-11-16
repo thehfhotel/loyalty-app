@@ -419,3 +419,6 @@ export class AuthService {
     return user;
   }
 }
+
+// Export singleton instance for use in tests and other services
+export const authService = new AuthService();

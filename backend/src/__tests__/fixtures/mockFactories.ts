@@ -248,6 +248,213 @@ export const setupSurveyServiceMocks = (mockService: jest.Mocked<SurveyService>)
 };
 
 /**
+ * Create a mocked CouponService with all methods
+ */
+export const createMockCouponService = (): jest.Mocked<any> => {
+  return {
+    createCoupon: jest.fn(),
+    updateCoupon: jest.fn(),
+    getCouponById: jest.fn(),
+    getCouponWithTranslations: jest.fn(),
+    getCouponByCode: jest.fn(),
+    listCoupons: jest.fn(),
+    assignCouponToUsers: jest.fn(),
+    redeemCoupon: jest.fn(),
+    getUserCouponByQR: jest.fn(),
+    getUserActiveCoupons: jest.fn(),
+    getUserCouponsByStatus: jest.fn(),
+    getCouponRedemptions: jest.fn(),
+    getCouponAnalytics: jest.fn(),
+    getCouponStats: jest.fn(),
+    updateDailyAnalytics: jest.fn(),
+    deleteCoupon: jest.fn(),
+    getCouponAssignments: jest.fn(),
+    revokeUserCouponsForCoupon: jest.fn(),
+    revokeUserCoupon: jest.fn(),
+  } as unknown as jest.Mocked<any>;
+};
+
+/**
+ * Setup common mock implementations for CouponService
+ */
+export const setupCouponServiceMocks = (mockService: jest.Mocked<any>) => {
+  mockService.createCoupon.mockResolvedValue({
+    id: 'coupon-123',
+    code: 'WELCOME10',
+    name: 'Welcome Discount',
+    type: 'percentage',
+    value: 10,
+    status: 'active',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  mockService.getCouponById.mockResolvedValue({
+    id: 'coupon-123',
+    code: 'WELCOME10',
+    name: 'Welcome Discount',
+    type: 'percentage',
+    value: 10,
+    status: 'active',
+  });
+
+  mockService.listCoupons.mockResolvedValue({
+    coupons: [],
+    total: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 0,
+  });
+
+  mockService.updateCoupon.mockResolvedValue({
+    id: 'coupon-123',
+    code: 'UPDATED',
+    status: 'active',
+  });
+
+  mockService.deleteCoupon.mockResolvedValue(true);
+
+  mockService.redeemCoupon.mockResolvedValue({
+    success: true,
+    redemptionId: 'redemption-123',
+    discountAmount: 50,
+    finalAmount: 450,
+  });
+
+  mockService.getUserCouponByQR.mockResolvedValue(null);
+
+  mockService.getUserActiveCoupons.mockResolvedValue({
+    coupons: [],
+    total: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 0,
+  });
+
+  mockService.getUserCouponsByStatus.mockResolvedValue({
+    coupons: [],
+    total: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 0,
+  });
+
+  mockService.getCouponRedemptions.mockResolvedValue({
+    redemptions: [],
+    total: 0,
+    page: 1,
+    limit: 20,
+    totalPages: 0,
+  });
+
+  mockService.getCouponAnalytics.mockResolvedValue({
+    couponId: 'coupon-123',
+    totalRedemptions: 0,
+    totalDiscountGiven: 0,
+  });
+
+  mockService.getCouponStats.mockResolvedValue({
+    totalCoupons: 0,
+    activeCoupons: 0,
+    totalRedemptions: 0,
+  });
+
+  mockService.assignCouponToUsers.mockResolvedValue([]);
+  mockService.getCouponAssignments.mockResolvedValue([]);
+  mockService.revokeUserCoupon.mockResolvedValue(true);
+
+  return mockService;
+};
+
+/**
+ * Create a mocked LoyaltyService with all methods
+ */
+export const createMockLoyaltyService = (): jest.Mocked<any> => {
+  return {
+    getAllTiers: jest.fn(),
+    getUserLoyaltyStatus: jest.fn(),
+    initializeUserLoyalty: jest.fn(),
+    ensureUserLoyaltyEnrollment: jest.fn(),
+    awardPoints: jest.fn(),
+    deductPoints: jest.fn(),
+    getUserPointsHistory: jest.fn(),
+    getAdminTransactions: jest.fn(),
+    calculateUserPoints: jest.fn(),
+    getAllUsersLoyaltyStatus: jest.fn(),
+    getPointsEarningRules: jest.fn(),
+    addStayNightsAndPoints: jest.fn(),
+    awardNights: jest.fn(),
+    deductNights: jest.fn(),
+    earnPointsForStay: jest.fn(),
+    expireOldPoints: jest.fn(),
+    getTransactionHistory: jest.fn(),
+    getTierConfiguration: jest.fn(),
+    updateTierConfiguration: jest.fn(),
+  } as unknown as jest.Mocked<any>;
+};
+
+/**
+ * Create a mocked AnalyticsService with all methods
+ */
+export const createMockAnalyticsService = (): jest.Mocked<any> => {
+  return {
+    trackCouponUsage: jest.fn(),
+    trackProfileChange: jest.fn(),
+    trackMultipleProfileChanges: jest.fn(),
+    getCouponUsageAnalytics: jest.fn(),
+    getProfileChangeAnalytics: jest.fn(),
+    updateDailyUserAnalytics: jest.fn(),
+    getUserEngagementMetrics: jest.fn(),
+  } as unknown as jest.Mocked<any>;
+};
+
+/**
+ * Create a mocked NotificationService with all methods
+ */
+export const createMockNotificationService = (): jest.Mocked<any> => {
+  return {
+    createNotification: jest.fn(),
+    getUserNotifications: jest.fn(),
+    getUnreadCount: jest.fn(),
+    markNotificationsRead: jest.fn(),
+    markAllNotificationsRead: jest.fn(),
+    deleteNotification: jest.fn(),
+    cleanupExpiredNotifications: jest.fn(),
+    getUserPreferences: jest.fn(),
+    updateUserPreferences: jest.fn(),
+    createProfileCompletionNotification: jest.fn(),
+    createCouponNotification: jest.fn(),
+    createPointsNotification: jest.fn(),
+    createBulkNotifications: jest.fn(),
+  } as unknown as jest.Mocked<any>;
+};
+
+/**
+ * Create a mocked MembershipIdService with all methods
+ */
+export const createMockMembershipIdService = (): jest.Mocked<any> => {
+  return {
+    generateUniqueMembershipId: jest.fn(),
+    getUserByMembershipId: jest.fn(),
+    getMembershipIdByUserId: jest.fn(),
+    regenerateMembershipId: jest.fn(),
+    getMembershipIdStats: jest.fn(),
+  } as unknown as jest.Mocked<any>;
+};
+
+/**
+ * Create a mocked StorageService with all methods
+ */
+export const createMockStorageService = (): jest.Mocked<any> => {
+  return {
+    uploadFile: jest.fn(),
+    deleteFile: jest.fn(),
+    getFileUrl: jest.fn(),
+    listFiles: jest.fn(),
+  } as unknown as jest.Mocked<any>;
+};
+
+/**
  * Reset all mocks in a service
  */
 export const resetServiceMocks = (mockService: any) => {

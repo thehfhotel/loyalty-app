@@ -7,23 +7,58 @@
  */
 
 import request from 'supertest';
-import { Express, Request, Response, NextFunction } from 'express';
+import { Express } from 'express';
 import couponRoutes from '../../../routes/coupon';
-import { couponController } from '../../../controllers/couponController';
 import { createTestApp } from '../../fixtures';
 
-// Mock dependencies
-jest.mock('../../../controllers/couponController');
+// Mock dependencies - Service-based mocking
+jest.mock('../../../services/couponService', () => ({
+  couponService: {
+    createCoupon: jest.fn(),
+    updateCoupon: jest.fn(),
+    getCouponById: jest.fn(),
+    getCouponWithTranslations: jest.fn(),
+    getCouponByCode: jest.fn(),
+    listCoupons: jest.fn(),
+    assignCouponToUsers: jest.fn(),
+    redeemCoupon: jest.fn(),
+    getUserCouponByQR: jest.fn(),
+    getUserActiveCoupons: jest.fn(),
+    getUserCouponsByStatus: jest.fn(),
+    getCouponRedemptions: jest.fn(),
+    getCouponAnalytics: jest.fn(),
+    getCouponStats: jest.fn(),
+    updateDailyAnalytics: jest.fn(),
+    deleteCoupon: jest.fn(),
+    getCouponAssignments: jest.fn(),
+    revokeUserCouponsForCoupon: jest.fn(),
+    revokeUserCoupon: jest.fn(),
+  },
+}));
+
 jest.mock('../../../middleware/auth', () => ({
-  authenticate: (req: Request, _res: Response, next: NextFunction) => {
-    req.user = {
+  authenticate: (req: any, _res: any, next: any) => {
+    // Admin routes: POST /, PUT, DELETE, GET /analytics, GET /admin paths, POST /assign, POST /user-coupons
+    const adminPaths = ['/analytics', '/assign', '/admin', '/user-coupons', '/redemptions', '/assignments'];
+    const isPOST = req.method === 'POST' && (req.path === '/' || adminPaths.some(p => req.path.includes(p)));
+    const isPUT = req.method === 'PUT';
+    const isDELETE = req.method === 'DELETE';
+    const isAdminGet = adminPaths.some(p => req.path.includes(p));
+
+    const isAdminRoute = isPOST || isPUT || isDELETE || isAdminGet;
+
+    req.user = isAdminRoute ? {
+      id: 'admin-user-id',
+      email: 'admin@example.com',
+      role: 'admin',
+    } : {
       id: 'test-user-id',
       email: 'test@example.com',
       role: 'customer',
     };
     next();
   },
-  requireAdmin: (req: Request, _res: Response, next: NextFunction) => {
+  requireAdmin: (req: any, _res: any, next: any) => {
     req.user = {
       id: 'admin-user-id',
       email: 'admin@example.com',
@@ -33,164 +68,182 @@ jest.mock('../../../middleware/auth', () => ({
   },
 }));
 
+// Import mocked service
+import { couponService } from '../../../services/couponService';
+
 describe('Coupon Routes Integration Tests', () => {
   let app: Express;
-  let mockCouponController: jest.Mocked<typeof couponController>;
+  const mockCouponService = couponService as jest.Mocked<typeof couponService>;
 
   beforeAll(() => {
     app = createTestApp(couponRoutes, '/api/coupons');
   });
 
   beforeEach(() => {
-    mockCouponController = couponController as jest.Mocked<typeof couponController>;
     jest.clearAllMocks();
   });
 
   describe('GET /api/coupons/validate/:qrCode', () => {
     it('should validate coupon by QR code (public route)', async () => {
-      mockCouponController.validateCoupon = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          data: {
-            valid: true,
-            coupon: {
-              code: 'WELCOME10',
-              name: 'Welcome Discount',
-              type: 'percentage',
-              value: 10,
-            },
-          },
-        });
-      }) as unknown as typeof mockCouponController.validateCoupon;
+      mockCouponService.getUserCouponByQR.mockResolvedValue({
+        userCouponId: 'uc-123',
+        userId: 'user-123',
+        couponId: 'coupon-123',
+        qrCode: 'QR-WELCOME10-ABC123',
+        code: 'WELCOME10',
+        name: 'Welcome Discount',
+        description: '10% off your first purchase',
+        type: 'percentage',
+        value: 10,
+        currency: 'THB',
+        status: 'available',
+        expiresAt: null,
+        assignedAt: new Date(),
+        effectiveExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        expiringSoon: false,
+      } as any);
 
       const response = await request(app)
         .get('/api/coupons/validate/QR-WELCOME10-ABC123');
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.data.valid).toBe(true);
-      expect(response.body.data.coupon.code).toBe('WELCOME10');
+      expect(response.body.valid).toBe(true);
+      expect(response.body.data.name).toBe('Welcome Discount');
     });
 
     it('should return invalid for expired coupon', async () => {
-      mockCouponController.validateCoupon = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          data: {
-            valid: false,
-            reason: 'Coupon has expired',
-          },
-        });
-      }) as unknown as typeof mockCouponController.validateCoupon;
+      mockCouponService.getUserCouponByQR.mockResolvedValue({
+        userCouponId: 'uc-456',
+        userId: 'user-123',
+        couponId: 'coupon-456',
+        qrCode: 'QR-EXPIRED-XYZ789',
+        code: 'EXPIRED10',
+        name: 'Expired Discount',
+        type: 'percentage',
+        value: 10,
+        currency: 'THB',
+        status: 'available',
+        expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        assignedAt: new Date(),
+        effectiveExpiry: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        expiringSoon: false,
+      } as any);
 
       const response = await request(app)
         .get('/api/coupons/validate/QR-EXPIRED-XYZ789');
 
       expect(response.status).toBe(200);
-      expect(response.body.data.valid).toBe(false);
-      expect(response.body.data.reason).toContain('expired');
+      expect(response.body.success).toBe(true);
+      expect(response.body.valid).toBe(false);
+      expect(response.body.message).toContain('not available');
     });
 
     it('should return invalid for already used coupon', async () => {
-      mockCouponController.validateCoupon = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          data: {
-            valid: false,
-            reason: 'Coupon already used',
-          },
-        });
-      }) as unknown as typeof mockCouponController.validateCoupon;
+      mockCouponService.getUserCouponByQR.mockResolvedValue({
+        userCouponId: 'uc-789',
+        userId: 'user-123',
+        couponId: 'coupon-789',
+        qrCode: 'QR-USED-COUPON',
+        code: 'USED10',
+        name: 'Used Discount',
+        type: 'percentage',
+        value: 10,
+        currency: 'THB',
+        status: 'used',
+        expiresAt: null,
+        assignedAt: new Date().toISOString(),
+        effectiveExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        expiringSoon: false,
+      } as any);
 
       const response = await request(app)
         .get('/api/coupons/validate/QR-USED-COUPON');
 
       expect(response.status).toBe(200);
-      expect(response.body.data.valid).toBe(false);
+      expect(response.body.success).toBe(true);
+      expect(response.body.valid).toBe(false);
     });
   });
 
   describe('GET /api/coupons/my-coupons', () => {
     it('should get user coupons', async () => {
-      mockCouponController.getUserCoupons = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          data: [
-            {
-              id: 'coupon-1',
-              code: 'WELCOME10',
-              qrCode: 'QR-WELCOME-123',
-              status: 'available',
-              expiresAt: '2024-12-31',
-            },
-            {
-              id: 'coupon-2',
-              code: 'BIRTHDAY15',
-              qrCode: 'QR-BIRTHDAY-456',
-              status: 'available',
-              expiresAt: '2024-06-15',
-            },
-          ],
-        });
-      }) as unknown as typeof mockCouponController.getUserCoupons;
+      mockCouponService.getUserActiveCoupons.mockResolvedValue({
+        coupons: [
+          {
+            userCouponId: 'uc-1',
+            userId: 'test-user-id',
+            couponId: 'coupon-1',
+            code: 'WELCOME10',
+            qrCode: 'QR-WELCOME-123',
+            name: 'Welcome Discount',
+            type: 'percentage',
+            value: 10,
+            currency: 'THB',
+            status: 'available',
+            expiresAt: new Date('2024-12-31').toISOString(),
+            assignedAt: new Date().toISOString(),
+            effectiveExpiry: new Date('2024-12-31').toISOString(),
+            expiringSoon: false,
+          },
+          {
+            userCouponId: 'uc-2',
+            userId: 'test-user-id',
+            couponId: 'coupon-2',
+            code: 'BIRTHDAY15',
+            qrCode: 'QR-BIRTHDAY-456',
+            name: 'Birthday Discount',
+            type: 'percentage',
+            value: 15,
+            currency: 'THB',
+            status: 'available',
+            expiresAt: new Date('2024-06-15').toISOString(),
+            assignedAt: new Date().toISOString(),
+            effectiveExpiry: new Date('2024-06-15').toISOString(),
+            expiringSoon: false,
+          },
+        ],
+        total: 2,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      } as any);
 
       const response = await request(app)
         .get('/api/coupons/my-coupons');
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveLength(2);
-      expect(response.body.data[0].code).toBe('WELCOME10');
+      expect(response.body.data.coupons).toHaveLength(2);
+      expect(response.body.data.coupons[0].code).toBe('WELCOME10');
     });
 
     it('should return empty array for user with no coupons', async () => {
-      mockCouponController.getUserCoupons = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({ success: true, data: [] });
-      }) as unknown as typeof mockCouponController.getUserCoupons;
+      mockCouponService.getUserActiveCoupons.mockResolvedValue({
+        coupons: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
+      });
 
       const response = await request(app)
         .get('/api/coupons/my-coupons');
 
       expect(response.status).toBe(200);
-      expect(response.body.data).toEqual([]);
+      expect(response.body.data.coupons).toEqual([]);
     });
   });
 
   describe('POST /api/coupons/redeem', () => {
     it('should redeem coupon with valid QR code', async () => {
-      mockCouponController.redeemCoupon = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          message: 'Coupon redeemed successfully',
-          data: {
-            discountAmount: 50,
-            finalAmount: 450,
-            coupon: {
-              code: 'SAVE50',
-              type: 'fixed_amount',
-              value: 50,
-            },
-          },
-        });
-      }) as unknown as typeof mockCouponController.redeemCoupon;
+      mockCouponService.redeemCoupon.mockResolvedValue({
+        success: true,
+        message: 'Coupon redeemed successfully',
+        discountAmount: 50,
+        finalAmount: 450,
+        userCouponId: 'uc-123',
+      });
 
       const response = await request(app)
         .post('/api/coupons/redeem')
@@ -229,23 +282,13 @@ describe('Coupon Routes Integration Tests', () => {
     });
 
     it('should handle redemption of percentage discount coupon', async () => {
-      mockCouponController.redeemCoupon = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          data: {
-            discountAmount: 100,
-            finalAmount: 900,
-            coupon: {
-              code: 'PERCENT10',
-              type: 'percentage',
-              value: 10,
-            },
-          },
-        });
-      }) as unknown as typeof mockCouponController.redeemCoupon;
+      mockCouponService.redeemCoupon.mockResolvedValue({
+        success: true,
+        message: 'Coupon redeemed successfully',
+        discountAmount: 100,
+        finalAmount: 900,
+        userCouponId: 'uc-456',
+      });
 
       const response = await request(app)
         .post('/api/coupons/redeem')
@@ -261,64 +304,74 @@ describe('Coupon Routes Integration Tests', () => {
 
   describe('GET /api/coupons', () => {
     it('should list all active coupons', async () => {
-      mockCouponController.listCoupons = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          data: [
-            { id: '1', code: 'SUMMER20', status: 'active' },
-            { id: '2', code: 'WELCOME10', status: 'active' },
-          ],
-        });
-      }) as unknown as typeof mockCouponController.listCoupons;
+      mockCouponService.listCoupons.mockResolvedValue({
+        coupons: [
+          {
+            id: '1',
+            code: 'SUMMER20',
+            name: 'Summer Sale',
+            type: 'percentage',
+            value: 20,
+            status: 'active',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          {
+            id: '2',
+            code: 'WELCOME10',
+            name: 'Welcome Offer',
+            type: 'percentage',
+            value: 10,
+            status: 'active',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+        total: 2,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      } as any);
 
       const response = await request(app)
         .get('/api/coupons');
 
       expect(response.status).toBe(200);
-      expect(response.body.data).toHaveLength(2);
+      expect(response.body.data.coupons).toHaveLength(2);
     });
 
     it('should support pagination for coupon list', async () => {
-      mockCouponController.listCoupons = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          data: [],
-          pagination: { page: 2, limit: 10, total: 25 },
-        });
-      }) as unknown as typeof mockCouponController.listCoupons;
+      mockCouponService.listCoupons.mockResolvedValue({
+        coupons: [],
+        total: 25,
+        page: 2,
+        limit: 10,
+        totalPages: 3,
+      });
 
       const response = await request(app)
         .get('/api/coupons')
         .query({ page: 2, limit: 10 });
 
       expect(response.status).toBe(200);
+      expect(response.body.data.page).toBe(2);
+      expect(response.body.data.limit).toBe(10);
     });
   });
 
   describe('GET /api/coupons/:couponId', () => {
     it('should get specific coupon details', async () => {
-      mockCouponController.getCoupon = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          data: {
-            id: 'coupon-123',
-            code: 'SPECIAL50',
-            name: 'Special Discount',
-            type: 'fixed_amount',
-            value: 50,
-            status: 'active',
-          },
-        });
-      }) as unknown as typeof mockCouponController.getCoupon;
+      mockCouponService.getCouponById.mockResolvedValue({
+        id: 'coupon-123',
+        code: 'SPECIAL50',
+        name: 'Special Discount',
+        type: 'fixed_amount',
+        value: 50,
+        currency: 'THB',
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as any);
 
       const response = await request(app)
         .get('/api/coupons/coupon-123');
@@ -328,38 +381,32 @@ describe('Coupon Routes Integration Tests', () => {
     });
 
     it('should handle coupon not found', async () => {
-      mockCouponController.getCoupon = jest.fn((
-        _req: Request,
-        _res: Response,
-        next: NextFunction
-      ) => {
-        next(new Error('Coupon not found'));
-      }) as unknown as typeof mockCouponController.getCoupon;
+      mockCouponService.getCouponById.mockResolvedValue(null);
 
       const response = await request(app)
         .get('/api/coupons/nonexistent');
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(404);
+      expect(response.body.message).toContain('not found');
     });
   });
 
   describe('POST /api/coupons (Admin)', () => {
     it('should create coupon with valid data', async () => {
-      mockCouponController.createCoupon = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.status(201).json({
-          success: true,
-          message: 'Coupon created successfully',
-          data: {
-            id: 'new-coupon-id',
-            code: 'NEWDISCOUNT',
-            type: 'percentage',
-            value: 15,
-          },
-        });
-      }) as unknown as typeof mockCouponController.createCoupon;
+      mockCouponService.createCoupon.mockResolvedValue({
+        id: 'new-coupon-id',
+        code: 'NEWDISCOUNT',
+        name: 'New Discount',
+        type: 'percentage',
+        value: 15,
+        currency: 'THB',
+        status: 'draft',
+        validFrom: new Date('2024-01-01T00:00:00Z').toISOString(),
+        validUntil: new Date('2024-12-31T23:59:59Z').toISOString(),
+        createdBy: 'admin-user-id',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as any);
 
       const response = await request(app)
         .post('/api/coupons')
@@ -404,20 +451,17 @@ describe('Coupon Routes Integration Tests', () => {
 
   describe('PUT /api/coupons/:couponId (Admin)', () => {
     it('should update coupon', async () => {
-      mockCouponController.updateCoupon = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          message: 'Coupon updated successfully',
-          data: {
-            id: 'coupon-123',
-            code: 'UPDATED20',
-            value: 20,
-          },
-        });
-      }) as unknown as typeof mockCouponController.updateCoupon;
+      mockCouponService.updateCoupon.mockResolvedValue({
+        id: 'coupon-123',
+        code: 'UPDATED20',
+        name: 'Updated Discount',
+        type: 'percentage',
+        value: 20,
+        currency: 'THB',
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as any);
 
       const response = await request(app)
         .put('/api/coupons/coupon-123')
@@ -443,65 +487,74 @@ describe('Coupon Routes Integration Tests', () => {
 
   describe('DELETE /api/coupons/:couponId (Admin)', () => {
     it('should delete coupon', async () => {
-      mockCouponController.deleteCoupon = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          message: 'Coupon deleted successfully',
-        });
-      }) as unknown as typeof mockCouponController.deleteCoupon;
+      mockCouponService.deleteCoupon.mockResolvedValue(true);
 
       const response = await request(app)
         .delete('/api/coupons/coupon-to-delete');
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
+      expect(response.body.message).toBe('Coupon deleted successfully');
     });
 
     it('should handle deletion of non-existent coupon', async () => {
-      mockCouponController.deleteCoupon = jest.fn((
-        _req: Request,
-        _res: Response,
-        next: NextFunction
-      ) => {
-        next(new Error('Coupon not found'));
-      }) as unknown as typeof mockCouponController.deleteCoupon;
+      mockCouponService.deleteCoupon.mockResolvedValue(false);
 
       const response = await request(app)
         .delete('/api/coupons/nonexistent');
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(404);
+      expect(response.body.message).toContain('not found');
     });
   });
 
   describe('POST /api/coupons/assign (Admin)', () => {
     it('should assign coupon to users', async () => {
-      mockCouponController.assignCoupon = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          message: 'Coupon assigned to 3 users',
-          data: {
-            assigned: 3,
-            failed: 0,
-          },
-        });
-      }) as unknown as typeof mockCouponController.assignCoupon;
+      mockCouponService.assignCouponToUsers.mockResolvedValue([
+        {
+          id: 'uc-1',
+          userId: 'user-1',
+          couponId: 'coupon-uuid',
+          status: 'available',
+          qrCode: 'QR-CODE-1',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'uc-2',
+          userId: 'user-2',
+          couponId: 'coupon-uuid',
+          status: 'available',
+          qrCode: 'QR-CODE-2',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: 'uc-3',
+          userId: 'user-3',
+          couponId: 'coupon-uuid',
+          status: 'available',
+          qrCode: 'QR-CODE-3',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ] as any);
 
       const response = await request(app)
         .post('/api/coupons/assign')
         .send({
-          couponId: 'coupon-uuid',
-          userIds: ['user-1', 'user-2', 'user-3'],
+          couponId: '550e8400-e29b-41d4-a716-446655440000',
+          userIds: [
+            '550e8400-e29b-41d4-a716-446655440001',
+            '550e8400-e29b-41d4-a716-446655440002',
+            '550e8400-e29b-41d4-a716-446655440003'
+          ],
           assignedReason: 'Loyalty reward',
         });
 
       expect(response.status).toBe(200);
-      expect(response.body.data.assigned).toBe(3);
+      expect(response.body.data).toHaveLength(3);
+      expect(response.body.message).toContain('3 users');
     });
 
     it('should reject assignment with invalid coupon ID', async () => {
@@ -531,15 +584,7 @@ describe('Coupon Routes Integration Tests', () => {
 
   describe('POST /api/coupons/user-coupons/:userCouponId/revoke (Admin)', () => {
     it('should revoke user coupon', async () => {
-      mockCouponController.revokeUserCoupon = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          message: 'Coupon revoked successfully',
-        });
-      }) as unknown as typeof mockCouponController.revokeUserCoupon;
+      mockCouponService.revokeUserCoupon.mockResolvedValue(true);
 
       const response = await request(app)
         .post('/api/coupons/user-coupons/user-coupon-123/revoke')
@@ -549,15 +594,11 @@ describe('Coupon Routes Integration Tests', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
+      expect(response.body.message).toBe('User coupon revoked successfully');
     });
 
     it('should revoke coupon without reason', async () => {
-      mockCouponController.revokeUserCoupon = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({ success: true });
-      }) as unknown as typeof mockCouponController.revokeUserCoupon;
+      mockCouponService.revokeUserCoupon.mockResolvedValue(true);
 
       const response = await request(app)
         .post('/api/coupons/user-coupons/user-coupon-123/revoke')
@@ -569,111 +610,143 @@ describe('Coupon Routes Integration Tests', () => {
 
   describe('GET /api/coupons/analytics/stats (Admin)', () => {
     it('should get coupon statistics', async () => {
-      mockCouponController.getCouponStats = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          data: {
-            totalCoupons: 50,
-            activeCoupons: 30,
-            redeemedCoupons: 150,
-            totalDiscountGiven: 15000,
+      mockCouponService.getCouponStats.mockResolvedValue({
+        totalCoupons: 50,
+        activeCoupons: 30,
+        totalAssigned: 500,
+        totalRedeemed: 150,
+        totalRevenueImpact: 15000,
+        conversionRate: 30,
+        topCoupons: [
+          {
+            couponId: 'c-1',
+            name: 'Welcome Coupon',
+            code: 'WELCOME10',
+            redemptionCount: 500,
+            conversionRate: 35.5,
           },
-        });
-      }) as unknown as typeof mockCouponController.getCouponStats;
+          {
+            couponId: 'c-2',
+            name: 'Summer Sale',
+            code: 'SUMMER20',
+            redemptionCount: 350,
+            conversionRate: 28.2,
+          },
+        ],
+      });
 
       const response = await request(app)
         .get('/api/coupons/analytics/stats');
 
       expect(response.status).toBe(200);
       expect(response.body.data.totalCoupons).toBe(50);
-      expect(response.body.data.redeemedCoupons).toBe(150);
+      expect(response.body.data.totalRedeemed).toBe(150);
     });
   });
 
   describe('GET /api/coupons/analytics/data (Admin)', () => {
     it('should get coupon analytics data', async () => {
-      mockCouponController.getCouponAnalytics = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          data: {
-            topCoupons: [
-              { code: 'WELCOME10', redemptions: 500 },
-              { code: 'SUMMER20', redemptions: 350 },
-            ],
-            redemptionTrend: [],
+      mockCouponService.getCouponAnalytics.mockResolvedValue({
+        analytics: [
+          {
+            id: 'analytics-1',
+            couponId: 'coupon-1',
+            analyticsDate: new Date('2024-01-15'),
+            totalAssigned: 100,
+            totalUsed: 50,
+            totalExpired: 10,
+            totalRevenueImpact: 5000,
+            uniqueUsersAssigned: 90,
+            uniqueUsersRedeemed: 45,
+            conversionRate: 0.5,
+            createdAt: new Date(),
           },
-        });
-      }) as unknown as typeof mockCouponController.getCouponAnalytics;
+        ],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      });
 
       const response = await request(app)
         .get('/api/coupons/analytics/data');
 
       expect(response.status).toBe(200);
-      expect(response.body.data.topCoupons).toHaveLength(2);
+      expect(response.body.data.analytics).toHaveLength(1);
     });
   });
 
   describe('GET /api/coupons/:couponId/redemptions (Admin)', () => {
     it('should get coupon redemption history', async () => {
-      mockCouponController.getCouponRedemptions = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          data: [
-            {
-              id: 'redemption-1',
-              userId: 'user-1',
-              redeemedAt: '2024-01-15',
-              discountAmount: 50,
-            },
-          ],
-        });
-      }) as unknown as typeof mockCouponController.getCouponRedemptions;
+      mockCouponService.getCouponRedemptions.mockResolvedValue({
+        redemptions: [
+          {
+            id: 'redemption-1',
+            userCouponId: 'uc-1',
+            originalAmount: 500,
+            discountAmount: 50,
+            finalAmount: 450,
+            currency: 'THB',
+            createdAt: new Date('2024-01-15').toISOString(),
+          },
+        ],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      } as any);
 
       const response = await request(app)
         .get('/api/coupons/coupon-123/redemptions');
 
       expect(response.status).toBe(200);
-      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data.redemptions).toHaveLength(1);
     });
   });
 
   describe('GET /api/coupons/:couponId/assignments (Admin)', () => {
     it('should get coupon assignment history', async () => {
-      mockCouponController.getCouponAssignments = jest.fn((
-        _req: Request,
-        res: Response
-      ) => {
-        res.json({
-          success: true,
-          data: [
-            {
-              userId: 'user-1',
-              assignedAt: '2024-01-10',
-              status: 'available',
-            },
-            {
-              userId: 'user-2',
-              assignedAt: '2024-01-11',
-              status: 'used',
-            },
-          ],
-        });
-      }) as unknown as typeof mockCouponController.getCouponAssignments;
+      mockCouponService.getCouponAssignments.mockResolvedValue({
+        assignments: [
+          {
+            userId: 'user-1',
+            firstName: 'John',
+            lastName: 'Doe',
+            email: 'john@example.com',
+            assignedCount: 2,
+            usedCount: 1,
+            availableCount: 1,
+            latestAssignment: new Date('2024-01-10').toISOString(),
+          },
+          {
+            userId: 'user-2',
+            firstName: 'Jane',
+            lastName: 'Smith',
+            email: 'jane@example.com',
+            assignedCount: 1,
+            usedCount: 1,
+            availableCount: 0,
+            latestAssignment: new Date('2024-01-11').toISOString(),
+          },
+        ],
+        summary: {
+          totalUsers: 2,
+          totalAssigned: 3,
+          totalUsed: 2,
+          totalAvailable: 1,
+        },
+        total: 2,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      } as any);
 
       const response = await request(app)
         .get('/api/coupons/coupon-123/assignments');
 
       expect(response.status).toBe(200);
-      expect(response.body.data).toHaveLength(2);
+      expect(response.body.data.assignments).toHaveLength(2);
+      expect(response.body.data.summary.totalUsers).toBe(2);
     });
   });
 });

@@ -374,3 +374,6 @@ export class NotificationService {
     return createdCount;
   }
 }
+
+// Export singleton instance for use in tests and other services
+export const notificationService = new NotificationService();

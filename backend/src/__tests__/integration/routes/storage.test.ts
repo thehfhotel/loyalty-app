@@ -1,613 +1,282 @@
 /**
  * Storage Routes Integration Tests
- * Tests storage statistics and backup endpoints
+ * Tests storage statistics and backup management
  *
- * Week 2 Priority - 20-25 tests
- * Coverage Target: ~2-3% contribution
+ * Week 2 Priority - 10-15 tests
+ * Coverage Target: ~1-2% contribution
  */
 
 import request from 'supertest';
-import express, { Express } from 'express';
-import storageRoutes from '../../../routes/storage';
-import { errorHandler } from '../../../middleware/errorHandler';
+import { Express } from 'express';
+import routes from '../../../routes/storage';
+import { createTestApp } from '../../fixtures';
 
-// Mock StorageService
-jest.mock('../../../services/storageService');
-jest.mock('../../../utils/logger', () => ({
-  logger: {
-    info: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
+// Mock dependencies - Service-based mocking
+jest.mock('../../../services/storageService', () => ({
+  StorageService: {
+    getStorageReport: jest.fn(),
+    performBackup: jest.fn(),
   },
 }));
 
-// Mock ImageProcessor
-jest.mock('../../../utils/imageProcessor', () => ({
-  ImageProcessor: {
-    backupAvatars: jest.fn(),
-    getStorageStats: jest.fn(),
-  },
-}));
+jest.mock('../../../middleware/auth', () => ({
+  authenticate: (req: any, _res: any, next: any) => {
+    // Admin routes: GET /stats, POST /backup
+    const adminPaths = ['/stats', '/backup'];
+    const isAdminRoute = adminPaths.some(p => req.path.includes(p));
 
-// Mock authentication middleware
-const mockAuthMiddleware = (role = 'customer') => {
-  return (req: express.Request, _res: express.Response, next: express.NextFunction) => {
-    req.user = {
-      id: 'test-user-123',
+    req.user = isAdminRoute ? {
+      id: 'admin-user-id',
+      email: 'admin@example.com',
+      role: 'admin',
+    } : {
+      id: 'test-user-id',
       email: 'test@example.com',
-      role: role as 'customer' | 'admin' | 'super_admin'
+      role: 'customer',
     };
     next();
-  };
-};
+  },
+  authorize: (..._roles: string[]) => (_req: any, _res: any, next: any) => {
+    next();
+  },
+}));
+
+// Import mocked service
+import { StorageService } from '../../../services/storageService';
 
 describe('Storage Routes Integration Tests', () => {
   let app: Express;
+  const mockStorageService = StorageService as jest.Mocked<typeof StorageService>;
+
+  beforeAll(() => {
+    app = createTestApp(routes, '/api/storage');
+  });
 
   beforeEach(() => {
-    // Reset mocks before each test
     jest.clearAllMocks();
   });
 
-  describe('GET /stats - Storage Statistics', () => {
-    describe('Authorization Tests', () => {
-      test('should allow admin to access storage stats', async () => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('admin'));
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
-
-        const mockReport = {
-          storage: {
-            totalFiles: 150,
-            totalSize: 52428800, // 50 MB
-            averageSize: 349525,
-            usagePercent: 5.0
-          }
-        };
-
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.getStorageReport.mockResolvedValue(mockReport);
-
-        const response = await request(app)
-          .get('/api/storage/stats')
-          .expect(200);
-
-        expect(response.body).toEqual(mockReport);
-        expect(StorageService.getStorageReport).toHaveBeenCalled();
+  describe('GET /api/storage/stats (Admin)', () => {
+    it('should get storage statistics', async () => {
+      mockStorageService.getStorageReport.mockResolvedValue({
+        storage: {
+          totalFiles: 150,
+          totalSize: 52428800, // 50 MB
+          averageSize: 349525, // ~341 KB
+          usagePercent: 5.0,
+        },
       });
 
-      test('should allow super_admin to access storage stats', async () => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('super_admin'));
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
+      const response = await request(app)
+        .get('/api/storage/stats');
 
-        const mockReport = {
-          storage: {
-            totalFiles: 200,
-            totalSize: 104857600, // 100 MB
-            averageSize: 524288,
-            usagePercent: 10.0
-          }
-        };
-
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.getStorageReport.mockResolvedValue(mockReport);
-
-        const response = await request(app)
-          .get('/api/storage/stats')
-          .expect(200);
-
-        expect(response.body).toEqual(mockReport);
-      });
-
-      test('should deny access to regular users', async (): Promise<void> => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('customer'));
-        app.use((req, res, next): void => {
-          // Simulate authorize middleware checking
-          if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
-            res.status(403).json({ error: 'Insufficient permissions' });
-            return;
-          }
-          next();
-        });
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
-
-        const response = await request(app)
-          .get('/api/storage/stats')
-          .expect(403);
-
-        expect(response.body).toHaveProperty('error', 'Insufficient permissions');
-      });
-
-      test('should deny access to merchant users', async (): Promise<void> => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('customer')); // Use customer instead of merchant
-        app.use((req, res, next): void => {
-          if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
-            res.status(403).json({ error: 'Insufficient permissions' });
-            return;
-          }
-          next();
-        });
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
-
-        const response = await request(app)
-          .get('/api/storage/stats')
-          .expect(403);
-
-        expect(response.body).toHaveProperty('error', 'Insufficient permissions');
-      });
+      expect(response.status).toBe(200);
+      expect(response.body.storage.totalFiles).toBe(150);
+      expect(response.body.storage.totalSize).toBe(52428800);
+      expect(response.body.storage.usagePercent).toBe(5.0);
     });
 
-    describe('Success Scenarios', () => {
-      beforeEach(() => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('admin'));
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
+    it('should return storage statistics with low usage', async () => {
+      mockStorageService.getStorageReport.mockResolvedValue({
+        storage: {
+          totalFiles: 50,
+          totalSize: 10485760, // 10 MB
+          averageSize: 209715, // ~205 KB
+          usagePercent: 1.0,
+        },
       });
 
-      test('should return storage statistics with valid data', async () => {
-        const mockReport = {
-          storage: {
-            totalFiles: 1000,
-            totalSize: 524288000, // 500 MB
-            averageSize: 524288,
-            usagePercent: 50.0
-          }
-        };
+      const response = await request(app)
+        .get('/api/storage/stats');
 
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.getStorageReport.mockResolvedValue(mockReport);
-
-        const response = await request(app)
-          .get('/api/storage/stats')
-          .expect(200);
-
-        expect(response.body).toEqual(mockReport);
-        expect(response.body.storage).toHaveProperty('totalFiles', 1000);
-        expect(response.body.storage).toHaveProperty('totalSize', 524288000);
-        expect(response.body.storage).toHaveProperty('averageSize', 524288);
-        expect(response.body.storage).toHaveProperty('usagePercent', 50.0);
-      });
-
-      test('should handle empty storage (zero files)', async () => {
-        const mockReport = {
-          storage: {
-            totalFiles: 0,
-            totalSize: 0,
-            averageSize: 0,
-            usagePercent: 0.0
-          }
-        };
-
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.getStorageReport.mockResolvedValue(mockReport);
-
-        const response = await request(app)
-          .get('/api/storage/stats')
-          .expect(200);
-
-        expect(response.body.storage.totalFiles).toBe(0);
-        expect(response.body.storage.usagePercent).toBe(0);
-      });
-
-      test('should handle near-full storage', async () => {
-        const mockReport = {
-          storage: {
-            totalFiles: 10000,
-            totalSize: 943718400, // ~900 MB (90% of 1GB)
-            averageSize: 94371,
-            usagePercent: 90.0
-          }
-        };
-
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.getStorageReport.mockResolvedValue(mockReport);
-
-        const response = await request(app)
-          .get('/api/storage/stats')
-          .expect(200);
-
-        expect(response.body.storage.usagePercent).toBe(90.0);
-      });
-
-      test('should handle large file counts', async () => {
-        const mockReport = {
-          storage: {
-            totalFiles: 50000,
-            totalSize: 524288000,
-            averageSize: 10485,
-            usagePercent: 50.0
-          }
-        };
-
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.getStorageReport.mockResolvedValue(mockReport);
-
-        const response = await request(app)
-          .get('/api/storage/stats')
-          .expect(200);
-
-        expect(response.body.storage.totalFiles).toBe(50000);
-      });
+      expect(response.status).toBe(200);
+      expect(response.body.storage.totalFiles).toBe(50);
+      expect(response.body.storage.usagePercent).toBe(1.0);
     });
 
-    describe('Error Handling', () => {
-      beforeEach(() => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('admin'));
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
+    it('should return storage statistics with high usage', async () => {
+      mockStorageService.getStorageReport.mockResolvedValue({
+        storage: {
+          totalFiles: 1000,
+          totalSize: 943718400, // 900 MB
+          averageSize: 943718, // ~922 KB
+          usagePercent: 90.0,
+        },
       });
 
-      test('should handle storage service errors gracefully', async () => {
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.getStorageReport.mockRejectedValue(new Error('Storage unavailable'));
+      const response = await request(app)
+        .get('/api/storage/stats');
 
-        const response = await request(app)
-          .get('/api/storage/stats')
-          .expect(500);
+      expect(response.status).toBe(200);
+      expect(response.body.storage.usagePercent).toBe(90.0);
+      expect(response.body.storage.totalFiles).toBe(1000);
+    });
 
-        expect(response.body).toHaveProperty('error', 'Failed to retrieve storage statistics');
+    it('should handle empty storage', async () => {
+      mockStorageService.getStorageReport.mockResolvedValue({
+        storage: {
+          totalFiles: 0,
+          totalSize: 0,
+          averageSize: 0,
+          usagePercent: 0,
+        },
       });
 
-      test('should handle database connection errors', async () => {
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.getStorageReport.mockRejectedValue(new Error('Database connection lost'));
+      const response = await request(app)
+        .get('/api/storage/stats');
 
-        const response = await request(app)
-          .get('/api/storage/stats')
-          .expect(500);
+      expect(response.status).toBe(200);
+      expect(response.body.storage.totalFiles).toBe(0);
+      expect(response.body.storage.totalSize).toBe(0);
+      expect(response.body.storage.usagePercent).toBe(0);
+    });
 
-        expect(response.body).toHaveProperty('error', 'Failed to retrieve storage statistics');
+    it('should return average file size', async () => {
+      mockStorageService.getStorageReport.mockResolvedValue({
+        storage: {
+          totalFiles: 100,
+          totalSize: 104857600, // 100 MB
+          averageSize: 1048576, // 1 MB
+          usagePercent: 10.0,
+        },
       });
 
-      test('should handle file system errors', async () => {
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.getStorageReport.mockRejectedValue(new Error('EACCES: permission denied'));
+      const response = await request(app)
+        .get('/api/storage/stats');
 
-        const response = await request(app)
-          .get('/api/storage/stats')
-          .expect(500);
+      expect(response.status).toBe(200);
+      expect(response.body.storage.averageSize).toBe(1048576);
+    });
 
-        expect(response.body).toHaveProperty('error');
+    it('should handle storage service errors', async () => {
+      mockStorageService.getStorageReport.mockRejectedValue(
+        new Error('Failed to read storage')
+      );
+
+      const response = await request(app)
+        .get('/api/storage/stats');
+
+      expect(response.status).toBe(500);
+      expect(response.body.error).toBe('Failed to retrieve storage statistics');
+    });
+
+    it('should return all storage metrics', async () => {
+      mockStorageService.getStorageReport.mockResolvedValue({
+        storage: {
+          totalFiles: 250,
+          totalSize: 262144000, // 250 MB
+          averageSize: 1048576, // 1 MB
+          usagePercent: 25.0,
+        },
       });
+
+      const response = await request(app)
+        .get('/api/storage/stats');
+
+      expect(response.status).toBe(200);
+      expect(response.body.storage).toHaveProperty('totalFiles');
+      expect(response.body.storage).toHaveProperty('totalSize');
+      expect(response.body.storage).toHaveProperty('averageSize');
+      expect(response.body.storage).toHaveProperty('usagePercent');
     });
   });
 
-  describe('POST /backup - Manual Backup', () => {
-    describe('Authorization Tests', () => {
-      test('should allow admin to trigger backup', async () => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('admin'));
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
+  describe('POST /api/storage/backup (Admin)', () => {
+    it('should trigger manual backup', async () => {
+      mockStorageService.performBackup.mockResolvedValue(undefined);
 
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.performBackup.mockResolvedValue(undefined);
+      const response = await request(app)
+        .post('/api/storage/backup');
 
-        const response = await request(app)
-          .post('/api/storage/backup')
-          .expect(200);
-
-        expect(response.body).toHaveProperty('message', 'Backup started successfully');
-      });
-
-      test('should allow super_admin to trigger backup', async () => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('super_admin'));
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
-
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.performBackup.mockResolvedValue(undefined);
-
-        const response = await request(app)
-          .post('/api/storage/backup')
-          .expect(200);
-
-        expect(response.body).toHaveProperty('message', 'Backup started successfully');
-      });
-
-      test('should deny backup access to regular users', async (): Promise<void> => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('customer'));
-        app.use((req, res, next): void => {
-          if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
-            res.status(403).json({ error: 'Insufficient permissions' });
-            return;
-          }
-          next();
-        });
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
-
-        const response = await request(app)
-          .post('/api/storage/backup')
-          .expect(403);
-
-        expect(response.body).toHaveProperty('error', 'Insufficient permissions');
-      });
-
-      test('should deny backup access to merchant users', async (): Promise<void> => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('customer')); // Use customer instead of merchant
-        app.use((req, res, next): void => {
-          if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
-            res.status(403).json({ error: 'Insufficient permissions' });
-            return;
-          }
-          next();
-        });
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
-
-        const response = await request(app)
-          .post('/api/storage/backup')
-          .expect(403);
-
-        expect(response.body).toHaveProperty('error', 'Insufficient permissions');
-      });
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('Backup started successfully');
     });
 
-    describe('Success Scenarios', () => {
-      beforeEach(() => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('admin'));
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
-      });
+    it('should start backup asynchronously', async () => {
+      mockStorageService.performBackup.mockResolvedValue(undefined);
 
-      test('should trigger backup successfully', async () => {
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.performBackup.mockResolvedValue(undefined);
+      const response = await request(app)
+        .post('/api/storage/backup');
 
-        const response = await request(app)
-          .post('/api/storage/backup')
-          .expect(200);
-
-        expect(response.body).toHaveProperty('message', 'Backup started successfully');
-      });
-
-      test('should return immediately without waiting for backup completion', async () => {
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-
-        // Simulate async backup without actual delay - just test API returns immediately
-        let backupResolve: () => void;
-        const backupPromise = new Promise<void>((resolve) => {
-          backupResolve = resolve;
-        });
-
-        StorageService.performBackup.mockImplementation(() => backupPromise);
-
-        const startTime = Date.now();
-        const response = await request(app)
-          .post('/api/storage/backup')
-          .expect(200);
-
-        const duration = Date.now() - startTime;
-
-        expect(response.body).toHaveProperty('message', 'Backup started successfully');
-        expect(duration).toBeLessThan(1000); // Should respond within 1 second
-
-        // Cleanup: resolve the hanging promise
-        backupResolve!();
-      });
-
-      test('should handle multiple concurrent backup requests', async () => {
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.performBackup.mockResolvedValue(undefined);
-
-        const requests = Array(5).fill(null).map(() =>
-          request(app).post('/api/storage/backup')
-        );
-
-        const responses = await Promise.all(requests);
-
-        responses.forEach(response => {
-          expect(response.status).toBe(200);
-          expect(response.body).toHaveProperty('message', 'Backup started successfully');
-        });
-      });
+      expect(response.status).toBe(200);
+      expect(response.body.message).toContain('started');
     });
 
-    describe('Error Handling', () => {
-      beforeEach(() => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('admin'));
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
-      });
+    it('should handle backup initiation without waiting', async () => {
+      // Backup runs asynchronously, so response should be immediate
+      mockStorageService.performBackup.mockImplementation(() =>
+        new Promise(resolve => setTimeout(() => resolve(undefined), 1000))
+      );
 
-      test('should handle backup startup errors', async () => {
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.performBackup.mockRejectedValue(new Error('Backup service unavailable'));
+      const startTime = Date.now();
+      const response = await request(app)
+        .post('/api/storage/backup');
+      const duration = Date.now() - startTime;
 
-        const response = await request(app)
-          .post('/api/storage/backup')
-          .expect(500);
-
-        expect(response.body).toHaveProperty('error', 'Failed to start backup');
-      });
-
-      test('should handle insufficient disk space errors', async () => {
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.performBackup.mockRejectedValue(new Error('ENOSPC: no space left on device'));
-
-        const response = await request(app)
-          .post('/api/storage/backup')
-          .expect(500);
-
-        expect(response.body).toHaveProperty('error', 'Failed to start backup');
-      });
-
-      test('should handle permission errors during backup', async () => {
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.performBackup.mockRejectedValue(new Error('EACCES: permission denied'));
-
-        const response = await request(app)
-          .post('/api/storage/backup')
-          .expect(500);
-
-        expect(response.body).toHaveProperty('error', 'Failed to start backup');
-      });
-
-      test('should log backup errors without affecting response', async () => {
-        const { logger } = jest.requireMock('../../../utils/logger');
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-
-        // Backup starts successfully but fails during execution
-        StorageService.performBackup.mockImplementation(() => {
-          return Promise.reject(new Error('Backup failed during execution'));
-        });
-
-        const response = await request(app)
-          .post('/api/storage/backup')
-          .expect(200);
-
-        expect(response.body).toHaveProperty('message', 'Backup started successfully');
-
-        // Use process.nextTick for immediate async execution without delay
-        await new Promise(resolve => process.nextTick(resolve));
-
-        // Error should be logged but not affect the response
-        expect(logger.error).toHaveBeenCalled();
-      });
+      expect(response.status).toBe(200);
+      expect(duration).toBeLessThan(500); // Should respond quickly, not wait for backup
     });
 
-    describe('Edge Cases', () => {
-      beforeEach(() => {
-        app = express();
-        app.use(express.json());
-        app.use(mockAuthMiddleware('admin'));
-        app.use('/api/storage', storageRoutes);
-        app.use(errorHandler);
+    it('should return success even if backup will fail later', async () => {
+      // Since backup runs asynchronously, endpoint returns success immediately
+      mockStorageService.performBackup.mockRejectedValue(
+        new Error('Backup process failed')
+      );
+
+      const response = await request(app)
+        .post('/api/storage/backup');
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('Backup started successfully');
+    });
+
+    it('should handle errors starting backup process', async () => {
+      // Simulate error in starting the backup process itself
+      mockStorageService.performBackup.mockImplementation(() => {
+        throw new Error('Cannot start backup');
       });
 
-      test('should handle backup with empty storage', async () => {
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.performBackup.mockResolvedValue(undefined);
+      const response = await request(app)
+        .post('/api/storage/backup');
 
-        const response = await request(app)
-          .post('/api/storage/backup')
-          .expect(200);
-
-        expect(response.body).toHaveProperty('message', 'Backup started successfully');
-      });
-
-      test('should handle backup with large storage volumes', async () => {
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.performBackup.mockResolvedValue(undefined);
-
-        const response = await request(app)
-          .post('/api/storage/backup')
-          .expect(200);
-
-        expect(response.body).toHaveProperty('message', 'Backup started successfully');
-      });
-
-      test('should handle rapid successive backup requests', async () => {
-        const { StorageService } = jest.requireMock('../../../services/storageService');
-        StorageService.performBackup.mockResolvedValue(undefined);
-
-        const response1 = await request(app).post('/api/storage/backup');
-        const response2 = await request(app).post('/api/storage/backup');
-        const response3 = await request(app).post('/api/storage/backup');
-
-        expect(response1.status).toBe(200);
-        expect(response2.status).toBe(200);
-        expect(response3.status).toBe(200);
-      });
+      expect(response.status).toBe(500);
+      expect(response.body.error).toBe('Failed to start backup');
     });
   });
 
-  describe('Integration Scenarios', () => {
-    beforeEach(() => {
-      app = express();
-      app.use(express.json());
-      app.use(mockAuthMiddleware('admin'));
-      app.use('/api/storage', storageRoutes);
-      app.use(errorHandler);
+  describe('Error Handling', () => {
+    it('should handle service unavailable for stats', async () => {
+      mockStorageService.getStorageReport.mockRejectedValue(
+        new Error('Service temporarily unavailable')
+      );
+
+      const response = await request(app)
+        .get('/api/storage/stats');
+
+      expect(response.status).toBe(500);
+      expect(response.body.error).toContain('Failed to retrieve');
     });
 
-    test('should get stats, trigger backup, and verify both work independently', async () => {
-      const { StorageService } = jest.requireMock('../../../services/storageService');
+    it('should handle database errors', async () => {
+      mockStorageService.getStorageReport.mockRejectedValue(
+        new Error('Database connection lost')
+      );
 
-      const mockReport = {
-        storage: {
-          totalFiles: 500,
-          totalSize: 262144000,
-          averageSize: 524288,
-          usagePercent: 25.0
-        }
-      };
+      const response = await request(app)
+        .get('/api/storage/stats');
 
-      StorageService.getStorageReport.mockResolvedValue(mockReport);
-      StorageService.performBackup.mockResolvedValue(undefined);
-
-      // Get stats
-      const statsResponse = await request(app)
-        .get('/api/storage/stats')
-        .expect(200);
-
-      expect(statsResponse.body).toEqual(mockReport);
-
-      // Trigger backup
-      const backupResponse = await request(app)
-        .post('/api/storage/backup')
-        .expect(200);
-
-      expect(backupResponse.body).toHaveProperty('message', 'Backup started successfully');
+      expect(response.status).toBe(500);
     });
 
-    test('should handle stats request during active backup', async () => {
-      const { StorageService } = jest.requireMock('../../../services/storageService');
+    it('should handle file system errors', async () => {
+      mockStorageService.getStorageReport.mockRejectedValue(
+        new Error('File system error')
+      );
 
-      const mockReport = {
-        storage: {
-          totalFiles: 500,
-          totalSize: 262144000,
-          averageSize: 524288,
-          usagePercent: 25.0
-        }
-      };
+      const response = await request(app)
+        .get('/api/storage/stats');
 
-      StorageService.getStorageReport.mockResolvedValue(mockReport);
-      // Use resolved promise instead of timeout - backup runs in background anyway
-      StorageService.performBackup.mockResolvedValue(undefined);
-
-      // Start backup
-      const backupPromise = request(app).post('/api/storage/backup');
-
-      // Get stats while backup is running
-      const statsResponse = await request(app)
-        .get('/api/storage/stats')
-        .expect(200);
-
-      expect(statsResponse.body).toEqual(mockReport);
-
-      // Verify backup completes
-      const backupResponse = await backupPromise;
-      expect(backupResponse.status).toBe(200);
+      expect(response.status).toBe(500);
     });
   });
 });

@@ -66,3 +66,6 @@ export class StorageService {
     };
   }
 }
+
+// Export singleton instance for use in tests and other services
+export const storageService = new StorageService();

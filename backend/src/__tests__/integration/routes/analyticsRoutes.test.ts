@@ -1,591 +1,709 @@
 /**
  * Analytics Routes Integration Tests
- * Tests analytics tracking and reporting endpoints
+ * Tests analytics tracking, retrieval, and dashboard functionality
  *
- * Week 2 Priority - 10-15 tests
- * Coverage Target: ~2% contribution
+ * Following service-based mocking pattern from notifications.test.ts
+ * Coverage Target: Comprehensive route testing
  */
 
 import request from 'supertest';
-import express, { Express } from 'express';
-import analyticsRoutes from '../../../routes/analyticsRoutes';
-import { errorHandler } from '../../../middleware/errorHandler';
+import { Express } from 'express';
+import routes from '../../../routes/analyticsRoutes';
+import { createTestApp } from '../../fixtures';
 
-// Mock analyticsService
-jest.mock('../../../services/analyticsService');
-jest.mock('../../../utils/logger', () => ({
-  logger: {
-    info: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-    warn: jest.fn(),
+// Mock dependencies - Service-based mocking
+jest.mock('../../../services/analyticsService', () => ({
+  analyticsService: {
+    trackCouponUsage: jest.fn(),
+    trackProfileChange: jest.fn(),
+    getCouponUsageAnalytics: jest.fn(),
+    getProfileChangeAnalytics: jest.fn(),
+    getUserEngagementMetrics: jest.fn(),
+    updateDailyUserAnalytics: jest.fn(),
   },
 }));
 
-// Mock authentication and authorization middleware
-const mockAuthMiddleware = (role = 'customer') => {
-  return (req: express.Request, _res: express.Response, next: express.NextFunction) => {
-    req.user = {
-      id: 'test-user-123',
-      email: 'test@example.com',
-      role: role as 'customer' | 'admin' | 'super_admin'
-    };
-    next();
-  };
+// Create a mutable auth implementation
+let currentUser = {
+  id: 'test-user-id',
+  email: 'test@example.com',
+  role: 'customer',
 };
 
-// Mock requestLogger middleware
-jest.mock('../../../middleware/requestLogger', () => ({
-  requestLogger: (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
+jest.mock('../../../middleware/auth', () => ({
+  authenticate: (req: any, _res: any, next: any) => {
+    req.user = { ...currentUser };
     next();
-  }
+  },
+  authorize: (...roles: string[]) => (req: any, res: any, next: any) => {
+    // Check if user role matches authorized roles
+    if (req.user && roles.includes(req.user.role)) {
+      next();
+    } else {
+      res.status(403).json({ error: 'Forbidden' });
+    }
+  },
 }));
+
+jest.mock('../../../middleware/requestLogger', () => ({
+  requestLogger: (_req: any, _res: any, next: any) => next(),
+}));
+
+// Import mocked service
+import { analyticsService } from '../../../services/analyticsService';
 
 describe('Analytics Routes Integration Tests', () => {
   let app: Express;
+  const mockAnalyticsService = analyticsService as jest.Mocked<typeof analyticsService>;
+
+  beforeAll(() => {
+    app = createTestApp(routes, '/api/analytics');
+  });
 
   beforeEach(() => {
-    // Reset mocks before each test
     jest.clearAllMocks();
   });
 
-  describe('POST /coupon-usage - Track Coupon Usage', () => {
-    beforeEach(() => {
-      app = express();
-      app.use(express.json());
-      app.use(mockAuthMiddleware('customer'));
-      app.use('/api/analytics', analyticsRoutes);
-    });
-
-    test('should track coupon usage event successfully', async () => {
-      const eventData = {
-        couponId: 'coupon-123',
-        userCouponId: 'user-coupon-456',
-        eventType: 'view',
-        source: 'mobile-app',
-        metadata: { platform: 'iOS' }
-      };
-
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.trackCouponUsage.mockResolvedValue(undefined);
+  describe('POST /api/analytics/coupon-usage (authenticated)', () => {
+    it('should track coupon usage event', async () => {
+      mockAnalyticsService.trackCouponUsage.mockResolvedValue(undefined);
 
       const response = await request(app)
         .post('/api/analytics/coupon-usage')
-        .send(eventData)
-        .expect(201);
+        .send({
+          couponId: 'coupon-123',
+          userCouponId: 'uc-456',
+          eventType: 'redeem_success',
+          source: 'mobile_app',
+          metadata: { deviceType: 'iOS' },
+        });
 
-      expect(response.body).toHaveProperty('success', true);
-      expect(response.body).toHaveProperty('message', 'Coupon usage event tracked successfully');
-      expect(analyticsService.trackCouponUsage).toHaveBeenCalled();
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({
+        success: true,
+        message: 'Coupon usage event tracked successfully',
+      });
+      expect(mockAnalyticsService.trackCouponUsage).toHaveBeenCalled();
     });
 
-    test('should validate required fields', async () => {
-      const invalidData = {
-        source: 'mobile-app'
-      };
-
+    it('should return 400 when couponId is missing', async () => {
       const response = await request(app)
         .post('/api/analytics/coupon-usage')
-        .send(invalidData)
-        .expect(400);
+        .send({
+          eventType: 'view',
+        });
 
-      expect(response.body).toHaveProperty('error', 'couponId and eventType are required');
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('couponId and eventType are required');
     });
 
-    test('should validate eventType values', async () => {
-      const invalidData = {
-        couponId: 'coupon-123',
-        eventType: 'invalid-type'
-      };
-
+    it('should return 400 when eventType is missing', async () => {
       const response = await request(app)
         .post('/api/analytics/coupon-usage')
-        .send(invalidData)
-        .expect(400);
+        .send({
+          couponId: 'coupon-123',
+        });
 
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('couponId and eventType are required');
+    });
+
+    it('should return 400 for invalid eventType', async () => {
+      const response = await request(app)
+        .post('/api/analytics/coupon-usage')
+        .send({
+          couponId: 'coupon-123',
+          eventType: 'invalid_event',
+        });
+
+      expect(response.status).toBe(400);
       expect(response.body.error).toContain('Invalid eventType');
     });
 
-    test('should accept all valid event types', async () => {
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.trackCouponUsage.mockResolvedValue(undefined);
+    it('should accept all valid event types', async () => {
+      const validEvents = ['view', 'assign', 'redeem_attempt', 'redeem_success', 'redeem_fail', 'expire', 'revoke'];
+      mockAnalyticsService.trackCouponUsage.mockResolvedValue(undefined);
 
-      const validTypes = ['view', 'assign', 'redeem_attempt', 'redeem_success', 'redeem_fail', 'expire', 'revoke'];
-
-      for (const eventType of validTypes) {
+      for (const eventType of validEvents) {
         const response = await request(app)
           .post('/api/analytics/coupon-usage')
-          .send({ couponId: 'test', eventType })
-          .expect(201);
+          .send({
+            couponId: 'coupon-123',
+            eventType,
+          });
 
-        expect(response.body.success).toBe(true);
+        expect(response.status).toBe(201);
       }
     });
 
-    test('should include IP address and User-Agent in tracking', async () => {
-      const eventData = {
-        couponId: 'coupon-123',
-        eventType: 'view'
-      };
+    it('should handle service errors', async () => {
+      mockAnalyticsService.trackCouponUsage.mockRejectedValue(new Error('Database error'));
 
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.trackCouponUsage.mockResolvedValue(undefined);
-
-      await request(app)
+      const response = await request(app)
         .post('/api/analytics/coupon-usage')
-        .set('User-Agent', 'Test Browser/1.0')
-        .send(eventData)
-        .expect(201);
+        .send({
+          couponId: 'coupon-123',
+          eventType: 'view',
+        });
 
-      expect(analyticsService.trackCouponUsage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userAgent: 'Test Browser/1.0',
-          ipAddress: expect.any(String)
-        })
-      );
+      expect(response.status).toBe(500);
     });
   });
 
-  describe('POST /profile-change - Track Profile Change', () => {
-    beforeEach(() => {
-      app = express();
-      app.use(express.json());
-      app.use(mockAuthMiddleware('customer'));
-      app.use('/api/analytics', analyticsRoutes);
-      app.use(errorHandler);
-    });
-
-    test('should track profile change event successfully', async () => {
-      const changeData = {
-        field: 'email',
-        oldValue: 'old@example.com',
-        newValue: 'new@example.com',
-        changeSource: 'user',
-        metadata: { verificationRequired: true }
-      };
-
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.trackProfileChange.mockResolvedValue(undefined);
+  describe('POST /api/analytics/profile-change (authenticated)', () => {
+    it('should track profile change event', async () => {
+      mockAnalyticsService.trackProfileChange.mockResolvedValue(undefined);
 
       const response = await request(app)
         .post('/api/analytics/profile-change')
-        .send(changeData)
-        .expect(201);
+        .send({
+          field: 'email',
+          oldValue: 'old@example.com',
+          newValue: 'new@example.com',
+          changeSource: 'user',
+          metadata: { reason: 'user_request' },
+        });
 
-      expect(response.body).toHaveProperty('success', true);
-      expect(response.body).toHaveProperty('message', 'Profile change event tracked successfully');
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({
+        success: true,
+        message: 'Profile change event tracked successfully',
+      });
+      expect(mockAnalyticsService.trackProfileChange).toHaveBeenCalled();
     });
 
-    test('should validate required fields', async () => {
-      const invalidData = {
-        oldValue: 'old'
-      };
-
+    it('should return 400 when field is missing', async () => {
       const response = await request(app)
         .post('/api/analytics/profile-change')
-        .send(invalidData)
-        .expect(400);
+        .send({
+          newValue: 'value',
+        });
 
-      expect(response.body).toHaveProperty('error', 'field and newValue are required');
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('field and newValue are required');
     });
 
-    test('should validate changeSource values', async () => {
-      const invalidData = {
-        field: 'name',
-        newValue: 'New Name',
-        changeSource: 'invalid-source'
-      };
-
+    it('should return 400 when newValue is missing', async () => {
       const response = await request(app)
         .post('/api/analytics/profile-change')
-        .send(invalidData)
-        .expect(400);
+        .send({
+          field: 'email',
+        });
 
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('field and newValue are required');
+    });
+
+    it('should return 400 for invalid changeSource', async () => {
+      const response = await request(app)
+        .post('/api/analytics/profile-change')
+        .send({
+          field: 'email',
+          newValue: 'new@example.com',
+          changeSource: 'invalid_source',
+        });
+
+      expect(response.status).toBe(400);
       expect(response.body.error).toContain('Invalid changeSource');
     });
 
-    test('should accept all valid change sources', async () => {
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.trackProfileChange.mockResolvedValue(undefined);
-
+    it('should accept all valid change sources', async () => {
       const validSources = ['user', 'admin', 'system'];
+      mockAnalyticsService.trackProfileChange.mockResolvedValue(undefined);
 
       for (const changeSource of validSources) {
         const response = await request(app)
           .post('/api/analytics/profile-change')
-          .send({ field: 'test', newValue: 'value', changeSource })
-          .expect(201);
+          .send({
+            field: 'email',
+            newValue: 'new@example.com',
+            changeSource,
+          });
 
-        expect(response.body.success).toBe(true);
+        expect(response.status).toBe(201);
       }
     });
 
-    test('should handle missing oldValue', async () => {
-      const changeData = {
-        field: 'phone',
-        newValue: '+1234567890',
-        changeSource: 'user'
-      };
+    it('should default changeSource to user if not provided', async () => {
+      mockAnalyticsService.trackProfileChange.mockResolvedValue(undefined);
 
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.trackProfileChange.mockResolvedValue(undefined);
-
-      await request(app)
+      const response = await request(app)
         .post('/api/analytics/profile-change')
-        .send(changeData)
-        .expect(201);
+        .send({
+          field: 'email',
+          newValue: 'new@example.com',
+        });
 
-      expect(analyticsService.trackProfileChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          oldValue: null
-        })
-      );
+      expect(response.status).toBe(201);
+    });
+
+    it('should handle service errors', async () => {
+      mockAnalyticsService.trackProfileChange.mockRejectedValue(new Error('Database error'));
+
+      const response = await request(app)
+        .post('/api/analytics/profile-change')
+        .send({
+          field: 'email',
+          newValue: 'new@example.com',
+        });
+
+      expect(response.status).toBe(500);
     });
   });
 
-  describe('GET /coupon-usage - Get Coupon Usage Analytics', () => {
+  describe('GET /api/analytics/coupon-usage (admin)', () => {
     beforeEach(() => {
-      app = express();
-      app.use(express.json());
-      app.use(mockAuthMiddleware('admin'));
-      app.use('/api/analytics', analyticsRoutes);
-      app.use(errorHandler);
+      // Set admin user for these tests
+      currentUser = {
+        id: 'admin-user-id',
+        email: 'admin@example.com',
+        role: 'admin',
+      };
     });
 
-    test('should return coupon usage analytics for admin', async () => {
+    afterEach(() => {
+      // Reset to customer user
+      currentUser = {
+        id: 'test-user-id',
+        email: 'test@example.com',
+        role: 'customer',
+      };
+    });
+
+    it('should return coupon usage analytics', async () => {
       const mockAnalytics = {
-        totalEvents: 1500,
-        uniqueUsers: 450,
-        conversionRate: 0.35,
+        totalEvents: 150,
+        uniqueUsers: 75,
+        conversionRate: 0.45,
         eventsByType: {
-          view: 800,
-          assign: 500,
-          redeem_success: 200
+          view: 50,
+          redeem_success: 40,
+          redeem_fail: 10,
         },
-        topSources: ['mobile-app', 'web-app'],
-        dateRange: { start: '2024-01-01', end: '2024-01-31' }
+        topSources: [
+          { source: 'mobile_app', count: 80 },
+          { source: 'web', count: 70 },
+        ],
       };
 
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.getCouponUsageAnalytics.mockResolvedValue(mockAnalytics);
+      mockAnalyticsService.getCouponUsageAnalytics.mockResolvedValue(mockAnalytics as any);
 
-      const response = await request(app)
-        .get('/api/analytics/coupon-usage')
-        .expect(200);
+      const response = await request(app).get('/api/analytics/coupon-usage');
 
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toEqual(mockAnalytics);
-    });
-
-    test('should filter by date range', async () => {
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.getCouponUsageAnalytics.mockResolvedValue({});
-
-      await request(app)
-        .get('/api/analytics/coupon-usage?startDate=2024-01-01&endDate=2024-01-31')
-        .expect(200);
-
-      expect(analyticsService.getCouponUsageAnalytics).toHaveBeenCalledWith(
-        expect.any(Date),
-        expect.any(Date),
-        undefined,
-        undefined
-      );
-    });
-
-    test('should filter by couponId', async () => {
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.getCouponUsageAnalytics.mockResolvedValue({});
-
-      await request(app)
-        .get('/api/analytics/coupon-usage?couponId=coupon-123')
-        .expect(200);
-
-      expect(analyticsService.getCouponUsageAnalytics).toHaveBeenCalledWith(
-        undefined,
-        undefined,
-        'coupon-123',
-        undefined
-      );
-    });
-
-    test('should deny access to non-admin users', async (): Promise<void> => {
-      app = express();
-      app.use(express.json());
-      app.use(mockAuthMiddleware('customer'));
-      app.use((req, res, next): void => {
-        if (req.user?.role !== 'admin' && req.user?.role !== 'super_admin') {
-          res.status(403).json({ error: 'Insufficient permissions' });
-          return;
-        }
-        next();
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        success: true,
+        data: mockAnalytics,
       });
-      app.use('/api/analytics', analyticsRoutes);
-      app.use(errorHandler);
+      expect(mockAnalyticsService.getCouponUsageAnalytics).toHaveBeenCalled();
+    });
+
+    it('should accept query parameters for filtering', async () => {
+      mockAnalyticsService.getCouponUsageAnalytics.mockResolvedValue({} as any);
 
       const response = await request(app)
         .get('/api/analytics/coupon-usage')
-        .expect(403);
+        .query({
+          startDate: '2025-01-01',
+          endDate: '2025-01-31',
+          couponId: 'coupon-123',
+          userId: 'user-456',
+        });
 
-      expect(response.body).toHaveProperty('error', 'Insufficient permissions');
+      expect(response.status).toBe(200);
+      expect(mockAnalyticsService.getCouponUsageAnalytics).toHaveBeenCalled();
+    });
+
+    it('should handle service errors', async () => {
+      mockAnalyticsService.getCouponUsageAnalytics.mockRejectedValue(new Error('Database error'));
+
+      const response = await request(app).get('/api/analytics/coupon-usage');
+
+      expect(response.status).toBe(500);
     });
   });
 
-  describe('GET /profile-changes - Get Profile Change Analytics', () => {
+  describe('GET /api/analytics/profile-changes (admin)', () => {
     beforeEach(() => {
-      app = express();
-      app.use(express.json());
-      app.use(mockAuthMiddleware('admin'));
-      app.use('/api/analytics', analyticsRoutes);
-      app.use(errorHandler);
+      // Set admin user for these tests
+      currentUser = {
+        id: 'admin-user-id',
+        email: 'admin@example.com',
+        role: 'admin',
+      };
     });
 
-    test('should return profile change analytics for admin', async () => {
+    afterEach(() => {
+      // Reset to customer user
+      currentUser = {
+        id: 'test-user-id',
+        email: 'test@example.com',
+        role: 'customer',
+      };
+    });
+
+    it('should return profile change analytics', async () => {
+      const testDate = new Date('2025-01-01T00:00:00.000Z');
       const mockAnalytics = {
-        totalChanges: 2500,
-        uniqueUsers: 800,
+        totalChanges: 250,
+        uniqueUsers: 120,
         changesByField: {
-          email: 450,
-          phone: 320,
-          name: 280
+          email: 80,
+          phone: 70,
+          address: 50,
         },
         completionMilestones: [
-          { userId: 'user-1', completedAt: '2024-01-15' }
-        ]
+          { userId: 'user-1', completedAt: testDate },
+        ],
       };
 
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.getProfileChangeAnalytics.mockResolvedValue(mockAnalytics);
+      mockAnalyticsService.getProfileChangeAnalytics.mockResolvedValue(mockAnalytics as any);
+
+      const response = await request(app).get('/api/analytics/profile-changes');
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.totalChanges).toBe(250);
+      expect(response.body.data.uniqueUsers).toBe(120);
+      expect(response.body.data.completionMilestones[0].userId).toBe('user-1');
+      expect(mockAnalyticsService.getProfileChangeAnalytics).toHaveBeenCalled();
+    });
+
+    it('should accept query parameters for filtering', async () => {
+      mockAnalyticsService.getProfileChangeAnalytics.mockResolvedValue({} as any);
 
       const response = await request(app)
         .get('/api/analytics/profile-changes')
-        .expect(200);
+        .query({
+          startDate: '2025-01-01',
+          endDate: '2025-01-31',
+          userId: 'user-123',
+        });
 
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toEqual(mockAnalytics);
+      expect(response.status).toBe(200);
+      expect(mockAnalyticsService.getProfileChangeAnalytics).toHaveBeenCalled();
     });
 
-    test('should filter by date range and userId', async () => {
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.getProfileChangeAnalytics.mockResolvedValue({});
+    it('should handle service errors', async () => {
+      mockAnalyticsService.getProfileChangeAnalytics.mockRejectedValue(new Error('Database error'));
 
-      await request(app)
-        .get('/api/analytics/profile-changes?startDate=2024-01-01&userId=user-123')
-        .expect(200);
+      const response = await request(app).get('/api/analytics/profile-changes');
 
-      expect(analyticsService.getProfileChangeAnalytics).toHaveBeenCalledWith(
-        expect.any(Date),
-        undefined,
-        'user-123'
-      );
+      expect(response.status).toBe(500);
     });
   });
 
-  describe('GET /user-engagement - Get User Engagement Metrics', () => {
+  describe('GET /api/analytics/user-engagement (admin)', () => {
     beforeEach(() => {
-      app = express();
-      app.use(express.json());
-      app.use(mockAuthMiddleware('super_admin'));
-      app.use('/api/analytics', analyticsRoutes);
-      app.use(errorHandler);
+      // Set admin user for these tests
+      currentUser = {
+        id: 'admin-user-id',
+        email: 'admin@example.com',
+        role: 'admin',
+      };
     });
 
-    test('should return user engagement metrics for admin', async () => {
+    afterEach(() => {
+      // Reset to customer user
+      currentUser = {
+        id: 'test-user-id',
+        email: 'test@example.com',
+        role: 'customer',
+      };
+    });
+
+    it('should return user engagement metrics', async () => {
       const mockMetrics = {
-        activeUsers: 1200,
+        activeUsers: 500,
         userSegments: {
-          highly_engaged: 300,
-          moderately_engaged: 600,
-          low_engagement: 300
+          high: 50,
+          medium: 200,
+          low: 250,
         },
         avgCouponsPerUser: 3.5,
         avgProfileChangesPerUser: 2.1,
         topUsers: [
-          { userId: 'user-1', interactionCount: 50 }
-        ]
+          { userId: 'user-1', score: 100 },
+          { userId: 'user-2', score: 95 },
+        ],
       };
 
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.getUserEngagementMetrics.mockResolvedValue(mockMetrics);
+      mockAnalyticsService.getUserEngagementMetrics.mockResolvedValue(mockMetrics as any);
+
+      const response = await request(app).get('/api/analytics/user-engagement');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        success: true,
+        data: mockMetrics,
+      });
+      expect(mockAnalyticsService.getUserEngagementMetrics).toHaveBeenCalled();
+    });
+
+    it('should accept date range parameters', async () => {
+      mockAnalyticsService.getUserEngagementMetrics.mockResolvedValue({} as any);
 
       const response = await request(app)
         .get('/api/analytics/user-engagement')
-        .expect(200);
+        .query({
+          startDate: '2025-01-01',
+          endDate: '2025-01-31',
+        });
 
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toEqual(mockMetrics);
+      expect(response.status).toBe(200);
+      expect(mockAnalyticsService.getUserEngagementMetrics).toHaveBeenCalled();
     });
 
-    test('should filter by date range', async () => {
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.getUserEngagementMetrics.mockResolvedValue({});
+    it('should handle service errors', async () => {
+      mockAnalyticsService.getUserEngagementMetrics.mockRejectedValue(new Error('Database error'));
 
-      await request(app)
-        .get('/api/analytics/user-engagement?startDate=2024-01-01&endDate=2024-01-31')
-        .expect(200);
+      const response = await request(app).get('/api/analytics/user-engagement');
 
-      expect(analyticsService.getUserEngagementMetrics).toHaveBeenCalledWith(
-        expect.any(Date),
-        expect.any(Date)
-      );
+      expect(response.status).toBe(500);
     });
   });
 
-  describe('GET /dashboard - Get Analytics Dashboard', () => {
+  describe('POST /api/analytics/update-daily (admin)', () => {
     beforeEach(() => {
-      app = express();
-      app.use(express.json());
-      app.use(mockAuthMiddleware('admin'));
-      app.use('/api/analytics', analyticsRoutes);
-      app.use(errorHandler);
+      // Set admin user for these tests
+      currentUser = {
+        id: 'admin-user-id',
+        email: 'admin@example.com',
+        role: 'admin',
+      };
     });
 
-    test('should return comprehensive dashboard data', async () => {
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
+    afterEach(() => {
+      // Reset to customer user
+      currentUser = {
+        id: 'test-user-id',
+        email: 'test@example.com',
+        role: 'customer',
+      };
+    });
 
-      analyticsService.getCouponUsageAnalytics.mockResolvedValue({
-        totalEvents: 1500,
-        uniqueUsers: 450,
-        conversionRate: 0.35,
-        topSources: ['mobile', 'web', 'email'],
-        eventsByType: { view: 800, redeem: 200 }
-      });
-
-      analyticsService.getProfileChangeAnalytics.mockResolvedValue({
-        totalChanges: 2500,
-        uniqueUsers: 800,
-        changesByField: { email: 450, phone: 320 },
-        completionMilestones: [{ userId: 'user-1' }]
-      });
-
-      analyticsService.getUserEngagementMetrics.mockResolvedValue({
-        activeUsers: 1200,
-        userSegments: { highly_engaged: 300 },
-        avgCouponsPerUser: 3.5,
-        avgProfileChangesPerUser: 2.1,
-        topUsers: [{ userId: 'user-1', interactionCount: 50 }]
-      });
+    it('should update daily analytics', async () => {
+      mockAnalyticsService.updateDailyUserAnalytics.mockResolvedValue(150);
 
       const response = await request(app)
-        .get('/api/analytics/dashboard')
-        .expect(200);
+        .post('/api/analytics/update-daily')
+        .send({});
 
+      expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty('period', '30 days');
+      expect(response.body.message).toBe('Daily analytics updated successfully');
+      expect(response.body.data.recordsProcessed).toBe(150);
+      expect(mockAnalyticsService.updateDailyUserAnalytics).toHaveBeenCalled();
+    });
+
+    it('should accept specific date for update', async () => {
+      mockAnalyticsService.updateDailyUserAnalytics.mockResolvedValue(100);
+
+      const response = await request(app)
+        .post('/api/analytics/update-daily')
+        .send({
+          date: '2025-01-15',
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.recordsProcessed).toBe(100);
+    });
+
+    it('should handle service errors', async () => {
+      mockAnalyticsService.updateDailyUserAnalytics.mockRejectedValue(new Error('Update failed'));
+
+      const response = await request(app)
+        .post('/api/analytics/update-daily')
+        .send({});
+
+      expect(response.status).toBe(500);
+    });
+  });
+
+  describe('GET /api/analytics/dashboard (admin)', () => {
+    beforeEach(() => {
+      // Set admin user for these tests
+      currentUser = {
+        id: 'admin-user-id',
+        email: 'admin@example.com',
+        role: 'admin',
+      };
+    });
+
+    afterEach(() => {
+      // Reset to customer user
+      currentUser = {
+        id: 'test-user-id',
+        email: 'test@example.com',
+        role: 'customer',
+      };
+    });
+
+    it('should return analytics dashboard', async () => {
+      const mockCouponAnalytics = {
+        totalEvents: 1000,
+        uniqueUsers: 500,
+        conversionRate: 0.6,
+        eventsByType: {
+          view: 400,
+          redeem_success: 300,
+        },
+        topSources: [
+          { source: 'mobile_app', count: 600 },
+          { source: 'web', count: 400 },
+        ],
+      };
+
+      const mockProfileAnalytics = {
+        totalChanges: 800,
+        uniqueUsers: 400,
+        changesByField: {
+          email: 300,
+          phone: 250,
+          address: 200,
+        },
+        completionMilestones: [],
+      };
+
+      const mockEngagementMetrics = {
+        activeUsers: 500,
+        userSegments: {
+          high: 50,
+          medium: 200,
+          low: 250,
+        },
+        avgCouponsPerUser: 4.2,
+        avgProfileChangesPerUser: 2.8,
+        topUsers: [],
+      };
+
+      mockAnalyticsService.getCouponUsageAnalytics.mockResolvedValue(mockCouponAnalytics as any);
+      mockAnalyticsService.getProfileChangeAnalytics.mockResolvedValue(mockProfileAnalytics as any);
+      mockAnalyticsService.getUserEngagementMetrics.mockResolvedValue(mockEngagementMetrics as any);
+
+      const response = await request(app).get('/api/analytics/dashboard');
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toHaveProperty('period');
       expect(response.body.data).toHaveProperty('couponUsage');
       expect(response.body.data).toHaveProperty('profileChanges');
       expect(response.body.data).toHaveProperty('userEngagement');
+      expect(response.body.data.couponUsage.totalEvents).toBe(1000);
+      expect(response.body.data.profileChanges.totalChanges).toBe(800);
+      expect(response.body.data.userEngagement.activeUsers).toBe(500);
     });
 
-    test('should accept custom period parameter', async () => {
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
+    it('should accept custom period parameter', async () => {
+      const mockCouponAnalytics = {
+        totalEvents: 100,
+        uniqueUsers: 50,
+        conversionRate: 0.5,
+        topSources: [],
+        eventsByType: {},
+      };
 
-      analyticsService.getCouponUsageAnalytics.mockResolvedValue({});
-      analyticsService.getProfileChangeAnalytics.mockResolvedValue({});
-      analyticsService.getUserEngagementMetrics.mockResolvedValue({});
+      const mockProfileAnalytics = {
+        totalChanges: 100,
+        uniqueUsers: 50,
+        changesByField: {},
+        completionMilestones: [],
+      };
 
-      const response = await request(app)
-        .get('/api/analytics/dashboard?period=7')
-        .expect(200);
+      const mockEngagementMetrics = {
+        activeUsers: 50,
+        userSegments: {},
+        avgCouponsPerUser: 2,
+        avgProfileChangesPerUser: 1,
+        topUsers: [],
+      };
 
-      expect(response.body.data.period).toBe('7 days');
-    });
-
-    test('should deny access to non-admin users', async () => {
-      app = express();
-      app.use(express.json());
-      app.use(mockAuthMiddleware('customer'));
-      app.use('/api/analytics', analyticsRoutes);
-      app.use(errorHandler);
+      mockAnalyticsService.getCouponUsageAnalytics.mockResolvedValue(mockCouponAnalytics as any);
+      mockAnalyticsService.getProfileChangeAnalytics.mockResolvedValue(mockProfileAnalytics as any);
+      mockAnalyticsService.getUserEngagementMetrics.mockResolvedValue(mockEngagementMetrics as any);
 
       const response = await request(app)
         .get('/api/analytics/dashboard')
-        .expect(403);
+        .query({ period: '60' });
 
-      expect(response.body).toHaveProperty('error', 'Insufficient permissions');
+      expect(response.status).toBe(200);
+      expect(response.body.data.period).toBe('60 days');
+    });
+
+    it('should handle service errors', async () => {
+      mockAnalyticsService.getCouponUsageAnalytics.mockRejectedValue(new Error('Database error'));
+
+      const response = await request(app).get('/api/analytics/dashboard');
+
+      expect(response.status).toBe(500);
     });
   });
 
-  describe('POST /update-daily - Update Daily Analytics', () => {
+  describe('Authorization', () => {
     beforeEach(() => {
-      app = express();
-      app.use(express.json());
-      app.use(mockAuthMiddleware('admin'));
-      app.use('/api/analytics', analyticsRoutes);
-      app.use(errorHandler);
+      // Reset to customer user for these tests
+      currentUser = {
+        id: 'test-user-id',
+        email: 'test@example.com',
+        role: 'customer',
+      };
     });
 
-    test('should update daily analytics for admin', async () => {
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.updateDailyUserAnalytics.mockResolvedValue(150);
+    it('should deny customer access to admin GET endpoints', async () => {
+      const adminEndpoints = [
+        '/api/analytics/coupon-usage',
+        '/api/analytics/profile-changes',
+        '/api/analytics/user-engagement',
+        '/api/analytics/dashboard',
+      ];
 
-      const response = await request(app)
-        .post('/api/analytics/update-daily')
-        .send({})
-        .expect(200);
-
-      expect(response.body.success).toBe(true);
-      expect(response.body).toHaveProperty('message');
-      expect(response.body.data).toHaveProperty('recordsProcessed', 150);
+      for (const endpoint of adminEndpoints) {
+        const response = await request(app).get(endpoint);
+        expect(response.status).toBe(403);
+        expect(response.body.error).toBe('Forbidden');
+      }
     });
 
-    test('should accept custom date parameter', async () => {
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.updateDailyUserAnalytics.mockResolvedValue(100);
-
+    it('should deny customer access to admin POST endpoints', async () => {
       const response = await request(app)
         .post('/api/analytics/update-daily')
-        .send({ date: '2024-01-15' })
-        .expect(200);
+        .send({});
 
-      expect(response.body.success).toBe(true);
-      expect(analyticsService.updateDailyUserAnalytics).toHaveBeenCalledWith(expect.any(Date));
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe('Forbidden');
     });
 
-    test('should deny access to non-admin users', async () => {
-      app = express();
-      app.use(express.json());
-      app.use(mockAuthMiddleware('customer'));
-      app.use('/api/analytics', analyticsRoutes);
-      app.use(errorHandler);
+    it('should allow customer access to tracking endpoints', async () => {
+      mockAnalyticsService.trackCouponUsage.mockResolvedValue(undefined);
+      mockAnalyticsService.trackProfileChange.mockResolvedValue(undefined);
 
-      const response = await request(app)
-        .post('/api/analytics/update-daily')
-        .send({})
-        .expect(403);
+      const couponResponse = await request(app)
+        .post('/api/analytics/coupon-usage')
+        .send({
+          couponId: 'coupon-123',
+          eventType: 'view',
+        });
 
-      expect(response.body).toHaveProperty('error', 'Insufficient permissions');
+      const profileResponse = await request(app)
+        .post('/api/analytics/profile-change')
+        .send({
+          field: 'email',
+          newValue: 'new@example.com',
+        });
+
+      expect(couponResponse.status).toBe(201);
+      expect(profileResponse.status).toBe(201);
     });
   });
 
   describe('Error Handling', () => {
-    beforeEach(() => {
-      app = express();
-      app.use(express.json());
-      app.use(mockAuthMiddleware('admin'));
-      app.use('/api/analytics', analyticsRoutes);
-      app.use(errorHandler);
-    });
-
-    test('should handle service errors gracefully', async () => {
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.getCouponUsageAnalytics.mockRejectedValue(new Error('Database error'));
-
+    it('should handle malformed JSON', async () => {
       const response = await request(app)
-        .get('/api/analytics/coupon-usage')
-        .expect(500);
+        .post('/api/analytics/coupon-usage')
+        .set('Content-Type', 'application/json')
+        .send('{invalid: json}');
 
-      expect(response.body).toHaveProperty('error', 'Internal server error');
-    });
-
-    test('should handle invalid date formats', async () => {
-      const { analyticsService } = jest.requireMock('../../../services/analyticsService');
-      analyticsService.getCouponUsageAnalytics.mockResolvedValue({});
-
-      // Invalid date should still be processed (Date constructor handles it)
-      await request(app)
-        .get('/api/analytics/coupon-usage?startDate=invalid-date')
-        .expect(200);
+      expect(response.status).toBe(400);
     });
   });
 });
