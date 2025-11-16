@@ -437,8 +437,11 @@ jobs:
         id: test-results
         if: always()
         run: |
+          # Capture test outcome as shell variable
+          TEST_OUTCOME="${{ steps.run-tests.outcome }}"
+
           # Check if tests actually passed
-          if [ "${{ steps.run-tests.outcome }}" == "success" ]; then
+          if [ "$TEST_OUTCOME" == "success" ]; then
             echo "✅ Unit tests passed"
             echo "passed=true" >> $GITHUB_OUTPUT
           else
@@ -474,7 +477,7 @@ jobs:
 |--------|-------|
 | **Lines Covered** | $LINES_HIT / $LINES_FOUND |
 | **Coverage Percentage** | $COVERAGE_PERCENT% |
-| **Test Status** | ${{ steps.run-tests.outcome }} |
+| **Test Status** | $TEST_OUTCOME |
 
 ### 📥 Download Reports
 Coverage reports are available as workflow artifacts for 30 days.
