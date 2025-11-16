@@ -116,3 +116,7 @@ allure-report/
 
 # CI-generated docker-compose files (not committed)
 docker-compose.e2e.ci.yml
+
+# Test file backups (not committed)
+*.spec.ts.backup
+*.test.ts.backup

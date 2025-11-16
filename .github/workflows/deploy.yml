@@ -1077,12 +1077,17 @@ jobs:
         env:
           DATABASE_URL: postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db
           NODE_ENV: development
+          # OAuth Configuration for E2E tests (from GitHub Secrets)
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID || 'test-google-not-configured' }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET || 'test-google-secret-not-configured' }}
+          LINE_CHANNEL_ID: ${{ secrets.LINE_CHANNEL_ID || 'test-line-not-configured' }}
+          LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET || 'test-line-secret-not-configured' }}
         run: |
           echo "🚀 Starting isolated application stack for E2E tests..."
-          
+
           # Create the E2E Docker Compose file with host networking
           echo "📝 Creating E2E Docker Compose configuration with host network..."
-          cat > docker-compose.e2e.ci.yml << 'EOF'
+          cat > docker-compose.e2e.ci.yml << EOF
           services:
             postgres:
               image: postgres:15-alpine
@@ -1134,6 +1139,13 @@ jobs:
                 FRONTEND_URL: http://localhost:3201
                 BACKEND_URL: http://localhost:4202
                 CORS_ORIGINS: "http://localhost:3201"
+                # OAuth Configuration (from GitHub Secrets via environment variables)
+                GOOGLE_CLIENT_ID: \${GOOGLE_CLIENT_ID}
+                GOOGLE_CLIENT_SECRET: \${GOOGLE_CLIENT_SECRET}
+                GOOGLE_CALLBACK_URL: http://localhost:4202/api/oauth/google/callback
+                LINE_CHANNEL_ID: \${LINE_CHANNEL_ID}
+                LINE_CHANNEL_SECRET: \${LINE_CHANNEL_SECRET}
+                LINE_CALLBACK_URL: http://localhost:4202/api/oauth/line/callback
               depends_on:
                 postgres:
                   condition: service_healthy
