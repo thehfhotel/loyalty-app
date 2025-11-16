@@ -8,6 +8,15 @@ import { execSync } from 'child_process';
 async function globalSetup(config: FullConfig) {
   console.log('🚀 Setting up E2E test environment...');
 
+  // Determine which docker-compose file to use based on environment
+  // CI: use docker-compose.e2e.ci.yml (generated inline by workflow, no volume mounts)
+  // Local: use docker-compose.e2e.local.yml (committed, with volume mounts for hot-reload)
+  const isCI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
+  const composeFile = isCI ? 'docker-compose.e2e.ci.yml' : 'docker-compose.e2e.local.yml';
+
+  console.log(`📦 Environment: ${isCI ? 'CI/CD' : 'Local Development'}`);
+  console.log(`📄 Using compose file: ${composeFile}`);
+
   // Set E2E environment variables with correct ports
   process.env.E2E_BACKEND_PORT = process.env.E2E_BACKEND_PORT || '4202';
   process.env.E2E_DB_PORT = process.env.E2E_DB_PORT || '5436';
@@ -26,7 +35,7 @@ async function globalSetup(config: FullConfig) {
 
   try {
     // Stop and remove E2E containers if they exist
-    execSync('docker compose -f docker-compose.e2e.local.yml down -v --remove-orphans', {
+    execSync(`docker compose -f ${composeFile} down -v --remove-orphans`, {
       stdio: 'inherit',
       cwd: process.cwd()
     });
@@ -57,7 +66,7 @@ async function globalSetup(config: FullConfig) {
   // Build E2E services first (separate from up to avoid dependency issues)
   console.log('🔨 Building E2E services...');
   try {
-    execSync(`docker compose -f docker-compose.e2e.local.yml build`, {
+    execSync(`docker compose -f ${composeFile} build`, {
       stdio: 'inherit',
       cwd: process.cwd(),
       timeout: 300000 // 5 minutes
@@ -70,7 +79,7 @@ async function globalSetup(config: FullConfig) {
   // Start E2E services (without --build to avoid dependency resolution issues)
   console.log('🐳 Starting E2E services with Docker Compose...');
   try {
-    execSync(`docker compose -f docker-compose.e2e.local.yml up -d`, {
+    execSync(`docker compose -f ${composeFile} up -d`, {
       stdio: 'inherit',
       cwd: process.cwd(),
       timeout: 120000 // 2 minutes (faster since build is already done)
@@ -88,7 +97,7 @@ async function globalSetup(config: FullConfig) {
   while (Date.now() - startTime < maxWaitTime) {
     try {
       const healthResult = execSync(
-        'docker compose -f docker-compose.e2e.local.yml ps --format "table {{.Name}}\t{{.Status}}"',
+        `docker compose -f ${composeFile} ps --format "table {{.Name}}\t{{.Status}}"`,
         { encoding: 'utf8', cwd: process.cwd() }
       );
 

@@ -8,10 +8,19 @@ import { execSync } from 'child_process';
 async function globalTeardown(config: FullConfig) {
   console.log('🧹 Tearing down E2E test environment...');
 
+  // Determine which docker-compose file to use based on environment
+  // CI: use docker-compose.e2e.ci.yml (generated inline by workflow)
+  // Local: use docker-compose.e2e.local.yml (committed)
+  const isCI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
+  const composeFile = isCI ? 'docker-compose.e2e.ci.yml' : 'docker-compose.e2e.local.yml';
+
+  console.log(`📦 Environment: ${isCI ? 'CI/CD' : 'Local Development'}`);
+  console.log(`📄 Using compose file: ${composeFile}`);
+
   try {
     // Stop and remove E2E containers
     console.log('🐳 Stopping E2E containers...');
-    execSync('docker compose -f docker-compose.e2e.local.yml down -v --remove-orphans', {
+    execSync(`docker compose -f ${composeFile} down -v --remove-orphans`, {
       stdio: 'inherit',
       cwd: process.cwd()
     });
