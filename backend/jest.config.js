@@ -33,7 +33,7 @@ module.exports = {
   //   },
   // },
   coverageDirectory: 'coverage',
-  coverageReporters: ['text', 'lcov', 'html', 'json'],
+  coverageReporters: ['text', 'lcov', 'html', 'json', 'json-summary'],
   setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
   // Allure reporting integration
   reporters: [
