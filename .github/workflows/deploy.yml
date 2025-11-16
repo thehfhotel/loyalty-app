@@ -621,29 +621,58 @@ jobs:
 
           echo "✅ Created latest redirect pointing to run #${{ github.run_number }}"
 
-      - name: "📤 Deploy Allure Report to GitHub Pages"
+      - name: "📦 Prepare GitHub Pages artifact structure"
         if: always() && github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: backend/allure-report
-          destination_dir: test-reports/${{ github.run_number }}
-          keep_files: true
-          user_name: 'github-actions[bot]'
-          user_email: 'github-actions[bot]@users.noreply.github.com'
-          commit_message: 'Deploy Allure report for run #${{ github.run_number }}'
+        run: |
+          echo "📦 Creating GitHub Pages artifact structure..."
 
-      - name: "📤 Deploy latest redirect to GitHub Pages"
+          # Create root pages directory
+          mkdir -p pages-artifact/test-reports
+
+          # Copy Allure report to numbered directory
+          if [ -d "backend/allure-report" ]; then
+            echo "✅ Copying Allure report to test-reports/${{ github.run_number }}/"
+            cp -r backend/allure-report pages-artifact/test-reports/${{ github.run_number }}
+          else
+            echo "⚠️ Allure report not found, creating placeholder"
+            mkdir -p pages-artifact/test-reports/${{ github.run_number }}
+            echo "<h1>No test results available</h1>" > pages-artifact/test-reports/${{ github.run_number }}/index.html
+          fi
+
+          # Copy latest redirect
+          if [ -d "test-reports-latest" ]; then
+            echo "✅ Copying latest redirect"
+            mkdir -p pages-artifact/test-reports/latest
+            cp -r test-reports-latest/* pages-artifact/test-reports/latest/
+          fi
+
+          # Create root index.html if it doesn't exist
+          if [ ! -f "pages-artifact/index.html" ]; then
+            cat > pages-artifact/index.html <<'ROOT_INDEX_EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <meta http-equiv="refresh" content="0; url=./test-reports/latest/">
+              <title>Loyalty App - Test Reports</title>
+          </head>
+          <body>
+              <p>Redirecting to <a href="./test-reports/latest/">latest test report</a>...</p>
+          </body>
+          </html>
+          ROOT_INDEX_EOF
+          fi
+
+          echo "✅ GitHub Pages artifact structure prepared"
+          du -sh pages-artifact/
+
+      - name: "📤 Upload GitHub Pages artifact"
         if: always() && github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v4
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: test-reports-latest
-          destination_dir: test-reports/latest
-          keep_files: true
-          user_name: 'github-actions[bot]'
-          user_email: 'github-actions[bot]@users.noreply.github.com'
-          commit_message: 'Update latest redirect to run #${{ github.run_number }}'
+          path: pages-artifact
+          retention-days: 90
 
       - name: "📈 Test results summary (reporting only)"
         id: test-results
@@ -2610,6 +2639,42 @@ jobs:
           
           # Final completion message
           echo "🎊 Post-deployment job completed successfully - pipeline will not get stuck"
+
+  # =============================================================================
+  # GITHUB PAGES DEPLOYMENT (NEW - Eliminates duplicate builds)
+  # =============================================================================
+
+  deploy-github-pages:
+    name: "📄 Deploy to GitHub Pages"
+    runs-on: ubuntu-latest
+    needs: [unit-tests]
+    if: always() && github.ref == 'refs/heads/main'
+
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
+
+    steps:
+      - name: "🚀 Deploy to GitHub Pages"
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages
+
+      - name: "✅ Deployment complete"
+        run: |
+          echo "📄 GitHub Pages deployed successfully!"
+          echo "🔗 URL: ${{ steps.deployment.outputs.page_url }}"
+          echo "📊 Test Reports: ${{ steps.deployment.outputs.page_url }}test-reports/latest/"
 
 # =============================================================================
 # PIPELINE SUMMARY:
