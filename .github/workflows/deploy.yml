@@ -38,7 +38,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: "📦 Setup local cache directories"
+      - name: "🗑️ Clean up old cache versions"
+        run: |
+          echo "🗑️ Removing old cache versions..."
+          # Remove all cache directories except current version
+          find /tmp/runner-cache -maxdepth 1 -type d ! -name "${{ env.CACHE_VERSION }}" ! -name "runner-cache" ! -name "workspace" -exec rm -rf {} + 2>/dev/null || true
+          echo "✅ Old cache versions cleaned up"
+
+      - name: "📦 Setup versioned cache directories"
         run: |
           mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm
           mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules
@@ -46,15 +53,27 @@ jobs:
           mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules
           echo "✅ Cache directories prepared (version: ${{ env.CACHE_VERSION }})"
 
-      - name: "📦 Restore backend node_modules from local cache"
+      - name: "📦 Restore backend dependencies with hash validation"
         id: backend-cache
         run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules" ]; then
-            echo "✅ Restoring backend node_modules from local cache (${{ env.CACHE_VERSION }})..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules ./backend/
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules"
+          LOCK_HASH=$(sha256sum backend/package-lock.json | cut -d' ' -f1)
+
+          if [ -f "$CACHE_DIR/.lock-hash" ] && [ -d "$CACHE_DIR/node_modules" ]; then
+            CACHED_HASH=$(cat "$CACHE_DIR/.lock-hash")
+            if [ "$LOCK_HASH" = "$CACHED_HASH" ]; then
+              echo "✅ Cache valid - restoring backend node_modules (hash: ${LOCK_HASH:0:12}...)"
+              cp -r "$CACHE_DIR/node_modules" ./backend/
+              echo "cache-hit=true" >> $GITHUB_OUTPUT
+            else
+              echo "⚠️ package-lock.json changed - cache invalidated"
+              echo "   Old: ${CACHED_HASH:0:12}... → New: ${LOCK_HASH:0:12}..."
+              rm -rf "$CACHE_DIR"
+              mkdir -p "$CACHE_DIR"
+              echo "cache-hit=false" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "❌ No backend cache found for version ${{ env.CACHE_VERSION }}"
+            echo "❌ No valid cache found for backend"
             echo "cache-hit=false" >> $GITHUB_OUTPUT
           fi
 
@@ -62,21 +81,39 @@ jobs:
         if: steps.backend-cache.outputs.cache-hit != 'true'
         working-directory: ./backend
         run: |
-          echo "📦 Installing backend dependencies with local npm cache..."
+          echo "📦 Installing backend dependencies (fresh install)..."
           npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline --include=dev
-          echo "💾 Saving backend node_modules to local cache (${{ env.CACHE_VERSION }})..."
-          rm -rf /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules
-          cp -r node_modules /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/
 
-      - name: "📦 Restore frontend node_modules from local cache"
+          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules"
+          LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
+
+          echo "💾 Saving backend node_modules to cache..."
+          rm -rf "$CACHE_DIR/node_modules"
+          cp -r node_modules "$CACHE_DIR/"
+          echo "$LOCK_HASH" > "$CACHE_DIR/.lock-hash"
+          echo "✅ Cache saved with hash: ${LOCK_HASH:0:12}..."
+
+      - name: "📦 Restore frontend dependencies with hash validation"
         id: frontend-cache
         run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules" ]; then
-            echo "✅ Restoring frontend node_modules from local cache (${{ env.CACHE_VERSION }})..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules ./frontend/
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules"
+          LOCK_HASH=$(sha256sum frontend/package-lock.json | cut -d' ' -f1)
+
+          if [ -f "$CACHE_DIR/.lock-hash" ] && [ -d "$CACHE_DIR/node_modules" ]; then
+            CACHED_HASH=$(cat "$CACHE_DIR/.lock-hash")
+            if [ "$LOCK_HASH" = "$CACHED_HASH" ]; then
+              echo "✅ Cache valid - restoring frontend node_modules (hash: ${LOCK_HASH:0:12}...)"
+              cp -r "$CACHE_DIR/node_modules" ./frontend/
+              echo "cache-hit=true" >> $GITHUB_OUTPUT
+            else
+              echo "⚠️ package-lock.json changed - cache invalidated"
+              echo "   Old: ${CACHED_HASH:0:12}... → New: ${LOCK_HASH:0:12}..."
+              rm -rf "$CACHE_DIR"
+              mkdir -p "$CACHE_DIR"
+              echo "cache-hit=false" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "❌ No frontend cache found for version ${{ env.CACHE_VERSION }}"
+            echo "❌ No valid cache found for frontend"
             echo "cache-hit=false" >> $GITHUB_OUTPUT
           fi
 
@@ -84,33 +121,57 @@ jobs:
         if: steps.frontend-cache.outputs.cache-hit != 'true'
         working-directory: ./frontend
         run: |
-          echo "📦 Installing frontend dependencies with local npm cache..."
+          echo "📦 Installing frontend dependencies (fresh install)..."
           npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline
-          echo "💾 Saving frontend node_modules to local cache (${{ env.CACHE_VERSION }})..."
-          rm -rf /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules
-          cp -r node_modules /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/
 
-      - name: "📦 Restore root node_modules from local cache (Playwright)"
+          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules"
+          LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
+
+          echo "💾 Saving frontend node_modules to cache..."
+          rm -rf "$CACHE_DIR/node_modules"
+          cp -r node_modules "$CACHE_DIR/"
+          echo "$LOCK_HASH" > "$CACHE_DIR/.lock-hash"
+          echo "✅ Cache saved with hash: ${LOCK_HASH:0:12}..."
+
+      - name: "📦 Restore root dependencies with hash validation"
         id: root-cache
         run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules/node_modules" ]; then
-            echo "✅ Restoring root node_modules from local cache (${{ env.CACHE_VERSION }})..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules/node_modules ./
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules"
+          LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
+
+          if [ -f "$CACHE_DIR/.lock-hash" ] && [ -d "$CACHE_DIR/node_modules" ]; then
+            CACHED_HASH=$(cat "$CACHE_DIR/.lock-hash")
+            if [ "$LOCK_HASH" = "$CACHED_HASH" ]; then
+              echo "✅ Cache valid - restoring root node_modules (hash: ${LOCK_HASH:0:12}...)"
+              cp -r "$CACHE_DIR/node_modules" ./
+              echo "cache-hit=true" >> $GITHUB_OUTPUT
+            else
+              echo "⚠️ package-lock.json changed - cache invalidated"
+              echo "   Old: ${CACHED_HASH:0:12}... → New: ${LOCK_HASH:0:12}..."
+              rm -rf "$CACHE_DIR"
+              mkdir -p "$CACHE_DIR"
+              echo "cache-hit=false" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "❌ No root cache found for version ${{ env.CACHE_VERSION }}"
+            echo "❌ No valid cache found for root"
             echo "cache-hit=false" >> $GITHUB_OUTPUT
           fi
 
       - name: "📦 Install root dependencies (Playwright)"
         if: steps.root-cache.outputs.cache-hit != 'true'
         run: |
-          echo "📦 Installing root dependencies (Playwright) with local npm cache..."
+          echo "📦 Installing root dependencies (Playwright - fresh install)..."
           npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline
+
+          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules"
+          LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
+
           echo "✅ Root dependencies installed (includes @playwright/test)"
-          echo "💾 Saving root node_modules to local cache (${{ env.CACHE_VERSION }})..."
-          rm -rf /tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules/node_modules
-          cp -r node_modules /tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules/
+          echo "💾 Saving root node_modules to cache..."
+          rm -rf "$CACHE_DIR/node_modules"
+          cp -r node_modules "$CACHE_DIR/"
+          echo "$LOCK_HASH" > "$CACHE_DIR/.lock-hash"
+          echo "✅ Cache saved with hash: ${LOCK_HASH:0:12}..."
 
       - name: "🔧 Generate Prisma client (shared)"
         working-directory: ./backend
