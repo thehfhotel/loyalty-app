@@ -237,11 +237,11 @@ check_secrets() {
         "sk_test_[a-zA-Z0-9]{24,}"                    # Stripe test keys
         "AKIA[0-9A-Z]{16}"                            # AWS Access Key
         "[0-9a-zA-Z/+=]{40}"                          # AWS Secret Key (harder to detect)
-        "AIza[0-9A-Za-z\\-_]{35}"                     # Google API key
+        "AIza[0-9A-Za-z\\-_]{30,}"                    # Google API key (at least 30 chars after AIza)
         "ya29\\.[0-9A-Za-z\\-_]+"                     # Google OAuth token
-        "ghp_[a-zA-Z0-9]{36}"                         # GitHub Personal Access Token
-        "gho_[a-zA-Z0-9]{36}"                         # GitHub OAuth token
-        "ghs_[a-zA-Z0-9]{36}"                         # GitHub App token
+        "ghp_[a-zA-Z0-9]{30,}"                        # GitHub Personal Access Token (at least 30 chars)
+        "gho_[a-zA-Z0-9]{30,}"                        # GitHub OAuth token
+        "ghs_[a-zA-Z0-9]{30,}"                        # GitHub App token
         "xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,}" # Slack tokens
         "[0-9]{10}:[a-zA-Z0-9_-]{35}"                 # Telegram Bot token
         "mongodb(\\+srv)?://[^@]+@[^/]+"              # MongoDB connection string with credentials
