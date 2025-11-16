@@ -52,6 +52,7 @@ services:
       SERVER_PORT: 4000
       CORS_ORIGIN: http://localhost:${E2E_BACKEND_PORT:-4202}
       BACKEND_URL: http://localhost:${E2E_BACKEND_PORT:-4202}
+      FRONTEND_URL: http://localhost:${E2E_BACKEND_PORT:-4202}
     ports:
       - "${E2E_BACKEND_PORT:-4202}:4000"
     depends_on:

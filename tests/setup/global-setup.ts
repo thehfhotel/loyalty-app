@@ -54,13 +54,26 @@ async function globalSetup(config: FullConfig) {
     }
   }
 
-  // Start E2E services
-  console.log('🐳 Starting E2E services with Docker Compose...');
+  // Build E2E services first (separate from up to avoid dependency issues)
+  console.log('🔨 Building E2E services...');
   try {
-    execSync(`docker compose -f docker-compose.e2e.yml up -d --build`, {
+    execSync(`docker compose -f docker-compose.e2e.yml build`, {
       stdio: 'inherit',
       cwd: process.cwd(),
       timeout: 300000 // 5 minutes
+    });
+  } catch (error) {
+    console.error('❌ Failed to build E2E services:', error);
+    throw error;
+  }
+
+  // Start E2E services (without --build to avoid dependency resolution issues)
+  console.log('🐳 Starting E2E services with Docker Compose...');
+  try {
+    execSync(`docker compose -f docker-compose.e2e.yml up -d`, {
+      stdio: 'inherit',
+      cwd: process.cwd(),
+      timeout: 120000 // 2 minutes (faster since build is already done)
     });
   } catch (error) {
     console.error('❌ Failed to start E2E services:', error);
