@@ -26,7 +26,9 @@ export {
 export {
   createMockAuthService,
   createMockUserService,
+  createMockSurveyService,
   setupAuthServiceMocks,
   setupUserServiceMocks,
+  setupSurveyServiceMocks,
   resetServiceMocks,
 } from './mockFactories';
