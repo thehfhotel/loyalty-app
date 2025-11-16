@@ -500,6 +500,13 @@ jobs:
           if-no-files-found: warn
           compression-level: 6
 
+      - name: "☕ Setup Java for Allure"
+        if: always()
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: "📊 Generate Allure Report"
         if: always()
         run: |
