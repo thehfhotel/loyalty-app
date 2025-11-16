@@ -390,12 +390,13 @@ describe('Storage Routes Integration Tests', () => {
       test('should return immediately without waiting for backup completion', async () => {
         const { StorageService } = jest.requireMock('../../../services/storageService');
 
-        // Simulate long-running backup
-        StorageService.performBackup.mockImplementation(() => {
-          return new Promise((resolve) => {
-            setTimeout(resolve, 5000); // 5 second delay
-          });
+        // Simulate async backup without actual delay - just test API returns immediately
+        let backupResolve: () => void;
+        const backupPromise = new Promise<void>((resolve) => {
+          backupResolve = resolve;
         });
+
+        StorageService.performBackup.mockImplementation(() => backupPromise);
 
         const startTime = Date.now();
         const response = await request(app)
@@ -406,6 +407,9 @@ describe('Storage Routes Integration Tests', () => {
 
         expect(response.body).toHaveProperty('message', 'Backup started successfully');
         expect(duration).toBeLessThan(1000); // Should respond within 1 second
+
+        // Cleanup: resolve the hanging promise
+        backupResolve!();
       });
 
       test('should handle multiple concurrent backup requests', async () => {
@@ -482,8 +486,8 @@ describe('Storage Routes Integration Tests', () => {
 
         expect(response.body).toHaveProperty('message', 'Backup started successfully');
 
-        // Give async backup time to fail
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Use process.nextTick for immediate async execution without delay
+        await new Promise(resolve => process.nextTick(resolve));
 
         // Error should be logged but not affect the response
         expect(logger.error).toHaveBeenCalled();
@@ -588,9 +592,8 @@ describe('Storage Routes Integration Tests', () => {
       };
 
       StorageService.getStorageReport.mockResolvedValue(mockReport);
-      StorageService.performBackup.mockImplementation(() => {
-        return new Promise((resolve) => setTimeout(resolve, 2000));
-      });
+      // Use resolved promise instead of timeout - backup runs in background anyway
+      StorageService.performBackup.mockResolvedValue(undefined);
 
       // Start backup
       const backupPromise = request(app).post('/api/storage/backup');

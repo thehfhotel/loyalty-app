@@ -9,8 +9,16 @@
 import request from 'supertest';
 import express, { Express } from 'express';
 import authRoutes from '../../../routes/auth';
-import { errorHandler } from '../../../middleware/errorHandler';
 import { AuthService } from '../../../services/authService';
+import {
+  createTestApp,
+  createTestCustomer,
+  createTestTokens,
+  createMockAuthService,
+  setupAuthServiceMocks,
+  resetServiceMocks,
+} from '../../fixtures';
+
 // Mock dependencies
 jest.mock('../../../services/authService');
 jest.mock('../../../middleware/auth', () => ({
@@ -30,16 +38,14 @@ describe('Auth Routes Integration Tests', () => {
   let authService: jest.Mocked<AuthService>;
 
   beforeAll(() => {
-    // Create Express app with routes
-    app = express();
-    app.use(express.json());
-    app.use('/api/auth', authRoutes);
-    app.use(errorHandler);
+    // Create Express app with standard configuration using fixture
+    app = createTestApp(authRoutes, '/api/auth');
   });
 
   beforeEach(() => {
-    // Get mocked instance
-    authService = new AuthService() as jest.Mocked<AuthService>;
+    // Create and setup mocked auth service using fixtures
+    authService = createMockAuthService();
+    setupAuthServiceMocks(authService);
     jest.clearAllMocks();
   });
 
