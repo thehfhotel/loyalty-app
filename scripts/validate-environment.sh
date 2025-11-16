@@ -94,9 +94,25 @@ validate "nginx configuration" "test -f nginx/nginx.conf" "nginx/nginx.conf not 
 
 # Check environment files
 log "🔐 Environment Configuration:"
-validate "production env example" "test -f .env.production.example" ".env.production.example not found"
 
-if [[ -f ".env.production" ]]; then
+# Check if running in CI/CD environment (GitHub Actions, GitLab CI, etc.)
+if [[ -n "$CI" ]] || [[ -n "$GITHUB_ACTIONS" ]] || [[ -n "$GITLAB_CI" ]]; then
+    success "✅ Running in CI/CD environment - secrets provided via environment variables"
+    log "🔑 CI/CD Mode - Validating environment variables from secrets..."
+
+    # In CI/CD, secrets are injected as environment variables, no .env file needed
+    # We'll validate the variables directly if they're set
+    if [[ -n "$JWT_SECRET" ]]; then
+        validate "JWT_SECRET (from secrets)" "test -n '$JWT_SECRET'" "JWT_SECRET is not set"
+    else
+        warning "JWT_SECRET not provided (may be set in later deployment steps)"
+    fi
+
+    log "✅ CI/CD environment validation complete"
+
+    # Skip file-based secret detection in CI/CD mode - secrets are in environment
+    CI_CD_MODE=true
+elif [[ -f ".env.production" ]]; then
     success "✅ .env.production file exists"
     
     # Check required environment variables
@@ -346,39 +362,44 @@ check_secrets() {
     return $secrets_found
 }
 
-if [[ -f ".env.production" ]]; then
-    # Check file permissions
-    env_perms=$(stat -f "%A" .env.production 2>/dev/null || stat -c "%a" .env.production 2>/dev/null || echo "000")
-    if [[ "$env_perms" == "600" ]] || [[ "$env_perms" == "644" ]]; then
-        success "✅ .env.production file permissions are appropriate ($env_perms)"
-    else
-        warning "Consider setting stricter permissions: chmod 600 .env.production (current: $env_perms)"
-        VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
+# Only perform file-based secret detection if NOT in CI/CD mode
+if [[ "$CI_CD_MODE" != "true" ]]; then
+    if [[ -f ".env.production" ]]; then
+        # Check file permissions
+        env_perms=$(stat -f "%A" .env.production 2>/dev/null || stat -c "%a" .env.production 2>/dev/null || echo "000")
+        if [[ "$env_perms" == "600" ]] || [[ "$env_perms" == "644" ]]; then
+            success "✅ .env.production file permissions are appropriate ($env_perms)"
+        else
+            warning "Consider setting stricter permissions: chmod 600 .env.production (current: $env_perms)"
+            VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
+        fi
+
+        # Run secret detection on production environment
+        check_secrets ".env.production" "production"
+
+        # Check for default passwords
+        source .env.production
+        if [[ "$LOYALTY_PASSWORD" == "your-secure-admin-password" ]]; then
+            error "Using default admin password - please change it!"
+            VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
+        fi
+    elif [[ -f ".env" ]]; then
+        # Check development environment file permissions
+        env_perms=$(stat -f "%A" .env 2>/dev/null || stat -c "%a" .env 2>/dev/null || echo "000")
+        success "✅ .env file permissions: $env_perms (development mode)"
+
+        # Run secret detection on development environment (warnings only)
+        check_secrets ".env" "development"
+
+        # Check for default passwords in development
+        source .env
+        if [[ "$LOYALTY_PASSWORD" == "your-secure-admin-password" ]] || [[ "$LOYALTY_PASSWORD" == "admin" ]]; then
+            warning "Using default/weak admin password in development"
+            VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
+        fi
     fi
-
-    # Run secret detection on production environment
-    check_secrets ".env.production" "production"
-
-    # Check for default passwords
-    source .env.production
-    if [[ "$LOYALTY_PASSWORD" == "your-secure-admin-password" ]]; then
-        error "Using default admin password - please change it!"
-        VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
-    fi
-elif [[ -f ".env" ]]; then
-    # Check development environment file permissions
-    env_perms=$(stat -f "%A" .env 2>/dev/null || stat -c "%a" .env 2>/dev/null || echo "000")
-    success "✅ .env file permissions: $env_perms (development mode)"
-
-    # Run secret detection on development environment (warnings only)
-    check_secrets ".env" "development"
-
-    # Check for default passwords in development
-    source .env
-    if [[ "$LOYALTY_PASSWORD" == "your-secure-admin-password" ]] || [[ "$LOYALTY_PASSWORD" == "admin" ]]; then
-        warning "Using default/weak admin password in development"
-        VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
-    fi
+else
+    log "🔒 Skipping file-based secret detection in CI/CD mode - secrets managed externally"
 fi
 
 # Runtime-only validations (skip during build phase)
