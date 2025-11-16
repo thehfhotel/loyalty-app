@@ -1508,46 +1508,6 @@ jobs:
           echo "🌐 Backend: http://localhost:4202/api/health"
           echo "🌐 Frontend: http://localhost:3201"
 
-      - name: "🗄️ E2E Database Migration"
-        working-directory: ./backend
-        env:
-          DATABASE_URL: postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db
-          NODE_ENV: development
-        run: |
-          echo "🗄️ Running database migrations for E2E environment..."
-
-          # Generate Prisma client if not already done
-          if [ ! -d "src/generated/prisma" ]; then
-            npm run db:generate
-          fi
-
-          # Wait for PostgreSQL to be fully ready (additional safety check)
-          echo "⏳ Waiting for PostgreSQL to be ready..."
-          for i in {1..30}; do
-            if npx prisma db execute --stdin <<< "SELECT 1;" 2>/dev/null; then
-              echo "✅ PostgreSQL is ready for migrations"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "❌ PostgreSQL not ready after 30 attempts"
-              exit 1
-            fi
-            echo "Attempt $i/30: PostgreSQL not ready, waiting 2 seconds..."
-            sleep 2
-          done
-
-          # Run migrations with fresh state
-          echo "🔄 Running Prisma migrations..."
-          if npm run db:migrate:deploy; then
-            echo "✅ E2E database migrations completed successfully"
-          else
-            echo "❌ E2E database migrations failed"
-            echo "📊 Migration status:"
-            npx prisma migrate status || true
-            echo "📄 PostgreSQL container logs:"
-            docker logs loyalty_postgres_e2e 2>&1 | tail -50
-            exit 1
-          fi
 
       - name: "🎭 Run E2E tests with Playwright (isolated)"
         env:
