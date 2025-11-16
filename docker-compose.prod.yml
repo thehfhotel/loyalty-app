@@ -2,37 +2,57 @@
 # Used for production deployments via GitHub Actions
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
-# SECURITY: All secrets loaded from .env.production file (NOT committed to git)
-# Never commit secrets directly to this file - use env_file or GitHub Secrets
+# SECURITY: All secrets injected from GitHub Secrets via workflow
+# GitHub Actions workflow sets environment variables in .env file
+# This file does NOT hardcode any secrets - all loaded from .env at runtime
 
 services:
   backend:
     build:
       target: runner  # Use production-optimized runner stage instead of development
-    env_file:
-      - .env.production  # Load all secrets from .env.production (gitignored)
     environment:
-      # Non-sensitive configuration (safe to commit)
-      NODE_ENV: production
-      LOG_LEVEL: info
-      CORS_ORIGINS: ""
-      FRONTEND_URL: "https://loyalty.saichon.com"
-      BACKEND_URL: "https://loyalty.saichon.com/api"
+      # Environment variables are loaded from .env file created by GitHub Actions
+      # The workflow injects secrets from GitHub Secrets into .env
+      # Non-sensitive defaults only (all secrets come from .env)
 
-      # Database URLs (container-internal, safe to commit)
-      DATABASE_URL: "postgresql://loyalty:loyalty_pass@postgres:5432/loyalty_db"
-      REDIS_URL: "redis://redis:6379"
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
 
-      # OAuth Callback URLs (public URLs, safe to commit)
-      GOOGLE_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/google/callback"
-      FACEBOOK_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/facebook/callback"
-      LINE_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/line/callback"
+      # Secrets (loaded from .env created by GitHub Actions)
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      SESSION_SECRET: ${SESSION_SECRET}
 
-      # Azure Translation Service URI (public endpoint, safe to commit)
-      AZURE_TRANSLATION_TEXT_URI: "https://api.cognitive.microsofttranslator.com"
-      AZURE_TRANSLATION_REGION: "global"
+      # Database & Redis
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
 
-      # All secrets (JWT_SECRET, GOOGLE_CLIENT_SECRET, etc.) loaded from .env.production via env_file above
+      # URLs
+      FRONTEND_URL: ${FRONTEND_URL}
+      BACKEND_URL: ${BACKEND_URL}
+
+      # OAuth Secrets
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL}
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
+      FACEBOOK_CALLBACK_URL: ${FACEBOOK_CALLBACK_URL}
+      LINE_CHANNEL_ID: ${LINE_CHANNEL_ID}
+      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET}
+      LINE_CALLBACK_URL: ${LINE_CALLBACK_URL}
+
+      # Azure Translation Service
+      AZURE_TRANSLATION_TEXT_URI: ${AZURE_TRANSLATION_TEXT_URI}
+      AZURE_TRANSLATION_KEY_1: ${AZURE_TRANSLATION_KEY_1}
+      AZURE_TRANSLATION_KEY_2: ${AZURE_TRANSLATION_KEY_2}
+      AZURE_TRANSLATION_REGION: ${AZURE_TRANSLATION_REGION:-global}
+
+      # Admin & Loyalty System
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      LOYALTY_USERNAME: ${LOYALTY_USERNAME:-}
+      LOYALTY_PASSWORD: ${LOYALTY_PASSWORD:-}
     volumes:
       # Remove development volume mounts for production
       - backend_logs:/app/logs
@@ -48,8 +68,8 @@ services:
 
   frontend:
     environment:
-      NODE_ENV: production
-      VITE_API_URL: "https://loyalty.saichon.com/api"
+      NODE_ENV: ${NODE_ENV:-production}
+      VITE_API_URL: ${VITE_API_URL}
     volumes:
       # Remove development volume mounts for production
       - frontend_logs:/app/logs

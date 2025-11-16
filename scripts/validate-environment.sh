@@ -222,6 +222,130 @@ fi
 # Security checks
 log "🔒 Security Validation:"
 
+# Function to detect secrets in environment files
+check_secrets() {
+    local env_file="$1"
+    local mode="$2"  # production or development
+    local secrets_found=0
+
+    log "🔍 Scanning $env_file for exposed secrets..."
+
+    # Patterns to detect various types of secrets
+    local -a secret_patterns=(
+        "sk-[a-zA-Z0-9]{48}"                          # OpenAI API keys
+        "sk_live_[a-zA-Z0-9]{24,}"                    # Stripe live keys
+        "sk_test_[a-zA-Z0-9]{24,}"                    # Stripe test keys
+        "AKIA[0-9A-Z]{16}"                            # AWS Access Key
+        "[0-9a-zA-Z/+=]{40}"                          # AWS Secret Key (harder to detect)
+        "AIza[0-9A-Za-z\\-_]{35}"                     # Google API key
+        "ya29\\.[0-9A-Za-z\\-_]+"                     # Google OAuth token
+        "ghp_[a-zA-Z0-9]{36}"                         # GitHub Personal Access Token
+        "gho_[a-zA-Z0-9]{36}"                         # GitHub OAuth token
+        "ghs_[a-zA-Z0-9]{36}"                         # GitHub App token
+        "xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,}" # Slack tokens
+        "[0-9]{10}:[a-zA-Z0-9_-]{35}"                 # Telegram Bot token
+        "mongodb(\\+srv)?://[^@]+@[^/]+"              # MongoDB connection string with credentials
+        "postgres://[^:]+:[^@]+@[^/]+"                # PostgreSQL connection string with password
+        "mysql://[^:]+:[^@]+@[^/]+"                   # MySQL connection string with password
+    )
+
+    local -a secret_names=(
+        "OpenAI API key"
+        "Stripe live key"
+        "Stripe test key"
+        "AWS Access Key"
+        "AWS Secret Key"
+        "Google API key"
+        "Google OAuth token"
+        "GitHub Personal Access Token"
+        "GitHub OAuth token"
+        "GitHub App token"
+        "Slack token"
+        "Telegram Bot token"
+        "MongoDB connection with credentials"
+        "PostgreSQL connection with password"
+        "MySQL connection with password"
+    )
+
+    # Check each pattern
+    for i in "${!secret_patterns[@]}"; do
+        if grep -qE "${secret_patterns[$i]}" "$env_file" 2>/dev/null; then
+            if [[ "$mode" == "production" ]]; then
+                error "❌ Detected ${secret_names[$i]} in $env_file"
+                echo "   This is a critical security issue - secrets should never be committed to version control"
+                VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
+            else
+                warning "⚠️  Detected ${secret_names[$i]} in $env_file"
+                echo "   Be cautious with development secrets - never commit them to version control"
+                VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
+            fi
+            secrets_found=$((secrets_found + 1))
+        fi
+    done
+
+    # Check for common placeholder values that should be replaced
+    local -a placeholder_patterns=(
+        "your-super-secret-jwt-key-change-in-production"
+        "your-super-secret-refresh-key-change-in-production"
+        "your-super-secret-session-key-change-in-production"
+        "your-secure-admin-password"
+        "your-domain.com"
+        "your-google-client-id"
+        "your-line-channel-id"
+        "change-me"
+        "replace-me"
+        "example.com"
+    )
+
+    for placeholder in "${placeholder_patterns[@]}"; do
+        if grep -qF "$placeholder" "$env_file" 2>/dev/null; then
+            if [[ "$mode" == "production" ]]; then
+                error "❌ Found placeholder value '$placeholder' in production environment"
+                VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
+            else
+                warning "⚠️  Found placeholder value '$placeholder' - should be replaced"
+                VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
+            fi
+            secrets_found=$((secrets_found + 1))
+        fi
+    done
+
+    # Check for weak secrets (too short, simple patterns)
+    if [[ "$mode" == "production" ]]; then
+        # Extract secret values and check their strength
+        while IFS='=' read -r key value; do
+            # Skip comments and empty lines
+            [[ "$key" =~ ^#.*$ ]] && continue
+            [[ -z "$key" ]] && continue
+
+            # Check if this is a secret-like variable
+            if [[ "$key" =~ (SECRET|PASSWORD|KEY|TOKEN|PRIVATE) ]]; then
+                # Remove quotes
+                value="${value//\"/}"
+                value="${value//\'/}"
+
+                # Check length
+                if [[ ${#value} -lt 16 ]]; then
+                    warning "⚠️  Secret '$key' is too short (${#value} chars) - recommend at least 16 characters"
+                    VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
+                fi
+
+                # Check for simple patterns (only letters or only numbers)
+                if [[ "$value" =~ ^[a-zA-Z]+$ ]] || [[ "$value" =~ ^[0-9]+$ ]]; then
+                    warning "⚠️  Secret '$key' uses simple pattern - use mix of letters, numbers, and symbols"
+                    VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
+                fi
+            fi
+        done < "$env_file"
+    fi
+
+    if [[ $secrets_found -eq 0 ]]; then
+        success "✅ No exposed secrets detected in $env_file"
+    fi
+
+    return $secrets_found
+}
+
 if [[ -f ".env.production" ]]; then
     # Check file permissions
     env_perms=$(stat -f "%A" .env.production 2>/dev/null || stat -c "%a" .env.production 2>/dev/null || echo "000")
@@ -231,7 +355,10 @@ if [[ -f ".env.production" ]]; then
         warning "Consider setting stricter permissions: chmod 600 .env.production (current: $env_perms)"
         VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
     fi
-    
+
+    # Run secret detection on production environment
+    check_secrets ".env.production" "production"
+
     # Check for default passwords
     source .env.production
     if [[ "$LOYALTY_PASSWORD" == "your-secure-admin-password" ]]; then
@@ -242,7 +369,10 @@ elif [[ -f ".env" ]]; then
     # Check development environment file permissions
     env_perms=$(stat -f "%A" .env 2>/dev/null || stat -c "%a" .env 2>/dev/null || echo "000")
     success "✅ .env file permissions: $env_perms (development mode)"
-    
+
+    # Run secret detection on development environment (warnings only)
+    check_secrets ".env" "development"
+
     # Check for default passwords in development
     source .env
     if [[ "$LOYALTY_PASSWORD" == "your-secure-admin-password" ]] || [[ "$LOYALTY_PASSWORD" == "admin" ]]; then

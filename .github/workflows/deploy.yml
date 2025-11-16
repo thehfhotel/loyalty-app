@@ -300,6 +300,25 @@ jobs:
             echo "⚠️ Test integrity script not found - skipping"
           fi
 
+      - name: "🔐 Environment & Secrets Validation"
+        id: environment-validation
+        run: |
+          echo "🔐 Validating environment configuration and secrets..."
+          if [ -f "./scripts/validate-environment.sh" ]; then
+            # Run in build mode (skip runtime checks like Redis/DB connectivity)
+            if ./scripts/validate-environment.sh build; then
+              echo "✅ Environment validation passed"
+              echo "env-validation-passed=true" >> $GITHUB_OUTPUT
+            else
+              echo "❌ Environment validation failed - check for exposed secrets or misconfiguration"
+              echo "env-validation-passed=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          else
+            echo "⚠️ Environment validation script not found - skipping"
+            echo "env-validation-passed=skipped" >> $GITHUB_OUTPUT
+          fi
+
       - name: "🔐 Enhanced Security Audit (20-User Prototype)"
         id: security-audit
         run: |
