@@ -335,7 +335,7 @@ describe('Membership Routes Integration Tests', () => {
       const { membershipIdService } = jest.requireMock('../../../services/membershipIdService');
       membershipIdService.getUserByMembershipId.mockImplementation(() => {
         return new Promise((resolve) => {
-          setTimeout(() => resolve(null), 60000); // 60 second timeout
+          setTimeout(() => resolve(null), 100); // 100ms delay - sufficient to test timeout logic
         });
       });
 

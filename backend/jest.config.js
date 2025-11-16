@@ -46,10 +46,11 @@ module.exports = {
       },
     ],
   ],
-  testTimeout: 10000,
+  testTimeout: 5000,
   verbose: true,
   forceExit: true,
   clearMocks: true,
   resetMocks: true,
   restoreMocks: true,
+  maxWorkers: '50%', // Enable parallel test execution
 };
