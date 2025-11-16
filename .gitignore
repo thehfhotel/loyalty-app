@@ -97,3 +97,19 @@ pids/
 
 # Yarn Integrity file
 .yarn-integrity
+
+# Backup files (test migration artifacts)
+*.backup
+**/*.backup
+*.bak
+**/*.bak
+
+# Claude documentation (project-specific, not for git)
+claudedocs/
+**/claudedocs/
+
+# Allure reports (generated, not committed)
+allure-results/
+allure-report/
+**/allure-results/
+**/allure-report/

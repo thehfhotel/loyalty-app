@@ -2,51 +2,37 @@
 # Used for production deployments via GitHub Actions
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
-# IMPORTANT: All environment variables are loaded from .env.production via env_file
-# No --env-file flag needed - production deployment is self-contained
+# SECURITY: All secrets loaded from .env.production file (NOT committed to git)
+# Never commit secrets directly to this file - use env_file or GitHub Secrets
 
 services:
   backend:
     build:
       target: runner  # Use production-optimized runner stage instead of development
+    env_file:
+      - .env.production  # Load all secrets from .env.production (gitignored)
     environment:
-      # Node environment
+      # Non-sensitive configuration (safe to commit)
       NODE_ENV: production
       LOG_LEVEL: info
       CORS_ORIGINS: ""
-
-      # Core secrets
-      JWT_SECRET: "a957d58120849a4e99d0df8b0bce2c426b26d51179a3e61de6ade3af3a9edf28"
-      JWT_REFRESH_SECRET: "35f483ecb727c5ecab7a6e9cdaa4a2f35000ab34797fc799e545161064c1e56c"
-      SESSION_SECRET: "0fe61673c7c1199d8053e04f16f9323eb4ba8411094f7e4abcf3a82239f5556a"
-      DATABASE_URL: "postgresql://loyalty:loyalty_pass@postgres:5432/loyalty_db"
-      REDIS_URL: "redis://redis:6379"
       FRONTEND_URL: "https://loyalty.saichon.com"
       BACKEND_URL: "https://loyalty.saichon.com/api"
 
-      # OAuth Configuration
-      GOOGLE_CLIENT_ID: "270398433950-krtdh3utpj31c7fvgrjpafvq63d4ip9b.apps.googleusercontent.com"
-      GOOGLE_CLIENT_SECRET: "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"
+      # Database URLs (container-internal, safe to commit)
+      DATABASE_URL: "postgresql://loyalty:loyalty_pass@postgres:5432/loyalty_db"
+      REDIS_URL: "redis://redis:6379"
+
+      # OAuth Callback URLs (public URLs, safe to commit)
       GOOGLE_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/google/callback"
-      FACEBOOK_APP_ID: ""
-      FACEBOOK_APP_SECRET: ""
       FACEBOOK_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/facebook/callback"
-      LINE_CHANNEL_ID: "2007813708"
-      LINE_CHANNEL_SECRET: "027096aac3a016068d4a26c99e004351"
       LINE_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/line/callback"
 
-      # Azure Translation Service
+      # Azure Translation Service URI (public endpoint, safe to commit)
       AZURE_TRANSLATION_TEXT_URI: "https://api.cognitive.microsofttranslator.com"
-      AZURE_TRANSLATION_KEY_1: "23ie92Tcd7d7rTkgfAiLE4KtcEexHpOCdk1bZTVrrZ9yd3iS0DyZJQQJ99BGACULyCpXJ3w3AAAbACOGeWWN"
-      AZURE_TRANSLATION_KEY_2: "9yzlIRxcArotN3hmrtiTAJUrfmmW2ZdX0YJIIwxTg9OLTqRFTafiJQQJ99BGACULyCpXJ3w3AAAbACOGb6hZ"
       AZURE_TRANSLATION_REGION: "global"
 
-      # Admin Configuration
-      ADMIN_USERNAME: "winut.hf@gmail.com"
-
-      # Loyalty System (optional - for future PMS integration)
-      LOYALTY_USERNAME: ""
-      LOYALTY_PASSWORD: ""
+      # All secrets (JWT_SECRET, GOOGLE_CLIENT_SECRET, etc.) loaded from .env.production via env_file above
     volumes:
       # Remove development volume mounts for production
       - backend_logs:/app/logs
