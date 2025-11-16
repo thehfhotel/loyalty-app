@@ -1,5 +1,8 @@
 # Hotel Loyalty System - Phase 1
 
+[![Test Reports](https://img.shields.io/badge/Test_Reports-Allure-green?logo=github)](https://jwinut.github.io/loyalty-app/test-reports/)
+[![CI/CD Pipeline](https://github.com/jwinut/loyalty-app/actions/workflows/deploy.yml/badge.svg)](https://github.com/jwinut/loyalty-app/actions/workflows/deploy.yml)
+
 A modern hotel loyalty program application built with React, Node.js, and PostgreSQL. This is Phase 1 implementation featuring user authentication and profile management.
 
 > **📋 Important**: Please read [CLAUDE.md](./CLAUDE.md) for critical project rules and conventions that must be followed.

@@ -7,6 +7,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write  # For GitHub Pages deployment
+  pages: write
+  id-token: write
+
 env:
   DEPLOY_PATH: /home/nut/loyalty-app
   NODE_VERSION: 24
@@ -494,6 +499,31 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
           compression-level: 6
+
+      - name: "📊 Generate Allure Report"
+        if: always()
+        run: |
+          cd backend
+          # Check if allure-results exists and has files
+          if [ -d "allure-results" ] && [ "$(ls -A allure-results)" ]; then
+            echo "✅ Generating Allure report from test results..."
+            npm run allure:generate
+            echo "✅ Allure report generated successfully"
+          else
+            echo "⚠️ No Allure results found, skipping report generation"
+          fi
+
+      - name: "📤 Deploy Allure Report to GitHub Pages"
+        if: always() && github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: backend/allure-report
+          destination_dir: test-reports/${{ github.run_number }}
+          keep_files: true
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: 'Deploy Allure report for run #${{ github.run_number }}'
 
       - name: "📈 Test results summary (reporting only)"
         id: test-results
