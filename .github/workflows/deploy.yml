@@ -285,9 +285,12 @@ jobs:
           echo "🔒 Running security linting with ESLint..."
           npm run lint:security 2>&1 | tee lint-output.txt
 
-          # Check if any errors were found (not just warnings)
-          if grep -q "error" lint-output.txt; then
-            echo "❌ ESLint found errors - build must fail"
+          # Extract error count from summary line (e.g., "✖ 166 problems (5 errors, 161 warnings)")
+          ERROR_COUNT=$(grep -oP '✖.*\(\K[0-9]+(?= error)' lint-output.txt || echo "0")
+
+          if [ "$ERROR_COUNT" -gt 0 ]; then
+            echo "❌ ESLint found $ERROR_COUNT errors - build must fail"
+            cat lint-output.txt | grep "error"
             rm -f lint-output.txt
             exit 1
           else
@@ -951,7 +954,7 @@ jobs:
           JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
           JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
           SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
-        run: npm run test:integration -- --passWithNoTests
+        run: npm run test:integration
 
       - name: "🧪 Run database schema tests (isolated)"
         id: run-db-tests
