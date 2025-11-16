@@ -2251,7 +2251,7 @@ jobs:
   post-deployment:
     name: "📊 Post-Deployment"
     runs-on: self-hosted
-    needs: [production-deployment]
+    needs: [security-analysis, unit-tests, integration-tests, e2e-tests, build-validation, production-deployment]
     if: always() && (needs.production-deployment.result == 'success' || needs.production-deployment.result == 'failure')
     timeout-minutes: 3
     continue-on-error: true  # Don't block pipeline completion on post-deployment issues
