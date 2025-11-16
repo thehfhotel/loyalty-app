@@ -935,7 +935,7 @@ jobs:
       cancel-in-progress: false
 
     needs: [prepare-workspace, security-analysis]
-    timeout-minutes: 8
+    timeout-minutes: 20  # Increased from 8: allows ~15min for 36 tests + 3-5min infrastructure setup
     if: (github.ref == 'refs/heads/main' || github.base_ref == 'main')
     outputs:
       e2e-passed: ${{ steps.e2e-results.outputs.passed }}
