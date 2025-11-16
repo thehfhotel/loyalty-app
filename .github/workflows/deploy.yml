@@ -1175,11 +1175,13 @@ jobs:
                 - "5436:5432"
               volumes:
                 - loyalty_postgres_e2e_data:/var/lib/postgresql/data
+              shm_size: 128mb
               healthcheck:
                 test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
                 interval: 5s
                 timeout: 5s
                 retries: 5
+                start_period: 10s
             
             redis:
               image: redis:7-alpine
@@ -1252,54 +1254,20 @@ jobs:
           
           echo "✅ E2E Docker Compose configuration validated"
           
-          # Start database services first
+          # Start database services and wait for health checks
           echo "🗄️ Starting isolated database services..."
-          docker compose -f docker-compose.e2e-test.yml up -d postgres redis
-          
-          # Wait for database services to be ready using healthcheck status
-          echo "🔍 Waiting for postgres (max 60 seconds)..."
-
-          # Improved postgres healthcheck with debugging
-          for i in {1..20}; do
-            if docker compose -f docker-compose.e2e-test.yml exec -T postgres pg_isready -U loyalty -d loyalty_db 2>&1; then
-              echo "✅ Postgres is ready!"
-              break
-            fi
-
-            if [ $i -eq 20 ]; then
-              echo "❌ Postgres healthcheck timeout after 60 seconds"
-              echo "📋 Container logs:"
-              docker compose -f docker-compose.e2e-test.yml logs postgres
-              echo "📋 Container status:"
-              docker compose -f docker-compose.e2e-test.yml ps
-              exit 1
-            fi
-
-            echo "⏳ Attempt $i/20 - waiting 3s..."
-            sleep 3
-          done
-
-          # Wait for redis to be ready by testing actual connection
-          echo "🔍 Waiting for redis (max 60 seconds)..."
-          REDIS_READY=false
-          for i in {1..20}; do
-            if docker compose -f docker-compose.e2e-test.yml exec -T redis redis-cli ping 2>&1 | grep -q "PONG"; then
-              echo "✅ Redis is ready!"
-              REDIS_READY=true
-              break
-            fi
-            echo "⏳ Attempt $i/20 - waiting 3s..."
-            sleep 3
-          done
-
-          if [ "$REDIS_READY" = false ]; then
-            echo "❌ Redis failed to respond to ping after 60 seconds"
-            echo "📋 Container logs:"
+          if ! timeout 120 docker compose -f docker-compose.e2e-test.yml up -d postgres redis --wait; then
+            echo "❌ Database services failed to become healthy"
+            echo "📋 Postgres logs:"
+            docker compose -f docker-compose.e2e-test.yml logs postgres
+            echo "📋 Redis logs:"
             docker compose -f docker-compose.e2e-test.yml logs redis
             echo "📋 Container status:"
             docker compose -f docker-compose.e2e-test.yml ps
             exit 1
           fi
+
+          echo "✅ Database services are healthy!"
 
           echo "✅ Isolated database services are ready"
 
@@ -1332,11 +1300,13 @@ jobs:
                 - "5436:5432"
               volumes:
                 - loyalty_postgres_e2e_data:/var/lib/postgresql/data
+              shm_size: 128mb
               healthcheck:
                 test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
                 interval: 5s
                 timeout: 5s
                 retries: 5
+                start_period: 10s
             
             redis:
               image: redis:7-alpine
@@ -1644,7 +1614,7 @@ jobs:
     name: "🏗️ Build Validation & Docker Images"
     runs-on: self-hosted
     needs: [security-analysis, unit-tests, integration-tests, e2e-tests]
-    if: github.ref == 'refs/heads/main' && always() && needs.security-analysis.outputs.security-passed == 'true' && needs.unit-tests.outputs.tests-passed == 'true' && needs.integration-tests.outputs.tests-passed == 'true'
+    if: github.ref == 'refs/heads/main' && always() && needs.security-analysis.outputs.security-passed == 'true' && needs.unit-tests.outputs.tests-passed == 'true' && needs.integration-tests.outputs.tests-passed == 'true' && needs.e2e-tests.outputs.tests-passed == 'true'
     timeout-minutes: 15
     outputs:
       build-passed: ${{ steps.build-results.outputs.passed }}
