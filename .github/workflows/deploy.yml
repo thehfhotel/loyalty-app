@@ -1329,6 +1329,12 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
 
+      - name: "🧹 Reset Playwright artifacts"
+        run: |
+          echo "🧹 Clearing stale Playwright artifacts before running tests..."
+          rm -rf allure-results test-results
+          mkdir -p allure-results test-results
+          echo "✅ Fresh artifact directories ready"
 
       - name: "🎭 Run E2E tests with Playwright (isolated)"
         env:
@@ -1478,7 +1484,7 @@ jobs:
     name: "🏗️ Build Validation & Docker Images"
     runs-on: self-hosted
     needs: [security-analysis, unit-tests, integration-tests, e2e-tests]
-    if: github.ref == 'refs/heads/main' && always() && needs.security-analysis.outputs.security-passed == 'true' && needs.unit-tests.outputs.tests-passed == 'true' && needs.integration-tests.outputs.tests-passed == 'true' && needs.e2e-tests.outputs.tests-passed == 'true'
+    if: github.ref == 'refs/heads/main' && always() && needs.security-analysis.outputs.security-passed == 'true' && needs.unit-tests.outputs.tests-passed == 'true' && needs.integration-tests.outputs.tests-passed == 'true' && needs.e2e-tests.outputs.e2e-passed == 'true'
     timeout-minutes: 15
     outputs:
       build-passed: ${{ steps.build-results.outputs.passed }}
