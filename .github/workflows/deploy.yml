@@ -50,6 +50,13 @@ jobs:
           find /tmp/runner-cache -maxdepth 1 -type d ! -name "${{ env.CACHE_VERSION }}" ! -name "runner-cache" ! -name "workspace" -exec rm -rf {} + 2>/dev/null || true
           echo "✅ Old cache versions cleaned up"
 
+      - name: "🧹 Reset Playwright artifacts (shared workspace)"
+        run: |
+          echo "🧹 Clearing stale Playwright and Allure artifacts..."
+          rm -rf allure-results test-results backend/allure-results frontend/allure-results 2>/dev/null || true
+          mkdir -p allure-results test-results backend/allure-results frontend/allure-results
+          echo "✅ Fresh artifact directories prepared for downstream jobs"
+
       - name: "📦 Setup versioned cache directories"
         run: |
           mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm
@@ -1328,13 +1335,6 @@ jobs:
 
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
-
-      - name: "🧹 Reset Playwright artifacts"
-        run: |
-          echo "🧹 Clearing stale Playwright artifacts before running tests..."
-          rm -rf allure-results test-results
-          mkdir -p allure-results test-results
-          echo "✅ Fresh artifact directories ready"
 
       - name: "🎭 Run E2E tests with Playwright (isolated)"
         env:
