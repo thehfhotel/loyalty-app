@@ -278,8 +278,12 @@ jobs:
             exit 1
           fi
 
-      - name: "🔍 TypeScript type checking (validation)"
+      - name: "🔍 TypeScript type checking - Backend (validation)"
         working-directory: ./backend
+        run: npm run typecheck
+
+      - name: "🔍 TypeScript type checking - Frontend (validation)"
+        working-directory: ./frontend
         run: npm run typecheck
 
       - name: "🔒 Security linting (ESLint + Security rules)"
