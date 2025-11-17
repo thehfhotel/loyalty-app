@@ -1064,18 +1064,6 @@ jobs:
 
           echo "✅ Prisma client validated successfully"
 
-          # Clean up any existing E2E containers first (before creating new compose file)
-          echo "🧹 Cleaning up any existing E2E containers..."
-          docker stop loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
-          docker rm loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
-          
-          # Clean up any existing compose stack if file exists
-          if [ -f "docker-compose.e2e.ci.yml" ]; then
-            echo "🧹 Cleaning up existing E2E compose stack..."
-            docker compose -f docker-compose.e2e.ci.yml down -v --remove-orphans 2>/dev/null || true
-            rm -f docker-compose.e2e.ci.yml
-          fi
-          
           # Critical: Remove E2E database volumes to ensure clean state
           echo "🧹 Removing E2E database volumes to prevent migration state corruption..."
           docker volume rm loyalty_postgres_e2e_data loyalty_redis_e2e_data 2>/dev/null || true
@@ -1203,12 +1191,9 @@ jobs:
           
           echo "✅ E2E Docker Compose configuration created"
           
-          # Clean up any existing E2E containers and ports to prevent conflicts
+          # Use project-specific compose teardown to avoid stopping production containers
           echo "🧹 Cleaning up any existing E2E containers and ports..."
-          
-          # Stop and remove containers
-          docker stop loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
-          docker rm loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
+          docker compose -p loyalty-e2e-tests -f docker-compose.e2e.ci.yml down -v --remove-orphans 2>/dev/null || true
           
           # Check for processes using E2E ports and kill them
           echo "🔍 Checking for processes using E2E ports..."
