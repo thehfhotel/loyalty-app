@@ -1360,7 +1360,7 @@ jobs:
           echo ""
           echo "🧪 Playwright Connectivity Diagnostic:"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          node -e "
+          node << 'EOF' || echo "⚠️ Node.js connectivity test failed"
           const http = require('http');
           const urls = [
             'http://localhost:4202/api/health',
@@ -1381,15 +1381,15 @@ jobs:
             };
 
             const req = http.request(options, (res) => {
-              console.log(\`  ✅ ${url}: HTTP ${res.statusCode}\`);
+              console.log(`  ✅ ${url}: HTTP ${res.statusCode}`);
             });
 
             req.on('error', (e) => {
-              console.log(\`  ❌ ${url}: ${e.code} - ${e.message}\`);
+              console.log(`  ❌ ${url}: ${e.code} - ${e.message}`);
             });
 
             req.on('timeout', () => {
-              console.log(\`  ⏱️ ${url}: Timeout\`);
+              console.log(`  ⏱️ ${url}: Timeout`);
               req.destroy();
             });
 
@@ -1398,7 +1398,7 @@ jobs:
 
           // Give requests time to complete
           setTimeout(() => {}, 6000);
-          " || echo "⚠️ Node.js connectivity test failed"
+EOF
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
 
