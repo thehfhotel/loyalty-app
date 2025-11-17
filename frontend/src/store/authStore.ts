@@ -2,17 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authService } from '../services/authService';
 import { notify } from '../utils/notificationManager';
-
-interface User {
-  id: string;
-  email: string | null;
-  role: 'customer' | 'admin' | 'super_admin';
-  firstName?: string;
-  lastName?: string;
-  avatarUrl?: string;
-  oauthProvider?: string;
-  oauthProviderId?: string;
-}
+import { User } from '../types/api';
 
 interface HttpError {
   response?: {

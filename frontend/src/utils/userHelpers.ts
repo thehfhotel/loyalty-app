@@ -1,13 +1,4 @@
-interface User {
-  id: string;
-  email: string;
-  role: 'customer' | 'admin' | 'super_admin';
-  firstName?: string;
-  lastName?: string;
-  avatarUrl?: string;
-  oauthProvider?: string;
-  oauthProviderId?: string;
-}
+import { User } from '../types/api';
 
 /**
  * Gets a user-friendly display name from user data
@@ -38,11 +29,11 @@ export function getUserDisplayName(user: User | null): string {
         return 'LINE User';
       case 'google':
         // For Google users, try to extract name from email before @
-        const emailPart = user.email.split('@')[0] ?? 'Google User';
+        const emailPart = user.email?.split('@')[0] ?? 'Google User';
         return emailPart.replace(/[._]/g, ' ');
       case 'facebook':
         // For Facebook users, similar logic
-        const fbEmailPart = user.email.split('@')[0] ?? 'Facebook User';
+        const fbEmailPart = user.email?.split('@')[0] ?? 'Facebook User';
         return fbEmailPart.replace(/[._]/g, ' ');
       default:
         break;
@@ -50,7 +41,7 @@ export function getUserDisplayName(user: User | null): string {
   }
 
   // Fallback to email username part
-  const emailUsername = user.email.split('@')[0] ?? 'User';
+  const emailUsername = user.email?.split('@')[0] ?? 'User';
   return emailUsername.replace(/[._]/g, ' ');
 }
 

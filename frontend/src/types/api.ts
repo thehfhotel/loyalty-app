@@ -25,6 +25,8 @@ export interface User {
   dateOfBirth?: string; // ISO 8601 date string
   avatarUrl?: string;
   membershipId?: string;
+  oauthProvider?: string;
+  oauthProviderId?: string;
 }
 
 export interface UserProfile {

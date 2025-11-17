@@ -229,7 +229,7 @@ const ThaiSurveyDebug: React.FC = (): JSX.Element => {
               isCreating && React.createElement('div', { className: 'animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2' }),
               isCreating ? 'Creating Survey...' : '🚀 Create Thai Survey'
             )
-          ) as JSX.Element}
+          ) as any}
 
           {/* Error Display */}
           {lastError && (() => {
