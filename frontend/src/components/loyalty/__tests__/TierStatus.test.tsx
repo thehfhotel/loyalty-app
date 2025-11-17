@@ -177,13 +177,13 @@ describe('TierStatus', () => {
       expect(awardIcons).toHaveLength(5);
     });
 
-    it('should display minimum points for each tier', () => {
+    it('should display minimum nights for each tier', () => {
       render(<TierStatus loyaltyStatus={mockLoyaltyStatus} allTiers={mockTiers} />);
 
       expect(screen.getByText('New Member')).toBeInTheDocument();
-      expect(screen.getByText(/1000\+/)).toBeInTheDocument();
-      expect(screen.getByText(/2500\+/)).toBeInTheDocument();
-      expect(screen.getByText(/5000\+/)).toBeInTheDocument();
+      expect(screen.getByText(/1\+ night/)).toBeInTheDocument();
+      expect(screen.getByText(/10\+ nights/)).toBeInTheDocument();
+      expect(screen.getByText(/20\+ nights/)).toBeInTheDocument();
     });
   });
 
@@ -191,7 +191,7 @@ describe('TierStatus', () => {
     it('should display progress bar for next tier', () => {
       render(<TierStatus loyaltyStatus={mockLoyaltyStatus} allTiers={mockTiers} />);
 
-      expect(screen.getByText('700 points to go')).toBeInTheDocument();
+      expect(screen.getByText('5 nights to go')).toBeInTheDocument();
       expect(screen.getByText('53.3%')).toBeInTheDocument();
     });
 
@@ -201,10 +201,10 @@ describe('TierStatus', () => {
       expect(screen.getByText('53.3%')).toBeInTheDocument();
     });
 
-    it('should display points to next tier', () => {
+    it('should display nights to next tier', () => {
       render(<TierStatus loyaltyStatus={mockLoyaltyStatus} allTiers={mockTiers} />);
 
-      expect(screen.getByText('700 points to go')).toBeInTheDocument();
+      expect(screen.getByText('5 nights to go')).toBeInTheDocument();
     });
 
     it('should display progress bar with correct color', () => {
@@ -258,10 +258,10 @@ describe('TierStatus', () => {
       expect(screen.getByText('Next tier: Gold')).toBeInTheDocument();
     });
 
-    it('should display unlock message with points', () => {
+    it('should display unlock message with nights', () => {
       render(<TierStatus loyaltyStatus={mockLoyaltyStatus} allTiers={mockTiers} />);
 
-      expect(screen.getByText('Earn 700 more points to unlock')).toBeInTheDocument();
+      expect(screen.getByText('Stay 5 more nights to unlock')).toBeInTheDocument();
     });
 
     it('should display unlock message with nights when available', () => {
@@ -396,7 +396,7 @@ describe('TierStatus', () => {
 
       expect(mockTranslate).toHaveBeenCalledWith('loyalty.tierStatus');
       expect(mockTranslate).toHaveBeenCalledWith('loyalty.currentTier');
-      expect(mockTranslate).toHaveBeenCalledWith('loyalty.pointsToGo');
+      expect(mockTranslate).toHaveBeenCalledWith('loyalty.nightsToGo');
     });
 
     it('should use nextTierBenefits translation with tier parameter', () => {
@@ -405,10 +405,10 @@ describe('TierStatus', () => {
       expect(mockTranslate).toHaveBeenCalledWith('loyalty.nextTierBenefits', { tier: 'Gold' });
     });
 
-    it('should use unlockBenefits translation with points parameter', () => {
+    it('should use unlockBenefitsNights translation with nights parameter', () => {
       render(<TierStatus loyaltyStatus={mockLoyaltyStatus} allTiers={mockTiers} />);
 
-      expect(mockTranslate).toHaveBeenCalledWith('loyalty.unlockBenefits', { points: '700' });
+      expect(mockTranslate).toHaveBeenCalledWith('loyalty.unlockBenefitsNights', { nights: 5 });
     });
 
     it('should use unlockBenefitsNights translation when nights available', () => {

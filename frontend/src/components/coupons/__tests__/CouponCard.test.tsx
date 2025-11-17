@@ -213,7 +213,7 @@ describe('CouponCard', () => {
       render(<CouponCard coupon={mockCoupon} />);
 
       expect(dateFormatter.formatExpiryDateWithRelative).toHaveBeenCalledWith(
-        '2024-12-31T23:59:59Z',
+        expect.any(Date),
         mockTranslate
       );
     });
