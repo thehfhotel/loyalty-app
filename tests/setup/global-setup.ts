@@ -32,6 +32,12 @@ async function globalSetup(config: FullConfig) {
   console.log(`  API: ${process.env.API_BASE_URL}`);
   console.log(`  Frontend: ${process.env.FRONTEND_URL}`);
 
+  if (process.env.SKIP_PLAYWRIGHT_DOCKER_SETUP === 'true') {
+    console.log('⚙️  Detected SKIP_PLAYWRIGHT_DOCKER_SETUP=true - assuming workflow already provisioned services.');
+    console.log('🔁 Skipping docker compose orchestration from Playwright global setup.');
+    return;
+  }
+
   // Clean up any existing E2E containers
   console.log('🧹 Cleaning up any existing E2E containers...');
 

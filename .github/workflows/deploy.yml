@@ -1337,6 +1337,7 @@ jobs:
           REDIS_URL: redis://localhost:6381
           BACKEND_URL: http://localhost:4202
           FRONTEND_URL: http://localhost:3201
+          SKIP_PLAYWRIGHT_DOCKER_SETUP: "true"
         run: |
           echo "🎭 Running E2E tests with Playwright on isolated environment..."
           echo "🌐 Testing against Backend: http://localhost:4202"
@@ -1381,6 +1382,25 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
 
+          # Abort early if the isolated stack has disappeared
+          RUNNING_SERVICES=$(docker compose -f docker-compose.e2e.ci.yml ps --services --filter "status=running" | tr '\n' ' ' | xargs)
+          if [ -z "$RUNNING_SERVICES" ] || ! echo "$RUNNING_SERVICES" | grep -q "backend"; then
+            echo "❌ Isolated E2E stack is not running. Capturing diagnostics before aborting..."
+            echo "📊 docker compose ps --all"
+            docker compose -f docker-compose.e2e.ci.yml ps -a || true
+            echo "📦 docker ps -a (host)"
+            docker ps -a || true
+            echo "📄 Backend logs:"
+            docker logs loyalty_backend_e2e 2>&1 || echo "No backend logs available"
+            echo "📄 Frontend logs:"
+            docker logs loyalty_frontend_e2e 2>&1 || echo "No frontend logs available"
+            echo "📄 PostgreSQL logs:"
+            docker logs loyalty_postgres_e2e 2>&1 || echo "No postgres logs available"
+            echo "📄 Redis logs:"
+            docker logs loyalty_redis_e2e 2>&1 || echo "No redis logs available"
+            exit 1
+          fi
+
           # Run all E2E tests against isolated environment (BLOCKING - must pass to succeed)
           echo "🎭 Running E2E tests - failures will BLOCK the pipeline..."
           npx playwright test
@@ -1390,6 +1410,7 @@ jobs:
           NODE_ENV: test
           BACKEND_URL: http://localhost:4202
           FRONTEND_URL: http://localhost:3201
+          SKIP_PLAYWRIGHT_DOCKER_SETUP: "true"
         run: |
           echo "🔐 Running OAuth-specific E2E tests on isolated environment..."
           echo "🔐 Testing OAuth against: http://localhost:4202"
