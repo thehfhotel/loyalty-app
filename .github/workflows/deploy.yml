@@ -942,6 +942,8 @@ jobs:
   e2e-tests:
     name: "🎭 E2E Tests"
     runs-on: self-hosted
+    env:
+      COMPOSE_PROJECT_NAME: loyalty-e2e-tests
 
     # Prevent parallel E2E runs to avoid port conflicts with host network
     concurrency:
