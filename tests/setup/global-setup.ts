@@ -25,10 +25,12 @@ async function globalSetup(config: FullConfig) {
   // Set service URLs for tests
   process.env.BACKEND_URL = `http://localhost:${process.env.E2E_BACKEND_PORT}`;
   process.env.API_BASE_URL = `${process.env.BACKEND_URL}/api`;
+  process.env.FRONTEND_URL = `http://localhost:3201`;
 
   console.log('📋 E2E Configuration:');
   console.log(`  Backend: ${process.env.BACKEND_URL}`);
   console.log(`  API: ${process.env.API_BASE_URL}`);
+  console.log(`  Frontend: ${process.env.FRONTEND_URL}`);
 
   // Clean up any existing E2E containers
   console.log('🧹 Cleaning up any existing E2E containers...');

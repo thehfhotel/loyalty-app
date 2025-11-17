@@ -7,9 +7,10 @@
  */
 
 import request from 'supertest';
-import { Express } from 'express';
+import { Express, Request, Response, NextFunction } from 'express';
 import routes from '../../../routes/analyticsRoutes';
 import { createTestApp } from '../../fixtures';
+import { TestUser, TestRequest, TestMiddlewareFunction } from '../../utils/testTypes';
 
 // Mock dependencies - Service-based mocking
 jest.mock('../../../services/analyticsService', () => ({
@@ -24,29 +25,30 @@ jest.mock('../../../services/analyticsService', () => ({
 }));
 
 // Create a mutable auth implementation
-let currentUser = {
+let currentUser: TestUser = {
   id: 'test-user-id',
   email: 'test@example.com',
   role: 'customer',
 };
 
 jest.mock('../../../middleware/auth', () => ({
-  authenticate: (req: any, _res: any, next: any) => {
+  authenticate: (req: TestRequest, _res: Response, next: NextFunction) => {
     req.user = { ...currentUser };
     next();
   },
-  authorize: (...roles: string[]) => (req: any, res: any, next: any) => {
-    // Check if user role matches authorized roles
-    if (req.user && roles.includes(req.user.role)) {
-      next();
-    } else {
-      res.status(403).json({ error: 'Forbidden' });
-    }
-  },
+  authorize: (...roles: string[]): TestMiddlewareFunction =>
+    (req: TestRequest, res: Response, next: NextFunction) => {
+      // Check if user role matches authorized roles
+      if (req.user && roles.includes(req.user.role)) {
+        next();
+      } else {
+        res.status(403).json({ error: 'Forbidden' });
+      }
+    },
 }));
 
 jest.mock('../../../middleware/requestLogger', () => ({
-  requestLogger: (_req: any, _res: any, next: any) => next(),
+  requestLogger: (_req: Request, _res: Response, next: NextFunction) => next(),
 }));
 
 // Import mocked service

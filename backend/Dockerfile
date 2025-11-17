@@ -27,8 +27,8 @@ RUN npm run build || echo "TypeScript compilation failed, will use tsx at runtim
 # Development stage (for docker-compose dev)
 FROM base AS development
 
-# Install curl for health checks and netcat for database connectivity checks
-RUN apk add --no-cache curl netcat-openbsd
+# Install curl for health checks, netcat for database connectivity checks, and postgresql-client for database operations
+RUN apk add --no-cache curl netcat-openbsd postgresql-client
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
@@ -88,8 +88,8 @@ CMD ["npm", "run", "dev"]
 # Production stage
 FROM base AS runner
 
-# Install curl for health checks and netcat for database connectivity checks
-RUN apk add --no-cache curl netcat-openbsd
+# Install curl for health checks, netcat for database connectivity checks, and postgresql-client for database operations
+RUN apk add --no-cache curl netcat-openbsd postgresql-client
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \

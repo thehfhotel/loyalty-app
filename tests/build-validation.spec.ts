@@ -540,7 +540,9 @@ services:
     test('should validate E2E tests use environment variables for URLs', async () => {
       const testFiles = [
         path.join(projectRoot, 'tests/health.spec.ts'),
-        path.join(projectRoot, 'tests/oauth-validation.spec.ts')
+        path.join(projectRoot, 'tests/oauth-validation.configured.spec.ts'),
+        path.join(projectRoot, 'tests/oauth-validation.security.spec.ts'),
+        path.join(projectRoot, 'tests/oauth-validation.unconfigured.spec.ts')
       ];
 
       for (const testFile of testFiles) {

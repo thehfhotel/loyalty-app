@@ -9,7 +9,7 @@ import type { CreateExpressContextOptions } from '@trpc/server/adapters/express'
 import type { JWTPayload } from '../types/auth';
 
 // Import Express type augmentation
-import '../types/express';
+import '../types/express.d.ts';
 
 /**
  * Create context from Express request/response
