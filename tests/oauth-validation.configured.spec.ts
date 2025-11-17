@@ -57,7 +57,9 @@ test.describe('OAuth Flow Validation - Configured Environment', () => {
       test.skip(!isOAuthConfigured, 'OAuth not configured in this environment');
 
       // Test Google OAuth endpoint accessibility with retry
-      const googleResponse = await retryRequest(request, `${baseUrl}/api/oauth/google`, 3);
+      const googleResponse = await retryRequest(request, `${baseUrl}/api/oauth/google`, 3, {
+        maxRedirects: 0
+      });
 
       // Should redirect to Google OAuth
       expect(googleResponse.status()).toBe(302);
@@ -71,7 +73,9 @@ test.describe('OAuth Flow Validation - Configured Environment', () => {
       test.skip(!isOAuthConfigured, 'OAuth not configured in this environment');
 
       // Test LINE OAuth endpoint accessibility with retry
-      const lineResponse = await retryRequest(request, `${baseUrl}/api/oauth/line`, 3);
+      const lineResponse = await retryRequest(request, `${baseUrl}/api/oauth/line`, 3, {
+        maxRedirects: 0
+      });
 
       // Should redirect to LINE OAuth
       expect(lineResponse.status()).toBe(302);
