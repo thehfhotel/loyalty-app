@@ -19,6 +19,7 @@ const mockTranslate = vi.fn((key: string, params?: any) => {
     'loyalty.unlockBenefits': `Earn ${params?.points || 0} more points to unlock`,
     'loyalty.topTierMessage': "You've reached the highest tier!",
     'loyalty.topTierDescription': 'Enjoy all premium benefits',
+    'loyalty.maxTierReached': 'Max tier reached',
   };
 
   if (params && translations[key]) {
@@ -49,6 +50,7 @@ describe('TierStatus', () => {
       id: 'bronze',
       name: 'Bronze',
       min_points: 0,
+      min_nights: 0,
       benefits: { description: 'Bronze benefits', perks: ['Basic perk'] },
       color: '#CD7F32',
       sort_order: 1,
@@ -57,6 +59,7 @@ describe('TierStatus', () => {
       id: 'silver',
       name: 'Silver',
       min_points: 1000,
+      min_nights: 1,
       benefits: { description: 'Silver benefits', perks: ['Silver perk'] },
       color: '#C0C0C0',
       sort_order: 2,
@@ -65,6 +68,7 @@ describe('TierStatus', () => {
       id: 'gold',
       name: 'Gold',
       min_points: 2500,
+      min_nights: 10,
       benefits: { description: 'Gold benefits', perks: ['Gold perk'] },
       color: '#FFD700',
       sort_order: 3,
@@ -73,6 +77,7 @@ describe('TierStatus', () => {
       id: 'platinum',
       name: 'Platinum',
       min_points: 5000,
+      min_nights: 20,
       benefits: { description: 'Platinum benefits', perks: ['Platinum perk'] },
       color: '#E5E4E2',
       sort_order: 4,
@@ -82,6 +87,7 @@ describe('TierStatus', () => {
   const mockLoyaltyStatus: UserLoyaltyStatus = {
     user_id: 'user-123',
     current_points: 1800,
+    total_nights: 5,
     tier_name: 'Silver',
     tier_color: '#C0C0C0',
     tier_benefits: {
@@ -90,9 +96,9 @@ describe('TierStatus', () => {
     },
     tier_level: 2,
     progress_percentage: 53.33,
-    next_tier_points: 2500,
+    next_tier_nights: 10,
     next_tier_name: 'Gold',
-    points_to_next_tier: 700,
+    nights_to_next_tier: 5,
   };
 
   beforeEach(() => {
@@ -453,9 +459,9 @@ describe('TierStatus', () => {
     });
 
     it('should handle very low minimum points', () => {
-      const customTiers = [
-        { ...mockTiers[0], min_points: 0 },
-        { ...mockTiers[1], min_points: 1 },
+      const customTiers: Tier[] = [
+        { ...mockTiers[0], min_points: 0 } as Tier,
+        { ...mockTiers[1], min_points: 1 } as Tier,
       ];
 
       render(<TierStatus loyaltyStatus={mockLoyaltyStatus} allTiers={customTiers} />);
@@ -476,16 +482,17 @@ describe('TierStatus', () => {
       expect(container).toBeTruthy();
     });
 
-    it('should handle undefined nights_to_next_tier', () => {
+    it('should handle null nights_to_next_tier', () => {
       const undefinedNightsStatus = {
         ...mockLoyaltyStatus,
-        nights_to_next_tier: undefined,
+        nights_to_next_tier: null,
       };
 
       render(<TierStatus loyaltyStatus={undefinedNightsStatus} allTiers={mockTiers} />);
 
-      // Should fall back to points display
-      expect(screen.getByText('700 points to go')).toBeInTheDocument();
+      // Should display "Max tier reached" when nights_to_next_tier is null (appears in 2 places)
+      const maxTierTexts = screen.getAllByText('Max tier reached');
+      expect(maxTierTexts.length).toBeGreaterThan(0);
     });
   });
 

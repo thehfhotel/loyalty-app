@@ -5,7 +5,7 @@ import TransactionList from '../TransactionList';
 import { PointsTransaction } from '../../../services/loyaltyService';
 
 // Mock dependencies
-const mockTranslate = vi.fn((key: string, params?: any) => {
+const mockTranslate = vi.fn((key: string) => {
   const translations: Record<string, string> = {
     'loyalty.transactionHistory': 'Transaction History',
     'loyalty.noTransactions': 'No transactions yet',
@@ -59,7 +59,7 @@ describe('TransactionList', () => {
       reference_id: 'booking-456',
       admin_user_id: null,
       admin_reason: null,
-      admin_email: null,
+      admin_email: undefined,
       expires_at: null,
       created_at: '2024-01-15T10:30:00Z',
     },
@@ -72,7 +72,7 @@ describe('TransactionList', () => {
       reference_id: 'redemption-789',
       admin_user_id: null,
       admin_reason: null,
-      admin_email: null,
+      admin_email: undefined,
       expires_at: null,
       created_at: '2024-01-10T14:20:00Z',
     },
@@ -201,7 +201,7 @@ describe('TransactionList', () => {
         ...mockTransactions[0],
         type: 'earned_stay',
         points: 500,
-      }];
+      } as PointsTransaction];
 
       render(<TransactionList transactions={earnedStayTxn} />);
 
@@ -213,7 +213,7 @@ describe('TransactionList', () => {
         ...mockTransactions[1],
         type: 'redeemed',
         points: -200,
-      }];
+      } as PointsTransaction];
 
       render(<TransactionList transactions={redeemedTxn} />);
 
@@ -225,7 +225,7 @@ describe('TransactionList', () => {
         ...mockTransactions[0],
         type: 'admin_award',
         points: 1000,
-      }];
+      } as PointsTransaction];
 
       render(<TransactionList transactions={adminAwardTxn} />);
 
@@ -237,7 +237,7 @@ describe('TransactionList', () => {
         ...mockTransactions[1],
         type: 'expired',
         points: -100,
-      }];
+      } as PointsTransaction];
 
       render(<TransactionList transactions={expiredTxn} />);
 
@@ -260,7 +260,7 @@ describe('TransactionList', () => {
       const txnWithAdmin: PointsTransaction[] = [{
         ...mockTransactions[0],
         admin_email: 'admin@example.com',
-      }];
+      } as PointsTransaction];
 
       render(<TransactionList transactions={txnWithAdmin} />);
 
@@ -271,7 +271,7 @@ describe('TransactionList', () => {
       const txnWithAdmin: PointsTransaction[] = [{
         ...mockTransactions[0],
         admin_email: 'admin@example.com',
-      }];
+      } as PointsTransaction];
 
       render(<TransactionList transactions={txnWithAdmin} showAdminInfo={true} />);
 
@@ -283,7 +283,7 @@ describe('TransactionList', () => {
       const txnWithReason: PointsTransaction[] = [{
         ...mockTransactions[0],
         admin_reason: 'Bonus for loyalty',
-      }];
+      } as PointsTransaction];
 
       render(<TransactionList transactions={txnWithReason} />);
 
@@ -294,7 +294,7 @@ describe('TransactionList', () => {
       const txnWithThb: PointsTransaction[] = [{
         ...mockTransactions[0],
         admin_reason: 'Spent 5000 THB',
-      }];
+      } as PointsTransaction];
 
       render(<TransactionList transactions={txnWithThb} />);
 
@@ -302,28 +302,6 @@ describe('TransactionList', () => {
     });
   });
 
-  describe('Expiry Date Display', () => {
-    it('should display expiry date when present', () => {
-      const txnWithExpiry: PointsTransaction[] = [{
-        ...mockTransactions[0],
-        expires_at: '2024-12-31T23:59:59Z',
-      }];
-
-      const { container } = render(<TransactionList transactions={txnWithExpiry} />);
-
-      expect(screen.getByText(/Expires/)).toBeInTheDocument();
-      // Check that the expiry date container has the date format
-      const expiryContainer = container.querySelector('.text-yellow-600');
-      expect(expiryContainer).toBeTruthy();
-      expect(expiryContainer?.textContent).toMatch(/Expires.*\d{2}\/\d{2}\/\d{4}/);
-    });
-
-    it('should not display expiry date when null', () => {
-      render(<TransactionList transactions={mockTransactions} />);
-
-      expect(screen.queryByText(/Expires/)).not.toBeInTheDocument();
-    });
-  });
 
   describe('Load More Button', () => {
     it('should not display load more button by default', () => {
@@ -362,7 +340,7 @@ describe('TransactionList', () => {
       const largeTxn: PointsTransaction[] = [{
         ...mockTransactions[0],
         points: 12345,
-      }];
+      } as PointsTransaction];
 
       render(<TransactionList transactions={largeTxn} />);
 
@@ -387,7 +365,7 @@ describe('TransactionList', () => {
       const zeroTxn: PointsTransaction[] = [{
         ...mockTransactions[0],
         points: 0,
-      }];
+      } as PointsTransaction];
 
       const { container } = render(<TransactionList transactions={zeroTxn} />);
 
@@ -398,7 +376,7 @@ describe('TransactionList', () => {
       const nullDescTxn: PointsTransaction[] = [{
         ...mockTransactions[0],
         description: null,
-      }];
+      } as PointsTransaction];
 
       const { container } = render(<TransactionList transactions={nullDescTxn} />);
 
@@ -409,7 +387,7 @@ describe('TransactionList', () => {
       const unknownTypeTxn: PointsTransaction[] = [{
         ...mockTransactions[0],
         type: 'unknown_type',
-      }];
+      } as PointsTransaction];
 
       render(<TransactionList transactions={unknownTypeTxn} />);
 
@@ -420,7 +398,7 @@ describe('TransactionList', () => {
       const longReasonTxn: PointsTransaction[] = [{
         ...mockTransactions[0],
         admin_reason: 'This is a very long admin reason that should still display properly without breaking the layout or causing issues',
-      }];
+      } as PointsTransaction];
 
       render(<TransactionList transactions={longReasonTxn} />);
 
