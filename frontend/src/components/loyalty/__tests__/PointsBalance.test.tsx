@@ -28,13 +28,14 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('react-icons/fi', () => ({
-  FiStar: () => <span data-testid="star-icon">⭐</span>,
+  FiStar: (props: any) => <span data-testid="tier-star-icon" {...props}>⭐</span>,
 }));
 
 describe('PointsBalance', () => {
   const mockLoyaltyStatus: UserLoyaltyStatus = {
     user_id: 'user-123',
     current_points: 1500,
+    total_nights: 15,
     tier_name: 'Gold',
     tier_color: '#FFD700',
     tier_benefits: {
@@ -43,9 +44,9 @@ describe('PointsBalance', () => {
     },
     tier_level: 2,
     progress_percentage: 75,
-    next_tier_points: 2000,
+    next_tier_nights: 20,
     next_tier_name: 'Platinum',
-    points_to_next_tier: 500,
+    nights_to_next_tier: 5,
   };
 
   beforeEach(() => {
@@ -155,14 +156,14 @@ describe('PointsBalance', () => {
     it('should apply tier color to points display', () => {
       render(<PointsBalance loyaltyStatus={mockLoyaltyStatus} />);
 
-      const pointsElement = screen.getByText('1,500');
+      const pointsElement = screen.getByTestId('points-display');
       expect(pointsElement).toHaveStyle({ color: '#FFD700' });
     });
 
     it('should apply tier color to star icon container background', () => {
-      const { container } = render(<PointsBalance loyaltyStatus={mockLoyaltyStatus} />);
+      render(<PointsBalance loyaltyStatus={mockLoyaltyStatus} />);
 
-      const starContainer = container.querySelector('.p-2.rounded-lg');
+      const starContainer = screen.getByTestId('star-icon-container');
       expect(starContainer).toHaveStyle({ backgroundColor: '#FFD70020' });
     });
   });
@@ -171,19 +172,20 @@ describe('PointsBalance', () => {
     it('should render star icon', () => {
       render(<PointsBalance loyaltyStatus={mockLoyaltyStatus} />);
 
-      expect(screen.getByTestId('star-icon')).toBeInTheDocument();
+      const starIcon = screen.getByTestId('tier-star-icon');
+      expect(starIcon).toBeInTheDocument();
+      expect(starIcon).toHaveStyle({ color: '#FFD700' });
     });
 
     it('should render star icon within styled container', () => {
       render(<PointsBalance loyaltyStatus={mockLoyaltyStatus} />);
 
-      // Verify the icon exists
-      const starIcon = screen.getByTestId('star-icon');
+      const starIcon = screen.getByTestId('tier-star-icon');
       expect(starIcon).toBeInTheDocument();
 
-      // Verify it's within the colored container (already tested in another test)
-      const container = starIcon.parentElement;
+      const container = screen.getByTestId('star-icon-container');
       expect(container).toHaveClass('p-2', 'rounded-lg');
+      expect(starIcon.parentElement).toBe(container);
     });
   });
 
@@ -323,12 +325,13 @@ describe('PointsBalance', () => {
     });
 
     it('should apply tier color to perk bullet points', () => {
-      const { container } = render(<PointsBalance loyaltyStatus={mockLoyaltyStatus} />);
+      render(<PointsBalance loyaltyStatus={mockLoyaltyStatus} />);
 
-      const bullets = container.querySelectorAll('.w-1\\.5.h-1\\.5.rounded-full');
-      bullets.forEach(bullet => {
-        expect(bullet).toHaveStyle({ backgroundColor: '#FFD700' });
-      });
+      const bullet0 = screen.getByTestId('perk-bullet-0');
+      const bullet1 = screen.getByTestId('perk-bullet-1');
+
+      expect(bullet0).toHaveStyle({ backgroundColor: '#FFD700' });
+      expect(bullet1).toHaveStyle({ backgroundColor: '#FFD700' });
     });
   });
 
@@ -493,7 +496,7 @@ describe('PointsBalance', () => {
     });
 
     it('should have sufficient color contrast with tier colors', () => {
-      const { container } = render(<PointsBalance loyaltyStatus={mockLoyaltyStatus} />);
+      render(<PointsBalance loyaltyStatus={mockLoyaltyStatus} />);
 
       const pointsElement = screen.getByText('1,500');
       expect(pointsElement).toHaveClass('text-3xl', 'font-bold');

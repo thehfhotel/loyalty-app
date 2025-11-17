@@ -20,8 +20,12 @@ export default function PointsBalance({
     >
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-3">
-          <div className="p-2 rounded-lg" style={{ backgroundColor: `${loyaltyStatus.tier_color}20` }}>
-            <FiStar className="w-6 h-6" style={{ color: loyaltyStatus.tier_color }} />
+          <div className="p-2 rounded-lg"
+               style={{ backgroundColor: `${loyaltyStatus.tier_color}20` }}
+               data-testid="star-icon-container">
+            <FiStar className="w-6 h-6"
+                    style={{ color: loyaltyStatus.tier_color }}
+                    data-testid="tier-star-icon" />
           </div>
           <div>
             <h3 className="text-lg font-semibold text-gray-900">
@@ -33,7 +37,9 @@ export default function PointsBalance({
           </div>
         </div>
         <div className="text-right">
-          <div className="text-3xl font-bold" style={{ color: loyaltyStatus.tier_color }}>
+          <div className="text-3xl font-bold"
+               style={{ color: loyaltyStatus.tier_color }}
+               data-testid="points-display">
             {loyaltyStatus.current_points.toLocaleString()}
           </div>
           <div className="text-sm text-gray-600">
@@ -57,9 +63,9 @@ export default function PointsBalance({
             <ul className="text-xs text-gray-600 space-y-1">
               {loyaltyStatus.tier_benefits.perks.slice(0, 2).map((perk, index) => (
                 <li key={index} className="flex items-center space-x-1">
-                  <span className="w-1.5 h-1.5 rounded-full" 
+                  <span className="w-1.5 h-1.5 rounded-full"
                         style={{ backgroundColor: loyaltyStatus.tier_color }}
-                  />
+                        data-testid={`perk-bullet-${index}`} />
                   <span>{perk}</span>
                 </li>
               ))}

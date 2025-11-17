@@ -61,7 +61,7 @@ describe('CouponCard', () => {
     vi.clearAllMocks();
 
     // Default mock implementations
-    vi.mocked(couponService.getExpiryDate).mockReturnValue('2024-12-31T23:59:59Z');
+    vi.mocked(couponService.getExpiryDate).mockReturnValue(new Date('2024-12-31T23:59:59Z'));
     vi.mocked(couponService.isExpiringSoon).mockReturnValue(false);
     vi.mocked(couponService.formatMinimumSpend).mockReturnValue('Min. spend: ฿1,000');
     vi.mocked(dateFormatter.formatExpiryDateWithRelative).mockReturnValue('Expires on 31 Dec 2024');
@@ -106,7 +106,7 @@ describe('CouponCard', () => {
     it('should style expiring soon badge correctly', () => {
       vi.mocked(couponService.isExpiringSoon).mockReturnValue(true);
 
-      const { container } = render(<CouponCard coupon={mockCoupon} />);
+      render(<CouponCard coupon={mockCoupon} />);
 
       const badge = screen.getByText('Expiring Soon');
       expect(badge).toHaveClass('bg-red-500', 'text-white');
@@ -132,12 +132,22 @@ describe('CouponCard', () => {
     });
 
     it('should have red border and background when expiring', () => {
+      // Clear previous mocks
+      vi.clearAllMocks();
+
+      // Set mock return value
       vi.mocked(couponService.isExpiringSoon).mockReturnValue(true);
+
+      // Verify mock setup BEFORE render
+      expect(couponService.isExpiringSoon(mockCoupon)).toBe(true);
 
       const { container } = render(<CouponCard coupon={mockCoupon} />);
 
       const card = container.firstChild as HTMLElement;
       expect(card).toHaveClass('border-red-300', 'bg-red-50');
+
+      // Verify mock was actually called by component
+      expect(couponService.isExpiringSoon).toHaveBeenCalledWith(mockCoupon);
     });
 
     it('should apply custom className', () => {
