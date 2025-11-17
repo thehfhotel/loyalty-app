@@ -1707,12 +1707,27 @@ jobs:
   # Environment → Service Deploy → Migration → Health Check → Summary
   # =============================================================================
   
+  production-shutdown-approval:
+    name: "🛑 Confirm Production Deployment"
+    runs-on: ubuntu-latest
+    environment:
+      name: production-shutdown
+    needs: [build-validation]
+    if: github.ref == 'refs/heads/main' && needs.build-validation.outputs.build-passed == 'true'
+    steps:
+      - name: "📋 Await manual approval"
+        run: |
+          echo "✅ Manual approval received for production deployment."
+
   production-deployment:
     name: "🚀 Production Deployment"
     runs-on: self-hosted
     environment: production
-    needs: [build-validation]
-    if: github.ref == 'refs/heads/main' && needs.build-validation.outputs.build-passed == 'true'
+    needs: [build-validation, production-shutdown-approval]
+    if: |
+      github.ref == 'refs/heads/main' &&
+      needs.build-validation.outputs.build-passed == 'true' &&
+      needs.production-shutdown-approval.result == 'success'
     timeout-minutes: 15
 
     steps:
