@@ -1364,6 +1364,19 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
 
+          # CRITICAL: Verify containers are still running RIGHT before test execution
+          echo "🔍 Pre-Test Container Status Check:"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          docker compose -f docker-compose.e2e.ci.yml ps
+          echo ""
+          echo "📋 Backend logs (last 30 lines):"
+          docker compose -f docker-compose.e2e.ci.yml logs --tail=30 backend
+          echo ""
+          echo "🏥 Final health check before tests:"
+          curl -f http://localhost:4202/api/health || echo "❌ Backend health check FAILED before test execution!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+
           # Run all E2E tests against isolated environment (BLOCKING - must pass to succeed)
           echo "🎭 Running E2E tests - failures will BLOCK the pipeline..."
           npx playwright test
