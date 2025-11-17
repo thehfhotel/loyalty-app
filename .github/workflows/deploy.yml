@@ -205,11 +205,14 @@ jobs:
           echo "📦 Creating shared workspace directory at: $SHARED_WORKSPACE"
           mkdir -p "$SHARED_WORKSPACE"
 
-          echo "📋 Copying workspace files (excluding .git and node_modules)..."
+          echo "📋 Copying workspace files (excluding .git, node_modules, and backup files)..."
           rsync -av --exclude='.git' \
                     --exclude='node_modules' \
                     --exclude='backend/node_modules' \
                     --exclude='frontend/node_modules' \
+                    --exclude='*.backup' \
+                    --exclude='*.spec.ts.backup' \
+                    --exclude='*.test.ts.backup' \
                     . "$SHARED_WORKSPACE/"
 
           echo "✅ Workspace copied to shared location"
