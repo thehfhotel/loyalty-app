@@ -32,7 +32,6 @@ vi.useFakeTimers();
 
 describe('SessionManager', () => {
   const mockLogout = vi.fn();
-  const mockNavigate = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();

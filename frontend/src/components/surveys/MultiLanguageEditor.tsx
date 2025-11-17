@@ -78,7 +78,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
     }
   };
 
-  const currentLang = supportedLanguages.find(lang => lang.code === activeTab) || supportedLanguages[0];
+  const currentLang = supportedLanguages.find(lang => lang.code === activeTab) ?? supportedLanguages[0];
   const currentText = value[activeTab] || '';
 
   return (
@@ -87,7 +87,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
         {label}
         {required && <span className="text-red-500 ml-1">*</span>}
       </label>
-      
+
       {/* Language Tabs */}
       <div className="flex items-center space-x-2 border-b border-gray-200">
         <div className="flex space-x-1">
@@ -120,7 +120,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
             </button>
           ))}
         </div>
-        
+
         {/* Add Language Button */}
         {availableToAdd.length > 0 && (
           <div className="relative">
@@ -131,7 +131,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
               <FiPlus className="h-4 w-4" />
               <FiGlobe className="h-4 w-4" />
             </button>
-            
+
             {showLanguageSelector && (
               <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-20">
                 <div className="p-2">
@@ -152,12 +152,12 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
           </div>
         )}
       </div>
-      
+
       {/* Text Editor */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs text-gray-500">
-            Editing: {currentLang.flag} {currentLang.name}
+            Editing: {currentLang!.flag} {currentLang!.name}
           </span>
           {activeTab !== 'en' && value['en'] && (
             <button
@@ -168,12 +168,12 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
             </button>
           )}
         </div>
-        
+
         {type === 'textarea' ? (
           <textarea
             value={currentText}
             onChange={(e) => handleTextChange(activeTab, e.target.value)}
-            placeholder={placeholder ? `${placeholder} (${currentLang.name})` : `Enter text in ${currentLang.name}...`}
+            placeholder={placeholder ? `${placeholder} (${currentLang!.name})` : `Enter text in ${currentLang!.name}...`}
             rows={3}
             className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
@@ -182,7 +182,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
             type="text"
             value={currentText}
             onChange={(e) => handleTextChange(activeTab, e.target.value)}
-            placeholder={placeholder ? `${placeholder} (${currentLang.name})` : `Enter text in ${currentLang.name}...`}
+            placeholder={placeholder ? `${placeholder} (${currentLang!.name})` : `Enter text in ${currentLang!.name}...`}
             className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         )}

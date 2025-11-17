@@ -131,7 +131,7 @@ const SurveyPreview: React.FC<SurveyPreviewProps> = ({ survey, onClose }) => {
                   className={`w-3 h-3 rounded-full transition-colors ${
                     index === currentQuestion
                       ? 'bg-blue-600'
-                      : answers[survey.questions[index].id]
+                      : answers[survey.questions[index]?.id ?? '']
                       ? 'bg-green-400'
                       : 'bg-gray-300'
                   }`}

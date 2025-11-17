@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Survey } from '../../types/survey';
+import { Survey, SurveyQuestion } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 import { translationService } from '../../services/translationService';
 import QuestionRenderer from '../../components/surveys/QuestionRenderer';
@@ -66,16 +66,16 @@ const TakeSurvey: React.FC = () => {
 
       // Load translations if available
       if (translationsData) {
-        const multilingualData: MultilingualSurvey = {
+        const multilingualData = {
           ...translationsData,
-          originalLanguage: translationsData.original_language ?? 'th',
-          availableLanguages: translationsData.available_languages ?? ['th'],
-          translationStatus: 'none',
-          translations: translationsData.translations ?? {}
-        };
-        
+          originalLanguage: (translationsData.original_language ?? 'th') as SupportedLanguage,
+          availableLanguages: (translationsData.available_languages ?? ['th']) as SupportedLanguage[],
+          translationStatus: 'none' as const,
+          translations: (translationsData.translations ?? {}) as { [language: string]: unknown }
+        } as MultilingualSurvey;
+
         setMultilingualSurvey(multilingualData);
-        setSelectedLanguage(translationsData.original_language ?? 'th');
+        setSelectedLanguage((translationsData.original_language ?? 'th') as SupportedLanguage);
       }
 
       if (responseData) {
@@ -168,14 +168,14 @@ const TakeSurvey: React.FC = () => {
     const displayContent = getDisplayContent();
     if (!displayContent || currentQuestion >= (displayContent.questions?.length ?? 0)) {return true;}
 
-    const question = displayContent.questions?.[currentQuestion];
+    const question = displayContent.questions?.[currentQuestion] as { id: string; required?: boolean } | undefined;
     if (!question) {return true;}
-    
+
     const answer = answers[question.id];
-    
-    if (!surveyService.validateAnswer(question, answer)) {
+
+    if (!surveyService.validateAnswer(question as never, answer)) {
       setErrors({
-        [question.id]: question.required 
+        [question.id]: question.required
           ? t('surveys.errors.required')
           : t('surveys.errors.invalid')
       });
@@ -313,16 +313,19 @@ const TakeSurvey: React.FC = () => {
               progress={progress}
             />
 
-            {displayContent?.questions?.[currentQuestion] && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-                <QuestionRenderer
-                  question={displayContent.questions[currentQuestion]}
-                  answer={answers[displayContent.questions[currentQuestion].id]}
-                  onAnswerChange={handleAnswerChange}
-                  error={errors[displayContent.questions[currentQuestion].id]}
-                />
-              </div>
-            )}
+            {displayContent?.questions?.[currentQuestion] && (() => {
+              const currentQ = displayContent.questions[currentQuestion] as SurveyQuestion;
+              return (
+                <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                  <QuestionRenderer
+                    question={currentQ}
+                    answer={answers[currentQ.id] as string | number | boolean | string[] | null}
+                    onAnswerChange={handleAnswerChange}
+                    error={errors[currentQ.id]}
+                  />
+                </div>
+              );
+            })()}
 
             {/* Navigation */}
             <div className="flex justify-between items-center">
@@ -356,19 +359,22 @@ const TakeSurvey: React.FC = () => {
 
             {/* Question navigation dots */}
             <div className="flex justify-center mt-6 space-x-2">
-              {displayContent?.questions?.map((question, index: number) => (
-                <button
-                  key={index}
-                  onClick={() => goToQuestion(index)}
-                  className={`w-3 h-3 rounded-full transition-colors ${
-                    index === currentQuestion
-                      ? 'bg-blue-600'
-                      : answers[question.id]
-                      ? 'bg-green-400'
-                      : 'bg-gray-300'
-                  }`}
-                />
-              ))}
+              {displayContent?.questions?.map((question, index: number) => {
+                const q = question as { id: string };
+                return (
+                  <button
+                    key={index}
+                    onClick={() => goToQuestion(index)}
+                    className={`w-3 h-3 rounded-full transition-colors ${
+                      index === currentQuestion
+                        ? 'bg-blue-600'
+                        : answers[q.id]
+                        ? 'bg-green-400'
+                        : 'bg-gray-300'
+                    }`}
+                  />
+                );
+              })}
             </div>
           </>
         ) : (

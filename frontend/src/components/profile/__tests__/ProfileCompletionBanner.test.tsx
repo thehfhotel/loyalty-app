@@ -511,6 +511,7 @@ describe('ProfileCompletionBanner', () => {
       });
 
       const openButton = screen.getAllByText('Complete Profile')[0];
+      if (!openButton) throw new Error('Open button not found');
       await user.click(openButton);
 
       await waitFor(() => {
@@ -535,6 +536,7 @@ describe('ProfileCompletionBanner', () => {
       });
 
       const openButton = screen.getAllByText('Complete Profile')[0];
+      if (!openButton) throw new Error('Open button not found');
       await user.click(openButton);
 
       await waitFor(() => {
@@ -561,6 +563,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -588,6 +591,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -618,6 +622,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -656,6 +661,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -675,6 +681,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -694,6 +701,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -713,6 +721,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -732,6 +741,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -751,6 +761,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -770,6 +781,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -789,6 +801,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -808,6 +821,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -837,6 +851,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -880,6 +895,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -917,6 +933,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -952,6 +969,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -987,6 +1005,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -1028,6 +1047,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -1063,6 +1083,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -1096,6 +1117,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -1134,6 +1156,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -1167,6 +1190,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -1201,6 +1225,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -1233,6 +1258,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -1254,6 +1280,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
+        if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
@@ -1297,6 +1324,7 @@ describe('ProfileCompletionBanner', () => {
 
       await waitFor(() => {
         const completeButton = screen.getAllByText('Complete Profile')[0];
+        if (!completeButton) throw new Error('Complete button not found');
         completeButton.focus();
         expect(completeButton).toHaveFocus();
       });

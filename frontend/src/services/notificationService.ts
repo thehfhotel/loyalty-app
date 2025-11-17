@@ -124,7 +124,7 @@ export class NotificationService {
       // Create new subscription
       const subscription = await this.swRegistration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: this.urlBase64ToUint8Array(this.vapidPublicKey)
+        applicationServerKey: this.urlBase64ToUint8Array(this.vapidPublicKey) as BufferSource
       });
 
       // Send subscription to backend

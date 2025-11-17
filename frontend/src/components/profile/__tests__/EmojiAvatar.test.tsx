@@ -69,7 +69,7 @@ describe('EmojiAvatar', () => {
     });
 
     it('should have emoji text sizing', () => {
-      const { container } = render(<EmojiAvatar avatarUrl="emoji:🐱" />);
+      render(<EmojiAvatar avatarUrl="emoji:🐱" />);
 
       const emojiSpan = screen.getByText('🐱');
       expect(emojiSpan).toHaveClass('select-none');

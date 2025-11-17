@@ -25,8 +25,8 @@ export function LoyaltyStatusExample() {
       <h2 className="text-xl font-bold mb-4">Loyalty Status (tRPC)</h2>
       <div className="space-y-2">
         <p><strong>Current Points:</strong> {data.current_points}</p>
-        <p><strong>Tier:</strong> {data.current_tier}</p>
-        <p><strong>Lifetime Points:</strong> {data.lifetime_points}</p>
+        <p><strong>Tier:</strong> {data.tier_name}</p>
+        <p><strong>Total Nights:</strong> {data.total_nights}</p>
       </div>
     </div>
   );
@@ -61,10 +61,10 @@ export function AwardPointsExample({ userId }: { userId: string }) {
   return (
     <button
       onClick={handleAwardPoints}
-      disabled={mutation.isLoading}
+      disabled={mutation.isPending}
       className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400"
     >
-      {mutation.isLoading ? 'Awarding...' : 'Award 100 Points'}
+      {mutation.isPending ? 'Awarding...' : 'Award 100 Points'}
     </button>
   );
 }
@@ -89,9 +89,9 @@ export function TransactionHistoryExample() {
     <div>
       <h3>Transaction History</h3>
       <ul>
-        {data.transactions?.map((tx: { id: string; points: number; reason: string; created_at: string }) => (
+        {data.transactions?.map((tx) => (
           <li key={tx.id}>
-            {tx.points} points - {tx.reason} ({new Date(tx.created_at).toLocaleDateString()})
+            {tx.points} points - {tx.description ?? 'Transaction'} ({new Date(tx.created_at).toLocaleDateString()})
           </li>
         ))}
       </ul>
@@ -103,10 +103,10 @@ export function TransactionHistoryExample() {
         >
           Previous
         </button>
-        <span>Page {page}</span>
+        <span>Page {page} of {data.totalPages}</span>
         <button
           onClick={() => setPage(p => p + 1)}
-          disabled={!data.hasMore}
+          disabled={page >= data.totalPages}
           className="px-3 py-1 bg-gray-200 rounded"
         >
           Next

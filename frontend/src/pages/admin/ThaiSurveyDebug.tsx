@@ -5,12 +5,12 @@ import toast from 'react-hot-toast';
 
 /**
  * Thai Survey Debug Page
- * 
+ *
  * This component provides a dedicated interface for testing Thai language
  * survey creation to debug the 400 error. It includes detailed logging
  * and error capture specifically for Thai content validation issues.
  */
-const ThaiSurveyDebug: React.FC = () => {
+const ThaiSurveyDebug: React.FC = (): JSX.Element => {
   const [isCreating, setIsCreating] = useState(false);
   const [lastError, setLastError] = useState<unknown>(null);
 
@@ -99,20 +99,6 @@ const ThaiSurveyDebug: React.FC = () => {
     }
   };
 
-  const analyzeTextEncoding = (text: string) => {
-    return {
-      text,
-      length: text.length,
-      bytes: new TextEncoder().encode(text).length,
-      hasThaiChars: /[\u0E00-\u0E7F]/.test(text),
-      charCodes: Array.from(text).slice(0, 10).map(char => ({
-        char,
-        code: char.charCodeAt(0),
-        unicode: `U+${char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`
-      }))
-    };
-  };
-
   // Type guard for axios-like error
   const getAxiosError = (error: unknown) => {
     if (error && typeof error === 'object' && 'response' in error) {
@@ -187,17 +173,19 @@ const ThaiSurveyDebug: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={surveyData.questions[0].text}
+                  value={surveyData.questions[0]?.text ?? ''}
                   onChange={(e) => {
                     const updated = {...surveyData};
-                    updated.questions[0].text = e.target.value;
-                    setSurveyData(updated);
+                    if (updated.questions[0]) {
+                      updated.questions[0].text = e.target.value;
+                      setSurveyData(updated);
+                    }
                   }}
                   className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                 />
                 <div className="mt-2 text-xs text-gray-600">
-                  <div>Length: {surveyData.questions[0].text.length} chars</div>
-                  <div>Bytes: {new TextEncoder().encode(surveyData.questions[0].text).length}</div>
+                  <div>Length: {surveyData.questions[0]?.text.length ?? 0} chars</div>
+                  <div>Bytes: {surveyData.questions[0]?.text ? new TextEncoder().encode(surveyData.questions[0].text).length : 0}</div>
                 </div>
               </div>
 
@@ -206,15 +194,16 @@ const ThaiSurveyDebug: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Options (Thai)
                 </label>
-                {surveyData.questions[0].options?.map((option, index) => (
+                {surveyData.questions[0]?.options?.map((option, index) => (
                   <div key={option.id} className="mb-2">
                     <input
                       type="text"
                       value={option.text}
                       onChange={(e) => {
                         const updated = {...surveyData};
-                        if (updated.questions[0].options?.[index]) {
-                          updated.questions[0].options[index].text = e.target.value;
+                        const firstQuestion = updated.questions[0];
+                        if (firstQuestion?.options?.[index]) {
+                          firstQuestion.options[index].text = e.target.value;
                           setSurveyData(updated);
                         }
                       }}
@@ -230,36 +219,25 @@ const ThaiSurveyDebug: React.FC = () => {
             </div>
           </div>
 
-          {/* Text Analysis */}
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">🔍 Text Analysis</h2>
-            <div className="bg-gray-50 rounded p-4 space-y-2">
-              <div>
-                <strong>Title Analysis:</strong>
-                <pre className="text-xs mt-1">{JSON.stringify(analyzeTextEncoding(surveyData.title), null, 2)}</pre>
-              </div>
-            </div>
-          </div>
-
           {/* Action Buttons */}
-          <div className="mb-6">
-            <button
-              onClick={handleCreateSurvey}
-              disabled={isCreating}
-              className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-            >
-              {isCreating && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />}
-              {isCreating ? 'Creating Survey...' : '🚀 Create Thai Survey'}
-            </button>
-          </div>
+          {React.createElement('div', { className: 'mb-6' },
+            React.createElement('button', {
+              onClick: handleCreateSurvey,
+              disabled: isCreating,
+              className: 'bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center'
+            },
+              isCreating && React.createElement('div', { className: 'animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2' }),
+              isCreating ? 'Creating Survey...' : '🚀 Create Thai Survey'
+            )
+          ) as JSX.Element}
 
           {/* Error Display */}
           {lastError && (() => {
             const err = getAxiosError(lastError);
-            if (!err) {return null;}
+            if (!err) {return null as React.ReactElement | null;}
 
             return (
-              <div className="mb-6">
+              <div className="mb-6" key="error-display">
                 <h2 className="text-lg font-semibold text-red-900 mb-4">❌ Last Error</h2>
                 <div className="bg-red-50 border border-red-200 rounded p-4">
                   <div className="mb-4">
@@ -270,34 +248,34 @@ const ThaiSurveyDebug: React.FC = () => {
                     <strong>Message:</strong> {(err.response?.data?.message as string) ?? err.message ?? 'Unknown error'}
                   </div>
 
-                  {err.response?.data?.validationErrors && (
+                  {err.response?.data?.validationErrors ? (
                     <div className="mb-4">
                       <strong>Validation Errors:</strong>
                       <pre className="text-xs mt-2 bg-white p-2 rounded border overflow-auto max-h-40">
-                        {JSON.stringify(err.response.data.validationErrors, null, 2)}
+                        {String(JSON.stringify(err.response.data.validationErrors, null, 2))}
                       </pre>
                     </div>
-                  )}
+                  ) : null}
 
-                  {err.response?.data?.receivedData && (
+                  {err.response?.data?.receivedData ? (
                     <div className="mb-4">
                       <strong>Backend Received:</strong>
                       <pre className="text-xs mt-2 bg-white p-2 rounded border overflow-auto max-h-40">
-                        {JSON.stringify(err.response.data.receivedData, null, 2)}
+                        {String(JSON.stringify(err.response.data.receivedData, null, 2))}
                       </pre>
                     </div>
-                  )}
+                  ) : null}
 
                   <div>
                     <strong>Full Error:</strong>
                     <pre className="text-xs mt-2 bg-white p-2 rounded border overflow-auto max-h-60">
-                      {JSON.stringify(err.response?.data ?? err, null, 2)}
+                      {String(JSON.stringify(err.response?.data ?? err, null, 2))}
                     </pre>
                   </div>
                 </div>
               </div>
-            );
-          })()}
+            ) as React.ReactElement | null;
+          })() as React.ReactElement | null}
 
           {/* Instructions */}
           <div className="bg-yellow-50 border border-yellow-200 rounded p-4">

@@ -5,7 +5,7 @@ import { notify } from '../utils/notificationManager';
 
 interface User {
   id: string;
-  email: string;
+  email: string | null;
   role: 'customer' | 'admin' | 'super_admin';
   firstName?: string;
   lastName?: string;
@@ -175,13 +175,13 @@ export const useAuthStore = create<AuthState>()(
           
           const response = await authService.getMe();
           clearTimeout(timeoutId);
-          
+
           // Update user info if it has changed
-          if (response.user.email !== state.user?.email || 
-              response.user.avatarUrl !== state.user?.avatarUrl ||
-              response.user.firstName !== state.user?.firstName ||
-              response.user.lastName !== state.user?.lastName) {
-            set({ user: response.user });
+          if (response.data?.email !== state.user?.email ||
+              response.data?.avatarUrl !== state.user?.avatarUrl ||
+              response.data?.firstName !== state.user?.firstName ||
+              response.data?.lastName !== state.user?.lastName) {
+            set({ user: response.data });
           }
           
           return true;

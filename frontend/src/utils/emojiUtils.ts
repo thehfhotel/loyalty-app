@@ -62,7 +62,7 @@ export function getAllEmojiOptions(): string[] {
  * Get a random emoji from the full collection
  */
 export function getRandomEmoji(): string {
-  return PROFILE_EMOJIS[Math.floor(Math.random() * PROFILE_EMOJIS.length)];
+  return PROFILE_EMOJIS[Math.floor(Math.random() * PROFILE_EMOJIS.length)] ?? '👤';
 }
 
 /**

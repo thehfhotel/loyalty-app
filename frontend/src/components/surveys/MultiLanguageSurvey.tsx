@@ -27,7 +27,7 @@ const MultiLanguageSurvey: React.FC<MultiLanguageSurveyProps> = ({
 }) => {
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
 
-  const currentLang = availableLanguages.find(lang => lang.code === currentLanguage) || availableLanguages[0];
+  const currentLang = availableLanguages.find(lang => lang.code === currentLanguage) ?? availableLanguages[0];
 
   const getTranslatedText = (textObj: Record<string, string> | string, fallback = '') => {
     if (typeof textObj === 'string') {return textObj;}
@@ -44,8 +44,8 @@ const MultiLanguageSurvey: React.FC<MultiLanguageSurveyProps> = ({
             className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
           >
             <FiGlobe className="mr-2 h-4 w-4" />
-            <span className="mr-2">{currentLang.flag}</span>
-            {currentLang.name}
+            <span className="mr-2">{currentLang!.flag}</span>
+            {currentLang!.name}
             <svg className="ml-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
@@ -124,7 +124,7 @@ const MultiLanguageSurvey: React.FC<MultiLanguageSurveyProps> = ({
             {question.type === 'text' && (
               <input
                 type="text"
-                placeholder={`Your answer in ${currentLang.name}...`}
+                placeholder={`Your answer in ${currentLang!.name}...`}
                 className="w-full p-2 border border-gray-300 rounded-md"
                 disabled
               />
@@ -132,7 +132,7 @@ const MultiLanguageSurvey: React.FC<MultiLanguageSurveyProps> = ({
 
             {question.type === 'textarea' && (
               <textarea
-                placeholder={`Your answer in ${currentLang.name}...`}
+                placeholder={`Your answer in ${currentLang!.name}...`}
                 rows={4}
                 className="w-full p-2 border border-gray-300 rounded-md"
                 disabled
@@ -180,7 +180,7 @@ const MultiLanguageSurvey: React.FC<MultiLanguageSurveyProps> = ({
               Multi-Language Survey Preview
             </p>
             <p className="text-xs text-blue-700 mt-1">
-              Currently showing: {currentLang.name}. 
+              Currently showing: {currentLang!.name}.
               Survey supports {availableLanguages.length} languages.
             </p>
           </div>

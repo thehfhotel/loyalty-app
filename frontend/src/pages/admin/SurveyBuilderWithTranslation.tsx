@@ -177,9 +177,9 @@ const SurveyBuilderWithTranslation: React.FC = () => {
   const [multilingualSurvey, setMultilingualSurvey] = useState<MultilingualSurvey | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('th');
   const [translationStatus, setTranslationStatus] = useState<Record<SupportedLanguage, TranslationStatus>>({
-    th: 'original',
-    en: 'pending',
-    'zh-CN': 'pending'
+    th: 'original' as TranslationStatus,
+    en: 'pending' as TranslationStatus,
+    'zh-CN': 'pending' as TranslationStatus
   });
   const [isTranslating, setIsTranslating] = useState(false);
   const [justRefreshed, setJustRefreshed] = useState(false);
@@ -305,14 +305,14 @@ const SurveyBuilderWithTranslation: React.FC = () => {
       const translationsData = await translationService.getSurveyTranslations(id);
       if (translationsData) {
         // Create a MultilingualSurvey-compatible object from backend response
-        const multilingualData: MultilingualSurvey = {
+        const multilingualData = {
           ...translationsData,
           originalLanguage: (translationsData.original_language ?? 'th') as SupportedLanguage,
-          availableLanguages: translationsData.available_languages ?? ['th'],
-          translationStatus: 'none',
+          availableLanguages: (translationsData.available_languages ?? ['th']) as SupportedLanguage[],
+          translationStatus: 'none' as const,
           translations: (translationsData.translations ?? {}) as { [language: string]: unknown }
-        };
-        
+        } as MultilingualSurvey;
+
         setMultilingualSurvey(multilingualData);
         
         // Update translation status
@@ -815,19 +815,22 @@ const SurveyBuilderWithTranslation: React.FC = () => {
               </div>
 
               <div className="space-y-4">
-                {displayContent.questions?.map((question, index: number) => (
-                  <QuestionEditor
-                    key={question.id}
-                    question={question}
-                    index={index}
-                    questionNumber={index + 1}
-                    onUpdate={(updates) => updateQuestion(question.id, updates)}
-                    onRemove={() => removeQuestion(question.id)}
-                    onReorder={reorderQuestions}
-                    canMove={(displayContent.questions?.length || 0) > 1}
-                    disabled={isEditing && selectedLanguage !== multilingualSurvey?.originalLanguage}
-                  />
-                ))}
+                {displayContent.questions?.map((question, index) => {
+                  const q = question as SurveyQuestion;
+                  return (
+                    <QuestionEditor
+                      key={q.id}
+                      question={q}
+                      index={index}
+                      questionNumber={index + 1}
+                      onUpdate={(updates) => updateQuestion(q.id, updates)}
+                      onRemove={() => removeQuestion(q.id)}
+                      onReorder={reorderQuestions}
+                      canMove={(displayContent.questions?.length || 0) > 1}
+                      disabled={isEditing && selectedLanguage !== multilingualSurvey?.originalLanguage}
+                    />
+                  );
+                })}
 
                 {displayContent.questions?.length === 0 && (
                   <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg">

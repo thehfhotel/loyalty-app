@@ -18,7 +18,6 @@ const CouponWallet: React.FC = () => {
   const [showQRCode, setShowQRCode] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [activeFilter, setActiveFilter] = useState<CouponFilter>('active');
 
@@ -49,7 +48,6 @@ const CouponWallet: React.FC = () => {
         setCoupons(response.coupons);
       }
       
-      setTotalPages(response.totalPages);
       setHasMore(pageNum < response.totalPages);
       setPage(pageNum);
     } catch (err) {

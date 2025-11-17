@@ -49,17 +49,17 @@ const SurveyDetailsPage: React.FC = () => {
       
       // Load translations if available
       if (translationsData) {
-        const multilingualData: MultilingualSurvey = {
+        const multilingualData = {
           ...translationsData,
-          originalLanguage: translationsData.original_language || 'th',
-          availableLanguages: translationsData.available_languages || ['th'],
-          translationStatus: 'none',
-          translations: translationsData.translations || {}
-        };
-        
+          originalLanguage: (translationsData.original_language || 'th') as SupportedLanguage,
+          availableLanguages: (translationsData.available_languages || ['th']) as SupportedLanguage[],
+          translationStatus: 'none' as const,
+          translations: (translationsData.translations || {}) as { [language: string]: unknown }
+        } as MultilingualSurvey;
+
         setMultilingualSurvey(multilingualData);
-        
-        setSelectedLanguage(translationsData.original_language || 'th');
+
+        setSelectedLanguage((translationsData.original_language || 'th') as SupportedLanguage);
       }
     } catch (err) {
       console.error('Error loading survey:', err);
@@ -245,9 +245,9 @@ const SurveyDetailsPage: React.FC = () => {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             {t('surveys.preview', { count: displayContent?.questions?.length || 0 })}
           </h2>
-          <SurveyPreview 
-            survey={displayContent ?? survey} 
-            onClose={() => window.history.back()} 
+          <SurveyPreview
+            survey={(displayContent ?? survey) as Survey}
+            onClose={() => window.history.back()}
           />
         </div>
       </main>

@@ -267,7 +267,6 @@ const SurveyTemplates: React.FC = () => {
     // Custom templates functionality is disabled for now
     // Templates are provided as predefined options only
     setCustomTemplates([]);
-    setLoading(false);
   };
 
   const categories = [

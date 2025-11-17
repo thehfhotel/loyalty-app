@@ -123,7 +123,7 @@ const SurveyAnalytics: React.FC = () => {
     }
   };
 
-  const getChartOptions = (title: string): ChartOptions<'bar' | 'line' | 'pie'> => ({
+  const getChartOptions = <T extends 'bar' | 'line' | 'pie'>(title: string): ChartOptions<T> => ({
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -138,7 +138,7 @@ const SurveyAnalytics: React.FC = () => {
         }
       },
     },
-  });
+  } as ChartOptions<T>);
 
   const getResponseTrendData = (): ChartData<'line'> => {
     if (!analytics) {return { labels: [], datasets: [] };}
@@ -306,9 +306,9 @@ const SurveyAnalytics: React.FC = () => {
               Response Trend
             </h2>
             <div className="h-64">
-              <Line 
-                data={getResponseTrendData()} 
-                options={getChartOptions('Daily Response Count')}
+              <Line
+                data={getResponseTrendData()}
+                options={getChartOptions<'line'>('Daily Response Count')}
               />
             </div>
           </div>
@@ -327,15 +327,15 @@ const SurveyAnalytics: React.FC = () => {
                 {(question.type === 'multiple_choice' || question.type === 'single_choice') && (
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="h-64">
-                      <Bar 
-                        data={getQuestionChartData(question, 'bar') as ChartData<'bar'>} 
-                        options={getChartOptions('Response Distribution')}
+                      <Bar
+                        data={getQuestionChartData(question, 'bar') as ChartData<'bar'>}
+                        options={getChartOptions<'bar'>('Response Distribution')}
                       />
                     </div>
                     <div className="h-64">
-                      <Pie 
-                        data={getQuestionChartData(question, 'pie') as ChartData<'pie'>} 
-                        options={getChartOptions('Response Percentage')}
+                      <Pie
+                        data={getQuestionChartData(question, 'pie') as ChartData<'pie'>}
+                        options={getChartOptions<'pie'>('Response Percentage')}
                       />
                     </div>
                   </div>
@@ -344,9 +344,9 @@ const SurveyAnalytics: React.FC = () => {
                 {(question.type === 'rating_5' || question.type === 'rating_10') && (
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="h-64">
-                      <Bar 
-                        data={getQuestionChartData(question, 'bar') as ChartData<'bar'>} 
-                        options={getChartOptions('Rating Distribution')}
+                      <Bar
+                        data={getQuestionChartData(question, 'bar') as ChartData<'bar'>}
+                        options={getChartOptions<'bar'>('Rating Distribution')}
                       />
                     </div>
                     <div className="flex items-center justify-center">
@@ -365,9 +365,9 @@ const SurveyAnalytics: React.FC = () => {
                 
                 {question.type === 'yes_no' && (
                   <div className="h-64 max-w-md mx-auto">
-                    <Pie 
-                      data={getQuestionChartData(question, 'pie') as ChartData<'pie'>} 
-                      options={getChartOptions('Yes/No Distribution')}
+                    <Pie
+                      data={getQuestionChartData(question, 'pie') as ChartData<'pie'>}
+                      options={getChartOptions<'pie'>('Yes/No Distribution')}
                     />
                   </div>
                 )}

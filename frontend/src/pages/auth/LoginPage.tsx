@@ -23,7 +23,7 @@ export default function LoginPage() {
   const loginSchema = z.object({
     email: z.string().email(t('auth.invalidEmail')),
     password: z.string().min(1, t('auth.passwordRequired')),
-    rememberMe: z.boolean().optional().default(false),
+    rememberMe: z.boolean().default(false),
   });
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -50,7 +50,7 @@ export default function LoginPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<LoginFormData>({
-    resolver: zodResolver(loginSchema),
+    resolver: zodResolver(loginSchema) as never,
   });
 
   const onSubmit = async (data: LoginFormData) => {

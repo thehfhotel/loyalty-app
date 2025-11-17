@@ -116,7 +116,7 @@ export default function DashboardPage() {
                       <span>
                         {loyaltyStatus.nights_to_next_tier !== undefined && loyaltyStatus.nights_to_next_tier !== null
                           ? t('loyalty.nightsToGo', { count: loyaltyStatus.nights_to_next_tier })
-                          : `${loyaltyStatus.points_to_next_tier?.toLocaleString()} ${t('loyalty.pointsToGo')}`
+                          : t('loyalty.maxTierReached')
                         }
                       </span>
                     </div>

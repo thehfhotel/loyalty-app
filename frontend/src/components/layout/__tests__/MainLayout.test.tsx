@@ -313,7 +313,7 @@ describe('MainLayout', () => {
     });
 
     it('should display welcome message with proper styling', () => {
-      const { container } = renderWithRouter(<MainLayout title="Test">Content</MainLayout>);
+      renderWithRouter(<MainLayout title="Test">Content</MainLayout>);
       const welcomeText = screen.getByText(/Welcome/);
       expect(welcomeText.className).toContain('text-sm');
       expect(welcomeText.className).toContain('text-gray-500');
