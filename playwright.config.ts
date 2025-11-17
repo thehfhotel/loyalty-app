@@ -19,8 +19,8 @@ export default defineConfig({
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
 
-  /* Retry on CI only */
-  retries: process.env.CI ? 1 : 0,  // Reduced from 2 to 1: allows 1 retry instead of 2 for faster feedback
+  /* Disable test-level retries - rely on request-level retries instead for faster feedback */
+  retries: 0,  // Disabled: request-level retries handle transient failures more efficiently
 
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
@@ -49,8 +49,8 @@ export default defineConfig({
     /* Video on failure */
     video: 'retain-on-failure',
 
-    /* Timeout for each action */
-    actionTimeout: 30000,
+    /* Timeout for each action - reduced for faster failure detection */
+    actionTimeout: 10000,  // Reduced from 30s for faster feedback
   },
 
   /* Configure projects for major browsers */
@@ -61,8 +61,8 @@ export default defineConfig({
     },
   ],
 
-  /* Global timeout settings */
-  timeout: 60000, // 60 seconds per test
+  /* Global timeout settings - reduced for faster failure detection */
+  timeout: 30000, // Reduced from 60s to 30s per test
   expect: {
     timeout: 10000, // 10 seconds for assertions
   },
