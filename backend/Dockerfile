@@ -25,9 +25,15 @@ RUN npm run db:generate
 # Build TypeScript - fail on errors
 RUN npm run build
 
+# Copy Prisma client to dist/generated for compiled code module resolution
+RUN mkdir -p dist/generated && \
+    cp -r src/generated/* dist/generated/ && \
+    echo "✅ Prisma client copied to dist/generated for compiled code"
+
 # Verify build artifacts exist
 RUN test -d dist || (echo "❌ ERROR: TypeScript compilation failed - dist/ not found" && exit 1) && \
     test -f dist/index.js || (echo "❌ ERROR: dist/index.js not found" && exit 1) && \
+    test -d dist/generated/prisma || (echo "❌ ERROR: Prisma client not found in dist/generated" && exit 1) && \
     echo "✅ TypeScript compilation successful"
 
 # Base runtime stage - shared between dev and prod
@@ -92,13 +98,16 @@ FROM base-runtime AS runner
 # Copy ONLY production dependencies (no dev dependencies like tsx, jest, @types/*)
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copy compiled JavaScript (not source TypeScript)
+# Copy compiled JavaScript with embedded Prisma client (dist/generated)
 COPY --from=builder /app/dist ./dist
+
+# Copy Prisma client to src/generated for entrypoint script compatibility
+COPY --from=builder /app/src/generated ./src/generated
 
 # Copy Prisma schema and migrations (needed for runtime)
 COPY --chown=nodejs:nodejs prisma ./prisma
 
-# Copy generated Prisma client from builder
+# Copy generated Prisma client to node_modules for additional compatibility
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
 # Copy package.json for npm scripts and metadata
@@ -106,7 +115,9 @@ COPY --chown=nodejs:nodejs package*.json ./
 
 # Verify production artifacts exist
 RUN test -f dist/index.js || (echo "❌ ERROR: Production build not found" && exit 1) && \
-    test -d node_modules/.prisma || (echo "❌ ERROR: Prisma client not found" && exit 1) && \
+    test -d dist/generated/prisma || (echo "❌ ERROR: Prisma client not found in dist/generated" && exit 1) && \
+    test -d src/generated/prisma || (echo "❌ ERROR: Prisma client not found in src/generated" && exit 1) && \
+    test -d node_modules/.prisma || (echo "❌ ERROR: Prisma client not found in node_modules" && exit 1) && \
     echo "✅ Production artifacts verified"
 
 # Set ownership
