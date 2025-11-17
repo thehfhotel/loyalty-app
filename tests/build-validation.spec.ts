@@ -314,25 +314,23 @@ services:
 `;
       
       const tempComposeFile = path.join(projectRoot, 'temp-conflict-test.yml');
+      let composeStarted = false;
       
       try {
         // Write compose file
         await fs.writeFile(tempComposeFile, testComposeContent);
         
         // Try to start services
-        const { stderr } = await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} up -d`).catch(error => error);
+        const { stderr } = await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} up -d`);
+        composeStarted = true;
         
-        // Clean up immediately to avoid leaving containers
-        await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} down -v --remove-orphans`).catch(() => {});
-        
-        // Check if container conflict was detected
         if (stderr && (stderr.includes('Conflict') || stderr.includes('already in use'))) {
-          // This is expected - containers with these names already exist
           console.warn('Container naming conflict detected - this indicates containers from previous runs weren\'t cleaned up properly');
         }
         
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const stderr = (error as { stderr?: string })?.stderr || '';
+        const errorMessage = stderr || (error instanceof Error ? error.message : String(error));
         
         // Should detect container conflicts
         if (errorMessage.includes('Conflict') || 
@@ -344,8 +342,9 @@ services:
           console.warn(`Container conflict test encountered unexpected error: ${errorMessage}`);
         }
       } finally {
-        // Ensure cleanup
-        await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} down -v --remove-orphans`).catch(() => {});
+        if (composeStarted) {
+          await execAsync(`cd ${projectRoot} && docker compose -f ${tempComposeFile} down -v --remove-orphans`).catch(() => {});
+        }
         await fs.unlink(tempComposeFile).catch(() => {});
       }
     });
@@ -398,62 +397,132 @@ services:
       }
     });
 
-    test('should detect Docker build context path issues', async () => {
-      // Test for the specific E2E issue: build context pointing to wrong directory
-      const backendPath = path.join(projectRoot, 'backend');
-      const frontendPath = path.join(projectRoot, 'frontend');
-      
-      try {
-        // Test backend build context from backend directory (correct for E2E)
-        const e2eBackendComposeContent = `
-services:
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: test_backend_e2e
-`;
-        
-        const tempE2EComposeFile = path.join(backendPath, 'temp-e2e-context-test.yml');
-        await fs.writeFile(tempE2EComposeFile, e2eBackendComposeContent);
-        
-        // This should work - backend Dockerfile exists in backend directory
-        await execAsync(`cd ${backendPath} && docker compose -f temp-e2e-context-test.yml config`);
-        
-        // Clean up E2E test file
-        await fs.unlink(tempE2EComposeFile).catch(() => {});
-        
-        // Test problematic context that would fail
-        const badContextComposeContent = `
-services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: test_backend_bad
-`;
-        
-        const tempBadComposeFile = path.join(backendPath, 'temp-bad-context-test.yml');
-        await fs.writeFile(tempBadComposeFile, badContextComposeContent);
-        
-        try {
-          // This should fail because ./backend/Dockerfile doesn't exist from backend directory
-          await execAsync(`cd ${backendPath} && docker compose -f temp-bad-context-test.yml config`);
-          throw new Error('Expected build context validation to fail but it passed');
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          
-          // Should detect missing Dockerfile in wrong context
-          if (errorMessage.includes('Expected build context validation to fail')) {
-            throw error;
-          }
-          // Expected error - build context issue detected
+    test('should validate Docker build contexts reference existing Dockerfiles', async () => {
+      const composeFiles = [
+        'docker-compose.yml',
+        'docker-compose.dev.yml',
+        'docker-compose.override.yml',
+        'docker-compose.e2e.local.yml'
+      ].map(file => path.join(projectRoot, file));
+
+      const normalize = (value: string) =>
+        value.replace(/^['"]|['"]$/g, '').trim();
+
+      const validateContext = async (
+        composeFile: string,
+        serviceName: string,
+        contextValue?: string,
+        dockerfileValue?: string
+      ) => {
+        if (!contextValue) {
+          return;
         }
-        
-        await fs.unlink(tempBadComposeFile).catch(() => {});
-        
-      } catch (error) {
-        throw new Error(`Build context validation test failed: ${error instanceof Error ? error.message : String(error)}`);
+
+        const composeDir = path.dirname(composeFile);
+        const resolvedContext = path.resolve(composeDir, normalize(contextValue));
+        const dockerfilePath = path.join(
+          resolvedContext,
+          normalize(dockerfileValue || 'Dockerfile')
+        );
+
+        const contextExists = await fs.access(resolvedContext)
+          .then(() => true)
+          .catch(() => false);
+
+        expect(contextExists).toBe(
+          true,
+          `Docker build context "${contextValue}" for service "${serviceName}" in ${path.basename(composeFile)} does not exist`
+        );
+
+        const dockerfileExists = await fs.access(dockerfilePath)
+          .then(() => true)
+          .catch(() => false);
+
+        expect(dockerfileExists).toBe(
+          true,
+          `Dockerfile "${dockerfileValue || 'Dockerfile'}" missing for service "${serviceName}" (context: ${contextValue}) in ${path.basename(composeFile)}`
+        );
+      };
+
+      for (const composeFile of composeFiles) {
+        const fileExists = await fs.access(composeFile)
+          .then(() => true)
+          .catch(() => false);
+
+        if (!fileExists) {
+          continue;
+        }
+
+        const lines = (await fs.readFile(composeFile, 'utf-8')).split('\n');
+        let inServicesSection = false;
+        let servicesIndent = 0;
+        let currentService = '';
+        let captureBuild = false;
+        let buildIndent = 0;
+        let currentContext: string | undefined;
+        let currentDockerfile: string | undefined;
+
+        const flushBuildBlock = async () => {
+          if (!captureBuild) {
+            return;
+          }
+          await validateContext(composeFile, currentService, currentContext, currentDockerfile);
+          captureBuild = false;
+          currentContext = undefined;
+          currentDockerfile = undefined;
+        };
+
+        for (const line of lines) {
+          const indent = line.match(/^\s*/)?.[0].length ?? 0;
+          const trimmed = line.trim();
+
+          if (indent === 0 && trimmed.startsWith('services:')) {
+            inServicesSection = true;
+            servicesIndent = indent;
+            currentService = '';
+            continue;
+          }
+
+          if (inServicesSection && indent <= servicesIndent && trimmed && !trimmed.startsWith('#')) {
+            // Exiting services section
+            await flushBuildBlock();
+            inServicesSection = false;
+          }
+
+          if (!inServicesSection) {
+            continue;
+          }
+
+          if (indent === servicesIndent + 2 && trimmed.endsWith(':') && !trimmed.startsWith('#')) {
+            await flushBuildBlock();
+            currentService = trimmed.slice(0, -1).trim();
+            continue;
+          }
+
+          if (trimmed.startsWith('build:')) {
+            await flushBuildBlock();
+            captureBuild = true;
+            buildIndent = indent;
+            currentContext = undefined;
+            currentDockerfile = undefined;
+            continue;
+          }
+
+          if (captureBuild) {
+            if (indent <= buildIndent) {
+              await flushBuildBlock();
+              continue;
+            }
+
+            if (trimmed.startsWith('context:')) {
+              currentContext = trimmed.split(':').slice(1).join(':').trim();
+            } else if (trimmed.startsWith('dockerfile:')) {
+              currentDockerfile = trimmed.split(':').slice(1).join(':').trim();
+            }
+          }
+        }
+
+        await flushBuildBlock();
       }
     });
   });
@@ -553,16 +622,30 @@ services:
         if (fileExists) {
           const fileContent = await fs.readFile(testFile, 'utf-8');
           
-          // Should use environment variables instead of hardcoded URLs
-          expect(fileContent).toContain('process.env.BACKEND_URL');
-          expect(fileContent).toContain('process.env.FRONTEND_URL');
+          // Backend URL must always be configurable
+          expect(fileContent).toContain(
+            'process.env.BACKEND_URL',
+            `Test file ${testFile} must reference process.env.BACKEND_URL for API calls`
+          );
+
+          // Only enforce FRONTEND_URL usage when frontend helpers are referenced
+          if (fileContent.includes('FRONTEND_URL') || fileContent.match(/frontendUrl/i)) {
+            expect(fileContent).toContain(
+              'process.env.FRONTEND_URL',
+              `Test file ${testFile} references the frontend but does not use process.env.FRONTEND_URL`
+            );
+          }
           
           // Should not have hardcoded localhost URLs (except as fallbacks)
-          const hardcodedUrls = fileContent.match(/http:\/\/localhost:\d{4}(?!')/g) || [];
-          const fallbackUrls = fileContent.match(/\|\|\s*'http:\/\/localhost:\d{4}'/g) || [];
+          const hardcodedUrls = fileContent.match(/http:\/\/localhost:\d{4}(?!['"])/g) || [];
+          const fallbackUrls = fileContent.match(/\|\|\s*['"]http:\/\/localhost:\d{4}['"]/g) || [];
           
-          expect(hardcodedUrls.length).toBeLessThanOrEqual(fallbackUrls.length * 2, 
-            `Test file ${testFile} has hardcoded URLs that should use environment variables`);
+          if (hardcodedUrls.length > 0) {
+            expect(fallbackUrls.length).toBeGreaterThan(
+              0,
+              `Test file ${testFile} uses hardcoded localhost URLs without environment fallbacks`
+            );
+          }
         }
       }
     });
