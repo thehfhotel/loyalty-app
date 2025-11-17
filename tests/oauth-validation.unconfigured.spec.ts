@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/httpFixtures';
 import { retryRequest } from './helpers/retry';
 
 // Get E2E URLs from environment or use E2E defaults
