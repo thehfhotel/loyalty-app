@@ -1291,6 +1291,40 @@ jobs:
           echo "🌐 Backend: http://localhost:4202/api/health"
           echo "🌐 Frontend: http://localhost:3201"
 
+          # Network diagnostics: Check what interfaces backend is listening on
+          echo ""
+          echo "🔍 Network Diagnostics:"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          echo "📡 Port 4202 listening status (host network):"
+          ss -tlnp | grep :4202 || netstat -tlnp | grep :4202 || echo "⚠️ Port 4202 not found in host network"
+
+          echo ""
+          echo "🐳 Backend container network info:"
+          docker exec loyalty_backend_e2e sh -c 'echo "Inside container - listening ports:" && netstat -tlnp 2>/dev/null || ss -tlnp' | grep -E "4202|State" || echo "⚠️ Could not get container network info"
+
+          echo ""
+          echo "🌐 Testing connectivity from different contexts:"
+          echo "  Host curl to localhost:4202:"
+          curl -s -o /dev/null -w "    Status: %{http_code}, Time: %{time_total}s\n" http://localhost:4202/api/health || echo "    ❌ Failed"
+
+          echo "  Host curl to 127.0.0.1:4202:"
+          curl -s -o /dev/null -w "    Status: %{http_code}, Time: %{time_total}s\n" http://127.0.0.1:4202/api/health || echo "    ❌ Failed"
+
+          echo "  Host curl to 0.0.0.0:4202:"
+          curl -s -o /dev/null -w "    Status: %{http_code}, Time: %{time_total}s\n" http://0.0.0.0:4202/api/health || echo "    ❌ Failed"
+
+          echo ""
+          echo "🔧 Backend container inspection:"
+          echo "  Container IP (if bridged):"
+          docker inspect loyalty_backend_e2e --format='    {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' || echo "    N/A (host network mode)"
+
+          echo "  Network mode:"
+          docker inspect loyalty_backend_e2e --format='    {{.HostConfig.NetworkMode}}'
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+
 
       - name: "🎭 Run E2E tests with Playwright (isolated)"
         env:
@@ -1321,6 +1355,52 @@ jobs:
           # Verify Playwright installation
           echo "🔍 Verifying Playwright installation..."
           npx playwright --version
+
+          # Playwright connectivity diagnostic
+          echo ""
+          echo "🧪 Playwright Connectivity Diagnostic:"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          node -e "
+          const http = require('http');
+          const urls = [
+            'http://localhost:4202/api/health',
+            'http://127.0.0.1:4202/api/health',
+            'http://0.0.0.0:4202/api/health'
+          ];
+
+          console.log('Testing connectivity from Node.js (same context as Playwright):');
+
+          urls.forEach(url => {
+            const urlObj = new URL(url);
+            const options = {
+              hostname: urlObj.hostname,
+              port: urlObj.port,
+              path: urlObj.pathname,
+              method: 'GET',
+              timeout: 5000
+            };
+
+            const req = http.request(options, (res) => {
+              console.log(\`  ✅ ${url}: HTTP ${res.statusCode}\`);
+            });
+
+            req.on('error', (e) => {
+              console.log(\`  ❌ ${url}: ${e.code} - ${e.message}\`);
+            });
+
+            req.on('timeout', () => {
+              console.log(\`  ⏱️ ${url}: Timeout\`);
+              req.destroy();
+            });
+
+            req.end();
+          });
+
+          // Give requests time to complete
+          setTimeout(() => {}, 6000);
+          " || echo "⚠️ Node.js connectivity test failed"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
 
           # Run all E2E tests against isolated environment (BLOCKING - must pass to succeed)
           echo "🎭 Running E2E tests - failures will BLOCK the pipeline..."
