@@ -1416,7 +1416,10 @@ jobs:
           echo "🔐 Testing OAuth against: http://localhost:4202"
           # Run OAuth-specific tests separately for focused validation (BLOCKING - must pass to succeed)
           echo "🔐 OAuth E2E test failures will BLOCK the pipeline..."
-          npx playwright test tests/oauth-validation.spec.ts
+          npx playwright test \
+            tests/oauth-validation.configured.spec.ts \
+            tests/oauth-validation.security.spec.ts \
+            tests/oauth-validation.unconfigured.spec.ts
       
       - name: "🗄️ Database migration rollback safety"
         run: |

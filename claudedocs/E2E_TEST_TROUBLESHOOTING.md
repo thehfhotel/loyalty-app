@@ -71,7 +71,7 @@ export async function waitForService(
 - Added retry logic to API endpoint accessibility tests (3 attempts)
 - Improved error messages with connection attempt context
 
-**oauth-validation.spec.ts:**
+**oauth-validation.configured.spec.ts / oauth-validation.security.spec.ts / oauth-validation.unconfigured.spec.ts:**
 - Added retry logic to OAuth endpoint configuration tests (3 attempts)
 - Added retry logic to OAuth callback validation (3 attempts)
 - Added retry logic to OAuth /me endpoint tests (3 attempts)
@@ -217,7 +217,7 @@ Watch for:
 - CI/CD configuration: `.github/workflows/deploy.yml`
 - Retry helpers: `tests/helpers/retry.ts`
 - Health tests: `tests/health.spec.ts`
-- OAuth tests: `tests/oauth-validation.spec.ts`
+- OAuth tests: `tests/oauth-validation.configured.spec.ts`, `tests/oauth-validation.security.spec.ts`, `tests/oauth-validation.unconfigured.spec.ts`
 
 ## Success Metrics
 

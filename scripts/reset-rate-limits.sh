@@ -312,7 +312,7 @@ main() {
         echo ""
         print_status "You can now test OAuth endpoints:"
         echo "  • Run OAuth health check: npm run oauth:health"
-        echo "  • Run OAuth E2E tests: npm run test:e2e -- tests/oauth-validation.spec.ts"
+        echo "  • Run OAuth E2E tests: npm run test:e2e -- tests/oauth-validation.configured.spec.ts tests/oauth-validation.security.spec.ts tests/oauth-validation.unconfigured.spec.ts"
         echo "  • Test via manage.sh: ./manage.sh (Deployment Menu → OAuth Health Check)"
         
     else

@@ -898,7 +898,10 @@ handle_security_menu() {
 run_oauth_e2e_tests() {
     print_section "Running OAuth E2E Tests"
     print_status "Executing OAuth flow validation tests..."
-    npx playwright test tests/oauth-validation.spec.ts --reporter=line
+    npx playwright test \
+        tests/oauth-validation.configured.spec.ts \
+        tests/oauth-validation.security.spec.ts \
+        tests/oauth-validation.unconfigured.spec.ts --reporter=line
     print_success "OAuth E2E tests completed"
 }
 
