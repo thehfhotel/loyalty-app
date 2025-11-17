@@ -43,7 +43,10 @@ test.describe('OAuth Integration Tests', () => {
     ];
 
     for (const endpoint of oauthEndpoints) {
-      const response = await retryRequest(request, `${backendUrl}${endpoint}`, 3);
+      // Disable redirects so we only validate the backend response and don't follow external providers
+      const response = await retryRequest(request, `${backendUrl}${endpoint}`, 3, {
+        maxRedirects: 0
+      });
       // Should get a redirect or OAuth flow, not connection error
       expect([200, 302, 401, 403]).toContain(response.status());
     }
