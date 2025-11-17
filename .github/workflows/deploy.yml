@@ -50,6 +50,13 @@ jobs:
           find /tmp/runner-cache -maxdepth 1 -type d ! -name "${{ env.CACHE_VERSION }}" ! -name "runner-cache" ! -name "workspace" -exec rm -rf {} + 2>/dev/null || true
           echo "✅ Old cache versions cleaned up"
 
+      - name: "🧹 Reset Playwright artifacts (shared workspace)"
+        run: |
+          echo "🧹 Clearing stale Playwright and Allure artifacts..."
+          rm -rf allure-results test-results backend/allure-results frontend/allure-results 2>/dev/null || true
+          mkdir -p allure-results test-results backend/allure-results frontend/allure-results
+          echo "✅ Fresh artifact directories prepared for downstream jobs"
+
       - name: "📦 Setup versioned cache directories"
         run: |
           mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm
@@ -1329,7 +1336,6 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
 
-
       - name: "🎭 Run E2E tests with Playwright (isolated)"
         env:
           NODE_ENV: test
@@ -1478,7 +1484,7 @@ jobs:
     name: "🏗️ Build Validation & Docker Images"
     runs-on: self-hosted
     needs: [security-analysis, unit-tests, integration-tests, e2e-tests]
-    if: github.ref == 'refs/heads/main' && always() && needs.security-analysis.outputs.security-passed == 'true' && needs.unit-tests.outputs.tests-passed == 'true' && needs.integration-tests.outputs.tests-passed == 'true' && needs.e2e-tests.outputs.tests-passed == 'true'
+    if: github.ref == 'refs/heads/main' && always() && needs.security-analysis.outputs.security-passed == 'true' && needs.unit-tests.outputs.tests-passed == 'true' && needs.integration-tests.outputs.tests-passed == 'true' && needs.e2e-tests.outputs.e2e-passed == 'true'
     timeout-minutes: 15
     outputs:
       build-passed: ${{ steps.build-results.outputs.passed }}
