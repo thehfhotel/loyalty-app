@@ -1413,22 +1413,6 @@ jobs:
           echo "🎭 Running E2E tests - failures will BLOCK the pipeline..."
           npx playwright test
 
-      - name: "🔐 OAuth E2E validation tests (isolated)"
-        env:
-          NODE_ENV: test
-          BACKEND_URL: http://localhost:4202
-          FRONTEND_URL: http://localhost:3201
-          SKIP_PLAYWRIGHT_DOCKER_SETUP: "true"
-        run: |
-          echo "🔐 Running OAuth-specific E2E tests on isolated environment..."
-          echo "🔐 Testing OAuth against: http://localhost:4202"
-          # Run OAuth-specific tests separately for focused validation (BLOCKING - must pass to succeed)
-          echo "🔐 OAuth E2E test failures will BLOCK the pipeline..."
-          npx playwright test \
-            tests/oauth-validation.configured.spec.ts \
-            tests/oauth-validation.security.spec.ts \
-            tests/oauth-validation.unconfigured.spec.ts
-      
       - name: "🗄️ Database migration rollback safety"
         run: |
           echo "🗄️ Checking migration rollback safety..."
