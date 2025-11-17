@@ -1360,45 +1360,7 @@ jobs:
           echo ""
           echo "🧪 Playwright Connectivity Diagnostic:"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          node << 'EOF' || echo "⚠️ Node.js connectivity test failed"
-          const http = require('http');
-          const urls = [
-            'http://localhost:4202/api/health',
-            'http://127.0.0.1:4202/api/health',
-            'http://0.0.0.0:4202/api/health'
-          ];
-
-          console.log('Testing connectivity from Node.js (same context as Playwright):');
-
-          urls.forEach(url => {
-            const urlObj = new URL(url);
-            const options = {
-              hostname: urlObj.hostname,
-              port: urlObj.port,
-              path: urlObj.pathname,
-              method: 'GET',
-              timeout: 5000
-            };
-
-            const req = http.request(options, (res) => {
-              console.log(`  ✅ ${url}: HTTP ${res.statusCode}`);
-            });
-
-            req.on('error', (e) => {
-              console.log(`  ❌ ${url}: ${e.code} - ${e.message}`);
-            });
-
-            req.on('timeout', () => {
-              console.log(`  ⏱️ ${url}: Timeout`);
-              req.destroy();
-            });
-
-            req.end();
-          });
-
-          // Give requests time to complete
-          setTimeout(() => {}, 6000);
-EOF
+          node -e 'const http = require("http"); const urls = ["http://localhost:4202/api/health", "http://127.0.0.1:4202/api/health", "http://0.0.0.0:4202/api/health"]; console.log("Testing connectivity from Node.js (same context as Playwright):"); let completed = 0; urls.forEach(url => { const urlObj = new URL(url); const options = { hostname: urlObj.hostname, port: urlObj.port, path: urlObj.pathname, method: "GET", timeout: 5000 }; const req = http.request(options, (res) => { console.log(`  ✅ ${url}: HTTP ${res.statusCode}`); if (++completed === urls.length) process.exit(0); }); req.on("error", (e) => { console.log(`  ❌ ${url}: ${e.code} - ${e.message}`); if (++completed === urls.length) process.exit(0); }); req.on("timeout", () => { console.log(`  ⏱️ ${url}: Timeout`); req.destroy(); if (++completed === urls.length) process.exit(0); }); req.end(); }); setTimeout(() => process.exit(0), 7000);' || echo "⚠️ Node.js connectivity test failed"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
 
