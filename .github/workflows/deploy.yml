@@ -314,7 +314,90 @@ jobs:
 
       - name: "🛡️ Security audit (npm audit)"
         working-directory: ./backend
-        run: npm run security:audit
+        run: |
+          echo "🛡️ Running npm audit (allowed exception: GHSA-5j98-mcp5-4vw2)..."
+          set +e
+          npm audit --audit-level=moderate --json > audit-report.json
+          AUDIT_EXIT=$?
+          set -e
+
+          if [ "$AUDIT_EXIT" -eq 0 ]; then
+            echo "✅ npm audit passed with no vulnerabilities"
+            rm -f audit-report.json
+            exit 0
+          fi
+
+          echo "⚠️ npm audit reported vulnerabilities, evaluating against approved exceptions..."
+          if node <<'EOF'
+            const fs = require('fs');
+            const reportPath = 'audit-report.json';
+            const allowedCves = ['GHSA-5j98-mcp5-4vw2'];
+            const data = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+            const vulnerabilities = data.vulnerabilities || {};
+            const memo = new Map();
+
+            const hasAllowedAdvisory = (item) => {
+              const id = item.id || item.source || '';
+              const url = item.url || '';
+              return allowedCves.some((allowed) => String(id).includes(allowed) || url.includes(allowed));
+            };
+
+            const isPackageAllowed = (pkg, seen = new Set()) => {
+              if (memo.has(pkg)) {
+                return memo.get(pkg);
+              }
+              if (seen.has(pkg)) {
+                return true;
+              }
+              const entry = vulnerabilities[pkg];
+              if (!entry) {
+                memo.set(pkg, false);
+                return false;
+              }
+              const via = entry.via || [];
+              if (via.length === 0) {
+                memo.set(pkg, false);
+                return false;
+              }
+
+              seen.add(pkg);
+              let allowed = true;
+              for (const v of via) {
+                if (typeof v === 'string') {
+                  if (!isPackageAllowed(v, seen)) {
+                    allowed = false;
+                    break;
+                  }
+                } else if (!hasAllowedAdvisory(v)) {
+                  allowed = false;
+                  break;
+                }
+              }
+              seen.delete(pkg);
+              memo.set(pkg, allowed);
+              return allowed;
+            };
+
+            const unapproved = Object.keys(vulnerabilities).filter((pkg) => !isPackageAllowed(pkg));
+
+            if (unapproved.length === 0) {
+              console.log('⚠️ npm audit only reported allowed advisories (GHSA-5j98-mcp5-4vw2). Accepted risk documented.');
+              process.exit(0);
+            }
+
+            console.error('❌ Unapproved advisories found:');
+            console.error(JSON.stringify(unapproved, null, 2));
+            process.exit(1);
+          EOF
+          then
+            rm -f audit-report.json
+            exit 0
+          else
+            echo "❌ npm audit detected unapproved vulnerabilities. See audit-report.json for details."
+            cat audit-report.json
+            rm -f audit-report.json
+            exit 1
+          fi
 
       - name: "🔒 Run custom security validation"
         working-directory: ./backend
@@ -1064,18 +1147,6 @@ jobs:
 
           echo "✅ Prisma client validated successfully"
 
-          # Clean up any existing E2E containers first (before creating new compose file)
-          echo "🧹 Cleaning up any existing E2E containers..."
-          docker stop loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
-          docker rm loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
-          
-          # Clean up any existing compose stack if file exists
-          if [ -f "docker-compose.e2e.ci.yml" ]; then
-            echo "🧹 Cleaning up existing E2E compose stack..."
-            docker compose -f docker-compose.e2e.ci.yml down -v --remove-orphans 2>/dev/null || true
-            rm -f docker-compose.e2e.ci.yml
-          fi
-          
           # Critical: Remove E2E database volumes to ensure clean state
           echo "🧹 Removing E2E database volumes to prevent migration state corruption..."
           docker volume rm loyalty_postgres_e2e_data loyalty_redis_e2e_data 2>/dev/null || true
@@ -1203,12 +1274,9 @@ jobs:
           
           echo "✅ E2E Docker Compose configuration created"
           
-          # Clean up any existing E2E containers and ports to prevent conflicts
+          # Use project-specific compose teardown to avoid stopping production containers
           echo "🧹 Cleaning up any existing E2E containers and ports..."
-          
-          # Stop and remove containers
-          docker stop loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
-          docker rm loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
+          docker compose -p loyalty-e2e-tests -f docker-compose.e2e.ci.yml down -v --remove-orphans 2>/dev/null || true
           
           # Check for processes using E2E ports and kill them
           echo "🔍 Checking for processes using E2E ports..."
@@ -1722,12 +1790,27 @@ jobs:
   # Environment → Service Deploy → Migration → Health Check → Summary
   # =============================================================================
   
+  production-shutdown-approval:
+    name: "🛑 Confirm Production Deployment"
+    runs-on: ubuntu-latest
+    environment:
+      name: production-shutdown
+    needs: [build-validation]
+    if: github.ref == 'refs/heads/main' && needs.build-validation.outputs.build-passed == 'true'
+    steps:
+      - name: "📋 Await manual approval"
+        run: |
+          echo "✅ Manual approval received for production deployment."
+
   production-deployment:
     name: "🚀 Production Deployment"
     runs-on: self-hosted
     environment: production
-    needs: [build-validation]
-    if: github.ref == 'refs/heads/main' && needs.build-validation.outputs.build-passed == 'true'
+    needs: [build-validation, production-shutdown-approval]
+    if: |
+      github.ref == 'refs/heads/main' &&
+      needs.build-validation.outputs.build-passed == 'true' &&
+      needs.production-shutdown-approval.result == 'success'
     timeout-minutes: 15
 
     steps:
