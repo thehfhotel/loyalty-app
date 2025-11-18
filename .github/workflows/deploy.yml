@@ -337,10 +337,12 @@ jobs:
             const unapproved = [];
 
             for (const [pkg, vuln] of vulnerabilities) {
-              const advisories = (vuln.via || []).map(v => typeof v === 'string' ? v : v.id).filter(Boolean);
-              const disallowed = advisories.filter(id => !allowed.has(id));
-              if (disallowed.length > 0) {
-                unapproved.push({ package: pkg, advisories: disallowed });
+              const advisories = (vuln.via || [])
+                .map(v => typeof v === 'string' ? v : v.id)
+                .filter(Boolean);
+              const isAllowed = advisories.length > 0 && advisories.every(id => allowed.has(id));
+              if (!isAllowed) {
+                unapproved.push({ package: pkg, advisories });
               }
             }
 
