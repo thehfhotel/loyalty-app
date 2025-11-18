@@ -331,20 +331,54 @@ jobs:
           if node <<'EOF'
             const fs = require('fs');
             const reportPath = 'audit-report.json';
-            const allowed = new Set(['GHSA-5j98-mcp5-4vw2']);
+            const allowedCves = ['GHSA-5j98-mcp5-4vw2'];
             const data = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-            const vulnerabilities = Object.entries(data.vulnerabilities || {});
-            const unapproved = [];
+            const vulnerabilities = data.vulnerabilities || {};
+            const memo = new Map();
 
-            for (const [pkg, vuln] of vulnerabilities) {
-              const advisories = (vuln.via || [])
-                .map(v => typeof v === 'string' ? v : v.id)
-                .filter(Boolean);
-              const isAllowed = advisories.length > 0 && advisories.every(id => allowed.has(id));
-              if (!isAllowed) {
-                unapproved.push({ package: pkg, advisories });
+            const hasAllowedAdvisory = (item) => {
+              const id = item.id || item.source || '';
+              const url = item.url || '';
+              return allowedCves.some((allowed) => String(id).includes(allowed) || url.includes(allowed));
+            };
+
+            const isPackageAllowed = (pkg, seen = new Set()) => {
+              if (memo.has(pkg)) {
+                return memo.get(pkg);
               }
-            }
+              if (seen.has(pkg)) {
+                return true;
+              }
+              const entry = vulnerabilities[pkg];
+              if (!entry) {
+                memo.set(pkg, false);
+                return false;
+              }
+              const via = entry.via || [];
+              if (via.length === 0) {
+                memo.set(pkg, false);
+                return false;
+              }
+
+              seen.add(pkg);
+              let allowed = true;
+              for (const v of via) {
+                if (typeof v === 'string') {
+                  if (!isPackageAllowed(v, seen)) {
+                    allowed = false;
+                    break;
+                  }
+                } else if (!hasAllowedAdvisory(v)) {
+                  allowed = false;
+                  break;
+                }
+              }
+              seen.delete(pkg);
+              memo.set(pkg, allowed);
+              return allowed;
+            };
+
+            const unapproved = Object.keys(vulnerabilities).filter((pkg) => !isPackageAllowed(pkg));
 
             if (unapproved.length === 0) {
               console.log('⚠️ npm audit only reported allowed advisories (GHSA-5j98-mcp5-4vw2). Accepted risk documented.');
