@@ -329,30 +329,30 @@ jobs:
 
           echo "⚠️ npm audit reported vulnerabilities, evaluating against approved exceptions..."
           if node <<'EOF'
-const fs = require('fs');
-const reportPath = 'audit-report.json';
-const allowed = new Set(['GHSA-5j98-mcp5-4vw2']);
-const data = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-const vulnerabilities = Object.entries(data.vulnerabilities || {});
-const unapproved = [];
+            const fs = require('fs');
+            const reportPath = 'audit-report.json';
+            const allowed = new Set(['GHSA-5j98-mcp5-4vw2']);
+            const data = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+            const vulnerabilities = Object.entries(data.vulnerabilities || {});
+            const unapproved = [];
 
-for (const [pkg, vuln] of vulnerabilities) {
-  const advisories = (vuln.via || []).map(v => typeof v === 'string' ? v : v.id).filter(Boolean);
-  const disallowed = advisories.filter(id => !allowed.has(id));
-  if (disallowed.length > 0) {
-    unapproved.push({ package: pkg, advisories: disallowed });
-  }
-}
+            for (const [pkg, vuln] of vulnerabilities) {
+              const advisories = (vuln.via || []).map(v => typeof v === 'string' ? v : v.id).filter(Boolean);
+              const disallowed = advisories.filter(id => !allowed.has(id));
+              if (disallowed.length > 0) {
+                unapproved.push({ package: pkg, advisories: disallowed });
+              }
+            }
 
-if (unapproved.length === 0) {
-  console.log('⚠️ npm audit only reported allowed advisories (GHSA-5j98-mcp5-4vw2). Accepted risk documented.');
-  process.exit(0);
-}
+            if (unapproved.length === 0) {
+              console.log('⚠️ npm audit only reported allowed advisories (GHSA-5j98-mcp5-4vw2). Accepted risk documented.');
+              process.exit(0);
+            }
 
-console.error('❌ Unapproved advisories found:');
-console.error(JSON.stringify(unapproved, null, 2));
-process.exit(1);
-EOF
+            console.error('❌ Unapproved advisories found:');
+            console.error(JSON.stringify(unapproved, null, 2));
+            process.exit(1);
+          EOF
           then
             rm -f audit-report.json
             exit 0
