@@ -1,8 +1,8 @@
 /** @type {import('jest').Config} */
 module.exports = {
   preset: 'ts-jest',
-  // Allure reporting integration using custom environment that resolves Node env even when not hoisted
-  testEnvironment: '<rootDir>/jest.allure.environment.js',
+  // Allure reporting integration - use allure-jest environment
+  testEnvironment: 'allure-jest/node',
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.test.ts', '**/*.test.ts'],
   transform: {
