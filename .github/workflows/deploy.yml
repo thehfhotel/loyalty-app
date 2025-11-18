@@ -1213,6 +1213,7 @@ jobs:
               build:
                 context: ./backend
                 dockerfile: Dockerfile
+                target: development
               container_name: loyalty_backend_e2e
               network_mode: host
               environment:
@@ -1249,6 +1250,7 @@ jobs:
               build:
                 context: ./frontend
                 dockerfile: Dockerfile
+                target: development
                 args:
                   VITE_API_URL: http://localhost:4202/api
               container_name: loyalty_frontend_e2e

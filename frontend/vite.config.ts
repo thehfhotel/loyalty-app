@@ -2,6 +2,25 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const resolvePort = () => {
+  const portSources = [
+    process.env.PORT,
+    process.env.FRONTEND_PORT,
+    process.env.VITE_PORT,
+  ];
+  for (const value of portSources) {
+    if (!value) continue;
+    const parsed = Number(value);
+    if (!Number.isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 3000;
+};
+
+const devServerPort = resolvePort();
+const previewServerPort = Number(process.env.PREVIEW_PORT ?? devServerPort);
+
 export default defineConfig({
   plugins: [
     react(),
@@ -64,7 +83,7 @@ export default defineConfig({
     })
   ],
   server: {
-    port: 3000,
+    port: devServerPort,
     host: true,
     allowedHosts: [
       'localhost',
@@ -81,7 +100,7 @@ export default defineConfig({
     }
   },
   preview: {
-    port: 3000,
+    port: previewServerPort,
     host: true,
     allowedHosts: [
       'localhost',
