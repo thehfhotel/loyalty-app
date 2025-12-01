@@ -50,6 +50,6 @@
   "devDependencies": {
     "allure-playwright": "^3.4.2",
     "concurrently": "^8.2.2",
-    "glob": "^11.0.3"
+    "glob": "^10.5.0"
   }
 }
