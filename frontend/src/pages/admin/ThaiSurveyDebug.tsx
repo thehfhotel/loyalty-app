@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
  * survey creation to debug the 400 error. It includes detailed logging
  * and error capture specifically for Thai content validation issues.
  */
-const ThaiSurveyDebug: React.FC = (): JSX.Element => {
+const ThaiSurveyDebug: React.FC = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [lastError, setLastError] = useState<unknown>(null);
 
