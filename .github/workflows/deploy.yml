@@ -787,7 +787,9 @@ jobs:
         run: |
           echo "🧹 Cleaning up isolated unit test services..."
           docker compose -f docker-compose.unit-test.yml down -v --remove-orphans || true
-          docker system prune -f --volumes || true
+          # SAFETY: Only remove test-specific volumes, NEVER docker system prune
+          # docker system prune can destroy production containers/volumes!
+          docker volume rm loyalty-unit-tests_loyalty_postgres_unit_data loyalty-unit-tests_loyalty_redis_unit_data 2>/dev/null || true
           rm -f docker-compose.unit-test.yml || true
           echo "✅ Isolated unit test environment cleaned up"
 
@@ -1034,7 +1036,9 @@ jobs:
         run: |
           echo "🧹 Cleaning up isolated integration test services..."
           docker compose -f docker-compose.integration-test.yml down -v --remove-orphans || true
-          docker system prune -f --volumes || true
+          # SAFETY: Only remove test-specific volumes, NEVER docker system prune
+          # docker system prune can destroy production containers/volumes!
+          docker volume rm loyalty-integration-tests_loyalty_postgres_integration_data loyalty-integration-tests_loyalty_redis_integration_data 2>/dev/null || true
           rm -f docker-compose.integration-test.yml || true
           echo "✅ Isolated integration test environment cleaned up"
 
@@ -1547,12 +1551,12 @@ jobs:
           echo "🧹 Cleaning up isolated E2E environment..."
           docker compose -f docker-compose.e2e.ci.yml down -v --remove-orphans || true
 
-          # Critical: Ensure E2E volumes are completely removed
+          # SAFETY: Only remove test-specific volumes, NEVER docker system prune
+          # docker system prune can destroy production containers/volumes!
           echo "🧹 Removing E2E volumes to prevent future migration state issues..."
           docker volume rm loyalty_postgres_e2e_data loyalty_redis_e2e_data 2>/dev/null || true
           docker volume rm loyalty-e2e-tests_loyalty_postgres_e2e_data loyalty-e2e-tests_loyalty_redis_e2e_data 2>/dev/null || true
 
-          docker system prune -f --volumes || true
           rm -f docker-compose.e2e.ci.yml || true
           echo "✅ Isolated E2E environment cleaned up"
 
