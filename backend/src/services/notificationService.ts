@@ -322,17 +322,50 @@ export class NotificationService {
    * Create system notification for points awards
    */
   async createPointsNotification(
-    userId: string, 
-    points: number, 
+    userId: string,
+    points: number,
     reason = 'Points earned'
   ): Promise<Notification> {
     return await this.createNotification({
       userId,
       title: '⭐ Points Earned!',
       message: `You've earned ${points} points! ${reason}`,
-      type: 'reward',
-      data: { pointsAwarded: points },
+      type: 'points',
+      data: { pointsAwarded: points, reason },
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    });
+  }
+
+  /**
+   * Create notification for tier change (upgrade)
+   */
+  async createTierChangeNotification(
+    userId: string,
+    previousTier: string,
+    newTier: string,
+    totalNights: number
+  ): Promise<Notification> {
+    const tierEmojis = new Map<string, string>([
+      ['Bronze', '🥉'],
+      ['Silver', '🥈'],
+      ['Gold', '🥇'],
+      ['Platinum', '💎']
+    ]);
+
+    const emoji = tierEmojis.get(newTier) ?? '🎉';
+
+    return await this.createNotification({
+      userId,
+      title: `${emoji} Congratulations! You've been upgraded to ${newTier}!`,
+      message: `Your loyalty has been rewarded! You've moved from ${previousTier} to ${newTier} tier with ${totalNights} nights stayed. Enjoy your new benefits!`,
+      type: 'tier_change',
+      data: {
+        previousTier,
+        newTier,
+        totalNights,
+        upgradedAt: new Date().toISOString()
+      },
+      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString() // Expire after 90 days
     });
   }
 

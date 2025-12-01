@@ -1,6 +1,7 @@
 import { query, getClient } from '../config/database';
 import { logger } from '../utils/logger';
 import { AppError } from '../middleware/errorHandler';
+import { notificationService } from './notificationService';
 import {
   Coupon,
   UserCoupon,
@@ -415,6 +416,39 @@ export class CouponService {
       await client.query('COMMIT');
 
       logger.info(`Assigned coupon ${data.couponId} to ${userCoupons.length} users by ${assignedBy}`);
+
+      // Send coupon notifications asynchronously (don't block the response)
+      setImmediate(async () => {
+        try {
+          // Get coupon details for notification
+          const [couponDetails] = await query<{ name: string; description: string | null }>(
+            'SELECT name, description FROM coupons WHERE id = $1',
+            [data.couponId]
+          );
+
+          if (couponDetails) {
+            for (const userCoupon of userCoupons) {
+              try {
+                await notificationService.createCouponNotification(
+                  userCoupon.userId,
+                  {
+                    id: data.couponId,
+                    name: couponDetails.name,
+                    description: couponDetails.description ?? '',
+                    validUntil: userCoupon.expiresAt ? new Date(userCoupon.expiresAt) : undefined
+                  } as Parameters<typeof notificationService.createCouponNotification>[1],
+                  data.assignedReason ?? 'Special reward for you!'
+                );
+              } catch (notifError) {
+                logger.error(`Failed to send coupon notification to user ${userCoupon.userId}:`, notifError);
+              }
+            }
+          }
+        } catch (notifError) {
+          logger.error('Failed to send coupon notifications:', notifError);
+        }
+      });
+
       return userCoupons;
     } catch (error) {
       await client.query('ROLLBACK');

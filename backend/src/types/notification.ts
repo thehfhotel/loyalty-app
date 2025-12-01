@@ -11,16 +11,18 @@ export interface Notification {
   expiresAt?: string;
 }
 
-export type NotificationType = 
-  | 'info' 
-  | 'success' 
-  | 'warning' 
-  | 'error' 
-  | 'system' 
-  | 'reward' 
-  | 'coupon' 
-  | 'survey' 
-  | 'profile';
+export type NotificationType =
+  | 'info'
+  | 'success'
+  | 'warning'
+  | 'error'
+  | 'system'
+  | 'reward'
+  | 'coupon'
+  | 'survey'
+  | 'profile'
+  | 'tier_change'
+  | 'points';
 
 export interface CreateNotificationData {
   userId: string;

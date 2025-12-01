@@ -567,6 +567,8 @@ model users {
   user_coupons_user_coupons_user_idTousers                             user_coupons[]              @relation("user_coupons_user_idTousers")
   user_loyalty                                                         user_loyalty?
   user_profiles                                                        user_profiles?
+  notifications                                                        notifications[]
+  notification_preferences                                             notification_preferences[]
 
   @@index([email], map: "idx_users_email")
   @@index([oauth_provider, oauth_provider_id], map: "idx_users_oauth_provider_id")
@@ -610,4 +612,54 @@ enum user_role {
   customer
   admin
   super_admin
+}
+
+enum notification_type {
+  info
+  success
+  warning
+  error
+  system
+  reward
+  coupon
+  survey
+  profile
+  tier_change
+  points
+}
+
+/// Notification center - stores all notifications for users
+model notifications {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  title      String    @db.VarChar(255)
+  message    String
+  type       String    @default("info") @db.VarChar(50)
+  data       Json?
+  read_at    DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at DateTime? @db.Timestamptz(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_notifications_user_id")
+  @@index([user_id, read_at], map: "idx_notifications_user_unread")
+  @@index([created_at(sort: Desc)], map: "idx_notifications_created_at")
+  @@index([type], map: "idx_notifications_type")
+  @@index([expires_at], map: "idx_notifications_expires_at")
+}
+
+/// User preferences for different types of notifications
+model notification_preferences {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String   @db.Uuid
+  type       String   @db.VarChar(50)
+  enabled    Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, type])
+  @@index([user_id], map: "idx_notification_preferences_user_id")
+  @@index([type], map: "idx_notification_preferences_type")
 }
