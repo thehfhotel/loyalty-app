@@ -7,7 +7,13 @@ module.exports = {
   testMatch: ['**/__tests__/**/*.test.ts', '**/*.test.ts'],
   transform: {
     '^.+\\.ts$': 'ts-jest',
+    // Transform ESM .js files from packages like uuid v13+
+    '^.+\\.js$': 'babel-jest',
   },
+  // Transform ESM packages like uuid v13+ (uses ES modules)
+  transformIgnorePatterns: [
+    '/node_modules/(?!(uuid)/)',
+  ],
   // Use v8 coverage provider instead of babel/istanbul (Node 24 compatible)
   coverageProvider: 'v8',
   collectCoverageFrom: [

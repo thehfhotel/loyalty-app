@@ -64,6 +64,8 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@babel/core": "^7.28.5",
+    "@babel/preset-env": "^7.28.5",
     "@faker-js/faker": "^10.1.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.5",
