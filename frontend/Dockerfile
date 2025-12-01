@@ -1,5 +1,5 @@
 # Multi-stage build for optimal caching and smaller production image
-FROM node:24-alpine AS base
+FROM node:25-alpine AS base
 WORKDIR /app
 
 # Development dependencies stage
