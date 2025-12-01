@@ -11,7 +11,8 @@ permissions:
   contents: write  # For GitHub Pages deployment
   pages: write
   id-token: write
-  actions: write   # For fail-fast workflow cancellation
+  actions: write   # For workflow management
+  pull-requests: write  # For PR comments on test results
 
 env:
   DEPLOY_PATH: /home/nut/loyalty-app
