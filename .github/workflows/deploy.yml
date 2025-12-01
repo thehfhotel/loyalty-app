@@ -11,6 +11,8 @@ permissions:
   contents: write  # For GitHub Pages deployment
   pages: write
   id-token: write
+  actions: write   # For workflow management
+  pull-requests: write  # For PR comments on test results
 
 env:
   DEPLOY_PATH: /home/nut/loyalty-app
@@ -778,15 +780,17 @@ jobs:
         run: |
           echo "🧹 Cleaning up isolated unit test services..."
           docker compose -f docker-compose.unit-test.yml down -v --remove-orphans || true
-          docker system prune -f --volumes || true
+          # SAFETY: Only remove test-specific volumes, NEVER docker system prune
+          # docker system prune can destroy production containers/volumes!
+          docker volume rm loyalty-unit-tests_loyalty_postgres_unit_data loyalty-unit-tests_loyalty_redis_unit_data 2>/dev/null || true
           rm -f docker-compose.unit-test.yml || true
           echo "✅ Isolated unit test environment cleaned up"
 
-  # Job 1C: Integration Tests (Parallel with Unit Tests)
+  # Job 1C: Integration Tests (Sequential - after Unit Tests)
   integration-tests:
     name: "🔗 Integration Tests"
     runs-on: self-hosted
-    needs: [prepare-workspace, security-analysis]
+    needs: [unit-tests]  # Sequential: runs after unit tests pass
     timeout-minutes: 5
     outputs:
       tests-passed: ${{ steps.test-results.outputs.passed }}
@@ -1012,12 +1016,57 @@ jobs:
             exit 1
           fi
 
+      - name: "💬 Comment integration results on PR"
+        if: github.event_name == 'pull_request' && steps.test-results.outputs.passed == 'true'
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const comment = [
+              '## 🔗 Integration Tests Passed',
+              '',
+              '| Test Suite | Status |',
+              '|:-----------|:-------|',
+              '| API Integration | ✅ Passed |',
+              '| DB Schema Tests | ✅ Passed |',
+              '',
+              '> Sequential pipeline: E2E tests starting next...',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Integration Tests')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
+
       - name: "🧹 Cleanup isolated integration test environment"
         if: always()
         run: |
           echo "🧹 Cleaning up isolated integration test services..."
           docker compose -f docker-compose.integration-test.yml down -v --remove-orphans || true
-          docker system prune -f --volumes || true
+          # SAFETY: Only remove test-specific volumes, NEVER docker system prune
+          # docker system prune can destroy production containers/volumes!
+          docker volume rm loyalty-integration-tests_loyalty_postgres_integration_data loyalty-integration-tests_loyalty_redis_integration_data 2>/dev/null || true
           rm -f docker-compose.integration-test.yml || true
           echo "✅ Isolated integration test environment cleaned up"
 
@@ -1033,7 +1082,7 @@ jobs:
       group: e2e-tests
       cancel-in-progress: false
 
-    needs: [prepare-workspace, security-analysis]
+    needs: [integration-tests]  # Sequential: runs after integration tests pass
     timeout-minutes: 20  # Increased from 8: allows ~15min for 36 tests + 3-5min infrastructure setup
     if: (github.ref == 'refs/heads/main' || github.base_ref == 'main')
     outputs:
@@ -1516,18 +1565,63 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      - name: "💬 Comment E2E results on PR"
+        if: github.event_name == 'pull_request' && steps.e2e-results.outputs.passed == 'true'
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const comment = [
+              '## 🎭 E2E Tests Passed',
+              '',
+              '| Test Suite | Status |',
+              '|:-----------|:-------|',
+              '| Playwright E2E | ✅ Passed |',
+              '| Migration Rollback | ✅ Safe |',
+              '',
+              '> All tests passed! Ready for build and deployment.',
+              '',
+              '📊 [View Allure Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('E2E Tests')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
+
       - name: "🧹 Cleanup isolated E2E environment"
         if: always()
         run: |
           echo "🧹 Cleaning up isolated E2E environment..."
           docker compose -f docker-compose.e2e.ci.yml down -v --remove-orphans || true
-          
-          # Critical: Ensure E2E volumes are completely removed
+
+          # SAFETY: Only remove test-specific volumes, NEVER docker system prune
+          # docker system prune can destroy production containers/volumes!
           echo "🧹 Removing E2E volumes to prevent future migration state issues..."
           docker volume rm loyalty_postgres_e2e_data loyalty_redis_e2e_data 2>/dev/null || true
           docker volume rm loyalty-e2e-tests_loyalty_postgres_e2e_data loyalty-e2e-tests_loyalty_redis_e2e_data 2>/dev/null || true
-          
-          docker system prune -f --volumes || true
+
           rm -f docker-compose.e2e.ci.yml || true
           echo "✅ Isolated E2E environment cleaned up"
 
