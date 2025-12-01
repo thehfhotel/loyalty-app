@@ -36,8 +36,12 @@ import { notificationService } from './services/notificationService';
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const user = useAuthStore((state) => state.user);
+  const accessToken = useAuthStore((state) => state.accessToken);
   const [isInitialized, setIsInitialized] = useState(false);
   const initializingRef = useRef(false);
+
+  // Fully authenticated = has all auth components (prevents redirect loop with ProtectedRoute)
+  const isFullyAuthenticated = isAuthenticated && !!user && !!accessToken;
   
 
   useEffect(() => {
@@ -219,15 +223,15 @@ function App() {
         {/* Public routes */}
         <Route
           path="/login"
-          element={!isAuthenticated ? <LoginPage /> : <Navigate to="/dashboard" />}
+          element={!isFullyAuthenticated ? <LoginPage /> : <Navigate to="/dashboard" />}
         />
         <Route
           path="/register"
-          element={!isAuthenticated ? <RegisterPage /> : <Navigate to="/dashboard" />}
+          element={!isFullyAuthenticated ? <RegisterPage /> : <Navigate to="/dashboard" />}
         />
         <Route
           path="/reset-password"
-          element={!isAuthenticated ? <ResetPasswordPage /> : <Navigate to="/dashboard" />}
+          element={!isFullyAuthenticated ? <ResetPasswordPage /> : <Navigate to="/dashboard" />}
         />
         <Route
           path="/oauth/success"
@@ -389,10 +393,10 @@ function App() {
         />
 
         {/* Default redirect */}
-        <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} />} />
-        
+        <Route path="/" element={<Navigate to={isFullyAuthenticated ? "/dashboard" : "/login"} />} />
+
         {/* Catch-all route for unknown paths - redirect based on auth status */}
-        <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
+        <Route path="*" element={<Navigate to={isFullyAuthenticated ? "/dashboard" : "/login"} replace />} />
           </Routes>
           
           {/* Development tools - only shows in development mode */}
