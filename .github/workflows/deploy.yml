@@ -1489,6 +1489,7 @@ jobs:
           echo ""
 
       - name: "🎭 Run E2E tests with Playwright (isolated)"
+        id: run-e2e-tests
         env:
           NODE_ENV: test
           DATABASE_URL: postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db
