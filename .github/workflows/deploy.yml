@@ -2902,7 +2902,7 @@ jobs:
           du -sh pages-artifact/
 
       - name: "📤 Upload GitHub Pages artifact"
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: pages-artifact
           retention-days: 90
