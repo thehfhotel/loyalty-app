@@ -112,6 +112,8 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: process.env.NODE_ENV === 'development',
+    // Strip console.log/warn/debug in production (keep console.error for critical issues)
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         manualChunks: {
@@ -121,6 +123,14 @@ export default defineConfig({
         }
       }
     }
+  },
+  esbuild: {
+    // Remove console.log, console.warn, console.debug, console.info in production
+    // Keep console.error for critical error reporting
+    pure: process.env.NODE_ENV === 'production'
+      ? ['console.log', 'console.warn', 'console.debug', 'console.info']
+      : [],
+    drop: process.env.NODE_ENV === 'production' ? ['debugger'] : [],
   },
   define: {
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version || '1.0.0'),
