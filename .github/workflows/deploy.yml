@@ -11,6 +11,7 @@ permissions:
   contents: write  # For GitHub Pages deployment
   pages: write
   id-token: write
+  actions: write   # For fail-fast workflow cancellation
 
 env:
   DEPLOY_PATH: /home/nut/loyalty-app
@@ -773,6 +774,14 @@ jobs:
               });
             }
 
+      - name: "🚨 Fail-fast: Cancel workflow on test failure"
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "🚨 Unit tests failed! Canceling workflow to fail fast..."
+          gh run cancel ${{ github.run_id }} --repo ${{ github.repository }} || true
+
       - name: "🧹 Cleanup isolated test environment"
         if: always()
         run: |
@@ -1011,6 +1020,14 @@ jobs:
             echo "🚨 BLOCKING: Integration tests must pass for deployment"
             exit 1
           fi
+
+      - name: "🚨 Fail-fast: Cancel workflow on test failure"
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "🚨 Integration tests failed! Canceling workflow to fail fast..."
+          gh run cancel ${{ github.run_id }} --repo ${{ github.repository }} || true
 
       - name: "🧹 Cleanup isolated integration test environment"
         if: always()
@@ -1516,17 +1533,25 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      - name: "🚨 Fail-fast: Cancel workflow on test failure"
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "🚨 E2E tests failed! Canceling workflow to fail fast..."
+          gh run cancel ${{ github.run_id }} --repo ${{ github.repository }} || true
+
       - name: "🧹 Cleanup isolated E2E environment"
         if: always()
         run: |
           echo "🧹 Cleaning up isolated E2E environment..."
           docker compose -f docker-compose.e2e.ci.yml down -v --remove-orphans || true
-          
+
           # Critical: Ensure E2E volumes are completely removed
           echo "🧹 Removing E2E volumes to prevent future migration state issues..."
           docker volume rm loyalty_postgres_e2e_data loyalty_redis_e2e_data 2>/dev/null || true
           docker volume rm loyalty-e2e-tests_loyalty_postgres_e2e_data loyalty-e2e-tests_loyalty_redis_e2e_data 2>/dev/null || true
-          
+
           docker system prune -f --volumes || true
           rm -f docker-compose.e2e.ci.yml || true
           echo "✅ Isolated E2E environment cleaned up"
