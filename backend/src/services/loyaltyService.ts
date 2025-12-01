@@ -1,5 +1,6 @@
 import { getPool } from '../config/database';
 import { logger } from '../utils/logger';
+import { notificationService } from './notificationService';
 
 export interface Tier {
   id: string;
@@ -523,6 +524,15 @@ export class LoyaltyService {
       );
       const newTotalNights = loyaltyResult.rows[0].total_nights;
 
+      // Get previous tier before recalculation
+      const previousTierResult = await client.query(
+        `SELECT t.name as tier_name FROM user_loyalty ul
+         JOIN tiers t ON ul.tier_id = t.id
+         WHERE ul.user_id = $1`,
+        [userId]
+      );
+      const previousTierName = previousTierResult.rows[0]?.tier_name ?? 'Bronze';
+
       // Recalculate tier based on total_nights
       const tierResult = await client.query(
         `SELECT * FROM recalculate_user_tier_by_nights($1)`,
@@ -534,6 +544,39 @@ export class LoyaltyService {
       await client.query('COMMIT');
 
       logger.info(`Added ${nights} nights and ${pointsEarned} points to user ${userId}`);
+
+      // Send notifications asynchronously (don't block the transaction)
+      setImmediate(async () => {
+        try {
+          // Notify points earned (only for positive points)
+          if (pointsEarned > 0) {
+            await notificationService.createPointsNotification(
+              userId,
+              pointsEarned,
+              description ?? `Earned from hotel stay (${nights} night${nights > 1 ? 's' : ''})`
+            );
+          }
+
+          // Notify tier upgrade (only if tier changed to a higher tier)
+          if (newTierName !== previousTierName) {
+            const tierOrder = ['Bronze', 'Silver', 'Gold', 'Platinum'];
+            const prevIndex = tierOrder.indexOf(previousTierName);
+            const newIndex = tierOrder.indexOf(newTierName);
+
+            if (newIndex > prevIndex) {
+              await notificationService.createTierChangeNotification(
+                userId,
+                previousTierName,
+                newTierName,
+                newTotalNights
+              );
+            }
+          }
+        } catch (notifError) {
+          // Log but don't fail - notifications are non-critical
+          logger.error('Failed to send loyalty notifications:', notifError);
+        }
+      });
 
       return {
         transactionId,
