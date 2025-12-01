@@ -331,10 +331,19 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
     req.body = sanitizeValue(req.body) as any;
   }
   
-  // Sanitize query parameters
-  if (req.query) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    req.query = sanitizeValue(req.query) as any;
+  // Sanitize query parameters (in-place to work with Express 5's read-only req.query)
+  if (req.query && typeof req.query === 'object') {
+    // Use Object.entries to iterate safely without index-based access
+    for (const [key, value] of Object.entries(req.query)) {
+      const sanitized = sanitizeValue(value);
+      // Mutate in place since req.query is read-only in Express 5
+      Object.defineProperty(req.query, key, {
+        value: sanitized,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
+    }
   }
   
   next();
