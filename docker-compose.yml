@@ -78,7 +78,8 @@ services:
     container_name: loyalty_frontend
     environment:
       NODE_ENV: ${NODE_ENV:-development}
-      VITE_API_URL: ${VITE_API_URL:?VITE_API_URL is required}
+      # Use safe default for compose config validation; override in real deployments via env/secret store
+      VITE_API_URL: ${VITE_API_URL:-/api}
     volumes:
       - ./frontend:/app
       - /app/node_modules
