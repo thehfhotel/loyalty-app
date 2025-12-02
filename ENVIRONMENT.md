@@ -78,11 +78,15 @@ Production uses GitHub Actions with environment secrets - no `.env` files are us
    FRONTEND_URL=https://your-domain.com
    BACKEND_URL=https://your-domain.com/api
    VITE_API_URL=https://your-domain.com/api
+   VITE_TRANSLATION_ENABLED=false
+
+   TRANSLATION_FEATURE_ENABLED=false
    
-   AZURE_TRANSLATION_TEXT_URI=<azure-translation-uri>
-   AZURE_TRANSLATION_KEY_1=<azure-key-1>
-   AZURE_TRANSLATION_KEY_2=<azure-key-2>
-   AZURE_TRANSLATION_REGION=global
+   # Optional: provide these only if translation is re-enabled
+   AZURE_TRANSLATION_TEXT_URI=
+   AZURE_TRANSLATION_KEY_1=
+   AZURE_TRANSLATION_KEY_2=
+   AZURE_TRANSLATION_REGION=
    ```
 
 3. **Deployment Command:**

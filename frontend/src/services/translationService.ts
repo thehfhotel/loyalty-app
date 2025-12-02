@@ -19,15 +19,19 @@ addAuthTokenInterceptor(api);
 
 class TranslationService {
   private config: TranslationServiceConfig;
+  private translationEnabled: boolean;
 
   constructor() {
-    // Default to Azure Translator for the generous free tier
+    this.translationEnabled = import.meta.env.VITE_TRANSLATION_ENABLED === 'true';
     this.config = {
-      provider: 'azure',
-      apiKey: import.meta.env.VITE_AZURE_TRANSLATION_KEY_1,
-      endpoint: import.meta.env.VITE_AZURE_TRANSLATION_TEXT_URI ?? 'https://api.cognitive.microsofttranslator.com',
-      region: import.meta.env.VITE_AZURE_TRANSLATION_REGION ?? 'global'
+      provider: 'azure'
     };
+  }
+
+  private ensureEnabled() {
+    if (!this.translationEnabled) {
+      throw new Error('Translation feature is disabled');
+    }
   }
 
   /**
@@ -35,6 +39,7 @@ class TranslationService {
    */
   async translateTexts(request: TranslationRequest): Promise<TranslationResponse> {
     try {
+      this.ensureEnabled();
       const response = await api.post('/translation/translate', {
         texts: request.texts,
         sourceLanguage: request.sourceLanguage,
@@ -80,6 +85,7 @@ class TranslationService {
     targetLanguages: SupportedLanguage[]
   ): Promise<TranslationJob> {
     try {
+      this.ensureEnabled();
       const response = await api.post(`/translation/survey/${surveyId}/translate`, {
         sourceLanguage,
         targetLanguages,
@@ -102,6 +108,7 @@ class TranslationService {
     targetLanguages: SupportedLanguage[]
   ): Promise<TranslationJob> {
     try {
+      this.ensureEnabled();
       const response = await api.post(`/translation/coupon/${couponId}/translate`, {
         sourceLanguage,
         targetLanguages,
@@ -191,6 +198,9 @@ class TranslationService {
    */
   async getServiceStatus(): Promise<{ available: boolean; provider: string; charactersRemaining?: number }> {
     try {
+      if (!this.translationEnabled) {
+        return { available: false, provider: 'disabled' };
+      }
       const response = await api.get('/translation/status');
       return response.data;
     } catch (error) {
@@ -203,7 +213,7 @@ class TranslationService {
    * Check if translation service is configured
    */
   isConfigured(): boolean {
-    return !!(this.config.apiKey ?? this.config.endpoint);
+    return this.translationEnabled;
   }
 
   /**
