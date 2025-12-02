@@ -2046,6 +2046,9 @@ jobs:
           LOYALTY_PASSWORD=admin123
           EOF
 
+          # docker compose always reads .env; symlink to reuse dev config
+          ln -sf .env.development .env
+
           echo "✅ Development environment configured"
 
       - name: "🐳 Deploy development services"
