@@ -94,6 +94,21 @@ loyalty-app/
 | **Database Name** | `loyalty_dev_db` | `loyalty_db` |
 | **Docker Target** | `development` | `runner` |
 
+### CI/CD Test Port Isolation
+
+**CRITICAL: All test environments use UNIQUE ports to prevent conflicts**
+
+| Test Type | PostgreSQL | Redis | Backend | Frontend |
+|-----------|------------|-------|---------|----------|
+| **Unit Tests** | 5438 | 6383 | - | - |
+| **Integration Tests** | 5437 | 6382 | - | - |
+| **E2E Tests** | 5436 | 6381 | 4202 | 3201 |
+
+**Why isolation matters:**
+- Tests run in parallel with dev/prod environments
+- Port conflicts cause test failures and deployment issues
+- Each test type has its own isolated database and services
+
 ```bash
 # Development
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
