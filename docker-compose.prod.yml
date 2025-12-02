@@ -79,13 +79,13 @@ services:
 
   postgres:
     restart: unless-stopped
-    # Remove port exposure for production security
-    ports: []
+    # Production uses default port 5434 from base file (dev uses 5435)
+    # Port exposure needed for production deployments
 
   redis:
     restart: unless-stopped
-    # Remove port exposure for production security
-    ports: []
+    # Production uses default port 6379 from base file (dev uses 6380)
+    # Port exposure needed for production deployments
 
   nginx:
     restart: unless-stopped
