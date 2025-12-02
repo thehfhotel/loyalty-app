@@ -37,8 +37,24 @@ echo "🔐 OAuth Health Validation"
 echo "========================================"
 
 # Configuration
-BACKEND_URL="${BACKEND_URL:-http://localhost:4001}"
-FRONTEND_URL="${FRONTEND_URL:-http://localhost:4001}"
+# IMPORTANT: BACKEND_URL and FRONTEND_URL must be provided via environment variables
+# Example: BACKEND_URL=http://localhost:4001 FRONTEND_URL=http://localhost:4001 ./scripts/validate-oauth-health.sh
+if [ -z "$BACKEND_URL" ]; then
+    print_error "BACKEND_URL environment variable is required"
+    print_status "Usage: BACKEND_URL=http://localhost:4001 FRONTEND_URL=http://localhost:4001 $0"
+    print_status "Or set BACKEND_URL and FRONTEND_URL in your .env file and source it:"
+    print_status "  source .env && $0"
+    exit 1
+fi
+
+if [ -z "$FRONTEND_URL" ]; then
+    print_error "FRONTEND_URL environment variable is required"
+    print_status "Usage: BACKEND_URL=http://localhost:4001 FRONTEND_URL=http://localhost:4001 $0"
+    print_status "Or set BACKEND_URL and FRONTEND_URL in your .env file and source it:"
+    print_status "  source .env && $0"
+    exit 1
+fi
+
 MAX_REDIRECT_DEPTH=5
 TIMEOUT=10
 

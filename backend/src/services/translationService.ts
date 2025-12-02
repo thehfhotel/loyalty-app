@@ -2,6 +2,7 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { getPool } from '../config/database';
 import { logger } from '../utils/logger';
+import { AppError } from '../middleware/errorHandler';
 
 export type SupportedLanguage = 'th' | 'en' | 'zh-CN';
 export type TranslationProvider = 'azure' | 'google' | 'libretranslate';
@@ -60,18 +61,45 @@ interface SurveyQuestion {
 }
 
 class TranslationService {
+  private translationFeatureEnabled =
+    (process.env.TRANSLATION_FEATURE_ENABLED ?? '').toLowerCase() === 'true';
+
   private azureConfig = {
-    endpoint: process.env.AZURE_TRANSLATION_TEXT_URI ?? 'https://api.cognitive.microsofttranslator.com',
-    apiKey: process.env.AZURE_TRANSLATION_KEY_1 ?? process.env.AZURE_TRANSLATION_KEY_2,
-    region: process.env.AZURE_TRANSLATION_REGION ?? 'global'
+    endpoint: this.normalizeEnv(process.env.AZURE_TRANSLATION_TEXT_URI) ?? 'https://api.cognitive.microsofttranslator.com',
+    apiKey: this.normalizeEnv(process.env.AZURE_TRANSLATION_KEY_1) ?? this.normalizeEnv(process.env.AZURE_TRANSLATION_KEY_2),
+    region: this.normalizeEnv(process.env.AZURE_TRANSLATION_REGION) ?? 'global'
   };
+
+  private normalizeEnv(value?: string | null): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private ensureTranslationEnabled(provider: TranslationProvider): void {
+    if (!this.translationFeatureEnabled) {
+      throw new AppError(503, 'Translation service is currently disabled');
+    }
+
+    if (provider === 'azure') {
+      if (!this.azureConfig.apiKey) {
+        throw new AppError(503, 'Azure translation provider is not configured');
+      }
+      return;
+    }
+
+    throw new AppError(501, `Translation provider "${provider}" is not available`);
+  }
 
   /**
    * Main translation method that routes to appropriate provider
    */
   async translateTexts(request: TranslationRequest): Promise<TranslationResponse> {
     const provider = request.provider ?? 'azure';
-    
+    this.ensureTranslationEnabled(provider);
+
     switch (provider) {
       case 'azure':
         return this.translateWithAzure(request);
@@ -88,10 +116,6 @@ class TranslationService {
    * Translate using Microsoft Azure Translator
    */
   private async translateWithAzure(request: TranslationRequest): Promise<TranslationResponse> {
-    if (!this.azureConfig.apiKey) {
-      throw new Error('Azure Translator API key not configured');
-    }
-
     const { texts, sourceLanguage, targetLanguages } = request;
     
     // Convert language codes for Azure
@@ -184,6 +208,7 @@ class TranslationService {
     provider: TranslationProvider = 'azure',
     userId?: string
   ): Promise<TranslationJob> {
+    this.ensureTranslationEnabled(provider);
     const jobId = uuidv4();
     
     // Create translation job record
@@ -228,6 +253,7 @@ class TranslationService {
     provider: TranslationProvider = 'azure',
     userId?: string
   ): Promise<TranslationJob> {
+    this.ensureTranslationEnabled(provider);
     const jobId = uuidv4();
     
     const job: TranslationJob = {
@@ -264,6 +290,7 @@ class TranslationService {
    */
   private async processSurveyTranslation(job: TranslationJob): Promise<void> {
     try {
+      this.ensureTranslationEnabled(job.provider);
       // Update status to processing
       await this.updateJobStatus(job.id, 'processing', 10);
 
@@ -372,6 +399,7 @@ class TranslationService {
    */
   private async processCouponTranslation(job: TranslationJob): Promise<void> {
     try {
+      this.ensureTranslationEnabled(job.provider);
       await this.updateJobStatus(job.id, 'processing', 10);
 
       const couponResult = await getPool().query('SELECT * FROM coupons WHERE id = $1', [job.entityId]);
@@ -649,7 +677,7 @@ class TranslationService {
   async getServiceStatus(): Promise<{ available: boolean; provider: string; charactersRemaining?: number }> {
     try {
       // Check Azure service availability
-      if (this.azureConfig.apiKey) {
+      if (this.translationFeatureEnabled && this.azureConfig.apiKey) {
         return {
           available: true,
           provider: 'azure',
@@ -659,7 +687,7 @@ class TranslationService {
 
       return {
         available: false,
-        provider: 'none'
+        provider: this.translationFeatureEnabled ? 'none' : 'disabled'
       };
     } catch {
       return {

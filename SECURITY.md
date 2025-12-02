@@ -10,7 +10,7 @@ The following secrets were **completely removed from git** (previously exposed i
 
 1. **JWT Secrets** - Session and refresh token signing keys
 2. **OAuth Credentials** - Google, Facebook, LINE client secrets
-3. **Azure Translation Keys** - API keys for translation service
+3. **Azure Translation Keys** *(feature currently disabled)* - API keys for translation service
 4. **Admin Credentials** - Admin email configuration
 
 ### Current Secure Configuration
@@ -39,9 +39,9 @@ All secrets are configured in GitHub repository settings:
 | `GOOGLE_CLIENT_SECRET` | Google OAuth secret | ✅ Configured |
 | `LINE_CHANNEL_ID` | LINE OAuth channel ID | ✅ Configured |
 | `LINE_CHANNEL_SECRET` | LINE OAuth secret | ✅ Configured |
-| `AZURE_TRANSLATION_KEY_1` | Azure translation primary key | ✅ Configured |
-| `AZURE_TRANSLATION_KEY_2` | Azure translation secondary key | ✅ Configured |
 | `ADMIN_USERNAME` | Admin email | ✅ Configured |
+
+> ℹ️ Translation services are currently disabled. No Azure translator secrets are required unless the feature is re-enabled.
 
 ### View Configured Secrets
 
@@ -245,7 +245,7 @@ If secrets are accidentally committed or leaked:
 3. **Revoke OAuth credentials in provider consoles**:
    - Google Cloud Console: Regenerate client secret
    - LINE Developers Console: Regenerate channel secret
-   - Azure Portal: Regenerate translation keys
+   - Azure Portal: Regenerate translation keys (only if translation is enabled)
 
 ### Follow-up Actions (Within 24 Hours)
 

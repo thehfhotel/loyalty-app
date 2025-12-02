@@ -77,9 +77,9 @@ Enhanced with:
 
 **Status**: ✅ Workflows disabled for implementation phase
 
-Files disabled:
-- `.github/workflows/deploy.yml.disabled`
-- `.github/workflows/deploy-zero-downtime.yml.disabled`
+Files affected:
+- `.github/workflows/deploy.yml` (primary pipeline)
+- Legacy zero-downtime workflow removed from repository
 
 **Reason**: Allow uninterrupted implementation without pipeline failures during refactoring.
 

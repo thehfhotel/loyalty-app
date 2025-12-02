@@ -109,7 +109,7 @@ export class AuthService {
 
   async login(email: string, password: string, rememberMe = false): Promise<{ user: User; tokens: AuthTokens }> {
     // Find user
-    const [user] = await query<User & { passwordHash: string }>(
+    const [user] = await query<User & { passwordHash: string | null }>(
       `SELECT id, email, password_hash AS "passwordHash", role, is_active AS "isActive", 
               email_verified AS "emailVerified", created_at AS "createdAt", updated_at AS "updatedAt"
        FROM users WHERE email = $1`,
@@ -129,6 +129,14 @@ export class AuthService {
     // Check if user is active
     if (!user.isActive) {
       throw new AppError(403, 'Account is disabled. Please contact support.');
+    }
+
+    // Handle accounts created via social login that don't have a password
+    if (!user.passwordHash) {
+      throw new AppError(
+        400,
+        'This account uses social login. Please sign in with Google/LINE or reset your password to set one.'
+      );
     }
 
     // Verify password

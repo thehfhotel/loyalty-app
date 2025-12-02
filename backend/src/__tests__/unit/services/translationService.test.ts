@@ -8,6 +8,7 @@ process.env.AZURE_TRANSLATION_KEY_1 = 'test-azure-key';
 process.env.AZURE_TRANSLATION_REGION = 'test-region';
 process.env.GOOGLE_TRANSLATE_KEY = 'test-google-key';
 process.env.LIBRETRANSLATE_URL = 'https://test-libre.com';
+process.env.TRANSLATION_FEATURE_ENABLED = 'true';
 
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { translationService } from '../../../services/translationService';

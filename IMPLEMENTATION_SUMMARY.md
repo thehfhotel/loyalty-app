@@ -11,7 +11,7 @@
 
 ### 1. GitHub Actions Disabled ✅
 - Disabled `deploy.yml` workflow
-- Disabled `deploy-zero-downtime.yml` workflow
+- Retired legacy zero-downtime workflow/assets
 - Created README explaining temporary disable
 - **Reason**: Allow uninterrupted implementation without pipeline failures
 

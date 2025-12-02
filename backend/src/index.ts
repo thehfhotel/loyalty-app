@@ -133,7 +133,19 @@ function createApp(redisAvailable: boolean) {
 
       // If FRONTEND_URL is set, use it as the primary origin
       if (process.env.FRONTEND_URL) {
-        allowedOrigins.unshift(process.env.FRONTEND_URL);
+        try {
+          const frontendUrl = new URL(process.env.FRONTEND_URL);
+          // Always allow the exact origin from env
+          allowedOrigins.unshift(frontendUrl.origin);
+
+          // Also allow the same host with the opposite protocol to avoid CORS issues
+          // when accessing via HTTPS behind a proxy while env is HTTP (or vice versa).
+          const altProtocol = frontendUrl.protocol === 'https:' ? 'http:' : 'https:';
+          const altOrigin = `${altProtocol}//${frontendUrl.host}`;
+          allowedOrigins.push(altOrigin);
+        } catch (error) {
+          logger.warn('Invalid FRONTEND_URL provided, skipping CORS allowlist entry:', process.env.FRONTEND_URL, error);
+        }
       }
 
       // Parse CORS_ORIGINS env var (comma-separated list of allowed origins)
