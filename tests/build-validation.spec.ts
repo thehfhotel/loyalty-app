@@ -141,8 +141,7 @@ test.describe('Build System Validation', () => {
   });
 
   test.describe('Docker Compose Validation', () => {
-    test('should validate docker-compose files have correct syntax', async () => {
-      const composeFile = path.join(projectRoot, 'docker-compose.yml');
+    test('should validate development docker-compose configuration', async () => {
       const devOverlay = path.join(projectRoot, 'docker-compose.dev.yml');
       const envFile = path.join(projectRoot, '.env.development');
 
@@ -162,8 +161,34 @@ test.describe('Build System Validation', () => {
         );
       } catch (error) {
         throw new Error(
-          `Docker compose validation failed: ${error instanceof Error ? error.message : String(error)}\n` +
-          'This will cause deployment failures.'
+          `Development docker-compose validation failed: ${error instanceof Error ? error.message : String(error)}\n` +
+          'This will cause local development failures.'
+        );
+      }
+    });
+
+    test('should validate production docker-compose configuration', async () => {
+      const prodOverlay = path.join(projectRoot, 'docker-compose.prod.yml');
+      const envFile = path.join(projectRoot, '.env.production');
+
+      // Load environment variables from .env.production
+      // E2E tests run only on main branch (production context)
+      const envConfig = config({ path: envFile });
+      if (envConfig.error) {
+        throw new Error(`Failed to load .env.production: ${envConfig.error.message}`);
+      }
+
+      try {
+        // Validate production deployment (what actually runs in CI/CD on main)
+        // Base file uses :? syntax for required vars, .env.production provides values
+        await execAsync(
+          `cd ${projectRoot} && docker compose -f docker-compose.yml -f docker-compose.prod.yml config`,
+          { env: { ...process.env, ...envConfig.parsed } }
+        );
+      } catch (error) {
+        throw new Error(
+          `Production docker-compose validation failed: ${error instanceof Error ? error.message : String(error)}\n` +
+          'This will cause production deployment failures.'
         );
       }
     });
