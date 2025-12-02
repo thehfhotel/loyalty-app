@@ -67,6 +67,11 @@ services:
 
   frontend:
     container_name: loyalty_frontend_dev
+    build:
+      context: ./frontend
+      target: development
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
     env_file:
       - .env.development
     environment:
