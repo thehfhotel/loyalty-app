@@ -1940,10 +1940,12 @@ jobs:
     name: "🧪 Development Deployment"
     runs-on: self-hosted
     environment: development
-    needs: [build-validation]
+    needs: [security-analysis, unit-tests, integration-tests]
     if: |
       github.ref == 'refs/heads/develop' &&
-      needs.build-validation.outputs.build-passed == 'true'
+      needs.security-analysis.outputs.security-passed == 'true' &&
+      needs.unit-tests.outputs.tests-passed == 'true' &&
+      needs.integration-tests.outputs.tests-passed == 'true'
     timeout-minutes: 10
 
     steps:
@@ -1952,7 +1954,9 @@ jobs:
           echo "🔍 Development deployment checks..."
           echo "Branch: ${{ github.ref_name }}"
           echo "Commit: ${{ github.sha }}"
-          echo "Build Validation: ${{ needs.build-validation.outputs.build-passed }}"
+          echo "Security: ${{ needs.security-analysis.outputs.security-passed }}"
+          echo "Unit Tests: ${{ needs.unit-tests.outputs.tests-passed }}"
+          echo "Integration Tests: ${{ needs.integration-tests.outputs.tests-passed }}"
           echo "✅ All checks passed - proceeding with development deployment"
 
       - name: "📥 Code deployment"
