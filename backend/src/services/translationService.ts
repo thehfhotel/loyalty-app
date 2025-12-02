@@ -71,8 +71,11 @@ class TranslationService {
   };
 
   private normalizeEnv(value?: string | null): string | undefined {
-    const trimmed = value?.trim();
-    return trimmed ? trimmed : undefined;
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
   }
 
   private ensureTranslationEnabled(provider: TranslationProvider): void {
