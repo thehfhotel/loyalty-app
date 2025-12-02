@@ -1946,6 +1946,9 @@ jobs:
       needs.unit-tests.outputs.tests-passed == 'true' &&
       needs.integration-tests.outputs.tests-passed == 'true'
     timeout-minutes: 10
+    concurrency:
+      group: dev-deployment
+      cancel-in-progress: true
     env:
       DEPLOY_PATH: /home/nut/loyalty-app-develop
 
@@ -2161,6 +2164,13 @@ jobs:
           echo "✅ Development deployment completed successfully!"
           echo "🌐 Development URL: http://localhost:5001"
 
+      - name: "🧹 Cleanup development env files"
+        if: always()
+        run: |
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
+          cd "$DEPLOY_DIR"
+          rm -f .env .env.development || true
+
   # =============================================================================
   # PHASE 3B: PRODUCTION DEPLOYMENT (only on main, after all tests pass)
   # Pipeline Order: Pre-validation → Backup → Code Deploy → Dependencies →
@@ -2189,6 +2199,9 @@ jobs:
       needs.build-validation.outputs.build-passed == 'true' &&
       needs.production-shutdown-approval.result == 'success'
     timeout-minutes: 15
+    concurrency:
+      group: prod-deployment
+      cancel-in-progress: true
     env:
       DEPLOY_PATH: /home/nut/loyalty-app-production
 
@@ -2906,6 +2919,13 @@ jobs:
           
           # Final completion message
           echo "🎊 Post-deployment job completed successfully - pipeline will not get stuck"
+
+      - name: "🧹 Cleanup production env file"
+        if: always()
+        run: |
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
+          cd "$DEPLOY_DIR"
+          rm -f .env || true
 
   # =============================================================================
   # UNIFIED TEST REPORT GENERATION (Merges all test types)
