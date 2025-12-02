@@ -136,6 +136,12 @@ function createApp(redisAvailable: boolean) {
         allowedOrigins.unshift(process.env.FRONTEND_URL);
       }
 
+      // Parse CORS_ORIGINS env var (comma-separated list of allowed origins)
+      if (process.env.CORS_ORIGINS) {
+        const customOrigins = process.env.CORS_ORIGINS.split(',').map(o => o.trim()).filter(Boolean);
+        allowedOrigins.push(...customOrigins);
+      }
+
       const isAllowed = allowedOrigins.some(allowedOrigin => {
         if (typeof allowedOrigin === 'string') {
           return origin === allowedOrigin;

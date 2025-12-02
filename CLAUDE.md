@@ -24,7 +24,25 @@ git commit -m "feat: description"
 git push
 ```
 
-### 3. Testing Integrity is ABSOLUTE
+### 3. NEVER Merge PRs Automatically
+**Human review is REQUIRED for all pull requests**
+
+```bash
+# ❌ FORBIDDEN - Auto-merge or self-merge
+gh pr merge --auto
+gh pr merge <PR_NUMBER>  # Without human review
+
+# ✅ CORRECT - Create PR and wait for human review
+gh pr create --title "feat: description" --body "..."
+# Then STOP - let human review and merge
+```
+
+**Why:**
+- Code review catches bugs, security issues, and design problems
+- Auto-merge bypasses the safety net of peer review
+- Even "simple" changes can have unintended consequences
+
+### 4. Testing Integrity is ABSOLUTE
 ```bash
 # ❌ FORBIDDEN
 test.skip('test')
@@ -35,12 +53,12 @@ if (process.env.SKIP_TESTS) return;
 expect(actualResult).toBe(expectedResult)
 ```
 
-### 4. Path Handling
+### 5. Path Handling
 - **Prefer absolute paths** in CI/CD
 - **Validate relative paths** (especially `../` and `../../`)
 - Test paths work in both local and CI/CD environments
 
-### 5. Database Access
+### 6. Database Access
 **NEVER direct database access - ALWAYS use backend APIs**
 
 ```bash
@@ -75,6 +93,21 @@ loyalty-app/
 | **Container Suffix** | `_dev` | (none) |
 | **Database Name** | `loyalty_dev_db` | `loyalty_db` |
 | **Docker Target** | `development` | `runner` |
+
+### CI/CD Test Port Isolation
+
+**CRITICAL: All test environments use UNIQUE ports to prevent conflicts**
+
+| Test Type | PostgreSQL | Redis | Backend | Frontend |
+|-----------|------------|-------|---------|----------|
+| **Unit Tests** | 5438 | 6383 | - | - |
+| **Integration Tests** | 5437 | 6382 | - | - |
+| **E2E Tests** | 5436 | 6381 | 4202 | 3201 |
+
+**Why isolation matters:**
+- Tests run in parallel with dev/prod environments
+- Port conflicts cause test failures and deployment issues
+- Each test type has its own isolated database and services
 
 ```bash
 # Development
@@ -287,6 +320,6 @@ npm run test
 
 ---
 
-**Last Updated**: November 15, 2025
+**Last Updated**: December 2, 2025
 **Enforced By**: Git hooks, CI/CD pipeline, project conventions
 **Compliance**: MANDATORY for all contributors

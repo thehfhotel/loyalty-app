@@ -58,7 +58,7 @@ services:
       AZURE_TRANSLATION_KEY_2: ${AZURE_TRANSLATION_KEY_2}
       AZURE_TRANSLATION_REGION: ${AZURE_TRANSLATION_REGION}
       LOG_LEVEL: ${LOG_LEVEL:-debug}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5001,http://127.0.0.1:3000,http://127.0.0.1:5001}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5001,http://127.0.0.1:3000,http://127.0.0.1:5001,https://loyalty-dev.saichon.com}
     volumes:
       - ./backend:/app
       - /app/node_modules
@@ -67,11 +67,15 @@ services:
 
   frontend:
     container_name: loyalty_frontend_dev
+    build:
+      context: ./frontend
+      target: development
     env_file:
       - .env.development
     environment:
       NODE_ENV: development
-      VITE_API_URL: ${VITE_API_URL:-/api}
+      # Override any .env file value - dev MUST use relative /api path
+      VITE_API_URL: /api
     volumes:
       - ./frontend:/app
       - /app/node_modules

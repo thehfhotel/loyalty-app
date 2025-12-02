@@ -511,14 +511,14 @@ jobs:
 
       - name: "🐳 Start isolated test services"
         run: |
-          # Use unique project name and ports to avoid conflicts with E2E tests
+          # Use unique project name and ports to avoid conflicts with dev/E2E tests
           export COMPOSE_PROJECT_NAME="loyalty-unit-tests"
-          export POSTGRES_PORT="5435"
-          export REDIS_PORT="6380"
-          
+          export POSTGRES_PORT="5438"
+          export REDIS_PORT="6383"
+
           # Start test services with isolated configuration
           echo "🚀 Starting isolated test services on custom ports..."
-          
+
           # Create temporary compose file for unit tests with isolated ports
           cat > docker-compose.unit-test.yml << 'EOF'
           version: '3.8'
@@ -531,7 +531,7 @@ jobs:
                 POSTGRES_PASSWORD: loyalty_password
                 POSTGRES_DB: loyalty_db
               ports:
-                - "5435:5432"
+                - "5438:5432"
               volumes:
                 - loyalty_postgres_unit_data:/var/lib/postgresql/data
               healthcheck:
@@ -539,12 +539,12 @@ jobs:
                 interval: 5s
                 timeout: 5s
                 retries: 5
-            
+
             redis:
               image: redis:7-alpine
               container_name: loyalty_redis_unit
               ports:
-                - "6380:6379"
+                - "6383:6379"
               volumes:
                 - loyalty_redis_unit_data:/data
               healthcheck:
@@ -552,38 +552,38 @@ jobs:
                 interval: 5s
                 timeout: 3s
                 retries: 5
-          
+
           volumes:
             loyalty_postgres_unit_data:
             loyalty_redis_unit_data:
           EOF
-          
+
           # Start isolated test services
           docker compose -f docker-compose.unit-test.yml up -d
-          
+
           # Wait for services to be ready with health checks
           echo "⏳ Waiting for isolated test services to be ready..."
           timeout 60 bash -c 'until docker compose -f docker-compose.unit-test.yml exec -T postgres pg_isready -U loyalty -d loyalty_db; do echo "Waiting for isolated postgres..."; sleep 2; done'
           timeout 30 bash -c 'until docker compose -f docker-compose.unit-test.yml exec -T redis redis-cli ping | grep -q PONG; do echo "Waiting for isolated redis..."; sleep 2; done'
-          
+
           # Configure isolated test database
           echo "🗄️ Setting up isolated test database..."
           docker exec loyalty_postgres_unit psql -U loyalty -d postgres -c "DROP DATABASE IF EXISTS loyalty_test_db;" || true
-          docker exec loyalty_postgres_unit psql -U loyalty -d postgres -c "DROP USER IF EXISTS loyalty_test;" || true  
+          docker exec loyalty_postgres_unit psql -U loyalty -d postgres -c "DROP USER IF EXISTS loyalty_test;" || true
           docker exec loyalty_postgres_unit psql -U loyalty -d postgres -c "CREATE USER loyalty_test WITH PASSWORD 'test_password';" || true
           docker exec loyalty_postgres_unit psql -U loyalty -d postgres -c "CREATE DATABASE loyalty_test_db OWNER loyalty_test;" || true
           docker exec loyalty_postgres_unit psql -U loyalty -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE loyalty_test_db TO loyalty_test;" || true
-          
+
           # Enable UUID extension in isolated test database
           docker exec loyalty_postgres_unit psql -U loyalty_test -d loyalty_test_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
-          
-          echo "✅ Isolated test services are ready on ports 5435 (postgres) and 6380 (redis)"
+
+          echo "✅ Isolated test services are ready on ports 5438 (postgres) and 6383 (redis)"
       
       - name: "🔧 Setup isolated test environment"
         working-directory: ./backend
         env:
-          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5435/loyalty_test_db
-          REDIS_URL: redis://localhost:6380
+          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5438/loyalty_test_db
+          REDIS_URL: redis://localhost:6383
           NODE_ENV: test
           JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
           JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
@@ -612,8 +612,8 @@ jobs:
         id: run-tests
         working-directory: ./backend
         env:
-          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5435/loyalty_test_db
-          REDIS_URL: redis://localhost:6380
+          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5438/loyalty_test_db
+          REDIS_URL: redis://localhost:6383
           NODE_ENV: test
           JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
           JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
@@ -1969,8 +1969,8 @@ jobs:
             echo "📥 Updating existing repository..."
             cd "$DEPLOY_DIR"
             git fetch origin develop
-            git checkout develop
-            git reset --hard origin/develop
+            # Create or switch to develop branch using FETCH_HEAD
+            git checkout -B develop FETCH_HEAD
           else
             echo "📦 Fresh clone..."
             mkdir -p "$(dirname "$DEPLOY_DIR")"
@@ -1999,8 +1999,8 @@ jobs:
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
           cd "$DEPLOY_DIR"
 
-          # Create .env file for development with GitHub Secrets
-          cat > .env << EOF
+          # Create .env.development file for development with GitHub Secrets
+          cat > .env.development << EOF
           # Development Environment - Auto-generated by GitHub Actions
           NODE_ENV=development
 
@@ -2039,6 +2039,10 @@ jobs:
           # Development settings
           LOG_LEVEL=debug
           CORS_ORIGINS=http://localhost:3000,http://localhost:5001,http://127.0.0.1:3000,http://127.0.0.1:5001
+
+          # Admin credentials (development only)
+          LOYALTY_USERNAME=admin@dev.local
+          LOYALTY_PASSWORD=admin123
           EOF
 
           echo "✅ Development environment configured"
@@ -2124,6 +2128,8 @@ jobs:
         run: |
           echo "🏥 Checking development service health..."
 
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+
           # Check backend health
           for i in {1..30}; do
             if curl -f -s http://localhost:5001/api/health >/dev/null 2>&1; then
@@ -2141,9 +2147,10 @@ jobs:
             echo "⚠️ Frontend may still be starting..."
           fi
 
-          # Show running containers
+          # Show running containers (run from deploy dir to find .env.development)
           echo ""
           echo "📊 Running development containers:"
+          cd "$DEPLOY_DIR"
           docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
 
           echo ""
@@ -3210,7 +3217,7 @@ jobs:
 #
 # 📊 PERFORMANCE OPTIMIZATIONS:
 # - Parallel job execution with isolated environments (prevents conflicts)
-# - Port isolation strategy (Unit: 5435/6380, Integration: 5437/6382, E2E: 5436/6381/4202/3201)
+# - Port isolation strategy (Unit: 5438/6383, Integration: 5437/6382, E2E: 5436/6381/4202/3201, Dev: 5435/6380)
 # - Container isolation with unique project names and containers
 # - Intelligent caching (npm, Docker BuildKit)
 # - Conditional jobs (E2E only on main/PR to main)
