@@ -1496,7 +1496,7 @@ jobs:
           BACKEND_URL: http://localhost:4202
           FRONTEND_URL: http://localhost:3201
           SKIP_PLAYWRIGHT_DOCKER_SETUP: "true"
-          # Secrets required for docker-compose validation tests
+          # GitHub Secrets for CI/CD environment validation test
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
@@ -1504,17 +1504,6 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           LINE_CHANNEL_ID: ${{ secrets.LINE_CHANNEL_ID }}
           LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
-          GOOGLE_CALLBACK_URL: "http://localhost:5001/api/oauth/google/callback"
-          LINE_CALLBACK_URL: "http://localhost:5001/api/oauth/line/callback"
-          LOYALTY_USERNAME: ${{ secrets.ADMIN_USERNAME || 'admin@test.local' }}
-          LOYALTY_PASSWORD: "test-admin-password-for-validation-only"
-          VITE_API_URL: "/api"
-          CORS_ORIGINS: "http://localhost:3000,http://localhost:5001"
-          TRANSLATION_FEATURE_ENABLED: "false"
-          AZURE_TRANSLATION_TEXT_URI: ""
-          AZURE_TRANSLATION_KEY_1: ""
-          AZURE_TRANSLATION_KEY_2: ""
-          AZURE_TRANSLATION_REGION: "global"
         run: |
           echo "🎭 Running E2E tests with Playwright on isolated environment..."
           echo "🌐 Testing against Backend: http://localhost:4202"
