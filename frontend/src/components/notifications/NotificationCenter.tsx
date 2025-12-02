@@ -71,7 +71,13 @@ export default function NotificationCenter() {
 
       if (response.ok) {
         const result = await response.json();
-        setNotifications(result.data);
+        // Count unread notifications from the response
+        const unreadCount = result.notifications?.filter((n: Notification) => !n.readAt).length ?? 0;
+        setNotifications({
+          total: result.pagination?.total ?? result.notifications?.length ?? 0,
+          unread: unreadCount,
+          notifications: result.notifications ?? []
+        });
       } else {
         console.error('Failed to fetch notifications');
       }
@@ -120,7 +126,7 @@ export default function NotificationCenter() {
   };
 
   const markAllAsRead = async () => {
-    if (!user || notifications.unread === 0) {return;}
+    if (!user || (notifications?.unread ?? 0) === 0) {return;}
 
     try {
       const response = await fetch('/api/notifications/mark-read', {
@@ -228,9 +234,9 @@ export default function NotificationCenter() {
         aria-label="Notifications"
       >
         <FiBell className="h-6 w-6" />
-        {notifications.unread > 0 && (
+        {(notifications?.unread ?? 0) > 0 && (
           <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 text-xs text-white rounded-full flex items-center justify-center font-semibold">
-            {notifications.unread > 9 ? '9+' : notifications.unread}
+            {(notifications?.unread ?? 0) > 9 ? '9+' : (notifications?.unread ?? 0)}
           </span>
         )}
       </button>
@@ -245,7 +251,7 @@ export default function NotificationCenter() {
                 {t('notifications.title', 'Notifications')}
               </h3>
               <div className="flex items-center space-x-2">
-                {notifications.unread > 0 && (
+                {(notifications?.unread ?? 0) > 0 && (
                   <button
                     onClick={markAllAsRead}
                     className="text-sm text-primary-600 hover:text-primary-700 font-medium"
@@ -261,9 +267,9 @@ export default function NotificationCenter() {
                 </button>
               </div>
             </div>
-            {notifications.unread > 0 && (
+            {(notifications?.unread ?? 0) > 0 && (
               <p className="text-sm text-gray-500 mt-1">
-                {t('notifications.unreadCount', '{{count}} unread', { count: notifications.unread })}
+                {t('notifications.unreadCount', '{{count}} unread', { count: notifications?.unread ?? 0 })}
               </p>
             )}
           </div>
