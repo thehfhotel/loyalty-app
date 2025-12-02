@@ -145,19 +145,25 @@ test.describe('Build System Validation', () => {
       const devOverlay = path.join(projectRoot, 'docker-compose.dev.yml');
       const envFile = path.join(projectRoot, '.env.development');
 
-      // Load environment variables from .env.development
-      // This is required because docker-compose.dev.yml no longer has inline defaults
-      const envConfig = config({ path: envFile });
-      if (envConfig.error) {
-        throw new Error(`Failed to load .env.development: ${envConfig.error.message}`);
+      // In CI: Use environment variables from GitHub Secrets (already set by workflow)
+      // Locally: Load from .env.development file if it exists
+      let testEnv = { ...process.env };
+
+      if (!process.env.CI && !process.env.GITHUB_ACTIONS) {
+        // Local development: try to load .env file
+        const envConfig = config({ path: envFile });
+        if (!envConfig.error && envConfig.parsed) {
+          testEnv = { ...testEnv, ...envConfig.parsed };
+        }
       }
+      // In CI: GitHub Actions already set all env vars from secrets, use them directly
 
       try {
         // Validate development deployment (documented usage pattern from CLAUDE.md)
-        // Base file uses :? syntax for required vars, .env.development provides values
+        // Base file uses :? syntax for required vars, env vars provide values
         await execAsync(
           `cd ${projectRoot} && docker compose -f docker-compose.yml -f docker-compose.dev.yml config`,
-          { env: { ...process.env, ...envConfig.parsed } }
+          { env: testEnv }
         );
       } catch (error) {
         throw new Error(
@@ -171,19 +177,25 @@ test.describe('Build System Validation', () => {
       const prodOverlay = path.join(projectRoot, 'docker-compose.prod.yml');
       const envFile = path.join(projectRoot, '.env.production');
 
-      // Load environment variables from .env.production
-      // E2E tests run only on main branch (production context)
-      const envConfig = config({ path: envFile });
-      if (envConfig.error) {
-        throw new Error(`Failed to load .env.production: ${envConfig.error.message}`);
+      // In CI: Use environment variables from GitHub Secrets (already set by workflow)
+      // Locally: Load from .env.production file if it exists
+      let testEnv = { ...process.env };
+
+      if (!process.env.CI && !process.env.GITHUB_ACTIONS) {
+        // Local development: try to load .env file
+        const envConfig = config({ path: envFile });
+        if (!envConfig.error && envConfig.parsed) {
+          testEnv = { ...testEnv, ...envConfig.parsed };
+        }
       }
+      // In CI: GitHub Actions already set all env vars from secrets, use them directly
 
       try {
         // Validate production deployment (what actually runs in CI/CD on main)
-        // Base file uses :? syntax for required vars, .env.production provides values
+        // Base file uses :? syntax for required vars, env vars provide values
         await execAsync(
           `cd ${projectRoot} && docker compose -f docker-compose.yml -f docker-compose.prod.yml config`,
-          { env: { ...process.env, ...envConfig.parsed } }
+          { env: testEnv }
         );
       } catch (error) {
         throw new Error(
