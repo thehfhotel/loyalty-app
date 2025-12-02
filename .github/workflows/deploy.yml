@@ -7,11 +7,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Enforce only 1 pipeline run at a time to prevent container name conflicts
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: write  # For GitHub Pages deployment
   pages: write
@@ -463,6 +458,10 @@ jobs:
     runs-on: self-hosted
     needs: [prepare-workspace, security-analysis]
     timeout-minutes: 4
+    # Prevent multiple unit test jobs from running concurrently (queue instead)
+    concurrency:
+      group: unit-tests
+      cancel-in-progress: false
     outputs:
       tests-passed: ${{ steps.test-results.outputs.passed }}
       coverage-percent: ${{ steps.test-results.outputs.coverage }}
@@ -813,6 +812,10 @@ jobs:
     runs-on: self-hosted
     needs: [unit-tests]  # Sequential: runs after unit tests pass
     timeout-minutes: 5
+    # Prevent multiple integration test jobs from running concurrently (queue instead)
+    concurrency:
+      group: integration-tests
+      cancel-in-progress: false
     outputs:
       tests-passed: ${{ steps.test-results.outputs.passed }}
 
