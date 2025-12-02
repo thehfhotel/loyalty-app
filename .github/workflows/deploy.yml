@@ -2054,16 +2054,59 @@ jobs:
 
           echo "✅ Development environment configured"
 
+      - name: "🔍 Pre-deployment port check (dev)"
+        run: |
+          echo "🔍 Checking if required development ports are available..."
+
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
+          cd "$DEPLOY_DIR"
+
+          # Development ports (from docker-compose.dev.yml)
+          REQUIRED_PORTS=(5435 6380 5001)
+          PORTS_IN_USE=()
+
+          for port in "${REQUIRED_PORTS[@]}"; do
+            if lsof -i ":$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+              echo "⚠️ Port $port is in use:"
+              lsof -i ":$port" -sTCP:LISTEN || true
+              PORTS_IN_USE+=($port)
+            else
+              echo "✅ Port $port is available"
+            fi
+          done
+
+          if [ ${#PORTS_IN_USE[@]} -gt 0 ]; then
+            echo ""
+            echo "⚠️ Ports in use: ${PORTS_IN_USE[*]}"
+            echo "🛑 Stopping existing development containers..."
+            docker compose -f docker-compose.yml -f docker-compose.dev.yml down --timeout 30 || true
+
+            # Re-check ports after shutdown
+            echo "🔍 Re-checking ports after shutdown..."
+            sleep 5
+            STILL_IN_USE=()
+            for port in "${PORTS_IN_USE[@]}"; do
+              if lsof -i ":$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+                STILL_IN_USE+=($port)
+              fi
+            done
+
+            if [ ${#STILL_IN_USE[@]} -gt 0 ]; then
+              echo "❌ WARNING: Ports still in use after shutdown: ${STILL_IN_USE[*]}"
+              echo "Continuing with deployment - may fail if ports cannot be freed"
+            else
+              echo "✅ All ports now available after shutdown"
+            fi
+          fi
+
+          echo "✅ Port check complete"
+
       - name: "🐳 Deploy development services"
         run: |
           echo "🐳 Deploying development services on port 5001..."
 
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
           cd "$DEPLOY_DIR"
-
-          # Stop existing dev containers gracefully
-          echo "🛑 Stopping existing development containers..."
-          docker compose -f docker-compose.yml -f docker-compose.dev.yml down --timeout 30 || true
 
           # Build and start with dev configuration
           echo "🏗️ Building and starting development services..."
@@ -2440,23 +2483,75 @@ jobs:
             echo "⚠️ Empty environment variables found: $empty_vars"
           fi
       
+      - name: "🔍 Pre-deployment port check"
+        run: |
+          echo "🔍 Checking if required ports are available..."
+
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
+          cd "$DEPLOY_DIR"
+
+          # Production ports (from docker-compose.yml + docker-compose.prod.yml)
+          REQUIRED_PORTS=(5434 6379 4001)
+          PORTS_IN_USE=()
+
+          for port in "${REQUIRED_PORTS[@]}"; do
+            if lsof -i ":$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+              echo "⚠️ Port $port is in use:"
+              lsof -i ":$port" -sTCP:LISTEN || true
+              PORTS_IN_USE+=($port)
+            else
+              echo "✅ Port $port is available"
+            fi
+          done
+
+          if [ ${#PORTS_IN_USE[@]} -gt 0 ]; then
+            echo ""
+            echo "❌ ERROR: Ports in use: ${PORTS_IN_USE[*]}"
+            echo ""
+            echo "🛑 Attempting graceful shutdown of existing services..."
+            if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q | head -1 | grep -q .; then
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 30 || true
+
+              # Re-check ports after shutdown
+              echo "🔍 Re-checking ports after shutdown..."
+              sleep 5
+              STILL_IN_USE=()
+              for port in "${PORTS_IN_USE[@]}"; do
+                if lsof -i ":$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+                  STILL_IN_USE+=($port)
+                fi
+              done
+
+              if [ ${#STILL_IN_USE[@]} -gt 0 ]; then
+                echo "❌ FATAL: Ports still in use after shutdown: ${STILL_IN_USE[*]}"
+                echo "Please manually stop services using these ports before deploying."
+                exit 1
+              else
+                echo "✅ All ports now available after shutdown"
+              fi
+            else
+              echo "❌ FATAL: Ports in use but no compose services found to stop"
+              echo "Please manually investigate and free these ports:"
+              for port in "${PORTS_IN_USE[@]}"; do
+                echo "  Port $port:"
+                lsof -i ":$port" -sTCP:LISTEN || true
+              done
+              exit 1
+            fi
+          fi
+
+          echo "✅ All required ports are available for deployment"
+
       - name: "🚀 Optimized service deployment"
         run: |
           echo "🚀 Deploying services with zero-downtime strategy..."
-          
+
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
-          
+
           # Enable BuildKit for faster builds
           export DOCKER_BUILDKIT=1
           export COMPOSE_DOCKER_CLI_BUILD=1
-          
-          # Graceful shutdown of existing services
-          if docker compose ps -q | head -1 | grep -q .; then
-            echo "🛑 Graceful shutdown of existing services..."
-            timeout 30s docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 10 || \
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 5
-          fi
           
           # Build and start services
           echo "🏗️ Building and starting services..."
