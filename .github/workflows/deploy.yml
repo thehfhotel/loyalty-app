@@ -2077,15 +2077,44 @@ jobs:
             sleep 2
           done
 
-          # Run migrations
-          echo "🔄 Running Prisma migrations..."
-          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npm run db:migrate:deploy || {
-            echo "⚠️ Migration failed, attempting db:generate first..."
-            docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npm run db:generate
-            docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npm run db:migrate:deploy
-          }
+          # Check migration status before running
+          echo "🔍 Checking current migration status..."
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npx prisma migrate status || echo "⚠️ Could not check migration status"
 
-          echo "✅ Database migrations completed"
+          # Run migrations with retry
+          echo "🔄 Running Prisma migrations..."
+          for attempt in 1 2 3; do
+            echo "🔄 Migration attempt $attempt/3..."
+
+            if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npm run db:migrate:deploy; then
+              echo "✅ Database migrations completed successfully"
+              break
+            else
+              echo "❌ Migration attempt $attempt failed"
+
+              if [ $attempt -eq 3 ]; then
+                echo "🔧 Attempting baseline resolution for 0_init..."
+                docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npx prisma migrate resolve --applied 0_init 2>/dev/null || true
+
+                echo "🔄 Final migration attempt after baseline..."
+                if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npm run db:migrate:deploy; then
+                  echo "✅ Database migrations completed after baseline resolution"
+                else
+                  echo "❌ All migration attempts failed"
+                  docker compose -f docker-compose.yml -f docker-compose.dev.yml logs --tail=20 backend
+                  exit 1
+                fi
+              else
+                sleep 3
+              fi
+            fi
+          done
+
+          # Verify final migration status
+          echo "🔍 Post-migration status:"
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npx prisma migrate status || true
+
+          echo "✅ Database migration phase completed"
 
       - name: "🏥 Health check"
         run: |
