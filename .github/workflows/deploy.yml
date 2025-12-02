@@ -2871,6 +2871,11 @@ jobs:
     needs: [unit-tests, integration-tests, e2e-tests]
     if: always() && github.ref == 'refs/heads/main'
 
+    # Prevent multiple concurrent report generations to avoid artifact conflicts
+    concurrency:
+      group: "test-reports-${{ github.repository }}"
+      cancel-in-progress: true
+
     steps:
       - name: "📥 Checkout code"
         uses: actions/checkout@v4
@@ -2984,18 +2989,30 @@ jobs:
           EOF
           fi
 
-      - name: "🔗 Create latest redirect"
+      - name: "🔗 Create latest redirect with branch indicator"
         run: |
           mkdir -p test-reports-latest
 
-          cat > test-reports-latest/index.html <<'REDIRECT_EOF'
+          # Determine branch name and badge color
+          BRANCH_NAME="${{ github.ref_name }}"
+          if [ "$BRANCH_NAME" = "main" ]; then
+            BADGE_COLOR="#28a745"
+            BADGE_TEXT="🚀 PRODUCTION"
+            ENV_NAME="Production"
+          else
+            BADGE_COLOR="#17a2b8"
+            BADGE_TEXT="🧪 DEVELOPMENT"
+            ENV_NAME="Development"
+          fi
+
+          cat > test-reports-latest/index.html <<REDIRECT_EOF
           <!DOCTYPE html>
           <html lang="en">
           <head>
               <meta charset="UTF-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <meta http-equiv="refresh" content="0; url=../${{ github.run_number }}/">
-              <title>Redirecting to Latest Report...</title>
+              <title>[$ENV_NAME] Test Report #${{ github.run_number }}</title>
               <style>
                   body {
                       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -3014,6 +3031,14 @@ jobs:
                       border-radius: 10px;
                       backdrop-filter: blur(10px);
                   }
+                  .badge {
+                      display: inline-block;
+                      padding: 0.5rem 1rem;
+                      background: $BADGE_COLOR;
+                      border-radius: 20px;
+                      font-weight: bold;
+                      margin-bottom: 1rem;
+                  }
                   .spinner {
                       margin: 1rem auto;
                       width: 40px;
@@ -3027,14 +3052,19 @@ jobs:
                       to { transform: rotate(360deg); }
                   }
                   a { color: white; text-decoration: underline; }
+                  .meta { font-size: 0.9rem; opacity: 0.8; margin-top: 1rem; }
               </style>
           </head>
           <body>
               <div class="container">
-                  <h2>Loading Latest Test Report...</h2>
+                  <div class="badge">$BADGE_TEXT</div>
+                  <h2>Loading Test Report...</h2>
                   <div class="spinner"></div>
                   <p>Report #${{ github.run_number }} (Unit + Integration + E2E Tests)</p>
                   <p><a href="../${{ github.run_number }}/">Click here if not redirected</a></p>
+                  <div class="meta">
+                      Branch: $BRANCH_NAME | Commit: ${{ github.sha }}
+                  </div>
               </div>
               <script>
                   setTimeout(() => window.location.href = '../${{ github.run_number }}/', 100);
@@ -3043,7 +3073,7 @@ jobs:
           </html>
           REDIRECT_EOF
 
-          echo "✅ Created latest redirect pointing to run #${{ github.run_number }}"
+          echo "✅ Created latest redirect for $ENV_NAME (run #${{ github.run_number }})"
 
       - name: "📦 Prepare GitHub Pages artifact structure"
         run: |
@@ -3092,9 +3122,11 @@ jobs:
         with:
           path: pages-artifact
           retention-days: 90
+          # Note: artifact name is always 'github-pages' for this action
 
   # =============================================================================
   # GITHUB PAGES DEPLOYMENT (Deploys unified test reports)
+  # Uses concurrency to prevent duplicate artifact conflicts
   # =============================================================================
 
   deploy-github-pages:
@@ -3112,16 +3144,27 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
 
+    # Strict concurrency - only one pages deployment at a time
+    # This prevents the "Multiple artifacts named github-pages" error
     concurrency:
-      group: "pages"
-      cancel-in-progress: false
+      group: "pages-deploy-${{ github.repository }}"
+      cancel-in-progress: true
 
     steps:
+      - name: "⏳ Wait for artifact to be ready"
+        run: |
+          echo "⏳ Waiting for artifact processing..."
+          sleep 5
+          echo "✅ Proceeding with deployment"
+
       - name: "🚀 Deploy to GitHub Pages"
         id: deployment
         uses: actions/deploy-pages@v4
         with:
-          artifact_name: github-pages
+          timeout: 600000
+          error_count: 10
+          reporting_interval: 5000
+        # Uses default artifact_name: github-pages
 
       - name: "✅ Deployment complete"
         run: |
