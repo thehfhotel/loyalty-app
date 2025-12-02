@@ -1969,8 +1969,8 @@ jobs:
             echo "📥 Updating existing repository..."
             cd "$DEPLOY_DIR"
             git fetch origin develop
-            # Create or switch to develop branch tracking origin/develop
-            git checkout -B develop origin/develop
+            # Create or switch to develop branch using FETCH_HEAD
+            git checkout -B develop FETCH_HEAD
           else
             echo "📦 Fresh clone..."
             mkdir -p "$(dirname "$DEPLOY_DIR")"
