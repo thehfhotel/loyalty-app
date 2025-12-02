@@ -788,11 +788,18 @@ jobs:
         if: always()
         run: |
           echo "🧹 Cleaning up isolated unit test services..."
-          docker compose -f docker-compose.unit-test.yml down -v --remove-orphans || true
-          # SAFETY: Only remove test-specific volumes, NEVER docker system prune
-          # docker system prune can destroy production containers/volumes!
+
+          # Stop and remove containers by explicit names (doesn't require compose file)
+          docker stop loyalty_postgres_unit loyalty_redis_unit 2>/dev/null || true
+          docker rm -f loyalty_postgres_unit loyalty_redis_unit 2>/dev/null || true
+
+          # Remove volumes (check both with and without project prefix)
+          docker volume rm loyalty_postgres_unit_data loyalty_redis_unit_data 2>/dev/null || true
           docker volume rm loyalty-unit-tests_loyalty_postgres_unit_data loyalty-unit-tests_loyalty_redis_unit_data 2>/dev/null || true
+
+          # Clean up compose file
           rm -f docker-compose.unit-test.yml || true
+
           echo "✅ Isolated unit test environment cleaned up"
 
   # Job 1C: Integration Tests (Sequential - after Unit Tests)
@@ -1093,11 +1100,18 @@ jobs:
         if: always()
         run: |
           echo "🧹 Cleaning up isolated integration test services..."
-          docker compose -f docker-compose.integration-test.yml down -v --remove-orphans || true
-          # SAFETY: Only remove test-specific volumes, NEVER docker system prune
-          # docker system prune can destroy production containers/volumes!
+
+          # Stop and remove containers by explicit names (doesn't require compose file)
+          docker stop loyalty_postgres_integration loyalty_redis_integration 2>/dev/null || true
+          docker rm -f loyalty_postgres_integration loyalty_redis_integration 2>/dev/null || true
+
+          # Remove volumes (check both with and without project prefix)
+          docker volume rm loyalty_postgres_integration_data loyalty_redis_integration_data 2>/dev/null || true
           docker volume rm loyalty-integration-tests_loyalty_postgres_integration_data loyalty-integration-tests_loyalty_redis_integration_data 2>/dev/null || true
+
+          # Clean up compose file
           rm -f docker-compose.integration-test.yml || true
+
           echo "✅ Isolated integration test environment cleaned up"
 
   # Job 1D: E2E Tests (Conditional - only on main branch or PR to main)
