@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { config } from 'dotenv';
 
 const execAsync = promisify(exec);
 
@@ -142,10 +143,23 @@ test.describe('Build System Validation', () => {
   test.describe('Docker Compose Validation', () => {
     test('should validate docker-compose files have correct syntax', async () => {
       const composeFile = path.join(projectRoot, 'docker-compose.yml');
-      
+      const devOverlay = path.join(projectRoot, 'docker-compose.dev.yml');
+      const envFile = path.join(projectRoot, '.env.development');
+
+      // Load environment variables from .env.development
+      // This is required because docker-compose.dev.yml no longer has inline defaults
+      const envConfig = config({ path: envFile });
+      if (envConfig.error) {
+        throw new Error(`Failed to load .env.development: ${envConfig.error.message}`);
+      }
+
       try {
-        // Validate main docker-compose file
-        await execAsync(`cd ${projectRoot} && docker compose -f docker-compose.yml config`);
+        // Validate development deployment (documented usage pattern from CLAUDE.md)
+        // Base file uses :? syntax for required vars, .env.development provides values
+        await execAsync(
+          `cd ${projectRoot} && docker compose -f docker-compose.yml -f docker-compose.dev.yml config`,
+          { env: { ...process.env, ...envConfig.parsed } }
+        );
       } catch (error) {
         throw new Error(
           `Docker compose validation failed: ${error instanceof Error ? error.message : String(error)}\n` +
