@@ -70,13 +70,12 @@ services:
     build:
       context: ./frontend
       target: development
-      args:
-        VITE_API_URL: ${VITE_API_URL:-/api}
     env_file:
       - .env.development
     environment:
       NODE_ENV: development
-      VITE_API_URL: ${VITE_API_URL:-/api}
+      # Override any .env file value - dev MUST use relative /api path
+      VITE_API_URL: /api
     volumes:
       - ./frontend:/app
       - /app/node_modules
