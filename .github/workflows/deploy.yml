@@ -2128,6 +2128,8 @@ jobs:
         run: |
           echo "🏥 Checking development service health..."
 
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+
           # Check backend health
           for i in {1..30}; do
             if curl -f -s http://localhost:5001/api/health >/dev/null 2>&1; then
@@ -2145,9 +2147,10 @@ jobs:
             echo "⚠️ Frontend may still be starting..."
           fi
 
-          # Show running containers
+          # Show running containers (run from deploy dir to find .env.development)
           echo ""
           echo "📊 Running development containers:"
+          cd "$DEPLOY_DIR"
           docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
 
           echo ""
