@@ -15,8 +15,6 @@ permissions:
   pull-requests: write  # For PR comments on test results
 
 env:
-  DEPLOY_PATH_DEV: /home/nut/loyalty-app-develop
-  DEPLOY_PATH_PROD: /home/nut/loyalty-app-production
   NODE_VERSION: 24
   CACHE_VERSION: v2
 
@@ -1949,7 +1947,7 @@ jobs:
       needs.integration-tests.outputs.tests-passed == 'true'
     timeout-minutes: 10
     env:
-      DEPLOY_PATH: ${{ env.DEPLOY_PATH_DEV }}
+      DEPLOY_PATH: /home/nut/loyalty-app-develop
 
     steps:
       - name: "📊 Pre-deployment validation"
@@ -2189,7 +2187,7 @@ jobs:
       needs.production-shutdown-approval.result == 'success'
     timeout-minutes: 15
     env:
-      DEPLOY_PATH: ${{ env.DEPLOY_PATH_PROD }}
+      DEPLOY_PATH: /home/nut/loyalty-app-production
 
     steps:
       - name: "📊 Pre-deployment validation (quality gates)"
