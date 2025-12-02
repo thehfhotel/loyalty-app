@@ -15,7 +15,8 @@ permissions:
   pull-requests: write  # For PR comments on test results
 
 env:
-  DEPLOY_PATH: /home/nut/loyalty-app
+  DEPLOY_PATH_DEV: /home/nut/loyalty-app-develop
+  DEPLOY_PATH_PROD: /home/nut/loyalty-app-production
   NODE_VERSION: 24
   CACHE_VERSION: v2
 
@@ -1947,6 +1948,8 @@ jobs:
       needs.unit-tests.outputs.tests-passed == 'true' &&
       needs.integration-tests.outputs.tests-passed == 'true'
     timeout-minutes: 10
+    env:
+      DEPLOY_PATH: ${{ env.DEPLOY_PATH_DEV }}
 
     steps:
       - name: "📊 Pre-deployment validation"
@@ -1963,7 +1966,7 @@ jobs:
         run: |
           echo "📥 Deploying code to development environment..."
 
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
 
           if [ -d "$DEPLOY_DIR/.git" ]; then
             echo "📥 Updating existing repository..."
@@ -1996,7 +1999,7 @@ jobs:
         run: |
           echo "🔧 Configuring development environment..."
 
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
           cd "$DEPLOY_DIR"
 
           # Create .env.development file for development with GitHub Secrets
@@ -2051,7 +2054,7 @@ jobs:
         run: |
           echo "🐳 Deploying development services on port 5001..."
 
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
           cd "$DEPLOY_DIR"
 
           # Stop existing dev containers gracefully
@@ -2071,7 +2074,7 @@ jobs:
         run: |
           echo "🗄️ Running database migrations on development..."
 
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
           cd "$DEPLOY_DIR"
 
           # Wait for database to be ready
@@ -2128,7 +2131,7 @@ jobs:
         run: |
           echo "🏥 Checking development service health..."
 
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
 
           # Check backend health
           for i in {1..30}; do
@@ -2185,6 +2188,8 @@ jobs:
       needs.build-validation.outputs.build-passed == 'true' &&
       needs.production-shutdown-approval.result == 'success'
     timeout-minutes: 15
+    env:
+      DEPLOY_PATH: ${{ env.DEPLOY_PATH_PROD }}
 
     steps:
       - name: "📊 Pre-deployment validation (quality gates)"
@@ -2210,7 +2215,7 @@ jobs:
         run: |
           echo "💾 Creating smart database backup..."
           
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           
           # Only backup if deployment directory exists
           if [ ! -d "$DEPLOY_DIR" ]; then
@@ -2245,7 +2250,7 @@ jobs:
         run: |
           echo "📥 Deploying code with optimizations..."
           
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           
           # Smart deployment: update existing repo or clone new
           if [ -d "$DEPLOY_DIR/.git" ]; then
@@ -2273,7 +2278,7 @@ jobs:
         run: |
           echo "⚡ Setting up dependencies with maximum speed..."
           
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
           
           # Configure npm for maximum performance
@@ -2370,7 +2375,7 @@ jobs:
         run: |
           echo "📝 Creating .env file for Docker Compose..."
           
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
           
           # Create .env file with all environment variables
@@ -2432,7 +2437,7 @@ jobs:
         run: |
           echo "🚀 Deploying services with zero-downtime strategy..."
           
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
           
           # Enable BuildKit for faster builds
@@ -2466,7 +2471,7 @@ jobs:
         run: |
           echo "🗃️ Running database migrations with enhanced logging..."
           
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
           
           # Pre-migration container status
@@ -2573,7 +2578,7 @@ jobs:
         run: |
           echo "🔐 Validating OAuth configuration in production environment..."
           
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
           
           # Wait for application to be ready
@@ -2599,7 +2604,7 @@ jobs:
         run: |
           echo "🗄️ Validating database migration status in production..."
           
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
           
           # Verify database migration status
@@ -2626,7 +2631,7 @@ jobs:
         run: |
           echo "🏥 Running comprehensive health checks with enhanced logging..."
           
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
           
           # Enhanced logging function with container inspection
@@ -2759,7 +2764,7 @@ jobs:
         run: |
           echo "⚠️ Deployment failed - initiating automatic rollback..."
 
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app}"
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
 
           # Find previous working images (excluding current SHA)
