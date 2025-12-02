@@ -7,6 +7,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Enforce only 1 pipeline run at a time to prevent container name conflicts
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write  # For GitHub Pages deployment
   pages: write
