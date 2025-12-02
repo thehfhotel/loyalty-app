@@ -4,7 +4,9 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import passport from 'passport';
 import session from 'express-session';
-import ConnectRedis from 'connect-redis';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const connectRedisModule = require('connect-redis');
+const RedisStore = connectRedisModule.RedisStore ?? connectRedisModule.default?.RedisStore ?? connectRedisModule;
 import { createServer } from 'http';
 
 // Load environment variables first
@@ -185,9 +187,8 @@ function createApp(redisAvailable: boolean) {
       try {
         const redisClient = getRedisClient();
         if (redisClient && redisClient.isReady) {
-          // Use modern connect-redis v7+ syntax
-          const RedisStoreClass = ConnectRedis(session);
-          const redisStore = new RedisStoreClass({
+          // Use connect-redis v7+ syntax (named export, direct instantiation)
+          const redisStore = new RedisStore({
             client: redisClient,
             prefix: 'loyalty-app:sess:'
           });
