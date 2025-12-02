@@ -81,23 +81,28 @@ wait_for_health() {
     local service=$2
     local port=$3
     local endpoint=${4:-/api/health}
-    
+
+    # Use HEALTH_CHECK_HOST from environment or default to localhost
+    # For production deployments, set HEALTH_CHECK_HOST to the appropriate hostname
+    local health_host="${HEALTH_CHECK_HOST:-localhost}"
+
     log_info "Waiting for $color $service to be healthy..."
-    
+    log_info "Health check URL: http://$health_host:$port$endpoint"
+
     local attempts=0
     local max_attempts=$((HEALTH_CHECK_TIMEOUT / HEALTH_CHECK_INTERVAL))
-    
+
     while [ $attempts -lt $max_attempts ]; do
-        if curl -f -s "http://localhost:$port$endpoint" >/dev/null 2>&1; then
+        if curl -f -s "http://$health_host:$port$endpoint" >/dev/null 2>&1; then
             log_success "$color $service is healthy"
             return 0
         fi
-        
+
         attempts=$((attempts + 1))
         log_info "Health check attempt $attempts/$max_attempts for $color $service..."
         sleep $HEALTH_CHECK_INTERVAL
     done
-    
+
     log_error "$color $service failed health checks after $HEALTH_CHECK_TIMEOUT seconds"
     return 1
 }
@@ -168,10 +173,14 @@ switch_traffic() {
     # Graceful reload
     if docker compose exec -T nginx nginx -s reload; then
         log_success "Traffic switched to $target_color environment"
-        
+
         # Verify traffic switch worked
+        # Use HEALTH_CHECK_HOST from environment or default to localhost
+        local health_host="${HEALTH_CHECK_HOST:-localhost}"
+        local health_port="${HEALTH_CHECK_PORT:-4001}"
+
         sleep 2
-        if curl -f -s "http://localhost:4001/api/health" >/dev/null 2>&1; then
+        if curl -f -s "http://$health_host:$health_port/api/health" >/dev/null 2>&1; then
             log_success "Traffic switch verification passed"
             return 0
         else
@@ -298,26 +307,30 @@ main() {
     fi
     
     # Final validation
+    # Use HEALTH_CHECK_HOST from environment or default to localhost
+    local health_host="${HEALTH_CHECK_HOST:-localhost}"
+    local health_port="${HEALTH_CHECK_PORT:-4001}"
+
     log_info "Running post-deployment validation..."
-    if ! curl -f -s "http://localhost:4001/api/health" >/dev/null 2>&1; then
+    if ! curl -f -s "http://$health_host:$health_port/api/health" >/dev/null 2>&1; then
         log_error "Post-deployment validation failed"
         if [ "$active_color" != "none" ]; then
             rollback_deployment "$deploy_color" "$active_color"
         fi
         exit 1
     fi
-    
+
     log_success "Zero-downtime deployment completed successfully!"
     log_success "Active environment: $deploy_color"
-    
+
     # Display deployment summary
     echo ""
     log_info "Deployment Summary:"
     log_info "=================="
-    log_info "Previous environment: $active_color"  
+    log_info "Previous environment: $active_color"
     log_info "Current environment: $deploy_color"
-    log_info "Application URL: http://localhost:4001"
-    log_info "Health check: http://localhost:4001/api/health"
+    log_info "Application URL: http://$health_host:$health_port"
+    log_info "Health check: http://$health_host:$health_port/api/health"
     echo ""
 }
 

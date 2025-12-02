@@ -36,7 +36,16 @@ echo "🔄 Rate Limit Reset Tool"
 echo "========================================"
 
 # Configuration
-BACKEND_URL="${BACKEND_URL:-http://localhost:4001}"
+# IMPORTANT: BACKEND_URL must be provided via environment variable
+# Example: BACKEND_URL=http://localhost:4001 ./scripts/reset-rate-limits.sh
+if [ -z "$BACKEND_URL" ]; then
+    print_error "BACKEND_URL environment variable is required"
+    print_status "Usage: BACKEND_URL=http://localhost:4001 $0"
+    print_status "Or set BACKEND_URL in your .env file and source it:"
+    print_status "  source .env && $0"
+    exit 1
+fi
+
 RESET_METHODS=()
 
 # Function to check if backend is running

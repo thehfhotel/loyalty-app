@@ -35,11 +35,11 @@ services:
     
   frontend-blue:
     extends:
-      service: frontend  
+      service: frontend
     container_name: loyalty_frontend_blue
     environment:
       DEPLOYMENT_COLOR: blue
-      VITE_API_URL: http://localhost:4001/api
+      VITE_API_URL: ${VITE_API_URL:?VITE_API_URL is required}
     depends_on:
       - backend-blue
     restart: unless-stopped
@@ -69,10 +69,10 @@ services:
   frontend-green:
     extends:
       service: frontend
-    container_name: loyalty_frontend_green  
+    container_name: loyalty_frontend_green
     environment:
       DEPLOYMENT_COLOR: green
-      VITE_API_URL: http://localhost:4001/api
+      VITE_API_URL: ${VITE_API_URL:?VITE_API_URL is required}
     depends_on:
       - backend-green
     restart: "no"  # Only started during deployment
