@@ -37,7 +37,7 @@
     "validate": "npm run install:all && npm run build && npm run quality:check"
   },
   "dependencies": {
-    "@playwright/test": "^1.54.1",
+    "@playwright/test": "^1.57.0",
     "axios": "^1.11.0",
     "canvas": "^3.2.0",
     "cors": "^2.8.5",
