@@ -39,7 +39,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
-    "@trpc/server": "^11.7.1",
+    "@trpc/server": "^11.7.2",
     "@types/connect-redis": "^0.0.23",
     "axios": "^1.11.0",
     "bcryptjs": "^3.0.3",
@@ -50,7 +50,7 @@
     "express-rate-limit": "^8.2.1",
     "express-session": "^1.17.3",
     "helmet": "^7.1.0",
-    "jsonwebtoken": "^9.0.2",
+    "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
