@@ -625,7 +625,7 @@ jobs:
 
       - name: "📊 Upload coverage report"
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-report-${{ github.run_id }}
           path: backend/coverage/
@@ -635,7 +635,7 @@ jobs:
 
       - name: "📊 Upload unit test Allure results"
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: allure-results-unit-${{ github.run_id }}
           path: backend/allure-results/
@@ -978,7 +978,7 @@ jobs:
 
       - name: "📊 Upload integration test Allure results"
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: allure-results-integration-${{ github.run_id }}
           path: backend/allure-results/
@@ -1619,7 +1619,7 @@ jobs:
 
       - name: "📊 Upload E2E test Allure results"
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: allure-results-e2e-${{ github.run_id }}
           path: allure-results/
