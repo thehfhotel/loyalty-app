@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: "📥 Checkout code (shared for all jobs)"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
           clean: true
@@ -1751,7 +1751,7 @@ jobs:
           ls -la
       
       - name: "📥 Checkout code"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
           clean: false  # Don't try to clean, we already did that
@@ -3054,7 +3054,7 @@ jobs:
 
     steps:
       - name: "📥 Checkout code"
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
