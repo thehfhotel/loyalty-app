@@ -714,7 +714,7 @@ jobs:
 
       - name: "💬 Comment unit test results on PR"
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         continue-on-error: true
         with:
           script: |
@@ -1042,7 +1042,7 @@ jobs:
 
       - name: "💬 Comment integration results on PR"
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         continue-on-error: true
         with:
           script: |
@@ -1628,7 +1628,7 @@ jobs:
 
       - name: "💬 Comment E2E results on PR"
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         continue-on-error: true
         with:
           script: |
