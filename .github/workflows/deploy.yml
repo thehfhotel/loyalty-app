@@ -2505,6 +2505,37 @@ jobs:
             echo "⚠️ Empty environment variables found: $empty_vars"
           fi
       
+      - name: "🛡️ Stop conflicting dev containers"
+        run: |
+          echo "🛡️ Checking for dev containers that might block production ports..."
+
+          # Dev containers that could conflict with production
+          DEV_CONTAINERS=(
+            "loyalty_postgres_dev"
+            "loyalty_redis_dev"
+            "loyalty_nginx_dev"
+            "loyalty_backend_dev"
+            "loyalty_frontend_dev"
+          )
+
+          STOPPED_CONTAINERS=()
+          for container in "${DEV_CONTAINERS[@]}"; do
+            if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+              echo "⚠️ Found dev container: $container"
+              docker stop "$container" 2>/dev/null || true
+              docker rm "$container" 2>/dev/null || true
+              STOPPED_CONTAINERS+=("$container")
+            fi
+          done
+
+          if [ ${#STOPPED_CONTAINERS[@]} -gt 0 ]; then
+            echo "🧹 Stopped and removed dev containers: ${STOPPED_CONTAINERS[*]}"
+            echo "⏳ Waiting for ports to be released..."
+            sleep 5
+          else
+            echo "✅ No conflicting dev containers found"
+          fi
+
       - name: "🔍 Pre-deployment port check"
         run: |
           echo "🔍 Checking if required ports are available..."
@@ -3002,9 +3033,14 @@ jobs:
           DISK_USAGE=$(timeout 10s df / | tail -1 | awk '{print $5}' | sed 's/%//' 2>/dev/null || echo "unknown")
           echo "💾 Disk usage: ${DISK_USAGE}%"
           
-          # Clean up old containers with timeout
-          echo "🐳 Cleaning old containers..."
-          timeout 20s docker container prune -f 2>/dev/null || echo "⚠️ Container cleanup timed out"
+          # Clean up old TEST containers only (NEVER prune all - protects dev containers)
+          echo "🐳 Cleaning old test containers..."
+          # Only remove E2E test containers, never use 'docker container prune' which could delete dev containers
+          for container in loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e \
+                          loyalty_postgres_unit loyalty_redis_unit loyalty_postgres_integration loyalty_redis_integration; do
+            docker rm -f "$container" 2>/dev/null || true
+          done
+          echo "✅ Test containers cleaned (dev/prod containers preserved)"
           
           # Clean up old images with timeout (keep last 3 versions)
           echo "🖼️ Cleaning old images..."
