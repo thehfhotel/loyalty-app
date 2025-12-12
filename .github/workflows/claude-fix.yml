@@ -4,6 +4,8 @@ on:
   workflow_run:
     workflows: ["Optimized CI/CD Pipeline with Security & Testing"]
     types: [completed]
+    branches-ignore:
+      - main
 
 permissions:
   contents: write
@@ -21,9 +23,7 @@ jobs:
   detect-issues:
     name: "🔍 Detect Issues"
     runs-on: self-hosted
-    if: |
-      github.event.workflow_run.head_branch != 'main' &&
-      !startsWith(github.event.workflow_run.head_commit.message, '[claude-fix]')
+    if: "!startsWith(github.event.workflow_run.head_commit.message, '[claude-fix]')"
     outputs:
       has-failures: ${{ steps.check.outputs.has-failures }}
       has-warnings: ${{ steps.check.outputs.has-warnings }}
