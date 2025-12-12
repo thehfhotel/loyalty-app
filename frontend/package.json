@@ -44,7 +44,7 @@
     "react-i18next": "^15.6.0",
     "react-icons": "^5.5.0",
     "react-router-dom": "^7.10.1",
-    "zod": "^3.22.4",
+    "zod": "^4.1.13",
     "zustand": "^4.4.7"
   },
   "devDependencies": {
