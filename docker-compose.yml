@@ -12,8 +12,8 @@ services:
       # - ./database/migrations:/docker-entrypoint-initdb.d
       # - ./database/seeds:/docker-entrypoint-initdb.d/seeds
       # - ./database/init-db.sh:/docker-entrypoint-initdb.d/zzz-init-db.sh
-    ports:
-      - "5434:5432"
+    # PORTS: Defined in environment-specific override files (dev/prod)
+    # to prevent port conflicts when both environments run on same machine
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
       interval: 10s
@@ -23,8 +23,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: loyalty_redis
-    ports:
-      - "6379:6379"
+    # PORTS: Defined in environment-specific override files (dev/prod)
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -89,8 +88,7 @@ services:
   nginx:
     image: nginx:alpine
     container_name: loyalty_nginx
-    ports:
-      - "4001:80"
+    # PORTS: Defined in environment-specific override files (dev/prod)
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - nginx_logs:/var/log/nginx
