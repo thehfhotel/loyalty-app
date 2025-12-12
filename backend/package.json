@@ -38,7 +38,8 @@
     "npm": ">=10.0.0"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.0",
+    "@prisma/adapter-pg": "^7.1.0",
+    "@prisma/client": "^7.1.0",
     "@trpc/server": "^11.7.1",
     "@types/connect-redis": "^0.0.23",
     "axios": "^1.11.0",

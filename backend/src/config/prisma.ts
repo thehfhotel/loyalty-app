@@ -1,4 +1,5 @@
-import { PrismaClient } from '../generated/prisma';
+import { PrismaClient } from '../generated/prisma/client.js';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { logger } from '../utils/logger';
 
 let prisma: PrismaClient;
@@ -8,19 +9,33 @@ declare global {
   var __prisma: PrismaClient | undefined;
 }
 
+function createPrismaClient(): PrismaClient {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL environment variable is required');
+  }
+
+  const adapter = new PrismaPg({ connectionString });
+
+  const logOptions = process.env.NODE_ENV === 'development'
+    ? { log: ['query', 'info', 'warn', 'error'] as const }
+    : { log: ['warn', 'error'] as const };
+
+  return new PrismaClient({
+    adapter,
+    ...logOptions,
+  });
+}
+
 export function getPrismaClient(): PrismaClient {
   if (!prisma) {
     // In development, store in global to prevent multiple instances during hot reloads
     if (process.env.NODE_ENV === 'development') {
-      global.__prisma ??= new PrismaClient({
-        log: ['query', 'info', 'warn', 'error'],
-      });
+      global.__prisma ??= createPrismaClient();
       prisma = global.__prisma;
     } else {
       // In production, create a new instance
-      prisma = new PrismaClient({
-        log: ['warn', 'error'],
-      });
+      prisma = createPrismaClient();
     }
 
     // Add error handling for connection issues

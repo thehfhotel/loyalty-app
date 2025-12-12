@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { db } from '../config/prisma';
 import { AppError } from '../middleware/errorHandler';
-import { users, user_profiles, Prisma } from '../generated/prisma';
+import { users, user_profiles, Prisma } from '../generated/prisma/client.js';
 
 export type UserWithProfile = users & {
   user_profiles?: user_profiles | null;
