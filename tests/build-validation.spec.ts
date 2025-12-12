@@ -96,6 +96,10 @@ test.describe('Build System Validation', () => {
   test.describe('TypeScript Build Validation', () => {
     test('should validate backend TypeScript compilation', async () => {
       try {
+        // Validate path doesn't contain shell metacharacters to prevent injection
+        if (!/^[a-zA-Z0-9/_.-]+$/.test(backendPath)) {
+          throw new Error(`Invalid backend path: ${backendPath}`);
+        }
         const { stdout, stderr } = await execAsync(`cd ${backendPath} && npx tsc --noEmit`);
         
         // If there are TypeScript errors, they'll be in stderr
@@ -127,7 +131,12 @@ test.describe('Build System Validation', () => {
 
     test('should validate frontend TypeScript compilation', async () => {
       const frontendPath = path.join(projectRoot, 'frontend');
-      
+
+      // Validate path doesn't contain shell metacharacters to prevent injection
+      if (!/^[a-zA-Z0-9/_.-]+$/.test(frontendPath)) {
+        throw new Error(`Invalid frontend path: ${frontendPath}`);
+      }
+
       try {
         await execAsync(`cd ${frontendPath} && npx tsc --noEmit`);
       } catch (error) {

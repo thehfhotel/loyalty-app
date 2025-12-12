@@ -31,7 +31,17 @@ test.describe('OAuth Flow Validation - Configured Environment', () => {
       if (googleResponse.status() === 302) {
         const location = googleResponse.headers()['location'];
         // If it redirects to Google, OAuth is configured
-        isOAuthConfigured = location?.includes('accounts.google.com') ?? false;
+        // Use URL parsing to properly validate the hostname
+        if (location) {
+          try {
+            const url = new URL(location);
+            isOAuthConfigured = url.hostname === 'accounts.google.com';
+          } catch {
+            isOAuthConfigured = false;
+          }
+        } else {
+          isOAuthConfigured = false;
+        }
       }
     } catch (error) {
       console.log('⚠️ OAuth configuration check failed:', error instanceof Error ? error.message : String(error));

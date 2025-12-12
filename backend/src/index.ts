@@ -104,7 +104,16 @@ function createApp(redisAvailable: boolean) {
       helmet({
         crossOriginResourcePolicy: { policy: "cross-origin" },
         crossOriginOpenerPolicy: false, // Disable COOP for OAuth redirects
-        contentSecurityPolicy: false, // Disable CSP for OAuth redirects
+        // Use relaxed CSP for OAuth instead of disabling completely
+        contentSecurityPolicy: {
+          directives: {
+            defaultSrc: ["'self'"],
+            formAction: ["'self'", "https://accounts.google.com", "https://access.line.me"],
+            frameAncestors: ["'self'"],
+            // Allow OAuth provider redirects
+            connectSrc: ["'self'", "https://accounts.google.com", "https://api.line.me"],
+          },
+        },
       })(req, res, next);
     } else {
       // Use our security headers middleware instead of inline helmet
@@ -177,24 +186,25 @@ function createApp(redisAvailable: boolean) {
   app.use('/storage', express.static('storage'));
 
   // Session configuration function that creates store based on Redis availability
-  const createSessionConfig = (req?: express.Request) => {
-    // Determine if connection is secure (works with proxies like Cloudflare)
-    const isSecure = process.env.NODE_ENV === 'production' &&
-      (req ? req.get('X-Forwarded-Proto') === 'https' : true);
+  const createSessionConfig = () => {
+    // In production, always use secure cookies - trust proxy headers for HTTPS detection
+    // This ensures cookies are only sent over HTTPS in production
+    const isProductionEnv = process.env.NODE_ENV === 'production';
 
     const baseConfig = {
       secret: process.env.SESSION_SECRET ?? 'your-session-secret-change-in-production',
       resave: false,
       saveUninitialized: false,
       name: 'loyalty-session-id',
-      proxy: process.env.NODE_ENV === 'production', // Trust proxy
+      proxy: isProductionEnv, // Trust proxy (required for secure cookies behind reverse proxy)
       cookie: {
-        secure: isSecure,
+        // Always require HTTPS in production for cookie transmission
+        secure: isProductionEnv,
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
         sameSite: 'lax' as const,
         // Ensure cookies work with proxy
-        ...(process.env.NODE_ENV === 'production' && {
+        ...(isProductionEnv && {
           domain: process.env.COOKIE_DOMAIN ?? undefined // Allow setting specific domain if needed
         })
       }
@@ -222,11 +232,9 @@ function createApp(redisAvailable: boolean) {
     return baseConfig;
   };
 
-  // Configure session middleware with dynamic secure detection
-  app.use((req, res, next) => {
-    const sessionConfig = createSessionConfig(req);
-    session(sessionConfig)(req, res, next);
-  });
+  // Configure session middleware
+  const sessionConfig = createSessionConfig();
+  app.use(session(sessionConfig));
 
   // Initialize Passport after session configuration
   app.use(passport.initialize());

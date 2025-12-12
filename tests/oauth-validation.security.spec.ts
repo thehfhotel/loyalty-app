@@ -34,9 +34,17 @@ test.describe('OAuth Security Validation', () => {
 
     if (response.status() === 302) {
       const location = response.headers()['location'];
-      if (location && location.includes('accounts.google.com')) {
-        // Google OAuth should use HTTPS
-        expect(location).toMatch(/^https:/);
+      if (location) {
+        // Use URL parsing to properly validate the hostname
+        try {
+          const url = new URL(location);
+          if (url.hostname === 'accounts.google.com') {
+            // Google OAuth should use HTTPS
+            expect(url.protocol).toBe('https:');
+          }
+        } catch {
+          // Invalid URL, skip the check
+        }
       }
     }
   });

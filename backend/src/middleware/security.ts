@@ -288,12 +288,23 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
   // Basic input sanitization with circular reference detection
   const sanitizeValue = (value: unknown): unknown => {
     if (typeof value === 'string') {
-      // Remove potentially dangerous characters
-      return value
-        .replace(/<script[^>]*>.*?<\/script>/gi, '') // Remove script tags (safer regex)
-        .replace(/javascript:/gi, '') // Remove javascript: protocol
-        .replace(/on\w+\s*=/gi, '') // Remove event handlers
-        .trim();
+      // Remove potentially dangerous URL schemes and patterns
+      // Use simple, non-ReDoS-vulnerable replacements
+      let sanitized = value;
+
+      // Remove dangerous URL schemes (case-insensitive)
+      sanitized = sanitized.replace(/javascript\s*:/gi, '');
+      sanitized = sanitized.replace(/vbscript\s*:/gi, '');
+      sanitized = sanitized.replace(/data\s*:/gi, '');
+
+      // Remove event handlers (on* attributes) - simple pattern without catastrophic backtracking
+      sanitized = sanitized.replace(/\bon\w+\s*=/gi, '');
+
+      // HTML encode angle brackets to prevent tag injection instead of trying to filter
+      // This is safer than regex-based tag removal which can be bypassed
+      sanitized = sanitized.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      return sanitized.trim();
     }
     if (Array.isArray(value)) {
       // Check for circular reference in arrays
