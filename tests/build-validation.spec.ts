@@ -143,6 +143,8 @@ test.describe('Build System Validation', () => {
     test('should verify required GitHub Secrets are accessible', async () => {
       // Skip this test in local development (no secrets expected)
       test.skip(!process.env.CI && !process.env.GITHUB_ACTIONS, 'Only runs in CI/CD');
+      // Skip for Dependabot PRs (no access to secrets)
+      test.skip(process.env.GITHUB_ACTOR === 'dependabot[bot]', 'Dependabot cannot access secrets');
 
       // Critical secrets required for deployment
       const requiredSecrets = [

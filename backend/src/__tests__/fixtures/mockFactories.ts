@@ -332,6 +332,7 @@ export const setupSurveyServiceMocks = (mockService: jest.Mocked<SurveyService>)
   };
 
   // Apply mocks
+  /* eslint-disable @typescript-eslint/no-explicit-any */
   mockService.createSurvey.mockResolvedValue(mockSurvey as any);
   mockService.getSurveyById.mockResolvedValue(mockActiveSurvey as any);
   mockService.getSurveys.mockResolvedValue(mockSurveyList as any);
@@ -349,6 +350,7 @@ export const setupSurveyServiceMocks = (mockService: jest.Mocked<SurveyService>)
   mockService.getSurveyCouponAssignments.mockResolvedValue(mockCouponAssignments as any);
   mockService.getSurveyRewardHistory.mockResolvedValue(mockRewardHistory as any);
   mockService.getAllSurveyCouponAssignments.mockResolvedValue(mockAllAssignments as any);
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   return mockService;
 };
