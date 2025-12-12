@@ -9,7 +9,7 @@ import { errorHandler } from '../../middleware/errorHandler';
 /**
  * Create a test Express app with standard middleware
  */
-export const createTestApp = (routes: Router, basePath: string = '/api'): Express => {
+export const createTestApp = (routes: Router, basePath = '/api'): Express => {
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
@@ -23,7 +23,7 @@ export const createTestApp = (routes: Router, basePath: string = '/api'): Expres
  */
 export const createMockAuthMiddleware = (
   role: 'customer' | 'admin' | 'super_admin' = 'customer',
-  userId: string = 'test-user-123'
+  userId = 'test-user-123'
 ) => {
   return (req: Request, _res: Response, next: NextFunction) => {
     req.user = {
@@ -56,6 +56,7 @@ export const createMockMulterMiddleware = () => {
  * Create mock error handler for testing error scenarios
  */
 export const createMockErrorHandler = () => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express error handlers require 4 parameters
   return (error: Error, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({
       error: error.message || 'Internal server error',

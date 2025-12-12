@@ -16,9 +16,30 @@ import { StorageService } from '../../services/storageService';
 // Import types for proper mock data
 import { CouponType, CouponStatus } from '../../types/coupon';
 
+// Mock user interface for type safety
+interface MockUser {
+  id: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  emailVerified: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Mock user profile interface for type safety
+interface MockUserProfile {
+  firstName: string;
+  lastName: string;
+  phoneNumber: string | null;
+  dateOfBirth: Date | null;
+  preferredLanguage: string;
+  avatarUrl: string | null;
+}
+
 // Mock data interfaces for better type safety
 interface MockUserResponse {
-  user: Partial<any>;
+  user: Partial<MockUser>;
   tokens: {
     accessToken: string;
     refreshToken: string;
@@ -113,7 +134,7 @@ export const createMockUserService = (): jest.Mocked<UserService> => {
  * Setup common mock implementations for AuthService
  */
 export const setupAuthServiceMocks = (mockService: jest.Mocked<AuthService>) => {
-  const mockUser: Partial<any> = {
+  const mockUser: Partial<MockUser> = {
     id: 'test-user-123',
     email: 'test@example.com',
     role: 'customer',
@@ -123,7 +144,7 @@ export const setupAuthServiceMocks = (mockService: jest.Mocked<AuthService>) => 
     updatedAt: new Date(),
   };
 
-  const mockNewUser: Partial<any> = {
+  const mockNewUser: Partial<MockUser> = {
     id: 'new-user-123',
     email: 'newuser@example.com',
     role: 'customer',
@@ -149,8 +170,8 @@ export const setupAuthServiceMocks = (mockService: jest.Mocked<AuthService>) => 
     },
   };
 
-  mockService.login.mockResolvedValue(loginResponse as any);
-  mockService.register.mockResolvedValue(registerResponse as any);
+  mockService.login.mockResolvedValue(loginResponse as unknown as Awaited<ReturnType<AuthService['login']>>);
+  mockService.register.mockResolvedValue(registerResponse as unknown as Awaited<ReturnType<AuthService['register']>>);
   mockService.verifyToken.mockResolvedValue({
     id: 'test-user-123',
     email: 'test@example.com',
@@ -164,7 +185,7 @@ export const setupAuthServiceMocks = (mockService: jest.Mocked<AuthService>) => 
  * Setup common mock implementations for UserService
  */
 export const setupUserServiceMocks = (mockService: jest.Mocked<UserService>) => {
-  const mockany: Partial<any> = {
+  const mockUserProfile: MockUserProfile = {
     firstName: 'Test',
     lastName: 'User',
     phoneNumber: null,
@@ -182,10 +203,10 @@ export const setupUserServiceMocks = (mockService: jest.Mocked<UserService>) => 
     password: 'hashed-password',
     createdAt: new Date(),
     updatedAt: new Date(),
-    user_profiles: mockany,
+    user_profiles: mockUserProfile,
   };
 
-  mockService.getUserById.mockResolvedValue(mockUserWithProfile as any as any);
+  mockService.getUserById.mockResolvedValue(mockUserWithProfile as unknown as Awaited<ReturnType<UserService['getUserById']>>);
 
   return mockService;
 };
