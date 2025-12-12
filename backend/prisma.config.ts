@@ -1,10 +1,13 @@
-import 'dotenv/config';
+// Import env initialization FIRST - sets DATABASE_URL fallback for CI environments
+// This MUST be the first import to ensure env is set before Prisma modules load
+import './prisma-env-init';
+
+import path from 'path';
+import { config } from 'dotenv';
 import { defineConfig } from 'prisma/config';
 
-// Use process.env with fallback for CI environments where DATABASE_URL may not be set
-// during client generation (which doesn't require an actual database connection).
-// The fallback URL is only used for schema parsing, not actual connections.
-const databaseUrl = process.env.DATABASE_URL || 'postgresql://placeholder:placeholder@localhost:5432/placeholder';
+// Load .env file if it exists - overrides the fallback if present
+config({ path: path.resolve(process.cwd(), '.env') });
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
@@ -12,6 +15,6 @@ export default defineConfig({
     path: 'prisma/migrations',
   },
   datasource: {
-    url: databaseUrl,
+    url: process.env.DATABASE_URL,
   },
 });
