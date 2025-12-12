@@ -496,6 +496,11 @@ jobs:
             loyalty_redis_unit_data:
           EOF
 
+          # Clean up any stale volumes to ensure fresh database state
+          echo "🧹 Cleaning up stale unit test volumes..."
+          docker compose -f docker-compose.unit-test.yml down -v 2>/dev/null || true
+          docker volume rm loyalty_postgres_unit_data loyalty_redis_unit_data 2>/dev/null || true
+
           # Start isolated test services
           docker compose -f docker-compose.unit-test.yml up -d
 
@@ -848,6 +853,11 @@ jobs:
             loyalty_postgres_integration_data:
             loyalty_redis_integration_data:
           EOF
+
+          # Clean up any stale volumes to ensure fresh database state
+          echo "🧹 Cleaning up stale integration test volumes..."
+          docker compose -f docker-compose.integration-test.yml down -v 2>/dev/null || true
+          docker volume rm loyalty_postgres_integration_data loyalty_redis_integration_data 2>/dev/null || true
 
           # Start isolated test services
           docker compose -f docker-compose.integration-test.yml up -d
