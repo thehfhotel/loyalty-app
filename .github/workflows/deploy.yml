@@ -541,8 +541,8 @@ jobs:
             exit 1
           fi
           
-          if [ ! -f "src/generated/prisma/index.js" ]; then
-            echo "❌ Prisma client generation failed - index.js not found"
+          if [ ! -f "src/generated/prisma/client.js" ]; then
+            echo "❌ Prisma client generation failed - client.js not found"
             exit 1
           fi
           
@@ -899,8 +899,8 @@ jobs:
             exit 1
           fi
 
-          if [ ! -f "src/generated/prisma/index.js" ]; then
-            echo "❌ Prisma client generation failed - index.js not found"
+          if [ ! -f "src/generated/prisma/client.js" ]; then
+            echo "❌ Prisma client generation failed - client.js not found"
             exit 1
           fi
 
