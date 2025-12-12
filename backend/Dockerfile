@@ -14,7 +14,7 @@ RUN npm ci && npm cache clean --force
 
 # Build stage - compile TypeScript and generate Prisma client
 FROM base AS builder
-COPY package*.json tsconfig.json ./
+COPY package*.json tsconfig.json prisma.config.ts prisma-env-init.ts ./
 COPY --from=dev-deps /app/node_modules ./node_modules
 COPY prisma ./prisma
 COPY src ./src
@@ -64,7 +64,7 @@ COPY --from=dev-deps /app/node_modules ./node_modules
 # Copy source files and configuration
 COPY --chown=nodejs:nodejs src ./src
 COPY --chown=nodejs:nodejs prisma ./prisma
-COPY --chown=nodejs:nodejs package*.json tsconfig.json ./
+COPY --chown=nodejs:nodejs package*.json tsconfig.json prisma.config.ts prisma-env-init.ts ./
 
 # Copy generated Prisma client from builder (Prisma 7.x outputs to src/generated)
 COPY --from=builder /app/src/generated ./src/generated
@@ -106,8 +106,8 @@ COPY --from=builder /app/src/generated ./src/generated
 # Copy Prisma schema and migrations (needed for runtime)
 COPY --chown=nodejs:nodejs prisma ./prisma
 
-# Copy package.json for npm scripts and metadata
-COPY --chown=nodejs:nodejs package*.json ./
+# Copy package.json and Prisma config for npm scripts and migrations (Prisma 7.x)
+COPY --chown=nodejs:nodejs package*.json prisma.config.ts prisma-env-init.ts ./
 
 # Verify production artifacts exist (Prisma 7.x uses src/generated, not node_modules/.prisma)
 RUN test -f dist/index.js || (echo "❌ ERROR: Production build not found" && exit 1) && \
