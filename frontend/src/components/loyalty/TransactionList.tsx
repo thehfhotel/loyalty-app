@@ -137,7 +137,7 @@ export default function TransactionList({
                     </p>
                     {(transaction.type === 'earned_stay' || transaction.type === 'admin_deduction') && transaction.description && (() => {
                       const nightsMatch = transaction.description.match(/(-?\d+)\s*night/i);
-                      let nights = nightsMatch && nightsMatch[1] ? parseInt(nightsMatch[1]) : null;
+                      let nights = nightsMatch?.[1] ? parseInt(nightsMatch[1]) : null;
 
                       // Force negative for admin_deduction if not already negative
                       if (nights !== null && transaction.type === 'admin_deduction' && nights > 0) {
