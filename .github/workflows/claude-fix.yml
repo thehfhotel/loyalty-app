@@ -191,12 +191,13 @@ jobs:
 
           IMPORTANT RULES:
           - Only modify files that are directly related to the errors/warnings
+          - NEVER modify .github/workflows/*.yml files (no permission to push workflow changes)
           - Do not skip tests or add test.skip()
           - Do not add meaningless assertions like expect(true).toBe(true)
           - Do not modify unrelated code
           - Make minimal, focused fixes
           - Fix ALL warnings shown in annotations, not just errors
-          - If you cannot fix an issue, explain why
+          - If the issue is in workflow files, explain what needs to be changed but do not edit them
 
           BRANCH: BRANCH_PLACEHOLDER
           ATTEMPT: ATTEMPT_PLACEHOLDER of MAX_RETRIES_PLACEHOLDER
