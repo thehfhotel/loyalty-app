@@ -108,11 +108,11 @@ validate_prisma_client() {
         return 1
     fi
     
-    # Check if generated client files exist
-    if [ -d "node_modules/.prisma/client" ] || [ -d "node_modules/@prisma/client" ]; then
+    # Check if generated client files exist (Prisma 7.x uses src/generated/prisma)
+    if [ -d "src/generated/prisma" ]; then
         print_success "Prisma client files generated successfully"
     else
-        print_error "Prisma client files not found after generation"
+        print_error "Prisma client files not found at src/generated/prisma"
         ((ERRORS++))
         return 1
     fi

@@ -66,8 +66,7 @@ COPY --chown=nodejs:nodejs src ./src
 COPY --chown=nodejs:nodejs prisma ./prisma
 COPY --chown=nodejs:nodejs package*.json tsconfig.json ./
 
-# Copy generated Prisma client from builder
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+# Copy generated Prisma client from builder (Prisma 7.x outputs to src/generated)
 COPY --from=builder /app/src/generated ./src/generated
 
 # Verify Prisma client exists
@@ -110,7 +109,7 @@ COPY --chown=nodejs:nodejs prisma ./prisma
 # Copy package.json for npm scripts and metadata
 COPY --chown=nodejs:nodejs package*.json ./
 
-# Verify production artifacts exist
+# Verify production artifacts exist (Prisma 7.x uses src/generated, not node_modules/.prisma)
 RUN test -f dist/index.js || (echo "❌ ERROR: Production build not found" && exit 1) && \
     test -d dist/generated/prisma || (echo "❌ ERROR: Prisma client not found in dist/generated" && exit 1) && \
     test -d src/generated/prisma || (echo "❌ ERROR: Prisma client not found in src/generated" && exit 1) && \
