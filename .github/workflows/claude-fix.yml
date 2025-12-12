@@ -185,30 +185,30 @@ jobs:
 
           # Create prompt
           cat > /tmp/claude-prompt.txt << 'PROMPT_END'
-You are fixing CI/CD pipeline issues. Analyze the errors/warnings and fix them.
+          You are fixing CI/CD pipeline issues. Analyze the errors/warnings and fix them.
 
-ISSUE TYPE: ISSUE_TYPE_PLACEHOLDER
+          ISSUE TYPE: ISSUE_TYPE_PLACEHOLDER
 
-IMPORTANT RULES:
-- Only modify files that are directly related to the errors/warnings
-- Do not skip tests or add test.skip()
-- Do not add meaningless assertions like expect(true).toBe(true)
-- Do not modify unrelated code
-- Make minimal, focused fixes
-- Fix ALL warnings shown in annotations, not just errors
-- If you cannot fix an issue, explain why
+          IMPORTANT RULES:
+          - Only modify files that are directly related to the errors/warnings
+          - Do not skip tests or add test.skip()
+          - Do not add meaningless assertions like expect(true).toBe(true)
+          - Do not modify unrelated code
+          - Make minimal, focused fixes
+          - Fix ALL warnings shown in annotations, not just errors
+          - If you cannot fix an issue, explain why
 
-BRANCH: BRANCH_PLACEHOLDER
-ATTEMPT: ATTEMPT_PLACEHOLDER of MAX_RETRIES_PLACEHOLDER
+          BRANCH: BRANCH_PLACEHOLDER
+          ATTEMPT: ATTEMPT_PLACEHOLDER of MAX_RETRIES_PLACEHOLDER
 
-ANNOTATIONS (warnings and errors from GitHub):
-ANNOTATIONS_PLACEHOLDER
+          ANNOTATIONS (warnings and errors from GitHub):
+          ANNOTATIONS_PLACEHOLDER
 
-FAILED JOBS:
-FAILED_JOBS_PLACEHOLDER
+          FAILED JOBS:
+          FAILED_JOBS_PLACEHOLDER
 
-LOG CONTEXT:
-PROMPT_END
+          LOG CONTEXT:
+          PROMPT_END
 
           # Replace placeholders
           sed -i "s|ISSUE_TYPE_PLACEHOLDER|$ISSUE_TYPE|g" /tmp/claude-prompt.txt
