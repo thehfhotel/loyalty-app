@@ -41,8 +41,8 @@ test.describe('Build System Validation', () => {
         );
       }
 
-      // Check if essential Prisma client files exist
-      const essentialFiles = ['index.js', 'index.d.ts', 'client.js', 'client.d.ts'];
+      // Check if essential Prisma client files exist (Prisma 7.x generates TypeScript files directly)
+      const essentialFiles = ['index.ts', 'client.ts'];
       for (const file of essentialFiles) {
         const filePath = path.join(prismaClientPath, file);
         const fileExists = await fs.access(filePath)
