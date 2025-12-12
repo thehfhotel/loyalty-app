@@ -7,6 +7,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Workflow-level concurrency: prevent parallel runs on same branch
+# This prevents race conditions when multiple commits push in quick succession
+concurrency:
+  group: "ci-${{ github.ref }}"
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: write  # For GitHub Pages deployment
   pages: write
@@ -101,9 +107,12 @@ jobs:
           LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
 
           echo "💾 Saving backend node_modules to cache..."
-          rm -rf "$CACHE_DIR/node_modules"
-          cp -r node_modules "$CACHE_DIR/"
-          echo "$LOCK_HASH" > "$CACHE_DIR/.lock-hash"
+          # Use flock to prevent race conditions with parallel runs from other branches
+          flock -w 60 "$CACHE_DIR/.flock" bash -c "
+            rm -rf '$CACHE_DIR/node_modules'
+            cp -r node_modules '$CACHE_DIR/'
+            echo '$LOCK_HASH' > '$CACHE_DIR/.lock-hash'
+          "
           echo "✅ Cache saved with hash: ${LOCK_HASH:0:12}..."
 
       - name: "📦 Restore frontend dependencies with hash validation"
@@ -141,9 +150,12 @@ jobs:
           LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
 
           echo "💾 Saving frontend node_modules to cache..."
-          rm -rf "$CACHE_DIR/node_modules"
-          cp -r node_modules "$CACHE_DIR/"
-          echo "$LOCK_HASH" > "$CACHE_DIR/.lock-hash"
+          # Use flock to prevent race conditions with parallel runs from other branches
+          flock -w 60 "$CACHE_DIR/.flock" bash -c "
+            rm -rf '$CACHE_DIR/node_modules'
+            cp -r node_modules '$CACHE_DIR/'
+            echo '$LOCK_HASH' > '$CACHE_DIR/.lock-hash'
+          "
           echo "✅ Cache saved with hash: ${LOCK_HASH:0:12}..."
 
       - name: "📦 Restore root dependencies with hash validation"
@@ -181,9 +193,12 @@ jobs:
 
           echo "✅ Root dependencies installed (includes @playwright/test)"
           echo "💾 Saving root node_modules to cache..."
-          rm -rf "$CACHE_DIR/node_modules"
-          cp -r node_modules "$CACHE_DIR/"
-          echo "$LOCK_HASH" > "$CACHE_DIR/.lock-hash"
+          # Use flock to prevent race conditions with parallel runs from other branches
+          flock -w 60 "$CACHE_DIR/.flock" bash -c "
+            rm -rf '$CACHE_DIR/node_modules'
+            cp -r node_modules '$CACHE_DIR/'
+            echo '$LOCK_HASH' > '$CACHE_DIR/.lock-hash'
+          "
           echo "✅ Cache saved with hash: ${LOCK_HASH:0:12}..."
 
       - name: "🔧 Generate Prisma client (shared)"
@@ -1707,8 +1722,12 @@ jobs:
           echo "📦 Installing backend dependencies with local npm cache..."
           npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline --include=dev
           echo "💾 Saving backend node_modules to local cache..."
-          rm -rf /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules
-          cp -r node_modules /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/
+          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules"
+          # Use flock to prevent race conditions with parallel runs from other branches
+          flock -w 60 "$CACHE_DIR/.flock" bash -c "
+            rm -rf '$CACHE_DIR/node_modules'
+            cp -r node_modules '$CACHE_DIR/'
+          "
 
       - name: "📦 Restore frontend node_modules from local cache"
         id: frontend-cache
@@ -1729,9 +1748,13 @@ jobs:
           echo "📦 Installing frontend dependencies with local npm cache..."
           npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline
           echo "💾 Saving frontend node_modules to local cache..."
-          rm -rf /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules
-          cp -r node_modules /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/
-      
+          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules"
+          # Use flock to prevent race conditions with parallel runs from other branches
+          flock -w 60 "$CACHE_DIR/.flock" bash -c "
+            rm -rf '$CACHE_DIR/node_modules'
+            cp -r node_modules '$CACHE_DIR/'
+          "
+
       - name: "🔧 Generate Prisma client (build phase)"
         run: |
           echo "🔧 Generating Prisma client for TypeScript compilation..."
@@ -1895,7 +1918,7 @@ jobs:
     timeout-minutes: 10
     concurrency:
       group: dev-deployment
-      cancel-in-progress: true
+      cancel-in-progress: false  # Queue deployments - never cancel mid-deployment
     env:
       DEPLOY_PATH: /home/nut/loyalty-app-develop
 
@@ -2186,7 +2209,7 @@ jobs:
     timeout-minutes: 15
     concurrency:
       group: prod-deployment
-      cancel-in-progress: true
+      cancel-in-progress: false  # Queue deployments - never cancel mid-deployment
     env:
       DEPLOY_PATH: /home/nut/loyalty-app-production
 
