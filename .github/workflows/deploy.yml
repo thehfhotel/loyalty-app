@@ -3013,8 +3013,12 @@ jobs:
         if: always()
         run: |
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
-          cd "$DEPLOY_DIR"
-          rm -f .env || true
+          if [ -d "$DEPLOY_DIR" ]; then
+            rm -f "$DEPLOY_DIR/.env" || true
+            echo "✅ Cleaned up .env file in $DEPLOY_DIR"
+          else
+            echo "⚠️ Deploy directory $DEPLOY_DIR does not exist - skipping cleanup"
+          fi
 
   # =============================================================================
   # UNIFIED TEST REPORT GENERATION (Merges all test types)
