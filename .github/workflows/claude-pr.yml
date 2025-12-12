@@ -167,6 +167,8 @@ jobs:
 
       - name: "📝 Commit changes"
         if: steps.check-permission.outputs.allowed == 'true' && steps.claude.outputs.changes-made == 'true'
+        env:
+          BODY: ${{ github.event.comment.body }}
         run: |
           BRANCH="${{ steps.pr-details.outputs.head-branch }}"
 
@@ -174,7 +176,7 @@ jobs:
           git config user.email "claude-pr@github-actions"
 
           git add -A
-          git commit -m "[claude-pr] ${{ github.event.comment.user.login }}: $(echo '${{ github.event.comment.body }}' | sed 's/@claude//' | head -c 50)...
+          git commit -m "[claude-pr] ${{ github.event.comment.user.login }}: $(echo \"$BODY\" | sed 's/@claude//' | head -c 50)...\
 
           Requested by: @${{ github.event.comment.user.login }}
           Comment: ${{ github.event.comment.html_url }}
