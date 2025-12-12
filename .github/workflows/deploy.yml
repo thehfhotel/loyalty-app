@@ -1081,8 +1081,7 @@ jobs:
 
     needs: [integration-tests]  # Sequential: runs after integration tests pass
     timeout-minutes: 20  # Increased from 8: allows ~15min for 36 tests + 3-5min infrastructure setup
-    # Skip E2E for Dependabot PRs (no access to secrets)
-    if: (github.ref == 'refs/heads/main' || github.base_ref == 'main') && github.actor != 'dependabot[bot]'
+    if: (github.ref == 'refs/heads/main' || github.base_ref == 'main')
     outputs:
       e2e-passed: ${{ steps.e2e-results.outputs.passed }}
 
