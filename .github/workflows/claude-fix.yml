@@ -1,0 +1,209 @@
+name: Claude Auto-Fix Pipeline Failures
+
+on:
+  workflow_run:
+    workflows: ["Optimized CI/CD Pipeline with Security & Testing"]
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: write
+
+env:
+  MAX_RETRIES: 2
+
+jobs:
+  auto-fix:
+    name: "🤖 Claude Auto-Fix"
+    runs-on: self-hosted
+    # Only run on failure, not on main branch, and not already a fix attempt
+    if: |
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.head_branch != 'main' &&
+      !startsWith(github.event.workflow_run.head_commit.message, '[claude-fix]')
+
+    steps:
+      - name: "📥 Checkout for retry check"
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 20
+
+      - name: "📋 Check retry count"
+        id: check-retry
+        run: |
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+
+          # Count consecutive [claude-fix] commits at HEAD
+          RETRY_COUNT=0
+          for i in $(seq 0 ${{ env.MAX_RETRIES }}); do
+            COMMIT_MSG=$(git log -1 --skip=$i --format="%s" 2>/dev/null || echo "")
+            if [[ "$COMMIT_MSG" == "[claude-fix]"* ]]; then
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+            else
+              break
+            fi
+          done
+
+          echo "Consecutive [claude-fix] commits: $RETRY_COUNT"
+
+          if [ "$RETRY_COUNT" -ge "${{ env.MAX_RETRIES }}" ]; then
+            echo "❌ Max retries (${{ env.MAX_RETRIES }}) reached for branch: $BRANCH"
+            echo "should-fix=false" >> $GITHUB_OUTPUT
+          else
+            NEW_COUNT=$((RETRY_COUNT + 1))
+            echo "Attempt $NEW_COUNT of ${{ env.MAX_RETRIES }}"
+            echo "should-fix=true" >> $GITHUB_OUTPUT
+            echo "attempt=$NEW_COUNT" >> $GITHUB_OUTPUT
+          fi
+
+      - name: "📜 Get failed workflow logs"
+        if: steps.check-retry.outputs.should-fix == 'true'
+        id: get-logs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID="${{ github.event.workflow_run.id }}"
+          echo "Fetching logs for run: $RUN_ID"
+
+          # Get failed job logs
+          gh run view "$RUN_ID" --log-failed > /tmp/failed-logs.txt 2>&1 || true
+
+          # Also get the run summary
+          gh run view "$RUN_ID" --json jobs --jq '.jobs[] | select(.conclusion == "failure") | {name: .name, conclusion: .conclusion}' > /tmp/failed-jobs.json 2>&1 || true
+
+          # Truncate logs if too long (keep last 500 lines per section)
+          if [ -f /tmp/failed-logs.txt ]; then
+            # Extract the most relevant error sections
+            grep -A 50 -B 5 -i "error\|failed\|Error:\|FAIL\|TypeError\|SyntaxError" /tmp/failed-logs.txt | tail -1000 > /tmp/error-context.txt || true
+
+            if [ ! -s /tmp/error-context.txt ]; then
+              tail -500 /tmp/failed-logs.txt > /tmp/error-context.txt
+            fi
+          fi
+
+          echo "Failed jobs:"
+          cat /tmp/failed-jobs.json || echo "Could not get failed jobs"
+
+          echo "logs-ready=true" >> $GITHUB_OUTPUT
+
+      - name: "🤖 Claude analyzes and fixes"
+        if: steps.check-retry.outputs.should-fix == 'true' && steps.get-logs.outputs.logs-ready == 'true'
+        id: claude-fix
+        run: |
+          # Prepare context for Claude
+          FAILED_JOBS=$(cat /tmp/failed-jobs.json 2>/dev/null || echo "Unknown")
+          ERROR_LOGS=$(cat /tmp/error-context.txt 2>/dev/null | head -800 || echo "No logs available")
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          ATTEMPT="${{ steps.check-retry.outputs.attempt }}"
+
+          echo "🤖 Running Claude to analyze and fix pipeline failure..."
+          echo "Branch: $BRANCH"
+          echo "Attempt: $ATTEMPT of ${{ env.MAX_RETRIES }}"
+          echo "Failed jobs: $FAILED_JOBS"
+
+          # Create prompt file
+          cat > /tmp/claude-prompt.txt << 'PROMPT_END'
+          You are fixing a CI/CD pipeline failure. Analyze the error logs and fix the issue.
+
+          IMPORTANT RULES:
+          - Only modify files that are directly related to the error
+          - Do not skip tests or add test.skip()
+          - Do not add meaningless assertions like expect(true).toBe(true)
+          - Do not modify unrelated code
+          - Make minimal, focused fixes
+          - If you cannot fix the issue, explain why
+
+          BRANCH: $BRANCH
+          ATTEMPT: $ATTEMPT of $MAX_RETRIES
+
+          FAILED JOBS:
+          $FAILED_JOBS
+
+          ERROR LOGS:
+          $ERROR_LOGS
+
+          Analyze these errors and fix the code. After fixing, briefly explain what you changed.
+          PROMPT_END
+
+          # Replace variables in prompt
+          sed -i "s|\$BRANCH|$BRANCH|g" /tmp/claude-prompt.txt
+          sed -i "s|\$ATTEMPT|$ATTEMPT|g" /tmp/claude-prompt.txt
+          sed -i "s|\$MAX_RETRIES|${{ env.MAX_RETRIES }}|g" /tmp/claude-prompt.txt
+          sed -i "s|\$FAILED_JOBS|$FAILED_JOBS|g" /tmp/claude-prompt.txt
+
+          # Append error logs (escaped)
+          echo "" >> /tmp/claude-prompt.txt
+          echo "ERROR LOGS:" >> /tmp/claude-prompt.txt
+          cat /tmp/error-context.txt >> /tmp/claude-prompt.txt 2>/dev/null || true
+
+          # Run Claude
+          CLAUDE_OUTPUT=$(claude -p "$(cat /tmp/claude-prompt.txt)" --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm run lint:*),Bash(npm run typecheck:*),Bash(npm test:*)" 2>&1) || true
+
+          echo "Claude output:"
+          echo "$CLAUDE_OUTPUT" | tail -100
+
+          # Check if any files were modified
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No changes made by Claude"
+            echo "changes-made=false" >> $GITHUB_OUTPUT
+          else
+            echo "Changes detected"
+            echo "changes-made=true" >> $GITHUB_OUTPUT
+            git diff --stat
+          fi
+
+      - name: "📝 Commit and push fix"
+        if: steps.claude-fix.outputs.changes-made == 'true'
+        run: |
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          ATTEMPT="${{ steps.check-retry.outputs.attempt }}"
+
+          git config user.name "Claude Auto-Fix"
+          git config user.email "claude-fix@github-actions"
+
+          git add -A
+          git commit -m "[claude-fix] Auto-fix pipeline failure (attempt $ATTEMPT/${{ env.MAX_RETRIES }})
+
+          Automated fix for failed workflow run: ${{ github.event.workflow_run.id }}
+          Branch: $BRANCH
+
+          🤖 Generated with Claude Code" || echo "Nothing to commit"
+
+          git push origin "$BRANCH"
+
+          echo "✅ Fix committed and pushed to $BRANCH"
+
+      - name: "🔄 Re-run failed workflow"
+        if: steps.claude-fix.outputs.changes-made == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Triggering new workflow run..."
+          # The push will automatically trigger the CI workflow
+          echo "✅ New workflow run will be triggered by the push"
+
+      - name: "📊 Report: No fix possible"
+        if: steps.claude-fix.outputs.changes-made == 'false' || steps.check-retry.outputs.should-fix == 'false'
+        run: |
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          RUN_ID="${{ github.event.workflow_run.id }}"
+
+          if [ "${{ steps.check-retry.outputs.should-fix }}" == "false" ]; then
+            echo "❌ Max retries reached. Manual intervention required."
+            echo ""
+            echo "🤖 Claude Auto-Fix Report"
+            echo "========================="
+            echo "❌ Max retries (${{ env.MAX_RETRIES }}) reached for branch: $BRANCH"
+            echo "Manual intervention required."
+            echo "Failed run: $RUN_ID"
+          else
+            echo "❌ Claude could not automatically fix this issue."
+            echo ""
+            echo "🤖 Claude Auto-Fix Report"
+            echo "========================="
+            echo "⚠️ Could not automatically fix the pipeline failure."
+            echo "Branch: $BRANCH"
+            echo "Please review the failed run manually: $RUN_ID"
+          fi
