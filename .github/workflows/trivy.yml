@@ -61,7 +61,7 @@ jobs:
       - name: Build frontend image
         run: |
           docker build -t loyalty-frontend:${{ github.sha }} \
-            --target runner \
+            --target production \
             -f frontend/Dockerfile \
             frontend/
 
