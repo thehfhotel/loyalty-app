@@ -1,0 +1,242 @@
+name: Claude PR Assistant
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  claude-assist:
+    name: "🤖 Claude PR Assistant"
+    runs-on: self-hosted
+    # Only run on PR comments (not issue comments) that mention @claude
+    if: |
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@claude')
+
+    steps:
+      - name: "🔐 Check permissions"
+        id: check-permission
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get commenter's permission level
+          PERMISSION=$(gh api "repos/${{ github.repository }}/collaborators/${{ github.event.comment.user.login }}/permission" --jq '.permission' 2>/dev/null || echo "none")
+
+          echo "User: ${{ github.event.comment.user.login }}"
+          echo "Permission: $PERMISSION"
+
+          if [[ "$PERMISSION" == "admin" || "$PERMISSION" == "write" || "$PERMISSION" == "maintain" ]]; then
+            echo "allowed=true" >> $GITHUB_OUTPUT
+          else
+            echo "allowed=false" >> $GITHUB_OUTPUT
+            echo "❌ User does not have write permission"
+          fi
+
+      - name: "👀 React to comment"
+        if: steps.check-permission.outputs.allowed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Add eyes reaction to show we're processing
+          gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            -f content='eyes' || true
+
+      - name: "📥 Get PR details"
+        if: steps.check-permission.outputs.allowed == 'true'
+        id: pr-details
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.issue.number }}"
+
+          # Get PR branch info
+          PR_DATA=$(gh pr view "$PR_NUMBER" --json headRefName,headRepository,headRepositoryOwner,baseRefName)
+          HEAD_BRANCH=$(echo "$PR_DATA" | jq -r '.headRefName')
+          BASE_BRANCH=$(echo "$PR_DATA" | jq -r '.baseRefName')
+
+          echo "pr-number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "head-branch=$HEAD_BRANCH" >> $GITHUB_OUTPUT
+          echo "base-branch=$BASE_BRANCH" >> $GITHUB_OUTPUT
+
+          echo "PR #$PR_NUMBER: $HEAD_BRANCH -> $BASE_BRANCH"
+
+      - name: "📥 Checkout PR branch"
+        if: steps.check-permission.outputs.allowed == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr-details.outputs.head-branch }}
+          fetch-depth: 50
+
+      - name: "📜 Get PR context"
+        if: steps.check-permission.outputs.allowed == 'true'
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ steps.pr-details.outputs.pr-number }}"
+          BASE_BRANCH="${{ steps.pr-details.outputs.base-branch }}"
+
+          # Get PR diff
+          gh pr diff "$PR_NUMBER" > /tmp/pr-diff.txt 2>/dev/null || true
+
+          # Get PR description
+          gh pr view "$PR_NUMBER" --json body --jq '.body' > /tmp/pr-body.txt 2>/dev/null || true
+
+          # Get changed files list
+          gh pr view "$PR_NUMBER" --json files --jq '.files[].path' > /tmp/changed-files.txt 2>/dev/null || true
+
+          echo "Context gathered for PR #$PR_NUMBER"
+
+      - name: "🤖 Run Claude"
+        if: steps.check-permission.outputs.allowed == 'true'
+        id: claude
+        run: |
+          # Extract the instruction from the comment (everything after @claude)
+          COMMENT='${{ github.event.comment.body }}'
+          INSTRUCTION=$(echo "$COMMENT" | sed 's/.*@claude//' | xargs)
+
+          echo "Instruction: $INSTRUCTION"
+
+          # Prepare context
+          PR_DIFF=$(cat /tmp/pr-diff.txt 2>/dev/null | head -500 || echo "No diff available")
+          PR_BODY=$(cat /tmp/pr-body.txt 2>/dev/null || echo "No description")
+          CHANGED_FILES=$(cat /tmp/changed-files.txt 2>/dev/null || echo "Unknown")
+
+          # Create prompt
+          cat > /tmp/claude-prompt.txt << PROMPT_END
+          You are assisting with a Pull Request. A collaborator has asked you to help.
+
+          INSTRUCTION FROM USER:
+          $INSTRUCTION
+
+          IMPORTANT RULES:
+          - Follow the user's instruction precisely
+          - Only modify files relevant to the request
+          - NEVER modify .github/workflows/*.yml files (no permission)
+          - Do not skip tests or add test.skip()
+          - Make minimal, focused changes
+          - If asked to review, provide constructive feedback
+          - If asked to fix something, make the fix and explain what you changed
+
+          PR DETAILS:
+          - PR Number: #${{ steps.pr-details.outputs.pr-number }}
+          - Branch: ${{ steps.pr-details.outputs.head-branch }} -> ${{ steps.pr-details.outputs.base-branch }}
+
+          CHANGED FILES:
+          $CHANGED_FILES
+
+          PR DESCRIPTION:
+          $PR_BODY
+
+          PR DIFF (truncated):
+          $PR_DIFF
+          PROMPT_END
+
+          # Determine if this is a review request or code change request
+          if echo "$INSTRUCTION" | grep -qi "review\|explain\|describe\|what\|why\|how"; then
+            # Review mode - don't allow edits
+            echo "Mode: Review/Explain (read-only)"
+            CLAUDE_OUTPUT=$(claude -p "$(cat /tmp/claude-prompt.txt)" \
+              --allowedTools "Read,Glob,Grep" \
+              --output-format text 2>&1) || true
+            echo "changes-made=false" >> $GITHUB_OUTPUT
+          else
+            # Edit mode - allow changes
+            echo "Mode: Edit (can modify files)"
+            CLAUDE_OUTPUT=$(claude -p "$(cat /tmp/claude-prompt.txt)" \
+              --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm run lint:*),Bash(npm run typecheck:*)" \
+              2>&1) || true
+
+            # Check if files were modified
+            if git diff --quiet && git diff --cached --quiet; then
+              echo "changes-made=false" >> $GITHUB_OUTPUT
+            else
+              echo "changes-made=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+          # Save output for comment (truncate if too long)
+          echo "$CLAUDE_OUTPUT" | tail -200 > /tmp/claude-output.txt
+
+          echo "Claude completed"
+
+      - name: "📝 Commit changes"
+        if: steps.check-permission.outputs.allowed == 'true' && steps.claude.outputs.changes-made == 'true'
+        run: |
+          BRANCH="${{ steps.pr-details.outputs.head-branch }}"
+
+          git config user.name "Claude PR Assistant"
+          git config user.email "claude-pr@github-actions"
+
+          git add -A
+          git commit -m "[claude-pr] ${{ github.event.comment.user.login }}: $(echo '${{ github.event.comment.body }}' | sed 's/@claude//' | head -c 50)...
+
+          Requested by: @${{ github.event.comment.user.login }}
+          Comment: ${{ github.event.comment.html_url }}
+
+          🤖 Generated with Claude Code" || echo "Nothing to commit"
+
+          git push origin "$BRANCH"
+
+          echo "✅ Changes pushed to $BRANCH"
+
+      - name: "💬 Post response comment"
+        if: steps.check-permission.outputs.allowed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ steps.pr-details.outputs.pr-number }}"
+          CHANGES_MADE="${{ steps.claude.outputs.changes-made }}"
+
+          # Build response
+          CLAUDE_RESPONSE=$(cat /tmp/claude-output.txt 2>/dev/null || echo "No output captured")
+
+          if [ "$CHANGES_MADE" == "true" ]; then
+            STATUS="✅ **Changes committed and pushed**"
+          else
+            STATUS="ℹ️ **No code changes made**"
+          fi
+
+          # Create comment body
+          cat > /tmp/response.md << EOF
+          ## 🤖 Claude Response
+
+          $STATUS
+
+          <details>
+          <summary>Claude's output</summary>
+
+          \`\`\`
+          $CLAUDE_RESPONSE
+          \`\`\`
+
+          </details>
+
+          ---
+          *Triggered by @${{ github.event.comment.user.login }}*
+          EOF
+
+          # Post comment
+          gh pr comment "$PR_NUMBER" --body-file /tmp/response.md
+
+      - name: "✅ Add reaction"
+        if: steps.check-permission.outputs.allowed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Add rocket reaction to show completion
+          gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            -f content='rocket' || true
+
+      - name: "❌ Permission denied response"
+        if: steps.check-permission.outputs.allowed == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ github.event.issue.number }}" \
+            --body "❌ Sorry @${{ github.event.comment.user.login }}, you need write permission to use Claude on this repository."
