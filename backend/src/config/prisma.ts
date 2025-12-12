@@ -17,13 +17,13 @@ function createPrismaClient(): PrismaClient {
 
   const adapter = new PrismaPg({ connectionString });
 
-  const logOptions = process.env.NODE_ENV === 'development'
-    ? { log: ['query', 'info', 'warn', 'error'] as const }
-    : { log: ['warn', 'error'] as const };
+  const log = process.env.NODE_ENV === 'development'
+    ? ['query', 'info', 'warn', 'error']
+    : ['warn', 'error'];
 
   return new PrismaClient({
     adapter,
-    ...logOptions,
+    log: log as ('query' | 'info' | 'warn' | 'error')[],
   });
 }
 
