@@ -10,6 +10,18 @@ interface RetryableRequestConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
 }
 
+// Type for API error responses
+interface ApiErrorResponse {
+  error?: string;
+  message?: string;
+}
+
+// Helper to extract error message from axios error response
+function extractErrorMessage(error: AxiosError): string {
+  const data = error.response?.data as ApiErrorResponse | undefined;
+  return data?.error ?? data?.message ?? error.message;
+}
+
 export function setupAxiosInterceptors() {
   // Response interceptor to handle 401 errors globally
   axios.interceptors.response.use(
@@ -23,10 +35,7 @@ export function setupAxiosInterceptors() {
         const authPages = ['/login', '/register', '/reset-password', '/oauth/success'];
         if (authPages.some(page => currentPath.startsWith(page))) {
           // Extract backend error message from response body
-          const backendError = (error.response?.data as any)?.error ||
-                              (error.response?.data as any)?.message ||
-                              error.message;
-          return Promise.reject(new Error(backendError));
+          return Promise.reject(new Error(extractErrorMessage(error)));
         }
 
         // Try to refresh token first - but only if we have a refresh token
@@ -76,10 +85,7 @@ export function setupAxiosInterceptors() {
       }
 
       // For all other errors, extract backend error message if available
-      const backendError = (error.response?.data as any)?.error ||
-                          (error.response?.data as any)?.message ||
-                          error.message;
-      return Promise.reject(new Error(backendError));
+      return Promise.reject(new Error(extractErrorMessage(error)));
     }
   );
 }
@@ -144,10 +150,7 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
         const authPages = ['/login', '/register', '/reset-password', '/oauth/success'];
         if (authPages.some(page => currentPath.startsWith(page))) {
           // Extract backend error message from response body
-          const backendError = (error.response?.data as any)?.error ||
-                              (error.response?.data as any)?.message ||
-                              error.message;
-          return Promise.reject(new Error(backendError));
+          return Promise.reject(new Error(extractErrorMessage(error)));
         }
 
         // Try to refresh token first - but only if we have a refresh token
@@ -192,10 +195,7 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
       }
 
       // For all other errors, extract backend error message if available
-      const backendError = (error.response?.data as any)?.error ||
-                          (error.response?.data as any)?.message ||
-                          error.message;
-      return Promise.reject(new Error(backendError));
+      return Promise.reject(new Error(extractErrorMessage(error)));
     }
   );
 }

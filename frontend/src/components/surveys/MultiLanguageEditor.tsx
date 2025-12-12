@@ -78,7 +78,8 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
     }
   };
 
-  const currentLang = supportedLanguages.find(lang => lang.code === activeTab) ?? supportedLanguages[0];
+  // Provide a safe fallback - supportedLanguages always has 'en' as first element
+  const currentLang = supportedLanguages.find(lang => lang.code === activeTab) ?? supportedLanguages[0] ?? { code: 'en', name: 'English', flag: '🇺🇸' };
   const currentText = value[activeTab] || '';
 
   return (
@@ -157,7 +158,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs text-gray-500">
-            Editing: {currentLang!.flag} {currentLang!.name}
+            Editing: {currentLang.flag} {currentLang.name}
           </span>
           {activeTab !== 'en' && value['en'] && (
             <button
@@ -173,7 +174,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
           <textarea
             value={currentText}
             onChange={(e) => handleTextChange(activeTab, e.target.value)}
-            placeholder={placeholder ? `${placeholder} (${currentLang!.name})` : `Enter text in ${currentLang!.name}...`}
+            placeholder={placeholder ? `${placeholder} (${currentLang.name})` : `Enter text in ${currentLang.name}...`}
             rows={3}
             className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
@@ -182,7 +183,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
             type="text"
             value={currentText}
             onChange={(e) => handleTextChange(activeTab, e.target.value)}
-            placeholder={placeholder ? `${placeholder} (${currentLang!.name})` : `Enter text in ${currentLang!.name}...`}
+            placeholder={placeholder ? `${placeholder} (${currentLang.name})` : `Enter text in ${currentLang.name}...`}
             className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         )}

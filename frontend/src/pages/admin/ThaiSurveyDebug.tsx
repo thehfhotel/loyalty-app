@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
  */
 const ThaiSurveyDebug: React.FC = () => {
   const [isCreating, setIsCreating] = useState(false);
-  const [lastError, setLastError] = useState<unknown>(null);
+  const [lastError, setLastError] = useState<Error | null>(null);
 
   // Pre-filled Thai survey data matching the test scenario
   const [surveyData, setSurveyData] = useState<CreateSurveyRequest>({
@@ -88,7 +88,7 @@ const ThaiSurveyDebug: React.FC = () => {
 
     } catch (error) {
       console.error('❌ THAI SURVEY CREATION ERROR:', error);
-      setLastError(error);
+      setLastError(error instanceof Error ? error : new Error(String(error)));
 
       const errorMessage = error instanceof Error && 'response' in error
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? (error as Error).message
@@ -100,14 +100,12 @@ const ThaiSurveyDebug: React.FC = () => {
   };
 
   // Type guard for axios-like error
-  const getAxiosError = (error: unknown) => {
-    if (error && typeof error === 'object' && 'response' in error) {
-      return error as { response?: { status?: number; statusText?: string; data?: Record<string, unknown> }; message?: string };
+  const getAxiosError = (error: Error | null) => {
+    if (!error) return null;
+    if ('response' in error) {
+      return error as unknown as { response?: { status?: number; statusText?: string; data?: Record<string, unknown> }; message?: string };
     }
-    if (error instanceof Error) {
-      return { message: error.message };
-    }
-    return null;
+    return { message: error.message };
   };
 
   return (
@@ -220,16 +218,16 @@ const ThaiSurveyDebug: React.FC = () => {
           </div>
 
           {/* Action Buttons */}
-          {React.createElement('div', { className: 'mb-6' },
-            React.createElement('button', {
-              onClick: handleCreateSurvey,
-              disabled: isCreating,
-              className: 'bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center'
-            },
-              isCreating && React.createElement('div', { className: 'animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2' }),
-              isCreating ? 'Creating Survey...' : '🚀 Create Thai Survey'
-            )
-          ) as any}
+          <div className="mb-6">
+            <button
+              onClick={handleCreateSurvey}
+              disabled={isCreating}
+              className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            >
+              {isCreating && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />}
+              {isCreating ? 'Creating Survey...' : '🚀 Create Thai Survey'}
+            </button>
+          </div>
 
           {/* Error Display */}
           {lastError && (() => {
