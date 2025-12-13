@@ -2245,7 +2245,88 @@ jobs:
 
           echo "✅ All pre-deployment checks passed"
           echo "🔐 Build validation confirmed - all quality gates met for deployment"
-      
+
+      - name: "🔗 Validate deployment directory (bind mount check)"
+        id: validate-deploy-dir
+        run: |
+          echo "🔗 Validating deployment directory..."
+
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
+
+          # Check 1: Directory exists (bind mount working)
+          if [ ! -d "$DEPLOY_DIR" ]; then
+            echo "❌ FATAL: Deployment directory not found: $DEPLOY_DIR"
+            echo ""
+            echo "This usually means the bind mount is not configured correctly."
+            echo "Please verify the runner's docker-compose.yml has:"
+            echo "  volumes:"
+            echo "    - /home/nut/loyalty-app-production:/home/nut/loyalty-app-production"
+            echo ""
+            echo "Then restart the runners:"
+            echo "  cd /home/nut/actions-runner && docker compose down && docker compose up -d"
+            exit 1
+          fi
+          echo "✅ Directory exists: $DEPLOY_DIR"
+
+          # Check 2: It's a git repository
+          if [ ! -d "$DEPLOY_DIR/.git" ]; then
+            echo "❌ FATAL: Not a git repository: $DEPLOY_DIR"
+            echo ""
+            echo "Please initialize the repository on the host:"
+            echo "  git clone https://github.com/${{ github.repository }}.git $DEPLOY_DIR"
+            exit 1
+          fi
+          echo "✅ Valid git repository"
+
+          cd "$DEPLOY_DIR"
+
+          # Check 3: Configure safe.directory for bind-mounted paths
+          git config --global --add safe.directory "$DEPLOY_DIR" 2>/dev/null || true
+
+          # Check 4: Git commands work
+          if ! git rev-parse HEAD >/dev/null 2>&1; then
+            echo "❌ FATAL: Git commands failing in $DEPLOY_DIR"
+            echo ""
+            echo "Git error output:"
+            git rev-parse HEAD 2>&1 || true
+            echo ""
+            echo "This might be a permission or corruption issue."
+            exit 1
+          fi
+          CURRENT_COMMIT=$(git rev-parse --short HEAD)
+          echo "✅ Git working (current commit: $CURRENT_COMMIT)"
+
+          # Check 5: Remote is configured
+          REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
+          if [ -z "$REMOTE_URL" ]; then
+            echo "❌ FATAL: No 'origin' remote configured"
+            echo ""
+            echo "Please configure the remote:"
+            echo "  git remote add origin https://github.com/${{ github.repository }}.git"
+            exit 1
+          fi
+          echo "✅ Remote configured: origin"
+
+          # Check 6: Can reach the target commit
+          echo "🔍 Verifying target commit ${{ github.sha }} is reachable..."
+
+          # Set up authenticated remote for fetch test
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+
+          if ! git fetch --depth 1 origin ${{ github.sha }} 2>/dev/null; then
+            echo "⚠️ WARNING: Could not fetch commit ${{ github.sha }}"
+            echo "Will retry during deployment step..."
+          else
+            echo "✅ Target commit is reachable"
+          fi
+
+          echo ""
+          echo "📋 Deployment Directory Status:"
+          echo "   Path: $DEPLOY_DIR"
+          echo "   Current: $CURRENT_COMMIT"
+          echo "   Target:  ${{ github.sha }}"
+          echo "   Ready for deployment: ✅"
+
       - name: "💾 Smart database backup (pre-shutdown)"
         id: backup
         run: |
@@ -2284,45 +2365,42 @@ jobs:
       
       - name: "📥 Optimized code deployment"
         run: |
-          echo "📥 Deploying code with optimizations..."
+          echo "📥 Deploying code..."
 
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
-
-          # Verify deployment directory exists (bind-mounted from host)
-          if [ ! -d "$DEPLOY_DIR" ]; then
-            echo "❌ ERROR: Deployment directory $DEPLOY_DIR not found"
-            echo "This directory should be bind-mounted from the host."
-            echo "Please ensure the runner has the correct volume mount configured."
-            exit 1
-          fi
-
           cd "$DEPLOY_DIR"
 
-          # Verify it's a git repository
-          if [ ! -d ".git" ]; then
-            echo "❌ ERROR: $DEPLOY_DIR is not a git repository"
-            echo "Please initialize the repository on the host first:"
-            echo "  git clone https://github.com/${{ github.repository }}.git $DEPLOY_DIR"
-            exit 1
-          fi
-
-          echo "📥 Updating repository to commit ${{ github.sha }}..."
-
-          # Mark directory as safe (required when bind-mounted with different ownership)
-          git config --global --add safe.directory "$DEPLOY_DIR"
+          # Show current state
+          BEFORE_COMMIT=$(git rev-parse --short HEAD)
+          echo "📍 Current commit: $BEFORE_COMMIT"
+          echo "🎯 Target commit:  ${{ github.sha }}"
 
           # Clean any local changes
+          echo "🧹 Cleaning local changes..."
           git clean -fd 2>/dev/null || true
           git reset --hard HEAD 2>/dev/null || true
 
-          # Update remote URL with token for authentication
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-
-          # Fetch and checkout the specific commit
+          # Fetch and checkout the specific commit (remote already configured in validation step)
+          echo "📥 Fetching and checking out target commit..."
           git fetch --depth 1 origin ${{ github.sha }}
           git checkout ${{ github.sha }}
 
-          echo "✅ Code deployment completed (now at $(git rev-parse --short HEAD))"
+          # Verify checkout succeeded
+          AFTER_COMMIT=$(git rev-parse --short HEAD)
+          TARGET_SHORT="${{ github.sha }}"
+          TARGET_SHORT="${TARGET_SHORT:0:7}"
+
+          if [ "$AFTER_COMMIT" != "$TARGET_SHORT" ]; then
+            echo "❌ ERROR: Checkout failed!"
+            echo "   Expected: $TARGET_SHORT"
+            echo "   Got:      $AFTER_COMMIT"
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ Code deployment completed"
+          echo "   Before: $BEFORE_COMMIT"
+          echo "   After:  $AFTER_COMMIT"
       
       - name: "⚡ Lightning-fast dependency setup"
         run: |
