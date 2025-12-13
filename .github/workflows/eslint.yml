@@ -34,14 +34,15 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: npm ci
+        run: |
+          npm ci
+          npm install --save-dev @microsoft/eslint-formatter-sarif@3.1.0
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
-
-      - name: Install SARIF formatter
-        run: npm install -g @microsoft/eslint-formatter-sarif@3.1.0
+        run: |
+          npm ci
+          npm install --save-dev @microsoft/eslint-formatter-sarif@3.1.0
 
       - name: Run ESLint on backend
         working-directory: backend
