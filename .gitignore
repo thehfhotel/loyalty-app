@@ -120,3 +120,6 @@ docker-compose.e2e.ci.yml
 # Test file backups (not committed)
 *.spec.ts.backup
 *.test.ts.backup
+
+# NPM cache (used by CI/CD)
+.npm-cache/

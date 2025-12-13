@@ -2285,46 +2285,59 @@ jobs:
       - name: "📥 Optimized code deployment"
         run: |
           echo "📥 Deploying code with optimizations..."
-          
+
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
-          
-          # Smart deployment: update existing repo or clone new
-          if [ -d "$DEPLOY_DIR/.git" ]; then
-            echo "📥 Updating existing repository..."
-            cd "$DEPLOY_DIR"
-            git clean -fd 2>/dev/null || true
-            git reset --hard HEAD 2>/dev/null || true
-            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-            git fetch --depth 1 origin ${{ github.sha }}
-            git checkout ${{ github.sha }}
-          else
-            echo "📦 Fresh deployment..."
-            mkdir -p "$(dirname "$DEPLOY_DIR")"
-            rm -rf "$DEPLOY_DIR" 2>/dev/null || true
-            git clone --depth 1 --single-branch \
-              https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
-              "$DEPLOY_DIR"
-            cd "$DEPLOY_DIR"
-            # Fetch the specific commit (shallow clone only has HEAD)
-            git fetch --depth 1 origin ${{ github.sha }}
-            git checkout ${{ github.sha }}
+
+          # Verify deployment directory exists (bind-mounted from host)
+          if [ ! -d "$DEPLOY_DIR" ]; then
+            echo "❌ ERROR: Deployment directory $DEPLOY_DIR not found"
+            echo "This directory should be bind-mounted from the host."
+            echo "Please ensure the runner has the correct volume mount configured."
+            exit 1
           fi
-          
-          echo "✅ Code deployment completed"
+
+          cd "$DEPLOY_DIR"
+
+          # Verify it's a git repository
+          if [ ! -d ".git" ]; then
+            echo "❌ ERROR: $DEPLOY_DIR is not a git repository"
+            echo "Please initialize the repository on the host first:"
+            echo "  git clone https://github.com/${{ github.repository }}.git $DEPLOY_DIR"
+            exit 1
+          fi
+
+          echo "📥 Updating repository to commit ${{ github.sha }}..."
+
+          # Mark directory as safe (required when bind-mounted with different ownership)
+          git config --global --add safe.directory "$DEPLOY_DIR"
+
+          # Clean any local changes
+          git clean -fd 2>/dev/null || true
+          git reset --hard HEAD 2>/dev/null || true
+
+          # Update remote URL with token for authentication
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+
+          # Fetch and checkout the specific commit
+          git fetch --depth 1 origin ${{ github.sha }}
+          git checkout ${{ github.sha }}
+
+          echo "✅ Code deployment completed (now at $(git rev-parse --short HEAD))"
       
       - name: "⚡ Lightning-fast dependency setup"
         run: |
           echo "⚡ Setting up dependencies with maximum speed..."
-          
+
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
-          
+
           # Configure npm for maximum performance
-          export NPM_CONFIG_CACHE=/home/nut/.npm-cache
+          # Use cache inside deployment directory (bind-mounted from host)
+          export NPM_CONFIG_CACHE="$DEPLOY_DIR/.npm-cache"
           export NPM_CONFIG_PREFER_OFFLINE=true
           export NPM_CONFIG_AUDIT=false
           export NPM_CONFIG_FUND=false
-          mkdir -p /home/nut/.npm-cache
+          mkdir -p "$NPM_CONFIG_CACHE"
           
           # Parallel dependency installation with smart caching
           install_deps() {
