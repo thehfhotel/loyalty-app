@@ -62,7 +62,12 @@ export interface MockNotificationData {
 export function createMockService<T extends MockService>(methods: (keyof T)[]): T {
   const service = {} as T;
   for (const method of methods) {
-    service[method] = jest.fn() as T[typeof method];
+    Object.defineProperty(service, method, {
+      value: jest.fn(),
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
   }
   return service;
 }

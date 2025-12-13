@@ -447,6 +447,7 @@ export const setupCouponServiceMocks = (mockService: jest.Mocked<CouponService>)
   };
 
   // Apply mocks
+  /* eslint-disable @typescript-eslint/no-explicit-any */
   mockService.createCoupon.mockResolvedValue(mockCoupon as any);
   mockService.getCouponById.mockResolvedValue(mockCoupon as any);
   mockService.listCoupons.mockResolvedValue(mockCouponList as any);
@@ -460,8 +461,9 @@ export const setupCouponServiceMocks = (mockService: jest.Mocked<CouponService>)
   mockService.getCouponAnalytics.mockResolvedValue(mockCouponAnalytics as any);
   mockService.getCouponStats.mockResolvedValue(mockCouponStats as any);
   mockService.assignCouponToUsers.mockResolvedValue([] as any);
-  mockService.getCouponAssignments.mockResolvedValue([] as any as any);
+  mockService.getCouponAssignments.mockResolvedValue([] as any);
   mockService.revokeUserCoupon.mockResolvedValue(true as any);
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   return mockService;
 };

@@ -4,6 +4,8 @@
  * Following proven pattern from coupon.test.ts
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Test file uses any for mock data coercion */
+
 import request from 'supertest';
 import { Express } from 'express';
 import routes from '../../../routes/user';
@@ -44,6 +46,7 @@ jest.mock('../../../middleware/auth', () => ({
     const isPUTMethod = req.method === 'PUT' && req.path === '/avatar';
     const isDELETE = req.method === 'DELETE';
 
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Boolean OR is intentional here
     const isAdminRoute = isAdminPath || isPUTMethod || isDELETE;
 
     req.user = isAdminRoute ? {

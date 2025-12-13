@@ -6,6 +6,8 @@
  * Coverage Target: Comprehensive route testing
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Test file uses any for mock data coercion */
+
 import request from 'supertest';
 import { Express, Request, Response, NextFunction } from 'express';
 import routes from '../../../routes/analyticsRoutes';

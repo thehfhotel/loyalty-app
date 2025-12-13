@@ -81,7 +81,7 @@ export const createTestUsers = (count: number, role: 'customer' | 'admin' = 'cus
 /**
  * Mock JWT tokens for testing
  */
-export const createTestTokens = (userId: string = 'test-user-123') => ({
+export const createTestTokens = (userId = 'test-user-123') => ({
   accessToken: `mock-access-token-${userId}`,
   refreshToken: `mock-refresh-token-${userId}`,
 });
