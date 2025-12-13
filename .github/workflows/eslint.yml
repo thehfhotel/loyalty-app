@@ -1,11 +1,5 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-# ESLint is a tool for identifying and reporting on patterns
-# found in ECMAScript/JavaScript code.
-# More details at https://github.com/eslint/eslint
-# and https://eslint.org
+# ESLint Security Scanning
+# Identifies security issues and code quality problems in JavaScript/TypeScript
 
 name: ESLint
 
@@ -13,10 +7,9 @@ on:
   push:
     branches: [ "main" ]
   pull_request:
-    # The branches below must be a subset of the branches above
     branches: [ "main" ]
   schedule:
-    - cron: '29 6 * * 2'
+    - cron: '29 6 * * 2'  # Weekly on Tuesday
 
 jobs:
   eslint:
@@ -25,28 +18,69 @@ jobs:
     permissions:
       contents: read
       security-events: write
-      actions: read # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
+      actions: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install ESLint
-        run: |
-          npm install eslint@8.10.0
-          npm install @microsoft/eslint-formatter-sarif@3.1.0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
 
-      - name: Run ESLint
-        env:
-          SARIF_ESLINT_IGNORE_SUPPRESSED: "true"
-        run: npx eslint .
-          --config .eslintrc.js
-          --ext .js,.jsx,.ts,.tsx
-          --format @microsoft/eslint-formatter-sarif
-          --output-file eslint-results.sarif
-        continue-on-error: true
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install SARIF formatter
+        run: npm install -g @microsoft/eslint-formatter-sarif@3.1.0
+
+      - name: Run ESLint on backend
+        working-directory: backend
+        run: |
+          npx eslint . \
+            --format @microsoft/eslint-formatter-sarif \
+            --output-file ../eslint-backend-results.sarif || true
+
+      - name: Run ESLint on frontend
+        working-directory: frontend
+        run: |
+          npx eslint . \
+            --format @microsoft/eslint-formatter-sarif \
+            --output-file ../eslint-frontend-results.sarif || true
+
+      - name: Merge SARIF files
+        run: |
+          # Create a combined SARIF file
+          cat > eslint-results.sarif << 'SARIF_EOF'
+          {
+            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+            "version": "2.1.0",
+            "runs": []
+          }
+          SARIF_EOF
+
+          # Use jq to merge if both files exist
+          if [ -f eslint-backend-results.sarif ] && [ -f eslint-frontend-results.sarif ]; then
+            jq -s '.[0].runs = ([.[].runs] | add) | .[0]' \
+              eslint-backend-results.sarif eslint-frontend-results.sarif > eslint-results.sarif
+          elif [ -f eslint-backend-results.sarif ]; then
+            cp eslint-backend-results.sarif eslint-results.sarif
+          elif [ -f eslint-frontend-results.sarif ]; then
+            cp eslint-frontend-results.sarif eslint-results.sarif
+          fi
 
       - name: Upload analysis results to GitHub
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: eslint-results.sarif
+          category: eslint
           wait-for-processing: true
