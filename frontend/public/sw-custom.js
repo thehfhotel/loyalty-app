@@ -114,6 +114,12 @@ self.addEventListener('pushsubscriptionchange', event => {
 
 // Handle message events from the app
 self.addEventListener('message', event => {
+  const allowedOrigins = [self.location.origin];
+  if (!event.origin || !allowedOrigins.includes(event.origin)) {
+    console.warn('Service worker received message from untrusted origin:', event.origin);
+    return;
+  }
+
   console.log('Service worker received message:', event.data);
 
   if (event.data && event.data.type === 'OAUTH_SUCCESS') {

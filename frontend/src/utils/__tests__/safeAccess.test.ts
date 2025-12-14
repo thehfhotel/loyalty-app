@@ -99,7 +99,7 @@ describe('safeAccess - Security Tests', () => {
         obj.title = 'Hello';
         // Explicitly set __proto__ as a data property to simulate prototype pollution input
         Object.defineProperty(obj, '__proto__', {
-          value: 'malicious',
+          value: Object.prototype, // use an object value to avoid invalid prototype warnings
           enumerable: true,
           writable: true,
           configurable: true

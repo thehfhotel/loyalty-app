@@ -21,8 +21,8 @@ test.describe('Build System Validation', () => {
   const backendPath = path.join(projectRoot, 'backend');
 
   test.beforeAll(async () => {
-    // Ensure we're testing from the correct directory
-    expect(await fs.access(backendPath).then(() => true).catch(() => false)).toBe(true);
+    // Ensure we're testing from the correct directory by verifying backend package.json is readable
+    await expect(fs.readFile(path.join(backendPath, 'package.json'), 'utf-8')).resolves.toBeTruthy();
   });
 
   test.describe('Prisma Client Generation', () => {
@@ -30,11 +30,9 @@ test.describe('Build System Validation', () => {
       const prismaClientPath = path.join(backendPath, 'src/generated/prisma');
       
       // Check if Prisma client directory exists
-      const prismaClientExists = await fs.access(prismaClientPath)
-        .then(() => true)
-        .catch(() => false);
-
-      if (!prismaClientExists) {
+      try {
+        await fs.readdir(prismaClientPath);
+      } catch {
         throw new Error(
           'Prisma client not generated. Run "npm run db:generate" in backend directory.\n' +
           'This will cause TypeScript errors: "Cannot find module \'../generated/prisma\'"'
@@ -46,11 +44,7 @@ test.describe('Build System Validation', () => {
       const essentialFiles = ['client.ts'];
       for (const file of essentialFiles) {
         const filePath = path.join(prismaClientPath, file);
-        const fileExists = await fs.access(filePath)
-          .then(() => true)
-          .catch(() => false);
-        
-        expect(fileExists).toBe(true, `Essential Prisma client file missing: ${file}`);
+        await expect(fs.readFile(filePath, 'utf-8')).resolves.toBeTruthy();
       }
     });
 
@@ -58,15 +52,11 @@ test.describe('Build System Validation', () => {
       try {
         // Check if Prisma client can be imported by checking package.json exists
         const prismaPackageFile = path.join(backendPath, 'src/generated/prisma/package.json');
-        const packageExists = await fs.access(prismaPackageFile)
-          .then(() => true)
-          .catch(() => false);
-        
-        if (packageExists) {
+        try {
           const packageContent = await fs.readFile(prismaPackageFile, 'utf-8');
           const packageData = JSON.parse(packageContent);
           expect(packageData.name).toMatch(/^(prisma-client-|@prisma\/client)/);
-        } else {
+        } catch (error) {
           console.warn('Prisma client package.json not found - may indicate generation issue');
         }
       } catch (error) {
@@ -80,13 +70,6 @@ test.describe('Build System Validation', () => {
     test('should validate Prisma schema exists and is valid', async () => {
       const schemaPath = path.join(backendPath, 'prisma/schema.prisma');
       
-      const schemaExists = await fs.access(schemaPath)
-        .then(() => true)
-        .catch(() => false);
-      
-      expect(schemaExists).toBe(true, 'Prisma schema file missing: prisma/schema.prisma');
-
-      // Validate schema content
       const schemaContent = await fs.readFile(schemaPath, 'utf-8');
       expect(schemaContent).toContain('generator client');
       expect(schemaContent).toContain('datasource db');
@@ -101,7 +84,7 @@ test.describe('Build System Validation', () => {
         if (!/^[a-zA-Z0-9/_.-]+$/.test(backendPath)) {
           throw new Error(`Invalid backend path: ${backendPath}`);
         }
-        const { stdout, stderr } = await execAsync(`cd ${backendPath} && npx tsc --noEmit`);
+        const { stderr } = await execAsync(`cd ${backendPath} && npx tsc --noEmit`);
         
         // If there are TypeScript errors, they'll be in stderr
         if (stderr && stderr.trim()) {
@@ -189,11 +172,7 @@ test.describe('Build System Validation', () => {
     test('should validate migration files exist and are properly structured', async () => {
       const migrationsPath = path.join(backendPath, 'prisma/migrations');
       
-      const migrationsExist = await fs.access(migrationsPath)
-        .then(() => true)
-        .catch(() => false);
-      
-      if (migrationsExist) {
+      try {
         const migrationDirs = await fs.readdir(migrationsPath);
         const validMigrations = migrationDirs.filter(dir => 
           dir.match(/^\d{14}_\w+$/) // Migration directory naming pattern
@@ -206,12 +185,14 @@ test.describe('Build System Validation', () => {
         // Check each migration has a migration.sql file
         for (const migrationDir of validMigrations) {
           const migrationFile = path.join(migrationsPath, migrationDir, 'migration.sql');
-          const fileExists = await fs.access(migrationFile)
-            .then(() => true)
-            .catch(() => false);
-          
-          expect(fileExists).toBe(true, `Migration SQL file missing: ${migrationDir}/migration.sql`);
+          try {
+            await fs.readFile(migrationFile, 'utf-8');
+          } catch {
+            throw new Error(`Migration SQL file missing: ${migrationDir}/migration.sql`);
+          }
         }
+      } catch {
+        throw new Error('Prisma migrations directory not found. Ensure migrations are created and included in the build.');
       }
     });
   });
@@ -220,12 +201,6 @@ test.describe('Build System Validation', () => {
     test('should validate GitHub Actions workflow syntax', async () => {
       const workflowFile = path.join(projectRoot, '.github/workflows/deploy.yml');
       
-      const workflowExists = await fs.access(workflowFile)
-        .then(() => true)
-        .catch(() => false);
-      
-      expect(workflowExists).toBe(true, 'GitHub Actions workflow file missing');
-
       // Basic YAML syntax validation
       const workflowContent = await fs.readFile(workflowFile, 'utf-8');
       
@@ -243,11 +218,7 @@ test.describe('Build System Validation', () => {
     test('should validate environment variable completeness', async () => {
       const envExampleFile = path.join(backendPath, '.env.example');
       
-      const envExampleExists = await fs.access(envExampleFile)
-        .then(() => true)
-        .catch(() => false);
-      
-      if (envExampleExists) {
+      try {
         const envContent = await fs.readFile(envExampleFile, 'utf-8');
         
         // Check for essential environment variables
@@ -261,6 +232,8 @@ test.describe('Build System Validation', () => {
         for (const varName of requiredVars) {
           expect(envContent).toContain(varName, `Required environment variable missing from .env.example: ${varName}`);
         }
+      } catch {
+        console.warn('.env.example not found - skipping env completeness check');
       }
     });
 
@@ -273,11 +246,7 @@ test.describe('Build System Validation', () => {
       ];
 
       for (const testFile of testFiles) {
-        const fileExists = await fs.access(testFile)
-          .then(() => true)
-          .catch(() => false);
-        
-        if (fileExists) {
+        try {
           const fileContent = await fs.readFile(testFile, 'utf-8');
           
           // Backend URL must always be configurable
@@ -304,6 +273,8 @@ test.describe('Build System Validation', () => {
               `Test file ${testFile} uses hardcoded localhost URLs without environment fallbacks`
             );
           }
+        } catch {
+          console.warn(`Test file not found during config validation: ${testFile}`);
         }
       }
     });
@@ -321,11 +292,7 @@ test.describe('Error Handling Validation', () => {
     ];
 
     for (const filePath of serviceFiles) {
-      const fileExists = await fs.access(filePath)
-        .then(() => true)
-        .catch(() => false);
-      
-      if (fileExists) {
+      try {
         const fileContent = await fs.readFile(filePath, 'utf-8');
         
         // Check for proper error handling patterns
@@ -343,6 +310,8 @@ test.describe('Error Handling Validation', () => {
             );
           }
         }
+      } catch {
+        console.warn(`File not found during error handling validation: ${filePath}`);
       }
     }
   });

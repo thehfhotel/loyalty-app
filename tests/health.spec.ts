@@ -3,7 +3,6 @@ import { retryRequest, retryPageGoto } from './helpers/retry';
 
 test.describe('Application Health Checks', () => {
   const backendUrl = process.env.BACKEND_URL || 'http://localhost:4202';
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3201';  // Used for E2E environment validation
 
   test('Backend health endpoint should respond', async ({ request }) => {
     // Retry connection attempts with exponential backoff
