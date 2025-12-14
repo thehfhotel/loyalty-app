@@ -8,8 +8,9 @@ import type { inferAsyncReturnType } from '@trpc/server';
 import type { CreateExpressContextOptions } from '@trpc/server/adapters/express';
 import type { JWTPayload } from '../types/auth';
 
-// Import Express type augmentation
-import '../types/express.d.ts';
+// Note: Express type augmentation is in ../types/express.d.ts
+// It's a global ambient declaration picked up by TypeScript automatically
+// Do NOT import .d.ts files directly - they don't exist at runtime
 
 /**
  * Create context from Express request/response

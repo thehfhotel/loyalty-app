@@ -2654,19 +2654,38 @@ jobs:
 
           HAS_ERROR=0
 
-          # Check 1: Verify docker-compose.prod.yml doesn't override command with dev tools
+          # Check 1: Verify no dev commands in production config
           echo "📋 Checking for dev commands in production config..."
+
+          # Get merged config as YAML
           MERGED_CONFIG=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml config 2>/dev/null)
 
-          # Check backend command
-          BACKEND_CMD=$(echo "$MERGED_CONFIG" | grep -A50 "backend:" | grep -m1 "command:" || echo "")
+          # Extract backend command using yq-style parsing (grep between backend: and next service)
+          # Look for command: in the backend service section
+          BACKEND_SECTION=$(echo "$MERGED_CONFIG" | sed -n '/^  backend:/,/^  [a-z]/p' | head -n -1)
+          BACKEND_CMD=$(echo "$BACKEND_SECTION" | grep "command:" | head -1 || echo "")
+
+          echo "   Backend command config: ${BACKEND_CMD:-'(none - using Dockerfile CMD)'}"
+
           if echo "$BACKEND_CMD" | grep -qE "(npm run dev|npx tsx|nodemon|ts-node)"; then
             echo "❌ FATAL: Development command found in backend service!"
             echo "   Found: $BACKEND_CMD"
-            echo "   Production must use: node dist/index.js"
+            echo "   Production must use Dockerfile CMD: node dist/index.js"
             HAS_ERROR=1
           else
-            echo "✅ Backend command OK"
+            echo "✅ Backend command OK (using Dockerfile CMD or explicit production command)"
+          fi
+
+          # Also check base docker-compose.yml directly for dev commands that might leak
+          echo "📋 Verifying base docker-compose.yml doesn't have dev commands..."
+          BASE_BACKEND_CMD=$(grep -A30 "^  backend:" docker-compose.yml | grep "command:" | head -1 || echo "")
+          if echo "$BASE_BACKEND_CMD" | grep -qE "(npm run dev|npx tsx|nodemon|ts-node)"; then
+            echo "❌ FATAL: Development command in base docker-compose.yml!"
+            echo "   Found: $BASE_BACKEND_CMD"
+            echo "   Dev commands must be in docker-compose.dev.yml only"
+            HAS_ERROR=1
+          else
+            echo "✅ Base docker-compose.yml OK (no dev commands)"
           fi
 
           # Check 2: Verify backend uses runner target (production stage)
