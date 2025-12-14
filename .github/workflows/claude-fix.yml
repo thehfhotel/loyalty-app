@@ -7,10 +7,12 @@ on:
     branches-ignore:
       - main
 
+# SECURITY: Top-level permissions set to minimal read-only
+# Write permissions granted at job-level (principle of least privilege)
 permissions:
-  contents: write
-  actions: write
-  pull-requests: write
+  contents: read
+  actions: read
+  pull-requests: read
   checks: read
 
 env:
@@ -81,6 +83,10 @@ jobs:
     runs-on: self-hosted
     needs: detect-issues
     if: needs.detect-issues.outputs.should-fix == 'true'
+    permissions:
+      contents: write      # For pushing code fixes
+      actions: write       # For workflow management
+      pull-requests: write # For PR comments
 
     steps:
       # =========================================================================

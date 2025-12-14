@@ -4,15 +4,21 @@ on:
   issue_comment:
     types: [created]
 
+# SECURITY: Top-level permissions set to minimal read-only
+# Write permissions granted at job-level (principle of least privilege)
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read
+  pull-requests: read
+  issues: read
 
 jobs:
   claude-assist:
     name: "🤖 Claude PR Assistant"
     runs-on: self-hosted
+    permissions:
+      contents: write      # For pushing code changes
+      pull-requests: write # For PR comments and reactions
+      issues: write        # For issue reactions
     # Only run on PR comments (not issue comments) that mention @claude
     if: |
       github.event.issue.pull_request &&
