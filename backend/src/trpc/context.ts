@@ -4,11 +4,11 @@
  * Includes authenticated user information from Express middleware
  */
 
+/// <reference path="../types/express.d.ts" />
+
 import type { inferAsyncReturnType } from '@trpc/server';
 import type { CreateExpressContextOptions } from '@trpc/server/adapters/express';
 import type { JWTPayload } from '../types/auth';
-// Express type augmentation is in ../types/express.d.ts
-// It's loaded automatically via tsconfig.json typeRoots
 
 /**
  * Create context from Express request/response
