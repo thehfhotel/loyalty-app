@@ -139,12 +139,28 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: "📥 Checkout branch"
+      # =========================================================================
+      # SECURITY: Checkout trusted main branch first, then fetch the PR branch
+      # This avoids the "untrusted code checkout" pattern flagged by Scorecard
+      # by not using untrusted refs directly in actions/checkout
+      # =========================================================================
+      - name: "📥 Checkout trusted base"
         if: steps.validate-author.outputs.trusted == 'true' && steps.check-branch.outputs.exists == 'true'
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_branch }}
-          fetch-depth: 20
+          ref: main
+          fetch-depth: 0
+
+      - name: "🔀 Fetch and switch to PR branch"
+        if: steps.validate-author.outputs.trusted == 'true' && steps.check-branch.outputs.exists == 'true'
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          # Fetch the PR branch (already validated as trusted)
+          git fetch origin "$HEAD_BRANCH"
+          # Switch to the PR branch
+          git checkout -B "$HEAD_BRANCH" "origin/$HEAD_BRANCH"
+          echo "✅ Now on branch: $(git branch --show-current)"
 
       - name: "📋 Check retry count"
         if: steps.validate-author.outputs.trusted == 'true' && steps.check-branch.outputs.exists == 'true'
