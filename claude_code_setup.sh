@@ -1,26 +1,25 @@
 #!/bin/bash
 # =============================================================================
-# Claude Code Z.AI Environment Setup Script
+# Claude Code CLI Setup Script
 # =============================================================================
 #
 # DESCRIPTION:
-#   This script automates the setup of Claude Code CLI configured to use the
-#   Z.AI API proxy instead of the direct Anthropic API. It handles the complete
-#   installation and configuration process.
+#   Installs and configures the Claude Code CLI for the direct Anthropic API.
+#   Handles Node.js setup (via nvm), pinned CLI install, and stores your API key.
 #
 # WHAT IT DOES:
-#   1. Checks for Node.js >= 18, installs via nvm if missing
-#   2. Installs Claude Code CLI globally via npm
-#   3. Configures Claude Code to use Z.AI API endpoint
-#   4. Prompts for and stores your Z.AI API key securely
+#   1. Checks for Node.js >= 18 (installs via nvm if missing)
+#   2. Installs Claude Code CLI globally via npm (pinned tarball + integrity hash)
+#   3. Prompts for your Anthropic API key and saves it to ~/.claude/settings.json
+#   4. Marks onboarding as complete in ~/.claude.json
 #
 # USAGE:
-#   ./claude_code_zai_env.sh
+#   ./claude_code_setup.sh
 #
 # PREREQUISITES:
 #   - Linux or macOS (Darwin)
 #   - Internet connection
-#   - Z.AI API key (obtain from https://z.ai/manage-apikey/apikey-list)
+#   - Anthropic API key (https://console.anthropic.com/settings/keys)
 #
 # SECURITY:
 #   - nvm install script is verified via SHA256 hash before execution
@@ -28,7 +27,7 @@
 #   - All package versions are pinned for reproducibility
 #
 # AFTER INSTALLATION:
-#   Run 'claude' to start using Claude Code with Z.AI backend.
+#   Run 'claude' to start using Claude Code with Anthropic API.
 #
 # =============================================================================
 
@@ -45,8 +44,8 @@ NVM_INSTALL_SHA256="2d8359a64a3cb07c02389ad88ceecd43f2fa469c06104f92f98df5b6f315
 CLAUDE_PACKAGE="@anthropic-ai/claude-code@2.0.69"
 CONFIG_DIR="$HOME/.claude"
 CONFIG_FILE="$CONFIG_DIR/settings.json"
-API_BASE_URL="https://api.z.ai/api/anthropic"
-API_KEY_URL="https://z.ai/manage-apikey/apikey-list"
+API_BASE_URL="https://api.anthropic.com"
+API_KEY_URL="https://console.anthropic.com/settings/keys"
 API_TIMEOUT_MS=3000000
 
 # ========================
@@ -80,7 +79,8 @@ ensure_dir_exists() {
 # ========================
 
 install_nodejs() {
-    local platform=$(uname -s)
+    local platform
+    platform=$(uname -s)
 
     case "$platform" in
         Linux|Darwin)
@@ -191,7 +191,7 @@ configure_claude_json(){
 configure_claude() {
     log_info "Configuring Claude Code..."
     echo "   You can get your API key from: $API_KEY_URL"
-    read -s -p "🔑 Please enter your Z.AI API key: " api_key
+    read -s -p "🔑 Please enter your Anthropic API key: " api_key
     echo
 
     if [ -z "$api_key" ]; then

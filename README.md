@@ -34,6 +34,7 @@ A modern hotel loyalty program application built with React, Node.js, and Postgr
 ### Prerequisites
 - Docker & Docker Compose
 - Node.js 18+ (for local development)
+- (Optional) Anthropic Claude Code CLI: run `./claude_code_setup.sh` to install/initialize the pinned CLI and store your Anthropic API key in `~/.claude/settings.json`.
 
 ### Installation
 
