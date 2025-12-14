@@ -8,6 +8,18 @@ import crypto from 'crypto';
 import { logger } from '../utils/logger';
 
 /**
+ * Determine if cookies should be secure (HTTPS only)
+ * SECURITY: Defaults to secure=true unless explicitly in development/test
+ * This is a security-critical function - secure cookies prevent MITM attacks
+ */
+const shouldUseSecureCookies = (): boolean => {
+  const nodeEnv = process.env.NODE_ENV ?? 'production'; // Default to production for safety
+  // Only allow insecure cookies in explicit development/test environments
+  const allowInsecureCookies = ['development', 'test'].includes(nodeEnv);
+  return !allowInsecureCookies;
+};
+
+/**
  * Generate a cryptographically secure CSRF token
  */
 export const generateCsrfToken = (): string => {
@@ -44,7 +56,7 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction):
     const token = generateCsrfToken();
     res.cookie('XSRF-TOKEN', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: shouldUseSecureCookies(),
       sameSite: 'strict',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
@@ -100,7 +112,7 @@ export const getCsrfToken = (req: Request, res: Response): void => {
   if (!existingToken) {
     res.cookie('XSRF-TOKEN', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: shouldUseSecureCookies(),
       sameSite: 'strict',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
