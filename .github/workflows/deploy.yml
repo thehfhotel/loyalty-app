@@ -3348,14 +3348,12 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: "📦 Install Allure CLI"
-        run: |
-          cd backend
-          npm install --no-save allure-commandline@2.36.0
-
       - name: "📊 Generate unified Allure report"
         run: |
           cd backend
+
+          # Install allure-commandline from package.json (integrity verified via package-lock.json)
+          npm ci --prefer-offline --no-audit --ignore-scripts
 
           echo "📊 Generating unified Allure report from merged results..."
 
