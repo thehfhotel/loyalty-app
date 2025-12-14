@@ -285,42 +285,53 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
   // Track visited objects to detect circular references
   const visited = new WeakSet<object>();
 
-  // Helper function to remove patterns completely, handling nested cases
-  // e.g., "oonclick=nclick=" -> after one pass "onclick=" -> need another pass
-  const removePatternCompletely = (str: string, pattern: RegExp): string => {
-    let result = str;
-    let previous = '';
-    // Loop until no more changes (handles nested patterns)
-    while (result !== previous) {
-      previous = result;
-      result = result.replace(pattern, '');
-    }
-    return result;
-  };
+  // Maximum input length to prevent DoS attacks (per CodeQL recommendation)
+  const MAX_INPUT_LENGTH = 10000;
 
   // Basic input sanitization with circular reference detection
   const sanitizeValue = (value: unknown): unknown => {
     if (typeof value === 'string') {
-      // Remove potentially dangerous URL schemes and patterns
-      // Use simple, non-ReDoS-vulnerable replacements
       let sanitized = value;
+
+      // Limit input length to prevent ReDoS attacks (CodeQL recommendation)
+      if (sanitized.length > MAX_INPUT_LENGTH) {
+        sanitized = sanitized.substring(0, MAX_INPUT_LENGTH);
+      }
+
+      // Normalize whitespace first - collapse multiple spaces/tabs to single space
+      // This eliminates the need for \s* patterns which can cause ReDoS
+      sanitized = sanitized.replace(/[ \t]+/g, ' ');
 
       // HTML encode angle brackets FIRST to prevent tag injection
       // This is safer than regex-based tag removal which can be bypassed
       sanitized = sanitized.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
       // Remove dangerous URL schemes (case-insensitive)
-      // Use loop-based removal to handle nested patterns like "javajavascript:script:"
-      sanitized = removePatternCompletely(sanitized, /javascript\s*:/gi);
-      sanitized = removePatternCompletely(sanitized, /vbscript\s*:/gi);
-      sanitized = removePatternCompletely(sanitized, /data\s*:/gi);
+      // After whitespace normalization, only need to handle single space variant
+      // Use replaceAll for complete removal without ReDoS-vulnerable loops
+      const dangerousSchemes = ['javascript:', 'javascript :', 'vbscript:', 'vbscript :', 'data:', 'data :'];
+      for (const scheme of dangerousSchemes) {
+        // Case-insensitive replacement using split/join (safe, no regex)
+        const lowerSanitized = sanitized.toLowerCase();
+        let index = lowerSanitized.indexOf(scheme);
+        while (index !== -1) {
+          sanitized = sanitized.substring(0, index) + sanitized.substring(index + scheme.length);
+          const newLower = sanitized.toLowerCase();
+          index = newLower.indexOf(scheme);
+        }
+      }
 
-      // Remove event handlers (on* attributes) - improved pattern to catch all variations
-      // Handles: onclick= onClick= on-click= etc.
-      // Use loop-based removal to handle nested patterns like "oonclick=nclick="
-      sanitized = removePatternCompletely(sanitized, /\bon[\w-]+\s*=/gi);
-      // Also remove standalone event handlers with leading whitespace
-      sanitized = removePatternCompletely(sanitized, /\s+on[\w-]+\s*=/gi);
+      // Remove event handlers (on* attributes)
+      // Pattern: word boundary + "on" + alphanumeric/dash + optional space + "="
+      // After whitespace normalization, space is at most one character
+      // Use a simple, non-backtracking approach
+      const eventHandlerPattern = /\bon[a-z][a-z0-9-]* ?=/gi;
+      let previousLength = -1;
+      // Loop until stable (handles nested patterns like "oonclick=nclick=")
+      while (sanitized.length !== previousLength) {
+        previousLength = sanitized.length;
+        sanitized = sanitized.replace(eventHandlerPattern, '');
+      }
 
       return sanitized.trim();
     }
