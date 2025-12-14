@@ -32,6 +32,7 @@
     "allowJs": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "typeRoots": ["./src/types", "./node_modules/@types"],
 
     /* Source Map Options */
     "sourceMap": true,

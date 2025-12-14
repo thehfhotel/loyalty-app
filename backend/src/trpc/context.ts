@@ -7,10 +7,8 @@
 import type { inferAsyncReturnType } from '@trpc/server';
 import type { CreateExpressContextOptions } from '@trpc/server/adapters/express';
 import type { JWTPayload } from '../types/auth';
-
-// Import Express type augmentation (without .d.ts extension)
-// TypeScript finds the .d.ts file for type checking but emits no JS
-import '../types/express';
+// Express type augmentation is in ../types/express.d.ts
+// It's loaded automatically via tsconfig.json typeRoots
 
 /**
  * Create context from Express request/response
