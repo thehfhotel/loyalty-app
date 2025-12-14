@@ -190,9 +190,18 @@ function createApp(redisAvailable: boolean) {
 
   // Session configuration function that creates store based on Redis availability
   const createSessionConfig = () => {
-    // In production, always use secure cookies - trust proxy headers for HTTPS detection
-    // This ensures cookies are only sent over HTTPS in production
-    const isProductionEnv = process.env.NODE_ENV === 'production';
+    const nodeEnv = process.env.NODE_ENV ?? 'development';
+    const isProductionEnv = nodeEnv === 'production';
+
+    // SECURITY: Cookies MUST be secure in production to prevent transmission over HTTP
+    // Only allow insecure cookies in explicit development/test environments for local testing
+    // This is a security-critical setting - secure:true prevents cookie theft via MITM attacks
+    const allowInsecureCookies = !isProductionEnv && ['development', 'test'].includes(nodeEnv);
+    const useSecureCookies = !allowInsecureCookies;
+
+    if (!useSecureCookies) {
+      logger.warn('SECURITY: Running with insecure cookies (secure=false) - only acceptable for local development');
+    }
 
     const baseConfig = {
       secret: process.env.SESSION_SECRET ?? 'your-session-secret-change-in-production',
@@ -201,8 +210,9 @@ function createApp(redisAvailable: boolean) {
       name: 'loyalty-session-id',
       proxy: isProductionEnv, // Trust proxy (required for secure cookies behind reverse proxy)
       cookie: {
-        // Always require HTTPS in production for cookie transmission
-        secure: isProductionEnv,
+        // SECURITY: Always require HTTPS in production for cookie transmission
+        // This prevents session hijacking via network interception
+        secure: useSecureCookies,
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
         sameSite: 'lax' as const,
