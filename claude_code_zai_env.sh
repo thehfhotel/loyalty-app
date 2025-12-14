@@ -1,4 +1,36 @@
 #!/bin/bash
+# =============================================================================
+# Claude Code Z.AI Environment Setup Script
+# =============================================================================
+#
+# DESCRIPTION:
+#   This script automates the setup of Claude Code CLI configured to use the
+#   Z.AI API proxy instead of the direct Anthropic API. It handles the complete
+#   installation and configuration process.
+#
+# WHAT IT DOES:
+#   1. Checks for Node.js >= 18, installs via nvm if missing
+#   2. Installs Claude Code CLI globally via npm
+#   3. Configures Claude Code to use Z.AI API endpoint
+#   4. Prompts for and stores your Z.AI API key securely
+#
+# USAGE:
+#   ./claude_code_zai_env.sh
+#
+# PREREQUISITES:
+#   - Linux or macOS (Darwin)
+#   - Internet connection
+#   - Z.AI API key (obtain from https://z.ai/manage-apikey/apikey-list)
+#
+# SECURITY:
+#   - nvm install script is verified via SHA256 hash before execution
+#   - API key is stored in ~/.claude/settings.json (user-only readable)
+#   - All package versions are pinned for reproducibility
+#
+# AFTER INSTALLATION:
+#   Run 'claude' to start using Claude Code with Z.AI backend.
+#
+# =============================================================================
 
 set -euo pipefail
 
