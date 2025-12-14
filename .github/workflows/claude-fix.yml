@@ -275,10 +275,47 @@ jobs:
 
           echo "✅ Fix committed and pushed to $BRANCH"
 
-      - name: "🔄 Trigger new workflow run"
+      - name: "💬 Notify PR about fix (CI won't auto-trigger)"
         if: steps.claude-fix.outputs.changes-made == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "✅ New workflow run will be triggered by the push"
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          COMMIT_SHA=$(git rev-parse HEAD)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+
+          # Find PR for this branch
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$PR_NUMBER" ]; then
+            COMMENT_BODY="## 🤖 Claude Auto-Fix Applied
+
+A fix has been pushed to this branch: \`$SHORT_SHA\`
+
+### ⚠️ Action Required: Trigger CI Pipeline
+
+GitHub's security feature prevents workflows from triggering other workflows when using \`GITHUB_TOKEN\`. You need to manually trigger the CI:
+
+**Option 1: Push an empty commit** (recommended)
+\`\`\`bash
+git pull
+git commit --allow-empty -m \"chore: trigger CI\"
+git push
+\`\`\`
+
+**Option 2: Re-run from GitHub UI**
+1. Go to [Actions](/${{ github.repository }}/actions)
+2. Find the failed workflow run
+3. Click \"Re-run all jobs\" (make sure to select the latest commit)
+
+---
+*This message was generated because commits pushed by GitHub Actions cannot trigger other workflows.*"
+
+            gh pr comment "$PR_NUMBER" --body "$COMMENT_BODY"
+            echo "✅ Posted notification to PR #$PR_NUMBER"
+          else
+            echo "⚠️ No PR found for branch $BRANCH - skipping notification"
+          fi
 
       - name: "📊 Report: No fix possible"
         if: steps.claude-fix.outputs.changes-made == 'false' || steps.check-retry.outputs.should-fix == 'false'
