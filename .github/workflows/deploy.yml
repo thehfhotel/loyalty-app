@@ -13,12 +13,12 @@ concurrency:
   group: "ci-${{ github.ref }}"
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# SECURITY: Top-level permissions set to minimal read-only
+# Write permissions are granted at job-level only where needed (principle of least privilege)
 permissions:
-  contents: write  # For GitHub Pages deployment
-  pages: write
-  id-token: write
-  actions: write   # For workflow management
-  pull-requests: write  # For PR comments on test results
+  contents: read
+  actions: read
+  pull-requests: read
 
 env:
   NODE_VERSION: 24
@@ -393,6 +393,9 @@ jobs:
     runs-on: self-hosted
     needs: [prepare-workspace, security-analysis]
     timeout-minutes: 4
+    permissions:
+      pull-requests: write  # For PR comments on test results
+      contents: read
     # Prevent multiple unit test jobs from running concurrently (queue instead)
     concurrency:
       group: unit-tests
@@ -754,6 +757,9 @@ jobs:
     runs-on: self-hosted
     needs: [unit-tests]  # Sequential: runs after unit tests pass
     timeout-minutes: 5
+    permissions:
+      pull-requests: write  # For PR comments on test results
+      contents: read
     # Prevent multiple integration test jobs from running concurrently (queue instead)
     concurrency:
       group: integration-tests
@@ -1075,6 +1081,9 @@ jobs:
   e2e-tests:
     name: "🎭 E2E Tests"
     runs-on: self-hosted
+    permissions:
+      pull-requests: write  # For PR comments on test results
+      contents: read
     env:
       COMPOSE_PROJECT_NAME: loyalty-e2e-tests
 
