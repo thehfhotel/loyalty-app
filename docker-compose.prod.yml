@@ -7,7 +7,20 @@
 # This file does NOT hardcode any secrets - all loaded from .env at runtime
 
 services:
+  postgres:
+    container_name: loyalty_postgres_production
+    restart: unless-stopped
+    ports:
+      - "5434:5432"  # Production PostgreSQL port
+
+  redis:
+    container_name: loyalty_redis_production
+    restart: unless-stopped
+    ports:
+      - "6379:6379"  # Production Redis port
+
   backend:
+    container_name: loyalty_backend_production
     build:
       target: runner  # Use production-optimized runner stage instead of development
     environment:
@@ -68,6 +81,7 @@ services:
     restart: unless-stopped
 
   frontend:
+    container_name: loyalty_frontend_production
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       VITE_API_URL: ${VITE_API_URL}
@@ -77,17 +91,8 @@ services:
     command: sh -c "echo 'Building frontend for production...' && npm run build && echo 'Starting preview server...' && npm run preview -- --host 0.0.0.0 --port 3000"
     restart: unless-stopped
 
-  postgres:
-    restart: unless-stopped
-    ports:
-      - "5434:5432"  # Production PostgreSQL port
-
-  redis:
-    restart: unless-stopped
-    ports:
-      - "6379:6379"  # Production Redis port
-
   nginx:
+    container_name: loyalty_nginx_production
     restart: unless-stopped
     ports:
       - "4001:80"  # Production Nginx port

@@ -85,14 +85,24 @@ loyalty-app/
 
 ### Environment Configuration
 
-| Component | Development | Production |
-|-----------|-------------|------------|
-| **Nginx Port** | 5001 | 4001 |
-| **PostgreSQL Port** | 5435 | 5434 |
-| **Redis Port** | 6380 | 6379 |
-| **Container Suffix** | `_dev` | (none) |
-| **Database Name** | `loyalty_dev_db` | `loyalty_db` |
-| **Docker Target** | `development` | `runner` |
+**Three isolated environments run on the same machine:**
+
+| Component | Local Dev | Development | Production |
+|-----------|-----------|-------------|------------|
+| **Compose File** | `docker-compose.yml` | `+ docker-compose.dev.yml` | `+ docker-compose.prod.yml` |
+| **Container Suffix** | (none) | `_dev` | `_production` |
+| **Nginx Port** | - | 5001 | 4001 |
+| **PostgreSQL Port** | - | 5435 | 5434 |
+| **Redis Port** | - | 6380 | 6379 |
+| **Database Name** | `loyalty_db` | `loyalty_dev_db` | `loyalty_db` |
+| **Docker Target** | `development` | `development` | `runner` |
+| **Deploy Path** | `/home/nut/loyalty-app` | `/home/nut/loyalty-app-develop` | `/home/nut/loyalty-app-production` |
+
+**Why 3 environments?**
+- All run on ONE machine (resource constraint)
+- Dev can develop while prod serves traffic
+- Port isolation prevents conflicts
+- Container naming prevents interference
 
 ### CI/CD Test Port Isolation
 
@@ -110,18 +120,23 @@ loyalty-app/
 - Each test type has its own isolated database and services
 
 ```bash
-# Development
+# Local development (base only, for IDE/testing)
+docker compose up -d
+
+# Development server (isolated from prod)
+cd /home/nut/loyalty-app-develop
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
-# Production (self-contained, no --env-file needed)
+# Production (isolated from dev)
+cd /home/nut/loyalty-app-production
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-**Production Deployment:**
-- All environment variables are hardcoded in `docker-compose.prod.yml`
-- No manual steps or flags needed - deployment is fully self-contained
-- GitHub Actions and manual deployments use the same command
-- Environment variables are read from `.env.production` and baked into `docker-compose.prod.yml`
+**Key Points:**
+- Each environment has its own directory with separate git checkout
+- Source volume mounts (`./backend:/app`) only in dev override, NOT in base
+- Production uses Docker image contents (no source mount)
+- Environment variables loaded from `.env` file created by GitHub Actions
 
 ### Database Operations
 
@@ -285,19 +300,26 @@ chore: Maintenance
 ## 📝 Quick Reference
 
 ```bash
-# Development
+# Local development
+docker compose up -d
+
+# Development server
+cd /home/nut/loyalty-app-develop
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+# Production
+cd /home/nut/loyalty-app-production
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# Database
 npm run db:generate && npm run db:migrate
-npm run quality:check
 
 # Git workflow
 git commit -m "feat: description"  # Hooks run automatically
 git push
 
 # Quality checks
-npm run lint
-npm run typecheck
-npm run test
+npm run lint && npm run typecheck && npm run test
 ```
 
 ## ⚠️ NON-NEGOTIABLE
@@ -316,10 +338,12 @@ npm run test
 **Critical Facts:**
 - Tiers based on `total_nights` NOT `current_points`
 - Production uses `runner` stage, dev uses `development` stage
-- Container names: Dev has `_dev` suffix, prod has none
+- Container names: Local has no suffix, dev has `_dev`, prod has `_production`
+- Source volume mounts ONLY in docker-compose.dev.yml (not in base)
+- All 3 environments can run simultaneously on one machine
 
 ---
 
-**Last Updated**: December 2, 2025
+**Last Updated**: December 15, 2025
 **Enforced By**: Git hooks, CI/CD pipeline, project conventions
 **Compliance**: MANDATORY for all contributors
