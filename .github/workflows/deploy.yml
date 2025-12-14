@@ -1956,18 +1956,44 @@ jobs:
           if [ -d "$DEPLOY_DIR/.git" ]; then
             echo "📥 Updating existing repository..."
             cd "$DEPLOY_DIR"
-            git fetch origin develop
-            # Create or switch to develop branch using FETCH_HEAD
-            git checkout -B develop FETCH_HEAD
+
+            # Show current state
+            BEFORE_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
+            echo "📍 Current commit: $BEFORE_COMMIT"
+            echo "🎯 Target commit:  ${{ github.sha }}"
+
+            # Clean any local changes
+            git clean -fd 2>/dev/null || true
+            git reset --hard HEAD 2>/dev/null || true
+
+            # Fetch and checkout the specific commit
+            git fetch --depth 1 origin ${{ github.sha }}
+            git checkout ${{ github.sha }}
           else
             echo "📦 Fresh clone..."
             mkdir -p "$(dirname "$DEPLOY_DIR")"
-            git clone --depth 1 --single-branch -b develop \
+            git clone --depth 1 \
               https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git \
               "$DEPLOY_DIR"
+            cd "$DEPLOY_DIR"
+            git fetch --depth 1 origin ${{ github.sha }}
+            git checkout ${{ github.sha }}
           fi
 
+          # Verify checkout succeeded
+          AFTER_COMMIT=$(git rev-parse HEAD)
+          TARGET_SHA="${{ github.sha }}"
+
+          if [ "$AFTER_COMMIT" != "$TARGET_SHA" ]; then
+            echo "❌ ERROR: Checkout verification failed!"
+            echo "   Expected: $TARGET_SHA"
+            echo "   Got:      $AFTER_COMMIT"
+            exit 1
+          fi
+
+          echo ""
           echo "✅ Code deployment completed"
+          echo "   Deployed SHA: $AFTER_COMMIT"
 
       - name: "🔧 Environment configuration"
         env:
@@ -2348,7 +2374,7 @@ jobs:
           timestamp=$(date +%Y%m%d_%H%M%S)
           backup_file="backups/pre_deploy_${timestamp}.sql"
           
-          if timeout 60s docker exec loyalty_postgres pg_dump -U loyalty -d loyalty_db > "$backup_file" 2>/dev/null; then
+          if timeout 60s docker exec loyalty_postgres_production pg_dump -U loyalty -d loyalty_db > "$backup_file" 2>/dev/null; then
             if [ -s "$backup_file" ]; then
               echo "✅ Backup created: $backup_file ($(du -h "$backup_file" | cut -f1))"
               echo "status=success" >> $GITHUB_OUTPUT
@@ -2385,14 +2411,13 @@ jobs:
           git fetch --depth 1 origin ${{ github.sha }}
           git checkout ${{ github.sha }}
 
-          # Verify checkout succeeded
-          AFTER_COMMIT=$(git rev-parse --short HEAD)
-          TARGET_SHORT="${{ github.sha }}"
-          TARGET_SHORT="${TARGET_SHORT:0:7}"
+          # Verify checkout succeeded (use full SHA for robust verification)
+          AFTER_COMMIT=$(git rev-parse HEAD)
+          TARGET_SHA="${{ github.sha }}"
 
-          if [ "$AFTER_COMMIT" != "$TARGET_SHORT" ]; then
-            echo "❌ ERROR: Checkout failed!"
-            echo "   Expected: $TARGET_SHORT"
+          if [ "$AFTER_COMMIT" != "$TARGET_SHA" ]; then
+            echo "❌ ERROR: Checkout verification failed!"
+            echo "   Expected: $TARGET_SHA"
             echo "   Got:      $AFTER_COMMIT"
             exit 1
           fi
@@ -2400,7 +2425,7 @@ jobs:
           echo ""
           echo "✅ Code deployment completed"
           echo "   Before: $BEFORE_COMMIT"
-          echo "   After:  $AFTER_COMMIT"
+          echo "   Deployed SHA: $AFTER_COMMIT"
       
       - name: "⚡ Lightning-fast dependency setup"
         run: |
