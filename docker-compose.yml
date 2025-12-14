@@ -58,10 +58,8 @@ services:
       AZURE_TRANSLATION_KEY_1: ${AZURE_TRANSLATION_KEY_1:-}
       AZURE_TRANSLATION_KEY_2: ${AZURE_TRANSLATION_KEY_2:-}
       AZURE_TRANSLATION_REGION: ${AZURE_TRANSLATION_REGION:-global}
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
-      - backend_logs:/app/logs
+    # VOLUMES: Source mounts (./backend:/app) are in docker-compose.dev.yml ONLY
+    # Production uses Docker image contents - no source mount needed
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,10 +75,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       VITE_API_URL: ${VITE_API_URL:?VITE_API_URL is required}
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - frontend_logs:/app/logs
+    # VOLUMES: Source mounts (./frontend:/app) are in docker-compose.dev.yml ONLY
+    # Production uses Docker image contents - no source mount needed
     depends_on:
       - backend
     # Command defined in override files (dev: npm run dev, prod: build & preview)
