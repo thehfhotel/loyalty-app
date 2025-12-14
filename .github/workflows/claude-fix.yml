@@ -281,15 +281,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          REPO_NAME: ${{ github.repository }}
         run: |
-          COMMIT_SHA=$(git rev-parse HEAD)
           SHORT_SHA=$(git rev-parse --short HEAD)
 
           # Find PR for this branch
           PR_NUMBER=$(gh pr list --head "$HEAD_BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
 
           if [ -n "$PR_NUMBER" ]; then
-            COMMENT_BODY="## 🤖 Claude Auto-Fix Applied
+            # Use heredoc to avoid escaping issues
+            COMMENT_BODY=$(cat <<COMMENT_EOF
+## 🤖 Claude Auto-Fix Applied
 
 A fix has been pushed to this branch: \`$SHORT_SHA\`
 
@@ -300,17 +302,19 @@ GitHub's security feature prevents workflows from triggering other workflows whe
 **Option 1: Push an empty commit** (recommended)
 \`\`\`bash
 git pull
-git commit --allow-empty -m \"chore: trigger CI\"
+git commit --allow-empty -m "chore: trigger CI"
 git push
 \`\`\`
 
 **Option 2: Re-run from GitHub UI**
-1. Go to [Actions](/${{ github.repository }}/actions)
+1. Go to [Actions](https://github.com/$REPO_NAME/actions)
 2. Find the failed workflow run
-3. Click \"Re-run all jobs\" (make sure to select the latest commit)
+3. Click "Re-run all jobs" (make sure to select the latest commit)
 
 ---
-*This message was generated because commits pushed by GitHub Actions cannot trigger other workflows.*"
+*This message was generated because commits pushed by GitHub Actions cannot trigger other workflows.*
+COMMENT_EOF
+)
 
             gh pr comment "$PR_NUMBER" --body "$COMMENT_BODY"
             echo "✅ Posted notification to PR #$PR_NUMBER"
