@@ -1,8 +1,9 @@
-/* eslint-disable no-console -- Date formatter uses console for error logging */
 /**
  * Date formatting utilities for consistent dd/mm/yyyy format across the application
  * European/International date format: 31/12/2025 = December 31st, 2025
  */
+
+import { logger } from './logger';
 
 export const formatDateToDDMMYYYY = (date: Date | string | null | undefined): string | null => {
   if (!date) {return null;}
@@ -22,7 +23,7 @@ export const formatDateToDDMMYYYY = (date: Date | string | null | undefined): st
       year: 'numeric'
     });
   } catch (error) {
-    console.warn('Error formatting date:', error);
+    logger.warn('Error formatting date:', error);
     return null;
   }
 };
@@ -48,7 +49,7 @@ export const formatDateTimeToEuropean = (date: Date | string | null | undefined)
       hour12: false
     });
   } catch (error) {
-    console.warn('Error formatting datetime:', error);
+    logger.warn('Error formatting datetime:', error);
     return null;
   }
 };
@@ -84,7 +85,7 @@ export const formatExpiryDateWithRelative = (
     // For dates more than 7 days away, use dd/mm/yyyy format
     return formatDateToDDMMYYYY(expiryDate);
   } catch (error) {
-    console.warn('Error formatting expiry date:', error);
+    logger.warn('Error formatting expiry date:', error);
     return null;
   }
 };

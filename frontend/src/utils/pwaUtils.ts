@@ -1,10 +1,10 @@
-/* eslint-disable no-console -- PWA utilities use console for OAuth and service worker debugging */
 /**
  * PWA Detection and OAuth Handling Utilities
  * Handles OAuth flows in PWA standalone mode to maintain app context
  */
 
 import { API_BASE_URL } from './apiConfig';
+import { logger } from './logger';
 
 export interface PWAInfo {
   isPWA: boolean;
@@ -125,7 +125,7 @@ function applyIOSPWAManifestWorkaround(): void {
     addIOSPWAMetaTags();
     
   } catch (error) {
-    console.warn('Failed to apply iOS PWA manifest workaround:', error);
+    logger.warn('Failed to apply iOS PWA manifest workaround:', error);
   }
 }
 
@@ -179,11 +179,11 @@ export function restoreIOSPWAManifest(): void {
     
     // Clear any temporary OAuth state
     localStorage.removeItem('ios_pwa_manifest_modified');
-    
-    console.log('iOS PWA manifest restored after OAuth success');
-    
+
+    logger.log('iOS PWA manifest restored after OAuth success');
+
   } catch (error) {
-    console.warn('Failed to restore iOS PWA manifest:', error);
+    logger.warn('Failed to restore iOS PWA manifest:', error);
   }
 }
 
@@ -220,7 +220,7 @@ export function recoverPWAOAuthState(): { url: string; timestamp: number } | nul
     
     return state;
   } catch (error) {
-    console.error('Failed to recover PWA OAuth state:', error);
+    logger.error('Failed to recover PWA OAuth state:', error);
     localStorage.removeItem('pwa_oauth_state');
     return null;
   }
@@ -298,7 +298,7 @@ export async function requestPWANotificationPermission(): Promise<boolean> {
     const permission = await Notification.requestPermission();
     return permission === 'granted';
   } catch (error) {
-    console.error('Failed to request notification permission:', error);
+    logger.error('Failed to request notification permission:', error);
     return false;
   }
 }
@@ -331,7 +331,7 @@ export function checkPWAInstallPrompt(): void {
           deferredPrompt.prompt();
           deferredPrompt.userChoice.then((choiceResult) => {
             if (choiceResult.outcome === 'accepted') {
-              console.log('User accepted the PWA install prompt');
+              logger.log('User accepted the PWA install prompt');
             }
             deferredPrompt = null;
           });
@@ -349,8 +349,8 @@ export function debugPWAOAuth(): void {
   if (import.meta.env?.DEV) {
     const pwaInfo = detectPWA();
     const oauthState = localStorage.getItem('pwa_oauth_state');
-    
-    console.log('PWA OAuth Debug Info:', {
+
+    logger.debug('PWA OAuth Debug Info:', {
       pwaInfo,
       oauthState: oauthState ? JSON.parse(oauthState) : null,
       currentUrl: window.location.href,

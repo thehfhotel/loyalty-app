@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import passport from 'passport';
 import session from 'express-session';
+import cookieParser from 'cookie-parser';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const connectRedisModule = require('connect-redis');
 const RedisStore = connectRedisModule.RedisStore ?? connectRedisModule.default?.RedisStore ?? connectRedisModule;
@@ -17,17 +18,18 @@ import { serverConfig, isProduction } from './config/environment';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
-import { 
-  securityHeaders, 
-  customSecurityHeaders, 
-  createRateLimiter, 
-  createApiRateLimiter, 
+import {
+  securityHeaders,
+  customSecurityHeaders,
+  createRateLimiter,
+  createApiRateLimiter,
   createUserRateLimiter,
   createAuthRateLimiter,
   inputSanitization,
   securityMonitoring,
   productionSecurity
 } from './middleware/security';
+import { csrfProtection } from './middleware/csrf';
 import { connectDatabase } from './config/database';
 import { connectRedis, getRedisClient } from './config/redis';
 import { seedMembershipSequence, seedTiers, seedSurveys } from './utils/seedDatabase';
@@ -181,6 +183,7 @@ function createApp(redisAvailable: boolean) {
   }));
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+  app.use(cookieParser());
 
   // Serve static files for avatars
   app.use('/storage', express.static('storage'));
@@ -239,6 +242,14 @@ function createApp(redisAvailable: boolean) {
   // Initialize Passport after session configuration
   app.use(passport.initialize());
   app.use(passport.session());
+
+  // CSRF protection - skip for health checks and OAuth routes
+  app.use((req, res, next) => {
+    if (req.path === '/health' || req.path === '/api/health' || req.path.startsWith('/api/oauth/')) {
+      return next();
+    }
+    csrfProtection(req, res, next);
+  });
 
   app.use(requestLogger);
 

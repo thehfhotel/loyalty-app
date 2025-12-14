@@ -292,17 +292,20 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
       // Use simple, non-ReDoS-vulnerable replacements
       let sanitized = value;
 
+      // HTML encode angle brackets FIRST to prevent tag injection
+      // This is safer than regex-based tag removal which can be bypassed
+      sanitized = sanitized.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
       // Remove dangerous URL schemes (case-insensitive)
       sanitized = sanitized.replace(/javascript\s*:/gi, '');
       sanitized = sanitized.replace(/vbscript\s*:/gi, '');
       sanitized = sanitized.replace(/data\s*:/gi, '');
 
-      // Remove event handlers (on* attributes) - simple pattern without catastrophic backtracking
-      sanitized = sanitized.replace(/\bon\w+\s*=/gi, '');
-
-      // HTML encode angle brackets to prevent tag injection instead of trying to filter
-      // This is safer than regex-based tag removal which can be bypassed
-      sanitized = sanitized.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // Remove event handlers (on* attributes) - improved pattern to catch all variations
+      // Handles: onclick= onClick= on-click= etc.
+      sanitized = sanitized.replace(/\bon[\w-]+\s*=/gi, '');
+      // Also remove standalone event handlers with leading whitespace
+      sanitized = sanitized.replace(/\s+on[\w-]+\s*=/gi, ' ');
 
       return sanitized.trim();
     }

@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- Service layer uses console for API debugging */
 import axios from 'axios';
 import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
 import { API_BASE_URL } from '../utils/apiConfig';
@@ -11,6 +10,7 @@ import type {
   User,
   UserProfile,
 } from '../types/api';
+import { logger } from '../utils/logger';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -32,13 +32,13 @@ interface RegisterData {
 
 export const authService = {
   async login(email: string, password: string, rememberMe?: boolean): Promise<LoginResponse> {
-    console.log('[Auth Debug] Login attempt', { email, rememberMe });
+    logger.log('[Auth Debug] Login attempt', { email, rememberMe });
     const response = await api.post<LoginResponse>('/auth/login', {
       email,
       password,
       rememberMe: rememberMe ?? false
     });
-    console.log('[Auth Debug] Login response', {
+    logger.log('[Auth Debug] Login response', {
       success: response.data.success,
       hasUser: !!response.data.user,
       hasTokens: !!response.data.tokens,
@@ -57,9 +57,9 @@ export const authService = {
   },
 
   async refreshToken(refreshToken: string): Promise<RefreshTokenResponse> {
-    console.log('[Auth Debug] Token refresh attempt');
+    logger.log('[Auth Debug] Token refresh attempt');
     const response = await api.post<RefreshTokenResponse>('/auth/refresh', { refreshToken });
-    console.log('[Auth Debug] Token refresh response', {
+    logger.log('[Auth Debug] Token refresh response', {
       success: !!response.data.tokens,
       hasNewAccessToken: !!response.data.tokens?.accessToken
     });
@@ -108,9 +108,9 @@ export const authService = {
       return response.data;
     } catch (error) {
       if (error instanceof Error) {
-        console.error(`[Auth Debug] API call failed: ${method} ${url}`, error.message);
+        logger.error(`[Auth Debug] API call failed: ${method} ${url}`, error.message);
       } else {
-        console.error(`[Auth Debug] API call failed: ${method} ${url}`, String(error));
+        logger.error(`[Auth Debug] API call failed: ${method} ${url}`, String(error));
       }
       throw error;
     }

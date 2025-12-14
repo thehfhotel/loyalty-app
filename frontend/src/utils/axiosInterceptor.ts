@@ -1,7 +1,7 @@
-/* eslint-disable no-console -- Axios interceptor uses console for request/response debugging */
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/authStore';
 import { notify } from './notificationManager';
+import { logger } from './logger';
 
 // Track if we've already shown the session expired message
 let sessionExpiredShown = false;
@@ -57,7 +57,7 @@ export function setupAxiosInterceptors() {
               }
             }
           } catch (refreshError) {
-            console.error('Token refresh failed:', refreshError);
+            logger.error('Token refresh failed:', refreshError);
           }
         }
 
@@ -107,7 +107,7 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
             const parsedAuth = JSON.parse(authStorage);
             token = parsedAuth.state?.accessToken;
           } catch (error) {
-            console.error('Error parsing auth storage:', error);
+            logger.error('Error parsing auth storage:', error);
           }
         }
       }
@@ -120,9 +120,9 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
         const isPublicEndpoint = (config.url?.includes('/auth/') ?? false) ||
                                 (config.url?.includes('/register') ?? false) ||
                                 (config.url?.includes('/forgot-password') ?? false);
-        
+
         if (!isPublicEndpoint) {
-          console.warn('No auth token available for protected endpoint:', config.url);
+          logger.warn('No auth token available for protected endpoint:', config.url);
           // Don't make the request if we know it will fail
           // Let the axios interceptor handle the redirect
         }
@@ -167,7 +167,7 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
               return axiosInstance.request(originalRequest);
             }
           } catch (refreshError) {
-            console.error('Token refresh failed:', refreshError);
+            logger.error('Token refresh failed:', refreshError);
           }
         }
 
