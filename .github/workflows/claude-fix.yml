@@ -306,19 +306,23 @@ jobs:
           PR_NUMBER=$(gh pr list --head "$HEAD_BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
 
           if [ -n "$PR_NUMBER" ]; then
-            # Write comment to temp file - use single quotes to avoid YAML interpretation
-            echo '## 🤖 Claude Auto-Fix Applied' > /tmp/pr-comment.md
-            echo '' >> /tmp/pr-comment.md
-            echo "A fix has been pushed to this branch: \`$SHORT_SHA\`" >> /tmp/pr-comment.md
-            echo '' >> /tmp/pr-comment.md
-            echo '### ⚠️ Action Required: Trigger CI Pipeline' >> /tmp/pr-comment.md
-            echo '' >> /tmp/pr-comment.md
-            echo 'GitHub Actions cannot trigger workflows from GITHUB_TOKEN commits.' >> /tmp/pr-comment.md
-            echo '' >> /tmp/pr-comment.md
-            echo 'Push an empty commit to trigger CI:' >> /tmp/pr-comment.md
-            echo '```' >> /tmp/pr-comment.md
-            echo "git pull && git commit --allow-empty -m 'chore: trigger CI' && git push" >> /tmp/pr-comment.md
-            echo '```' >> /tmp/pr-comment.md
+            # Write comment to temp file to avoid YAML escaping issues
+            {
+              echo "## 🤖 Claude Auto-Fix Applied"
+              echo ""
+              echo "A fix has been pushed to this branch: \`$SHORT_SHA\`"
+              echo ""
+              echo "### ⚠️ Action Required: Trigger CI Pipeline"
+              echo ""
+              echo "GitHub Actions cannot trigger workflows from GITHUB_TOKEN commits. Manually trigger CI:"
+              echo ""
+              echo "**Option 1:** Push an empty commit"
+              echo "\`\`\`"
+              echo "git pull && git commit --allow-empty -m 'chore: trigger CI' && git push"
+              echo "\`\`\`"
+              echo ""
+              echo "**Option 2:** Re-run from [Actions](https://github.com/$REPO_NAME/actions) page"
+            } > /tmp/pr-comment.md
 
             gh pr comment "$PR_NUMBER" --body-file /tmp/pr-comment.md
             echo "✅ Posted notification to PR #$PR_NUMBER"
