@@ -54,6 +54,9 @@ RUN test -f dist/index.html && \
 # =============================================================================
 FROM nginx:alpine@sha256:052b75ab72f690f33debaa51c7e08d9b969a0447a133eb2b99cc905d9188cb2b AS production
 
+# Update packages to fix CVEs (e.g., CVE-2025-62408 in c-ares)
+RUN apk upgrade --no-cache
+
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/nginx.conf
 
