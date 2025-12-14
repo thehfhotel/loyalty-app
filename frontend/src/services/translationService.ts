@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- Service layer uses console for translation debugging */
 /* eslint-disable security/detect-object-injection -- Safe object property access with validated language keys */
 import axios from 'axios';
 import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
@@ -10,6 +9,7 @@ import {
   TranslationServiceConfig,
   TranslationJob
 } from '../types/multilingual';
+import { logger } from '../utils/logger';
 
 // Create axios instance with auth interceptor
 const api = axios.create({
@@ -51,7 +51,7 @@ class TranslationService {
 
       return response.data;
     } catch (error) {
-      console.error('Translation service error:', error);
+      logger.error('Translation service error:', error);
       throw error;
     }
   }
@@ -96,7 +96,7 @@ class TranslationService {
 
       return response.data;
     } catch (error) {
-      console.error('Survey translation error:', error);
+      logger.error('Survey translation error:', error);
       throw error;
     }
   }
@@ -119,7 +119,7 @@ class TranslationService {
 
       return response.data;
     } catch (error) {
-      console.error('Coupon translation error:', error);
+      logger.error('Coupon translation error:', error);
       throw error;
     }
   }
@@ -132,7 +132,7 @@ class TranslationService {
       const response = await api.get(`/translation/job/${jobId}`);
       return response.data;
     } catch (error) {
-      console.error('Translation job status error:', error);
+      logger.error('Translation job status error:', error);
       throw error;
     }
   }
@@ -152,7 +152,7 @@ class TranslationService {
       const response = await api.get('/translation/jobs');
       return response.data.jobs ?? [];
     } catch (error) {
-      console.error('Translation jobs error:', error);
+      logger.error('Translation jobs error:', error);
       throw error;
     }
   }
@@ -171,7 +171,7 @@ class TranslationService {
           return null;
         }
       }
-      console.error('Survey translations error:', error);
+      logger.error('Survey translations error:', error);
       return null;
     }
   }
@@ -190,7 +190,7 @@ class TranslationService {
           return null;
         }
       }
-      console.error('Coupon translations error:', error);
+      logger.error('Coupon translations error:', error);
       return null;
     }
   }
@@ -206,7 +206,7 @@ class TranslationService {
       const response = await api.get('/translation/status');
       return response.data;
     } catch (error) {
-      console.error('Service status error:', error);
+      logger.error('Service status error:', error);
       return { available: false, provider: 'none' };
     }
   }

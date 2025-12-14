@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import MainLayout from '../../components/layout/MainLayout';
 import { loyaltyService, AdminTransaction } from '../../services/loyaltyService';
+import { logger } from '../../utils/logger';
 
 export default function AdminTransactionHistoryPage() {
   const { t } = useTranslation();
@@ -22,8 +23,7 @@ export default function AdminTransactionHistoryPage() {
       setTransactions(response.transactions);
       setTotal(response.total);
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Error loading transactions:', error);
+      logger.error('Error loading transactions:', error);
       toast.error(t('errors.networkError'));
     } finally {
       setLoading(false);

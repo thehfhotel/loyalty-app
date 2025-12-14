@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- Service layer uses console for push notification debugging */
 /* eslint-disable security/detect-object-injection -- Safe object property access with validated keys */
 /**
  * PWA Push Notification Service
@@ -7,6 +6,7 @@
 
 import { detectPWA } from '../utils/pwaUtils';
 import { API_BASE_URL } from '../utils/apiConfig';
+import { logger } from '../utils/logger';
 
 export interface NotificationOptions {
   title: string;
@@ -39,9 +39,9 @@ export class NotificationService {
   async initialize(): Promise<boolean> {
     try {
       const pwaInfo = detectPWA();
-      
+
       if (!pwaInfo.isPWA || !('serviceWorker' in navigator) || !('PushManager' in window)) {
-        console.log('Push notifications not supported in this environment');
+        logger.log('Push notifications not supported in this environment');
         return false;
       }
 
@@ -50,10 +50,10 @@ export class NotificationService {
       
       // Get VAPID public key from backend
       await this.fetchVapidPublicKey();
-      
+
       return true;
     } catch (error) {
-      console.error('Failed to initialize notification service:', error);
+      logger.error('Failed to initialize notification service:', error);
       return false;
     }
   }
@@ -69,7 +69,7 @@ export class NotificationService {
         this.vapidPublicKey = data.publicKey;
       }
     } catch (error) {
-      console.error('Failed to fetch VAPID public key:', error);
+      logger.error('Failed to fetch VAPID public key:', error);
     }
   }
 
@@ -79,7 +79,7 @@ export class NotificationService {
   async requestPermission(): Promise<boolean> {
     try {
       if (!('Notification' in window)) {
-        console.log('Notifications not supported');
+        logger.log('Notifications not supported');
         return false;
       }
 
@@ -88,14 +88,14 @@ export class NotificationService {
       }
 
       if (Notification.permission === 'denied') {
-        console.log('Notification permission denied');
+        logger.log('Notification permission denied');
         return false;
       }
 
       const permission = await Notification.requestPermission();
       return permission === 'granted';
     } catch (error) {
-      console.error('Failed to request notification permission:', error);
+      logger.error('Failed to request notification permission:', error);
       return false;
     }
   }
@@ -106,7 +106,7 @@ export class NotificationService {
   async subscribeToPush(userId: string): Promise<boolean> {
     try {
       if (!this.swRegistration || !this.vapidPublicKey) {
-        console.error('Service worker or VAPID key not available');
+        logger.error('Service worker or VAPID key not available');
         return false;
       }
 
@@ -131,11 +131,11 @@ export class NotificationService {
 
       // Send subscription to backend
       await this.sendSubscriptionToBackend(userId, subscription);
-      
-      console.log('Successfully subscribed to push notifications');
+
+      logger.log('Successfully subscribed to push notifications');
       return true;
     } catch (error) {
-      console.error('Failed to subscribe to push notifications:', error);
+      logger.error('Failed to subscribe to push notifications:', error);
       return false;
     }
   }
@@ -160,10 +160,10 @@ export class NotificationService {
         // Notify backend about unsubscription
         await this.removeSubscriptionFromBackend(subscription);
       }
-      
+
       return success;
     } catch (error) {
-      console.error('Failed to unsubscribe from push notifications:', error);
+      logger.error('Failed to unsubscribe from push notifications:', error);
       return false;
     }
   }
@@ -190,7 +190,7 @@ export class NotificationService {
         throw new Error('Failed to save subscription on backend');
       }
     } catch (error) {
-      console.error('Failed to send subscription to backend:', error);
+      logger.error('Failed to send subscription to backend:', error);
       throw error;
     }
   }
@@ -211,7 +211,7 @@ export class NotificationService {
         })
       });
     } catch (error) {
-      console.error('Failed to remove subscription from backend:', error);
+      logger.error('Failed to remove subscription from backend:', error);
     }
   }
 
@@ -239,7 +239,7 @@ export class NotificationService {
         ...(options.actions && { actions: options.actions })
       });
     } catch (error) {
-      console.error('Failed to show notification:', error);
+      logger.error('Failed to show notification:', error);
       throw error;
     }
   }

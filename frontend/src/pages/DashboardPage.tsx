@@ -11,6 +11,7 @@ import {
   PointsTransaction
 } from '../services/loyaltyService';
 import LoyaltyCarousel from '../components/loyalty/LoyaltyCarousel';
+import { logger } from '../utils/logger';
 
 export default function DashboardPage() {
   const { t } = useTranslation();
@@ -42,8 +43,7 @@ export default function DashboardPage() {
       setLoyaltyStatus(statusResult);
       setTransactions(historyResult.transactions);
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Error loading loyalty data:', error);
+      logger.error('Error loading loyalty data:', error);
       toast.error(t('errors.networkError'));
     } finally {
       setLoyaltyLoading(false);

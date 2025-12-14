@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { loyaltyService, AdminTransaction } from '../../services/loyaltyService';
 import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
 import toast from 'react-hot-toast';
+import { logger } from '../../utils/logger';
 
 export default function AdminTransactionHistory() {
   const { t } = useTranslation();
@@ -23,8 +24,7 @@ export default function AdminTransactionHistory() {
       setTransactions(result.transactions);
       setTotal(result.total);
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Error loading admin transactions:', error);
+      logger.error('Error loading admin transactions:', error);
       toast.error(t('errors.networkError'));
     } finally {
       setLoading(false);

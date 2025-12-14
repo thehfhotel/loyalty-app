@@ -1,7 +1,7 @@
-/* eslint-disable no-console -- Service layer uses console for API debugging */
 import axios from 'axios';
 import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
 import { API_BASE_URL } from '../utils/apiConfig';
+import { logger } from '../utils/logger';
 
 // Create axios instance with unified auth interceptor
 const api = axios.create({
@@ -105,7 +105,7 @@ export class LoyaltyService {
       const response = await api.get('/loyalty/tiers');
       return response.data.data;
     } catch (error) {
-      console.error('Error fetching tiers:', error);
+      logger.error('Error fetching tiers:', error);
       throw new Error('Failed to fetch loyalty tiers');
     }
   }
@@ -118,7 +118,7 @@ export class LoyaltyService {
       const response = await api.get('/loyalty/status');
       return response.data.data;
     } catch (error) {
-      console.error('Error fetching loyalty status:', error);
+      logger.error('Error fetching loyalty status:', error);
       throw new Error('Failed to fetch loyalty status');
     }
   }
@@ -131,7 +131,7 @@ export class LoyaltyService {
       const response = await api.get('/loyalty/points/calculation');
       return response.data.data;
     } catch (error) {
-      console.error('Error fetching points calculation:', error);
+      logger.error('Error fetching points calculation:', error);
       throw new Error('Failed to fetch points calculation');
     }
   }
@@ -146,7 +146,7 @@ export class LoyaltyService {
       });
       return response.data.data;
     } catch (error) {
-      console.error('Error fetching points history:', error);
+      logger.error('Error fetching points history:', error);
       throw new Error('Failed to fetch points history');
     }
   }
@@ -165,7 +165,7 @@ export class LoyaltyService {
       });
       return response.data.data;
     } catch (error) {
-      console.error('Error simulating stay earning:', error);
+      logger.error('Error simulating stay earning:', error);
       throw new Error('Failed to simulate stay earning');
     }
   }
@@ -189,7 +189,7 @@ export class LoyaltyService {
       const response = await api.get('/loyalty/admin/users', { params });
       return response.data.data;
     } catch (error) {
-      console.error('Error fetching all users loyalty status:', error);
+      logger.error('Error fetching all users loyalty status:', error);
       throw new Error('Failed to fetch users loyalty status');
     }
   }
@@ -226,7 +226,7 @@ export class LoyaltyService {
       });
       return response.data.data;
     } catch (error) {
-      console.error('Error awarding points:', error);
+      logger.error('Error awarding points:', error);
       throw new Error('Failed to award points');
     }
   }
@@ -250,7 +250,7 @@ export class LoyaltyService {
       });
       return response.data.data;
     } catch (error) {
-      console.error('Error deducting points:', error);
+      logger.error('Error deducting points:', error);
       throw new Error('Failed to deduct points');
     }
   }
@@ -268,7 +268,7 @@ export class LoyaltyService {
       });
       return response.data.data;
     } catch (error) {
-      console.error('Error fetching admin transactions:', error);
+      logger.error('Error fetching admin transactions:', error);
       throw new Error('Failed to fetch admin transactions');
     }
   }
@@ -287,7 +287,7 @@ export class LoyaltyService {
       });
       return response.data.data;
     } catch (error) {
-      console.error('Error fetching user points history (admin):', error);
+      logger.error('Error fetching user points history (admin):', error);
       throw new Error('Failed to fetch user points history');
     }
   }
@@ -300,7 +300,7 @@ export class LoyaltyService {
       const response = await api.get('/loyalty/admin/earning-rules');
       return response.data.data;
     } catch (error) {
-      console.error('Error fetching earning rules:', error);
+      logger.error('Error fetching earning rules:', error);
       throw new Error('Failed to fetch earning rules');
     }
   }
@@ -313,7 +313,7 @@ export class LoyaltyService {
       const response = await api.post('/loyalty/admin/expire-points');
       return response.data.data;
     } catch (error) {
-      console.error('Error expiring points:', error);
+      logger.error('Error expiring points:', error);
       throw new Error('Failed to expire points');
     }
   }
@@ -344,7 +344,7 @@ export class LoyaltyService {
       });
       return response.data.data;
     } catch (error) {
-      console.error('Error awarding spending with nights:', error);
+      logger.error('Error awarding spending with nights:', error);
       throw new Error('Failed to award spending with nights');
     }
   }

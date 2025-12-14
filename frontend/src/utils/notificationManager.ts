@@ -1,5 +1,5 @@
-/* eslint-disable no-console -- Notification manager uses console for fallback logging */
 import toast from 'react-hot-toast';
+import { logger } from './logger';
 
 interface NotificationOptions {
   duration?: number;
@@ -65,9 +65,9 @@ class NotificationManager {
 
   showSuccess(message: string, options?: NotificationOptions): string | undefined {
     const id = options?.id ?? this.generateId('success', message);
-    
+
     if (this.isDuplicate(id)) {
-      console.debug(`[NotificationManager] Blocked duplicate success notification: ${message}`);
+      logger.debug(`[NotificationManager] Blocked duplicate success notification: ${message}`);
       return undefined;
     }
 
@@ -83,9 +83,9 @@ class NotificationManager {
 
   showError(message: string, options?: NotificationOptions): string | undefined {
     const id = options?.id ?? this.generateId('error', message);
-    
+
     if (this.isDuplicate(id)) {
-      console.debug(`[NotificationManager] Blocked duplicate error notification: ${message}`);
+      logger.debug(`[NotificationManager] Blocked duplicate error notification: ${message}`);
       return undefined;
     }
 
@@ -101,9 +101,9 @@ class NotificationManager {
 
   showInfo(message: string, options?: NotificationOptions): string | undefined {
     const id = options?.id ?? this.generateId('info', message);
-    
+
     if (this.isDuplicate(id)) {
-      console.debug(`[NotificationManager] Blocked duplicate info notification: ${message}`);
+      logger.debug(`[NotificationManager] Blocked duplicate info notification: ${message}`);
       return undefined;
     }
 
@@ -119,9 +119,9 @@ class NotificationManager {
 
   showWarning(message: string, options?: NotificationOptions): string | undefined {
     const id = options?.id ?? this.generateId('warning', message);
-    
+
     if (this.isDuplicate(id)) {
-      console.debug(`[NotificationManager] Blocked duplicate warning notification: ${message}`);
+      logger.debug(`[NotificationManager] Blocked duplicate warning notification: ${message}`);
       return undefined;
     }
 

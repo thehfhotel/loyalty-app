@@ -1,9 +1,9 @@
-/* eslint-disable no-console -- Auth store uses console for authentication debugging */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authService } from '../services/authService';
 import { notify } from '../utils/notificationManager';
 import { User } from '../types/api';
+import { logger } from '../utils/logger';
 
 interface HttpError {
   response?: {
@@ -100,7 +100,7 @@ export const useAuthStore = create<AuthState>()(
       refreshAuth: async () => {
         const { refreshToken } = get();
         if (!refreshToken) {
-          console.warn('No refresh token available for refresh');
+          logger.warn('No refresh token available for refresh');
           get().clearAuth();
           return;
         }
@@ -117,17 +117,17 @@ export const useAuthStore = create<AuthState>()(
             accessToken: response.tokens.accessToken,
             refreshToken: response.tokens.refreshToken,
           });
-          
+
           if (import.meta.env?.DEV) {
-            console.log('Token refresh successful');
+            logger.log('Token refresh successful');
           }
         } catch (error: unknown) {
-          console.warn('Token refresh failed:', error instanceof Error ? error.message : String(error));
+          logger.warn('Token refresh failed:', error instanceof Error ? error.message : String(error));
           
           // Only clear auth on explicit auth failures, not network issues
-          if ((error as HttpError)?.response?.status === 401 || (error as HttpError)?.response?.status === 403 || 
+          if ((error as HttpError)?.response?.status === 401 || (error as HttpError)?.response?.status === 403 ||
               (error instanceof Error && error.message.includes('Invalid refresh token'))) {
-            console.warn('Refresh token is invalid, clearing auth state');
+            logger.warn('Refresh token is invalid, clearing auth state');
             get().clearAuth();
           }
           
@@ -179,14 +179,14 @@ export const useAuthStore = create<AuthState>()(
         } catch (error: unknown) {
           // Handle network errors differently from auth errors
           if ((error as HttpError)?.name === 'AbortError' || (error as HttpError)?.code === 'NETWORK_ERROR') {
-            console.warn('Network error during auth check, assuming valid for now:', error instanceof Error ? error.message : String(error));
+            logger.warn('Network error during auth check, assuming valid for now:', error instanceof Error ? error.message : String(error));
             // On network errors, don't clear auth - user might be offline
             return true;
           }
-          
+
           // Handle rate limiting (429) - don't logout user for this
           if ((error as HttpError)?.response?.status === 429) {
-            console.warn('Rate limit hit during auth check, assuming valid for now');
+            logger.warn('Rate limit hit during auth check, assuming valid for now');
             // On rate limit, keep user logged in - this is temporary
             return true;
           }
@@ -197,11 +197,11 @@ export const useAuthStore = create<AuthState>()(
               await get().refreshAuth();
               return true;
             } catch (refreshError: unknown) {
-              console.warn('Refresh token failed:', refreshError instanceof Error ? refreshError.message : String(refreshError));
-              
+              logger.warn('Refresh token failed:', refreshError instanceof Error ? refreshError.message : String(refreshError));
+
               // Handle rate limiting on refresh - don't logout
               if ((refreshError as HttpError)?.response?.status === 429) {
-                console.warn('Rate limit hit during token refresh, keeping auth state');
+                logger.warn('Rate limit hit during token refresh, keeping auth state');
                 return true;
               }
               
@@ -214,9 +214,9 @@ export const useAuthStore = create<AuthState>()(
               return false;
             }
           }
-          
+
           // No refresh token available
-          console.warn('No refresh token available, clearing auth');
+          logger.warn('No refresh token available, clearing auth');
           get().clearAuth();
           return false;
         }

@@ -1,4 +1,3 @@
-/* eslint-disable no-console -- Configuration utility uses console for environment debugging */
 /**
  * API Configuration Utility
  *
@@ -10,6 +9,8 @@
  * - Production: Requires VITE_API_URL to be explicitly set
  * - Development: Falls back to relative /api path (proxied by nginx)
  */
+
+import { logger } from './logger';
 
 /**
  * Detect if running in browser context (as opposed to SSR or build time)
@@ -38,7 +39,7 @@ export const getApiUrl = (): string => {
 
   // In development mode (build time), allow fallback with warning
   if (import.meta.env.MODE === 'development') {
-    console.warn(
+    logger.warn(
       '⚠️ VITE_API_URL not set, using relative /api path. ' +
       'This will be proxied by nginx in browser context.'
     );
