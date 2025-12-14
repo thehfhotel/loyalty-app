@@ -9,7 +9,8 @@ SCRIPT_NAME=$(basename "$0")
 NODE_MIN_VERSION=18
 NODE_INSTALL_VERSION=22
 NVM_VERSION="v0.40.3"
-CLAUDE_PACKAGE="@anthropic-ai/claude-code"
+NVM_INSTALL_SHA256="2d8359a64a3cb07c02389ad88ceecd43f2fa469c06104f92f98df5b6f315275f"
+CLAUDE_PACKAGE="@anthropic-ai/claude-code@2.0.69"
 CONFIG_DIR="$HOME/.claude"
 CONFIG_FILE="$CONFIG_DIR/settings.json"
 API_BASE_URL="https://api.z.ai/api/anthropic"
@@ -53,9 +54,25 @@ install_nodejs() {
         Linux|Darwin)
             log_info "Installing Node.js on $platform..."
 
-            # Install nvm
+            # Install nvm with integrity verification
             log_info "Installing nvm ($NVM_VERSION)..."
-            curl -s https://raw.githubusercontent.com/nvm-sh/nvm/"$NVM_VERSION"/install.sh | bash
+            local nvm_script
+            nvm_script=$(mktemp)
+            curl -sL "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh" -o "$nvm_script"
+
+            # Verify SHA256 hash before execution
+            local actual_hash
+            actual_hash=$(sha256sum "$nvm_script" | cut -d' ' -f1)
+            if [ "$actual_hash" != "$NVM_INSTALL_SHA256" ]; then
+                rm -f "$nvm_script"
+                log_error "nvm install script hash mismatch!"
+                log_error "Expected: $NVM_INSTALL_SHA256"
+                log_error "Got: $actual_hash"
+                exit 1
+            fi
+            log_info "Hash verified: $actual_hash"
+            bash "$nvm_script"
+            rm -f "$nvm_script"
 
             # Load nvm
             log_info "Loading nvm environment..."

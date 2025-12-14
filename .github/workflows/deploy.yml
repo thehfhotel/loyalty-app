@@ -3348,7 +3348,7 @@ jobs:
       - name: "📦 Install Allure CLI"
         run: |
           cd backend
-          npm install --no-save allure-commandline@^2.34.1
+          npm install --no-save allure-commandline@2.36.0
 
       - name: "📊 Generate unified Allure report"
         run: |
