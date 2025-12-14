@@ -2450,12 +2450,11 @@ jobs:
             cd "$DEPLOY_DIR/$dir"
             
             # Use npm ci for reproducible installs with integrity verification
-            # npm ci strictly follows package-lock.json and verifies integrity hashes
-            # No fallback to npm install - fail fast if lock file is out of sync
+            # Strictly follows package-lock.json and verifies integrity hashes
             npm ci --prefer-offline --no-audit --ignore-scripts || {
               echo "❌ npm ci failed for $service"
               echo "   Ensure package-lock.json is committed and in sync with package.json"
-              echo "   Run 'npm install' locally and commit the updated lock file"
+              echo "   Regenerate lock file locally and commit the update"
               exit 1
             }
             echo "✅ $service dependencies installed (integrity verified)"
