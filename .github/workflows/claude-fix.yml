@@ -83,13 +83,30 @@ jobs:
     if: needs.detect-issues.outputs.should-fix == 'true'
 
     steps:
+      - name: "🔍 Check if branch still exists"
+        id: check-branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          # Check if the branch still exists (might have been merged/deleted)
+          if gh api "repos/${{ github.repository }}/branches/$HEAD_BRANCH" --silent 2>/dev/null; then
+            echo "Branch $HEAD_BRANCH exists"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Branch $HEAD_BRANCH no longer exists (likely merged/deleted)"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: "📥 Checkout branch"
+        if: steps.check-branch.outputs.exists == 'true'
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
           fetch-depth: 20
 
       - name: "📋 Check retry count"
+        if: steps.check-branch.outputs.exists == 'true'
         id: check-retry
         env:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
@@ -118,7 +135,7 @@ jobs:
           fi
 
       - name: "📜 Get workflow logs and annotations"
-        if: steps.check-retry.outputs.should-fix == 'true'
+        if: steps.check-branch.outputs.exists == 'true' && steps.check-retry.outputs.should-fix == 'true'
         id: get-logs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -309,8 +326,24 @@ jobs:
             echo "⚠️ No PR found for branch $HEAD_BRANCH - skipping notification"
           fi
 
+      - name: "📊 Report: Branch no longer exists"
+        if: steps.check-branch.outputs.exists == 'false'
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          echo "ℹ️ Branch no longer exists - nothing to fix"
+          echo ""
+          echo "🤖 Claude Auto-Fix Report"
+          echo "========================="
+          echo "Branch: $HEAD_BRANCH (deleted/merged)"
+          echo "Triggering run: $WORKFLOW_RUN_ID"
+          echo ""
+          echo "The branch was likely merged or deleted before auto-fix could run."
+          echo "No action needed."
+
       - name: "📊 Report: No fix possible"
-        if: steps.claude-fix.outputs.changes-made == 'false' || steps.check-retry.outputs.should-fix == 'false'
+        if: steps.check-branch.outputs.exists == 'true' && (steps.claude-fix.outputs.changes-made == 'false' || steps.check-retry.outputs.should-fix == 'false')
         env:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
