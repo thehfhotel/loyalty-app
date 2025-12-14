@@ -257,7 +257,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
                 <span className="font-medium">{String(validationResult?.message ?? '')}</span>
               </div>
               
-              {validationResult && validationResult.valid && validationResult.data ? (
+              {validationResult.valid && validationResult.data ? (
                 <div className="mt-2 text-sm text-green-700">
                   <div className="font-medium">{(validationResult.data as Coupon | UserActiveCoupon)?.name ?? ''}</div>
                   <div>{(validationResult.data as Coupon | UserActiveCoupon)?.description ?? ''}</div>

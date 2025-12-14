@@ -95,10 +95,15 @@ describe('safeAccess - Security Tests', () => {
       });
 
       it('should prevent access to non-translation keys', () => {
-        const obj: Record<string, string> = {
-          title: 'Hello',
-          __proto__: 'malicious'
-        };
+        const obj: Record<string, string> = Object.create(null);
+        obj.title = 'Hello';
+        // Explicitly set __proto__ as a data property to simulate prototype pollution input
+        Object.defineProperty(obj, '__proto__', {
+          value: 'malicious',
+          enumerable: true,
+          writable: true,
+          configurable: true
+        });
 
         expect(safeGetTranslation(obj, '__proto__')).toBeUndefined();
       });

@@ -7,9 +7,8 @@
 process.env.JWT_SECRET = 'test-jwt-secret-key-that-is-at-least-sixty-four-characters-long-for-security';
 process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-key-that-is-at-least-sixty-four-characters-long';
 
-jest.mock('../../../services/loyaltyService');
-
 import { describe, expect, jest, beforeEach } from '@jest/globals';
+jest.mock('../../../services/loyaltyService');
 import { oauthService } from '../../../services/oauthService';
 import { User } from '../../../types/auth';
 import * as database from '../../../config/database';
