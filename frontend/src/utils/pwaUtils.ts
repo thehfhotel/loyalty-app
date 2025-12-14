@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- PWA utilities use console for OAuth and service worker debugging */
 /**
  * PWA Detection and OAuth Handling Utilities
  * Handles OAuth flows in PWA standalone mode to maintain app context

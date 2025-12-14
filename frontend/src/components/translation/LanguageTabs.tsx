@@ -257,11 +257,11 @@ const StatusLegend: React.FC<StatusLegendProps> = ({ translationStatus }) => {
                   style={{ 
                     width: `${(statusCounts.translated ?? 0) / Object.keys(translationStatus).length * 100}%` 
                   }}
-                  aria-label={`${Math.round((statusCounts.translated || 0) / Object.keys(translationStatus).length * 100)}% complete`}
+                  aria-label={`${Math.round((statusCounts.translated ?? 0) / Object.keys(translationStatus).length * 100)}% complete`}
                 />
               </div>
               <span className="text-green-600 font-medium">
-                {Math.round((statusCounts.translated || 0) / Object.keys(translationStatus).length * 100)}%
+                {Math.round((statusCounts.translated ?? 0) / Object.keys(translationStatus).length * 100)}%
               </span>
             </div>
           </div>

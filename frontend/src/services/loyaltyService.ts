@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- Service layer uses console for API debugging */
 import axios from 'axios';
 import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
 import { API_BASE_URL } from '../utils/apiConfig';

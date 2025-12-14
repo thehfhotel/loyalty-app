@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { ReactNode, useEffect } from 'react';
+import { logger } from '../../utils/logger';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -28,7 +29,7 @@ export default function ProtectedRoute({
         try {
           await checkAuthStatus();
         } catch (error) {
-          console.warn('Auth verification failed in ProtectedRoute:', error);
+          logger.warn('Auth verification failed in ProtectedRoute:', error);
           // Auth state will be cleared by checkAuthStatus on failure
         }
       }

@@ -27,14 +27,16 @@ export function getUserDisplayName(user: User | null): string {
       case 'line':
         // For LINE users, show "LINE User" instead of the generated email
         return 'LINE User';
-      case 'google':
+      case 'google': {
         // For Google users, try to extract name from email before @
         const emailPart = user.email?.split('@')[0] ?? 'Google User';
         return emailPart.replace(/[._]/g, ' ');
-      case 'facebook':
+      }
+      case 'facebook': {
         // For Facebook users, similar logic
         const fbEmailPart = user.email?.split('@')[0] ?? 'Facebook User';
         return fbEmailPart.replace(/[._]/g, ' ');
+      }
       default:
         break;
     }

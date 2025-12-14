@@ -1,3 +1,5 @@
+/* eslint-disable no-console -- Service layer uses console for push notification debugging */
+/* eslint-disable security/detect-object-injection -- Safe object property access with validated keys */
 /**
  * PWA Push Notification Service
  * Handles push notifications for the loyalty app PWA

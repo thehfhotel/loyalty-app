@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { notify } from '../../utils/notificationManager';
 import { API_BASE_URL } from '../../utils/apiConfig';
+import { logger } from '../../utils/logger';
 import {
   handlePWAOAuthSuccess,
   recoverPWAOAuthState,
@@ -55,7 +56,7 @@ export default function OAuthSuccessPage() {
           if (pwaState && !pwaInfo.isStandalone) {
             // We're in browser window opened by iOS PWA OAuth redirect
             // Show loading message and wait for redirect
-            console.log('OAuth success in browser window, redirecting to PWA...');
+            logger.info('OAuth success in browser window, redirecting to PWA...');
             return;
           }
         }
@@ -99,10 +100,10 @@ export default function OAuthSuccessPage() {
           try {
             const notificationGranted = await requestPWANotificationPermission();
             if (notificationGranted) {
-              console.log('PWA notification permission granted');
+              logger.info('PWA notification permission granted');
             }
           } catch (error) {
-            console.warn('PWA notification permission request failed:', error);
+            logger.warn('PWA notification permission request failed:', error);
           }
         }
 
@@ -121,7 +122,7 @@ export default function OAuthSuccessPage() {
         // Redirect to dashboard
         navigate('/dashboard');
       } catch (error) {
-        console.error('OAuth success handling error:', error);
+        logger.error('OAuth success handling error:', error);
         notify.error('Authentication failed. Please try again.');
         navigate('/login');
       }

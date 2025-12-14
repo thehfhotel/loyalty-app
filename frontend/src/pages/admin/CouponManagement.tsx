@@ -7,6 +7,7 @@ import DashboardButton from '../../components/navigation/DashboardButton';
 import CouponAssignmentsModal from '../../components/admin/CouponAssignmentsModal';
 import toast from 'react-hot-toast';
 import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
+import { logger } from '../../utils/logger';
 
 interface User {
   id: string;
@@ -81,9 +82,9 @@ const CouponManagement: React.FC = () => {
       setTotalPages(calculatedTotalPages);
       setPage(pageNum);
     } catch (err: unknown) {
-      console.error('Error loading coupons:', err);
-      const errorMessage = err instanceof Error && 'response' in err 
-        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message 
+      logger.error('Error loading coupons:', err);
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
       setError(errorMessage ?? 'Failed to load coupons');
     } finally {
@@ -107,7 +108,7 @@ const CouponManagement: React.FC = () => {
       }));
       setUsers(transformedUsers);
     } catch (err) {
-      console.error('Error loading users:', err);
+      logger.error('Error loading users:', err);
     }
   };
 
@@ -183,9 +184,9 @@ const CouponManagement: React.FC = () => {
       // Refresh the coupons list to update counts
       await loadCoupons();
     } catch (err: unknown) {
-      console.error('Assignment error:', err);
-      const errorMessage = err instanceof Error && 'response' in err 
-        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message 
+      logger.error('Assignment error:', err);
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : err instanceof Error ? err.message : 'Failed to assign coupons';
       setError(errorMessage ?? null);
       toast.error(errorMessage ?? 'Unknown error');
@@ -233,8 +234,8 @@ const CouponManagement: React.FC = () => {
       setError(null);
       
     } catch (err: unknown) {
-      console.error('Error deleting coupon:', err);
-      
+      logger.error('Error deleting coupon:', err);
+
       // Handle authentication errors specifically
       const httpError = err instanceof Error && 'response' in err ? err as { response?: { status?: number; data?: { message?: string } } } : null;
       if (httpError?.response?.status === 401) {
@@ -895,7 +896,7 @@ const CouponManagement: React.FC = () => {
                 </div>
                 <div className="text-sm text-red-700">
                   <p className="mb-2">{t('admin.coupons.deleteConfirmText')}:</p>
-                  <p className="font-medium">"{selectedCoupon.name}" ({selectedCoupon.code})</p>
+                  <p className="font-medium">&quot;{selectedCoupon.name}&quot; ({selectedCoupon.code})</p>
                 </div>
               </div>
 

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { 
-  FiUsers, 
-  FiAward, 
-  FiPlus, 
-  FiMinus, 
+import {
+  FiUsers,
+  FiAward,
+  FiPlus,
+  FiMinus,
   FiRefreshCw,
   FiSearch,
   FiDollarSign,
@@ -12,12 +12,13 @@ import {
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
-import { 
-  loyaltyService, 
-  AdminUserLoyalty, 
-  PointsTransaction 
+import {
+  loyaltyService,
+  AdminUserLoyalty,
+  PointsTransaction
 } from '../../services/loyaltyService';
 import DashboardButton from '../../components/navigation/DashboardButton';
+import { logger } from '../../utils/logger';
 
 interface PointsAdjustmentModal {
   isOpen: boolean;
@@ -83,7 +84,7 @@ export default function LoyaltyAdminPage() {
       setTotalUsers(result.total);
     } catch (error) {
       toast.error(t('admin.loyalty.errors.loadFailed'));
-      console.error('Failed to load users:', error);
+      logger.error('Failed to load users:', error);
     } finally {
       setIsLoading(false);
     }
@@ -95,7 +96,7 @@ export default function LoyaltyAdminPage() {
       setUserTransactions(result.transactions);
     } catch (error) {
       toast.error(t('admin.loyalty.errors.transactionsFailed'));
-      console.error('Failed to load user transactions:', error);
+      logger.error('Failed to load user transactions:', error);
     }
   };
 
@@ -209,7 +210,7 @@ export default function LoyaltyAdminPage() {
       }
     } catch (error) {
       toast.error(t('admin.loyalty.errors.pointsOperationFailed'));
-      console.error('Points operation failed:', error);
+      logger.error('Points operation failed:', error);
     } finally {
       setIsLoadingAction(false);
     }
@@ -252,7 +253,7 @@ export default function LoyaltyAdminPage() {
       const result = await loyaltyService.getAllUsersLoyaltyStatus(10, 0, searchTerm);
       setUserSearchResults(result.users);
     } catch (error) {
-      console.error('Failed to search users:', error);
+      logger.error('Failed to search users:', error);
       toast.error('ไม่สามารถค้นหาผู้ใช้ได้');
     } finally {
       setIsSearchingUsers(false);
@@ -331,7 +332,7 @@ export default function LoyaltyAdminPage() {
       }
     } catch (error) {
       toast.error('ไม่สามารถมอบคะแนนได้');
-      console.error('Spending points operation failed:', error);
+      logger.error('Spending points operation failed:', error);
     } finally {
       setIsLoadingAction(false);
     }
@@ -661,7 +662,7 @@ export default function LoyaltyAdminPage() {
                               )}
                               {transaction.admin_reason && (
                                 <div className="text-xs text-gray-500 italic">
-                                  "{transaction.admin_reason}"
+                                  &quot;{transaction.admin_reason}&quot;
                                 </div>
                               )}
                             </div>

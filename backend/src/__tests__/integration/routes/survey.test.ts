@@ -6,6 +6,8 @@
  * Coverage Target: ~2-3% contribution
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Test mocks require flexible typing */
+
 import request from 'supertest';
 import { Express } from 'express';
 import surveyRoutes from '../../../routes/survey';

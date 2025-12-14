@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { couponService } from '../../services/couponService';
 import { Coupon } from '../../types/coupon';
 import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
+import { logger } from '../../utils/logger';
 
 interface CouponAssignment {
   userId: string;
@@ -33,7 +34,7 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
   isOpen: _isOpen,
   onClose
 }) => {
-  const { } = useTranslation();
+  const { t } = useTranslation();
   const [assignments, setAssignments] = useState<CouponAssignment[]>([]);
   const [summary, setSummary] = useState<CouponAssignmentSummary>({
     totalUsers: 0,
@@ -63,15 +64,15 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
       setTotalPages(result.totalPages);
       setTotal(result.total);
     } catch (err: unknown) {
-      console.error('Error loading coupon assignments:', err);
-      const errorMessage = err instanceof Error && 'response' in err 
-        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message 
+      logger.error('Error loading coupon assignments:', err);
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      setError(errorMessage ?? 'Failed to load assignments');
+      setError(errorMessage ?? t('errors.failedToLoadAssignments', 'Failed to load assignments'));
     } finally {
       setLoading(false);
     }
-  }, [coupon.id, limit]);
+  }, [coupon.id, limit, t]);
 
   useEffect(() => {
     loadAssignments(1);
@@ -124,14 +125,15 @@ const CouponAssignmentsModal: React.FC<CouponAssignmentsModalProps> = ({
       
       // Reload assignments to reflect changes
       await loadAssignments(page);
-      
+
+
       setUserToRemove(null);
     } catch (err: unknown) {
-      console.error('Error removing user coupons:', err);
-      const errorMessage = err instanceof Error && 'response' in err 
-        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message 
+      logger.error('Error removing user coupons:', err);
+      const errorMessage = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      setError(errorMessage ?? 'Failed to remove user coupons');
+      setError(errorMessage ?? t('errors.failedToRemoveCoupons', 'Failed to remove user coupons'));
     } finally {
       setRemovingUserId(null);
     }

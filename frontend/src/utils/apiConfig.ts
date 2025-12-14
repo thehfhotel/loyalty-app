@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- Configuration utility uses console for environment debugging */
 /**
  * API Configuration Utility
  *

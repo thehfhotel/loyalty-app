@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './styles/index.css';
 import { setupAxiosInterceptors } from './utils/axiosInterceptor';
+import { logger } from './utils/logger';
 import './i18n/config';
 
 // Set up global axios interceptors
@@ -16,5 +17,5 @@ if (rootElement) {
     </React.StrictMode>,
   );
 } else {
-  console.error('Root element not found');
+  logger.error('Root element not found');
 }

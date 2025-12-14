@@ -12,6 +12,7 @@ import LanguageSwitcher from '../../components/LanguageSwitcher';
 import LanguageTabs from '../../components/translation/LanguageTabs';
 import toast from 'react-hot-toast';
 import { MultilingualSurvey, SupportedLanguage, TranslationStatus } from '../../types/multilingual';
+import { logger } from '../../utils/logger';
 
 // Validation utility types and functions (keeping existing)
 interface QuestionValidationError {
@@ -335,7 +336,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
         setSelectedLanguage((translationsData.original_language ?? 'th') as SupportedLanguage);
       }
     } catch (err) {
-      console.error('Error loading survey:', err);
+      logger.error('Error loading survey:', err);
       toast.error(t('surveys.admin.messages.loadError'));
       navigate('/admin/surveys');
     } finally {
@@ -432,7 +433,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
               }, 1000);
             }
           } catch (error) {
-            console.error('Error polling ongoing translation jobs:', error);
+            logger.error('Error polling ongoing translation jobs:', error);
           }
         }, 3000);
         
@@ -443,7 +444,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
         }, 300000);
       }
     } catch (error) {
-      console.error('Error checking ongoing translations:', error);
+      logger.error('Error checking ongoing translations:', error);
     }
   };
 
@@ -567,7 +568,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
             });
           }
         } catch (translationError) {
-          console.error('Auto-translation failed:', translationError);
+          logger.error('Auto-translation failed:', translationError);
           toast.error('Survey published successfully, but auto-translation failed. You can translate manually later.', {
             duration: 7000,
             icon: '⚠️'
@@ -826,7 +827,7 @@ const SurveyBuilderWithTranslation: React.FC = () => {
                       onUpdate={(updates) => updateQuestion(q.id, updates)}
                       onRemove={() => removeQuestion(q.id)}
                       onReorder={reorderQuestions}
-                      canMove={(displayContent.questions?.length || 0) > 1}
+                      canMove={(displayContent.questions?.length ?? 0) > 1}
                       disabled={isEditing && selectedLanguage !== multilingualSurvey?.originalLanguage}
                     />
                   );

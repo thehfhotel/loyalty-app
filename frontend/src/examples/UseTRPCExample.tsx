@@ -1,3 +1,4 @@
+/* eslint-disable no-alert -- Example file uses alert() for demonstration purposes */
 /**
  * Example Component: How to Use tRPC
  * This demonstrates type-safe API calls with tRPC

@@ -5,6 +5,7 @@ import MainLayout from '../../components/layout/MainLayout';
 import { adminService, CouponStatusForAdmin } from '../../services/adminService';
 import { couponService } from '../../services/couponService';
 import type { Coupon } from '../../types/coupon';
+import { logger } from '../../utils/logger';
 
 interface NewMemberCouponSettings {
   id: string;
@@ -58,7 +59,7 @@ export default function NewMemberCouponSettings() {
           const status = await adminService.getCouponStatusForAdmin(selectedCouponId);
           setCouponStatus(status);
         } catch (error) {
-          console.error('Failed to load coupon status:', error);
+          logger.error('Failed to load coupon status:', error);
           setCouponStatus(null);
         }
       } else {
@@ -89,9 +90,9 @@ export default function NewMemberCouponSettings() {
       setPointsAmount(settingsData.pointsAmount?.toString() ?? '');
       
     } catch (error: unknown) {
-      console.error('Failed to load data:', error);
-      const errorMessage = error instanceof Error && 'response' in error 
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+      logger.error('Failed to load data:', error);
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
         : undefined;
       toast.error(errorMessage ?? 'Failed to load settings');
     } finally {
@@ -116,9 +117,9 @@ export default function NewMemberCouponSettings() {
       setHasChanged(false);
       toast.success('New member coupon settings updated successfully');
     } catch (error: unknown) {
-      console.error('Failed to update settings:', error);
-      const errorMessage = error instanceof Error && 'response' in error 
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+      logger.error('Failed to update settings:', error);
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
         : undefined;
       toast.error(errorMessage ?? 'Failed to update settings');
     } finally {
@@ -410,7 +411,7 @@ export default function NewMemberCouponSettings() {
             {/* Save Button Help Text */}
             {isEnabled && couponStatus?.isExpired && (
               <p className="mt-2 text-sm text-red-600">
-                Cannot save settings with an expired coupon. Please select a different coupon or extend the current coupon's validity period.
+                Cannot save settings with an expired coupon. Please select a different coupon or extend the current coupon&apos;s validity period.
               </p>
             )}
             {pointsEnabled && (!pointsAmount || parseInt(pointsAmount) < 1 || parseInt(pointsAmount) > 10000) && (

@@ -7,6 +7,7 @@ import { surveyService } from '../../services/surveyService';
 import { useAuthRedirect } from '../../hooks/useAuthRedirect';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
+import { logger } from '../../utils/logger';
 
 const SurveyList: React.FC = () => {
   const { t } = useTranslation();
@@ -34,11 +35,11 @@ const SurveyList: React.FC = () => {
       setPublicSurveys(publicSurveysData);
       setInvitedSurveys(invitedSurveysData);
     } catch (err) {
-      console.error('Error loading surveys:', err);
+      logger.error('Error loading surveys:', err);
       const errorMessage = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      setError(errorMessage || t('surveys.errors.loadFailed'));
+      setError(errorMessage ?? t('surveys.errors.loadFailed'));
     } finally {
       setLoading(false);
     }

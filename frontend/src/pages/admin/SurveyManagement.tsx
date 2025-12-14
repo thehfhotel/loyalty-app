@@ -8,6 +8,7 @@ import DashboardButton from '../../components/navigation/DashboardButton';
 import SurveyCouponAssignments from '../../components/surveys/SurveyCouponAssignments';
 import toast from 'react-hot-toast';
 import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
+import { logger } from '../../utils/logger';
 
 const SurveyManagement: React.FC = () => {
   const { t } = useTranslation();
@@ -28,11 +29,11 @@ const SurveyManagement: React.FC = () => {
       setSurveys(response.surveys);
       setTotalPages(response.pagination.totalPages);
     } catch (err) {
-      console.error('Error loading surveys:', err);
+      logger.error('Error loading surveys:', err);
       const errorMessage = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      setError(errorMessage || 'Failed to load surveys');
+      setError(errorMessage ?? 'Failed to load surveys');
       toast.error('Failed to load surveys');
     } finally {
       setLoading(false);
@@ -44,6 +45,7 @@ const SurveyManagement: React.FC = () => {
   }, [currentPage, statusFilter, loadSurveys]);
 
   const handleDeleteSurvey = async (surveyId: string) => {
+    // eslint-disable-next-line no-alert -- User confirmation for destructive action
     if (!confirm('Are you sure you want to delete this survey? This action cannot be undone.')) {
       return;
     }
@@ -53,11 +55,11 @@ const SurveyManagement: React.FC = () => {
       toast.success('Survey deleted successfully');
       loadSurveys();
     } catch (err) {
-      console.error('Error deleting survey:', err);
+      logger.error('Error deleting survey:', err);
       const errorMessage = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      toast.error(errorMessage || 'Failed to delete survey');
+      toast.error(errorMessage ?? 'Failed to delete survey');
     }
   };
 
@@ -74,7 +76,7 @@ const SurveyManagement: React.FC = () => {
       window.URL.revokeObjectURL(url);
       toast.success('Survey responses exported successfully');
     } catch (err) {
-      console.error('Error exporting responses:', err);
+      logger.error('Error exporting responses:', err);
       toast.error('Failed to export survey responses');
     }
   };

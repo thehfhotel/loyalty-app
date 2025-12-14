@@ -3,6 +3,7 @@ import { UserActiveCoupon } from '../../types/coupon';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
+import { logger } from '../../utils/logger';
 
 interface QRCodeDisplayProps {
   coupon: UserActiveCoupon;
@@ -23,7 +24,7 @@ const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
       await navigator.clipboard.writeText(coupon.qrCode);
       toast.success(t('coupons.qrCodeCopied'));
     } catch (err) {
-      console.error('Failed to copy QR code:', err);
+      logger.error('Failed to copy QR code:', err);
     }
   };
 
@@ -36,7 +37,7 @@ const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
           url: window.location.href
         });
       } catch (err) {
-        console.error('Failed to share:', err);
+        logger.error('Failed to share:', err);
       }
     } else {
       // Fallback to copying

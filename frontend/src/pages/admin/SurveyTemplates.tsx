@@ -15,6 +15,7 @@ import DashboardButton from '../../components/navigation/DashboardButton';
 import { Survey, SurveyQuestion } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 import toast from 'react-hot-toast';
+import { logger } from '../../utils/logger';
 
 interface SurveyTemplate {
   id: string;
@@ -258,7 +259,7 @@ const SurveyTemplates: React.FC = () => {
       setTemplates(getPredefinedTemplates(t));
       loadCustomTemplates();
     } catch (error) {
-      console.error('Error initializing templates:', error);
+      logger.error('Error initializing templates:', error);
       toast.error('Failed to load survey templates');
     }
   }, [t]);
@@ -296,6 +297,7 @@ const SurveyTemplates: React.FC = () => {
   };
 
   const handleDeleteCustomTemplate = async (templateId: string) => {
+    // eslint-disable-next-line no-alert -- User confirmation for destructive action
     if (!confirm(t('surveys.admin.templates.deleteConfirm'))) {
       return;
     }
@@ -305,7 +307,7 @@ const SurveyTemplates: React.FC = () => {
       toast.success(t('surveys.admin.templates.templateDeleted'));
       loadCustomTemplates();
     } catch (error) {
-      console.error('Error deleting template:', error);
+      logger.error('Error deleting template:', error);
       toast.error(t('surveys.admin.templates.deleteFailed'));
     }
   };

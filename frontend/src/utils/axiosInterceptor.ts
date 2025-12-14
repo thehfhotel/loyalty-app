@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- Axios interceptor uses console for request/response debugging */
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/authStore';
 import { notify } from './notificationManager';

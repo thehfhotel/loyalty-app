@@ -6,6 +6,7 @@ import CouponCard from '../../components/coupons/CouponCard';
 import QRCodeModal from '../../components/coupons/QRCodeModal';
 import CouponDetailsModal from '../../components/coupons/CouponDetailsModal';
 import DashboardButton from '../../components/navigation/DashboardButton';
+import { logger } from '../../utils/logger';
 
 type CouponFilter = 'active' | 'used' | 'expired';
 
@@ -51,11 +52,11 @@ const CouponWallet: React.FC = () => {
       setHasMore(pageNum < response.totalPages);
       setPage(pageNum);
     } catch (err) {
-      console.error('Error loading coupons:', err);
+      logger.error('Error loading coupons:', err);
       const errorMessage = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      setError(errorMessage || t('errors.failedToLoadCoupons'));
+      setError(errorMessage ?? t('errors.failedToLoadCoupons'));
     } finally {
       setLoading(false);
     }

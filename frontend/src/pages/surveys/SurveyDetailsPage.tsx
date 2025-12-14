@@ -11,6 +11,7 @@ import LanguageSwitcher from '../../components/LanguageSwitcher';
 import LanguageTabs from '../../components/translation/LanguageTabs';
 import { MultilingualSurvey, SupportedLanguage } from '../../types/multilingual';
 import toast from 'react-hot-toast';
+import { logger } from '../../utils/logger';
 
 const SurveyDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -51,22 +52,22 @@ const SurveyDetailsPage: React.FC = () => {
       if (translationsData) {
         const multilingualData = {
           ...translationsData,
-          originalLanguage: (translationsData.original_language || 'th') as SupportedLanguage,
-          availableLanguages: (translationsData.available_languages || ['th']) as SupportedLanguage[],
+          originalLanguage: (translationsData.original_language ?? 'th') as SupportedLanguage,
+          availableLanguages: (translationsData.available_languages ?? ['th']) as SupportedLanguage[],
           translationStatus: 'none' as const,
-          translations: (translationsData.translations || {}) as { [language: string]: unknown }
+          translations: (translationsData.translations ?? {}) as { [language: string]: unknown }
         } as MultilingualSurvey;
 
         setMultilingualSurvey(multilingualData);
 
-        setSelectedLanguage((translationsData.original_language || 'th') as SupportedLanguage);
+        setSelectedLanguage((translationsData.original_language ?? 'th') as SupportedLanguage);
       }
     } catch (err) {
-      console.error('Error loading survey:', err);
+      logger.error('Error loading survey:', err);
       const errorMessage = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      setError(errorMessage || t('surveys.errors.loadFailed'));
+      setError(errorMessage ?? t('surveys.errors.loadFailed'));
       toast.error(t('surveys.errors.loadFailed'));
     } finally {
       setLoading(false);
@@ -94,9 +95,9 @@ const SurveyDetailsPage: React.FC = () => {
     type Translation = { title?: string; description?: string; questions?: unknown[] };
     return {
       ...survey,
-      title: (translation as Translation)?.title || survey.title,
-      description: (translation as Translation)?.description || survey.description,
-      questions: (translation as Translation)?.questions || survey.questions
+      title: (translation as Translation)?.title ?? survey.title,
+      description: (translation as Translation)?.description ?? survey.description,
+      questions: (translation as Translation)?.questions ?? survey.questions
     };
   }, [survey, multilingualSurvey, selectedLanguage]);
 
@@ -243,7 +244,7 @@ const SurveyDetailsPage: React.FC = () => {
 
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            {t('surveys.preview', { count: displayContent?.questions?.length || 0 })}
+            {t('surveys.preview', { count: displayContent?.questions?.length ?? 0 })}
           </h2>
           <SurveyPreview
             survey={(displayContent ?? survey) as Survey}

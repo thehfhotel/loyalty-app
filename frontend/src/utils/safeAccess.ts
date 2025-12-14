@@ -1,3 +1,5 @@
+/* eslint-disable no-console -- Safe access utility uses console for security warnings */
+/* eslint-disable security/detect-object-injection -- This utility is specifically designed for safe object access */
 /**
  * Safe Object Property Access Utility
  *

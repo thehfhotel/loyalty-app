@@ -1,3 +1,4 @@
+/* eslint-disable curly -- Test file uses single-line conditionals for concise error handling */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

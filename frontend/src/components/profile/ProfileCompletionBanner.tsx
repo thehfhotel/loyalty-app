@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { useAuthStore } from '../../store/authStore';
 import { userService } from '../../services/userService';
 import { notify } from '../../utils/notificationManager';
+import { logger } from '../../utils/logger';
 import { GenderField, OccupationField, InterestsField, DateOfBirthField } from './ProfileFormFields';
 
 interface ProfileStatus {
@@ -60,10 +61,10 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
         const response = await userService.getProfileCompletionStatus();
         setProfileStatus(response);
       } catch (error) {
-        console.error('Failed to check profile completion status:', error);
+        logger.error('Failed to check profile completion status:', error);
         // For debugging: log the full error details
         if (error instanceof Error) {
-          console.error('Error details:', error.message);
+          logger.error('Error details:', error.message);
         }
         // Set profile status to null on error to hide banner
         setProfileStatus(null);
@@ -187,7 +188,7 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
         default: {
           // Fallback for unknown fields - capitalize and remove underscores
           const formattedField = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-          console.warn(`Missing translation for profile field: ${field}`);
+          logger.warn(`Missing translation for profile field: ${field}`);
           return formattedField;
         }
       }

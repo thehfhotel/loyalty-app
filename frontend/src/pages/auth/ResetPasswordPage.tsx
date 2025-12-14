@@ -46,7 +46,7 @@ export default function ResetPasswordPage() {
       const errorMessage = error instanceof Error && 'response' in error
         ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
         : undefined;
-      toast.error(errorMessage || 'Failed to send reset link');
+      toast.error(errorMessage ?? 'Failed to send reset link');
     } finally {
       setIsLoading(false);
     }
@@ -64,7 +64,7 @@ export default function ResetPasswordPage() {
       const errorMessage = error instanceof Error && 'response' in error
         ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
         : undefined;
-      toast.error(errorMessage || 'Failed to reset password');
+      toast.error(errorMessage ?? 'Failed to reset password');
     } finally {
       setIsLoading(false);
     }
@@ -171,7 +171,7 @@ export default function ResetPasswordPage() {
                 <h3 className="text-sm font-medium text-green-800">Check your email</h3>
                 <div className="mt-2 text-sm text-green-700">
                   <p>
-                    If an account exists with that email address, we've sent a password reset
+                    If an account exists with that email address, we&apos;ve sent a password reset
                     link. Please check your email and follow the instructions.
                   </p>
                 </div>

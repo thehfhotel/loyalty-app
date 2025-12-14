@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
-import { 
-  FiArrowLeft, 
-  FiDownload, 
-  FiUsers, 
-  FiCheckCircle, 
+import {
+  FiArrowLeft,
+  FiDownload,
+  FiUsers,
+  FiCheckCircle,
   FiClock,
   FiBarChart,
   FiTrendingUp
@@ -14,6 +13,7 @@ import { Survey, SurveyResponse } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import toast from 'react-hot-toast';
+import { logger } from '../../utils/logger';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -63,7 +63,6 @@ interface AnalyticsData {
 
 const SurveyAnalytics: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -89,11 +88,11 @@ const SurveyAnalytics: React.FC = () => {
       const analyticsData = await surveyService.getSurveyAnalytics(id);
       setAnalytics(analyticsData);
     } catch (err) {
-      console.error('Error loading analytics:', err);
+      logger.error('Error loading analytics:', err);
       const errorMessage = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      setError(errorMessage || 'Failed to load analytics');
+      setError(errorMessage ?? 'Failed to load analytics');
       toast.error('Failed to load survey analytics');
     } finally {
       setLoading(false);
@@ -118,7 +117,7 @@ const SurveyAnalytics: React.FC = () => {
       window.URL.revokeObjectURL(url);
       toast.success('Analytics exported successfully');
     } catch (err) {
-      console.error('Error exporting analytics:', err);
+      logger.error('Error exporting analytics:', err);
       toast.error('Failed to export analytics');
     }
   };

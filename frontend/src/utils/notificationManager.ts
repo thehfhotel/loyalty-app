@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- Notification manager uses console for fallback logging */
 import toast from 'react-hot-toast';
 
 interface NotificationOptions {

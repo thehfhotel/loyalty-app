@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RedeemCouponRequest, RedeemCouponResponse, Coupon, UserActiveCoupon } from '../../types/coupon';
 import { couponService } from '../../services/couponService';
+import { logger } from '../../utils/logger';
+import { notify } from '../../utils/notificationManager';
 
 interface CouponScannerProps {
   onRedemptionComplete?: (result: RedeemCouponResponse) => void;
@@ -37,11 +39,11 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
         setCameraActive(true);
       }
     } catch (err) {
-      console.error('Error accessing camera:', err);
-      alert(t('coupons.cameraError'));
+      logger.error('Error accessing camera:', err);
+      notify.error(t('coupons.cameraError'));
       setScanMode('manual');
     }
-  }, [t, setScanMode, setCameraActive]);
+  }, [t]);
 
   const stopCamera = () => {
     if (videoRef.current?.srcObject) {
@@ -73,7 +75,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
       const result = await couponService.validateCoupon(code.trim());
       setValidationResult(result);
     } catch (err: unknown) {
-      console.error('Error validating coupon:', err);
+      logger.error('Error validating coupon:', err);
       const errorMessage = err instanceof Error && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'message' in err.response.data
         ? (err.response.data as { message: string }).message
         : t('errors.validationFailed');
@@ -107,7 +109,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
 
     const amount = parseFloat(originalAmount);
     if (isNaN(amount) || amount <= 0) {
-      alert(t('coupons.invalidAmount'));
+      notify.error(t('coupons.invalidAmount'));
       return;
     }
 
@@ -117,8 +119,8 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
       const request: RedeemCouponRequest = {
         qrCode: qrCode.trim(),
         originalAmount: amount,
-        transactionReference: transactionReference.trim() ?? undefined,
-        location: location.trim() ?? undefined,
+        transactionReference: transactionReference.trim() || undefined,
+        location: location.trim() || undefined,
         metadata: {
           redemptionChannel: 'staff_interface',
           timestamp: new Date().toISOString()
@@ -140,7 +142,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
         }
       }
     } catch (err: unknown) {
-      console.error('Error redeeming coupon:', err);
+      logger.error('Error redeeming coupon:', err);
       const errorMessage = err instanceof Error && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'message' in err.response.data
         ? (err.response.data as { message: string }).message
         : t('errors.redemptionFailed');
@@ -148,7 +150,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
         success: false,
         message: errorMessage,
         discountAmount: 0,
-        finalAmount: parseFloat(originalAmount) ?? 0
+        finalAmount: parseFloat(originalAmount) || 0
       };
       setRedemptionResult(errorResult);
     } finally {
@@ -157,7 +159,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
   };
 
   // Calculate preview of discount
-  const discountPreview = validationResult?.valid && originalAmount ? 
+  const discountPreview = validationResult?.valid && originalAmount ?
     couponService.calculateDiscount(validationResult.data as Coupon | UserActiveCoupon, parseFloat(originalAmount)) : null;
 
   return (
@@ -252,13 +254,13 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
                 <span className="mr-2">
                   {validationResult.valid ? '✅' : '❌'}
                 </span>
-                <span className="font-medium">{String(validationResult?.message || '')}</span>
+                <span className="font-medium">{String(validationResult?.message ?? '')}</span>
               </div>
               
               {validationResult && validationResult.valid && validationResult.data ? (
                 <div className="mt-2 text-sm text-green-700">
-                  <div className="font-medium">{(validationResult.data as Coupon | UserActiveCoupon)?.name || ''}</div>
-                  <div>{(validationResult.data as Coupon | UserActiveCoupon)?.description || ''}</div>
+                  <div className="font-medium">{(validationResult.data as Coupon | UserActiveCoupon)?.name ?? ''}</div>
+                  <div>{(validationResult.data as Coupon | UserActiveCoupon)?.description ?? ''}</div>
                   <div className="mt-1">
                     {t('coupons.value')}: {couponService.formatCouponValue(validationResult.data as Coupon | UserActiveCoupon)}
                   </div>

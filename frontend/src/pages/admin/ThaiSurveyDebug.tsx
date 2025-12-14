@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- Debug tool requires console logging for diagnostics */
 import React, { useState } from 'react';
 import { surveyService } from '../../services/surveyService';
 import { CreateSurveyRequest } from '../../types/survey';
@@ -101,7 +102,7 @@ const ThaiSurveyDebug: React.FC = () => {
 
   // Type guard for axios-like error
   const getAxiosError = (error: Error | null) => {
-    if (!error) return null;
+    if (!error) {return null;}
     if ('response' in error) {
       return error as unknown as { response?: { status?: number; statusText?: string; data?: Record<string, unknown> }; message?: string };
     }
@@ -280,9 +281,9 @@ const ThaiSurveyDebug: React.FC = () => {
             <h2 className="text-lg font-semibold text-yellow-900 mb-2">📝 Instructions</h2>
             <ol className="list-decimal list-inside text-yellow-800 space-y-1">
               <li>Open browser dev tools console for detailed logging</li>
-              <li>Click "Create Thai Survey" to reproduce the 400 error</li>
+              <li>Click &quot;Create Thai Survey&quot; to reproduce the 400 error</li>
               <li>Check the console for detailed request/response data</li>
-              <li>Check the "Last Error" section above for validation details</li>
+              <li>Check the &quot;Last Error&quot; section above for validation details</li>
               <li>Check backend server logs for additional debugging info</li>
             </ol>
           </div>

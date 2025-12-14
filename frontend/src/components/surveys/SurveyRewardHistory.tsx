@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FiGift, FiUser, FiCalendar, FiSearch } from 'react-icons/fi';
 import toast from 'react-hot-toast';
+import { logger } from '../../utils/logger';
 import { SurveyRewardHistory } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 
@@ -28,7 +29,7 @@ const SurveyRewardHistoryComponent: React.FC<SurveyRewardHistoryProps> = ({
       setRewards(response.rewards);
       setTotalPages(response.totalPages);
     } catch (error: unknown) {
-      console.error('Error loading reward history:', error);
+      logger.error('Error loading reward history:', error);
       toast.error(t('surveys.couponAssignment.loadError'));
     } finally {
       setLoading(false);

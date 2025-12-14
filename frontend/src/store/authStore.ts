@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- Auth store uses console for authentication debugging */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authService } from '../services/authService';

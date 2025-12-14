@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { 
-  loyaltyService, 
-  UserLoyaltyStatus, 
-  Tier, 
+import {
+  loyaltyService,
+  UserLoyaltyStatus,
+  Tier,
   PointsTransaction,
   PointsCalculation
 } from '../../services/loyaltyService';
@@ -12,6 +12,7 @@ import PointsBalance from '../../components/loyalty/PointsBalance';
 import TierStatus from '../../components/loyalty/TierStatus';
 import TransactionList from '../../components/loyalty/TransactionList';
 import DashboardButton from '../../components/navigation/DashboardButton';
+import { logger } from '../../utils/logger';
 
 export default function LoyaltyDashboard() {
   const { t } = useTranslation();
@@ -39,7 +40,7 @@ export default function LoyaltyDashboard() {
       setPointsCalculation(calculationResult);
       setTransactions(historyResult.transactions);
     } catch (error) {
-      console.error('Error loading loyalty data:', error);
+      logger.error('Error loading loyalty data:', error);
       toast.error(t('errors.networkError'));
     } finally {
       setIsLoading(false);

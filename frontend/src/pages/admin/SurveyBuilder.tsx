@@ -10,6 +10,7 @@ import QuestionEditor from '../../components/surveys/QuestionEditor';
 import SurveyPreview from '../../components/surveys/SurveyPreview';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import toast from 'react-hot-toast';
+import { logger } from '../../utils/logger';
 
 // Validation utility types and functions
 interface QuestionValidationError {
@@ -201,7 +202,7 @@ const SurveyBuilder: React.FC = () => {
       const surveyData = await surveyService.getSurveyById(id);
       setSurvey(surveyData);
     } catch (err) {
-      console.error('Error loading survey:', err);
+      logger.error('Error loading survey:', err);
       toast.error(t('surveys.admin.messages.loadError'));
       navigate('/admin/surveys');
     } finally {
@@ -400,7 +401,7 @@ const SurveyBuilder: React.FC = () => {
 
       // Debug logging for development (only in non-production environments)
       if (process.env.NODE_ENV === 'development') {
-        console.log('📊 Survey submission:', {
+        logger.info('📊 Survey submission:', {
           title: surveyData.title,
           questionCount: surveyData.questions.length,
           hasThaiContent: /[\u0E00-\u0E7F]/.test(JSON.stringify(surveyData)),
@@ -443,7 +444,7 @@ const SurveyBuilder: React.FC = () => {
 
         // Log only essential info for debugging
         if (process.env.NODE_ENV === 'development') {
-          console.warn('Survey validation failed:', {
+          logger.warn('Survey validation failed:', {
             status: axiosError?.response?.status,
             message: errorMessage,
             validationErrors: backendErrors
@@ -457,7 +458,7 @@ const SurveyBuilder: React.FC = () => {
         });
         
         // Log full error details for non-validation errors
-        console.error('Survey save failed:', err);
+        logger.error('Survey save failed:', err);
       }
     } finally {
       setSaving(false);

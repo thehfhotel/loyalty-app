@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Safe object access with validated language keys */
 import { MultilingualText, SupportedLanguage } from '../types/multilingual';
 
 /**

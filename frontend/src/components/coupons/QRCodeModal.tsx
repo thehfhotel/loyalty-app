@@ -2,6 +2,8 @@ import React, { useRef, useState, useEffect } from 'react';
 import { UserActiveCoupon } from '../../types/coupon';
 import { useTranslation } from 'react-i18next';
 import QRCode from 'qrcode';
+import { logger } from '../../utils/logger';
+import { notify } from '../../utils/notificationManager';
 
 interface QRCodeModalProps {
   coupon: UserActiveCoupon;
@@ -37,7 +39,7 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
         });
         setQrCodeDataURL(dataURL);
       } catch (error) {
-        console.error('Error generating QR code:', error);
+        logger.error('Error generating QR code:', error);
       } finally {
         setIsGeneratingQR(false);
       }
@@ -49,9 +51,9 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(coupon.code);
-      alert(t('coupons.couponCodeCopied', 'Coupon code copied!'));
+      notify.success(t('coupons.couponCodeCopied', 'Coupon code copied!'));
     } catch (err) {
-      console.error('Failed to copy coupon code:', err);
+      logger.error('Failed to copy coupon code:', err);
     }
   };
 

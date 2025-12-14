@@ -32,6 +32,7 @@ import AdminTransactionHistoryPage from './pages/admin/AdminTransactionHistoryPa
 import { useEffect, useState, useRef } from 'react';
 import { checkPWAInstallPrompt } from './utils/pwaUtils';
 import { notificationService } from './services/notificationService';
+import { logger } from './utils/logger';
 
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -48,15 +49,15 @@ function App() {
     const initializeAuth = async () => {
       // Prevent duplicate initialization (React StrictMode causes double mounting)
       if (initializingRef.current) {
-        console.log('Auth initialization already in progress, skipping duplicate');
+        logger.debug('Auth initialization already in progress, skipping duplicate');
         return;
       }
-      
+
       initializingRef.current = true;
-      
+
       // Set maximum timeout for initialization to prevent infinite loading
       const initTimeout = setTimeout(() => {
-        console.warn('Auth initialization timeout - forcing app to load');
+        logger.warn('Auth initialization timeout - forcing app to load');
         setIsInitialized(true);
       }, 5000); // 5 second max timeout
 
@@ -74,7 +75,7 @@ function App() {
             const parsed = JSON.parse(storedAuth);
             // Validate structure - if malformed, clear it
             if (!parsed.state || typeof parsed.state !== 'object') {
-              console.warn('Corrupted auth storage detected, clearing');
+              logger.warn('Corrupted auth storage detected, clearing');
               localStorage.removeItem('auth-storage');
               authStore.clearAuth();
               clearTimeout(initTimeout);
@@ -83,7 +84,7 @@ function App() {
             }
           }
         } catch (parseError) {
-          console.warn('Failed to parse auth storage, clearing:', parseError);
+          logger.warn('Failed to parse auth storage, clearing:', parseError);
           localStorage.removeItem('auth-storage');
           authStore.clearAuth();
           clearTimeout(initTimeout);
@@ -93,7 +94,7 @@ function App() {
         
         // Quick consistency check - if inconsistent state, clear immediately
         if (authStore.isAuthenticated && (!authStore.accessToken || !authStore.refreshToken)) {
-          console.warn('Auth state inconsistent (authenticated but missing tokens), clearing');
+          logger.warn('Auth state inconsistent (authenticated but missing tokens), clearing');
           authStore.clearAuth();
           clearTimeout(initTimeout);
           setIsInitialized(true);
@@ -110,20 +111,20 @@ function App() {
             });
             
             const isValid = await Promise.race([validationPromise, timeoutPromise]);
-            
+
             if (!isValid) {
-              console.warn('Stored auth tokens are invalid, clearing auth state');
+              logger.warn('Stored auth tokens are invalid, clearing auth state');
               authStore.clearAuth();
             }
           } catch (error) {
-            console.warn('Auth validation failed during initialization:', error instanceof Error ? error.message : error);
+            logger.warn('Auth validation failed during initialization:', error instanceof Error ? error.message : error);
             // Don't clear auth on rate limit or network errors during page refresh
             if (error instanceof Error && (error.message.includes('429') || error.message.includes('rate limit'))) {
-              console.log('Rate limit during auth init, keeping user logged in');
+              logger.debug('Rate limit during auth init, keeping user logged in');
             } else if (error && typeof error === 'object' && 'response' in error) {
               const httpError = error as { response?: { status?: number } };
               if (httpError.response?.status === 429) {
-                console.log('Rate limit HTTP error during auth init, keeping user logged in');
+                logger.debug('Rate limit HTTP error during auth init, keeping user logged in');
               } else {
                 // Clear potentially corrupted auth state on other HTTP errors
                 authStore.clearAuth();
@@ -138,15 +139,15 @@ function App() {
         // Only log in development mode
         if (import.meta.env?.DEV) {
           const finalState = useAuthStore.getState();
-          console.log('App initialized. Final auth state:', { 
-            isAuthenticated: finalState.isAuthenticated, 
+          logger.debug('App initialized. Final auth state:', {
+            isAuthenticated: finalState.isAuthenticated,
             user: finalState.user?.email,
             hasAccessToken: !!finalState.accessToken,
             hasRefreshToken: !!finalState.refreshToken
           });
         }
       } catch (error) {
-        console.error('Critical error during auth initialization:', error);
+        logger.error('Critical error during auth initialization:', error);
         // Clear auth state on any critical error
         useAuthStore.getState().clearAuth();
       } finally {
@@ -175,11 +176,11 @@ function App() {
             // Auto-subscribe to notifications for PWA users
             const subscribed = await notificationService.subscribeToPush(user.id);
             if (subscribed) {
-              console.log('Successfully subscribed to push notifications');
+              logger.debug('Successfully subscribed to push notifications');
             }
           }
         } catch (error) {
-          console.error('Failed to initialize PWA features:', error);
+          logger.error('Failed to initialize PWA features:', error);
         }
       };
 

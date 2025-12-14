@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { 
-  FiArrowLeft, 
-  FiSend, 
-  FiUsers, 
+import {
+  FiArrowLeft,
+  FiSend,
+  FiUsers,
   FiMail,
   FiClock,
   FiCheckCircle,
@@ -19,6 +19,7 @@ import { surveyService } from '../../services/surveyService';
 import { User, userService } from '../../services/userService';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import toast from 'react-hot-toast';
+import { logger } from '../../utils/logger';
 
 interface InvitationStats {
   total: number;
@@ -86,7 +87,7 @@ const SurveyInvitations: React.FC = () => {
       setStats(newStats);
       
     } catch (err) {
-      console.error('Error loading data:', err);
+      logger.error('Error loading data:', err);
       toast.error('Failed to load survey invitations');
     } finally {
       setLoading(false);
@@ -94,6 +95,7 @@ const SurveyInvitations: React.FC = () => {
   };
 
   const handleSendInvitations = async () => {
+    // eslint-disable-next-line no-alert -- User confirmation for bulk action
     if (!confirm('Are you sure you want to send invitations to all eligible users?')) {
       return;
     }
@@ -109,11 +111,11 @@ const SurveyInvitations: React.FC = () => {
       toast.success(`Successfully sent ${result.sent} invitations`);
       loadData();
     } catch (err) {
-      console.error('Error sending invitations:', err);
+      logger.error('Error sending invitations:', err);
       const errorMessage = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      toast.error(errorMessage || 'Failed to send invitations');
+      toast.error(errorMessage ?? 'Failed to send invitations');
     } finally {
       setSending(false);
     }
@@ -125,7 +127,7 @@ const SurveyInvitations: React.FC = () => {
       toast.success('Invitation resent successfully');
       loadData();
     } catch (err) {
-      console.error('Error resending invitation:', err);
+      logger.error('Error resending invitation:', err);
       toast.error('Failed to resend invitation');
     }
   };
@@ -137,7 +139,7 @@ const SurveyInvitations: React.FC = () => {
       const customerUsers = result.users.filter(user => user.role === 'customer');
       setUsers(customerUsers);
     } catch (err) {
-      console.error('Error loading users:', err);
+      logger.error('Error loading users:', err);
       toast.error('Failed to load users');
     } finally {
       setLoadingUsers(false);
@@ -167,6 +169,7 @@ const SurveyInvitations: React.FC = () => {
       return;
     }
 
+    // eslint-disable-next-line no-alert -- User confirmation for bulk action
     if (!confirm(`Are you sure you want to send invitations to ${selectedUsers.size} selected users?`)) {
       return;
     }
@@ -192,11 +195,11 @@ const SurveyInvitations: React.FC = () => {
       setSelectedUsers(new Set());
       loadData();
     } catch (err) {
-      console.error('Error sending invitations to users:', err);
+      logger.error('Error sending invitations to users:', err);
       const errorMessage = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      toast.error(errorMessage || 'Failed to send invitations');
+      toast.error(errorMessage ?? 'Failed to send invitations');
     } finally {
       setSendingToUsers(false);
     }

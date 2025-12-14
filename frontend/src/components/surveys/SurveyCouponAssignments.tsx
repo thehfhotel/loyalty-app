@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FiPlus, FiEdit, FiTrash2, FiGift, FiUsers } from 'react-icons/fi';
 import toast from 'react-hot-toast';
+import { logger } from '../../utils/logger';
 import { 
   SurveyCouponDetails, 
   AssignCouponToSurveyRequest, 
@@ -367,7 +368,7 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
       setAssignments(assignmentsResponse.assignments);
       setCoupons(couponsResponse.coupons);
     } catch (error) {
-      console.error('Error loading survey coupon assignments:', error);
+      logger.error('Error loading survey coupon assignments:', error);
       toast.error(t('surveys.admin.couponAssignment.loadError'));
     } finally {
       setLoading(false);
@@ -381,11 +382,11 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
       setShowAssignModal(false);
       loadData();
     } catch (error) {
-      console.error('Error assigning coupon:', error);
+      logger.error('Error assigning coupon:', error);
       const errorMessage = error instanceof Error && 'response' in error
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      toast.error(errorMessage || t('surveys.admin.couponAssignment.assignError'));
+      toast.error(errorMessage ?? t('surveys.admin.couponAssignment.assignError'));
     }
   };
 
@@ -403,15 +404,16 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
       setEditingAssignment(null);
       loadData();
     } catch (error) {
-      console.error('Error updating assignment:', error);
+      logger.error('Error updating assignment:', error);
       const errorMessage = error instanceof Error && 'response' in error
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      toast.error(errorMessage || t('surveys.admin.couponAssignment.updateError'));
+      toast.error(errorMessage ?? t('surveys.admin.couponAssignment.updateError'));
     }
   };
 
   const handleRemoveAssignment = async (assignment: SurveyCouponDetails) => {
+    // eslint-disable-next-line no-alert -- User confirmation for destructive action
     if (!confirm(t('surveys.admin.couponAssignment.confirmRemove'))) {return;}
 
     try {
@@ -419,11 +421,11 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
       toast.success(t('surveys.admin.couponAssignment.removeSuccess'));
       loadData();
     } catch (error) {
-      console.error('Error removing assignment:', error);
+      logger.error('Error removing assignment:', error);
       const errorMessage = error instanceof Error && 'response' in error
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      toast.error(errorMessage || t('surveys.admin.couponAssignment.removeError'));
+      toast.error(errorMessage ?? t('surveys.admin.couponAssignment.removeError'));
     }
   };
 

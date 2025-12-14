@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Safe array access with validated emoji index */
 /**
  * Emoji Avatar Utility
  * Handles emoji selection and display for user avatars

@@ -3,6 +3,7 @@ import { FiBell, FiCheck, FiX, FiTrash2 } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
 import { formatDistanceToNow } from 'date-fns';
+import { logger } from '../../utils/logger';
 
 interface NotificationData {
   coupon?: {
@@ -79,10 +80,10 @@ export default function NotificationCenter() {
           notifications: result.notifications ?? []
         });
       } else {
-        console.error('Failed to fetch notifications');
+        logger.error('Failed to fetch notifications');
       }
     } catch (error) {
-      console.error('Error fetching notifications:', error);
+      logger.error('Error fetching notifications:', error);
     } finally {
       setIsLoading(false);
     }
@@ -121,7 +122,7 @@ export default function NotificationCenter() {
         }));
       }
     } catch (error) {
-      console.error('Error marking notifications as read:', error);
+      logger.error('Error marking notifications as read:', error);
     }
   };
 
@@ -150,7 +151,7 @@ export default function NotificationCenter() {
         }));
       }
     } catch (error) {
-      console.error('Error marking all notifications as read:', error);
+      logger.error('Error marking all notifications as read:', error);
     }
   };
 
@@ -175,7 +176,7 @@ export default function NotificationCenter() {
         }));
       }
     } catch (error) {
-      console.error('Error deleting notification:', error);
+      logger.error('Error deleting notification:', error);
     }
   };
 

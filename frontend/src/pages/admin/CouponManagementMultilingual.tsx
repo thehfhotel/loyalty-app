@@ -9,6 +9,7 @@ import LanguageTabs from '../../components/translation/LanguageTabs';
 import TranslationButton from '../../components/translation/TranslationButton';
 import CouponAssignmentsModal from '../../components/admin/CouponAssignmentsModal';
 import toast from 'react-hot-toast';
+import { logger } from '../../utils/logger';
 
 const CouponManagementMultilingual: React.FC = () => {
   const { t } = useTranslation();
@@ -84,7 +85,7 @@ const CouponManagementMultilingual: React.FC = () => {
       setTotalPages(response.totalPages);
     } catch (err) {
       setError(t('coupons.admin.errors.loadFailed'));
-      console.error('Failed to load coupons:', err);
+      logger.error('Failed to load coupons:', err);
     } finally {
       setLoading(false);
     }
@@ -101,7 +102,7 @@ const CouponManagementMultilingual: React.FC = () => {
             translations[language] = translatedCoupon;
           }
         } catch (error) {
-          console.warn(`Failed to load ${language} translation:`, error);
+          logger.warn(`Failed to load ${language} translation:`, error);
         }
       }
       
@@ -123,7 +124,7 @@ const CouponManagementMultilingual: React.FC = () => {
       setTranslationStatus(newTranslationStatus);
       
     } catch (error) {
-      console.error('Failed to load coupon translations:', error);
+      logger.error('Failed to load coupon translations:', error);
     }
   };
 
@@ -167,7 +168,7 @@ const CouponManagementMultilingual: React.FC = () => {
       pollTranslationProgress(translationJob.id, targetLanguages, couponId);
 
     } catch (error) {
-      console.error('Translation failed:', error);
+      logger.error('Translation failed:', error);
       toast.error(t('translation.translationFailed'));
       
       // Reset status on error
@@ -218,7 +219,7 @@ const CouponManagementMultilingual: React.FC = () => {
         }
         
       } catch (error) {
-        console.error('Failed to check translation status:', error);
+        logger.error('Failed to check translation status:', error);
         clearInterval(pollInterval);
       }
     }, 2000);
@@ -251,7 +252,7 @@ const CouponManagementMultilingual: React.FC = () => {
       resetCreateForm();
       loadCoupons(page);
     } catch (err) {
-      console.error('Failed to create coupon:', err);
+      logger.error('Failed to create coupon:', err);
       const errorMessage = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
         : undefined;
@@ -298,7 +299,7 @@ const CouponManagementMultilingual: React.FC = () => {
       setDeleteConfirmText('');
       loadCoupons(page);
     } catch (err) {
-      console.error('Failed to delete coupon:', err);
+      logger.error('Failed to delete coupon:', err);
       toast.error(t('coupons.admin.errors.deleteFailed'));
     }
   };

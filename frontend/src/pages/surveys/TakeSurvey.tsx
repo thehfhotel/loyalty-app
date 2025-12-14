@@ -10,6 +10,7 @@ import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import LanguageTabs from '../../components/translation/LanguageTabs';
 import { MultilingualSurvey, SupportedLanguage } from '../../types/multilingual';
+import { logger } from '../../utils/logger';
 
 const TakeSurvey: React.FC = () => {
   const { t } = useTranslation();
@@ -84,7 +85,7 @@ const TakeSurvey: React.FC = () => {
         setCurrentQuestion(0);
       }
     } catch (err) {
-      console.error('Error loading survey:', err);
+      logger.error('Error loading survey:', err);
       const errorMessage = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
@@ -113,7 +114,7 @@ const TakeSurvey: React.FC = () => {
         setCurrentQuestion(displayContent?.questions?.length ?? 0);
       }
     } catch (err) {
-      console.error('Error saving progress:', err);
+      logger.error('Error saving progress:', err);
       const errorMessage = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;

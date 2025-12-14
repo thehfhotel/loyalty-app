@@ -47,7 +47,7 @@ export default function AdminTransactionHistoryPage() {
   };
 
   const formatChange = (value: number | null | undefined) => {
-    if (value === null || value === undefined || value === 0) return '-';
+    if (value === null || value === undefined || value === 0) {return '-';}
     const sign = value > 0 ? '+' : '';
     return `${sign}${value}`;
   };

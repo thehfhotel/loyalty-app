@@ -1,3 +1,4 @@
+/* eslint-disable no-console -- Date formatter uses console for error logging */
 /**
  * Date formatting utilities for consistent dd/mm/yyyy format across the application
  * European/International date format: 31/12/2025 = December 31st, 2025

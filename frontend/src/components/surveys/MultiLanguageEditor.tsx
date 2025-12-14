@@ -59,7 +59,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
   const addLanguage = (langCode: string) => {
     const newTranslations = {
       ...value,
-      [langCode]: value['en'] || '' // Default to English text
+      [langCode]: value['en'] ?? '' // Default to English text
     };
     onChange(newTranslations);
     setActiveTab(langCode);
@@ -80,7 +80,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
 
   // Provide a safe fallback - supportedLanguages always has 'en' as first element
   const currentLang = supportedLanguages.find(lang => lang.code === activeTab) ?? supportedLanguages[0] ?? { code: 'en', name: 'English', flag: '🇺🇸' };
-  const currentText = value[activeTab] || '';
+  const currentText = value[activeTab] ?? '';
 
   return (
     <div className="space-y-3">
@@ -162,7 +162,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
           </span>
           {activeTab !== 'en' && value['en'] && (
             <button
-              onClick={() => handleTextChange(activeTab, value['en'] || '')}
+              onClick={() => handleTextChange(activeTab, value['en'] ?? '')}
               className="text-xs text-blue-600 hover:text-blue-800"
             >
               Copy from English

@@ -4,8 +4,10 @@
  * Following proven pattern from coupon.test.ts
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Test mocks require flexible typing */
+
 import request from 'supertest';
-import { Express } from 'express';
+import { Express, Request, Response, NextFunction } from 'express';
 import authRoutes from '../../../routes/auth';
 import { createTestApp } from '../../fixtures';
 
@@ -30,7 +32,7 @@ jest.mock('../../../services/authService', () => {
 });
 
 jest.mock('../../../middleware/auth', () => ({
-  authenticate: (req: any, _res: any, next: any) => {
+  authenticate: (req: Request, _res: Response, next: NextFunction) => {
     // Auth routes that require authentication: /me and /logout
     const requiresAuth = req.path === '/me' || req.path === '/logout';
 
@@ -80,7 +82,7 @@ describe('Auth Routes Integration Tests', () => {
         },
       };
 
-      mockAuthService.register.mockResolvedValue(mockResult as any);
+      mockAuthService.register.mockResolvedValue(mockResult as Awaited<ReturnType<typeof mockAuthService.register>>);
 
       const response = await request(app)
         .post('/api/auth/register')
@@ -156,7 +158,7 @@ describe('Auth Routes Integration Tests', () => {
         },
       };
 
-      mockAuthService.login.mockResolvedValue(mockResult as any);
+      mockAuthService.login.mockResolvedValue(mockResult as Awaited<ReturnType<typeof mockAuthService.login>>);
 
       const response = await request(app)
         .post('/api/auth/login')
@@ -263,7 +265,7 @@ describe('Auth Routes Integration Tests', () => {
         updatedAt: new Date().toISOString(),
       };
 
-      mockAuthService.getUserProfile.mockResolvedValue(mockUser as any);
+      mockAuthService.getUserProfile.mockResolvedValue(mockUser as Awaited<ReturnType<typeof mockAuthService.getUserProfile>>);
 
       const response = await request(app)
         .get('/api/auth/me');

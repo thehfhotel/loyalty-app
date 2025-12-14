@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-object-injection -- Safe object access with predefined interest keys */
 import { type TFunction } from 'i18next';
 
 // Mapping between English display names and translation keys

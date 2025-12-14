@@ -6,6 +6,9 @@
  * Coverage Target: ~2-3% contribution
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Test mocks require flexible typing */
+/* eslint-disable @typescript-eslint/no-unused-vars -- Test setup may have intentionally unused variables */
+
 import request from 'supertest';
 import { Express } from 'express';
 import routes from '../../../routes/membership';

@@ -6,6 +6,9 @@
  * Coverage Target: Comprehensive route testing
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Test mocks require flexible typing */
+/* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- Boolean OR is intentional in test setup */
+
 import request from 'supertest';
 import { Express } from 'express';
 import routes from '../../../routes/notifications';

@@ -4,6 +4,8 @@
  * Following proven pattern from coupon.test.ts
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Test mocks require flexible typing */
+
 import request from 'supertest';
 import { Express } from 'express';
 import routes from '../../../routes/loyalty';

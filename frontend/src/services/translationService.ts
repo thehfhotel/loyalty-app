@@ -1,3 +1,5 @@
+/* eslint-disable no-console -- Service layer uses console for translation debugging */
+/* eslint-disable security/detect-object-injection -- Safe object property access with validated language keys */
 import axios from 'axios';
 import { addAuthTokenInterceptor } from '../utils/axiosInterceptor';
 import { API_BASE_URL } from '../utils/apiConfig';

@@ -6,6 +6,7 @@ import { surveyService } from '../../services/surveyService';
 import SurveyPreview from '../../components/surveys/SurveyPreview';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import toast from 'react-hot-toast';
+import { logger } from '../../utils/logger';
 
 const SurveyPreviewPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -34,11 +35,11 @@ const SurveyPreviewPage: React.FC = () => {
       const surveyData = await surveyService.getSurveyById(id);
       setSurvey(surveyData);
     } catch (err) {
-      console.error('Error loading survey:', err);
+      logger.error('Error loading survey:', err);
       const errorMessage = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
-      setError(errorMessage || 'Failed to load survey');
+      setError(errorMessage ?? 'Failed to load survey');
       toast.error('Failed to load survey');
     } finally {
       setLoading(false);

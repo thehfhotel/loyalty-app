@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { userService, UserProfile } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
+import { logger } from '../utils/logger';
 import { FiCopy, FiSettings } from 'react-icons/fi';
 import EmailDisplay from '../components/common/EmailDisplay';
 import MainLayout from '../components/layout/MainLayout';
@@ -84,7 +85,7 @@ export default function ProfilePage() {
       });
     } catch (error: unknown) {
       notify.error(t('profile.profileLoadError'));
-      console.error('Profile load error:', error);
+      logger.error('Profile load error:', error);
     } finally {
       setIsLoading(false);
     }
@@ -208,6 +209,7 @@ export default function ProfilePage() {
   };
 
   const handleDeleteAvatar = async () => {
+    // eslint-disable-next-line no-alert -- User confirmation for destructive action
     if (!confirm(t('profile.confirmRemovePhoto'))) {
       return;
     }

@@ -33,7 +33,7 @@ const MultiLanguageSurvey: React.FC<MultiLanguageSurveyProps> = ({
 
   const getTranslatedText = (textObj: Record<string, string> | string, fallback = '') => {
     if (typeof textObj === 'string') {return textObj;}
-    return textObj[currentLanguage] || textObj['en'] || fallback;
+    return textObj[currentLanguage] ?? textObj['en'] ?? fallback;
   };
 
   return (

@@ -6,8 +6,10 @@
  * Coverage Target: ~2-3% contribution
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Test mocks require flexible typing */
+
 import request from 'supertest';
-import { Express } from 'express';
+import { Express, Request, Response, NextFunction } from 'express';
 import couponRoutes from '../../../routes/coupon';
 import { createTestApp } from '../../fixtures';
 
@@ -37,7 +39,7 @@ jest.mock('../../../services/couponService', () => ({
 }));
 
 jest.mock('../../../middleware/auth', () => ({
-  authenticate: (req: any, _res: any, next: any) => {
+  authenticate: (req: Request, _res: Response, next: NextFunction) => {
     // Admin routes: POST /, PUT, DELETE, GET /analytics, GET /admin paths, POST /assign, POST /user-coupons
     const adminPaths = ['/analytics', '/assign', '/admin', '/user-coupons', '/redemptions', '/assignments'];
     const isPOST = req.method === 'POST' && (req.path === '/' || adminPaths.some(p => req.path.includes(p)));
@@ -58,7 +60,7 @@ jest.mock('../../../middleware/auth', () => ({
     };
     next();
   },
-  requireAdmin: (req: any, _res: any, next: any) => {
+  requireAdmin: (req: Request, _res: Response, next: NextFunction) => {
     req.user = {
       id: 'admin-user-id',
       email: 'admin@example.com',
@@ -101,7 +103,7 @@ describe('Coupon Routes Integration Tests', () => {
         assignedAt: new Date(),
         effectiveExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         expiringSoon: false,
-      } as any);
+      } as Awaited<ReturnType<typeof mockCouponService.getUserCouponByQR>>);
 
       const response = await request(app)
         .get('/api/coupons/validate/QR-WELCOME10-ABC123');
@@ -128,7 +130,7 @@ describe('Coupon Routes Integration Tests', () => {
         assignedAt: new Date(),
         effectiveExpiry: new Date(Date.now() - 24 * 60 * 60 * 1000),
         expiringSoon: false,
-      } as any);
+      } as Awaited<ReturnType<typeof mockCouponService.getUserCouponByQR>>);
 
       const response = await request(app)
         .get('/api/coupons/validate/QR-EXPIRED-XYZ789');
@@ -155,7 +157,7 @@ describe('Coupon Routes Integration Tests', () => {
         assignedAt: new Date().toISOString(),
         effectiveExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         expiringSoon: false,
-      } as any);
+      } as Awaited<ReturnType<typeof mockCouponService.getUserCouponByQR>>);
 
       const response = await request(app)
         .get('/api/coupons/validate/QR-USED-COUPON');

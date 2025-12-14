@@ -12,6 +12,7 @@ import TranslationButton from '../../components/translation/TranslationButton';
 import QuestionEditor from '../../components/surveys/QuestionEditor';
 import SurveyPreview from '../../components/surveys/SurveyPreview';
 import toast from 'react-hot-toast';
+import { logger } from '../../utils/logger';
 
 const SurveyBuilderMultilingual: React.FC = () => {
   const { t } = useTranslation();
@@ -89,7 +90,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
         await loadTranslations(id, (survey.available_languages as SupportedLanguage[]) ?? [originalLang]);
       }
     } catch (error) {
-      console.error('Failed to load survey:', error);
+      logger.error('Failed to load survey:', error);
       toast.error(t('surveys.admin.errors.loadFailed'));
     } finally {
       setLoading(false);
@@ -107,7 +108,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
             translations[language] = translatedSurvey;
           }
         } catch (error) {
-          console.warn(`Failed to load ${language} translation:`, error);
+          logger.warn(`Failed to load ${language} translation:`, error);
         }
       }
       
@@ -127,9 +128,9 @@ const SurveyBuilderMultilingual: React.FC = () => {
       
       setMultilingualData(newMultilingualData);
       setTranslationStatus(newTranslationStatus);
-      
+
     } catch (error) {
-      console.error('Failed to load translations:', error);
+      logger.error('Failed to load translations:', error);
     }
   };
 
@@ -178,7 +179,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
       pollTranslationProgress(translationJob.id, targetLanguages);
 
     } catch (error) {
-      console.error('Translation failed:', error);
+      logger.error('Translation failed:', error);
       toast.error(t('translation.translationFailed'));
       
       // Reset status on error
@@ -231,7 +232,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
         }
         
       } catch (error) {
-        console.error('Failed to check translation status:', error);
+        logger.error('Failed to check translation status:', error);
         clearInterval(pollInterval);
       }
     }, 2000);
@@ -326,7 +327,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
       }
 
     } catch (error) {
-      console.error('Save failed:', error);
+      logger.error('Save failed:', error);
       toast.error(t('surveys.admin.errors.saveFailed'));
     } finally {
       setSaving(false);
@@ -349,7 +350,7 @@ const SurveyBuilderMultilingual: React.FC = () => {
         // The save will redirect to edit mode where user can publish
       }
     } catch (error) {
-      console.error('Publish failed:', error);
+      logger.error('Publish failed:', error);
       toast.error(t('surveys.admin.errors.publishFailed'));
     } finally {
       setSaving(false);

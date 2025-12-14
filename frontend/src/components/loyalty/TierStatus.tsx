@@ -1,6 +1,7 @@
 import { UserLoyaltyStatus, Tier } from '../../services/loyaltyService';
 import { useTranslation } from 'react-i18next';
 import { FiChevronUp, FiAward } from 'react-icons/fi';
+import { logger } from '../../utils/logger';
 
 interface TierStatusProps {
   loyaltyStatus: UserLoyaltyStatus;
@@ -19,7 +20,7 @@ export default function TierStatus({ loyaltyStatus, allTiers }: TierStatusProps)
       const percentage = Number(loyaltyStatus.progress_percentage);
       return isNaN(percentage) ? 0 : percentage;
     } catch (error) {
-      console.warn('Error converting progress_percentage to number:', error);
+      logger.warn('Error converting progress_percentage to number:', error);
       return 0;
     }
   };
