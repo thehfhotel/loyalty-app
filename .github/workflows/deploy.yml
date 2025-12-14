@@ -2449,13 +2449,16 @@ jobs:
             echo "Installing $service dependencies..."
             cd "$DEPLOY_DIR/$dir"
             
-            # Use npm ci for reproducible installs
-            if npm ci --prefer-offline --no-audit --ignore-scripts 2>/dev/null; then
-              echo "✅ $service dependencies installed"
-            else
-              echo "🔄 Fallback install for $service..."
-              npm install --prefer-offline --no-audit
-            fi
+            # Use npm ci for reproducible installs with integrity verification
+            # npm ci strictly follows package-lock.json and verifies integrity hashes
+            # No fallback to npm install - fail fast if lock file is out of sync
+            npm ci --prefer-offline --no-audit --ignore-scripts || {
+              echo "❌ npm ci failed for $service"
+              echo "   Ensure package-lock.json is committed and in sync with package.json"
+              echo "   Run 'npm install' locally and commit the updated lock file"
+              exit 1
+            }
+            echo "✅ $service dependencies installed (integrity verified)"
           }
           
           # Install in parallel
