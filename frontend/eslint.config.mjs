@@ -115,7 +115,7 @@ export default tseslint.config(
         'varsIgnorePattern': '^_',
         'caughtErrorsIgnorePattern': '^_',
       }],
-      '@typescript-eslint/prefer-nullish-coalescing': 'warn', // Temporarily downgraded - 32 violations to fix
+      '@typescript-eslint/prefer-nullish-coalescing': 'error',
       '@typescript-eslint/prefer-optional-chain': 'error',
       '@typescript-eslint/no-non-null-assertion': 'error',
 

@@ -16,6 +16,7 @@ import { Survey, SurveyQuestion } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 import toast from 'react-hot-toast';
 import { logger } from '../../utils/logger';
+import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 
 interface SurveyTemplate {
   id: string;
@@ -253,6 +254,8 @@ const SurveyTemplates: React.FC = () => {
   const [templates, setTemplates] = useState<SurveyTemplate[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [customTemplates, setCustomTemplates] = useState<Survey[]>([]);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [templateToDelete, setTemplateToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -296,19 +299,20 @@ const SurveyTemplates: React.FC = () => {
     });
   };
 
-  const handleDeleteCustomTemplate = async (templateId: string) => {
-    // eslint-disable-next-line no-alert -- User confirmation for destructive action
-    if (!confirm(t('surveys.admin.templates.deleteConfirm'))) {
-      return;
-    }
+  const handleDeleteCustomTemplate = async () => {
+    if (!templateToDelete) {return;}
+
+    setDeleteConfirmOpen(false);
 
     try {
-      await surveyService.deleteSurvey(templateId);
+      await surveyService.deleteSurvey(templateToDelete);
       toast.success(t('surveys.admin.templates.templateDeleted'));
       loadCustomTemplates();
     } catch (error) {
       logger.error('Error deleting template:', error);
       toast.error(t('surveys.admin.templates.deleteFailed'));
+    } finally {
+      setTemplateToDelete(null);
     }
   };
 
@@ -465,7 +469,10 @@ const SurveyTemplates: React.FC = () => {
                           {t('surveys.admin.templates.edit')}
                         </button>
                         <button
-                          onClick={() => handleDeleteCustomTemplate(template.id)}
+                          onClick={() => {
+                            setTemplateToDelete(template.id);
+                            setDeleteConfirmOpen(true);
+                          }}
                           className="inline-flex items-center justify-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50"
                         >
                           <FiTrash2 className="h-4 w-4" />
@@ -479,6 +486,21 @@ const SurveyTemplates: React.FC = () => {
           )}
         </div>
       </main>
+
+      {/* Confirm Delete Dialog */}
+      <ConfirmDialog
+        isOpen={deleteConfirmOpen}
+        title={t('surveys.admin.templates.deleteConfirm')}
+        message={t('surveys.admin.templates.deleteConfirmMessage', 'Are you sure you want to delete this template? This action cannot be undone.')}
+        confirmText={t('common.delete', 'Delete')}
+        cancelText={t('common.cancel', 'Cancel')}
+        onConfirm={handleDeleteCustomTemplate}
+        onCancel={() => {
+          setDeleteConfirmOpen(false);
+          setTemplateToDelete(null);
+        }}
+        variant="danger"
+      />
     </div>
   );
 };

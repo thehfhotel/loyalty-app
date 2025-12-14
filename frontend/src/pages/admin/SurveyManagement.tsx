@@ -9,6 +9,7 @@ import SurveyCouponAssignments from '../../components/surveys/SurveyCouponAssign
 import toast from 'react-hot-toast';
 import { formatDateToDDMMYYYY } from '../../utils/dateFormatter';
 import { logger } from '../../utils/logger';
+import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 
 const SurveyManagement: React.FC = () => {
   const { t } = useTranslation();
@@ -19,6 +20,8 @@ const SurveyManagement: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [selectedSurveyForCoupons, setSelectedSurveyForCoupons] = useState<Survey | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [surveyToDelete, setSurveyToDelete] = useState<string | null>(null);
 
   const loadSurveys = useCallback(async () => {
     try {
@@ -44,14 +47,13 @@ const SurveyManagement: React.FC = () => {
     loadSurveys();
   }, [currentPage, statusFilter, loadSurveys]);
 
-  const handleDeleteSurvey = async (surveyId: string) => {
-    // eslint-disable-next-line no-alert -- User confirmation for destructive action
-    if (!confirm('Are you sure you want to delete this survey? This action cannot be undone.')) {
-      return;
-    }
+  const handleDeleteSurvey = async () => {
+    if (!surveyToDelete) {return;}
+
+    setShowDeleteConfirm(false);
 
     try {
-      await surveyService.deleteSurvey(surveyId);
+      await surveyService.deleteSurvey(surveyToDelete);
       toast.success('Survey deleted successfully');
       loadSurveys();
     } catch (err) {
@@ -60,6 +62,8 @@ const SurveyManagement: React.FC = () => {
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
       toast.error(errorMessage ?? 'Failed to delete survey');
+    } finally {
+      setSurveyToDelete(null);
     }
   };
 
@@ -286,7 +290,10 @@ const SurveyManagement: React.FC = () => {
                           </Link>
                           
                           <button
-                            onClick={() => handleDeleteSurvey(survey.id)}
+                            onClick={() => {
+                              setSurveyToDelete(survey.id);
+                              setShowDeleteConfirm(true);
+                            }}
                             className="p-2 text-gray-400 hover:text-red-600"
                             title="Delete survey"
                           >
@@ -391,6 +398,21 @@ const SurveyManagement: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Confirm Delete Dialog */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        title="Delete Survey"
+        message="Are you sure you want to delete this survey? This action cannot be undone and will delete all associated responses and invitations."
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleDeleteSurvey}
+        onCancel={() => {
+          setShowDeleteConfirm(false);
+          setSurveyToDelete(null);
+        }}
+        variant="danger"
+      />
     </div>
   );
 };

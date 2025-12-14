@@ -3,14 +3,15 @@ import { useTranslation } from 'react-i18next';
 import { FiPlus, FiEdit, FiTrash2, FiGift, FiUsers } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { logger } from '../../utils/logger';
-import { 
-  SurveyCouponDetails, 
-  AssignCouponToSurveyRequest, 
+import {
+  SurveyCouponDetails,
+  AssignCouponToSurveyRequest,
   UpdateSurveyCouponAssignmentRequest
 } from '../../types/survey';
 import { Coupon } from '../../types/coupon';
 import { surveyService } from '../../services/surveyService';
 import { couponService } from '../../services/couponService';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 
 interface SurveyCouponAssignmentsProps {
   surveyId: string;
@@ -351,6 +352,8 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<SurveyCouponDetails | null>(null);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [assignmentToRemove, setAssignmentToRemove] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -412,11 +415,15 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
     }
   };
 
-  const handleRemoveAssignment = async (assignment: SurveyCouponDetails) => {
-    // eslint-disable-next-line no-alert -- User confirmation for destructive action
-    if (!confirm(t('surveys.admin.couponAssignment.confirmRemove'))) {return;}
+  const handleRemoveAssignment = async () => {
+    if (!assignmentToRemove) {return;}
+
+    setShowRemoveConfirm(false);
 
     try {
+      const assignment = assignments.find(a => a.coupon_id === assignmentToRemove);
+      if (!assignment) {return;}
+
       await surveyService.removeCouponFromSurvey(assignment.survey_id, assignment.coupon_id);
       toast.success(t('surveys.admin.couponAssignment.removeSuccess'));
       loadData();
@@ -426,6 +433,8 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
         : undefined;
       toast.error(errorMessage ?? t('surveys.admin.couponAssignment.removeError'));
+    } finally {
+      setAssignmentToRemove(null);
     }
   };
 
@@ -547,7 +556,10 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
                       <FiEdit className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => handleRemoveAssignment(assignment)}
+                      onClick={() => {
+                        setAssignmentToRemove(assignment.coupon_id);
+                        setShowRemoveConfirm(true);
+                      }}
                       className="p-2 text-gray-400 hover:text-red-600 transition-colors"
                       title={t('common.remove')}
                     >
@@ -578,6 +590,21 @@ const SurveyCouponAssignments: React.FC<SurveyCouponAssignmentsProps> = ({
         }}
         onUpdate={handleUpdateAssignment}
         assignment={editingAssignment}
+      />
+
+      {/* Confirm Remove Dialog */}
+      <ConfirmDialog
+        isOpen={showRemoveConfirm}
+        title={t('surveys.admin.couponAssignment.confirmRemove')}
+        message={t('surveys.admin.couponAssignment.confirmRemoveMessage', 'Are you sure you want to remove this coupon assignment? This action cannot be undone.')}
+        confirmText={t('common.remove', 'Remove')}
+        cancelText={t('common.cancel', 'Cancel')}
+        onConfirm={handleRemoveAssignment}
+        onCancel={() => {
+          setShowRemoveConfirm(false);
+          setAssignmentToRemove(null);
+        }}
+        variant="danger"
       />
     </div>
   );

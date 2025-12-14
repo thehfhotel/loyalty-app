@@ -20,6 +20,7 @@ import { User, userService } from '../../services/userService';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import toast from 'react-hot-toast';
 import { logger } from '../../utils/logger';
+import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 
 interface InvitationStats {
   total: number;
@@ -48,6 +49,8 @@ const SurveyInvitations: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [userSearch, setUserSearch] = useState('');
+  const [showSendAllConfirm, setShowSendAllConfirm] = useState(false);
+  const [showSendSelectedConfirm, setShowSendSelectedConfirm] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [sendingToUsers, setSendingToUsers] = useState(false);
 
@@ -95,10 +98,7 @@ const SurveyInvitations: React.FC = () => {
   };
 
   const handleSendInvitations = async () => {
-    // eslint-disable-next-line no-alert -- User confirmation for bulk action
-    if (!confirm('Are you sure you want to send invitations to all eligible users?')) {
-      return;
-    }
+    setShowSendAllConfirm(false);
 
     if (!id) {
       toast.error('Survey ID is required');
@@ -169,10 +169,7 @@ const SurveyInvitations: React.FC = () => {
       return;
     }
 
-    // eslint-disable-next-line no-alert -- User confirmation for bulk action
-    if (!confirm(`Are you sure you want to send invitations to ${selectedUsers.size} selected users?`)) {
-      return;
-    }
+    setShowSendSelectedConfirm(false);
 
     if (!id) {
       toast.error('Survey ID is required');
@@ -182,9 +179,9 @@ const SurveyInvitations: React.FC = () => {
     try {
       setSendingToUsers(true);
       const userIdsArray = Array.from(selectedUsers);
-      
+
       const result = await surveyService.sendSurveyInvitationsToUsers(id, userIdsArray);
-      
+
       if (result.sent === 0) {
         toast.error(`No invitations were sent. Users may not match targeting criteria or already have invitations.`);
       } else {
@@ -364,7 +361,7 @@ const SurveyInvitations: React.FC = () => {
                 Select Users
               </button>
               <button
-                onClick={handleSendInvitations}
+                onClick={() => setShowSendAllConfirm(true)}
                 disabled={sending || survey.status !== 'active'}
                 className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -515,7 +512,7 @@ const SurveyInvitations: React.FC = () => {
                 <p className="text-gray-500">No invitations sent yet</p>
                 {survey.status === 'active' && (
                   <button
-                    onClick={handleSendInvitations}
+                    onClick={() => setShowSendAllConfirm(true)}
                     className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
                   >
                     <FiSend className="mr-2 h-4 w-4" />
@@ -619,7 +616,7 @@ const SurveyInvitations: React.FC = () => {
                 Cancel
               </button>
               <button
-                onClick={handleSendToSelectedUsers}
+                onClick={() => setShowSendSelectedConfirm(true)}
                 disabled={selectedUsers.size === 0 || sendingToUsers}
                 className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -630,6 +627,30 @@ const SurveyInvitations: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Confirm Send to All Dialog */}
+      <ConfirmDialog
+        isOpen={showSendAllConfirm}
+        title="Send Invitations to All Eligible Users"
+        message="Are you sure you want to send invitations to all eligible users? This action will send survey invitations based on the targeting criteria."
+        confirmText="Send Invitations"
+        cancelText="Cancel"
+        onConfirm={handleSendInvitations}
+        onCancel={() => setShowSendAllConfirm(false)}
+        variant="info"
+      />
+
+      {/* Confirm Send to Selected Dialog */}
+      <ConfirmDialog
+        isOpen={showSendSelectedConfirm}
+        title={`Send Invitations to ${selectedUsers.size} Users`}
+        message={`Are you sure you want to send invitations to the ${selectedUsers.size} selected users?`}
+        confirmText="Send Invitations"
+        cancelText="Cancel"
+        onConfirm={handleSendToSelectedUsers}
+        onCancel={() => setShowSendSelectedConfirm(false)}
+        variant="info"
+      />
     </div>
   );
 };

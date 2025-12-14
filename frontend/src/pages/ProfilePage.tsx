@@ -15,6 +15,7 @@ import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
 import { getTranslatedInterest } from '../utils/interestUtils';
 import SettingsModal from '../components/profile/SettingsModal';
 import EmojiAvatar from '../components/profile/EmojiAvatar';
+import { ConfirmDialog } from '../components/common/ConfirmDialog';
 
 const profileSchema = z.object({
   email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
@@ -39,6 +40,7 @@ export default function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
 
@@ -209,30 +211,27 @@ export default function ProfilePage() {
   };
 
   const handleDeleteAvatar = async () => {
-    // eslint-disable-next-line no-alert -- User confirmation for destructive action
-    if (!confirm(t('profile.confirmRemovePhoto'))) {
-      return;
-    }
-
     setUploadingAvatar(true);
+    setShowDeleteConfirm(false);
+
     try {
       await userService.deleteAvatar();
-      
+
       // Update local profile state
       if (profile) {
         setProfile({
           ...profile,
           avatarUrl: undefined
         });
-        
+
         // Update auth store to persist removal across restarts
         updateUser({ avatarUrl: undefined });
       }
-      
+
       notify.success(t('profile.photoRemoved'));
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error && 'response' in error 
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
         : undefined;
       notify.error(errorMessage ?? t('profile.photoRemoveError'));
     } finally {
@@ -411,12 +410,24 @@ export default function ProfilePage() {
           onSubmit={onSubmit}
           isSaving={isSaving}
           onAvatarUpload={handleAvatarUpload}
-          onDeleteAvatar={handleDeleteAvatar}
+          onDeleteAvatar={async () => setShowDeleteConfirm(true)}
           uploadingAvatar={uploadingAvatar}
           onProfileUpdate={(updatedProfile) => {
             setProfile(updatedProfile);
             updateUser({ avatarUrl: updatedProfile.avatarUrl });
           }}
+        />
+
+        {/* Confirm Delete Avatar Dialog */}
+        <ConfirmDialog
+          isOpen={showDeleteConfirm}
+          title={t('profile.confirmRemovePhoto')}
+          message={t('profile.confirmRemovePhotoMessage', 'Are you sure you want to remove your profile photo? This action cannot be undone.')}
+          confirmText={t('common.remove', 'Remove')}
+          cancelText={t('common.cancel', 'Cancel')}
+          onConfirm={handleDeleteAvatar}
+          onCancel={() => setShowDeleteConfirm(false)}
+          variant="danger"
         />
     </MainLayout>
   );

@@ -1,4 +1,3 @@
-/* eslint-disable no-alert -- Example file uses alert() for demonstration purposes */
 /**
  * Example Component: How to Use tRPC
  * This demonstrates type-safe API calls with tRPC
@@ -6,6 +5,7 @@
 
 import React from 'react';
 import { trpc } from '../utils/trpc';
+import { notify } from '../utils/notificationManager';
 
 /**
  * Example: Fetch user loyalty status
@@ -41,10 +41,10 @@ export function AwardPointsExample({ userId }: { userId: string }) {
   // Type-safe mutation with auto-completion
   const mutation = trpc.loyalty.awardPoints.useMutation({
     onSuccess: () => {
-      alert('Points awarded successfully!');
+      notify.success('Points awarded successfully!');
     },
     onError: (error) => {
-      alert(`Error: ${error.message}`);
+      notify.error(`Error: ${error.message}`);
     },
   });
 
