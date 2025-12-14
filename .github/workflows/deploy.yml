@@ -2729,10 +2729,13 @@ jobs:
           export DOCKER_BUILDKIT=1
           export COMPOSE_DOCKER_CLI_BUILD=1
           
-          # Build and start services (--no-cache ensures fresh build with latest code)
+          # Build and start services
+          # Dockerfiles are optimized for caching:
+          # - Dependencies cached until package*.json changes
+          # - Config files cached until they change
+          # - Source code copied LAST (only build layer rebuilds on code changes)
           echo "🏗️ Building and starting services..."
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
           
           echo "✅ Services deployed"
           

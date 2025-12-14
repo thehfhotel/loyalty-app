@@ -1,0 +1,45 @@
+# Dependencies (installed in container)
+node_modules
+
+# Build output (built in container)
+dist
+
+# Development files
+*.log
+*.local
+.env*
+!.env.example
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Test files (not needed in production)
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/__tests__
+coverage
+.nyc_output
+playwright-report
+test-results
+
+# Documentation
+*.md
+docs
+
+# Git
+.git
+.gitignore
+
+# Docker (prevent recursive copy)
+Dockerfile*
+.dockerignore
+docker-compose*
+
+# Misc
+.DS_Store
+*.tgz
