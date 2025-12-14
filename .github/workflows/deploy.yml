@@ -2729,9 +2729,10 @@ jobs:
           export DOCKER_BUILDKIT=1
           export COMPOSE_DOCKER_CLI_BUILD=1
           
-          # Build and start services
+          # Build and start services (--no-cache ensures fresh build with latest code)
           echo "🏗️ Building and starting services..."
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
           
           echo "✅ Services deployed"
           
@@ -3178,16 +3179,32 @@ jobs:
       - name: "📋 Post-deployment summary"
         timeout-minutes: 1
         continue-on-error: true
+        env:
+          DEPLOY_RESULT: ${{ needs.production-deployment.result }}
         run: |
-          echo "🎉 Deployment Summary:"
-          echo "├── ✅ Application deployed successfully"
-          echo "├── 🌐 Frontend: https://loyalty.saichon.com"
-          echo "├── 🔗 Backend: https://loyalty.saichon.com/api"
-          echo "├── 📊 Health check: $(curl -s -o /dev/null -w '%{http_code}' https://loyalty.saichon.com/api/health 2>/dev/null || echo 'timeout')"
-          echo "└── 🕒 Completed at: $(date)"
-          
-          # Final completion message
-          echo "🎊 Post-deployment job completed successfully - pipeline will not get stuck"
+          echo "==============================================="
+          echo "📋 DEPLOYMENT RESULT"
+          echo "==============================================="
+
+          if [ "$DEPLOY_RESULT" = "success" ]; then
+            HEALTH_CODE=$(curl -s -o /dev/null -w '%{http_code}' https://loyalty.saichon.com/api/health 2>/dev/null || echo 'timeout')
+            echo "🎉 Deployment Status: ✅ SUCCESS"
+            echo "├── 🌐 Frontend: https://loyalty.saichon.com"
+            echo "├── 🔗 Backend: https://loyalty.saichon.com/api"
+            echo "├── 📊 Health check: $HEALTH_CODE"
+            echo "└── 🕒 Completed at: $(date)"
+          else
+            echo "❌ Deployment Status: FAILED"
+            echo "├── Result: $DEPLOY_RESULT"
+            echo "├── Commit: ${{ github.sha }}"
+            echo "├── Branch: ${{ github.ref_name }}"
+            echo "└── 🕒 Failed at: $(date)"
+            echo ""
+            echo "🔍 Check the 'Production Deployment' job logs for details"
+          fi
+
+          echo "==============================================="
+          echo "🎊 Post-deployment job completed - pipeline will not get stuck"
 
       - name: "🧹 Cleanup production env file"
         if: always()
