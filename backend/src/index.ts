@@ -188,16 +188,24 @@ function createApp(redisAvailable: boolean) {
   // Serve static files for avatars
   app.use('/storage', express.static('storage'));
 
+  // Determine if cookies should be secure (HTTPS only)
+  // SECURITY: Defaults to secure=true unless explicitly in development/test
+  // This is a security-critical setting; secure cookies prevent session hijacking via MITM
+  const shouldUseSecureCookies = (): boolean => {
+    const nodeEnv = process.env.NODE_ENV ?? 'production'; // Default to production for safety
+    const allowInsecureCookies = ['development', 'test'].includes(nodeEnv);
+    return !allowInsecureCookies;
+  };
+
   // Session configuration function that creates store based on Redis availability
   const createSessionConfig = () => {
-    const nodeEnv = process.env.NODE_ENV ?? 'development';
+    const nodeEnv = process.env.NODE_ENV ?? 'production';
     const isProductionEnv = nodeEnv === 'production';
 
     // SECURITY: Cookies MUST be secure in production to prevent transmission over HTTP
     // Only allow insecure cookies in explicit development/test environments for local testing
     // This is a security-critical setting - secure:true prevents cookie theft via MITM attacks
-    const allowInsecureCookies = !isProductionEnv && ['development', 'test'].includes(nodeEnv);
-    const useSecureCookies = !allowInsecureCookies;
+    const useSecureCookies = shouldUseSecureCookies();
 
     if (!useSecureCookies) {
       logger.warn('SECURITY: Running with insecure cookies (secure=false) - only acceptable for local development');
