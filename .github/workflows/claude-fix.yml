@@ -83,7 +83,48 @@ jobs:
     if: needs.detect-issues.outputs.should-fix == 'true'
 
     steps:
+      # =========================================================================
+      # SECURITY: Validate this is from a trusted source before processing
+      # This mitigates "untrusted code checkout" vulnerability (CWE-829)
+      # Ref: https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/
+      # =========================================================================
+      - name: "🔒 Validate trusted author"
+        id: validate-author
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          ACTOR: ${{ github.event.workflow_run.actor.login }}
+          TRIGGERING_ACTOR: ${{ github.event.workflow_run.triggering_actor.login }}
+        run: |
+          echo "Validating author: $ACTOR (triggered by: $TRIGGERING_ACTOR)"
+
+          # Get the repository owner
+          REPO_OWNER="${{ github.repository_owner }}"
+
+          # Check if the actor is the repository owner
+          if [ "$ACTOR" == "$REPO_OWNER" ]; then
+            echo "✅ Author is repository owner"
+            echo "trusted=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check if the actor is a collaborator with write access
+          PERMISSION=$(gh api "repos/${{ github.repository }}/collaborators/$ACTOR/permission" \
+            --jq '.permission' 2>/dev/null || echo "none")
+
+          echo "Author permission level: $PERMISSION"
+
+          if [ "$PERMISSION" == "admin" ] || [ "$PERMISSION" == "write" ]; then
+            echo "✅ Author is a trusted collaborator with $PERMISSION access"
+            echo "trusted=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Author is not a trusted collaborator (permission: $PERMISSION)"
+            echo "⚠️ Skipping auto-fix for security reasons"
+            echo "trusted=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: "🔍 Check if branch still exists"
+        if: steps.validate-author.outputs.trusted == 'true'
         id: check-branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -99,14 +140,14 @@ jobs:
           fi
 
       - name: "📥 Checkout branch"
-        if: steps.check-branch.outputs.exists == 'true'
+        if: steps.validate-author.outputs.trusted == 'true' && steps.check-branch.outputs.exists == 'true'
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
           fetch-depth: 20
 
       - name: "📋 Check retry count"
-        if: steps.check-branch.outputs.exists == 'true'
+        if: steps.validate-author.outputs.trusted == 'true' && steps.check-branch.outputs.exists == 'true'
         id: check-retry
         env:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
@@ -135,7 +176,7 @@ jobs:
           fi
 
       - name: "📜 Get workflow logs and annotations"
-        if: steps.check-branch.outputs.exists == 'true' && steps.check-retry.outputs.should-fix == 'true'
+        if: steps.validate-author.outputs.trusted == 'true' && steps.check-branch.outputs.exists == 'true' && steps.check-retry.outputs.should-fix == 'true'
         id: get-logs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -183,7 +224,7 @@ jobs:
           echo "logs-ready=true" >> $GITHUB_OUTPUT
 
       - name: "🤖 Claude analyzes and fixes"
-        if: steps.check-retry.outputs.should-fix == 'true' && steps.get-logs.outputs.logs-ready == 'true'
+        if: steps.validate-author.outputs.trusted == 'true' && steps.check-retry.outputs.should-fix == 'true' && steps.get-logs.outputs.logs-ready == 'true'
         id: claude-fix
         env:
           ISSUE_TYPE: ${{ needs.detect-issues.outputs.issue-type }}
@@ -246,8 +287,11 @@ jobs:
           cat /tmp/combined-context.txt >> /tmp/claude-prompt.txt 2>/dev/null || true
 
           # Run Claude
+          # SECURITY: Only allow file read/write operations, NO script execution
+          # This prevents execution of potentially malicious npm scripts from untrusted checkouts
+          # Ref: https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/
           CLAUDE_OUTPUT=$(claude -p "$(cat /tmp/claude-prompt.txt)" \
-            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm run lint:*),Bash(npm run typecheck:*),Bash(npm test:*)" \
+            --allowedTools "Read,Edit,Write,Glob,Grep" \
             2>&1) || true
 
           echo "Claude output:"
@@ -264,7 +308,7 @@ jobs:
           fi
 
       - name: "📝 Commit and push fix"
-        if: steps.claude-fix.outputs.changes-made == 'true'
+        if: steps.validate-author.outputs.trusted == 'true' && steps.claude-fix.outputs.changes-made == 'true'
         env:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           ATTEMPT: ${{ steps.check-retry.outputs.attempt }}
@@ -294,7 +338,7 @@ jobs:
           echo "✅ Fix committed and pushed to $HEAD_BRANCH"
 
       - name: "💬 Notify PR about fix (CI won't auto-trigger)"
-        if: steps.claude-fix.outputs.changes-made == 'true'
+        if: steps.validate-author.outputs.trusted == 'true' && steps.claude-fix.outputs.changes-made == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
@@ -330,8 +374,28 @@ jobs:
             echo "⚠️ No PR found for branch $HEAD_BRANCH - skipping notification"
           fi
 
+      - name: "🔒 Report: Untrusted author"
+        if: steps.validate-author.outputs.trusted == 'false'
+        env:
+          ACTOR: ${{ github.event.workflow_run.actor.login }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          echo "🔒 Security: Skipping auto-fix for untrusted author"
+          echo ""
+          echo "🤖 Claude Auto-Fix Report"
+          echo "========================="
+          echo "⚠️ Auto-fix skipped for security reasons"
+          echo "Author: $ACTOR (not a trusted collaborator)"
+          echo "Branch: $HEAD_BRANCH"
+          echo "Run: $WORKFLOW_RUN_ID"
+          echo ""
+          echo "Only repository owners and collaborators with write access can trigger auto-fix."
+          echo "This prevents potential code injection from untrusted pull requests."
+          echo "Ref: https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/"
+
       - name: "📊 Report: Branch no longer exists"
-        if: steps.check-branch.outputs.exists == 'false'
+        if: steps.validate-author.outputs.trusted == 'true' && steps.check-branch.outputs.exists == 'false'
         env:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
@@ -347,7 +411,7 @@ jobs:
           echo "No action needed."
 
       - name: "📊 Report: No fix possible"
-        if: steps.check-branch.outputs.exists == 'true' && (steps.claude-fix.outputs.changes-made == 'false' || steps.check-retry.outputs.should-fix == 'false')
+        if: steps.validate-author.outputs.trusted == 'true' && steps.check-branch.outputs.exists == 'true' && (steps.claude-fix.outputs.changes-made == 'false' || steps.check-retry.outputs.should-fix == 'false')
         env:
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
