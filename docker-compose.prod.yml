@@ -58,7 +58,7 @@ services:
       # Remove development volume mounts for production
       - backend_logs:/app/logs
       - backend_storage:/app/storage
-    command: ["npm", "run", "dev"]  # Use tsx (runner stage has dev deps until Dockerfile is fixed)
+    # Use Dockerfile CMD (node dist/index.js) - no override needed
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
       interval: 30s
