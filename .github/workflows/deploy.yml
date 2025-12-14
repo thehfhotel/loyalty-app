@@ -2645,6 +2645,60 @@ jobs:
 
           echo "✅ All required ports are available for deployment"
 
+      - name: "🔒 Validate production configuration"
+        run: |
+          echo "🔒 Validating production configuration..."
+
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
+          cd "$DEPLOY_DIR"
+
+          HAS_ERROR=0
+
+          # Check 1: Verify docker-compose.prod.yml doesn't override command with dev tools
+          echo "📋 Checking for dev commands in production config..."
+          MERGED_CONFIG=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml config 2>/dev/null)
+
+          # Check backend command
+          BACKEND_CMD=$(echo "$MERGED_CONFIG" | grep -A50 "backend:" | grep -m1 "command:" || echo "")
+          if echo "$BACKEND_CMD" | grep -qE "(npm run dev|npx tsx|nodemon|ts-node)"; then
+            echo "❌ FATAL: Development command found in backend service!"
+            echo "   Found: $BACKEND_CMD"
+            echo "   Production must use: node dist/index.js"
+            HAS_ERROR=1
+          else
+            echo "✅ Backend command OK"
+          fi
+
+          # Check 2: Verify backend uses runner target (production stage)
+          BACKEND_TARGET=$(echo "$MERGED_CONFIG" | grep -A20 "backend:" | grep -A10 "build:" | grep "target:" | head -1 || echo "")
+          if echo "$BACKEND_TARGET" | grep -q "development"; then
+            echo "❌ FATAL: Backend using development Docker target!"
+            echo "   Found: $BACKEND_TARGET"
+            echo "   Production must use: target: runner"
+            HAS_ERROR=1
+          else
+            echo "✅ Backend Docker target OK"
+          fi
+
+          # Check 3: Verify NODE_ENV is production
+          NODE_ENV_VALUE=$(echo "$MERGED_CONFIG" | grep -A100 "backend:" | grep "NODE_ENV:" | head -1 || echo "")
+          if echo "$NODE_ENV_VALUE" | grep -qE "(development|dev)"; then
+            echo "❌ FATAL: NODE_ENV not set to production!"
+            echo "   Found: $NODE_ENV_VALUE"
+            HAS_ERROR=1
+          else
+            echo "✅ NODE_ENV OK"
+          fi
+
+          if [ $HAS_ERROR -eq 1 ]; then
+            echo ""
+            echo "🛑 Production deployment blocked due to configuration errors."
+            echo "   Please fix docker-compose.prod.yml before deploying."
+            exit 1
+          fi
+
+          echo "✅ Production configuration validated"
+
       - name: "🚀 Optimized service deployment"
         run: |
           echo "🚀 Deploying services with zero-downtime strategy..."

@@ -6,6 +6,58 @@ set -e
 
 echo "🚀 Starting backend initialization..."
 
+# =============================================================================
+# Production Safety Checks
+# Prevents accidental deployment with development configurations
+# =============================================================================
+validate_production_config() {
+  if [ "$NODE_ENV" = "production" ]; then
+    echo "🔒 Running production safety checks..."
+
+    COMMAND="$*"
+    HAS_ERROR=0
+
+    # Check 1: Reject dev commands in production
+    case "$COMMAND" in
+      *"npm run dev"*|*"npx tsx"*|*"nodemon"*|*"ts-node"*)
+        echo "❌ FATAL: Development command detected in production!"
+        echo "   Command: $COMMAND"
+        echo "   Production must use: node dist/index.js"
+        HAS_ERROR=1
+        ;;
+    esac
+
+    # Check 2: Verify compiled dist exists for production
+    if [ ! -f "dist/index.js" ]; then
+      echo "❌ FATAL: Production build not found!"
+      echo "   Expected: dist/index.js"
+      echo "   The Docker image may have been built with wrong target."
+      HAS_ERROR=1
+    fi
+
+    # Check 3: Verify we're not running from src/ in production
+    if echo "$COMMAND" | grep -q "src/index.ts"; then
+      echo "❌ FATAL: Attempting to run TypeScript source in production!"
+      echo "   Production must run compiled JavaScript from dist/"
+      HAS_ERROR=1
+    fi
+
+    # Check 4: Warn if tsx is available (shouldn't be in runner stage)
+    if command -v tsx >/dev/null 2>&1 || [ -d "node_modules/tsx" ]; then
+      echo "⚠️  WARNING: tsx found in production (dev dependency leak)"
+    fi
+
+    if [ $HAS_ERROR -eq 1 ]; then
+      echo ""
+      echo "🛑 Production deployment aborted due to configuration errors."
+      echo "   Please check docker-compose.prod.yml and Dockerfile."
+      exit 1
+    fi
+
+    echo "✅ Production safety checks passed"
+  fi
+}
+
 # Function to wait for database to be ready
 wait_for_database() {
   echo "⏳ Waiting for PostgreSQL to be ready..."
@@ -76,6 +128,9 @@ main() {
   echo "  Loyalty App Backend - Entrypoint"
   echo "  Environment: ${NODE_ENV:-development}"
   echo "=================================================="
+
+  # Step 0: Production safety checks (before anything else)
+  validate_production_config "$@"
 
   # Step 1: Wait for database
   wait_for_database
