@@ -35,22 +35,22 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          CHECK_SUITE_ID: ${{ github.event.workflow_run.check_suite_id }}
         run: |
-          RUN_ID="${{ github.event.workflow_run.id }}"
-          CONCLUSION="${{ github.event.workflow_run.conclusion }}"
-
-          echo "Run ID: $RUN_ID"
-          echo "Conclusion: $CONCLUSION"
+          echo "Run ID: $WORKFLOW_RUN_ID"
+          echo "Conclusion: $WORKFLOW_CONCLUSION"
 
           # Check for failures
-          if [ "$CONCLUSION" == "failure" ]; then
+          if [ "$WORKFLOW_CONCLUSION" == "failure" ]; then
             echo "has-failures=true" >> $GITHUB_OUTPUT
           else
             echo "has-failures=false" >> $GITHUB_OUTPUT
           fi
 
           # Check for warnings via annotations API
-          WARNINGS=$(gh api "repos/${{ github.repository }}/check-runs?check_suite_id=${{ github.event.workflow_run.check_suite_id }}" \
+          WARNINGS=$(gh api "repos/${{ github.repository }}/check-runs?check_suite_id=$CHECK_SUITE_ID" \
             --jq '[.check_runs[].output.annotations[]? | select(.annotation_level == "warning")] | length' 2>/dev/null || echo "0")
 
           echo "Warning count: $WARNINGS"
@@ -62,7 +62,7 @@ jobs:
           fi
 
           # Determine if we should fix
-          if [ "$CONCLUSION" == "failure" ]; then
+          if [ "$WORKFLOW_CONCLUSION" == "failure" ]; then
             echo "should-fix=true" >> $GITHUB_OUTPUT
             echo "issue-type=failure" >> $GITHUB_OUTPUT
           elif [ "$WARNINGS" -gt 0 ]; then
@@ -91,9 +91,9 @@ jobs:
 
       - name: "📋 Check retry count"
         id: check-retry
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          BRANCH="${{ github.event.workflow_run.head_branch }}"
-
           # Count consecutive [claude-fix] commits at HEAD
           RETRY_COUNT=0
           for i in $(seq 0 ${{ env.MAX_RETRIES }}); do
@@ -108,7 +108,7 @@ jobs:
           echo "Consecutive [claude-fix] commits: $RETRY_COUNT"
 
           if [ "$RETRY_COUNT" -ge "${{ env.MAX_RETRIES }}" ]; then
-            echo "❌ Max retries (${{ env.MAX_RETRIES }}) reached for branch: $BRANCH"
+            echo "❌ Max retries (${{ env.MAX_RETRIES }}) reached for branch: $HEAD_BRANCH"
             echo "should-fix=false" >> $GITHUB_OUTPUT
           else
             NEW_COUNT=$((RETRY_COUNT + 1))
@@ -122,26 +122,26 @@ jobs:
         id: get-logs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          CHECK_SUITE_ID: ${{ github.event.workflow_run.check_suite_id }}
+          ISSUE_TYPE: ${{ needs.detect-issues.outputs.issue-type }}
         run: |
-          RUN_ID="${{ github.event.workflow_run.id }}"
-          ISSUE_TYPE="${{ needs.detect-issues.outputs.issue-type }}"
-
-          echo "Fetching logs for run: $RUN_ID (issue type: $ISSUE_TYPE)"
+          echo "Fetching logs for run: $WORKFLOW_RUN_ID (issue type: $ISSUE_TYPE)"
 
           # Get failed job logs if failure
           if [ "$ISSUE_TYPE" == "failure" ]; then
-            gh run view "$RUN_ID" --log-failed > /tmp/failed-logs.txt 2>&1 || true
+            gh run view "$WORKFLOW_RUN_ID" --log-failed > /tmp/failed-logs.txt 2>&1 || true
 
-            gh run view "$RUN_ID" --json jobs \
+            gh run view "$WORKFLOW_RUN_ID" --json jobs \
               --jq '.jobs[] | select(.conclusion == "failure") | {name: .name, conclusion: .conclusion}' \
               > /tmp/failed-jobs.json 2>&1 || true
           fi
 
           # Get all logs for context
-          gh run view "$RUN_ID" --log > /tmp/full-logs.txt 2>&1 || true
+          gh run view "$WORKFLOW_RUN_ID" --log > /tmp/full-logs.txt 2>&1 || true
 
           # Get annotations (warnings and errors)
-          gh api "repos/${{ github.repository }}/check-runs?check_suite_id=${{ github.event.workflow_run.check_suite_id }}" \
+          gh api "repos/${{ github.repository }}/check-runs?check_suite_id=$CHECK_SUITE_ID" \
             --jq '.check_runs[].output.annotations[]? | select(.annotation_level == "warning" or .annotation_level == "failure") | {level: .annotation_level, path: .path, line: .start_line, message: .message}' \
             > /tmp/annotations.json 2>&1 || true
 
@@ -168,11 +168,11 @@ jobs:
       - name: "🤖 Claude analyzes and fixes"
         if: steps.check-retry.outputs.should-fix == 'true' && steps.get-logs.outputs.logs-ready == 'true'
         id: claude-fix
+        env:
+          ISSUE_TYPE: ${{ needs.detect-issues.outputs.issue-type }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          ATTEMPT: ${{ steps.check-retry.outputs.attempt }}
         run: |
-          ISSUE_TYPE="${{ needs.detect-issues.outputs.issue-type }}"
-          BRANCH="${{ github.event.workflow_run.head_branch }}"
-          ATTEMPT="${{ steps.check-retry.outputs.attempt }}"
-
           # Prepare context
           FAILED_JOBS=$(cat /tmp/failed-jobs.json 2>/dev/null || echo "N/A")
           ANNOTATIONS=$(cat /tmp/annotations.json 2>/dev/null || echo "No annotations")
@@ -180,7 +180,7 @@ jobs:
 
           echo "🤖 Running Claude to analyze and fix pipeline issues..."
           echo "Issue type: $ISSUE_TYPE"
-          echo "Branch: $BRANCH"
+          echo "Branch: $HEAD_BRANCH"
           echo "Attempt: $ATTEMPT of ${{ env.MAX_RETRIES }}"
 
           # Create prompt
@@ -213,7 +213,7 @@ jobs:
 
           # Replace placeholders
           sed -i "s|ISSUE_TYPE_PLACEHOLDER|$ISSUE_TYPE|g" /tmp/claude-prompt.txt
-          sed -i "s|BRANCH_PLACEHOLDER|$BRANCH|g" /tmp/claude-prompt.txt
+          sed -i "s|BRANCH_PLACEHOLDER|$HEAD_BRANCH|g" /tmp/claude-prompt.txt
           sed -i "s|ATTEMPT_PLACEHOLDER|$ATTEMPT|g" /tmp/claude-prompt.txt
           sed -i "s|MAX_RETRIES_PLACEHOLDER|${{ env.MAX_RETRIES }}|g" /tmp/claude-prompt.txt
 
@@ -248,11 +248,12 @@ jobs:
 
       - name: "📝 Commit and push fix"
         if: steps.claude-fix.outputs.changes-made == 'true'
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          ATTEMPT: ${{ steps.check-retry.outputs.attempt }}
+          ISSUE_TYPE: ${{ needs.detect-issues.outputs.issue-type }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          BRANCH="${{ github.event.workflow_run.head_branch }}"
-          ATTEMPT="${{ steps.check-retry.outputs.attempt }}"
-          ISSUE_TYPE="${{ needs.detect-issues.outputs.issue-type }}"
-
           git config user.name "Claude Auto-Fix"
           git config user.email "claude-fix@github-actions"
 
@@ -265,27 +266,27 @@ jobs:
           git add -A
           git commit -m "$COMMIT_MSG
 
-          Automated fix for workflow run: ${{ github.event.workflow_run.id }}
+          Automated fix for workflow run: $WORKFLOW_RUN_ID
           Issue type: $ISSUE_TYPE
-          Branch: $BRANCH
+          Branch: $HEAD_BRANCH
 
           🤖 Generated with Claude Code" || echo "Nothing to commit"
 
-          git push origin "$BRANCH"
+          git push origin "$HEAD_BRANCH"
 
-          echo "✅ Fix committed and pushed to $BRANCH"
+          echo "✅ Fix committed and pushed to $HEAD_BRANCH"
 
       - name: "💬 Notify PR about fix (CI won't auto-trigger)"
         if: steps.claude-fix.outputs.changes-made == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          BRANCH="${{ github.event.workflow_run.head_branch }}"
           COMMIT_SHA=$(git rev-parse HEAD)
           SHORT_SHA=$(git rev-parse --short HEAD)
 
           # Find PR for this branch
-          PR_NUMBER=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+          PR_NUMBER=$(gh pr list --head "$HEAD_BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
 
           if [ -n "$PR_NUMBER" ]; then
             COMMENT_BODY="## 🤖 Claude Auto-Fix Applied
@@ -314,31 +315,32 @@ git push
             gh pr comment "$PR_NUMBER" --body "$COMMENT_BODY"
             echo "✅ Posted notification to PR #$PR_NUMBER"
           else
-            echo "⚠️ No PR found for branch $BRANCH - skipping notification"
+            echo "⚠️ No PR found for branch $HEAD_BRANCH - skipping notification"
           fi
 
       - name: "📊 Report: No fix possible"
         if: steps.claude-fix.outputs.changes-made == 'false' || steps.check-retry.outputs.should-fix == 'false'
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          ISSUE_TYPE: ${{ needs.detect-issues.outputs.issue-type }}
+          SHOULD_FIX: ${{ steps.check-retry.outputs.should-fix }}
         run: |
-          BRANCH="${{ github.event.workflow_run.head_branch }}"
-          RUN_ID="${{ github.event.workflow_run.id }}"
-          ISSUE_TYPE="${{ needs.detect-issues.outputs.issue-type }}"
-
-          if [ "${{ steps.check-retry.outputs.should-fix }}" == "false" ]; then
+          if [ "$SHOULD_FIX" == "false" ]; then
             echo "❌ Max retries reached. Manual intervention required."
             echo ""
             echo "🤖 Claude Auto-Fix Report"
             echo "========================="
-            echo "❌ Max retries (${{ env.MAX_RETRIES }}) reached for branch: $BRANCH"
+            echo "❌ Max retries (${{ env.MAX_RETRIES }}) reached for branch: $HEAD_BRANCH"
             echo "Issue type: $ISSUE_TYPE"
             echo "Manual intervention required."
-            echo "Failed run: $RUN_ID"
+            echo "Failed run: $WORKFLOW_RUN_ID"
           else
             echo "❌ Claude could not automatically fix this issue."
             echo ""
             echo "🤖 Claude Auto-Fix Report"
             echo "========================="
             echo "⚠️ Could not automatically fix the pipeline $ISSUE_TYPE."
-            echo "Branch: $BRANCH"
-            echo "Please review the run manually: $RUN_ID"
+            echo "Branch: $HEAD_BRANCH"
+            echo "Please review the run manually: $WORKFLOW_RUN_ID"
           fi
