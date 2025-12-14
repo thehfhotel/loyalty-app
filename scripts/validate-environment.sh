@@ -208,31 +208,39 @@ check_port 4000 "Backend API"
 check_port 5434 "PostgreSQL"
 check_port 6379 "Redis"
 
-# Check Docker resources
-log "💻 Docker Resources:"
-# Get Docker info
-docker_info=$(docker info 2>/dev/null || echo "")
+# Check system resources
+log "💻 System Resources:"
 
-if [[ -n "$docker_info" ]]; then
-    # Extract memory info (this is approximate and may vary by Docker version)
-    if echo "$docker_info" | grep -q "Total Memory"; then
-        memory=$(echo "$docker_info" | grep "Total Memory" | sed 's/.*Total Memory: //' | sed 's/GiB.*/GiB/')
-        echo "💾 Available Memory: $memory"
-        
-        # Check if we have at least 2GB
-        memory_gb=$(echo "$memory" | sed 's/GiB//' | cut -d'.' -f1)
-        if [[ "$memory_gb" -lt 2 ]]; then
-            warning "Low memory detected. Recommend at least 2GB for production"
-            VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
-        fi
+# Check host disk space (more useful than docker system df)
+if command -v df &>/dev/null; then
+    # Get disk usage for the root filesystem or Docker data directory
+    disk_info=$(df -h / 2>/dev/null | tail -1)
+    disk_used=$(echo "$disk_info" | awk '{print $5}' | tr -d '%')
+    disk_avail=$(echo "$disk_info" | awk '{print $4}')
+
+    echo "💽 Disk Available: $disk_avail (${disk_used}% used)"
+
+    if [[ "$disk_used" -gt 90 ]]; then
+        error "Disk usage critical (${disk_used}%) - deployment may fail"
+        VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
+    elif [[ "$disk_used" -gt 80 ]]; then
+        warning "Disk usage high (${disk_used}%) - consider cleanup"
+        VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
     fi
-    
-    # Check disk space
-    available_disk=$(docker system df | grep "Local Volumes" | awk '{print $4}' || echo "Unknown")
-    echo "💽 Docker Disk Usage: $available_disk"
-else
-    warning "Could not retrieve Docker resource information"
-    VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
+fi
+
+# Check Docker memory (lightweight check from cached docker info)
+docker_info=$(docker info 2>/dev/null || echo "")
+if [[ -n "$docker_info" ]] && echo "$docker_info" | grep -q "Total Memory"; then
+    memory=$(echo "$docker_info" | grep "Total Memory" | sed 's/.*Total Memory: //' | sed 's/GiB.*/GiB/')
+    echo "💾 Docker Memory: $memory"
+
+    # Check if we have at least 2GB
+    memory_gb=$(echo "$memory" | sed 's/GiB//' | cut -d'.' -f1)
+    if [[ "$memory_gb" -lt 2 ]]; then
+        warning "Low memory detected. Recommend at least 2GB for production"
+        VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
+    fi
 fi
 
 # Security checks
