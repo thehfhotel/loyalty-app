@@ -36,6 +36,7 @@ services:
     container_name: loyalty_backend_dev
     env_file:
       - .env.development
+    command: npm run dev  # Development uses tsx for hot reload
     environment:
       NODE_ENV: development
       PORT: ${BACKEND_PORT:-4000}
@@ -73,6 +74,7 @@ services:
       target: development
     env_file:
       - .env.development
+    command: npm run dev  # Development uses Vite dev server with HMR
     environment:
       NODE_ENV: development
       VITE_API_URL: ${VITE_API_URL}

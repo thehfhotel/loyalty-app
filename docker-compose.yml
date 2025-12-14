@@ -67,7 +67,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: npm run dev
+    # Command defined in override files (dev: npm run dev, prod: uses Dockerfile CMD)
 
   frontend:
     build:
@@ -83,7 +83,7 @@ services:
       - frontend_logs:/app/logs
     depends_on:
       - backend
-    command: npm run dev
+    # Command defined in override files (dev: npm run dev, prod: build & preview)
 
   nginx:
     image: nginx:alpine
