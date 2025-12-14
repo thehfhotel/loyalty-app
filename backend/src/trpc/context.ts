@@ -4,6 +4,7 @@
  * Includes authenticated user information from Express middleware
  */
 
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference
 /// <reference path="../types/express.d.ts" />
 
 import type { inferAsyncReturnType } from '@trpc/server';
