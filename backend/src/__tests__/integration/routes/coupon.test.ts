@@ -99,7 +99,7 @@ describe('Coupon Routes Integration Tests', () => {
         value: 10,
         currency: 'THB',
         status: 'available',
-        expiresAt: null,
+        expiresAt: undefined,
         assignedAt: new Date(),
         effectiveExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         expiringSoon: false,
@@ -153,9 +153,9 @@ describe('Coupon Routes Integration Tests', () => {
         value: 10,
         currency: 'THB',
         status: 'used',
-        expiresAt: null,
-        assignedAt: new Date().toISOString(),
-        effectiveExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        expiresAt: undefined,
+        assignedAt: new Date(),
+        effectiveExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         expiringSoon: false,
       } as Awaited<ReturnType<typeof mockCouponService.getUserCouponByQR>>);
 

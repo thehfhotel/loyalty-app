@@ -73,8 +73,8 @@ describe('Auth Routes Integration Tests', () => {
           role: 'customer' as const,
           isActive: true,
           emailVerified: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
         },
         tokens: {
           accessToken: 'mock-access-token',
@@ -149,8 +149,8 @@ describe('Auth Routes Integration Tests', () => {
           role: 'customer' as const,
           isActive: true,
           emailVerified: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
         },
         tokens: {
           accessToken: 'mock-access-token',
@@ -261,8 +261,8 @@ describe('Auth Routes Integration Tests', () => {
         role: 'customer' as const,
         isActive: true,
         emailVerified: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
       };
 
       mockAuthService.getUserProfile.mockResolvedValue(mockUser as Awaited<ReturnType<typeof mockAuthService.getUserProfile>>);
