@@ -40,13 +40,13 @@ jobs:
 
     steps:
       - name: "📥 Checkout code (shared for all jobs)"
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           fetch-depth: 1
           clean: true
 
       - name: "⚡ Setup Node.js"
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -273,7 +273,7 @@ jobs:
           echo "✅ Workspace copied from shared location"
 
       - name: "⚡ Setup Node.js"
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -419,7 +419,7 @@ jobs:
           echo "✅ Workspace copied from shared location"
 
       - name: "⚡ Setup Node.js"
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -567,7 +567,7 @@ jobs:
 
       - name: "📊 Upload coverage report"
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: coverage-report-${{ github.run_id }}
           path: backend/coverage/
@@ -577,7 +577,7 @@ jobs:
 
       - name: "📊 Upload unit test Allure results"
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: allure-results-unit-${{ github.run_id }}
           path: backend/allure-results/
@@ -656,7 +656,7 @@ jobs:
 
       - name: "💬 Comment unit test results on PR"
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         continue-on-error: true
         with:
           script: |
@@ -779,7 +779,7 @@ jobs:
           echo "✅ Workspace copied from shared location"
 
       - name: "⚡ Setup Node.js"
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -927,7 +927,7 @@ jobs:
 
       - name: "📊 Upload integration test Allure results"
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: allure-results-integration-${{ github.run_id }}
           path: backend/allure-results/
@@ -991,7 +991,7 @@ jobs:
 
       - name: "💬 Comment integration results on PR"
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         continue-on-error: true
         with:
           script: |
@@ -1107,7 +1107,7 @@ jobs:
           echo "✅ Workspace copied from shared location"
 
       - name: "⚡ Setup Node.js"
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -1568,7 +1568,7 @@ jobs:
 
       - name: "📊 Upload E2E test Allure results"
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: allure-results-e2e-${{ github.run_id }}
           path: allure-results/
@@ -1577,7 +1577,7 @@ jobs:
 
       - name: "💬 Comment E2E results on PR"
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         continue-on-error: true
         with:
           script: |
@@ -1700,13 +1700,13 @@ jobs:
           ls -la
       
       - name: "📥 Checkout code"
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           fetch-depth: 1
           clean: false  # Don't try to clean, we already did that
       
       - name: "⚡ Setup Node.js"
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -3262,31 +3262,31 @@ jobs:
 
     steps:
       - name: "📥 Checkout code"
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           fetch-depth: 1
 
       - name: "⚡ Setup Node.js"
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: "📥 Download unit test results"
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: allure-results-unit-${{ github.run_id }}
           path: allure-results-unit/
         continue-on-error: true
 
       - name: "📥 Download integration test results"
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: allure-results-integration-${{ github.run_id }}
           path: allure-results-integration/
         continue-on-error: true
 
       - name: "📥 Download E2E test results"
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           name: allure-results-e2e-${{ github.run_id }}
           path: allure-results-e2e/
@@ -3340,7 +3340,7 @@ jobs:
           fi
 
       - name: "☕ Setup Java for Allure"
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -3502,7 +3502,7 @@ jobs:
           du -sh pages-artifact/
 
       - name: "📤 Upload GitHub Pages artifact"
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
           path: pages-artifact
           retention-days: 90
@@ -3543,7 +3543,7 @@ jobs:
 
       - name: "🚀 Deploy to GitHub Pages"
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
         with:
           timeout: 600000
           error_count: 10

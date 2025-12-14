@@ -9,7 +9,7 @@
 # On code-only changes, only layers 3+ rebuild (fast)
 # On dependency changes, layers 1+ rebuild (slow but necessary)
 
-FROM node:25-alpine AS base
+FROM node:25-alpine@sha256:fd164609b5ab0c6d49bac138ae06c347e72261ec6ae1de32b6aa9f5ee2271110 AS base
 WORKDIR /app
 
 # =============================================================================
@@ -52,7 +52,7 @@ RUN test -f dist/index.html && \
 # =============================================================================
 # STAGE 3: Production runtime (nginx - minimal)
 # =============================================================================
-FROM nginx:alpine AS production
+FROM nginx:alpine@sha256:052b75ab72f690f33debaa51c7e08d9b969a0447a133eb2b99cc905d9188cb2b AS production
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/nginx.conf

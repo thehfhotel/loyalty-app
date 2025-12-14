@@ -9,7 +9,7 @@
 # On code-only changes, only layers 3+ rebuild (fast)
 # On dependency changes, layers 1+ rebuild (slow but necessary)
 
-FROM node:25-alpine AS base
+FROM node:25-alpine@sha256:fd164609b5ab0c6d49bac138ae06c347e72261ec6ae1de32b6aa9f5ee2271110 AS base
 WORKDIR /app
 
 # =============================================================================
