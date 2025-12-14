@@ -285,6 +285,19 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
   // Track visited objects to detect circular references
   const visited = new WeakSet<object>();
 
+  // Helper function to remove patterns completely, handling nested cases
+  // e.g., "oonclick=nclick=" -> after one pass "onclick=" -> need another pass
+  const removePatternCompletely = (str: string, pattern: RegExp): string => {
+    let result = str;
+    let previous = '';
+    // Loop until no more changes (handles nested patterns)
+    while (result !== previous) {
+      previous = result;
+      result = result.replace(pattern, '');
+    }
+    return result;
+  };
+
   // Basic input sanitization with circular reference detection
   const sanitizeValue = (value: unknown): unknown => {
     if (typeof value === 'string') {
@@ -297,15 +310,17 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
       sanitized = sanitized.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
       // Remove dangerous URL schemes (case-insensitive)
-      sanitized = sanitized.replace(/javascript\s*:/gi, '');
-      sanitized = sanitized.replace(/vbscript\s*:/gi, '');
-      sanitized = sanitized.replace(/data\s*:/gi, '');
+      // Use loop-based removal to handle nested patterns like "javajavascript:script:"
+      sanitized = removePatternCompletely(sanitized, /javascript\s*:/gi);
+      sanitized = removePatternCompletely(sanitized, /vbscript\s*:/gi);
+      sanitized = removePatternCompletely(sanitized, /data\s*:/gi);
 
       // Remove event handlers (on* attributes) - improved pattern to catch all variations
       // Handles: onclick= onClick= on-click= etc.
-      sanitized = sanitized.replace(/\bon[\w-]+\s*=/gi, '');
+      // Use loop-based removal to handle nested patterns like "oonclick=nclick="
+      sanitized = removePatternCompletely(sanitized, /\bon[\w-]+\s*=/gi);
       // Also remove standalone event handlers with leading whitespace
-      sanitized = sanitized.replace(/\s+on[\w-]+\s*=/gi, ' ');
+      sanitized = removePatternCompletely(sanitized, /\s+on[\w-]+\s*=/gi);
 
       return sanitized.trim();
     }
