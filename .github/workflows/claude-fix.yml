@@ -281,38 +281,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          REPO_NAME: ${{ github.repository }}
         run: |
-          COMMIT_SHA=$(git rev-parse HEAD)
           SHORT_SHA=$(git rev-parse --short HEAD)
 
           # Find PR for this branch
           PR_NUMBER=$(gh pr list --head "$HEAD_BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
 
           if [ -n "$PR_NUMBER" ]; then
-            COMMENT_BODY="## 🤖 Claude Auto-Fix Applied
+            # Write comment to temp file - use single quotes to avoid YAML interpretation
+            echo '## 🤖 Claude Auto-Fix Applied' > /tmp/pr-comment.md
+            echo '' >> /tmp/pr-comment.md
+            echo "A fix has been pushed to this branch: \`$SHORT_SHA\`" >> /tmp/pr-comment.md
+            echo '' >> /tmp/pr-comment.md
+            echo '### ⚠️ Action Required: Trigger CI Pipeline' >> /tmp/pr-comment.md
+            echo '' >> /tmp/pr-comment.md
+            echo 'GitHub Actions cannot trigger workflows from GITHUB_TOKEN commits.' >> /tmp/pr-comment.md
+            echo '' >> /tmp/pr-comment.md
+            echo 'Push an empty commit to trigger CI:' >> /tmp/pr-comment.md
+            echo '```' >> /tmp/pr-comment.md
+            echo "git pull && git commit --allow-empty -m 'chore: trigger CI' && git push" >> /tmp/pr-comment.md
+            echo '```' >> /tmp/pr-comment.md
 
-A fix has been pushed to this branch: \`$SHORT_SHA\`
-
-### ⚠️ Action Required: Trigger CI Pipeline
-
-GitHub's security feature prevents workflows from triggering other workflows when using \`GITHUB_TOKEN\`. You need to manually trigger the CI:
-
-**Option 1: Push an empty commit** (recommended)
-\`\`\`bash
-git pull
-git commit --allow-empty -m \"chore: trigger CI\"
-git push
-\`\`\`
-
-**Option 2: Re-run from GitHub UI**
-1. Go to [Actions](/${{ github.repository }}/actions)
-2. Find the failed workflow run
-3. Click \"Re-run all jobs\" (make sure to select the latest commit)
-
----
-*This message was generated because commits pushed by GitHub Actions cannot trigger other workflows.*"
-
-            gh pr comment "$PR_NUMBER" --body "$COMMENT_BODY"
+            gh pr comment "$PR_NUMBER" --body-file /tmp/pr-comment.md
             echo "✅ Posted notification to PR #$PR_NUMBER"
           else
             echo "⚠️ No PR found for branch $HEAD_BRANCH - skipping notification"
