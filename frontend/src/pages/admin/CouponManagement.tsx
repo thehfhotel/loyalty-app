@@ -161,35 +161,45 @@ const CouponManagement: React.FC = () => {
 
   const handleAssignCoupons = async () => {
     if (!selectedCoupon || selectedUsers.length === 0) {return;}
-    
+
     try {
       setLoading(true);
       setError(null);
-      
+
       const response = await couponService.assignCouponToUsers({
         couponId: selectedCoupon.id,
         userIds: selectedUsers,
         assignedReason: 'Admin assignment'
       });
-      
+
+      // Verify response indicates success before showing success message
+      if (!response || response.success === false) {
+        const errorMsg = response?.message || 'Failed to assign coupons';
+        setError(errorMsg);
+        toast.error(errorMsg);
+        return;
+      }
+
       // Show success message
-      const assignedCount = response?.assignedCount ?? selectedUsers.length;
+      const assignedCount = response.assignedCount ?? selectedUsers.length;
       toast.success(`Successfully assigned coupon "${selectedCoupon.name}" to ${assignedCount} user(s)`);
-      
+
       setShowAssignModal(false);
       setSelectedUsers([]);
       setSelectedCoupon(null);
       setUserSearchTerm('');
-      
+
       // Refresh the coupons list to update counts
       await loadCoupons();
     } catch (err: unknown) {
       logger.error('Assignment error:', err);
-      const errorMessage = err instanceof Error && 'response' in err
-        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
-        : err instanceof Error ? err.message : 'Failed to assign coupons';
-      setError(errorMessage ?? null);
-      toast.error(errorMessage ?? 'Unknown error');
+      // Extract error message - handle both AxiosError and plain Error
+      let errorMessage = 'Failed to assign coupons';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
