@@ -150,7 +150,7 @@ export const useAuthStore = create<AuthState>()(
 
       checkAuthStatus: async () => {
         const state = get();
-        
+
         // If no access token, not authenticated
         if (!state.accessToken) {
           if (state.isAuthenticated) {
@@ -163,24 +163,46 @@ export const useAuthStore = create<AuthState>()(
           // Try to verify the token by getting user info with timeout
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
-          
+
           const response = await authService.getMe();
           clearTimeout(timeoutId);
 
-          // Update user info if it has changed
-          if (response.data?.email !== state.user?.email ||
-              response.data?.avatarUrl !== state.user?.avatarUrl ||
-              response.data?.firstName !== state.user?.firstName ||
-              response.data?.lastName !== state.user?.lastName) {
-            set({ user: response.data });
+          // Update user info and ensure isAuthenticated is true
+          // This handles cases where tokens exist but isAuthenticated wasn't set
+          // (e.g., OAuth flow interrupted, or state corruption)
+          const updates: Partial<AuthState> = {};
+
+          if (response.data) {
+            if (response.data.email !== state.user?.email ||
+                response.data.avatarUrl !== state.user?.avatarUrl ||
+                response.data.firstName !== state.user?.firstName ||
+                response.data.lastName !== state.user?.lastName) {
+              updates.user = response.data;
+            }
           }
-          
+
+          // Ensure isAuthenticated is true when tokens are valid
+          if (!state.isAuthenticated) {
+            updates.isAuthenticated = true;
+            if (response.data && !state.user) {
+              updates.user = response.data;
+            }
+          }
+
+          if (Object.keys(updates).length > 0) {
+            set(updates);
+          }
+
           return true;
         } catch (error: unknown) {
           // Handle network errors differently from auth errors
           if ((error as HttpError)?.name === 'AbortError' || (error as HttpError)?.code === 'NETWORK_ERROR') {
             logger.warn('Network error during auth check, assuming valid for now:', error instanceof Error ? error.message : String(error));
             // On network errors, don't clear auth - user might be offline
+            // Ensure isAuthenticated is set if we have tokens
+            if (!state.isAuthenticated && state.accessToken) {
+              set({ isAuthenticated: true });
+            }
             return true;
           }
 
@@ -188,13 +210,21 @@ export const useAuthStore = create<AuthState>()(
           if ((error as HttpError)?.response?.status === 429) {
             logger.warn('Rate limit hit during auth check, assuming valid for now');
             // On rate limit, keep user logged in - this is temporary
+            // Ensure isAuthenticated is set if we have tokens
+            if (!state.isAuthenticated && state.accessToken) {
+              set({ isAuthenticated: true });
+            }
             return true;
           }
-          
+
           // Token is invalid or expired, try to refresh
           if (state.refreshToken) {
             try {
               await get().refreshAuth();
+              // After successful refresh, ensure isAuthenticated is true
+              if (!get().isAuthenticated) {
+                set({ isAuthenticated: true });
+              }
               return true;
             } catch (refreshError: unknown) {
               logger.warn('Refresh token failed:', refreshError instanceof Error ? refreshError.message : String(refreshError));
@@ -202,9 +232,13 @@ export const useAuthStore = create<AuthState>()(
               // Handle rate limiting on refresh - don't logout
               if ((refreshError as HttpError)?.response?.status === 429) {
                 logger.warn('Rate limit hit during token refresh, keeping auth state');
+                // Ensure isAuthenticated is set if we have tokens
+                if (!state.isAuthenticated && state.accessToken) {
+                  set({ isAuthenticated: true });
+                }
                 return true;
               }
-              
+
               // Only clear auth on explicit 401/403 errors, not network issues
               if ((refreshError as HttpError)?.response?.status === 401 || (refreshError as HttpError)?.response?.status === 403) {
                 get().clearAuth();
