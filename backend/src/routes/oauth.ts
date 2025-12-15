@@ -38,6 +38,35 @@ function validateReturnUrl(inputUrl: string | undefined): string {
   }
 }
 
+/**
+ * OAuth 2.0 standard error codes (RFC 6749 Section 4.1.2.1)
+ * Only these values are valid OAuth error responses from providers.
+ */
+const OAUTH_ERROR_CODES = new Set([
+  'invalid_request',
+  'unauthorized_client',
+  'access_denied',
+  'unsupported_response_type',
+  'invalid_scope',
+  'server_error',
+  'temporarily_unavailable',
+  // Additional provider-specific errors
+  'interaction_required',
+  'login_required',
+  'consent_required'
+]);
+
+/**
+ * Validates if the error query parameter is a legitimate OAuth error code.
+ * Returns the error code if valid, null otherwise.
+ */
+function getValidOAuthError(errorParam: unknown): string | null {
+  if (typeof errorParam !== 'string' || !errorParam) {
+    return null;
+  }
+  return OAUTH_ERROR_CODES.has(errorParam) ? errorParam : null;
+}
+
 const router = Router();
 
 // Google OAuth routes
@@ -161,11 +190,11 @@ router.get('/google', async (req, res) => {
 router.get('/google/callback', 
   (req, res, next) => {
     try {
-      // Check for OAuth errors in callback
-      // lgtm[js/user-controlled-bypass] - Standard OAuth error handling: providers redirect with error query param on auth failures
-      if (req.query.error) {
+      // Check for OAuth errors in callback - only accept whitelisted OAuth error codes
+      const oauthError = getValidOAuthError(req.query.error);
+      if (oauthError) {
         logger.error('[OAuth] Google OAuth error', {
-          error: sanitizeLogValue(req.query.error as string),
+          error: oauthError,
           description: sanitizeLogValue((req.query.error_description as string) ?? 'No description')
         });
         return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_provider_error`);
@@ -445,11 +474,11 @@ router.get('/line', async (req, res) => {
 
 router.get('/line/callback', async (req, res) => {
   try {
-    // Check for OAuth errors in callback
-    // lgtm[js/user-controlled-bypass] - Standard OAuth error handling: providers redirect with error query param on auth failures
-    if (req.query.error) {
+    // Check for OAuth errors in callback - only accept whitelisted OAuth error codes
+    const oauthError = getValidOAuthError(req.query.error);
+    if (oauthError) {
       logger.error('[OAuth] LINE OAuth error', {
-        error: sanitizeLogValue(req.query.error as string),
+        error: oauthError,
         description: sanitizeLogValue((req.query.error_description as string) ?? 'No description')
       });
       return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_provider_error`);
