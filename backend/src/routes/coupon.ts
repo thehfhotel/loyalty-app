@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { couponController } from '../controllers/couponController';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireAdmin } from '../middleware/auth';
 import { validateRequest } from '../middleware/validateRequest';
 import { z } from 'zod';
 
@@ -81,20 +81,20 @@ router.post('/redeem', validateRequest(redeemCouponSchema), couponController.red
 router.get('/', couponController.listCoupons);
 router.get('/:couponId', couponController.getCoupon);
 
-// Admin routes - Create and manage coupons
-router.post('/', validateRequest(createCouponSchema), couponController.createCoupon);
-router.put('/:couponId', validateRequest(updateCouponSchema), couponController.updateCoupon);
-router.delete('/:couponId', couponController.deleteCoupon);
+// Admin routes - Create and manage coupons (requireAdmin checks DB role)
+router.post('/', requireAdmin(), validateRequest(createCouponSchema), couponController.createCoupon);
+router.put('/:couponId', requireAdmin(), validateRequest(updateCouponSchema), couponController.updateCoupon);
+router.delete('/:couponId', requireAdmin(), couponController.deleteCoupon);
 
 // Admin routes - Coupon assignment and management
-router.post('/assign', validateRequest(assignCouponSchema), couponController.assignCoupon);
-router.post('/user-coupons/:userCouponId/revoke', validateRequest(revokeUserCouponSchema), couponController.revokeUserCoupon);
-router.post('/:couponId/users/:targetUserId/revoke', validateRequest(revokeUserCouponsForCouponSchema), couponController.revokeUserCouponsForCoupon);
+router.post('/assign', requireAdmin(), validateRequest(assignCouponSchema), couponController.assignCoupon);
+router.post('/user-coupons/:userCouponId/revoke', requireAdmin(), validateRequest(revokeUserCouponSchema), couponController.revokeUserCoupon);
+router.post('/:couponId/users/:targetUserId/revoke', requireAdmin(), validateRequest(revokeUserCouponsForCouponSchema), couponController.revokeUserCouponsForCoupon);
 
 // Admin routes - Analytics and reporting
-router.get('/analytics/stats', couponController.getCouponStats);
-router.get('/analytics/data', couponController.getCouponAnalytics);
-router.get('/:couponId/redemptions', couponController.getCouponRedemptions);
-router.get('/:couponId/assignments', couponController.getCouponAssignments);
+router.get('/analytics/stats', requireAdmin(), couponController.getCouponStats);
+router.get('/analytics/data', requireAdmin(), couponController.getCouponAnalytics);
+router.get('/:couponId/redemptions', requireAdmin(), couponController.getCouponRedemptions);
+router.get('/:couponId/assignments', requireAdmin(), couponController.getCouponAssignments);
 
 export default router;

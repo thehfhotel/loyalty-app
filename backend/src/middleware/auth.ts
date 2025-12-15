@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/authService';
 import { AppError } from './errorHandler';
 import { UserRole } from '../types/auth';
+import { query } from '../config/database';
 
 const authService = new AuthService();
 
@@ -18,7 +19,7 @@ export async function authenticate(
 
     const token = authHeader.substring(7);
     const payload = await authService.verifyToken(token);
-    
+
     req.user = payload;
     next();
   } catch (error) {
@@ -51,5 +52,41 @@ export function requireRole(allowedRoles: UserRole[]) {
     }
 
     next();
+  };
+}
+
+/**
+ * Middleware to require admin role with database verification.
+ * This checks the CURRENT role in the database, not just the JWT payload.
+ * Use this for sensitive admin operations where role changes should take effect immediately.
+ */
+export function requireAdmin() {
+  return async (req: Request, _res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return next(new AppError(401, 'Not authenticated'));
+      }
+
+      // Fetch current role from database (not just JWT payload)
+      const [user] = await query<{ role: UserRole }>(
+        'SELECT role FROM users WHERE id = $1 AND is_active = true',
+        [req.user.id]
+      );
+
+      if (!user) {
+        return next(new AppError(401, 'User not found or inactive'));
+      }
+
+      // Update req.user with current role from database
+      req.user.role = user.role;
+
+      if (!['admin', 'super_admin'].includes(user.role)) {
+        return next(new AppError(403, 'Admin access required'));
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
   };
 }

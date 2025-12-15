@@ -12,18 +12,13 @@ import {
 } from '../types/coupon';
 
 export class CouponController {
-  // Create new coupon (Admin only)
+  // Create new coupon (Admin only - requireAdmin middleware handles auth)
   async createCoupon(req: Request, res: Response): Promise<void> {
     try {
       if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
       }
       const userId = req.user.id as string;
-
-      // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user.role ?? '')) {
-        throw new AppError(403, 'Admin access required');
-      }
 
       const data: CreateCouponRequest = req.body;
 
@@ -70,16 +65,11 @@ export class CouponController {
     }
   }
 
-  // Update coupon (Admin only)
+  // Update coupon (Admin only - requireAdmin middleware handles auth)
   async updateCoupon(req: Request, res: Response): Promise<void> {
     try {
       if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
-      }
-
-      // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user.role ?? '')) {
-        throw new AppError(403, 'Admin access required');
       }
 
       const { couponId } = req.params;
@@ -200,18 +190,13 @@ export class CouponController {
     }
   }
 
-  // Assign coupon to users (Admin only)
+  // Assign coupon to users (Admin only - requireAdmin middleware handles auth)
   async assignCoupon(req: Request, res: Response): Promise<void> {
     try {
       if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
       }
       const userId = req.user.id as string;
-
-      // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user.role ?? '')) {
-        throw new AppError(403, 'Admin access required');
-      }
 
       const data: AssignCouponRequest = req.body;
 
@@ -330,14 +315,9 @@ export class CouponController {
     }
   }
 
-  // Get coupon redemption history (Admin only)
+  // Get coupon redemption history (Admin only - requireAdmin middleware handles auth)
   async getCouponRedemptions(req: Request, res: Response): Promise<void> {
     try {
-      // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
-        throw new AppError(403, 'Admin access required');
-      }
-
       const { couponId } = req.params;
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
@@ -364,14 +344,9 @@ export class CouponController {
     }
   }
 
-  // Get coupon analytics (Admin only)
+  // Get coupon analytics (Admin only - requireAdmin middleware handles auth)
   async getCouponAnalytics(req: Request, res: Response): Promise<void> {
     try {
-      // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
-        throw new AppError(403, 'Admin access required');
-      }
-
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
 
@@ -401,14 +376,9 @@ export class CouponController {
     }
   }
 
-  // Get coupon statistics dashboard (Admin only)
-  async getCouponStats(req: Request, res: Response): Promise<void> {
+  // Get coupon statistics dashboard (Admin only - requireAdmin middleware handles auth)
+  async getCouponStats(_req: Request, res: Response): Promise<void> {
     try {
-      // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
-        throw new AppError(403, 'Admin access required');
-      }
-
       const stats = await couponService.getCouponStats();
 
       res.json({
@@ -424,16 +394,11 @@ export class CouponController {
     }
   }
 
-  // Delete coupon (Admin only)
+  // Delete coupon (Admin only - requireAdmin middleware handles auth)
   async deleteCoupon(req: Request, res: Response): Promise<void> {
     try {
       if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
-      }
-
-      // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user.role ?? '')) {
-        throw new AppError(403, 'Admin access required');
       }
 
       const { couponId } = req.params;
@@ -463,16 +428,11 @@ export class CouponController {
     }
   }
 
-  // Revoke user coupon (Admin only)
+  // Revoke user coupon (Admin only - requireAdmin middleware handles auth)
   async revokeUserCoupon(req: Request, res: Response): Promise<void> {
     try {
       if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
-      }
-
-      // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user.role ?? '')) {
-        throw new AppError(403, 'Admin access required');
       }
 
       const { userCouponId } = req.params;
@@ -504,16 +464,11 @@ export class CouponController {
     }
   }
 
-  // Revoke all user coupons for a specific coupon (Admin only)
+  // Revoke all user coupons for a specific coupon (Admin only - requireAdmin middleware handles auth)
   async revokeUserCouponsForCoupon(req: Request, res: Response): Promise<void> {
     try {
       if (!req.user?.id) {
         throw new AppError(401, 'Authentication required');
-      }
-
-      // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user.role ?? '')) {
-        throw new AppError(403, 'Admin access required');
       }
 
       const { couponId, targetUserId } = req.params;
@@ -546,14 +501,9 @@ export class CouponController {
     }
   }
 
-  // Get coupon assignments (Admin only)
+  // Get coupon assignments (Admin only - requireAdmin middleware handles auth)
   async getCouponAssignments(req: Request, res: Response): Promise<void> {
     try {
-      // Check admin permissions
-      if (!['admin', 'super_admin'].includes(req.user?.role ?? '')) {
-        throw new AppError(403, 'Admin access required');
-      }
-
       const { couponId } = req.params;
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
