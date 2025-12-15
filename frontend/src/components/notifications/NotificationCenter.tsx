@@ -116,7 +116,7 @@ export default function NotificationCenter() {
     if (!user || notificationIds.length === 0) {return;}
 
     try {
-      await api.patch('/notifications/mark-read', { notificationIds });
+      await api.post('/notifications/mark-read', { notificationIds });
       // Update local state
       setNotifications(prev => ({
         ...prev,
@@ -136,7 +136,7 @@ export default function NotificationCenter() {
     if (!user || (notifications?.unread ?? 0) === 0) {return;}
 
     try {
-      await api.patch('/notifications/mark-read', { markAll: true });
+      await api.post('/notifications/mark-all-read');
       // Update local state
       setNotifications(prev => ({
         ...prev,
