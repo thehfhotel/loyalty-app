@@ -176,9 +176,8 @@ export class MembershipIdService {
         -- Check active users
         SELECT 1 FROM user_profiles WHERE membership_id = $1
         UNION
-        -- Check deleted users (stored in audit log details)
-        SELECT 1 FROM user_audit_log
-        WHERE details->>'deleted_user_membership_id' = $1
+        -- Check reserved (deleted users') membership IDs
+        SELECT 1 FROM reserved_membership_ids WHERE membership_id = $1
       ) as exists
     `, [membershipId]);
 

@@ -405,6 +405,16 @@ export class UserService {
   }
 
   async deleteUser(userId: string): Promise<void> {
+    // 0. Reserve the membership ID to prevent reuse
+    //    Must be done before user_profiles is CASCADE deleted
+    await query(`
+      INSERT INTO reserved_membership_ids (membership_id, original_user_id, reason)
+      SELECT membership_id, user_id, 'user_deleted'
+      FROM user_profiles
+      WHERE user_id = $1
+      ON CONFLICT (membership_id) DO NOTHING
+    `, [userId]);
+
     // Handle tables with ON DELETE NO ACTION constraints:
 
     // 1. points_transactions.admin_user_id - tracks which admin awarded points (not whose points)
