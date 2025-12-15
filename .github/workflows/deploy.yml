@@ -52,6 +52,14 @@ jobs:
 
       - name: "🗂️ Prepare directories"
         run: |
+          # Verify Node.js version
+          echo "🔍 Node.js: $(node --version) | npm: $(npm --version)"
+          NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
+          if [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ]; then
+            echo "❌ Node.js version mismatch! Expected ${{ env.NODE_VERSION }}.x, got $(node --version)"
+            exit 1
+          fi
+
           echo "🗑️ Removing old cache versions..."
           find /tmp/runner-cache -maxdepth 1 -type d ! -name "${{ env.CACHE_VERSION }}" ! -name "runner-cache" ! -name "workspace" -exec rm -rf {} + 2>/dev/null || true
 
@@ -250,6 +258,11 @@ jobs:
       - name: "🔒 Security & code quality: TypeScript, ESLint, npm audit, validations"
         id: security-results
         run: |
+          # Verify Node.js version
+          echo "🔍 Node.js: $(node --version) | npm: $(npm --version)"
+          NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
+          [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ] && echo "❌ Node.js version mismatch!" && exit 1
+
           echo "=========================================="
           echo "🔍 TypeScript type checking"
           echo "=========================================="
@@ -636,6 +649,11 @@ jobs:
 
       - name: "🧹 Cleanup E2E ports, validate Prisma client & remove stale volumes"
         run: |
+          # Verify Node.js version
+          echo "🔍 Node.js: $(node --version) | npm: $(npm --version)"
+          NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
+          [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ] && echo "❌ Node.js version mismatch!" && exit 1
+
           echo "🧹 Cleaning up E2E ports (5436, 6381, 3201, 4202)..."
           for port in 5436 6381 3201 4202; do
             pid=$(lsof -ti:$port 2>/dev/null || true)
@@ -1168,6 +1186,11 @@ jobs:
 
       - name: "📦 Restore/install backend & frontend dependencies from cache"
         run: |
+          # Verify Node.js version
+          echo "🔍 Node.js: $(node --version) | npm: $(npm --version)"
+          NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
+          [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ] && echo "❌ Node.js version mismatch!" && exit 1
+
           # Backend dependencies
           BACKEND_CACHE="/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules"
           if [ -d "$BACKEND_CACHE/node_modules" ]; then
@@ -1799,6 +1822,11 @@ jobs:
 
       - name: "⚡ Lightning-fast dependency setup"
         run: |
+          # Verify Node.js version
+          echo "🔍 Node.js: $(node --version) | npm: $(npm --version)"
+          NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
+          [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ] && echo "❌ Node.js version mismatch!" && exit 1
+
           echo "⚡ Setting up dependencies with maximum speed..."
 
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
@@ -2545,6 +2573,11 @@ jobs:
 
       - name: "🔀 Merge all test results"
         run: |
+          # Verify Node.js version
+          echo "🔍 Node.js: $(node --version) | npm: $(npm --version)"
+          NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
+          [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ] && echo "❌ Node.js version mismatch!" && exit 1
+
           echo "🔀 Merging test results from all test types..."
 
           # Create combined results directory
