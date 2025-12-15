@@ -277,6 +277,7 @@ export class MembershipIdService {
       throw new AppError(404, 'User profile not found');
     }
 
+    // lgtm[js/log-injection] - Values sanitized via sanitizeUserId/sanitizeLogValue (removes newlines/control chars)
     logger.info(`Membership ID regenerated for user ${sanitizeUserId(userId)}: ${sanitizeLogValue(newMembershipId)}`);
     return newMembershipId;
   }

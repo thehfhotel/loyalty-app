@@ -134,8 +134,10 @@ export class LoyaltyService {
       );
 
       if (result.rows.length > 0) {
+        // lgtm[js/log-injection] - UserId sanitized via sanitizeUserId
         logger.info(`Initialized loyalty status for user ${sanitizeUserId(userId)} - new enrollment`);
       } else {
+        // lgtm[js/log-injection] - UserId sanitized via sanitizeUserId
         logger.debug(`User ${sanitizeUserId(userId)} already has loyalty status - skipping initialization`);
       }
     } catch (error) {
@@ -187,6 +189,7 @@ export class LoyaltyService {
       );
 
       const transactionId = result.rows[0].transaction_id;
+      // lgtm[js/log-injection] - Values sanitized via sanitizeUserId
       logger.info(`Awarded ${points} points to user ${sanitizeUserId(userId)}, transaction: ${sanitizeUserId(transactionId)}`);
       return transactionId;
     } catch (error) {
@@ -544,6 +547,7 @@ export class LoyaltyService {
 
       await client.query('COMMIT');
 
+      // lgtm[js/log-injection] - UserId sanitized via sanitizeUserId
       logger.info(`Added ${nights} nights and ${pointsEarned} points to user ${sanitizeUserId(userId)}`);
 
       // Send notifications asynchronously (don't block the transaction)
@@ -623,6 +627,7 @@ export class LoyaltyService {
         adminReason
       );
 
+      // lgtm[js/log-injection] - UserIds sanitized via sanitizeUserId
       logger.info(`Awarded ${nights} nights to user ${sanitizeUserId(userId)} by admin ${sanitizeUserId(adminUserId)}`);
 
       return {
@@ -671,6 +676,7 @@ export class LoyaltyService {
         adminReason
       );
 
+      // lgtm[js/log-injection] - UserIds sanitized via sanitizeUserId
       logger.info(`Deducted ${nights} nights from user ${sanitizeUserId(userId)} by admin ${sanitizeUserId(adminUserId)}`);
 
       return {

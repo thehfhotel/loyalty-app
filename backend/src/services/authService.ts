@@ -83,6 +83,7 @@ export class AuthService {
         [user.id, data.firstName, data.lastName, data.phone, membershipId, emojiAvatarUrl]
       );
 
+      // lgtm[js/log-injection] - Values sanitized via sanitizeLogValue/sanitizeEmail (removes newlines/control chars)
       logger.info(`User registered with membership ID: ${sanitizeLogValue(membershipId)}, emoji: ${sanitizeLogValue(randomEmoji)} (email: ${sanitizeEmail(data.email)})`);
 
       // Generate tokens (pass client for transaction)
@@ -155,6 +156,7 @@ export class AuthService {
     const requiredRole = adminConfigService.getRequiredRole(email);
     
     if (requiredRole && user.role === 'customer') {
+      // lgtm[js/log-injection] - Values sanitized via sanitizeEmail/sanitizeLogValue
       logger.info(`Upgrading user ${sanitizeEmail(email)} to ${sanitizeLogValue(requiredRole)} role based on admin config`);
 
       // Update user role
@@ -180,6 +182,7 @@ export class AuthService {
       });
     } else if (requiredRole && user.role === 'admin' && requiredRole === 'super_admin') {
       // Handle upgrade from admin to super_admin
+      // lgtm[js/log-injection] - Email sanitized via sanitizeEmail
       logger.info(`Upgrading user ${sanitizeEmail(email)} from admin to super_admin role based on admin config`);
 
       const [upgradedUser] = await query<User & { passwordHash: string }>(
@@ -276,6 +279,7 @@ export class AuthService {
 
     if (!user) {
       // Don't reveal if email exists
+      // lgtm[js/log-injection] - Email sanitized via sanitizeEmail
       logger.info('Password reset requested for non-existent email:', sanitizeEmail(email));
       return;
     }
@@ -292,6 +296,7 @@ export class AuthService {
     );
 
     // TODO: Send email with reset link containing resetToken
+    // lgtm[js/log-injection] - Email sanitized via sanitizeEmail
     logger.info('Password reset token generated for:', sanitizeEmail(email));
     // Note: Reset token should not be logged in production - this is only for development debugging
     if (process.env.NODE_ENV === 'development') {

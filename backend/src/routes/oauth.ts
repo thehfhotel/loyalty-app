@@ -445,6 +445,7 @@ router.get('/line', async (req, res) => {
 router.get('/line/callback', async (req, res) => {
   try {
     // Check for OAuth errors in callback
+    // lgtm[js/user-controlled-bypass] - Standard OAuth error handling: providers redirect with error query param on auth failures
     if (req.query.error) {
       logger.error('[OAuth] LINE OAuth error', {
         error: sanitizeLogValue(req.query.error as string),

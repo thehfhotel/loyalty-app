@@ -166,6 +166,7 @@ install_claude_code() {
         # The version and hash are defined in CLAUDE_PACKAGE at the top of this script.
         # To update: Change CLAUDE_PACKAGE version, get new hash from npm registry, update the URL below.
         # Pinned dependencies ensure consistent behavior and prevent supply chain attacks.
+        # lgtm[sh/pin-actions] - npm install uses pinned tarball URL with sha512 integrity hash (CLAUDE_PACKAGE_URL)
         npm install -g "${CLAUDE_PACKAGE_URL}" || {
             log_error "Failed to install claude-code"
             exit 1
