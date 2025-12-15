@@ -60,7 +60,8 @@ jest.mock('../../../middleware/auth', () => ({
     };
     next();
   },
-  requireAdmin: (req: Request, _res: Response, next: NextFunction) => {
+  // requireAdmin is a factory function that returns middleware
+  requireAdmin: () => (req: Request, _res: Response, next: NextFunction) => {
     req.user = {
       id: 'admin-user-id',
       email: 'admin@example.com',
