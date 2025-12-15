@@ -93,6 +93,9 @@ COPY --from=dev-deps /app/node_modules ./node_modules
 # Copy config files
 COPY --chown=nodejs:nodejs package*.json tsconfig.json prisma.config.ts prisma-env-init.ts ./
 
+# Copy admin config (for admin email configuration)
+COPY --chown=nodejs:nodejs config ./config
+
 # Copy Prisma schema and generated client
 COPY --chown=nodejs:nodejs prisma ./prisma
 COPY --from=builder /app/src/generated ./src/generated
@@ -127,6 +130,9 @@ COPY --from=builder /app/src/generated ./src/generated
 
 # Copy Prisma schema for migrations
 COPY --chown=nodejs:nodejs prisma ./prisma
+
+# Copy admin config (for admin email configuration)
+COPY --chown=nodejs:nodejs config ./config
 
 # Copy package.json for npm scripts
 COPY --chown=nodejs:nodejs package*.json prisma.config.ts prisma-env-init.ts ./
