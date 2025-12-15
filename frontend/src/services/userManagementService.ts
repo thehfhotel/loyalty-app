@@ -8,6 +8,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Required for CSRF cookies
 });
 
 // Use the unified auth token interceptor

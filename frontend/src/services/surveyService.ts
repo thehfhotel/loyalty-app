@@ -23,6 +23,7 @@ import {
 // Create axios instance for surveys and add auth interceptor
 const surveyAxios = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true, // Required for CSRF cookies
 });
 addAuthTokenInterceptor(surveyAxios);
 

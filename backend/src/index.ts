@@ -29,7 +29,7 @@ import {
   securityMonitoring,
   productionSecurity
 } from './middleware/security';
-import { csrfProtection } from './middleware/csrf';
+import { csrfProtection, getCsrfToken } from './middleware/csrf';
 import { connectDatabase } from './config/database';
 import { connectRedis, getRedisClient } from './config/redis';
 import { seedMembershipSequence, seedTiers, seedSurveys } from './utils/seedDatabase';
@@ -267,14 +267,16 @@ function createApp(redisAvailable: boolean) {
   app.use(passport.initialize());
   app.use(passport.session());
 
-  // CSRF protection - skip for health checks, OAuth, and auth routes
+  // CSRF protection - skip for health checks, OAuth, auth routes, and CSRF token endpoint
   // Auth routes (login/register/logout) don't need CSRF because:
   // - Login/register: user isn't authenticated yet (no session to hijack)
   // - Logout: uses refresh token validation, not session cookie
+  // - CSRF token endpoint: needs to generate its own token without interference
   app.use((req, res, next) => {
     if (
       req.path === '/health' ||
       req.path === '/api/health' ||
+      req.path === '/api/csrf-token' ||
       req.path.startsWith('/api/oauth/') ||
       req.path.startsWith('/api/auth/')
     ) {
@@ -366,6 +368,9 @@ function configureApp(app: express.Express) {
       });
     }
   });
+
+  // CSRF token endpoint - allows frontend to fetch token for subsequent requests
+  app.get('/api/csrf-token', getCsrfToken);
 
   // API Routes with layered rate limiting
   const apiRateLimit = createApiRateLimiter(); // IP-based with user awareness

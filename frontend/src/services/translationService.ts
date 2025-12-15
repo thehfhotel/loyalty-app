@@ -15,6 +15,7 @@ import { logger } from '../utils/logger';
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
+  withCredentials: true, // Required for CSRF cookies
 });
 
 addAuthTokenInterceptor(api);

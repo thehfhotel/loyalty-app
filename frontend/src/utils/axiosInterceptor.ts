@@ -2,13 +2,65 @@ import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'ax
 import { useAuthStore } from '../store/authStore';
 import { notify } from './notificationManager';
 import { logger } from './logger';
+import { API_BASE_URL } from './apiConfig';
 
 // Track if we've already shown the session expired message
 let sessionExpiredShown = false;
 
+// CSRF token storage
+let csrfToken: string | null = null;
+let csrfTokenPromise: Promise<string> | null = null;
+
+/**
+ * Fetch CSRF token from the server
+ * Uses singleton pattern to prevent multiple simultaneous fetches
+ */
+export async function fetchCsrfToken(): Promise<string> {
+  // If we're already fetching, return the existing promise
+  if (csrfTokenPromise) {
+    return csrfTokenPromise;
+  }
+
+  csrfTokenPromise = (async () => {
+    try {
+      const response = await axios.get<{ csrfToken: string }>(`${API_BASE_URL}/csrf-token`, {
+        withCredentials: true, // Important: include cookies
+      });
+      csrfToken = response.data.csrfToken;
+      logger.log('[CSRF] Token fetched successfully');
+      return csrfToken;
+    } catch (error) {
+      logger.error('[CSRF] Failed to fetch token:', error);
+      throw error;
+    } finally {
+      csrfTokenPromise = null;
+    }
+  })();
+
+  return csrfTokenPromise;
+}
+
+/**
+ * Get the current CSRF token, fetching if necessary
+ */
+export async function getCsrfToken(): Promise<string> {
+  if (csrfToken) {
+    return csrfToken;
+  }
+  return fetchCsrfToken();
+}
+
+/**
+ * Clear the CSRF token (call on logout)
+ */
+export function clearCsrfToken(): void {
+  csrfToken = null;
+}
+
 // Extend InternalAxiosRequestConfig to include retry tracking
 interface RetryableRequestConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
+  _csrfRetry?: boolean;
 }
 
 // Type for API error responses
@@ -91,14 +143,14 @@ export function setupAxiosInterceptors() {
   );
 }
 
-// Helper function to add auth token to axios instances
+// Helper function to add auth token and CSRF token to axios instances
 export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
   axiosInstance.interceptors.request.use(
-    (config: InternalAxiosRequestConfig) => {
+    async (config: InternalAxiosRequestConfig) => {
       // Try to get token from auth store first, then fallback to localStorage
       const authStore = useAuthStore.getState();
       let token = authStore.accessToken;
-      
+
       // Fallback to localStorage if store doesn't have token
       if (!token) {
         const authStorage = localStorage.getItem('auth-storage');
@@ -111,7 +163,7 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
           }
         }
       }
-      
+
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       } else {
@@ -127,7 +179,20 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
           // Let the axios interceptor handle the redirect
         }
       }
-      
+
+      // Add CSRF token for non-GET requests (state-changing operations)
+      const method = config.method?.toUpperCase();
+      const requiresCsrf = method && !['GET', 'HEAD', 'OPTIONS'].includes(method);
+
+      if (requiresCsrf) {
+        try {
+          const token = await getCsrfToken();
+          config.headers['X-CSRF-Token'] = token;
+        } catch (error) {
+          logger.warn('[CSRF] Could not get token, proceeding without it:', error);
+        }
+      }
+
       return config;
     },
     (error: AxiosError) => {
@@ -135,11 +200,33 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
     }
   );
 
-  // Add response interceptor for 401 handling specific to this instance
+  // Add response interceptor for CSRF and 401 handling specific to this instance
   axiosInstance.interceptors.response.use(
     (response) => response,
     async (error: AxiosError) => {
       const originalRequest = error.config as RetryableRequestConfig;
+      const errorData = error.response?.data as ApiErrorResponse | undefined;
+
+      // Handle CSRF token errors (403 with CSRF message)
+      if (
+        error.response?.status === 403 &&
+        (errorData?.error?.includes('CSRF') || errorData?.message?.includes('CSRF')) &&
+        !originalRequest._csrfRetry
+      ) {
+        originalRequest._csrfRetry = true;
+        logger.log('[CSRF] Token rejected, fetching new token and retrying...');
+
+        try {
+          // Clear old token and fetch a new one
+          clearCsrfToken();
+          const newToken = await fetchCsrfToken();
+          originalRequest.headers['X-CSRF-Token'] = newToken;
+          return axiosInstance.request(originalRequest);
+        } catch (csrfError) {
+          logger.error('[CSRF] Failed to refresh token:', csrfError);
+          return Promise.reject(new Error(extractErrorMessage(error)));
+        }
+      }
 
       if (error.response?.status === 401 && !originalRequest._retry) {
         originalRequest._retry = true;
