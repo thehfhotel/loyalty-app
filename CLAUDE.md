@@ -273,6 +273,21 @@ services:
 - Sanitize user content (prevent XSS)
 - Parameterized queries (prevent SQL injection)
 - Use stored procedures for complex operations
+- **Log injection prevention**: Always use `sanitizeUserId()`, `sanitizeEmail()`, `sanitizeLogValue()` from `backend/src/utils/logSanitizer.ts` for user-controlled values in logs
+
+### CodeQL Code Scanning
+
+**Important Limitations:**
+1. **JavaScript model packs don't support sanitizers** - CodeQL can't be taught to recognize custom sanitizer functions
+2. **Inline comments (`// codeql[]`, `// lgtm[]`) don't work** with GitHub Code Scanning - only with CLI
+3. **Dismiss false positives via API** when sanitizers are properly used:
+   ```bash
+   gh api -X PATCH repos/OWNER/REPO/code-scanning/alerts/NUMBER \
+     -f state=dismissed -f dismissed_reason="false positive" \
+     -f dismissed_comment="Sanitized via sanitizeUserId/sanitizeLogValue"
+   ```
+
+See `SECURITY.md` for full documentation.
 
 ### Git Commits
 ```
