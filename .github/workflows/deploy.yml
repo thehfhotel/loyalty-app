@@ -1614,6 +1614,97 @@ jobs:
 
           echo "✅ Database migration phase completed"
 
+      - name: "🔍 Verify database schema and stored procedures"
+        run: |
+          echo "🔍 Verifying database schema and stored procedures..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
+          cd "$DEPLOY_DIR"
+
+          # Verify critical tables exist
+          echo "📋 Checking critical tables..."
+          TABLES_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty -d loyalty_dev_db -t -c "
+            SELECT string_agg(tablename, ',')
+            FROM pg_tables
+            WHERE schemaname = 'public'
+            AND tablename IN ('users', 'coupons', 'user_coupons', 'tiers', 'user_loyalty', 'audit_logs', 'surveys');
+          " 2>/dev/null | tr -d ' \n')
+
+          REQUIRED_TABLES="users,coupons,user_coupons,tiers,user_loyalty,audit_logs,surveys"
+          MISSING_TABLES=""
+          for table in $(echo "$REQUIRED_TABLES" | tr ',' ' '); do
+            if ! echo "$TABLES_CHECK" | grep -q "$table"; then
+              MISSING_TABLES="$MISSING_TABLES $table"
+            fi
+          done
+
+          if [ -n "$MISSING_TABLES" ]; then
+            echo "❌ Missing tables:$MISSING_TABLES"
+            exit 1
+          else
+            echo "✅ All critical tables exist"
+          fi
+
+          # Verify critical stored procedures exist
+          echo "📋 Checking critical stored procedures..."
+          FUNCTIONS_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty -d loyalty_dev_db -t -c "
+            SELECT string_agg(proname, ',')
+            FROM pg_proc p
+            JOIN pg_namespace n ON p.pronamespace = n.oid
+            WHERE n.nspname = 'public'
+            AND proname IN (
+              'assign_coupon_to_user',
+              'redeem_coupon',
+              'award_points',
+              'recalculate_user_tier_by_nights',
+              'create_notification',
+              'mark_notification_read',
+              'generate_survey_coupon',
+              'get_next_membership_id'
+            );
+          " 2>/dev/null | tr -d ' \n')
+
+          REQUIRED_FUNCTIONS="assign_coupon_to_user,redeem_coupon,award_points,recalculate_user_tier_by_nights,create_notification,mark_notification_read,generate_survey_coupon,get_next_membership_id"
+          MISSING_FUNCTIONS=""
+          for func in $(echo "$REQUIRED_FUNCTIONS" | tr ',' ' '); do
+            if ! echo "$FUNCTIONS_CHECK" | grep -q "$func"; then
+              MISSING_FUNCTIONS="$MISSING_FUNCTIONS $func"
+            fi
+          done
+
+          if [ -n "$MISSING_FUNCTIONS" ]; then
+            echo "❌ Missing stored procedures:$MISSING_FUNCTIONS"
+            echo "⚠️ Run migration to create missing stored procedures"
+            exit 1
+          else
+            echo "✅ All critical stored procedures exist"
+          fi
+
+          # Verify critical triggers exist
+          echo "📋 Checking critical triggers..."
+          TRIGGERS_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty -d loyalty_dev_db -t -c "
+            SELECT string_agg(tgname, ',')
+            FROM pg_trigger t
+            JOIN pg_class c ON t.tgrelid = c.oid
+            WHERE NOT t.tgisinternal
+            AND tgname IN ('trigger_update_user_tier_on_nights', 'set_membership_id_trigger', 'audit_user_changes');
+          " 2>/dev/null | tr -d ' \n')
+
+          REQUIRED_TRIGGERS="trigger_update_user_tier_on_nights,set_membership_id_trigger,audit_user_changes"
+          MISSING_TRIGGERS=""
+          for trigger in $(echo "$REQUIRED_TRIGGERS" | tr ',' ' '); do
+            if ! echo "$TRIGGERS_CHECK" | grep -q "$trigger"; then
+              MISSING_TRIGGERS="$MISSING_TRIGGERS $trigger"
+            fi
+          done
+
+          if [ -n "$MISSING_TRIGGERS" ]; then
+            echo "⚠️ Missing triggers:$MISSING_TRIGGERS (may be optional)"
+          else
+            echo "✅ All critical triggers exist"
+          fi
+
+          echo "✅ Database schema verification completed"
+
       - name: "🏥 Health check"
         run: |
           echo "🏥 Checking development service health..."
@@ -2229,12 +2320,100 @@ jobs:
           echo "🗄️ Checking database migration status..."
           docker compose exec -T backend npm run db:migrate:status && echo "✅ Migration status OK" || echo "⚠️ Cannot verify migration status"
 
+          # Verify critical tables exist
+          echo ""
+          echo "📋 Verifying critical database tables..."
+          TABLES_CHECK=$(docker compose exec -T postgres psql -U loyalty -d loyalty_db -t -c "
+            SELECT string_agg(tablename, ',')
+            FROM pg_tables
+            WHERE schemaname = 'public'
+            AND tablename IN ('users', 'coupons', 'user_coupons', 'tiers', 'user_loyalty', 'audit_logs', 'surveys');
+          " 2>/dev/null | tr -d ' \n')
+
+          REQUIRED_TABLES="users,coupons,user_coupons,tiers,user_loyalty,audit_logs,surveys"
+          MISSING_TABLES=""
+          for table in $(echo "$REQUIRED_TABLES" | tr ',' ' '); do
+            if ! echo "$TABLES_CHECK" | grep -q "$table"; then
+              MISSING_TABLES="$MISSING_TABLES $table"
+            fi
+          done
+
+          if [ -n "$MISSING_TABLES" ]; then
+            echo "❌ Missing tables:$MISSING_TABLES"
+            exit 1
+          else
+            echo "✅ All critical tables exist"
+          fi
+
+          # Verify critical stored procedures exist
+          echo ""
+          echo "📋 Verifying critical stored procedures..."
+          FUNCTIONS_CHECK=$(docker compose exec -T postgres psql -U loyalty -d loyalty_db -t -c "
+            SELECT string_agg(proname, ',')
+            FROM pg_proc p
+            JOIN pg_namespace n ON p.pronamespace = n.oid
+            WHERE n.nspname = 'public'
+            AND proname IN (
+              'assign_coupon_to_user',
+              'redeem_coupon',
+              'award_points',
+              'recalculate_user_tier_by_nights',
+              'create_notification',
+              'mark_notification_read',
+              'generate_survey_coupon',
+              'get_next_membership_id'
+            );
+          " 2>/dev/null | tr -d ' \n')
+
+          REQUIRED_FUNCTIONS="assign_coupon_to_user,redeem_coupon,award_points,recalculate_user_tier_by_nights,create_notification,mark_notification_read,generate_survey_coupon,get_next_membership_id"
+          MISSING_FUNCTIONS=""
+          for func in $(echo "$REQUIRED_FUNCTIONS" | tr ',' ' '); do
+            if ! echo "$FUNCTIONS_CHECK" | grep -q "$func"; then
+              MISSING_FUNCTIONS="$MISSING_FUNCTIONS $func"
+            fi
+          done
+
+          if [ -n "$MISSING_FUNCTIONS" ]; then
+            echo "❌ Missing stored procedures:$MISSING_FUNCTIONS"
+            echo "⚠️ Database drift detected - stored procedures missing"
+            exit 1
+          else
+            echo "✅ All critical stored procedures exist"
+          fi
+
+          # Verify critical triggers exist
+          echo ""
+          echo "📋 Verifying critical triggers..."
+          TRIGGERS_CHECK=$(docker compose exec -T postgres psql -U loyalty -d loyalty_db -t -c "
+            SELECT string_agg(tgname, ',')
+            FROM pg_trigger t
+            JOIN pg_class c ON t.tgrelid = c.oid
+            WHERE NOT t.tgisinternal
+            AND tgname IN ('trigger_update_user_tier_on_nights', 'set_membership_id_trigger', 'audit_user_changes');
+          " 2>/dev/null | tr -d ' \n')
+
+          REQUIRED_TRIGGERS="trigger_update_user_tier_on_nights,set_membership_id_trigger,audit_user_changes"
+          MISSING_TRIGGERS=""
+          for trigger in $(echo "$REQUIRED_TRIGGERS" | tr ',' ' '); do
+            if ! echo "$TRIGGERS_CHECK" | grep -q "$trigger"; then
+              MISSING_TRIGGERS="$MISSING_TRIGGERS $trigger"
+            fi
+          done
+
+          if [ -n "$MISSING_TRIGGERS" ]; then
+            echo "⚠️ Missing triggers:$MISSING_TRIGGERS (may be optional)"
+          else
+            echo "✅ All critical triggers exist"
+          fi
+
+          echo "✅ Database schema verification completed"
+
           # Rollback safety check
           if docker compose exec -T backend test -f "/app/scripts/migration-rollback-safety.sh"; then
             echo "🔍 Running rollback safety check..."
             docker compose exec -T backend bash -c "cd /app && ./scripts/migration-rollback-safety.sh check" && echo "✅ Rollback safety OK" || echo "⚠️ Rollback safety check failed"
           fi
-      
+
       - name: "🏥 Health checks & validation (service readiness)"
         run: |
           echo "🏥 Running comprehensive health checks with enhanced logging..."
