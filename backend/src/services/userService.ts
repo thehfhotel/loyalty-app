@@ -405,13 +405,22 @@ export class UserService {
   }
 
   async deleteUser(userId: string): Promise<void> {
-    // Clear references in tables with ON DELETE NO ACTION constraints
-    // These columns are nullable, so we set them to NULL before deleting the user
+    // Handle tables with ON DELETE NO ACTION constraints:
+
+    // 1. points_transactions.admin_user_id - tracks which admin awarded points (not whose points)
+    //    The user's own points are in user_id column which has CASCADE delete
+    //    Setting to NULL preserves transaction history but removes admin reference
     await query('UPDATE points_transactions SET admin_user_id = NULL WHERE admin_user_id = $1', [userId]);
-    await query('UPDATE user_audit_log SET user_id = NULL WHERE user_id = $1', [userId]);
+
+    // 2. user_audit_log - delete entries for this user (orphaned audit logs aren't useful)
+    await query('DELETE FROM user_audit_log WHERE user_id = $1', [userId]);
+
+    // 3. translation_jobs.created_by - just metadata about who created the job
     await query('UPDATE translation_jobs SET created_by = NULL WHERE created_by = $1', [userId]);
 
-    // Now delete the user - cascade will handle other related data
+    // Now delete the user - CASCADE will handle:
+    // - user_profiles, user_loyalty, user_coupons, points_transactions (user_id)
+    // - refresh_tokens, password_reset_tokens, notifications, etc.
     await query('DELETE FROM users WHERE id = $1', [userId]);
   }
 
