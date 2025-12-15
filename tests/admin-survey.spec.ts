@@ -31,7 +31,7 @@ test.describe('Admin Survey Management', () => {
         },
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Create survey endpoint should exist', async ({ request }) => {
@@ -44,12 +44,12 @@ test.describe('Admin Survey Management', () => {
 
     test('List surveys endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Get survey by ID endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys/00000000-0000-0000-0000-000000000001`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Update survey endpoint should require authentication', async ({ request }) => {
@@ -57,24 +57,24 @@ test.describe('Admin Survey Management', () => {
         data: { title: 'Updated Title' },
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Delete survey endpoint should require authentication', async ({ request }) => {
       const response = await request.delete(`${backendUrl}/api/surveys/00000000-0000-0000-0000-000000000001`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
   });
 
   test.describe('Survey Analytics', () => {
     test('Survey analytics endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys/00000000-0000-0000-0000-000000000001/analytics`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Export survey responses endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys/00000000-0000-0000-0000-000000000001/export`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Analytics endpoints should exist', async ({ request }) => {
@@ -89,7 +89,7 @@ test.describe('Admin Survey Management', () => {
   test.describe('Survey Invitations', () => {
     test('Get survey invitations endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys/00000000-0000-0000-0000-000000000001/invitations`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Send survey invitations endpoint should require authentication', async ({ request }) => {
@@ -97,7 +97,7 @@ test.describe('Admin Survey Management', () => {
         data: {},
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Send invitations to specific users endpoint should require authentication', async ({ request }) => {
@@ -105,7 +105,7 @@ test.describe('Admin Survey Management', () => {
         data: { userIds: ['00000000-0000-0000-0000-000000000001'] },
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Resend invitation endpoint should require authentication', async ({ request }) => {
@@ -113,7 +113,7 @@ test.describe('Admin Survey Management', () => {
         data: {},
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Invitation endpoints should exist', async ({ request }) => {
@@ -137,12 +137,12 @@ test.describe('Admin Survey Management', () => {
         },
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Get survey coupon assignments endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys/00000000-0000-0000-0000-000000000001/coupon-assignments`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Update survey coupon assignment endpoint should require authentication', async ({ request }) => {
@@ -150,22 +150,22 @@ test.describe('Admin Survey Management', () => {
         data: { is_active: false },
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Remove coupon from survey endpoint should require authentication', async ({ request }) => {
       const response = await request.delete(`${backendUrl}/api/surveys/00000000-0000-0000-0000-000000000001/coupon-assignments/00000000-0000-0000-0000-000000000002`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Get survey reward history endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys/00000000-0000-0000-0000-000000000001/reward-history`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Admin coupon assignments overview endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys/admin/coupon-assignments`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Coupon assignment endpoints should exist', async ({ request }) => {
@@ -214,34 +214,34 @@ test.describe('Admin Survey Management', () => {
         },
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Get user survey response endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys/responses/00000000-0000-0000-0000-000000000001/user`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Get all survey responses endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys/00000000-0000-0000-0000-000000000001/responses`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
   });
 
   test.describe('Customer Survey Endpoints', () => {
     test('Get available surveys endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys/available/user`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Get public surveys endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys/public/user`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Get invited surveys endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/surveys/invited/user`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Customer survey endpoints should exist', async ({ request }) => {

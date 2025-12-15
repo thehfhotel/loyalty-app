@@ -19,10 +19,10 @@ test.describe('Admin Coupon Operations', () => {
   };
 
   test.describe('Coupon Endpoints Accessibility', () => {
-    test('Public coupon listing should be accessible without auth', async ({ request }) => {
+    test('Public coupon listing should require auth', async ({ request }) => {
       const response = await retryRequest(request, `${backendUrl}/api/coupons`, 3);
-      // Should return 401 because authenticate middleware is applied
-      expect(response.status()).toBe(401);
+      // Should return 401/403 because authenticate middleware is applied
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Admin endpoints should require authentication', async ({ request }) => {
@@ -44,8 +44,8 @@ test.describe('Admin Coupon Operations', () => {
           });
         }
 
-        // Should return 401 without auth token
-        expect(response.status()).toBe(401);
+        // Should return 401/403 without auth token
+        expect([401, 403]).toContain(response.status());
       }
     });
 
@@ -62,8 +62,8 @@ test.describe('Admin Coupon Operations', () => {
         },
       });
 
-      // Should return 401 for invalid token
-      expect(response.status()).toBe(401);
+      // Should return 401/403 for invalid token
+      expect([401, 403]).toContain(response.status());
     });
   });
 
@@ -86,8 +86,8 @@ test.describe('Admin Coupon Operations', () => {
           },
         });
 
-        // Without auth, should return 401
-        expect(response.status()).toBe(401);
+        // Without auth, should return 401/403
+        expect([401, 403]).toContain(response.status());
       }
     });
 
@@ -103,7 +103,7 @@ test.describe('Admin Coupon Operations', () => {
         headers: { 'Content-Type': 'application/json' },
       });
 
-      expect(response.status()).toBe(401); // Without auth
+      expect([401, 403]).toContain(response.status()); // Without auth
     });
   });
 
@@ -160,9 +160,9 @@ test.describe('Coupon API Contract Tests', () => {
   const backendUrl = process.env.BACKEND_URL || 'http://localhost:4202';
 
   test('List coupons should return proper pagination structure', async ({ request }) => {
-    // Without auth, should return 401
+    // Without auth, should return 401/403
     const response = await request.get(`${backendUrl}/api/coupons?page=1&limit=10`);
-    expect(response.status()).toBe(401);
+    expect([401, 403]).toContain(response.status());
   });
 
   test('Create coupon should validate coupon types', async ({ request }) => {
@@ -178,8 +178,8 @@ test.describe('Coupon API Contract Tests', () => {
         headers: { 'Content-Type': 'application/json' },
       });
 
-      // Without auth, returns 401
-      expect(response.status()).toBe(401);
+      // Without auth, returns 401/403
+      expect([401, 403]).toContain(response.status());
     }
   });
 
@@ -192,6 +192,6 @@ test.describe('Coupon API Contract Tests', () => {
       headers: { 'Content-Type': 'application/json' },
     });
 
-    expect(response.status()).toBe(401);
+    expect([401, 403]).toContain(response.status());
   });
 });

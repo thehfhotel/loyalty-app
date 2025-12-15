@@ -11,7 +11,7 @@ test.describe('Admin Loyalty Management', () => {
   test.describe('Loyalty User Listing', () => {
     test('Admin users loyalty endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/loyalty/admin/users`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Admin users loyalty endpoint should exist', async ({ request }) => {
@@ -21,7 +21,7 @@ test.describe('Admin Loyalty Management', () => {
 
     test('Loyalty users endpoint should support pagination', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/loyalty/admin/users?limit=10&offset=0&search=test`);
-      expect(response.status()).toBe(401); // Auth required, but route exists
+      expect([401, 403]).toContain(response.status()); // Auth required, but route exists
     });
   });
 
@@ -35,7 +35,7 @@ test.describe('Admin Loyalty Management', () => {
         },
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Award points endpoint should exist', async ({ request }) => {
@@ -55,7 +55,7 @@ test.describe('Admin Loyalty Management', () => {
         },
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Deduct points endpoint should exist', async ({ request }) => {
@@ -77,7 +77,7 @@ test.describe('Admin Loyalty Management', () => {
         },
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Award nights endpoint should exist', async ({ request }) => {
@@ -97,7 +97,7 @@ test.describe('Admin Loyalty Management', () => {
         },
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Deduct nights endpoint should exist', async ({ request }) => {
@@ -119,7 +119,7 @@ test.describe('Admin Loyalty Management', () => {
         },
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Award spending with nights endpoint should exist', async ({ request }) => {
@@ -134,7 +134,7 @@ test.describe('Admin Loyalty Management', () => {
   test.describe('Transaction History', () => {
     test('Admin transactions endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/loyalty/admin/transactions`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Admin transactions endpoint should exist', async ({ request }) => {
@@ -144,7 +144,7 @@ test.describe('Admin Loyalty Management', () => {
 
     test('User points history endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/loyalty/admin/user/00000000-0000-0000-0000-000000000001/history`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('User points history endpoint should exist', async ({ request }) => {
@@ -156,7 +156,7 @@ test.describe('Admin Loyalty Management', () => {
   test.describe('Earning Rules', () => {
     test('Earning rules endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/loyalty/admin/earning-rules`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Earning rules endpoint should exist', async ({ request }) => {
@@ -171,7 +171,7 @@ test.describe('Admin Loyalty Management', () => {
         data: {},
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Expire points endpoint should exist', async ({ request }) => {

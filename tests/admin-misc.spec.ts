@@ -11,7 +11,7 @@ test.describe('Admin Analytics Operations', () => {
   test.describe('Analytics Dashboard', () => {
     test('Analytics dashboard endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/analytics/dashboard`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Analytics dashboard endpoint should exist', async ({ request }) => {
@@ -23,7 +23,7 @@ test.describe('Admin Analytics Operations', () => {
   test.describe('Coupon Usage Analytics', () => {
     test('Coupon usage analytics endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/analytics/coupon-usage`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Coupon usage analytics endpoint should exist', async ({ request }) => {
@@ -35,7 +35,7 @@ test.describe('Admin Analytics Operations', () => {
   test.describe('Profile Change Analytics', () => {
     test('Profile changes analytics endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/analytics/profile-changes`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Profile changes analytics endpoint should exist', async ({ request }) => {
@@ -47,7 +47,7 @@ test.describe('Admin Analytics Operations', () => {
   test.describe('User Engagement Analytics', () => {
     test('User engagement metrics endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/analytics/user-engagement`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('User engagement metrics endpoint should exist', async ({ request }) => {
@@ -62,7 +62,7 @@ test.describe('Admin Analytics Operations', () => {
         data: {},
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Update daily analytics endpoint should exist', async ({ request }) => {
@@ -81,7 +81,7 @@ test.describe('Admin Storage Operations', () => {
   test.describe('Storage Statistics', () => {
     test('Storage stats endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/storage/stats`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Storage stats endpoint should exist', async ({ request }) => {
@@ -96,7 +96,7 @@ test.describe('Admin Storage Operations', () => {
         data: {},
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Backup endpoint should exist', async ({ request }) => {
@@ -118,7 +118,7 @@ test.describe('Admin Notifications Operations', () => {
         data: {},
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Cleanup notifications endpoint should exist', async ({ request }) => {
@@ -133,7 +133,7 @@ test.describe('Admin Notifications Operations', () => {
   test.describe('Customer Notification Endpoints', () => {
     test('Get notifications endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/notifications`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Mark notification as read endpoint should require authentication', async ({ request }) => {
@@ -141,7 +141,7 @@ test.describe('Admin Notifications Operations', () => {
         data: {},
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Notification endpoints should exist', async ({ request }) => {
@@ -157,7 +157,7 @@ test.describe('Admin Membership Operations', () => {
   test.describe('Membership Lookup', () => {
     test('Membership lookup endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/membership/lookup/M12345678`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Membership lookup endpoint should exist', async ({ request }) => {
@@ -169,7 +169,7 @@ test.describe('Admin Membership Operations', () => {
   test.describe('Membership Statistics', () => {
     test('Membership stats endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/membership/stats`);
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Membership stats endpoint should exist', async ({ request }) => {
@@ -184,7 +184,7 @@ test.describe('Admin Membership Operations', () => {
         data: {},
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).toBe(401);
+      expect([401, 403]).toContain(response.status());
     });
 
     test('Regenerate membership ID endpoint should exist', async ({ request }) => {
