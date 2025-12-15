@@ -115,7 +115,7 @@ test.describe('Admin Coupon Operations', () => {
 
       const health = await healthResponse.json();
       expect(health.status).toBeTruthy();
-      expect(health.database).toBeTruthy();
+      expect(health.services.database).toBeTruthy();
     });
   });
 
@@ -150,8 +150,11 @@ test.describe('Admin Coupon Operations', () => {
       // The validate endpoint should work without auth (for staff scanning)
       const response = await request.get(`${backendUrl}/api/coupons/validate/TESTCODE123`);
 
-      // Should return a response (not 401), could be 404 if code doesn't exist
-      expect([200, 404]).toContain(response.status());
+      // Should return 200 (endpoint returns valid:false for non-existent codes, not 404)
+      expect(response.status()).toBe(200);
+
+      const data = await response.json();
+      expect(data.success).toBeDefined();
     });
   });
 });

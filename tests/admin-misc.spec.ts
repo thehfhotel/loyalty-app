@@ -270,6 +270,6 @@ test.describe('Admin API Contract Tests', () => {
 
     const health = await response.json();
     expect(health.status).toBeTruthy();
-    expect(health.database).toBeTruthy();
+    expect(health.services.database).toBeTruthy();
   });
 });

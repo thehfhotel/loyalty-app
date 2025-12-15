@@ -302,6 +302,6 @@ test.describe('Admin Survey API Contract Tests', () => {
     expect(response.status()).toBe(200);
 
     const health = await response.json();
-    expect(health.database).toBeTruthy();
+    expect(health.services.database).toBeTruthy();
   });
 });
