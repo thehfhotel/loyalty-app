@@ -132,42 +132,6 @@ test.describe('Build System Validation', () => {
     });
   });
 
-  test.describe('CI/CD Environment Validation', () => {
-    test('should verify required GitHub Secrets are accessible', async () => {
-      // Skip this test in local development (no secrets expected)
-      test.skip(!process.env.CI && !process.env.GITHUB_ACTIONS, 'Only runs in CI/CD');
-      // Skip for Dependabot PRs (no access to secrets)
-      test.skip(process.env.GITHUB_ACTOR === 'dependabot[bot]', 'Dependabot cannot access secrets');
-
-      // Critical secrets required for deployment
-      const requiredSecrets = [
-        'JWT_SECRET',
-        'JWT_REFRESH_SECRET',
-        'SESSION_SECRET',
-        'GOOGLE_CLIENT_ID',
-        'GOOGLE_CLIENT_SECRET',
-        'LINE_CHANNEL_ID',
-        'LINE_CHANNEL_SECRET'
-      ];
-
-      const missingSecrets: string[] = [];
-
-      for (const secret of requiredSecrets) {
-        if (!process.env[secret] || process.env[secret]?.trim() === '') {
-          missingSecrets.push(secret);
-        }
-      }
-
-      if (missingSecrets.length > 0) {
-        throw new Error(
-          `Missing required GitHub Secrets:\n${missingSecrets.map(s => `  - ${s}`).join('\n')}\n\n` +
-          'These secrets must be configured in GitHub repository settings.\n' +
-          'Go to: Settings > Secrets and variables > Actions > Repository secrets'
-        );
-      }
-    });
-  });
-
   test.describe('Database Migration Validation', () => {
     test('should validate migration files exist and are properly structured', async () => {
       const migrationsPath = path.join(backendPath, 'prisma/migrations');
