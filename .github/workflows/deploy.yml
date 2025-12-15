@@ -168,7 +168,7 @@ jobs:
           "
           echo "✅ Root dependencies installed and cached"
 
-      - name: "🔧 Finalize workspace"
+      - name: "🔧 Generate Prisma client & share workspace"
         id: setup-complete
         run: |
           echo "🔧 Generating Prisma client..."
