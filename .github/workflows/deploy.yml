@@ -1791,7 +1791,12 @@ jobs:
           echo "✅ Code deployment completed"
           echo "   Before: $BEFORE_COMMIT"
           echo "   Deployed SHA: $AFTER_COMMIT"
-      
+
+      - name: "⚡ Setup Node.js"
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: "⚡ Lightning-fast dependency setup"
         run: |
           echo "⚡ Setting up dependencies with maximum speed..."
