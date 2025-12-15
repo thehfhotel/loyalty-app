@@ -1626,10 +1626,10 @@ jobs:
             SELECT string_agg(tablename, ',')
             FROM pg_tables
             WHERE schemaname = 'public'
-            AND tablename IN ('users', 'coupons', 'user_coupons', 'tiers', 'user_loyalty', 'audit_logs', 'surveys');
+            AND tablename IN ('users', 'coupons', 'user_coupons', 'tiers', 'user_loyalty', 'user_audit_log', 'surveys');
           " 2>/dev/null | tr -d ' \n')
 
-          REQUIRED_TABLES="users,coupons,user_coupons,tiers,user_loyalty,audit_logs,surveys"
+          REQUIRED_TABLES="users,coupons,user_coupons,tiers,user_loyalty,user_audit_log,surveys"
           MISSING_TABLES=""
           for table in $(echo "$REQUIRED_TABLES" | tr ',' ' '); do
             if ! echo "$TABLES_CHECK" | grep -q "$table"; then
@@ -2327,10 +2327,10 @@ jobs:
             SELECT string_agg(tablename, ',')
             FROM pg_tables
             WHERE schemaname = 'public'
-            AND tablename IN ('users', 'coupons', 'user_coupons', 'tiers', 'user_loyalty', 'audit_logs', 'surveys');
+            AND tablename IN ('users', 'coupons', 'user_coupons', 'tiers', 'user_loyalty', 'user_audit_log', 'surveys');
           " 2>/dev/null | tr -d ' \n')
 
-          REQUIRED_TABLES="users,coupons,user_coupons,tiers,user_loyalty,audit_logs,surveys"
+          REQUIRED_TABLES="users,coupons,user_coupons,tiers,user_loyalty,user_audit_log,surveys"
           MISSING_TABLES=""
           for table in $(echo "$REQUIRED_TABLES" | tr ',' ' '); do
             if ! echo "$TABLES_CHECK" | grep -q "$table"; then
