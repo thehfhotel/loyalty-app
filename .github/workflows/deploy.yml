@@ -50,196 +50,151 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: "🗑️ Clean up old cache versions"
+      - name: "🗂️ Prepare directories"
         run: |
           echo "🗑️ Removing old cache versions..."
-          # Remove all cache directories except current version
           find /tmp/runner-cache -maxdepth 1 -type d ! -name "${{ env.CACHE_VERSION }}" ! -name "runner-cache" ! -name "workspace" -exec rm -rf {} + 2>/dev/null || true
-          echo "✅ Old cache versions cleaned up"
 
-      - name: "🧹 Reset Playwright artifacts (shared workspace)"
-        run: |
           echo "🧹 Clearing stale Playwright and Allure artifacts..."
           rm -rf allure-results test-results backend/allure-results frontend/allure-results 2>/dev/null || true
           mkdir -p allure-results test-results backend/allure-results frontend/allure-results
-          echo "✅ Fresh artifact directories prepared for downstream jobs"
 
-      - name: "📦 Setup versioned cache directories"
-        run: |
-          mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm
-          mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules
-          mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules
-          mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules
-          echo "✅ Cache directories prepared (version: ${{ env.CACHE_VERSION }})"
+          echo "📦 Setting up versioned cache directories..."
+          mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/{npm,backend-node_modules,frontend-node_modules,root-node_modules}
 
-      - name: "📦 Restore backend dependencies with hash validation"
+          echo "✅ Directories prepared (cache version: ${{ env.CACHE_VERSION }})"
+
+      - name: "📦 Restore/install backend dependencies"
         id: backend-cache
-        run: |
-          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules"
-          LOCK_HASH=$(sha256sum backend/package-lock.json | cut -d' ' -f1)
-
-          if [ -f "$CACHE_DIR/.lock-hash" ] && [ -d "$CACHE_DIR/node_modules" ]; then
-            CACHED_HASH=$(cat "$CACHE_DIR/.lock-hash")
-            if [ "$LOCK_HASH" = "$CACHED_HASH" ]; then
-              echo "✅ Cache valid - restoring backend node_modules (hash: ${LOCK_HASH:0:12}...)"
-              cp -r "$CACHE_DIR/node_modules" ./backend/
-              echo "cache-hit=true" >> $GITHUB_OUTPUT
-            else
-              echo "⚠️ package-lock.json changed - cache invalidated"
-              echo "   Old: ${CACHED_HASH:0:12}... → New: ${LOCK_HASH:0:12}..."
-              rm -rf "$CACHE_DIR"
-              mkdir -p "$CACHE_DIR"
-              echo "cache-hit=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "❌ No valid cache found for backend"
-            echo "cache-hit=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: "📦 Install backend dependencies"
-        if: steps.backend-cache.outputs.cache-hit != 'true'
         working-directory: ./backend
         run: |
-          echo "📦 Installing backend dependencies (fresh install)..."
-          npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline --include=dev
-
           CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules"
           LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
 
-          echo "💾 Saving backend node_modules to cache..."
-          # Use flock to prevent race conditions with parallel runs from other branches
-          flock -w 60 "$CACHE_DIR/.flock" bash -c "
-            rm -rf '$CACHE_DIR/node_modules'
-            cp -r node_modules '$CACHE_DIR/'
-            echo '$LOCK_HASH' > '$CACHE_DIR/.lock-hash'
-          "
-          echo "✅ Cache saved with hash: ${LOCK_HASH:0:12}..."
-
-      - name: "📦 Restore frontend dependencies with hash validation"
-        id: frontend-cache
-        run: |
-          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules"
-          LOCK_HASH=$(sha256sum frontend/package-lock.json | cut -d' ' -f1)
-
+          # Check cache validity
           if [ -f "$CACHE_DIR/.lock-hash" ] && [ -d "$CACHE_DIR/node_modules" ]; then
             CACHED_HASH=$(cat "$CACHE_DIR/.lock-hash")
             if [ "$LOCK_HASH" = "$CACHED_HASH" ]; then
-              echo "✅ Cache valid - restoring frontend node_modules (hash: ${LOCK_HASH:0:12}...)"
-              cp -r "$CACHE_DIR/node_modules" ./frontend/
-              echo "cache-hit=true" >> $GITHUB_OUTPUT
-            else
-              echo "⚠️ package-lock.json changed - cache invalidated"
-              echo "   Old: ${CACHED_HASH:0:12}... → New: ${LOCK_HASH:0:12}..."
-              rm -rf "$CACHE_DIR"
-              mkdir -p "$CACHE_DIR"
-              echo "cache-hit=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "❌ No valid cache found for frontend"
-            echo "cache-hit=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: "📦 Install frontend dependencies"
-        if: steps.frontend-cache.outputs.cache-hit != 'true'
-        working-directory: ./frontend
-        run: |
-          echo "📦 Installing frontend dependencies (fresh install)..."
-          npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline
-
-          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules"
-          LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
-
-          echo "💾 Saving frontend node_modules to cache..."
-          # Use flock to prevent race conditions with parallel runs from other branches
-          flock -w 60 "$CACHE_DIR/.flock" bash -c "
-            rm -rf '$CACHE_DIR/node_modules'
-            cp -r node_modules '$CACHE_DIR/'
-            echo '$LOCK_HASH' > '$CACHE_DIR/.lock-hash'
-          "
-          echo "✅ Cache saved with hash: ${LOCK_HASH:0:12}..."
-
-      - name: "📦 Restore root dependencies with hash validation"
-        id: root-cache
-        run: |
-          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules"
-          LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
-
-          if [ -f "$CACHE_DIR/.lock-hash" ] && [ -d "$CACHE_DIR/node_modules" ]; then
-            CACHED_HASH=$(cat "$CACHE_DIR/.lock-hash")
-            if [ "$LOCK_HASH" = "$CACHED_HASH" ]; then
-              echo "✅ Cache valid - restoring root node_modules (hash: ${LOCK_HASH:0:12}...)"
+              echo "✅ Cache hit - restoring backend node_modules (hash: ${LOCK_HASH:0:12}...)"
               cp -r "$CACHE_DIR/node_modules" ./
               echo "cache-hit=true" >> $GITHUB_OUTPUT
-            else
-              echo "⚠️ package-lock.json changed - cache invalidated"
-              echo "   Old: ${CACHED_HASH:0:12}... → New: ${LOCK_HASH:0:12}..."
-              rm -rf "$CACHE_DIR"
-              mkdir -p "$CACHE_DIR"
-              echo "cache-hit=false" >> $GITHUB_OUTPUT
+              exit 0
             fi
+            echo "⚠️ Cache invalidated: ${CACHED_HASH:0:12}... → ${LOCK_HASH:0:12}..."
+            rm -rf "$CACHE_DIR"
+            mkdir -p "$CACHE_DIR"
           else
-            echo "❌ No valid cache found for root"
-            echo "cache-hit=false" >> $GITHUB_OUTPUT
+            echo "❌ No valid cache found"
           fi
 
-      - name: "📦 Install root dependencies (Playwright)"
-        if: steps.root-cache.outputs.cache-hit != 'true'
-        run: |
-          echo "📦 Installing root dependencies (Playwright - fresh install)..."
-          npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline
+          # Install and save to cache
+          echo "📦 Installing backend dependencies..."
+          npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline --include=dev
 
-          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules"
-          LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
-
-          echo "✅ Root dependencies installed (includes @playwright/test)"
-          echo "💾 Saving root node_modules to cache..."
-          # Use flock to prevent race conditions with parallel runs from other branches
+          echo "💾 Saving to cache..."
           flock -w 60 "$CACHE_DIR/.flock" bash -c "
             rm -rf '$CACHE_DIR/node_modules'
             cp -r node_modules '$CACHE_DIR/'
             echo '$LOCK_HASH' > '$CACHE_DIR/.lock-hash'
           "
-          echo "✅ Cache saved with hash: ${LOCK_HASH:0:12}..."
+          echo "cache-hit=false" >> $GITHUB_OUTPUT
+          echo "✅ Backend dependencies installed and cached"
 
-      - name: "🔧 Generate Prisma client (shared)"
-        working-directory: ./backend
+      - name: "📦 Restore/install frontend dependencies"
+        id: frontend-cache
+        working-directory: ./frontend
         run: |
-          echo "🔧 Generating Prisma client for all jobs..."
-          npm run db:generate
+          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules"
+          LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
+
+          # Check cache validity
+          if [ -f "$CACHE_DIR/.lock-hash" ] && [ -d "$CACHE_DIR/node_modules" ]; then
+            CACHED_HASH=$(cat "$CACHE_DIR/.lock-hash")
+            if [ "$LOCK_HASH" = "$CACHED_HASH" ]; then
+              echo "✅ Cache hit - restoring frontend node_modules (hash: ${LOCK_HASH:0:12}...)"
+              cp -r "$CACHE_DIR/node_modules" ./
+              echo "cache-hit=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            echo "⚠️ Cache invalidated: ${CACHED_HASH:0:12}... → ${LOCK_HASH:0:12}..."
+            rm -rf "$CACHE_DIR"
+            mkdir -p "$CACHE_DIR"
+          else
+            echo "❌ No valid cache found"
+          fi
+
+          # Install and save to cache
+          echo "📦 Installing frontend dependencies..."
+          npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline
+
+          echo "💾 Saving to cache..."
+          flock -w 60 "$CACHE_DIR/.flock" bash -c "
+            rm -rf '$CACHE_DIR/node_modules'
+            cp -r node_modules '$CACHE_DIR/'
+            echo '$LOCK_HASH' > '$CACHE_DIR/.lock-hash'
+          "
+          echo "cache-hit=false" >> $GITHUB_OUTPUT
+          echo "✅ Frontend dependencies installed and cached"
+
+      - name: "📦 Restore/install root dependencies"
+        run: |
+          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules"
+          LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
+
+          # Check cache validity
+          if [ -f "$CACHE_DIR/.lock-hash" ] && [ -d "$CACHE_DIR/node_modules" ]; then
+            CACHED_HASH=$(cat "$CACHE_DIR/.lock-hash")
+            if [ "$LOCK_HASH" = "$CACHED_HASH" ]; then
+              echo "✅ Cache hit - restoring root node_modules (hash: ${LOCK_HASH:0:12}...)"
+              cp -r "$CACHE_DIR/node_modules" ./
+              exit 0
+            fi
+            echo "⚠️ Cache invalidated: ${CACHED_HASH:0:12}... → ${LOCK_HASH:0:12}..."
+            rm -rf "$CACHE_DIR"
+            mkdir -p "$CACHE_DIR"
+          else
+            echo "❌ No valid cache found"
+          fi
+
+          # Install and save to cache
+          echo "📦 Installing root dependencies (Playwright)..."
+          npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline
+
+          echo "💾 Saving to cache..."
+          flock -w 60 "$CACHE_DIR/.flock" bash -c "
+            rm -rf '$CACHE_DIR/node_modules'
+            cp -r node_modules '$CACHE_DIR/'
+            echo '$LOCK_HASH' > '$CACHE_DIR/.lock-hash'
+          "
+          echo "✅ Root dependencies installed and cached"
+
+      - name: "🔧 Finalize workspace"
+        id: setup-complete
+        run: |
+          echo "🔧 Generating Prisma client..."
+          cd backend && npm run db:generate
 
           if [ ! -d "src/generated/prisma" ]; then
             echo "❌ Prisma client generation failed"
             exit 1
           fi
+          cd ..
 
-          echo "✅ Prisma client generated successfully"
-
-      - name: "📊 Workspace preparation complete"
-        id: setup-complete
-        run: |
-          echo "✅ Workspace preparation completed"
-          echo "Backend cache hit: ${{ steps.backend-cache.outputs.cache-hit }}"
-          echo "Frontend cache hit: ${{ steps.frontend-cache.outputs.cache-hit }}"
-          echo "ready=true" >> $GITHUB_OUTPUT
-
-      - name: "📤 Copy workspace to shared location"
-        run: |
+          echo "📤 Copying workspace to shared location..."
           SHARED_WORKSPACE="/tmp/runner-cache/workspace/${{ github.run_id }}"
-          echo "📦 Creating shared workspace directory at: $SHARED_WORKSPACE"
           mkdir -p "$SHARED_WORKSPACE"
 
-          echo "📋 Copying workspace files (excluding .git, node_modules, and backup files)..."
-          rsync -av --exclude='.git' \
-                    --exclude='node_modules' \
-                    --exclude='backend/node_modules' \
-                    --exclude='frontend/node_modules' \
-                    --exclude='*.backup' \
-                    --exclude='*.spec.ts.backup' \
-                    --exclude='*.test.ts.backup' \
-                    . "$SHARED_WORKSPACE/"
+          rsync -a --exclude='.git' \
+                   --exclude='node_modules' \
+                   --exclude='backend/node_modules' \
+                   --exclude='frontend/node_modules' \
+                   --exclude='*.backup' \
+                   . "$SHARED_WORKSPACE/"
 
-          echo "✅ Workspace copied to shared location"
-          echo "workspace-path=$SHARED_WORKSPACE" >> $GITHUB_OUTPUT
+          echo "✅ Workspace preparation complete"
+          echo "   Backend cache: ${{ steps.backend-cache.outputs.cache-hit && 'hit' || 'miss' }}"
+          echo "   Frontend cache: ${{ steps.frontend-cache.outputs.cache-hit && 'hit' || 'miss' }}"
+          echo "ready=true" >> $GITHUB_OUTPUT
 
   # =============================================================================
   # PHASE 1: PARALLEL VALIDATION & SECURITY (3-4 minutes)
