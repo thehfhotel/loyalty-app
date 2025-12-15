@@ -35,7 +35,7 @@
     /* Emit Options */
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vite/client", "@testing-library/jest-dom"]
+    "types": ["vite/client", "@testing-library/jest-dom", "vitest/globals"]
   },
   "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]
