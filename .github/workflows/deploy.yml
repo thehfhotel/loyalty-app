@@ -201,7 +201,7 @@ jobs:
   # =============================================================================
 
   validate-and-test:
-    name: "🔒🧪 Validate & Test"
+    name: "🔒🧪 Security, Unit & Integration Tests"
     runs-on: self-hosted
     needs: prepare-workspace
     timeout-minutes: 12
