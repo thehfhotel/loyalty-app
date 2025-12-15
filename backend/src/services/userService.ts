@@ -405,7 +405,13 @@ export class UserService {
   }
 
   async deleteUser(userId: string): Promise<void> {
-    // Note: This will cascade delete user_profiles and other related data
+    // Clear references in tables with ON DELETE NO ACTION constraints
+    // These columns are nullable, so we set them to NULL before deleting the user
+    await query('UPDATE points_transactions SET admin_user_id = NULL WHERE admin_user_id = $1', [userId]);
+    await query('UPDATE user_audit_log SET user_id = NULL WHERE user_id = $1', [userId]);
+    await query('UPDATE translation_jobs SET created_by = NULL WHERE created_by = $1', [userId]);
+
+    // Now delete the user - cascade will handle other related data
     await query('DELETE FROM users WHERE id = $1', [userId]);
   }
 
