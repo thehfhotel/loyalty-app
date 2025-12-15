@@ -412,9 +412,21 @@ export class UserService {
     //    Setting to NULL preserves transaction history but removes admin reference
     await query('UPDATE points_transactions SET admin_user_id = NULL WHERE admin_user_id = $1', [userId]);
 
-    // 2. user_audit_log - SET NULL to retain audit trail for compliance
-    //    The log still has: action, details (JSONB), ip_address, user_agent, created_at
-    await query('UPDATE user_audit_log SET user_id = NULL WHERE user_id = $1', [userId]);
+    // 2. user_audit_log - Pseudonymize for compliance while retaining traceability
+    //    Store membership_id in details before nullifying user_id
+    //    This allows audit correlation without storing PII
+    await query(`
+      UPDATE user_audit_log
+      SET
+        user_id = NULL,
+        details = details || jsonb_build_object(
+          'deleted_user_membership_id', (
+            SELECT membership_id FROM user_profiles WHERE user_id = $1
+          ),
+          'deleted_at', NOW()
+        )
+      WHERE user_id = $1
+    `, [userId]);
 
     // 3. translation_jobs.created_by - just metadata about who created the job
     await query('UPDATE translation_jobs SET created_by = NULL WHERE created_by = $1', [userId]);
