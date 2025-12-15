@@ -167,6 +167,17 @@ describe('Coupon Routes Integration Tests', () => {
       expect(response.body.success).toBe(true);
       expect(response.body.valid).toBe(false);
     });
+
+    it('should return 404 for non-existent QR code', async () => {
+      mockCouponService.getUserCouponByQR.mockResolvedValue(null);
+
+      const response = await request(app)
+        .get('/api/coupons/validate/QR-NONEXISTENT-123');
+
+      expect(response.status).toBe(404);
+      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe('Invalid QR code');
+    });
   });
 
   describe('GET /api/coupons/my-coupons', () => {

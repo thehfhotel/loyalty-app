@@ -543,9 +543,8 @@ export class CouponController {
       const userCoupon = await couponService.getUserCouponByQR(qrCode);
 
       if (!userCoupon) {
-        res.json({
+        res.status(404).json({
           success: false,
-          valid: false,
           message: 'Invalid QR code'
         });
         return;

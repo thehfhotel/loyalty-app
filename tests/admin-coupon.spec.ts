@@ -150,8 +150,8 @@ test.describe('Admin Coupon Operations', () => {
       // The validate endpoint should work without auth (for staff scanning)
       const response = await request.get(`${backendUrl}/api/coupons/validate/TESTCODE123`);
 
-      // Should return 200 (endpoint returns valid:false for non-existent codes, not 404)
-      expect(response.status()).toBe(200);
+      // Should return 200 (valid code) or 404 (non-existent code), never 401/403
+      expect([200, 404]).toContain(response.status());
 
       const data = await response.json();
       expect(data.success).toBeDefined();
