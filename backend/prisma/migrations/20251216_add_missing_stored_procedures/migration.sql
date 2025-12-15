@@ -205,15 +205,15 @@ COMMENT ON FUNCTION create_default_notification_preferences() IS 'Creates defaul
 CREATE OR REPLACE FUNCTION generate_qr_code()
 RETURNS TEXT AS $$
 DECLARE
-    qr_code TEXT;
+    v_qr_code TEXT;
     exists_check INTEGER;
 BEGIN
     LOOP
-        qr_code := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 16));
-        SELECT COUNT(*) INTO exists_check FROM user_coupons WHERE qr_code = qr_code;
+        v_qr_code := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 16));
+        SELECT COUNT(*) INTO exists_check FROM user_coupons uc WHERE uc.qr_code = v_qr_code;
         EXIT WHEN exists_check = 0;
     END LOOP;
-    RETURN qr_code;
+    RETURN v_qr_code;
 END;
 $$ LANGUAGE plpgsql;
 

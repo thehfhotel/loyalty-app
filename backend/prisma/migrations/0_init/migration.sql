@@ -1015,21 +1015,21 @@ CREATE TRIGGER trigger_create_default_notification_preferences
 CREATE OR REPLACE FUNCTION generate_qr_code()
 RETURNS TEXT AS $$
 DECLARE
-    qr_code TEXT;
+    v_qr_code TEXT;
     exists_check INTEGER;
 BEGIN
     LOOP
         -- Generate 16-character alphanumeric code
-        qr_code := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 16));
+        v_qr_code := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 16));
 
         -- Check if it already exists
-        SELECT COUNT(*) INTO exists_check FROM user_coupons WHERE qr_code = qr_code;
+        SELECT COUNT(*) INTO exists_check FROM user_coupons uc WHERE uc.qr_code = v_qr_code;
 
         -- Exit loop if unique
         EXIT WHEN exists_check = 0;
     END LOOP;
 
-    RETURN qr_code;
+    RETURN v_qr_code;
 END;
 $$ LANGUAGE plpgsql;
 
