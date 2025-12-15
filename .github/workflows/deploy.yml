@@ -661,13 +661,14 @@ jobs:
           docker volume rm loyalty-e2e-tests_loyalty_postgres_e2e_data loyalty-e2e-tests_loyalty_redis_e2e_data 2>/dev/null || true
           echo "✅ E2E environment prepared"
 
-      - name: "🏗️ Build backend & frontend applications in parallel"
+      - name: "🏗️ Build backend & frontend applications sequentially"
         run: |
           echo "🏗️ Building backend..."
-          (cd backend && npm run build) &
+          cd backend && npm run build && cd ..
+
           echo "🏗️ Building frontend..."
-          (cd frontend && npm run build) &
-          wait
+          cd frontend && npm run build && cd ..
+
           echo "✅ Both applications built successfully"
 
       - name: "🐳 Create Docker Compose config, start E2E stack & wait for services"
@@ -1131,151 +1132,90 @@ jobs:
       images-ready: ${{ steps.docker-build.outputs.images_ready }}
     
     steps:
-      - name: "🧹 Workspace preparation"
+      - name: "🧹 Clean workspace, setup cache directories & checkout code"
         run: |
-          # Clean workspace with passwordless sudo (now configured)
-          echo "Cleaning workspace at ${{ github.workspace }}"
-          
+          echo "🧹 Cleaning workspace at ${{ github.workspace }}..."
           cd ${{ github.workspace }}
-          
-          # Force clean the problematic directories with sudo
-          echo "Removing build artifacts with elevated permissions..."
-          sudo rm -rf frontend/dist backend/dist 2>/dev/null || true
-          sudo rm -rf frontend/build backend/build 2>/dev/null || true
+
+          # Force clean problematic directories with sudo
+          sudo rm -rf frontend/dist backend/dist frontend/build backend/build 2>/dev/null || true
           sudo rm -rf frontend/.next backend/.next 2>/dev/null || true
           sudo rm -rf node_modules frontend/node_modules backend/node_modules 2>/dev/null || true
-          
+
           # Clean git repository state
           if [ -d ".git" ]; then
-            echo "Cleaning git repository state..."
             sudo git clean -xffd 2>/dev/null || true
             git reset --hard 2>/dev/null || true
           fi
-          
-          # Fix ownership of remaining files to current user
+
+          # Fix ownership
           sudo chown -R $USER:$USER . 2>/dev/null || true
-          
-          echo "Workspace after cleanup:"
-          ls -la
-      
+
+          # Setup cache directories
+          mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/{npm,backend-node_modules,frontend-node_modules}
+          echo "✅ Workspace cleaned and cache directories prepared"
+
       - name: "📥 Checkout code"
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           fetch-depth: 1
-          clean: false  # Don't try to clean, we already did that
-      
+          clean: false
+
       - name: "⚡ Setup Node.js"
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: "📦 Setup local cache directories"
+      - name: "📦 Restore/install backend & frontend dependencies from cache"
         run: |
-          mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm
-          mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules
-          mkdir -p /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules
-          echo "✅ Cache directories prepared"
-
-      - name: "📦 Restore backend node_modules from local cache"
-        id: backend-cache
-        run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules" ]; then
-            echo "✅ Restoring backend node_modules from local cache..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules ./backend/
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          # Backend dependencies
+          BACKEND_CACHE="/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules"
+          if [ -d "$BACKEND_CACHE/node_modules" ]; then
+            echo "✅ Restoring backend node_modules from cache..."
+            cp -r "$BACKEND_CACHE/node_modules" ./backend/
           else
-            echo "❌ No backend cache found"
-            echo "cache-hit=false" >> $GITHUB_OUTPUT
+            echo "📦 Installing backend dependencies..."
+            cd backend && npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline --include=dev
+            flock -w 60 "$BACKEND_CACHE/.flock" bash -c "rm -rf '$BACKEND_CACHE/node_modules' && cp -r node_modules '$BACKEND_CACHE/'"
+            cd ..
           fi
 
-      - name: "📦 Install backend dependencies"
-        if: steps.backend-cache.outputs.cache-hit != 'true'
-        working-directory: ./backend
-        run: |
-          echo "📦 Installing backend dependencies with local npm cache..."
-          npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline --include=dev
-          echo "💾 Saving backend node_modules to local cache..."
-          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules"
-          # Use flock to prevent race conditions with parallel runs from other branches
-          flock -w 60 "$CACHE_DIR/.flock" bash -c "
-            rm -rf '$CACHE_DIR/node_modules'
-            cp -r node_modules '$CACHE_DIR/'
-          "
-
-      - name: "📦 Restore frontend node_modules from local cache"
-        id: frontend-cache
-        run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules" ]; then
-            echo "✅ Restoring frontend node_modules from local cache..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules ./frontend/
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
+          # Frontend dependencies
+          FRONTEND_CACHE="/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules"
+          if [ -d "$FRONTEND_CACHE/node_modules" ]; then
+            echo "✅ Restoring frontend node_modules from cache..."
+            cp -r "$FRONTEND_CACHE/node_modules" ./frontend/
           else
-            echo "❌ No frontend cache found"
-            echo "cache-hit=false" >> $GITHUB_OUTPUT
+            echo "📦 Installing frontend dependencies..."
+            cd frontend && npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline
+            flock -w 60 "$FRONTEND_CACHE/.flock" bash -c "rm -rf '$FRONTEND_CACHE/node_modules' && cp -r node_modules '$FRONTEND_CACHE/'"
+            cd ..
           fi
+          echo "✅ All dependencies ready"
 
-      - name: "📦 Install frontend dependencies"
-        if: steps.frontend-cache.outputs.cache-hit != 'true'
-        working-directory: ./frontend
+      - name: "🔧 Generate Prisma client & build backend/frontend sequentially"
         run: |
-          echo "📦 Installing frontend dependencies with local npm cache..."
-          npm ci --cache /tmp/runner-cache/${{ env.CACHE_VERSION }}/npm --prefer-offline
-          echo "💾 Saving frontend node_modules to local cache..."
-          CACHE_DIR="/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules"
-          # Use flock to prevent race conditions with parallel runs from other branches
-          flock -w 60 "$CACHE_DIR/.flock" bash -c "
-            rm -rf '$CACHE_DIR/node_modules'
-            cp -r node_modules '$CACHE_DIR/'
-          "
+          echo "🔧 Generating Prisma client..."
+          cd backend && npm run db:generate && cd ..
 
-      - name: "🔧 Generate Prisma client (build phase)"
+          echo "🏗️ Building backend (production)..."
+          cd backend && npm run build:prod && cd ..
+
+          echo "🏗️ Building frontend..."
+          cd frontend && npm run build && cd ..
+
+          echo "✅ Prisma generated and both applications built successfully"
+
+      - name: "✅ Verify build artifacts (backend/frontend dist directories)"
         run: |
-          echo "🔧 Generating Prisma client for TypeScript compilation..."
-          cd backend && npm run db:generate
-          echo "✅ Prisma client generated successfully"
+          echo "🔍 Verifying build outputs..."
+          [ -d "backend/dist" ] || { echo "❌ backend/dist missing"; exit 1; }
+          [ -d "frontend/dist" ] || { echo "❌ frontend/dist missing"; exit 1; }
+          [ -f "backend/dist/index.js" ] || { echo "❌ backend/dist/index.js missing"; exit 1; }
+          [ -f "frontend/dist/index.html" ] || { echo "❌ frontend/dist/index.html missing"; exit 1; }
+          echo "✅ All build artifacts verified"
       
-      - name: "🏗️ Build applications (parallel)"
-        run: |
-          # Backend build
-          cd backend && npm run build:prod &
-          BACKEND_PID=$!
-          
-          # Frontend build  
-          cd frontend && npm run build &
-          FRONTEND_PID=$!
-          
-          # Wait for both builds
-          wait $BACKEND_PID
-          BACKEND_EXIT=$?
-          wait $FRONTEND_PID
-          FRONTEND_EXIT=$?
-          
-          # Check results
-          if [ $BACKEND_EXIT -ne 0 ] || [ $FRONTEND_EXIT -ne 0 ]; then
-            echo "Build failed"
-            exit 1
-          fi
-      
-      - name: "✅ Build validation (artifact verification)"
-        run: |
-          # Verify build outputs
-          if [ ! -d "backend/dist" ] || [ ! -d "frontend/dist" ]; then
-            echo "Build artifacts missing"
-            exit 1
-          fi
-          
-          # Check key files exist
-          if [ ! -f "backend/dist/index.js" ]; then
-            echo "Backend build incomplete"
-            exit 1
-          fi
-          
-          if [ ! -f "frontend/dist/index.html" ]; then
-            echo "Frontend build incomplete"
-            exit 1
-          fi
-      
-      - name: "🐳 Build & Tag Docker Images (Production-Ready)"
+      - name: "🐳 Build production Docker images & tag with commit SHA"
         id: docker-build
         env:
           # Provide dummy environment variables for build-time validation
@@ -1367,10 +1307,10 @@ jobs:
           echo "📦 Backend: loyalty-app-backend:$COMMIT_SHA"
           echo "📦 Frontend: loyalty-app-frontend:$COMMIT_SHA"
       
-      - name: "📊 Build results (output summary)"
+      - name: "📊 Record build validation results (passed status)"
         id: build-results
         run: |
-          echo "Build validation completed successfully"
+          echo "✅ Build validation completed successfully"
           echo "passed=true" >> $GITHUB_OUTPUT
 
   # =============================================================================
