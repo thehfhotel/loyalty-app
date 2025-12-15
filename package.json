@@ -41,7 +41,7 @@
     "axios": "^1.11.0",
     "canvas": "^3.2.0",
     "cors": "^2.8.5",
-    "express": "^5.2.0",
+    "express": "^5.2.1",
     "jsonwebtoken": "^9.0.2",
     "node-fetch": "^3.3.2",
     "pg": "^8.16.3",
@@ -49,8 +49,8 @@
   },
   "devDependencies": {
     "allure-playwright": "^3.4.2",
-    "concurrently": "^8.2.2",
+    "concurrently": "^9.2.1",
     "fast-check": "^4.4.0",
-    "glob": "^10.5.0"
+    "glob": "^13.0.0"
   }
 }
