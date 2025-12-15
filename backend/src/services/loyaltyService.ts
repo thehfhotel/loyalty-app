@@ -1,5 +1,6 @@
 import { getPool } from '../config/database';
 import { logger } from '../utils/logger';
+import { sanitizeUserId } from '../utils/logSanitizer';
 import { notificationService } from './notificationService';
 
 export interface Tier {
@@ -133,9 +134,9 @@ export class LoyaltyService {
       );
 
       if (result.rows.length > 0) {
-        logger.info(`Initialized loyalty status for user ${userId} - new enrollment`);
+        logger.info(`Initialized loyalty status for user ${sanitizeUserId(userId)} - new enrollment`);
       } else {
-        logger.debug(`User ${userId} already has loyalty status - skipping initialization`);
+        logger.debug(`User ${sanitizeUserId(userId)} already has loyalty status - skipping initialization`);
       }
     } catch (error) {
       logger.error('Error initializing user loyalty:', error);
@@ -151,7 +152,7 @@ export class LoyaltyService {
     try {
       await this.initializeUserLoyalty(userId);
     } catch (error) {
-      logger.error(`Failed to ensure loyalty enrollment for user ${userId}:`, error);
+      logger.error(`Failed to ensure loyalty enrollment for user ${sanitizeUserId(userId)}:`, error);
       // Don't throw error to avoid breaking login flow
       // Loyalty enrollment failure shouldn't prevent login
     }
@@ -186,7 +187,7 @@ export class LoyaltyService {
       );
 
       const transactionId = result.rows[0].transaction_id;
-      logger.info(`Awarded ${points} points to user ${userId}, transaction: ${transactionId}`);
+      logger.info(`Awarded ${points} points to user ${sanitizeUserId(userId)}, transaction: ${sanitizeUserId(transactionId)}`);
       return transactionId;
     } catch (error) {
       logger.error('Error awarding points:', error);
@@ -543,7 +544,7 @@ export class LoyaltyService {
 
       await client.query('COMMIT');
 
-      logger.info(`Added ${nights} nights and ${pointsEarned} points to user ${userId}`);
+      logger.info(`Added ${nights} nights and ${pointsEarned} points to user ${sanitizeUserId(userId)}`);
 
       // Send notifications asynchronously (don't block the transaction)
       setImmediate(async () => {
@@ -622,7 +623,7 @@ export class LoyaltyService {
         adminReason
       );
 
-      logger.info(`Awarded ${nights} nights to user ${userId} by admin ${adminUserId}`);
+      logger.info(`Awarded ${nights} nights to user ${sanitizeUserId(userId)} by admin ${sanitizeUserId(adminUserId)}`);
 
       return {
         transactionId: result.transactionId,
@@ -670,7 +671,7 @@ export class LoyaltyService {
         adminReason
       );
 
-      logger.info(`Deducted ${nights} nights from user ${userId} by admin ${adminUserId}`);
+      logger.info(`Deducted ${nights} nights from user ${sanitizeUserId(userId)} by admin ${sanitizeUserId(adminUserId)}`);
 
       return {
         transactionId: result.transactionId,

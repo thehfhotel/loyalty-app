@@ -42,6 +42,8 @@ NODE_INSTALL_VERSION=22
 NVM_VERSION="v0.40.3"
 NVM_INSTALL_SHA256="2d8359a64a3cb07c02389ad88ceecd43f2fa469c06104f92f98df5b6f315275f"
 CLAUDE_PACKAGE="@anthropic-ai/claude-code@2.0.69"
+# Full URL with integrity hash for secure installation (update this when changing CLAUDE_PACKAGE)
+CLAUDE_PACKAGE_URL="https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.0.69.tgz#sha512-uuW3M4j3gN9kus0QH/3wEZq+JS3B0YJWzwlX2FqD421eeFVHhauN2HduO99vryHDFvtp8rH9TLKKuythBbNFHA=="
 CONFIG_DIR="$HOME/.claude"
 CONFIG_FILE="$CONFIG_DIR/settings.json"
 API_BASE_URL="https://api.anthropic.com"
@@ -160,7 +162,11 @@ install_claude_code() {
         log_success "Claude Code is already installed: $(claude --version)"
     else
         log_info "Installing Claude Code..."
-        npm install -g "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.0.69.tgz#sha512-uuW3M4j3gN9kus0QH/3wEZq+JS3B0YJWzwlX2FqD421eeFVHhauN2HduO99vryHDFvtp8rH9TLKKuythBbNFHA==" || {
+        # SECURITY: Using pinned version with integrity hash for reproducible and tamper-resistant installs.
+        # The version and hash are defined in CLAUDE_PACKAGE at the top of this script.
+        # To update: Change CLAUDE_PACKAGE version, get new hash from npm registry, update the URL below.
+        # Pinned dependencies ensure consistent behavior and prevent supply chain attacks.
+        npm install -g "${CLAUDE_PACKAGE_URL}" || {
             log_error "Failed to install claude-code"
             exit 1
         }

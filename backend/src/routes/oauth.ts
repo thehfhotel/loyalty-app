@@ -2,7 +2,41 @@
 import { Router } from 'express';
 import passport from 'passport';
 import { logger } from '../utils/logger';
+import { sanitizeLogValue, sanitizeEmail, sanitizeUserId, sanitizeUrl } from '../utils/logSanitizer';
 import { oauthStateService } from '../services/oauthStateService';
+
+/**
+ * Validates and sanitizes OAuth return URLs to prevent open redirect attacks.
+ * Only allows redirects to the configured frontend URL origin.
+ */
+function validateReturnUrl(inputUrl: string | undefined): string {
+  const defaultUrl = process.env.FRONTEND_URL ?? 'http://localhost:4001';
+
+  if (!inputUrl) {
+    return defaultUrl;
+  }
+
+  try {
+    const parsed = new URL(inputUrl);
+    const frontendOrigin = new URL(defaultUrl).origin;
+
+    // Only allow redirects to the same origin as the configured frontend
+    if (parsed.origin === frontendOrigin) {
+      return inputUrl;
+    }
+
+    // Log attempted open redirect attack
+    logger.warn('[OAuth] Blocked potential open redirect attempt', {
+      attemptedUrl: sanitizeUrl(inputUrl),
+      allowedOrigin: frontendOrigin
+    });
+
+    return defaultUrl;
+  } catch {
+    // Invalid URL, use default
+    return defaultUrl;
+  }
+}
 
 const router = Router();
 
@@ -33,7 +67,7 @@ router.get('/google', async (req, res) => {
     
     // Create OAuth state for session continuity across browser context switches
     const userAgent = req.get('User-Agent') ?? '';
-    const returnUrl = (req.query.return_url as string) ?? req.headers.referer ?? process.env.FRONTEND_URL ?? 'http://localhost:4001';
+    const returnUrl = validateReturnUrl((req.query.return_url as string) ?? req.headers.referer);
     
     // PWA-specific parameters
     const isPWA = req.query.pwa === 'true';
@@ -129,8 +163,10 @@ router.get('/google/callback',
     try {
       // Check for OAuth errors in callback
       if (req.query.error) {
-        const error = `Google OAuth error: ${req.query.error} - ${req.query.error_description ?? 'No description'}`;
-        logger.error('[OAuth] ' + error);
+        logger.error('[OAuth] Google OAuth error', {
+          error: sanitizeLogValue(req.query.error as string),
+          description: sanitizeLogValue((req.query.error_description as string) ?? 'No description')
+        });
         return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_provider_error`);
       }
 
@@ -198,7 +234,7 @@ router.get('/google/callback',
       successUrl.searchParams.set('refreshToken', tokens.refreshToken);
       successUrl.searchParams.set('isNewUser', isNewUser.toString());
 
-      logger.info(`[OAuth] Google OAuth success for user ${user.email}, isNewUser: ${isNewUser}`);
+      logger.info(`[OAuth] Google OAuth success for user ${sanitizeEmail(user.email)}, isNewUser: ${isNewUser}`);
       logger.info('[OAuth] Environment check', {
         frontendUrl,
         nodeEnv: process.env.NODE_ENV,
@@ -312,7 +348,7 @@ router.get('/line', async (req, res) => {
     
     // Create OAuth state for session continuity across browser context switches
     const userAgent = req.get('User-Agent') ?? '';
-    const returnUrl = (req.query.return_url as string) ?? req.headers.referer ?? process.env.FRONTEND_URL ?? 'http://localhost:4001';
+    const returnUrl = validateReturnUrl((req.query.return_url as string) ?? req.headers.referer);
     
     // PWA-specific parameters
     const isPWA = req.query.pwa === 'true';
@@ -410,8 +446,10 @@ router.get('/line/callback', async (req, res) => {
   try {
     // Check for OAuth errors in callback
     if (req.query.error) {
-      const error = `LINE OAuth error: ${req.query.error} - ${req.query.error_description ?? 'No description'}`;
-      logger.error('[OAuth] ' + error);
+      logger.error('[OAuth] LINE OAuth error', {
+        error: sanitizeLogValue(req.query.error as string),
+        description: sanitizeLogValue((req.query.error_description as string) ?? 'No description')
+      });
       return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_provider_error`);
     }
 
@@ -471,7 +509,7 @@ router.get('/line/callback', async (req, res) => {
         status: tokenResponse.status, 
         error: errorText 
       });
-      return res.redirect(`${stateData.returnUrl}/login?error=oauth_token_failed`);
+      return res.redirect(`${validateReturnUrl(stateData.returnUrl)}/login?error=oauth_token_failed`);
     }
 
     const tokenData = await tokenResponse.json() as {
@@ -491,7 +529,7 @@ router.get('/line/callback', async (req, res) => {
 
     if (!profileResponse.ok) {
       logger.error('[OAuth] LINE profile fetch failed', { status: profileResponse.status });
-      return res.redirect(`${stateData.returnUrl}/login?error=oauth_profile_failed`);
+      return res.redirect(`${validateReturnUrl(stateData.returnUrl)}/login?error=oauth_profile_failed`);
     }
 
     const lineProfile = await profileResponse.json() as {
@@ -521,7 +559,7 @@ router.get('/line/callback', async (req, res) => {
     
     if (!oauthResult) {
       logger.error('[OAuth] LINE authentication processing failed');
-      return res.redirect(`${stateData.returnUrl}/login?error=oauth_processing_failed`);
+      return res.redirect(`${validateReturnUrl(stateData.returnUrl)}/login?error=oauth_processing_failed`);
     }
 
     const { user, tokens, isNewUser } = oauthResult;
@@ -535,13 +573,14 @@ router.get('/line/callback', async (req, res) => {
     // Cleanup state data
     await oauthStateService.deleteState(state as string, 'line');
 
-    // Create success URL with tokens using original return URL from state
-    const successUrl = new URL('/oauth/success', stateData.returnUrl);
+    // Create success URL with tokens using validated return URL from state
+    const validatedReturnUrl = validateReturnUrl(stateData.returnUrl);
+    const successUrl = new URL('/oauth/success', validatedReturnUrl);
     successUrl.searchParams.set('token', tokens.accessToken);
     successUrl.searchParams.set('refreshToken', tokens.refreshToken);
     successUrl.searchParams.set('isNewUser', isNewUser.toString());
 
-    logger.info(`[OAuth] LINE OAuth success for user ${user.email ?? user.id}, isNewUser: ${isNewUser}`);
+    logger.info(`[OAuth] LINE OAuth success for user ${sanitizeEmail(user.email ?? '')} (${sanitizeUserId(user.id)}), isNewUser: ${isNewUser}`);
     logger.debug('[OAuth] Redirecting to success URL', { successUrl: successUrl.toString() });
     
     // Enhanced mobile-friendly redirect for Safari iPhone compatibility
@@ -590,7 +629,7 @@ router.get('/line/callback', async (req, res) => {
       if (state) {
         const stateData = await oauthStateService.getState(state, 'line');
         if (stateData) {
-          returnUrl = stateData.returnUrl;
+          returnUrl = validateReturnUrl(stateData.returnUrl);
           await oauthStateService.deleteState(state, 'line');
         }
       }

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { retryRequest, retryPageGoto } from './helpers/retry';
+import { retryRequest } from './helpers/retry';
 
 test.describe('Application Health Checks', () => {
   const backendUrl = process.env.BACKEND_URL || 'http://localhost:4202';
@@ -32,7 +32,6 @@ test.describe('Application Health Checks', () => {
 
 test.describe('OAuth Integration Tests', () => {
   const backendUrl = process.env.BACKEND_URL || 'http://localhost:4202';
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3201';  // Used for E2E environment validation
 
   test('OAuth endpoints should be accessible', async ({ request }) => {
     // Test that OAuth endpoints don't return connection errors

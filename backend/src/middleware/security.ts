@@ -347,7 +347,7 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
       visited.add(value);
       return value.map(sanitizeValue);
     }
-    if (value && typeof value === 'object' && value !== null) {
+    if (value !== null && typeof value === 'object') {
       // Check for circular reference in objects
       if (visited.has(value)) {
         return '[Circular Reference]';
@@ -379,14 +379,18 @@ export const inputSanitization = (req: Request, _res: Response, next: NextFuncti
   if (req.query && typeof req.query === 'object') {
     // Use Object.entries to iterate safely without index-based access
     for (const [key, value] of Object.entries(req.query)) {
-      const sanitized = sanitizeValue(value);
-      // Mutate in place since req.query is read-only in Express 5
-      Object.defineProperty(req.query, key, {
-        value: sanitized,
-        writable: true,
-        enumerable: true,
-        configurable: true,
-      });
+      // Validate key to prevent prototype pollution and property injection
+      // Only allow safe property names (alphanumeric, underscore, dollar sign, no __proto__ etc)
+      if (typeof key === 'string' && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key) && !key.startsWith('__')) {
+        const sanitized = sanitizeValue(value);
+        // Mutate in place since req.query is read-only in Express 5
+        Object.defineProperty(req.query, key, {
+          value: sanitized,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+      }
     }
   }
   

@@ -1,5 +1,6 @@
 import { query, getClient } from '../config/database';
 import { logger } from '../utils/logger';
+import { sanitizeLogValue, sanitizeUserId } from '../utils/logSanitizer';
 import { AppError } from '../middleware/errorHandler';
 import { notificationService } from './notificationService';
 import {
@@ -88,7 +89,7 @@ export class CouponService {
         throw new AppError(500, 'Failed to create coupon');
       }
 
-      logger.info(`Coupon created: ${coupon.code} by user ${createdBy}`);
+      logger.info(`Coupon created: ${sanitizeLogValue(coupon.code)} by user ${sanitizeUserId(createdBy)}`);
       return coupon;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -197,7 +198,7 @@ export class CouponService {
         throw new AppError(500, 'Failed to update coupon');
       }
 
-      logger.info(`Coupon updated: ${updatedCoupon.code} by user ${updatedBy}`);
+      logger.info(`Coupon updated: ${sanitizeLogValue(updatedCoupon.code)} by user ${sanitizeUserId(updatedBy)}`);
       return updatedCoupon;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -408,14 +409,14 @@ export class CouponService {
           userCoupons.push(userCoupon);
         } catch (error: unknown) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          logger.warn(`Failed to assign coupon ${data.couponId} to user ${userId}: ${errorMessage}`);
+          logger.warn(`Failed to assign coupon ${sanitizeUserId(data.couponId)} to user ${sanitizeUserId(userId)}: ${sanitizeLogValue(errorMessage)}`);
           // Continue with other users instead of failing the entire batch
         }
       }
 
       await client.query('COMMIT');
 
-      logger.info(`Assigned coupon ${data.couponId} to ${userCoupons.length} users by ${assignedBy}`);
+      logger.info(`Assigned coupon ${sanitizeUserId(data.couponId)} to ${userCoupons.length} users by ${sanitizeUserId(assignedBy)}`);
 
       // Send coupon notifications asynchronously (don't block the response)
       setImmediate(async () => {
@@ -487,9 +488,9 @@ export class CouponService {
       await client.query('COMMIT');
 
       if (result.success) {
-        logger.info(`Coupon redeemed successfully: QR ${data.qrCode} by ${redeemedBy ?? 'system'}`);
+        logger.info(`Coupon redeemed successfully: QR ${sanitizeLogValue(data.qrCode)} by ${sanitizeUserId(redeemedBy ?? 'system')}`);
       } else {
-        logger.warn(`Coupon redemption failed: QR ${data.qrCode} - ${result.message}`);
+        logger.warn(`Coupon redemption failed: QR ${sanitizeLogValue(data.qrCode)} - ${sanitizeLogValue(result.message)}`);
       }
 
       return result;
@@ -932,7 +933,7 @@ export class CouponService {
     );
 
     if (result) {
-      logger.info(`Coupon ${couponId} deleted by ${deletedBy}`);
+      logger.info(`Coupon ${sanitizeUserId(couponId)} deleted by ${sanitizeUserId(deletedBy)}`);
       return true;
     }
 
@@ -1059,7 +1060,7 @@ export class CouponService {
     const revokedCount = result.length;
     
     if (revokedCount > 0) {
-      logger.info(`Revoked ${revokedCount} coupons for user ${userId} and coupon ${couponId} by ${revokedBy}: ${reason ?? 'No reason provided'}`);
+      logger.info(`Revoked ${revokedCount} coupons for user ${sanitizeUserId(userId)} and coupon ${sanitizeUserId(couponId)} by ${sanitizeUserId(revokedBy)}: ${sanitizeLogValue(reason ?? 'No reason provided')}`);
     }
     
     return revokedCount;
@@ -1078,7 +1079,7 @@ export class CouponService {
     );
 
     if (result) {
-      logger.info(`User coupon ${userCouponId} revoked by ${revokedBy}: ${reason ?? 'No reason provided'}`);
+      logger.info(`User coupon ${sanitizeUserId(userCouponId)} revoked by ${sanitizeUserId(revokedBy)}: ${sanitizeLogValue(reason ?? 'No reason provided')}`);
       return true;
     }
 

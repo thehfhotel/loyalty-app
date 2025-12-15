@@ -191,6 +191,12 @@ function createApp(redisAvailable: boolean) {
   // Determine if cookies should be secure (HTTPS only)
   // SECURITY: Defaults to secure=true unless explicitly in development/test
   // This is a security-critical setting; secure cookies prevent session hijacking via MITM
+  //
+  // CodeQL Note: This function can return false for development/test environments.
+  // This is INTENTIONAL for local development without HTTPS. The security model is:
+  // 1. NODE_ENV must be EXPLICITLY set to 'development' or 'test' to allow insecure cookies
+  // 2. Default (unset NODE_ENV) = 'production' = secure cookies REQUIRED
+  // 3. Production deployments MUST use HTTPS - enforced by productionSecurity middleware
   const shouldUseSecureCookies = (): boolean => {
     const nodeEnv = process.env.NODE_ENV ?? 'production'; // Default to production for safety
     const allowInsecureCookies = ['development', 'test'].includes(nodeEnv);

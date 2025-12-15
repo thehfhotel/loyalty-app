@@ -7,6 +7,7 @@ import { query, getClient } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { User, JWTPayload, AuthTokens } from '../types/auth';
 import { logger } from '../utils/logger';
+import { sanitizeEmail, sanitizeLogValue } from '../utils/logSanitizer';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
 import { membershipIdService } from './membershipIdService';
@@ -82,7 +83,7 @@ export class AuthService {
         [user.id, data.firstName, data.lastName, data.phone, membershipId, emojiAvatarUrl]
       );
 
-      logger.info(`User registered with membership ID: ${membershipId}, emoji: ${randomEmoji} (email: ${data.email})`);
+      logger.info(`User registered with membership ID: ${sanitizeLogValue(membershipId)}, emoji: ${sanitizeLogValue(randomEmoji)} (email: ${sanitizeEmail(data.email)})`);
 
       // Generate tokens (pass client for transaction)
       const tokens = await this.generateTokens(user, client);
@@ -154,7 +155,7 @@ export class AuthService {
     const requiredRole = adminConfigService.getRequiredRole(email);
     
     if (requiredRole && user.role === 'customer') {
-      logger.info(`Upgrading user ${email} to ${requiredRole} role based on admin config`);
+      logger.info(`Upgrading user ${sanitizeEmail(email)} to ${sanitizeLogValue(requiredRole)} role based on admin config`);
 
       // Update user role
       const [upgradedUser] = await query<User & { passwordHash: string }>(
@@ -179,7 +180,7 @@ export class AuthService {
       });
     } else if (requiredRole && user.role === 'admin' && requiredRole === 'super_admin') {
       // Handle upgrade from admin to super_admin
-      logger.info(`Upgrading user ${email} from admin to super_admin role based on admin config`);
+      logger.info(`Upgrading user ${sanitizeEmail(email)} from admin to super_admin role based on admin config`);
 
       const [upgradedUser] = await query<User & { passwordHash: string }>(
         `UPDATE users SET role = 'super_admin', updated_at = NOW()
@@ -275,7 +276,7 @@ export class AuthService {
 
     if (!user) {
       // Don't reveal if email exists
-      logger.info('Password reset requested for non-existent email:', email);
+      logger.info('Password reset requested for non-existent email:', sanitizeEmail(email));
       return;
     }
 
@@ -291,8 +292,11 @@ export class AuthService {
     );
 
     // TODO: Send email with reset link containing resetToken
-    logger.info('Password reset token generated for:', email);
-    logger.info('Reset token:', resetToken); // Remove in production
+    logger.info('Password reset token generated for:', sanitizeEmail(email));
+    // Note: Reset token should not be logged in production - this is only for development debugging
+    if (process.env.NODE_ENV === 'development') {
+      logger.debug('Reset token generated (dev only)');
+    }
 
     await this.logUserAction(user.id, 'password_reset_request');
   }

@@ -1,6 +1,7 @@
 import { query } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { logger } from '../utils/logger';
+import { sanitizeLogValue, sanitizeUserId } from '../utils/logSanitizer';
 
 export class MembershipIdService {
   private readonly MAX_ATTEMPTS = 100;
@@ -78,7 +79,7 @@ export class MembershipIdService {
       const blockStart = primaryBlockNumber * this.BLOCK_SIZE + 1;
       const blockEnd = (primaryBlockNumber + 1) * this.BLOCK_SIZE;
 
-      logger.info(`Generated membership ID: ${membershipId} for user #${userCount} (Primary Block ${primaryBlockNumber}: ${blockStart}-${blockEnd})`);
+      logger.info(`Generated membership ID: ${sanitizeLogValue(membershipId)} for user #${userCount} (Primary Block ${primaryBlockNumber}: ${blockStart}-${blockEnd})`);
       return membershipId;
     } catch {
       logger.warn(`Primary block ${primaryBlockNumber} exhausted for user #${userCount}, searching for available blocks`);
@@ -98,7 +99,7 @@ export class MembershipIdService {
         const blockStart = fallbackBlock * this.BLOCK_SIZE + 1;
         const blockEnd = (fallbackBlock + 1) * this.BLOCK_SIZE;
 
-        logger.info(`Generated membership ID: ${membershipId} for user #${userCount} (Fallback Block ${fallbackBlock}: ${blockStart}-${blockEnd}) - Advanced ${blockOffset} blocks due to exhaustion`);
+        logger.info(`Generated membership ID: ${sanitizeLogValue(membershipId)} for user #${userCount} (Fallback Block ${fallbackBlock}: ${blockStart}-${blockEnd}) - Advanced ${blockOffset} blocks due to exhaustion`);
         return membershipId;
       } catch {
         logger.debug(`Fallback block ${fallbackBlock} also exhausted, trying next block`);
@@ -121,7 +122,7 @@ export class MembershipIdService {
         const blockStart = fallbackBlock * this.BLOCK_SIZE + 1;
         const blockEnd = (fallbackBlock + 1) * this.BLOCK_SIZE;
 
-        logger.info(`Generated membership ID: ${membershipId} for user #${userCount} (Backward Fallback Block ${fallbackBlock}: ${blockStart}-${blockEnd}) - Retreated ${blockOffset} blocks due to exhaustion`);
+        logger.info(`Generated membership ID: ${sanitizeLogValue(membershipId)} for user #${userCount} (Backward Fallback Block ${fallbackBlock}: ${blockStart}-${blockEnd}) - Retreated ${blockOffset} blocks due to exhaustion`);
         return membershipId;
       } catch {
         logger.debug(`Backward fallback block ${fallbackBlock} also exhausted, trying previous block`);
@@ -276,7 +277,7 @@ export class MembershipIdService {
       throw new AppError(404, 'User profile not found');
     }
 
-    logger.info(`Membership ID regenerated for user ${userId}: ${newMembershipId}`);
+    logger.info(`Membership ID regenerated for user ${sanitizeUserId(userId)}: ${sanitizeLogValue(newMembershipId)}`);
     return newMembershipId;
   }
 
