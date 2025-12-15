@@ -105,33 +105,37 @@ function App() {
         if (authStore.accessToken && authStore.refreshToken) {
           try {
             // Add timeout to auth validation to prevent hanging
+            // Use 5s timeout - generous enough for slow networks
             const validationPromise = authStore.checkAuthStatus();
-            const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('Auth validation timeout')), 3000);
+            const timeoutPromise = new Promise<boolean>((resolve) => {
+              setTimeout(() => {
+                logger.debug('Auth validation timeout - keeping user logged in');
+                resolve(true); // On timeout, assume valid and let subsequent requests handle refresh
+              }, 5000);
             });
-            
+
             const isValid = await Promise.race([validationPromise, timeoutPromise]);
 
             if (!isValid) {
-              logger.warn('Stored auth tokens are invalid, clearing auth state');
-              authStore.clearAuth();
+              // checkAuthStatus returns false for network errors but doesn't clear auth
+              // Only log a warning - the auth state is already handled by checkAuthStatus
+              // The axios interceptor will handle token refresh on subsequent API calls
+              logger.debug('Auth validation returned false - auth state handled by checkAuthStatus');
             }
           } catch (error) {
             logger.warn('Auth validation failed during initialization:', error instanceof Error ? error.message : error);
-            // Don't clear auth on rate limit or network errors during page refresh
-            if (error instanceof Error && (error.message.includes('429') || error.message.includes('rate limit'))) {
-              logger.debug('Rate limit during auth init, keeping user logged in');
-            } else if (error && typeof error === 'object' && 'response' in error) {
-              const httpError = error as { response?: { status?: number } };
-              if (httpError.response?.status === 429) {
-                logger.debug('Rate limit HTTP error during auth init, keeping user logged in');
-              } else {
-                // Clear potentially corrupted auth state on other HTTP errors
-                authStore.clearAuth();
-              }
-            } else {
-              // Clear auth state on other types of errors
+            // On any error during initialization, keep user logged in if they have tokens
+            // The axios interceptor will handle token refresh/logout on actual API calls
+            // This prevents logout on network issues, slow backend, or temporary errors
+            const httpError = error as { response?: { status?: number } };
+            const status = httpError?.response?.status;
+
+            // Only clear auth on explicit auth failures (401/403 from the server)
+            if (status === 401 || status === 403) {
+              logger.warn('Auth explicitly rejected by server, clearing auth state');
               authStore.clearAuth();
+            } else {
+              logger.debug('Non-auth error during init, keeping user logged in');
             }
           }
         }
