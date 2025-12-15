@@ -165,17 +165,23 @@ export class MembershipIdService {
   }
 
   /**
-   * Checks if a membership ID already exists in the database
+   * Checks if a membership ID already exists or was previously used
    * @param membershipId - Membership ID to check
-   * @returns Promise<boolean> - True if exists, false otherwise
+   * @returns Promise<boolean> - True if exists or was used, false otherwise
    * @private
    */
   private async checkIdExists(membershipId: string): Promise<boolean> {
-    const [result] = await query<{ exists: boolean }>(
-      'SELECT EXISTS(SELECT 1 FROM user_profiles WHERE membership_id = $1) as exists',
-      [membershipId]
-    );
-    
+    const [result] = await query<{ exists: boolean }>(`
+      SELECT EXISTS(
+        -- Check active users
+        SELECT 1 FROM user_profiles WHERE membership_id = $1
+        UNION
+        -- Check deleted users (stored in audit log details)
+        SELECT 1 FROM user_audit_log
+        WHERE details->>'deleted_user_membership_id' = $1
+      ) as exists
+    `, [membershipId]);
+
     return result?.exists ?? false;
   }
 
