@@ -67,6 +67,22 @@ function getValidOAuthError(errorParam: unknown): string | null {
   return OAUTH_ERROR_CODES.has(errorParam) ? errorParam : null;
 }
 
+/**
+ * Validates and extracts OAuth callback parameters.
+ * Returns validated strings or null if invalid/missing.
+ * This converts user-controlled input to server-validated values.
+ */
+function getValidOAuthParams(query: { code?: unknown; state?: unknown }): { code: string; state: string } | null {
+  const code = typeof query.code === 'string' && query.code.length > 0 ? query.code : null;
+  const state = typeof query.state === 'string' && query.state.length > 0 ? query.state : null;
+
+  if (!code || !state) {
+    return null;
+  }
+
+  return { code, state };
+}
+
 const router = Router();
 
 // Google OAuth routes
@@ -484,22 +500,24 @@ router.get('/line/callback', async (req, res) => {
       return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_provider_error`);
     }
 
-    const { code, state } = req.query;
-    
-    if (!code || !state) {
-      logger.error('[OAuth] LINE callback missing required parameters', { code: !!code, state: !!state });
+    // Validate OAuth callback parameters - converts user input to server-validated values
+    const oauthParams = getValidOAuthParams(req.query);
+    if (!oauthParams) {
+      logger.error('[OAuth] LINE callback missing or invalid parameters');
       return res.redirect(`${process.env.FRONTEND_URL ?? 'http://localhost:4001'}/login?error=oauth_invalid`);
     }
 
+    const { code, state } = oauthParams;
+
     logger.debug('[OAuth] LINE OAuth callback received', {
-      hasCode: !!code,
-      hasState: !!state,
+      hasCode: true,
+      hasState: true,
       userAgent: req.get('User-Agent'),
       ip: req.ip
     });
 
     // Retrieve state data for session continuity
-    const stateData = await oauthStateService.getState(state as string, 'line');
+    const stateData = await oauthStateService.getState(state, 'line');
     
     if (!stateData) {
       logger.error('[OAuth] LINE callback with invalid or expired state', { state });
@@ -519,7 +537,7 @@ router.get('/line/callback', async (req, res) => {
     const lineTokenUrl = 'https://api.line.me/oauth2/v2.1/token';
     const tokenParams = new URLSearchParams({
       grant_type: 'authorization_code',
-      code: code as string,
+      code,
       redirect_uri: process.env.LINE_CALLBACK_URL ?? 'http://localhost:4001/api/oauth/line/callback',
       client_id: process.env.LINE_CHANNEL_ID ?? '',
       client_secret: process.env.LINE_CHANNEL_SECRET ?? ''
