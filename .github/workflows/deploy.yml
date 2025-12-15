@@ -608,67 +608,35 @@ jobs:
       e2e-passed: ${{ steps.e2e-results.outputs.passed }}
 
     steps:
-      - name: "📥 Copy shared workspace from local storage"
+      - name: "📥 Copy shared workspace & restore root/backend/frontend dependencies"
         run: |
           SHARED_WORKSPACE="/tmp/runner-cache/workspace/${{ github.run_id }}"
-          echo "📦 Copying workspace from shared location: $SHARED_WORKSPACE"
-
           if [ ! -d "$SHARED_WORKSPACE" ]; then
-            echo "❌ CRITICAL: Shared workspace not found at $SHARED_WORKSPACE"
-            echo "This job depends on the prepare-workspace job completing successfully"
+            echo "❌ Shared workspace not found at $SHARED_WORKSPACE"
             exit 1
           fi
+          rsync -a "$SHARED_WORKSPACE/" .
+          echo "✅ Workspace ready"
 
-          echo "📋 Copying workspace files..."
-          rsync -av "$SHARED_WORKSPACE/" .
+          echo "📦 Restoring root node_modules (Playwright)..."
+          cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules/node_modules ./ || exit 1
 
-          echo "✅ Workspace copied from shared location"
+          echo "📦 Restoring backend node_modules..."
+          cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules ./backend/ || exit 1
 
-      - name: "⚡ Setup Node.js"
+          echo "📦 Restoring frontend node_modules..."
+          cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules ./frontend/ || exit 1
+
+          echo "✅ All dependencies restored"
+
+      - name: "⚡ Setup Node.js runtime environment"
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: "📦 Restore root dependencies (Playwright) from local cache"
-        id: root-cache-restore
+      - name: "🧹 Cleanup E2E ports, validate Prisma client & remove stale volumes"
         run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules/node_modules" ]; then
-            echo "✅ Restoring root node_modules from local cache..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules/node_modules ./
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ CRITICAL: Root cache missing - should have been prepared by prepare-workspace job"
-            exit 1
-          fi
-
-      - name: "📦 Restore backend dependencies from local cache"
-        id: backend-cache-restore
-        run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules" ]; then
-            echo "✅ Restoring backend node_modules from local cache..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules ./backend/
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ CRITICAL: Backend cache missing - should have been prepared by prepare-workspace job"
-            exit 1
-          fi
-
-      - name: "📦 Restore frontend dependencies from local cache"
-        id: frontend-cache-restore
-        run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules" ]; then
-            echo "✅ Restoring frontend node_modules from local cache..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules ./frontend/
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ CRITICAL: Frontend cache missing - should have been prepared by prepare-workspace job"
-            exit 1
-          fi
-
-      - name: "🧹 Cleanup E2E ports"
-        run: |
-          echo "🧹 Cleaning up E2E ports before starting tests..."
-          # Kill any processes using E2E ports
+          echo "🧹 Cleaning up E2E ports (5436, 6381, 3201, 4202)..."
           for port in 5436 6381 3201 4202; do
             pid=$(lsof -ti:$port 2>/dev/null || true)
             if [ ! -z "$pid" ]; then
@@ -676,58 +644,33 @@ jobs:
               kill -9 $pid 2>/dev/null || true
             fi
           done
-
-          # Wait for ports to be released
           sleep 2
           echo "✅ Port cleanup completed"
 
-      - name: "🔧 Setup isolated E2E environment"
-        run: |
-          # Use unique project name and ports to avoid conflicts with unit tests
-          export COMPOSE_PROJECT_NAME="loyalty-e2e-tests"
-          export POSTGRES_PORT="5436"
-          export REDIS_PORT="6381"
-          export BACKEND_PORT="4202"
-          export FRONTEND_PORT="3201"
-
-          echo "🚀 Setting up isolated E2E environment on custom ports..."
-
-          # Database services will be started with the complete compose file after build
-      
-      - name: "🏗️ Build and start isolated application for E2E"
-        env:
-          DATABASE_URL: postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db
-          REDIS_URL: redis://localhost:6381
-          NODE_ENV: development
-          JWT_SECRET: e2e-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxxx
-          JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-must-be-64-chars-minimum-xxx
-          SESSION_SECRET: e2e-session-secret-for-testing-only-min-32-chars
-          FRONTEND_URL: http://localhost:3201
-          BACKEND_URL: http://localhost:4202
-          VITE_API_URL: http://localhost:4202/api
-        run: |
-          # Validate Prisma client from workspace (already generated)
+          echo ""
           echo "🔍 Validating Prisma client from shared workspace..."
           if [ ! -d "backend/src/generated/prisma" ]; then
             echo "❌ Prisma client not found - workspace preparation may have failed"
             exit 1
           fi
+          echo "✅ Prisma client validated"
 
-          echo "✅ Prisma client validated successfully"
-
-          # Critical: Remove E2E database volumes to ensure clean state
-          echo "🧹 Removing E2E database volumes to prevent migration state corruption..."
+          echo ""
+          echo "🧹 Removing stale E2E database volumes..."
           docker volume rm loyalty_postgres_e2e_data loyalty_redis_e2e_data 2>/dev/null || true
           docker volume rm loyalty-e2e-tests_loyalty_postgres_e2e_data loyalty-e2e-tests_loyalty_redis_e2e_data 2>/dev/null || true
-          
-          # Build backend and frontend
-          echo "🏗️ Building application for isolated E2E testing..."
+          echo "✅ E2E environment prepared"
+
+      - name: "🏗️ Build backend & frontend applications in parallel"
+        run: |
+          echo "🏗️ Building backend..."
           (cd backend && npm run build) &
+          echo "🏗️ Building frontend..."
           (cd frontend && npm run build) &
           wait
-          
+          echo "✅ Both applications built successfully"
 
-      - name: "🔄 E2E Environment Setup and Database Migration"
+      - name: "🐳 Create Docker Compose config, start E2E stack & wait for services"
         working-directory: .
         env:
           DATABASE_URL: postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db
@@ -976,7 +919,7 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
 
-      - name: "🎭 Run E2E tests with Playwright (isolated)"
+      - name: "🎭 Execute Playwright E2E test suite against isolated stack"
         id: run-e2e-tests
         env:
           NODE_ENV: test
@@ -1060,7 +1003,7 @@ jobs:
           echo "🎭 Running E2E tests - failures will BLOCK the pipeline..."
           npx playwright test
 
-      - name: "🗄️ Database migration rollback safety"
+      - name: "🗄️ Verify database migration rollback safety (non-blocking)"
         run: |
           echo "🗄️ Checking migration rollback safety..."
           if [ -f "./scripts/migration-rollback-safety.sh" ]; then
@@ -1069,22 +1012,20 @@ jobs:
             echo "⚠️ Migration rollback safety script not found - skipping"
           fi
       
-      - name: "📊 E2E results summary"
+      - name: "📊 Record E2E test results (success/failure status)"
         id: e2e-results
-        if: success()
+        if: always()
         run: |
-          echo "✅ E2E tests completed successfully"
-          echo "passed=true" >> $GITHUB_OUTPUT
+          if [ "${{ steps.run-e2e-tests.outcome }}" = "success" ]; then
+            echo "✅ E2E tests completed successfully"
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ E2E tests failed"
+            echo "passed=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
 
-      - name: "📊 E2E results summary (failure)"
-        id: e2e-results-failure
-        if: failure()
-        run: |
-          echo "❌ E2E tests failed"
-          echo "passed=false" >> $GITHUB_OUTPUT
-          exit 1
-
-      - name: "📊 Upload E2E test Allure results"
+      - name: "📤 Upload E2E Allure results to GitHub artifacts"
         if: always()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
@@ -1093,7 +1034,7 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-      - name: "💬 Comment E2E results on PR"
+      - name: "💬 Post E2E test results comment on pull request"
         if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         continue-on-error: true
@@ -1157,7 +1098,7 @@ jobs:
               });
             }
 
-      - name: "🧹 Cleanup isolated E2E environment"
+      - name: "🧹 Teardown E2E Docker containers, volumes & generated config"
         if: always()
         run: |
           echo "🧹 Cleaning up isolated E2E environment..."
