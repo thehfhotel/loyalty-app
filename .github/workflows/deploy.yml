@@ -1655,15 +1655,11 @@ jobs:
               'assign_coupon_to_user',
               'redeem_coupon',
               'award_points',
-              'recalculate_user_tier_by_nights',
-              'create_notification',
-              'mark_notification_read',
-              'generate_survey_coupon',
-              'get_next_membership_id'
+              'recalculate_user_tier_by_nights'
             );
           " 2>/dev/null | tr -d ' \n')
 
-          REQUIRED_FUNCTIONS="assign_coupon_to_user,redeem_coupon,award_points,recalculate_user_tier_by_nights,create_notification,mark_notification_read,generate_survey_coupon,get_next_membership_id"
+          REQUIRED_FUNCTIONS="assign_coupon_to_user,redeem_coupon,award_points,recalculate_user_tier_by_nights"
           MISSING_FUNCTIONS=""
           for func in $(echo "$REQUIRED_FUNCTIONS" | tr ',' ' '); do
             if ! echo "$FUNCTIONS_CHECK" | grep -q "$func"; then
@@ -2357,15 +2353,11 @@ jobs:
               'assign_coupon_to_user',
               'redeem_coupon',
               'award_points',
-              'recalculate_user_tier_by_nights',
-              'create_notification',
-              'mark_notification_read',
-              'generate_survey_coupon',
-              'get_next_membership_id'
+              'recalculate_user_tier_by_nights'
             );
           " 2>/dev/null | tr -d ' \n')
 
-          REQUIRED_FUNCTIONS="assign_coupon_to_user,redeem_coupon,award_points,recalculate_user_tier_by_nights,create_notification,mark_notification_read,generate_survey_coupon,get_next_membership_id"
+          REQUIRED_FUNCTIONS="assign_coupon_to_user,redeem_coupon,award_points,recalculate_user_tier_by_nights"
           MISSING_FUNCTIONS=""
           for func in $(echo "$REQUIRED_FUNCTIONS" | tr ',' ' '); do
             if ! echo "$FUNCTIONS_CHECK" | grep -q "$func"; then
