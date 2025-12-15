@@ -1,0 +1,32 @@
+# Custom Log Sanitizer Models for loyalty-app
+# These functions sanitize user input by removing newlines and control characters
+# to prevent log injection attacks.
+#
+# Source: backend/src/utils/logSanitizer.ts
+
+extensions:
+  - addsTo:
+      pack: codeql/javascript-all
+      extensible: summaryModel
+    data:
+      # sanitizeLogValue - removes newlines, carriage returns, and control characters
+      - ["loyalty-app", "Member[sanitizeLogValue]", "Argument[0]", "ReturnValue", "taint"]
+
+      # sanitizeUserId - validates UUID format and sanitizes
+      - ["loyalty-app", "Member[sanitizeUserId]", "Argument[0]", "ReturnValue", "taint"]
+
+      # sanitizeEmail - removes newlines and control characters from email
+      - ["loyalty-app", "Member[sanitizeEmail]", "Argument[0]", "ReturnValue", "taint"]
+
+      # sanitizeUrl - sanitizes URL values for logging
+      - ["loyalty-app", "Member[sanitizeUrl]", "Argument[0]", "ReturnValue", "taint"]
+
+  - addsTo:
+      pack: codeql/javascript-all
+      extensible: neutralModel
+    data:
+      # Mark these functions as sanitizers (neutral for log injection)
+      - ["loyalty-app", "Member[sanitizeLogValue]", "log-injection"]
+      - ["loyalty-app", "Member[sanitizeUserId]", "log-injection"]
+      - ["loyalty-app", "Member[sanitizeEmail]", "log-injection"]
+      - ["loyalty-app", "Member[sanitizeUrl]", "log-injection"]

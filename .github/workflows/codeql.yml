@@ -47,8 +47,8 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          # Security and quality queries for comprehensive analysis
-          queries: security-extended,security-and-quality
+          # Use custom config with sanitizer models
+          config-file: ./.github/codeql/codeql-config.yml
 
       # Perform CodeQL Analysis
       - name: Perform CodeQL Analysis
