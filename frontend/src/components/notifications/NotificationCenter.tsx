@@ -1,9 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { FiBell, FiCheck, FiX, FiTrash2 } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
 import { formatDistanceToNow } from 'date-fns';
 import { logger } from '../../utils/logger';
+import axios from 'axios';
+import { addAuthTokenInterceptor } from '../../utils/axiosInterceptor';
+import { API_BASE_URL } from '../../utils/apiConfig';
 
 interface NotificationData {
   coupon?: {
@@ -46,6 +49,17 @@ export default function NotificationCenter() {
   const [isLoading, setIsLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Create axios instance with auth and CSRF interceptors
+  const api = useMemo(() => {
+    const instance = axios.create({
+      baseURL: API_BASE_URL,
+      headers: { 'Content-Type': 'application/json' },
+      withCredentials: true,
+    });
+    addAuthTokenInterceptor(instance);
+    return instance;
+  }, []);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -60,34 +74,24 @@ export default function NotificationCenter() {
 
   const fetchNotifications = useCallback(async () => {
     if (!user) {return;}
-    
+
     setIsLoading(true);
     try {
-      const response = await fetch('/api/notifications?limit=10&includeRead=true', {
-        headers: {
-          'Authorization': `Bearer ${useAuthStore.getState().accessToken}`,
-          'Content-Type': 'application/json',
-        },
+      const response = await api.get('/notifications?limit=10&includeRead=true');
+      const result = response.data;
+      // Count unread notifications from the response
+      const unreadCount = result.notifications?.filter((n: Notification) => !n.readAt).length ?? 0;
+      setNotifications({
+        total: result.pagination?.total ?? result.notifications?.length ?? 0,
+        unread: unreadCount,
+        notifications: result.notifications ?? []
       });
-
-      if (response.ok) {
-        const result = await response.json();
-        // Count unread notifications from the response
-        const unreadCount = result.notifications?.filter((n: Notification) => !n.readAt).length ?? 0;
-        setNotifications({
-          total: result.pagination?.total ?? result.notifications?.length ?? 0,
-          unread: unreadCount,
-          notifications: result.notifications ?? []
-        });
-      } else {
-        logger.error('Failed to fetch notifications');
-      }
     } catch (error) {
       logger.error('Error fetching notifications:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, api]);
 
   // Fetch notifications on mount and when user changes
   useEffect(() => {
@@ -96,38 +100,33 @@ export default function NotificationCenter() {
     }
   }, [user, fetchNotifications]);
 
-  // Refresh notifications when dropdown opens
+  // Refresh notifications and mark as read when dropdown opens
   useEffect(() => {
     if (isOpen && user) {
       fetchNotifications();
+      // Auto-mark all as read when user opens the dropdown
+      if (notifications.unread > 0) {
+        markAllAsRead();
+      }
     }
-  }, [isOpen, user, fetchNotifications]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, user]);
 
   const markAsRead = async (notificationIds: string[]) => {
     if (!user || notificationIds.length === 0) {return;}
 
     try {
-      const response = await fetch('/api/notifications/mark-read', {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${useAuthStore.getState().accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ notificationIds }),
-      });
-
-      if (response.ok) {
-        // Update local state
-        setNotifications(prev => ({
-          ...prev,
-          unread: Math.max(0, prev.unread - notificationIds.length),
-          notifications: prev.notifications.map(notif => 
-            notificationIds.includes(notif.id) 
-              ? { ...notif, readAt: new Date().toISOString() }
-              : notif
-          )
-        }));
-      }
+      await api.patch('/notifications/mark-read', { notificationIds });
+      // Update local state
+      setNotifications(prev => ({
+        ...prev,
+        unread: Math.max(0, prev.unread - notificationIds.length),
+        notifications: prev.notifications.map(notif =>
+          notificationIds.includes(notif.id)
+            ? { ...notif, readAt: new Date().toISOString() }
+            : notif
+        )
+      }));
     } catch (error) {
       logger.error('Error marking notifications as read:', error);
     }
@@ -137,26 +136,16 @@ export default function NotificationCenter() {
     if (!user || (notifications?.unread ?? 0) === 0) {return;}
 
     try {
-      const response = await fetch('/api/notifications/mark-read', {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${useAuthStore.getState().accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ markAll: true }),
-      });
-
-      if (response.ok) {
-        // Update local state
-        setNotifications(prev => ({
-          ...prev,
-          unread: 0,
-          notifications: prev.notifications.map(notif => ({
-            ...notif,
-            readAt: notif.readAt ?? new Date().toISOString()
-          }))
-        }));
-      }
+      await api.patch('/notifications/mark-read', { markAll: true });
+      // Update local state
+      setNotifications(prev => ({
+        ...prev,
+        unread: 0,
+        notifications: prev.notifications.map(notif => ({
+          ...notif,
+          readAt: notif.readAt ?? new Date().toISOString()
+        }))
+      }));
     } catch (error) {
       logger.error('Error marking all notifications as read:', error);
     }
@@ -166,22 +155,14 @@ export default function NotificationCenter() {
     if (!user) {return;}
 
     try {
-      const response = await fetch(`/api/notifications/${notificationId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${useAuthStore.getState().accessToken}`,
-        },
-      });
-
-      if (response.ok) {
-        // Update local state
-        const deletedNotification = notifications.notifications.find(n => n.id === notificationId);
-        setNotifications(prev => ({
-          total: prev.total - 1,
-          unread: deletedNotification && !deletedNotification.readAt ? prev.unread - 1 : prev.unread,
-          notifications: prev.notifications.filter(n => n.id !== notificationId)
-        }));
-      }
+      await api.delete(`/notifications/${notificationId}`);
+      // Update local state
+      const deletedNotification = notifications.notifications.find(n => n.id === notificationId);
+      setNotifications(prev => ({
+        total: prev.total - 1,
+        unread: deletedNotification && !deletedNotification.readAt ? prev.unread - 1 : prev.unread,
+        notifications: prev.notifications.filter(n => n.id !== notificationId)
+      }));
     } catch (error) {
       logger.error('Error deleting notification:', error);
     }
