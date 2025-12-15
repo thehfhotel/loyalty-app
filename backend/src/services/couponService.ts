@@ -409,7 +409,7 @@ export class CouponService {
           userCoupons.push(userCoupon);
         } catch (error: unknown) {
           const errorMessage = error instanceof Error ? error.message : String(error);
-          // lgtm[js/log-injection] - Values sanitized via sanitizeUserId/sanitizeLogValue (removes newlines/control chars)
+          // codeql[js/log-injection] - Values sanitized via sanitizeUserId/sanitizeLogValue (removes newlines/control chars)
           logger.warn(`Failed to assign coupon ${sanitizeUserId(data.couponId)} to user ${sanitizeUserId(userId)}: ${sanitizeLogValue(errorMessage)}`);
           // Continue with other users instead of failing the entire batch
         }
@@ -417,7 +417,7 @@ export class CouponService {
 
       await client.query('COMMIT');
 
-      // lgtm[js/log-injection] - Values sanitized via sanitizeUserId (removes newlines/control chars)
+      // codeql[js/log-injection] - Values sanitized via sanitizeUserId (removes newlines/control chars)
       logger.info(`Assigned coupon ${sanitizeUserId(data.couponId)} to ${userCoupons.length} users by ${sanitizeUserId(assignedBy)}`);
 
       // Send coupon notifications asynchronously (don't block the response)
@@ -490,10 +490,10 @@ export class CouponService {
       await client.query('COMMIT');
 
       if (result.success) {
-        // lgtm[js/log-injection] - Values sanitized via sanitizeLogValue/sanitizeUserId (removes newlines/control chars)
+        // codeql[js/log-injection] - Values sanitized via sanitizeLogValue/sanitizeUserId (removes newlines/control chars)
         logger.info(`Coupon redeemed successfully: QR ${sanitizeLogValue(data.qrCode)} by ${sanitizeUserId(redeemedBy ?? 'system')}`);
       } else {
-        // lgtm[js/log-injection] - Values sanitized via sanitizeLogValue (removes newlines/control chars)
+        // codeql[js/log-injection] - Values sanitized via sanitizeLogValue (removes newlines/control chars)
         logger.warn(`Coupon redemption failed: QR ${sanitizeLogValue(data.qrCode)} - ${sanitizeLogValue(result.message)}`);
       }
 
@@ -937,7 +937,7 @@ export class CouponService {
     );
 
     if (result) {
-      // lgtm[js/log-injection] - Values sanitized via sanitizeUserId (removes newlines/control chars)
+      // codeql[js/log-injection] - Values sanitized via sanitizeUserId (removes newlines/control chars)
       logger.info(`Coupon ${sanitizeUserId(couponId)} deleted by ${sanitizeUserId(deletedBy)}`);
       return true;
     }
@@ -1065,7 +1065,7 @@ export class CouponService {
     const revokedCount = result.length;
 
     if (revokedCount > 0) {
-      // lgtm[js/log-injection] - Values sanitized via sanitizeUserId/sanitizeLogValue (removes newlines/control chars)
+      // codeql[js/log-injection] - Values sanitized via sanitizeUserId/sanitizeLogValue (removes newlines/control chars)
       logger.info(`Revoked ${revokedCount} coupons for user ${sanitizeUserId(userId)} and coupon ${sanitizeUserId(couponId)} by ${sanitizeUserId(revokedBy)}: ${sanitizeLogValue(reason ?? 'No reason provided')}`);
     }
     
@@ -1085,7 +1085,7 @@ export class CouponService {
     );
 
     if (result) {
-      // lgtm[js/log-injection] - Values sanitized via sanitizeUserId/sanitizeLogValue (removes newlines/control chars)
+      // codeql[js/log-injection] - Values sanitized via sanitizeUserId/sanitizeLogValue (removes newlines/control chars)
       logger.info(`User coupon ${sanitizeUserId(userCouponId)} revoked by ${sanitizeUserId(revokedBy)}: ${sanitizeLogValue(reason ?? 'No reason provided')}`);
       return true;
     }
