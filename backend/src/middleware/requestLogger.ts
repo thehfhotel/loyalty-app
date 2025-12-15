@@ -8,10 +8,12 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
   res.on('finish', () => {
     const duration = Date.now() - start;
     const sanitizedUrl = sanitizeUrl(req.originalUrl);
-    const message = `${req.method} ${sanitizedUrl}`;
+    const sanitizedMethod = sanitizeLogValue(req.method);
+    // codeql[js/log-injection] - Values sanitized via sanitizeLogValue/sanitizeUrl
+    const message = `${sanitizedMethod} ${sanitizedUrl}`;
 
     const logData = {
-      method: req.method,
+      method: sanitizedMethod,
       url: sanitizedUrl,
       status: res.statusCode,
       duration: `${duration}ms`,
