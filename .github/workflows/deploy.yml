@@ -3283,21 +3283,21 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: "📥 Download unit test results"
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v6
         with:
           name: allure-results-unit-${{ github.run_id }}
           path: allure-results-unit/
         continue-on-error: true
 
       - name: "📥 Download integration test results"
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v6
         with:
           name: allure-results-integration-${{ github.run_id }}
           path: allure-results-integration/
         continue-on-error: true
 
       - name: "📥 Download E2E test results"
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v6
         with:
           name: allure-results-e2e-${{ github.run_id }}
           path: allure-results-e2e/
