@@ -2494,31 +2494,30 @@ jobs:
           # Export environment variables
           echo "NODE_ENV=production" >> $GITHUB_ENV
           echo "LOG_LEVEL=info" >> $GITHUB_ENV
-          echo "CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}" >> $GITHUB_ENV
+          echo "CORS_ORIGINS=${{ vars.CORS_ORIGINS }}" >> $GITHUB_ENV
           
           # Core secrets
           echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> $GITHUB_ENV
           echo "JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}" >> $GITHUB_ENV
           echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> $GITHUB_ENV
           echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
-          echo "REDIS_URL=${{ secrets.REDIS_URL || 'redis://redis:6379' }}" >> $GITHUB_ENV
-          echo "FRONTEND_URL=${{ secrets.FRONTEND_URL }}" >> $GITHUB_ENV
-          echo "BACKEND_URL=${{ secrets.BACKEND_URL }}" >> $GITHUB_ENV
-          echo "VITE_API_URL=${{ secrets.VITE_API_URL }}" >> $GITHUB_ENV
-          
+          echo "REDIS_URL=${{ vars.REDIS_URL || 'redis://redis:6379' }}" >> $GITHUB_ENV
+
+          # URLs (from environment variables, not secrets)
+          echo "FRONTEND_URL=${{ vars.FRONTEND_URL }}" >> $GITHUB_ENV
+          echo "BACKEND_URL=${{ vars.BACKEND_URL }}" >> $GITHUB_ENV
+          echo "VITE_API_URL=${{ vars.VITE_API_URL }}" >> $GITHUB_ENV
+
           # OAuth Configuration
           echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> $GITHUB_ENV
           echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" >> $GITHUB_ENV
-          echo "GOOGLE_CALLBACK_URL=${{ secrets.GOOGLE_CALLBACK_URL || vars.GOOGLE_CALLBACK_URL }}" >> $GITHUB_ENV
-          echo "FACEBOOK_APP_ID=${{ secrets.FACEBOOK_APP_ID }}" >> $GITHUB_ENV
-          echo "FACEBOOK_APP_SECRET=${{ secrets.FACEBOOK_APP_SECRET }}" >> $GITHUB_ENV
-          echo "FACEBOOK_CALLBACK_URL=${{ secrets.FACEBOOK_CALLBACK_URL }}" >> $GITHUB_ENV
+          echo "GOOGLE_CALLBACK_URL=${{ vars.GOOGLE_CALLBACK_URL }}" >> $GITHUB_ENV
           echo "LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}" >> $GITHUB_ENV
           echo "LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}" >> $GITHUB_ENV
-          echo "LINE_CALLBACK_URL=${{ secrets.LINE_CALLBACK_URL || vars.LINE_CALLBACK_URL }}" >> $GITHUB_ENV
-          
-          # Azure Translation Service
-          echo "TRANSLATION_FEATURE_ENABLED=${{ secrets.TRANSLATION_FEATURE_ENABLED || 'false' }}" >> $GITHUB_ENV
+          echo "LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}" >> $GITHUB_ENV
+
+          # Feature flags
+          echo "TRANSLATION_FEATURE_ENABLED=false" >> $GITHUB_ENV
           
           # Loyalty System Configuration
           echo "LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}" >> $GITHUB_ENV
@@ -2560,13 +2559,10 @@ jobs:
           VITE_TRANSLATION_ENABLED=${TRANSLATION_FEATURE_ENABLED}
           TRANSLATION_FEATURE_ENABLED=${TRANSLATION_FEATURE_ENABLED}
           
-          # OAuth Configuration
+          # OAuth Configuration (Google and LINE only - Facebook not implemented)
           GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
           GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
           GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL}
-          FACEBOOK_APP_ID=${FACEBOOK_APP_ID}
-          FACEBOOK_APP_SECRET=${FACEBOOK_APP_SECRET}
-          FACEBOOK_CALLBACK_URL=${FACEBOOK_CALLBACK_URL}
           LINE_CHANNEL_ID=${LINE_CHANNEL_ID}
           LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET}
           LINE_CALLBACK_URL=${LINE_CALLBACK_URL}
