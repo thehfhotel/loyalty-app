@@ -160,9 +160,8 @@ install_claude_code() {
         log_success "Claude Code is already installed: $(claude --version)"
     else
         log_info "Installing Claude Code..."
-        # SECURITY: Pinned tarball with integrity hash - update hash via: npm view @anthropic-ai/claude-code@<ver> dist.integrity
-        npm install -g "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.0.69.tgz" \
-            --integrity="sha512-uuW3M4j3gN9kus0QH/3wEZq+JS3B0YJWzwlX2FqD421eeFVHhauN2HduO99vryHDFvtp8rH9TLKKuythBbNFHA==" || {
+        # SECURITY: Pinned tarball with SRI hash - update via: npm view @anthropic-ai/claude-code@<ver> dist.integrity
+        npm install -g "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.0.69.tgz#sha512-uuW3M4j3gN9kus0QH/3wEZq+JS3B0YJWzwlX2FqD421eeFVHhauN2HduO99vryHDFvtp8rH9TLKKuythBbNFHA==" || {
             log_error "Failed to install claude-code"
             exit 1
         }
