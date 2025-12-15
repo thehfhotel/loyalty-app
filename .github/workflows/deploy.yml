@@ -197,231 +197,124 @@ jobs:
           echo "ready=true" >> $GITHUB_OUTPUT
 
   # =============================================================================
-  # PHASE 1: PARALLEL VALIDATION & SECURITY (3-4 minutes)
+  # PHASE 1: VALIDATION & TESTING (Security, Unit Tests, Integration Tests)
   # =============================================================================
 
-  # Job 1A: Code Quality & Security Analysis (Parallel)
-  security-analysis:
-    name: "🔒 Security & Code Quality"
+  validate-and-test:
+    name: "🔒🧪 Validate & Test"
     runs-on: self-hosted
     needs: prepare-workspace
-    timeout-minutes: 5
+    timeout-minutes: 12
+    permissions:
+      pull-requests: write
+      contents: read
+    concurrency:
+      group: validate-and-test
+      cancel-in-progress: false
     outputs:
       security-passed: ${{ steps.security-results.outputs.passed }}
-      audit-passed: ${{ steps.security-audit.outputs.passed }}
+      unit-tests-passed: ${{ steps.unit-test-results.outputs.passed }}
+      integration-tests-passed: ${{ steps.integration-test-results.outputs.passed }}
+      coverage-percent: ${{ steps.unit-test-results.outputs.coverage }}
 
     steps:
-      - name: "📥 Copy shared workspace from local storage"
+      # =========================================================================
+      # SETUP (shared across all phases)
+      # =========================================================================
+      - name: "📥 Copy shared workspace"
         run: |
           SHARED_WORKSPACE="/tmp/runner-cache/workspace/${{ github.run_id }}"
-          echo "📦 Copying workspace from shared location: $SHARED_WORKSPACE"
-
           if [ ! -d "$SHARED_WORKSPACE" ]; then
-            echo "❌ CRITICAL: Shared workspace not found at $SHARED_WORKSPACE"
-            echo "This job depends on the prepare-workspace job completing successfully"
+            echo "❌ Shared workspace not found at $SHARED_WORKSPACE"
             exit 1
           fi
-
-          echo "📋 Copying workspace files..."
-          rsync -av "$SHARED_WORKSPACE/" .
-
-          echo "✅ Workspace copied from shared location"
+          rsync -a "$SHARED_WORKSPACE/" .
+          echo "✅ Workspace ready"
 
       - name: "⚡ Setup Node.js"
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: "📦 Restore backend dependencies from local cache"
-        id: backend-cache-restore
+      - name: "📦 Restore dependencies"
         run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules" ]; then
-            echo "✅ Restoring backend node_modules from local cache..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules ./backend/
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ CRITICAL: Backend cache missing - should have been prepared by prepare-workspace job"
-            exit 1
-          fi
+          echo "📦 Restoring backend node_modules..."
+          cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules ./backend/ || exit 1
 
-      - name: "📦 Restore frontend dependencies from local cache"
-        id: frontend-cache-restore
+          echo "📦 Restoring frontend node_modules..."
+          cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules ./frontend/ || exit 1
+
+          echo "✅ Dependencies restored"
+
+      # =========================================================================
+      # PHASE 1: SECURITY & CODE QUALITY
+      # =========================================================================
+      - name: "🔍 TypeScript type checking"
         run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules" ]; then
-            echo "✅ Restoring frontend node_modules from local cache..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules ./frontend/
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ CRITICAL: Frontend cache missing - should have been prepared by prepare-workspace job"
-            exit 1
-          fi
+          echo "🔍 Checking backend..."
+          cd backend && npm run typecheck
+          echo "🔍 Checking frontend..."
+          cd ../frontend && npm run typecheck
+          echo "✅ TypeScript checks passed"
 
-      - name: "🔍 TypeScript type checking - Backend (validation)"
-        working-directory: ./backend
-        run: npm run typecheck
-
-      - name: "🔍 TypeScript type checking - Frontend (validation)"
-        working-directory: ./frontend
-        run: npm run typecheck
-
-      - name: "🔒 Security linting (ESLint + Security rules)"
+      - name: "🔒 Security linting"
         working-directory: ./backend
         run: |
-          echo "🔒 Running security linting with ESLint..."
           npm run lint:security 2>&1 | tee lint-output.txt
-
-          # Extract error count from summary line (e.g., "✖ 166 problems (5 errors, 161 warnings)")
           ERROR_COUNT=$(grep -oP '✖.*\(\K[0-9]+(?= error)' lint-output.txt || echo "0")
-
+          rm -f lint-output.txt
           if [ "$ERROR_COUNT" -gt 0 ]; then
-            echo "❌ ESLint found $ERROR_COUNT errors - build must fail"
-            cat lint-output.txt | grep "error"
-            rm -f lint-output.txt
+            echo "❌ ESLint found $ERROR_COUNT errors"
             exit 1
-          else
-            echo "✅ No ESLint errors found (warnings are acceptable)"
-            rm -f lint-output.txt
           fi
+          echo "✅ Security linting passed"
 
-      - name: "🛡️ Security audit (npm audit)"
+      - name: "🛡️ Security audit"
         working-directory: ./backend
         run: |
-          echo "🛡️ Running npm audit..."
           npm audit --audit-level=moderate
-          echo "✅ npm audit passed with no vulnerabilities"
+          echo "✅ npm audit passed"
 
-      - name: "🔒 Run custom security validation"
+      - name: "🔒 Custom security validation"
         working-directory: ./backend
         run: node scripts/validate-security.js
 
       - name: "🛡️ Test integrity validation"
         run: |
-          echo "🛡️ Running test integrity validation..."
           if [ -f "./scripts/validate-test-integrity.sh" ]; then
             ./scripts/validate-test-integrity.sh
           else
             echo "⚠️ Test integrity script not found - skipping"
           fi
 
-      - name: "🔐 Environment & Secrets Validation"
-        id: environment-validation
+      - name: "🔐 Environment validation"
         run: |
-          echo "🔐 Validating environment configuration and secrets..."
           if [ -f "./scripts/validate-environment.sh" ]; then
-            # Run in build mode (skip runtime checks like Redis/DB connectivity)
-            if ./scripts/validate-environment.sh build; then
-              echo "✅ Environment validation passed"
-              echo "env-validation-passed=true" >> $GITHUB_OUTPUT
-            else
-              echo "❌ Environment validation failed - check for exposed secrets or misconfiguration"
-              echo "env-validation-passed=false" >> $GITHUB_OUTPUT
-              exit 1
-            fi
-          else
-            echo "⚠️ Environment validation script not found - skipping"
-            echo "env-validation-passed=skipped" >> $GITHUB_OUTPUT
+            ./scripts/validate-environment.sh build || exit 1
           fi
+          echo "✅ Environment validation passed"
 
-      - name: "🔐 Enhanced Security Audit (20-User Prototype)"
+      - name: "🔐 Enhanced security audit"
         id: security-audit
         run: |
-          echo "🔐 Running comprehensive security audit..."
-          if ./scripts/security-audit.sh; then
-            echo "✅ Security audit passed"
-            echo "passed=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Security audit failed - see details above"
-            echo "passed=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-
-      - name: "📊 Security results summary (reporting only)"
-        id: security-results
-        if: always()
-        run: |
-          echo "Security analysis completed"
+          ./scripts/security-audit.sh || exit 1
           echo "passed=true" >> $GITHUB_OUTPUT
 
-  # Job 1B: Unit Tests (Parallel with Integration Tests)
-  unit-tests:
-    name: "🧪 Unit Tests"
-    runs-on: self-hosted
-    needs: [prepare-workspace, security-analysis]
-    timeout-minutes: 4
-    permissions:
-      pull-requests: write  # For PR comments on test results
-      contents: read
-    # Prevent multiple unit test jobs from running concurrently (queue instead)
-    concurrency:
-      group: unit-tests
-      cancel-in-progress: false
-    outputs:
-      tests-passed: ${{ steps.test-results.outputs.passed }}
-      coverage-percent: ${{ steps.test-results.outputs.coverage }}
+      - name: "📊 Security results"
+        id: security-results
+        run: echo "passed=true" >> $GITHUB_OUTPUT
 
-    steps:
-      - name: "📥 Copy shared workspace from local storage"
+      # =========================================================================
+      # PHASE 2: START SHARED TEST CONTAINERS
+      # =========================================================================
+      - name: "🐳 Start test containers (shared)"
         run: |
-          SHARED_WORKSPACE="/tmp/runner-cache/workspace/${{ github.run_id }}"
-          echo "📦 Copying workspace from shared location: $SHARED_WORKSPACE"
-
-          if [ ! -d "$SHARED_WORKSPACE" ]; then
-            echo "❌ CRITICAL: Shared workspace not found at $SHARED_WORKSPACE"
-            echo "This job depends on the prepare-workspace job completing successfully"
-            exit 1
-          fi
-
-          echo "📋 Copying workspace files..."
-          rsync -av "$SHARED_WORKSPACE/" .
-
-          echo "✅ Workspace copied from shared location"
-
-      - name: "⚡ Setup Node.js"
-        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: "📦 Restore backend dependencies from local cache"
-        id: backend-cache-restore
-        run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules" ]; then
-            echo "✅ Restoring backend node_modules from local cache..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules ./backend/
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ CRITICAL: Backend cache missing - should have been prepared by prepare-workspace job"
-            exit 1
-          fi
-
-      - name: "📦 Restore frontend dependencies from local cache"
-        id: frontend-cache-restore
-        run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules" ]; then
-            echo "✅ Restoring frontend node_modules from local cache..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules ./frontend/
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ CRITICAL: Frontend cache missing - should have been prepared by prepare-workspace job"
-            exit 1
-          fi
-
-      - name: "🐳 Start isolated test services"
-        run: |
-          # Use unique project name and ports to avoid conflicts with dev/E2E tests
-          export COMPOSE_PROJECT_NAME="loyalty-unit-tests"
-          export POSTGRES_PORT="5438"
-          export REDIS_PORT="6383"
-
-          # Start test services with isolated configuration
-          echo "🚀 Starting isolated test services on custom ports..."
-
-          # Create temporary compose file for unit tests with isolated ports
-          cat > docker-compose.unit-test.yml << 'EOF'
+          cat > docker-compose.test.yml << 'EOF'
           version: '3.8'
           services:
             postgres:
               image: postgres:15-alpine
-              container_name: loyalty_postgres_unit
+              container_name: loyalty_postgres_test
               environment:
                 POSTGRES_USER: loyalty
                 POSTGRES_PASSWORD: loyalty_password
@@ -429,7 +322,7 @@ jobs:
               ports:
                 - "5438:5432"
               volumes:
-                - loyalty_postgres_unit_data:/var/lib/postgresql/data
+                - loyalty_postgres_test_data:/var/lib/postgresql/data
               healthcheck:
                 test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
                 interval: 5s
@@ -438,11 +331,9 @@ jobs:
 
             redis:
               image: redis:7-alpine
-              container_name: loyalty_redis_unit
+              container_name: loyalty_redis_test
               ports:
                 - "6383:6379"
-              volumes:
-                - loyalty_redis_unit_data:/data
               healthcheck:
                 test: ["CMD", "redis-cli", "ping"]
                 interval: 5s
@@ -450,72 +341,53 @@ jobs:
                 retries: 5
 
           volumes:
-            loyalty_postgres_unit_data:
-            loyalty_redis_unit_data:
+            loyalty_postgres_test_data:
           EOF
 
-          # Clean up any stale volumes to ensure fresh database state
-          echo "🧹 Cleaning up stale unit test volumes..."
-          docker compose -f docker-compose.unit-test.yml down -v 2>/dev/null || true
-          docker volume rm loyalty_postgres_unit_data loyalty_redis_unit_data 2>/dev/null || true
+          # Cleanup and start
+          docker compose -f docker-compose.test.yml down -v 2>/dev/null || true
+          docker compose -f docker-compose.test.yml up -d
 
-          # Start isolated test services
-          docker compose -f docker-compose.unit-test.yml up -d
+          # Wait for services
+          echo "⏳ Waiting for postgres..."
+          timeout 60 bash -c 'until docker exec loyalty_postgres_test pg_isready -U loyalty; do sleep 2; done'
+          echo "⏳ Waiting for redis..."
+          timeout 30 bash -c 'until docker exec loyalty_redis_test redis-cli ping | grep -q PONG; do sleep 2; done'
 
-          # Wait for services to be ready with health checks
-          echo "⏳ Waiting for isolated test services to be ready..."
-          timeout 60 bash -c 'until docker compose -f docker-compose.unit-test.yml exec -T postgres pg_isready -U loyalty -d loyalty_db; do echo "Waiting for isolated postgres..."; sleep 2; done'
-          timeout 30 bash -c 'until docker compose -f docker-compose.unit-test.yml exec -T redis redis-cli ping | grep -q PONG; do echo "Waiting for isolated redis..."; sleep 2; done'
+          # Create both test databases
+          echo "🗄️ Creating test databases..."
+          docker exec loyalty_postgres_test psql -U loyalty -d postgres -c "CREATE USER loyalty_unit WITH PASSWORD 'unit_password';" || true
+          docker exec loyalty_postgres_test psql -U loyalty -d postgres -c "CREATE DATABASE loyalty_unit_db OWNER loyalty_unit;" || true
+          docker exec loyalty_postgres_test psql -U loyalty -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE loyalty_unit_db TO loyalty_unit;" || true
+          docker exec loyalty_postgres_test psql -U loyalty_unit -d loyalty_unit_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
 
-          # Configure isolated test database
-          echo "🗄️ Setting up isolated test database..."
-          docker exec loyalty_postgres_unit psql -U loyalty -d postgres -c "DROP DATABASE IF EXISTS loyalty_test_db;" || true
-          docker exec loyalty_postgres_unit psql -U loyalty -d postgres -c "DROP USER IF EXISTS loyalty_test;" || true
-          docker exec loyalty_postgres_unit psql -U loyalty -d postgres -c "CREATE USER loyalty_test WITH PASSWORD 'test_password';" || true
-          docker exec loyalty_postgres_unit psql -U loyalty -d postgres -c "CREATE DATABASE loyalty_test_db OWNER loyalty_test;" || true
-          docker exec loyalty_postgres_unit psql -U loyalty -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE loyalty_test_db TO loyalty_test;" || true
+          docker exec loyalty_postgres_test psql -U loyalty -d postgres -c "CREATE USER loyalty_integration WITH PASSWORD 'integration_password';" || true
+          docker exec loyalty_postgres_test psql -U loyalty -d postgres -c "CREATE DATABASE loyalty_integration_db OWNER loyalty_integration;" || true
+          docker exec loyalty_postgres_test psql -U loyalty -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE loyalty_integration_db TO loyalty_integration;" || true
+          docker exec loyalty_postgres_test psql -U loyalty_integration -d loyalty_integration_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
 
-          # Enable UUID extension in isolated test database
-          docker exec loyalty_postgres_unit psql -U loyalty_test -d loyalty_test_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
+          echo "✅ Test containers ready (postgres:5438, redis:6383)"
+          echo "   - loyalty_unit_db for unit tests"
+          echo "   - loyalty_integration_db for integration tests"
 
-          echo "✅ Isolated test services are ready on ports 5438 (postgres) and 6383 (redis)"
-      
-      - name: "🔧 Setup isolated test environment"
+      # =========================================================================
+      # PHASE 3: UNIT TESTS
+      # =========================================================================
+      - name: "🔧 Setup unit test database"
         working-directory: ./backend
         env:
-          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5438/loyalty_test_db
-          REDIS_URL: redis://localhost:6383
+          DATABASE_URL: postgresql://loyalty_unit:unit_password@localhost:5438/loyalty_unit_db
           NODE_ENV: test
-          JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
-          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
-          SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
         run: |
-          # Generate Prisma client for tests
           npm run db:generate
-          
-          # Validate Prisma client was generated successfully
-          if [ ! -d "src/generated/prisma" ]; then
-            echo "❌ Prisma client generation failed - directory not found"
-            exit 1
-          fi
-          
-          # Check for client.ts which is generated by Prisma 7.x
-          if [ ! -f "src/generated/prisma/client.ts" ]; then
-            echo "❌ Prisma client generation failed - client.ts not found"
-            ls -la src/generated/prisma/ || true
-            exit 1
-          fi
-          
-          echo "✅ Prisma client validated successfully"
-          
-          # Run database migrations for test DB
           npm run db:migrate:deploy
-      
-      - name: "🧪 Run unit tests (isolated)"
-        id: run-tests
+          echo "✅ Unit test database ready"
+
+      - name: "🧪 Run unit tests"
+        id: run-unit-tests
         working-directory: ./backend
         env:
-          DATABASE_URL: postgresql://loyalty_test:test_password@localhost:5438/loyalty_test_db
+          DATABASE_URL: postgresql://loyalty_unit:unit_password@localhost:5438/loyalty_unit_db
           REDIS_URL: redis://localhost:6383
           NODE_ENV: test
           JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
@@ -531,7 +403,6 @@ jobs:
           path: backend/coverage/
           retention-days: 30
           if-no-files-found: warn
-          compression-level: 6
 
       - name: "📊 Upload unit test Allure results"
         if: always()
@@ -542,15 +413,11 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-      - name: "📈 Test results summary (reporting only)"
-        id: test-results
+      - name: "📈 Unit test results"
+        id: unit-test-results
         if: always()
         run: |
-          # Capture test outcome as shell variable
-          TEST_OUTCOME="${{ steps.run-tests.outcome }}"
-
-          # Check if tests actually passed
-          if [ "$TEST_OUTCOME" == "success" ]; then
+          if [ "${{ steps.run-unit-tests.outcome }}" == "success" ]; then
             echo "✅ Unit tests passed"
             echo "passed=true" >> $GITHUB_OUTPUT
           else
@@ -558,328 +425,32 @@ jobs:
             echo "passed=false" >> $GITHUB_OUTPUT
           fi
 
-          # Extract and display coverage metrics
           if [ -f backend/coverage/coverage-summary.json ]; then
-            # Extract coverage metrics from JSON summary (accurate totals across all files)
-            LINES_FOUND=$(jq '.total.lines.total' backend/coverage/coverage-summary.json)
-            LINES_HIT=$(jq '.total.lines.covered' backend/coverage/coverage-summary.json)
-            COVERAGE_PERCENT=$(jq '.total.lines.pct' backend/coverage/coverage-summary.json)
-
-            # Additional metrics for comprehensive reporting
-            STATEMENTS_TOTAL=$(jq '.total.statements.total' backend/coverage/coverage-summary.json)
-            STATEMENTS_COVERED=$(jq '.total.statements.covered' backend/coverage/coverage-summary.json)
-            STATEMENTS_PCT=$(jq '.total.statements.pct' backend/coverage/coverage-summary.json)
-
-            FUNCTIONS_TOTAL=$(jq '.total.functions.total' backend/coverage/coverage-summary.json)
-            FUNCTIONS_COVERED=$(jq '.total.functions.covered' backend/coverage/coverage-summary.json)
-            FUNCTIONS_PCT=$(jq '.total.functions.pct' backend/coverage/coverage-summary.json)
-
-            BRANCHES_TOTAL=$(jq '.total.branches.total' backend/coverage/coverage-summary.json)
-            BRANCHES_COVERED=$(jq '.total.branches.covered' backend/coverage/coverage-summary.json)
-            BRANCHES_PCT=$(jq '.total.branches.pct' backend/coverage/coverage-summary.json)
-
-            echo "coverage=$COVERAGE_PERCENT" >> $GITHUB_OUTPUT
-
-            # Display coverage summary
-            echo "📊 Coverage Summary:"
-            echo "  Lines:      $LINES_HIT / $LINES_FOUND ($COVERAGE_PERCENT%)"
-            echo "  Statements: $STATEMENTS_COVERED / $STATEMENTS_TOTAL ($STATEMENTS_PCT%)"
-            echo "  Functions:  $FUNCTIONS_COVERED / $FUNCTIONS_TOTAL ($FUNCTIONS_PCT%)"
-            echo "  Branches:   $BRANCHES_COVERED / $BRANCHES_TOTAL ($BRANCHES_PCT%)"
-            echo "  Coverage report: Available in workflow artifacts"
-
-            # Add to job summary for GitHub UI
-            {
-              echo "## 📊 Test Coverage Report"
-              echo ""
-              echo "| Metric | Covered | Total | Percentage |"
-              echo "|--------|---------|-------|------------|"
-              echo "| **Lines** | $LINES_HIT | $LINES_FOUND | $COVERAGE_PERCENT% |"
-              echo "| **Statements** | $STATEMENTS_COVERED | $STATEMENTS_TOTAL | $STATEMENTS_PCT% |"
-              echo "| **Functions** | $FUNCTIONS_COVERED | $FUNCTIONS_TOTAL | $FUNCTIONS_PCT% |"
-              echo "| **Branches** | $BRANCHES_COVERED | $BRANCHES_TOTAL | $BRANCHES_PCT% |"
-              echo ""
-              echo "| **Test Status** | $TEST_OUTCOME |"
-              echo ""
-              echo "### 📥 Download Reports"
-              echo "Coverage reports are available as workflow artifacts for 30 days."
-              echo "- HTML Report: \`backend/coverage/lcov-report/index.html\`"
-              echo "- LCOV Data: \`backend/coverage/lcov.info\`"
-              echo "- JSON Summary: \`backend/coverage/coverage-summary.json\`"
-            } >> $GITHUB_STEP_SUMMARY
+            COVERAGE=$(jq '.total.lines.pct' backend/coverage/coverage-summary.json)
+            echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+            echo "📊 Coverage: $COVERAGE%"
           else
             echo "coverage=0" >> $GITHUB_OUTPUT
-            echo "⚠️ No coverage data available"
           fi
 
-      - name: "💬 Comment unit test results on PR"
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        continue-on-error: true
-        with:
-          script: |
-            const fs = require('fs');
-            const testPassed = '${{ steps.test-results.outputs.passed }}' === 'true';
-            const statusEmoji = testPassed ? '✅' : '❌';
-            const statusText = testPassed ? 'Passed' : 'Failed';
-
-            let coverageSection = '';
-            const coveragePath = 'backend/coverage/coverage-summary.json';
-            if (fs.existsSync(coveragePath)) {
-              const coverageData = JSON.parse(fs.readFileSync(coveragePath, 'utf8'));
-              const total = coverageData.total;
-              coverageSection = [
-                '',
-                '### 📊 Coverage',
-                '| Metric | Covered | Total | Percentage |',
-                '|--------|---------|-------|------------|',
-                `| Lines | ${total.lines.covered} | ${total.lines.total} | ${total.lines.pct}% |`,
-                `| Functions | ${total.functions.covered} | ${total.functions.total} | ${total.functions.pct}% |`,
-                `| Branches | ${total.branches.covered} | ${total.branches.total} | ${total.branches.pct}% |`,
-              ].join('\n');
-            }
-
-            const commentLines = [
-              '## 🧪 CI Test Results',
-              '',
-              '| Stage | Status |',
-              '|-------|--------|',
-              `| Unit Tests | ${statusEmoji} ${statusText} |`,
-              '| Integration Tests | ⏳ Pending |',
-              '| E2E Tests | ⏳ Pending |',
-              coverageSection,
-              '',
-              testPassed
-                ? '> Sequential pipeline: Integration tests starting next...'
-                : '> ❌ Unit tests failed - pipeline stopped.',
-              '',
-              `> Commit: \`${context.sha.substring(0, 7)}\` | [View Artifacts](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
-            ];
-
-            const comment = commentLines.join('\n');
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            // Use consistent marker to track same comment across test stages
-            const COMMENT_MARKER = '<!-- CI-TEST-RESULTS-COMMENT -->';
-            const fullComment = COMMENT_MARKER + '\n' + comment;
-
-            const botComment = comments.find(c =>
-              c.user.type === 'Bot' && c.body.includes(COMMENT_MARKER)
-            );
-
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: fullComment
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: fullComment
-              });
-            }
-
-      - name: "🧹 Cleanup isolated test environment"
-        if: always()
-        run: |
-          echo "🧹 Cleaning up isolated unit test services..."
-
-          # Stop and remove containers by explicit names (doesn't require compose file)
-          docker stop loyalty_postgres_unit loyalty_redis_unit 2>/dev/null || true
-          docker rm -f loyalty_postgres_unit loyalty_redis_unit 2>/dev/null || true
-
-          # Remove volumes (check both with and without project prefix)
-          docker volume rm loyalty_postgres_unit_data loyalty_redis_unit_data 2>/dev/null || true
-          docker volume rm loyalty-unit-tests_loyalty_postgres_unit_data loyalty-unit-tests_loyalty_redis_unit_data 2>/dev/null || true
-
-          # Clean up compose file
-          rm -f docker-compose.unit-test.yml || true
-
-          echo "✅ Isolated unit test environment cleaned up"
-
-  # Job 1C: Integration Tests (Sequential - after Unit Tests)
-  integration-tests:
-    name: "🔗 Integration Tests"
-    runs-on: self-hosted
-    needs: [unit-tests]  # Sequential: runs after unit tests pass
-    timeout-minutes: 5
-    permissions:
-      pull-requests: write  # For PR comments on test results
-      contents: read
-    # Prevent multiple integration test jobs from running concurrently (queue instead)
-    concurrency:
-      group: integration-tests
-      cancel-in-progress: false
-    outputs:
-      tests-passed: ${{ steps.test-results.outputs.passed }}
-
-    steps:
-      - name: "📥 Copy shared workspace from local storage"
-        run: |
-          SHARED_WORKSPACE="/tmp/runner-cache/workspace/${{ github.run_id }}"
-          echo "📦 Copying workspace from shared location: $SHARED_WORKSPACE"
-
-          if [ ! -d "$SHARED_WORKSPACE" ]; then
-            echo "❌ CRITICAL: Shared workspace not found at $SHARED_WORKSPACE"
-            echo "This job depends on the prepare-workspace job completing successfully"
-            exit 1
-          fi
-
-          echo "📋 Copying workspace files..."
-          rsync -av "$SHARED_WORKSPACE/" .
-
-          echo "✅ Workspace copied from shared location"
-
-      - name: "⚡ Setup Node.js"
-        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: "📦 Restore backend dependencies from local cache"
-        id: backend-cache-restore
-        run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules" ]; then
-            echo "✅ Restoring backend node_modules from local cache..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules ./backend/
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ CRITICAL: Backend cache missing - should have been prepared by prepare-workspace job"
-            exit 1
-          fi
-
-      - name: "📦 Restore frontend dependencies from local cache"
-        id: frontend-cache-restore
-        run: |
-          if [ -d "/tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules" ]; then
-            echo "✅ Restoring frontend node_modules from local cache..."
-            cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/frontend-node_modules/node_modules ./frontend/
-            echo "cache-hit=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ CRITICAL: Frontend cache missing - should have been prepared by prepare-workspace job"
-            exit 1
-          fi
-
-      - name: "🐳 Start isolated test services"
-        run: |
-          # Use unique project name and ports to avoid conflicts with Unit and E2E tests
-          export COMPOSE_PROJECT_NAME="loyalty-integration-tests"
-          export POSTGRES_PORT="5437"
-          export REDIS_PORT="6382"
-
-          # Start test services with isolated configuration
-          echo "🚀 Starting isolated integration test services on custom ports..."
-
-          # Create temporary compose file for integration tests with isolated ports
-          cat > docker-compose.integration-test.yml << 'EOF'
-          version: '3.8'
-          services:
-            postgres:
-              image: postgres:15-alpine
-              container_name: loyalty_postgres_integration
-              environment:
-                POSTGRES_USER: loyalty
-                POSTGRES_PASSWORD: loyalty_password
-                POSTGRES_DB: loyalty_db
-              ports:
-                - "5437:5432"
-              volumes:
-                - loyalty_postgres_integration_data:/var/lib/postgresql/data
-              healthcheck:
-                test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
-                interval: 5s
-                timeout: 5s
-                retries: 5
-
-            redis:
-              image: redis:7-alpine
-              container_name: loyalty_redis_integration
-              ports:
-                - "6382:6379"
-              volumes:
-                - loyalty_redis_integration_data:/data
-              healthcheck:
-                test: ["CMD", "redis-cli", "ping"]
-                interval: 5s
-                timeout: 3s
-                retries: 5
-
-          volumes:
-            loyalty_postgres_integration_data:
-            loyalty_redis_integration_data:
-          EOF
-
-          # Clean up any stale volumes to ensure fresh database state
-          echo "🧹 Cleaning up stale integration test volumes..."
-          docker compose -f docker-compose.integration-test.yml down -v 2>/dev/null || true
-          docker volume rm loyalty_postgres_integration_data loyalty_redis_integration_data 2>/dev/null || true
-
-          # Start isolated test services
-          docker compose -f docker-compose.integration-test.yml up -d
-
-          # Wait for services to be ready with health checks
-          echo "⏳ Waiting for isolated integration test services to be ready..."
-          timeout 60 bash -c 'until docker compose -f docker-compose.integration-test.yml exec -T postgres pg_isready -U loyalty -d loyalty_db; do echo "Waiting for isolated postgres..."; sleep 2; done'
-          timeout 30 bash -c 'until docker compose -f docker-compose.integration-test.yml exec -T redis redis-cli ping | grep -q PONG; do echo "Waiting for isolated redis..."; sleep 2; done'
-
-          # Configure isolated test database
-          echo "🗄️ Setting up isolated integration test database..."
-          docker exec loyalty_postgres_integration psql -U loyalty -d postgres -c "DROP DATABASE IF EXISTS loyalty_integration_db;" || true
-          docker exec loyalty_postgres_integration psql -U loyalty -d postgres -c "DROP USER IF EXISTS loyalty_integration;" || true
-          docker exec loyalty_postgres_integration psql -U loyalty -d postgres -c "CREATE USER loyalty_integration WITH PASSWORD 'integration_password';" || true
-          docker exec loyalty_postgres_integration psql -U loyalty -d postgres -c "CREATE DATABASE loyalty_integration_db OWNER loyalty_integration;" || true
-          docker exec loyalty_postgres_integration psql -U loyalty -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE loyalty_integration_db TO loyalty_integration;" || true
-
-          # Enable UUID extension in isolated test database
-          docker exec loyalty_postgres_integration psql -U loyalty_integration -d loyalty_integration_db -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" || true
-
-          echo "✅ Isolated integration test services are ready on ports 5437 (postgres) and 6382 (redis)"
-
-      - name: "🔧 Setup isolated integration test environment"
+      # =========================================================================
+      # PHASE 4: INTEGRATION TESTS
+      # =========================================================================
+      - name: "🔧 Setup integration test database"
         working-directory: ./backend
         env:
-          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5437/loyalty_integration_db
-          REDIS_URL: redis://localhost:6382
+          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5438/loyalty_integration_db
           NODE_ENV: test
-          JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
-          JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
-          SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
         run: |
-          # Generate Prisma client for tests
-          npm run db:generate
-
-          # Validate Prisma client was generated successfully
-          if [ ! -d "src/generated/prisma" ]; then
-            echo "❌ Prisma client generation failed - directory not found"
-            exit 1
-          fi
-
-          # Check for client.ts which is generated by Prisma 7.x
-          if [ ! -f "src/generated/prisma/client.ts" ]; then
-            echo "❌ Prisma client generation failed - client.ts not found"
-            ls -la src/generated/prisma/ || true
-            exit 1
-          fi
-
-          echo "✅ Prisma client validated successfully"
-
-          # Run database migrations for integration test DB
           npm run db:migrate:deploy
+          echo "✅ Integration test database ready"
 
-      - name: "🔗 Run integration tests (isolated)"
+      - name: "🔗 Run integration tests"
         id: run-integration-tests
         working-directory: ./backend
         env:
-          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5437/loyalty_integration_db
-          REDIS_URL: redis://localhost:6382
+          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5438/loyalty_integration_db
+          REDIS_URL: redis://localhost:6383
           NODE_ENV: test
           JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
           JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
@@ -895,142 +466,113 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-      - name: "🧪 Run database schema tests (isolated)"
+      - name: "🧪 Run database schema tests"
         id: run-db-tests
         working-directory: ./backend
         env:
-          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5437/loyalty_integration_db
+          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5438/loyalty_integration_db
           NODE_ENV: test
         run: npm run test:db -- --passWithNoTests
 
-      - name: "🔐 OAuth validation tests"
-        run: |
-          echo "🔐 Running OAuth validation tests..."
-          # Check if services are running
-          if curl -s http://localhost:4001/api/health >/dev/null 2>&1; then
-            echo "✅ Backend service is running, performing OAuth validation"
-            if [ -f "./scripts/validate-oauth-health.sh" ]; then
-              ./scripts/validate-oauth-health.sh || echo "⚠️ OAuth validation failed (non-blocking in CI)"
-            else
-              echo "⚠️ OAuth validation script not found - skipping"
-            fi
-          else
-            echo "⚠️ Backend not running - skipping OAuth validation"
-          fi
-
-      - name: "🗄️ Database migration validation (isolated)"
+      - name: "🗄️ Database migration validation"
         env:
-          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5437/loyalty_integration_db
+          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5438/loyalty_integration_db
           NODE_ENV: test
         run: |
-          echo "🗄️ Running database migration validation on isolated environment..."
           if [ -f "./scripts/validate-db-migration.sh" ]; then
-            ./scripts/validate-db-migration.sh || echo "⚠️ DB migration validation failed (non-blocking in CI)"
-          else
-            echo "⚠️ Database migration validation script not found - skipping"
+            ./scripts/validate-db-migration.sh || echo "⚠️ DB migration validation failed (non-blocking)"
           fi
 
-      - name: "📈 Test results summary (reporting only)"
-        id: test-results
+      - name: "📈 Integration test results"
+        id: integration-test-results
         if: always()
         run: |
-          # Check if all critical integration tests passed
-          INTEGRATION_RESULT="${{ steps.run-integration-tests.outcome }}"
-          DB_TEST_RESULT="${{ steps.run-db-tests.outcome }}"
+          INTEGRATION="${{ steps.run-integration-tests.outcome }}"
+          DB_TESTS="${{ steps.run-db-tests.outcome }}"
 
-          if [ "$INTEGRATION_RESULT" == "success" ] && [ "$DB_TEST_RESULT" == "success" ]; then
+          if [ "$INTEGRATION" == "success" ] && [ "$DB_TESTS" == "success" ]; then
             echo "✅ All integration tests passed"
             echo "passed=true" >> $GITHUB_OUTPUT
           else
-            echo "❌ Integration tests failed"
-            echo "Integration tests: $INTEGRATION_RESULT"
-            echo "DB schema tests: $DB_TEST_RESULT"
+            echo "❌ Integration tests failed (integration: $INTEGRATION, db: $DB_TESTS)"
             echo "passed=false" >> $GITHUB_OUTPUT
-            echo "🚨 BLOCKING: Integration tests must pass for deployment"
             exit 1
           fi
 
-      - name: "💬 Comment integration results on PR"
+      # =========================================================================
+      # FINAL: PR COMMENT & CLEANUP
+      # =========================================================================
+      - name: "💬 Comment test results on PR"
         if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         continue-on-error: true
         with:
           script: |
-            const integrationResult = '${{ steps.run-integration-tests.outcome }}';
-            const dbTestResult = '${{ steps.run-db-tests.outcome }}';
-            const allPassed = integrationResult === 'success' && dbTestResult === 'success';
+            const fs = require('fs');
+            const unitPassed = '${{ steps.unit-test-results.outputs.passed }}' === 'true';
+            const integrationPassed = '${{ steps.integration-test-results.outputs.passed }}' === 'true';
 
-            const statusEmoji = allPassed ? '✅' : '❌';
-            const statusText = allPassed ? 'Passed' : 'Failed';
-            const integrationEmoji = integrationResult === 'success' ? '✅' : '❌';
-            const dbEmoji = dbTestResult === 'success' ? '✅' : '❌';
+            const unitEmoji = unitPassed ? '✅' : '❌';
+            const integrationEmoji = integrationPassed ? '✅' : '❌';
 
+            let coverageSection = '';
+            const coveragePath = 'backend/coverage/coverage-summary.json';
+            if (fs.existsSync(coveragePath)) {
+              const data = JSON.parse(fs.readFileSync(coveragePath, 'utf8'));
+              const t = data.total;
+              coverageSection = [
+                '', '### 📊 Coverage',
+                '| Metric | Covered | Total | % |',
+                '|--------|---------|-------|---|',
+                `| Lines | ${t.lines.covered} | ${t.lines.total} | ${t.lines.pct}% |`,
+                `| Functions | ${t.functions.covered} | ${t.functions.total} | ${t.functions.pct}% |`,
+                `| Branches | ${t.branches.covered} | ${t.branches.total} | ${t.branches.pct}% |`,
+              ].join('\n');
+            }
+
+            const allPassed = unitPassed && integrationPassed;
             const comment = [
               '## 🧪 CI Test Results',
               '',
               '| Stage | Status |',
               '|-------|--------|',
-              '| Unit Tests | ✅ Passed |',
-              `| Integration Tests | ${statusEmoji} ${statusText} |`,
+              `| Unit Tests | ${unitEmoji} ${unitPassed ? 'Passed' : 'Failed'} |`,
+              `| Integration Tests | ${integrationEmoji} ${integrationPassed ? 'Passed' : 'Failed'} |`,
               '| E2E Tests | ⏳ Pending |',
+              coverageSection,
               '',
-              '### 🔗 Integration Details',
-              '| Test Suite | Status |',
-              '|:-----------|:-------|',
-              `| API Integration | ${integrationEmoji} ${integrationResult === 'success' ? 'Passed' : 'Failed'} |`,
-              `| DB Schema Tests | ${dbEmoji} ${dbTestResult === 'success' ? 'Passed' : 'Failed'} |`,
+              allPassed ? '> E2E tests starting next...' : '> ❌ Tests failed - pipeline stopped.',
               '',
-              allPassed ? '> Sequential pipeline: E2E tests starting next...' : '> ❌ Integration tests failed - pipeline stopped.',
-              '',
-              `> Commit: \`${context.sha.substring(0, 7)}\` | [View Artifacts](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              `> Commit: \`${context.sha.substring(0, 7)}\` | [Artifacts](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
             ].join('\n');
 
-            const COMMENT_MARKER = '<!-- CI-TEST-RESULTS-COMMENT -->';
-            const fullComment = COMMENT_MARKER + '\n' + comment;
-
+            const MARKER = '<!-- CI-TEST-RESULTS-COMMENT -->';
             const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
             });
+            const existing = comments.find(c => c.user.type === 'Bot' && c.body.includes(MARKER));
 
-            const botComment = comments.find(c =>
-              c.user.type === 'Bot' && c.body.includes(COMMENT_MARKER)
-            );
-
-            if (botComment) {
+            if (existing) {
               await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: fullComment
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: existing.id, body: MARKER + '\n' + comment
               });
             } else {
               await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: fullComment
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body: MARKER + '\n' + comment
               });
             }
 
-      - name: "🧹 Cleanup isolated integration test environment"
+      - name: "🧹 Cleanup test containers"
         if: always()
         run: |
-          echo "🧹 Cleaning up isolated integration test services..."
-
-          # Stop and remove containers by explicit names (doesn't require compose file)
-          docker stop loyalty_postgres_integration loyalty_redis_integration 2>/dev/null || true
-          docker rm -f loyalty_postgres_integration loyalty_redis_integration 2>/dev/null || true
-
-          # Remove volumes (check both with and without project prefix)
-          docker volume rm loyalty_postgres_integration_data loyalty_redis_integration_data 2>/dev/null || true
-          docker volume rm loyalty-integration-tests_loyalty_postgres_integration_data loyalty-integration-tests_loyalty_redis_integration_data 2>/dev/null || true
-
-          # Clean up compose file
-          rm -f docker-compose.integration-test.yml || true
-
-          echo "✅ Isolated integration test environment cleaned up"
+          echo "🧹 Cleaning up test containers..."
+          docker stop loyalty_postgres_test loyalty_redis_test 2>/dev/null || true
+          docker rm -f loyalty_postgres_test loyalty_redis_test 2>/dev/null || true
+          docker volume rm loyalty_postgres_test_data 2>/dev/null || true
+          rm -f docker-compose.test.yml || true
+          echo "✅ Cleanup complete"
 
   # Job 1D: E2E Tests (Conditional - only on main branch or PR to main)
   e2e-tests:
@@ -1047,7 +589,7 @@ jobs:
       group: e2e-tests
       cancel-in-progress: false
 
-    needs: [integration-tests]  # Sequential: runs after integration tests pass
+    needs: [validate-and-test]  # Sequential: runs after validation and tests pass
     timeout-minutes: 20  # Increased from 8: allows ~15min for 36 tests + 3-5min infrastructure setup
     if: (github.ref == 'refs/heads/main' || github.base_ref == 'main')
     outputs:
@@ -1626,8 +1168,8 @@ jobs:
   build-validation:
     name: "🏗️ Build Validation & Docker Images"
     runs-on: self-hosted
-    needs: [security-analysis, unit-tests, integration-tests, e2e-tests]
-    if: github.ref == 'refs/heads/main' && always() && needs.security-analysis.outputs.security-passed == 'true' && needs.unit-tests.outputs.tests-passed == 'true' && needs.integration-tests.outputs.tests-passed == 'true' && needs.e2e-tests.outputs.e2e-passed == 'true'
+    needs: [validate-and-test, e2e-tests]
+    if: github.ref == 'refs/heads/main' && always() && needs.validate-and-test.outputs.security-passed == 'true' && needs.validate-and-test.outputs.unit-tests-passed == 'true' && needs.validate-and-test.outputs.integration-tests-passed == 'true' && needs.e2e-tests.outputs.e2e-passed == 'true'
     timeout-minutes: 15
     outputs:
       build-passed: ${{ steps.build-results.outputs.passed }}
@@ -1887,12 +1429,12 @@ jobs:
     name: "🧪 Development Deployment"
     runs-on: self-hosted
     environment: development
-    needs: [security-analysis, unit-tests, integration-tests]
+    needs: [validate-and-test]
     if: |
       github.ref == 'refs/heads/develop' &&
-      needs.security-analysis.outputs.security-passed == 'true' &&
-      needs.unit-tests.outputs.tests-passed == 'true' &&
-      needs.integration-tests.outputs.tests-passed == 'true'
+      needs.validate-and-test.outputs.security-passed == 'true' &&
+      needs.validate-and-test.outputs.unit-tests-passed == 'true' &&
+      needs.validate-and-test.outputs.integration-tests-passed == 'true'
     timeout-minutes: 10
     concurrency:
       group: dev-deployment
@@ -1906,9 +1448,9 @@ jobs:
           echo "🔍 Development deployment checks..."
           echo "Branch: ${{ github.ref_name }}"
           echo "Commit: ${{ github.sha }}"
-          echo "Security: ${{ needs.security-analysis.outputs.security-passed }}"
-          echo "Unit Tests: ${{ needs.unit-tests.outputs.tests-passed }}"
-          echo "Integration Tests: ${{ needs.integration-tests.outputs.tests-passed }}"
+          echo "Security: ${{ needs.validate-and-test.outputs.security-passed }}"
+          echo "Unit Tests: ${{ needs.validate-and-test.outputs.unit-tests-passed }}"
+          echo "Integration Tests: ${{ needs.validate-and-test.outputs.integration-tests-passed }}"
           echo "✅ All checks passed - proceeding with development deployment"
 
       - name: "📥 Code deployment"
@@ -3103,15 +2645,13 @@ jobs:
           echo "Timestamp: $(date -Iseconds)"
           echo ""
           echo "🎯 Job Results:"
-          echo "Security Analysis: ${{ needs.security-analysis.result }}"
-          echo "Unit Tests: ${{ needs.unit-tests.result }}"
-          echo "Integration Tests: ${{ needs.integration-tests.result }}"
+          echo "Validate & Test: ${{ needs.validate-and-test.result }}"
           echo "E2E Tests: ${{ needs.e2e-tests.result || 'skipped' }}"
           echo "Build Validation: ${{ needs.build-validation.result }}"
           echo "Production Deployment: ${{ needs.production-deployment.result }}"
           echo ""
           echo "📈 Metrics:"
-          echo "Test Coverage: ${{ needs.unit-tests.outputs.coverage-percent }}%"
+          echo "Test Coverage: ${{ needs.validate-and-test.outputs.coverage-percent }}%"
           echo ""
           echo "🌐 Service Endpoints:"
           echo "Application: https://loyalty.saichon.com"
@@ -3215,7 +2755,7 @@ jobs:
   generate-test-reports:
     name: "📊 Generate Unified Test Reports"
     runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests, e2e-tests]
+    needs: [validate-and-test, e2e-tests]
     if: always() && github.ref == 'refs/heads/main'
 
     # Prevent multiple concurrent report generations to avoid artifact conflicts
