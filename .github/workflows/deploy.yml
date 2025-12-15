@@ -221,7 +221,7 @@ jobs:
       # =========================================================================
       # SETUP (shared across all phases)
       # =========================================================================
-      - name: "📥 Copy shared workspace"
+      - name: "📥 Copy shared workspace & restore backend/frontend dependencies"
         run: |
           SHARED_WORKSPACE="/tmp/runner-cache/workspace/${{ github.run_id }}"
           if [ ! -d "$SHARED_WORKSPACE" ]; then
@@ -231,13 +231,6 @@ jobs:
           rsync -a "$SHARED_WORKSPACE/" .
           echo "✅ Workspace ready"
 
-      - name: "⚡ Setup Node.js"
-        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: "📦 Restore dependencies"
-        run: |
           echo "📦 Restoring backend node_modules..."
           cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules ./backend/ || exit 1
 
@@ -246,20 +239,32 @@ jobs:
 
           echo "✅ Dependencies restored"
 
+      - name: "⚡ Setup Node.js runtime environment"
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       # =========================================================================
       # PHASE 1: SECURITY & CODE QUALITY
       # =========================================================================
-      - name: "🔍 TypeScript type checking"
+      - name: "🔒 Security & code quality: TypeScript, ESLint, npm audit, validations"
+        id: security-results
         run: |
-          echo "🔍 Checking backend..."
+          echo "=========================================="
+          echo "🔍 TypeScript type checking"
+          echo "=========================================="
+          echo "Checking backend..."
           cd backend && npm run typecheck
-          echo "🔍 Checking frontend..."
+          echo "Checking frontend..."
           cd ../frontend && npm run typecheck
+          cd ..
           echo "✅ TypeScript checks passed"
 
-      - name: "🔒 Security linting"
-        working-directory: ./backend
-        run: |
+          echo ""
+          echo "=========================================="
+          echo "🔒 Security linting (ESLint + security rules)"
+          echo "=========================================="
+          cd backend
           npm run lint:security 2>&1 | tee lint-output.txt
           ERROR_COUNT=$(grep -oP '✖.*\(\K[0-9]+(?= error)' lint-output.txt || echo "0")
           rm -f lint-output.txt
@@ -268,46 +273,56 @@ jobs:
             exit 1
           fi
           echo "✅ Security linting passed"
+          cd ..
 
-      - name: "🛡️ Security audit"
-        working-directory: ./backend
-        run: |
+          echo ""
+          echo "=========================================="
+          echo "🛡️ npm security audit"
+          echo "=========================================="
+          cd backend
           npm audit --audit-level=moderate
           echo "✅ npm audit passed"
 
-      - name: "🔒 Custom security validation"
-        working-directory: ./backend
-        run: node scripts/validate-security.js
+          echo ""
+          echo "=========================================="
+          echo "🔒 Custom security validation"
+          echo "=========================================="
+          node scripts/validate-security.js
+          cd ..
 
-      - name: "🛡️ Test integrity validation"
-        run: |
+          echo ""
+          echo "=========================================="
+          echo "🛡️ Test integrity validation"
+          echo "=========================================="
           if [ -f "./scripts/validate-test-integrity.sh" ]; then
             ./scripts/validate-test-integrity.sh
           else
             echo "⚠️ Test integrity script not found - skipping"
           fi
 
-      - name: "🔐 Environment validation"
-        run: |
+          echo ""
+          echo "=========================================="
+          echo "🔐 Environment & secrets validation"
+          echo "=========================================="
           if [ -f "./scripts/validate-environment.sh" ]; then
             ./scripts/validate-environment.sh build || exit 1
           fi
           echo "✅ Environment validation passed"
 
-      - name: "🔐 Enhanced security audit"
-        id: security-audit
-        run: |
+          echo ""
+          echo "=========================================="
+          echo "🔐 Enhanced security audit (20-user prototype)"
+          echo "=========================================="
           ./scripts/security-audit.sh || exit 1
-          echo "passed=true" >> $GITHUB_OUTPUT
 
-      - name: "📊 Security results"
-        id: security-results
-        run: echo "passed=true" >> $GITHUB_OUTPUT
+          echo ""
+          echo "✅ All security & code quality checks passed"
+          echo "passed=true" >> $GITHUB_OUTPUT
 
       # =========================================================================
       # PHASE 2: START SHARED TEST CONTAINERS
       # =========================================================================
-      - name: "🐳 Start test containers (shared)"
+      - name: "🐳 Start shared postgres/redis containers & create unit + integration databases"
         run: |
           cat > docker-compose.test.yml << 'EOF'
           version: '3.8'
@@ -373,17 +388,7 @@ jobs:
       # =========================================================================
       # PHASE 3: UNIT TESTS
       # =========================================================================
-      - name: "🔧 Setup unit test database"
-        working-directory: ./backend
-        env:
-          DATABASE_URL: postgresql://loyalty_unit:unit_password@localhost:5438/loyalty_unit_db
-          NODE_ENV: test
-        run: |
-          npm run db:generate
-          npm run db:migrate:deploy
-          echo "✅ Unit test database ready"
-
-      - name: "🧪 Run unit tests"
+      - name: "🧪 Unit tests: setup database, run Prisma migrations, execute tests with coverage"
         id: run-unit-tests
         working-directory: ./backend
         env:
@@ -393,9 +398,17 @@ jobs:
           JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
           JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
           SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
-        run: npm run test:unit -- --coverage --passWithNoTests
+        run: |
+          echo "🔧 Setting up unit test database..."
+          npm run db:generate
+          npm run db:migrate:deploy
+          echo "✅ Unit test database ready"
 
-      - name: "📊 Upload coverage report"
+          echo ""
+          echo "🧪 Running unit tests with coverage..."
+          npm run test:unit -- --coverage --passWithNoTests
+
+      - name: "📊 Upload unit test coverage report (retained 30 days)"
         if: always()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
@@ -404,7 +417,7 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      - name: "📊 Upload unit test Allure results"
+      - name: "📊 Upload unit test Allure results (retained 7 days)"
         if: always()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
@@ -413,7 +426,7 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-      - name: "📈 Unit test results"
+      - name: "📈 Evaluate unit test results & extract coverage metrics"
         id: unit-test-results
         if: always()
         run: |
@@ -436,16 +449,7 @@ jobs:
       # =========================================================================
       # PHASE 4: INTEGRATION TESTS
       # =========================================================================
-      - name: "🔧 Setup integration test database"
-        working-directory: ./backend
-        env:
-          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5438/loyalty_integration_db
-          NODE_ENV: test
-        run: |
-          npm run db:migrate:deploy
-          echo "✅ Integration test database ready"
-
-      - name: "🔗 Run integration tests"
+      - name: "🔗 Integration tests: setup database, run Prisma migrations, execute API tests"
         id: run-integration-tests
         working-directory: ./backend
         env:
@@ -455,9 +459,16 @@ jobs:
           JWT_SECRET: test-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxx
           JWT_REFRESH_SECRET: test-refresh-secret-for-testing-only-must-be-64-chars-minimum-xx
           SESSION_SECRET: test-session-secret-for-testing-only-min-32-chars
-        run: npm run test:integration
+        run: |
+          echo "🔧 Setting up integration test database..."
+          npm run db:migrate:deploy
+          echo "✅ Integration test database ready"
 
-      - name: "📊 Upload integration test Allure results"
+          echo ""
+          echo "🔗 Running integration tests..."
+          npm run test:integration
+
+      - name: "📊 Upload integration test Allure results (retained 7 days)"
         if: always()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
@@ -466,24 +477,25 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
-      - name: "🧪 Run database schema tests"
+      - name: "🗄️ Database schema tests & migration validation"
         id: run-db-tests
         working-directory: ./backend
         env:
           DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5438/loyalty_integration_db
           NODE_ENV: test
-        run: npm run test:db -- --passWithNoTests
-
-      - name: "🗄️ Database migration validation"
-        env:
-          DATABASE_URL: postgresql://loyalty_integration:integration_password@localhost:5438/loyalty_integration_db
-          NODE_ENV: test
         run: |
+          echo "🧪 Running database schema tests..."
+          npm run test:db -- --passWithNoTests
+
+          echo ""
+          echo "🗄️ Running database migration validation..."
+          cd ..
           if [ -f "./scripts/validate-db-migration.sh" ]; then
             ./scripts/validate-db-migration.sh || echo "⚠️ DB migration validation failed (non-blocking)"
           fi
+          echo "✅ Database validation complete"
 
-      - name: "📈 Integration test results"
+      - name: "📈 Evaluate integration test results (API tests + DB schema tests)"
         id: integration-test-results
         if: always()
         run: |
@@ -502,7 +514,7 @@ jobs:
       # =========================================================================
       # FINAL: PR COMMENT & CLEANUP
       # =========================================================================
-      - name: "💬 Comment test results on PR"
+      - name: "💬 Post test results summary to pull request (unit + integration status)"
         if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         continue-on-error: true
@@ -564,7 +576,7 @@ jobs:
               });
             }
 
-      - name: "🧹 Cleanup test containers"
+      - name: "🧹 Cleanup: stop postgres/redis containers, remove volumes and compose file"
         if: always()
         run: |
           echo "🧹 Cleaning up test containers..."
