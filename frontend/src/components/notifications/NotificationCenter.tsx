@@ -89,7 +89,14 @@ export default function NotificationCenter() {
     }
   }, [user]);
 
-  // Fetch notifications when dropdown opens
+  // Fetch notifications on mount and when user changes
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+    }
+  }, [user, fetchNotifications]);
+
+  // Refresh notifications when dropdown opens
   useEffect(() => {
     if (isOpen && user) {
       fetchNotifications();
