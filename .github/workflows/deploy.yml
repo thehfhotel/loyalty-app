@@ -2006,13 +2006,14 @@ jobs:
 
       - name: "🔧 Environment configuration"
         env:
-          DEV_JWT_SECRET: ${{ secrets.DEV_JWT_SECRET }}
-          DEV_JWT_REFRESH_SECRET: ${{ secrets.DEV_JWT_REFRESH_SECRET }}
-          DEV_SESSION_SECRET: ${{ secrets.DEV_SESSION_SECRET }}
-          DEV_GOOGLE_CLIENT_ID: ${{ secrets.DEV_GOOGLE_CLIENT_ID }}
-          DEV_GOOGLE_CLIENT_SECRET: ${{ secrets.DEV_GOOGLE_CLIENT_SECRET }}
-          DEV_LINE_CHANNEL_ID: ${{ secrets.DEV_LINE_CHANNEL_ID }}
-          DEV_LINE_CHANNEL_SECRET: ${{ secrets.DEV_LINE_CHANNEL_SECRET }}
+          # Secrets from 'development' environment (no DEV_ prefix needed)
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          LINE_CHANNEL_ID: ${{ secrets.LINE_CHANNEL_ID }}
+          LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
         run: |
           echo "🔧 Configuring development environment..."
 
@@ -2039,17 +2040,17 @@ jobs:
           REDIS_URL=redis://redis:6379
 
           # Security
-          JWT_SECRET=${DEV_JWT_SECRET}
-          JWT_REFRESH_SECRET=${DEV_JWT_REFRESH_SECRET}
-          SESSION_SECRET=${DEV_SESSION_SECRET}
+          JWT_SECRET=${JWT_SECRET}
+          JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+          SESSION_SECRET=${SESSION_SECRET}
 
           # OAuth
-          GOOGLE_CLIENT_ID=${DEV_GOOGLE_CLIENT_ID}
-          GOOGLE_CLIENT_SECRET=${DEV_GOOGLE_CLIENT_SECRET}
-          GOOGLE_CALLBACK_URL=http://localhost:5001/api/oauth/google/callback
-          LINE_CHANNEL_ID=${DEV_LINE_CHANNEL_ID}
-          LINE_CHANNEL_SECRET=${DEV_LINE_CHANNEL_SECRET}
-          LINE_CALLBACK_URL=http://localhost:5001/api/oauth/line/callback
+          GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+          GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+          GOOGLE_CALLBACK_URL=https://loyalty-dev.saichon.com/api/oauth/google/callback
+          LINE_CHANNEL_ID=${LINE_CHANNEL_ID}
+          LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET}
+          LINE_CALLBACK_URL=https://loyalty-dev.saichon.com/api/oauth/line/callback
 
           # Azure Translation
           TRANSLATION_FEATURE_ENABLED=false
