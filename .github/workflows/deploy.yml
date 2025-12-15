@@ -261,7 +261,13 @@ jobs:
           # Verify Node.js version
           echo "🔍 Node.js: $(node --version) | npm: $(npm --version)"
           NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
-          [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ] && echo "❌ Node.js version mismatch!" && exit 1
+          if [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ]; then
+            echo "❌ Node.js version mismatch!"
+            echo "   Expected: ${{ env.NODE_VERSION }}.x"
+            echo "   Got: $(node --version)"
+            echo "   Fix: Ensure actions/setup-node ran successfully"
+            exit 1
+          fi
 
           echo "=========================================="
           echo "🔍 TypeScript type checking"
@@ -652,7 +658,10 @@ jobs:
           # Verify Node.js version
           echo "🔍 Node.js: $(node --version) | npm: $(npm --version)"
           NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
-          [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ] && echo "❌ Node.js version mismatch!" && exit 1
+          if [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ]; then
+            echo "❌ Node.js version mismatch! Expected ${{ env.NODE_VERSION }}.x, got $(node --version)"
+            exit 1
+          fi
 
           echo "🧹 Cleaning up E2E ports (5436, 6381, 3201, 4202)..."
           for port in 5436 6381 3201 4202; do
@@ -1189,7 +1198,10 @@ jobs:
           # Verify Node.js version
           echo "🔍 Node.js: $(node --version) | npm: $(npm --version)"
           NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
-          [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ] && echo "❌ Node.js version mismatch!" && exit 1
+          if [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ]; then
+            echo "❌ Node.js version mismatch! Expected ${{ env.NODE_VERSION }}.x, got $(node --version)"
+            exit 1
+          fi
 
           # Backend dependencies
           BACKEND_CACHE="/tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules"
@@ -1825,7 +1837,10 @@ jobs:
           # Verify Node.js version
           echo "🔍 Node.js: $(node --version) | npm: $(npm --version)"
           NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
-          [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ] && echo "❌ Node.js version mismatch!" && exit 1
+          if [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ]; then
+            echo "❌ Node.js version mismatch! Expected ${{ env.NODE_VERSION }}.x, got $(node --version)"
+            exit 1
+          fi
 
           echo "⚡ Setting up dependencies with maximum speed..."
 
@@ -1916,8 +1931,13 @@ jobs:
 
           # Validate .env file (without exposing secrets)
           echo "🔍 Validation: NODE_ENV=$(grep '^NODE_ENV=' .env | cut -d'=' -f2)"
-          empty_vars=$(grep '=$' .env | cut -d'=' -f1 | head -5)
-          [ -n "$empty_vars" ] && echo "⚠️ Empty vars: $empty_vars"
+          empty_vars=$(grep '=$' .env | cut -d'=' -f1 | head -5 || true)
+          if [ -n "$empty_vars" ]; then
+            echo "⚠️ Empty environment variables detected: $empty_vars"
+            echo "   This may cause issues - please check GitHub Secrets/Variables"
+          else
+            echo "✅ All environment variables have values"
+          fi
       
       - name: "🛡️ Stop conflicting dev containers & verify production ports available"
         run: |
@@ -2576,7 +2596,10 @@ jobs:
           # Verify Node.js version
           echo "🔍 Node.js: $(node --version) | npm: $(npm --version)"
           NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
-          [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ] && echo "❌ Node.js version mismatch!" && exit 1
+          if [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ]; then
+            echo "❌ Node.js version mismatch! Expected ${{ env.NODE_VERSION }}.x, got $(node --version)"
+            exit 1
+          fi
 
           echo "🔀 Merging test results from all test types..."
 
