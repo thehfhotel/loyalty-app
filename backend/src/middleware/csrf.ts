@@ -52,14 +52,17 @@ export const csrfProtection = (req: Request, res: Response, next: NextFunction):
 
   // Skip CSRF validation for safe methods
   if (safeMethods.includes(req.method)) {
-    // Always set/refresh CSRF token for safe methods
-    const token = generateCsrfToken();
-    res.cookie('XSRF-TOKEN', token, {
-      httpOnly: true,
-      secure: shouldUseSecureCookies(),
-      sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    });
+    // Only set CSRF token if one doesn't already exist
+    const existingToken = req.cookies?.['XSRF-TOKEN'] as string | undefined;
+    if (!existingToken) {
+      const token = generateCsrfToken();
+      res.cookie('XSRF-TOKEN', token, {
+        httpOnly: true,
+        secure: shouldUseSecureCookies(),
+        sameSite: 'strict',
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      });
+    }
     return next();
   }
 
