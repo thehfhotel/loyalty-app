@@ -1086,6 +1086,15 @@ jobs:
       contents: read
     env:
       COMPOSE_PROJECT_NAME: loyalty-e2e-tests
+      # Test values for E2E - must match values in docker-compose.e2e.ci.yml
+      # These are NOT real secrets - they're test values for isolated E2E environment
+      JWT_SECRET: e2e-jwt-secret-for-testing-only-must-be-64-chars-minimum-xxxxxxx
+      JWT_REFRESH_SECRET: e2e-refresh-secret-for-testing-only-must-be-64-chars-xxxxxxx
+      SESSION_SECRET: e2e-session-secret-for-testing-only-64-chars-minimum-xxxxxxx
+      GOOGLE_CLIENT_ID: e2e-test-google-client-id
+      GOOGLE_CLIENT_SECRET: e2e-test-google-client-secret
+      LINE_CHANNEL_ID: e2e-test-line-channel-id
+      LINE_CHANNEL_SECRET: e2e-test-line-channel-secret
 
     # Prevent parallel E2E runs to avoid port conflicts with host network
     concurrency:
