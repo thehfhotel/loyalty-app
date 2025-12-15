@@ -509,16 +509,36 @@ export class CouponService {
   // Get user coupon by QR code
   async getUserCouponByQR(qrCode: string): Promise<UserActiveCoupon | null> {
     const [userCoupon] = await query<UserActiveCoupon>(
-      `SELECT 
-         user_coupon_id as "userCouponId", user_id as "userId", status,
-         qr_code as "qrCode", expires_at as "expiresAt", assigned_at as "assignedAt",
-         coupon_id as "couponId", code, name, description,
-         terms_and_conditions as "termsAndConditions", type, value, currency,
-         minimum_spend as "minimumSpend", maximum_discount as "maximumDiscount",
-         coupon_expires_at as "couponExpiresAt", effective_expiry as "effectiveExpiry",
-         expiring_soon as "expiringSoon"
-       FROM user_active_coupons 
-       WHERE qr_code = $1`,
+      `SELECT
+         uc.id as "userCouponId",
+         uc.user_id as "userId",
+         uc.status,
+         uc.qr_code as "qrCode",
+         uc.expires_at as "expiresAt",
+         uc.created_at as "assignedAt",
+         uc.coupon_id as "couponId",
+         c.code,
+         c.name,
+         c.description,
+         c.terms_and_conditions as "termsAndConditions",
+         c.type,
+         c.value,
+         c.currency,
+         c.minimum_spend as "minimumSpend",
+         c.maximum_discount as "maximumDiscount",
+         c.valid_until as "couponExpiresAt",
+         CASE
+           WHEN uc.expires_at IS NOT NULL THEN uc.expires_at
+           ELSE c.valid_until
+         END as "effectiveExpiry",
+         CASE
+           WHEN uc.expires_at IS NOT NULL AND uc.expires_at <= NOW() + INTERVAL '7 days' THEN true
+           WHEN c.valid_until IS NOT NULL AND c.valid_until <= NOW() + INTERVAL '7 days' THEN true
+           ELSE false
+         END as "expiringSoon"
+       FROM user_coupons uc
+       JOIN coupons c ON uc.coupon_id = c.id
+       WHERE uc.qr_code = $1`,
       [qrCode]
     );
 
