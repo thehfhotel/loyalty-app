@@ -1654,7 +1654,8 @@ jobs:
       DEPLOY_PATH: /home/nut/loyalty-app-production
 
     steps:
-      - name: "📊 Pre-deployment validation (quality gates)"
+      - name: "📊 Pre-deployment validation (quality gates & deployment directory)"
+        id: validate-deploy-dir
         run: |
           echo "🔍 Pre-deployment checks..."
           echo "Build Validation: ${{ needs.build-validation.outputs.build-passed }}"
@@ -1662,96 +1663,60 @@ jobs:
           echo "Frontend Image: ${{ needs.build-validation.outputs.frontend-image }}"
           echo "Images Ready: ${{ needs.build-validation.outputs.images-ready }}"
 
-          # Verify build validation passed (which already validates all tests)
           if [ "${{ needs.build-validation.outputs.build-passed }}" != "true" ]; then
             echo "❌ Build validation failed - deployment blocked"
-            echo "🚨 Build validation ensures all tests (security, unit, integration, e2e) passed"
             exit 1
           fi
+          echo "✅ All quality gates passed"
 
-          echo "✅ All pre-deployment checks passed"
-          echo "🔐 Build validation confirmed - all quality gates met for deployment"
-
-      - name: "🔗 Validate deployment directory (bind mount check)"
-        id: validate-deploy-dir
-        run: |
+          echo ""
           echo "🔗 Validating deployment directory..."
-
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
 
-          # Check 1: Directory exists (bind mount working)
+          # Directory exists (bind mount working)
           if [ ! -d "$DEPLOY_DIR" ]; then
             echo "❌ FATAL: Deployment directory not found: $DEPLOY_DIR"
-            echo ""
-            echo "This usually means the bind mount is not configured correctly."
-            echo "Please verify the runner's docker-compose.yml has:"
-            echo "  volumes:"
-            echo "    - /home/nut/loyalty-app-production:/home/nut/loyalty-app-production"
-            echo ""
-            echo "Then restart the runners:"
-            echo "  cd /home/nut/actions-runner && docker compose down && docker compose up -d"
+            echo "Verify runner's docker-compose.yml has bind mount configured"
             exit 1
           fi
           echo "✅ Directory exists: $DEPLOY_DIR"
 
-          # Check 2: It's a git repository
+          # It's a git repository
           if [ ! -d "$DEPLOY_DIR/.git" ]; then
             echo "❌ FATAL: Not a git repository: $DEPLOY_DIR"
-            echo ""
-            echo "Please initialize the repository on the host:"
-            echo "  git clone https://github.com/${{ github.repository }}.git $DEPLOY_DIR"
             exit 1
           fi
           echo "✅ Valid git repository"
 
           cd "$DEPLOY_DIR"
-
-          # Check 3: Configure safe.directory for bind-mounted paths
           git config --global --add safe.directory "$DEPLOY_DIR" 2>/dev/null || true
 
-          # Check 4: Git commands work
+          # Git commands work
           if ! git rev-parse HEAD >/dev/null 2>&1; then
             echo "❌ FATAL: Git commands failing in $DEPLOY_DIR"
-            echo ""
-            echo "Git error output:"
-            git rev-parse HEAD 2>&1 || true
-            echo ""
-            echo "This might be a permission or corruption issue."
             exit 1
           fi
           CURRENT_COMMIT=$(git rev-parse --short HEAD)
           echo "✅ Git working (current commit: $CURRENT_COMMIT)"
 
-          # Check 5: Remote is configured
+          # Remote is configured
           REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
           if [ -z "$REMOTE_URL" ]; then
             echo "❌ FATAL: No 'origin' remote configured"
-            echo ""
-            echo "Please configure the remote:"
-            echo "  git remote add origin https://github.com/${{ github.repository }}.git"
             exit 1
           fi
           echo "✅ Remote configured: origin"
 
-          # Check 6: Can reach the target commit
-          echo "🔍 Verifying target commit ${{ github.sha }} is reachable..."
-
-          # Set up authenticated remote for fetch test
+          # Can reach the target commit
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-
           if ! git fetch --depth 1 origin ${{ github.sha }} 2>/dev/null; then
-            echo "⚠️ WARNING: Could not fetch commit ${{ github.sha }}"
-            echo "Will retry during deployment step..."
+            echo "⚠️ WARNING: Could not fetch commit - will retry during deployment"
           else
             echo "✅ Target commit is reachable"
           fi
 
           echo ""
-          echo "📋 Deployment Directory Status:"
-          echo "   Path: $DEPLOY_DIR"
-          echo "   Current: $CURRENT_COMMIT"
-          echo "   Target:  ${{ github.sha }}"
-          echo "   Ready for deployment: ✅"
+          echo "📋 Ready for deployment: $DEPLOY_DIR ($CURRENT_COMMIT → ${{ github.sha }})"
 
       - name: "💾 Smart database backup (pre-shutdown)"
         id: backup
@@ -1867,206 +1832,111 @@ jobs:
           
           echo "✅ Dependencies installed in parallel"
       
-      - name: "🔧 Environment configuration"
+      - name: "🔧 Validate secrets & create .env file for Docker Compose"
         run: |
           echo "🔧 Configuring production environment..."
-          
+
           # Validate critical secrets
           missing_secrets=()
-          if [ -z "${{ secrets.JWT_SECRET }}" ]; then missing_secrets+=("JWT_SECRET"); fi
-          if [ -z "${{ secrets.DATABASE_URL }}" ]; then missing_secrets+=("DATABASE_URL"); fi
-          
+          [ -z "${{ secrets.JWT_SECRET }}" ] && missing_secrets+=("JWT_SECRET")
+          [ -z "${{ secrets.DATABASE_URL }}" ] && missing_secrets+=("DATABASE_URL")
+
           if [ ${#missing_secrets[@]} -ne 0 ]; then
             echo "❌ Missing secrets: ${missing_secrets[*]}"
             exit 1
           fi
-          
-          # Export environment variables
-          echo "NODE_ENV=production" >> $GITHUB_ENV
-          echo "LOG_LEVEL=info" >> $GITHUB_ENV
-          echo "CORS_ORIGINS=${{ vars.CORS_ORIGINS }}" >> $GITHUB_ENV
-          
-          # Core secrets
-          echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> $GITHUB_ENV
-          echo "JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}" >> $GITHUB_ENV
-          echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> $GITHUB_ENV
-          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
-          echo "REDIS_URL=${{ vars.REDIS_URL || 'redis://redis:6379' }}" >> $GITHUB_ENV
+          echo "✅ Critical secrets validated"
 
-          # URLs (from environment variables, not secrets)
-          echo "FRONTEND_URL=${{ vars.FRONTEND_URL }}" >> $GITHUB_ENV
-          echo "BACKEND_URL=${{ vars.BACKEND_URL }}" >> $GITHUB_ENV
-          echo "VITE_API_URL=${{ vars.VITE_API_URL }}" >> $GITHUB_ENV
-
-          # OAuth Configuration
-          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> $GITHUB_ENV
-          echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" >> $GITHUB_ENV
-          echo "GOOGLE_CALLBACK_URL=${{ vars.GOOGLE_CALLBACK_URL }}" >> $GITHUB_ENV
-          echo "LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}" >> $GITHUB_ENV
-          echo "LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}" >> $GITHUB_ENV
-          echo "LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}" >> $GITHUB_ENV
-
-          # Feature flags
-          echo "TRANSLATION_FEATURE_ENABLED=false" >> $GITHUB_ENV
-          
-          # Loyalty System Configuration
-          echo "LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}" >> $GITHUB_ENV
-          echo "LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}" >> $GITHUB_ENV
-          
-          echo "✅ Environment configured"
-          
-          # Debug environment variable lengths for validation
-          echo "🔍 Environment Variable Debug:"
-          echo "JWT_SECRET length: ${#JWT_SECRET}"
-          echo "JWT_REFRESH_SECRET length: ${#JWT_REFRESH_SECRET}"
-          echo "SESSION_SECRET length: ${#SESSION_SECRET}"
-          echo "REDIS_URL configured: $([ -n "$REDIS_URL" ] && echo 'yes' || echo 'no')"
-          echo "DATABASE_URL configured: $([ -n "$DATABASE_URL" ] && echo 'yes' || echo 'no')"
-      
-      - name: "📝 Create .env file (container configuration)"
-        run: |
-          echo "📝 Creating .env file for Docker Compose..."
-          
+          echo ""
+          echo "📝 Creating .env file..."
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
-          
-          # Create .env file with all environment variables
+
           cat > .env << EOF
-          # Node environment
-          NODE_ENV=${NODE_ENV}
-          LOG_LEVEL=${LOG_LEVEL}
-          CORS_ORIGINS=${CORS_ORIGINS}
-          
-          # Core secrets
-          JWT_SECRET=${JWT_SECRET}
-          JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
-          SESSION_SECRET=${SESSION_SECRET}
-          DATABASE_URL=${DATABASE_URL}
-          REDIS_URL=${REDIS_URL:-redis://redis:6379}
-          FRONTEND_URL=${FRONTEND_URL}
-          BACKEND_URL=${BACKEND_URL}
-          VITE_API_URL=${VITE_API_URL}
-          VITE_TRANSLATION_ENABLED=${TRANSLATION_FEATURE_ENABLED}
-          TRANSLATION_FEATURE_ENABLED=${TRANSLATION_FEATURE_ENABLED}
-          
-          # OAuth Configuration (Google and LINE only - Facebook not implemented)
-          GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-          GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-          GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL}
-          LINE_CHANNEL_ID=${LINE_CHANNEL_ID}
-          LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET}
-          LINE_CALLBACK_URL=${LINE_CALLBACK_URL}
-          
-          # Loyalty System Configuration
-          LOYALTY_USERNAME=${LOYALTY_USERNAME}
-          LOYALTY_PASSWORD=${LOYALTY_PASSWORD}
+          NODE_ENV=production
+          LOG_LEVEL=info
+          CORS_ORIGINS=${{ vars.CORS_ORIGINS }}
+
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          REDIS_URL=${{ vars.REDIS_URL || 'redis://redis:6379' }}
+          FRONTEND_URL=${{ vars.FRONTEND_URL }}
+          BACKEND_URL=${{ vars.BACKEND_URL }}
+          VITE_API_URL=${{ vars.VITE_API_URL }}
+          VITE_TRANSLATION_ENABLED=false
+          TRANSLATION_FEATURE_ENABLED=false
+
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_CALLBACK_URL=${{ vars.GOOGLE_CALLBACK_URL }}
+          LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
+          LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
+
+          LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
+          LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
           EOF
-          
-          echo "✅ Environment file created successfully"
-          echo "📊 Environment variables configured: $(wc -l < .env) lines"
-          
-          # Debug .env file contents (without exposing secrets)
-          echo "🔍 .env file validation:"
-          echo "NODE_ENV: $(grep '^NODE_ENV=' .env | cut -d'=' -f2)"
-          echo "REDIS_URL configured: $(grep -q '^REDIS_URL=' .env && echo 'yes' || echo 'no')"
-          echo "DATABASE_URL configured: $(grep -q '^DATABASE_URL=' .env && echo 'yes' || echo 'no')"
-          echo "JWT_SECRET configured: $(grep -q '^JWT_SECRET=' .env && echo 'yes' || echo 'no')"
-          
-          # Check for empty values
+
+          echo "✅ .env file created ($(wc -l < .env) lines)"
+
+          # Validate .env file (without exposing secrets)
+          echo "🔍 Validation: NODE_ENV=$(grep '^NODE_ENV=' .env | cut -d'=' -f2)"
           empty_vars=$(grep '=$' .env | cut -d'=' -f1 | head -5)
-          if [ -n "$empty_vars" ]; then
-            echo "⚠️ Empty environment variables found: $empty_vars"
-          fi
+          [ -n "$empty_vars" ] && echo "⚠️ Empty vars: $empty_vars"
       
-      - name: "🛡️ Stop conflicting dev containers"
+      - name: "🛡️ Stop conflicting dev containers & verify production ports available"
         run: |
           echo "🛡️ Checking for dev containers that might block production ports..."
 
-          # Dev containers that could conflict with production
-          DEV_CONTAINERS=(
-            "loyalty_postgres_dev"
-            "loyalty_redis_dev"
-            "loyalty_nginx_dev"
-            "loyalty_backend_dev"
-            "loyalty_frontend_dev"
-          )
-
+          # Stop dev containers that could conflict
+          DEV_CONTAINERS=("loyalty_postgres_dev" "loyalty_redis_dev" "loyalty_nginx_dev" "loyalty_backend_dev" "loyalty_frontend_dev")
           STOPPED_CONTAINERS=()
           for container in "${DEV_CONTAINERS[@]}"; do
             if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
-              echo "⚠️ Found dev container: $container"
+              echo "⚠️ Stopping dev container: $container"
               docker stop "$container" 2>/dev/null || true
               docker rm "$container" 2>/dev/null || true
               STOPPED_CONTAINERS+=("$container")
             fi
           done
+          [ ${#STOPPED_CONTAINERS[@]} -gt 0 ] && echo "🧹 Removed: ${STOPPED_CONTAINERS[*]}" && sleep 5
 
-          if [ ${#STOPPED_CONTAINERS[@]} -gt 0 ]; then
-            echo "🧹 Stopped and removed dev containers: ${STOPPED_CONTAINERS[*]}"
-            echo "⏳ Waiting for ports to be released..."
-            sleep 5
-          else
-            echo "✅ No conflicting dev containers found"
-          fi
-
-      - name: "🔍 Pre-deployment port check"
-        run: |
-          echo "🔍 Checking if required ports are available..."
-
+          echo ""
+          echo "🔍 Checking production ports (5434, 6379, 4001)..."
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
 
-          # Production ports (from docker-compose.yml + docker-compose.prod.yml)
           REQUIRED_PORTS=(5434 6379 4001)
           PORTS_IN_USE=()
-
           for port in "${REQUIRED_PORTS[@]}"; do
             if lsof -i ":$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
-              echo "⚠️ Port $port is in use:"
-              lsof -i ":$port" -sTCP:LISTEN || true
+              echo "⚠️ Port $port in use"
               PORTS_IN_USE+=($port)
             else
-              echo "✅ Port $port is available"
+              echo "✅ Port $port available"
             fi
           done
 
           if [ ${#PORTS_IN_USE[@]} -gt 0 ]; then
-            echo ""
-            echo "❌ ERROR: Ports in use: ${PORTS_IN_USE[*]}"
-            echo ""
-            echo "🛑 Attempting graceful shutdown of existing services..."
-            if docker compose -f docker-compose.yml -f docker-compose.prod.yml ps -q | head -1 | grep -q .; then
-              docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 30 || true
+            echo "🛑 Attempting graceful shutdown..."
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml down --timeout 30 || true
+            sleep 5
 
-              # Re-check ports after shutdown
-              echo "🔍 Re-checking ports after shutdown..."
-              sleep 5
-              STILL_IN_USE=()
-              for port in "${PORTS_IN_USE[@]}"; do
-                if lsof -i ":$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
-                  STILL_IN_USE+=($port)
-                fi
-              done
+            # Re-check ports
+            STILL_IN_USE=()
+            for port in "${PORTS_IN_USE[@]}"; do
+              lsof -i ":$port" -sTCP:LISTEN -t >/dev/null 2>&1 && STILL_IN_USE+=($port)
+            done
 
-              if [ ${#STILL_IN_USE[@]} -gt 0 ]; then
-                echo "❌ FATAL: Ports still in use after shutdown: ${STILL_IN_USE[*]}"
-                echo "Please manually stop services using these ports before deploying."
-                exit 1
-              else
-                echo "✅ All ports now available after shutdown"
-              fi
-            else
-              echo "❌ FATAL: Ports in use but no compose services found to stop"
-              echo "Please manually investigate and free these ports:"
-              for port in "${PORTS_IN_USE[@]}"; do
-                echo "  Port $port:"
-                lsof -i ":$port" -sTCP:LISTEN || true
-              done
+            if [ ${#STILL_IN_USE[@]} -gt 0 ]; then
+              echo "❌ FATAL: Ports still in use: ${STILL_IN_USE[*]}"
               exit 1
             fi
+            echo "✅ Ports freed after shutdown"
           fi
-
-          echo "✅ All required ports are available for deployment"
+          echo "✅ All production ports available"
 
       - name: "🔒 Validate production configuration"
         run: |
@@ -2279,57 +2149,37 @@ jobs:
           
           echo "✅ Database migration phase completed"
       
-      - name: "🔐 Post-deployment OAuth validation"
+      - name: "🔐🗄️ Post-deployment OAuth & database validation"
         run: |
-          echo "🔐 Validating OAuth configuration in production environment..."
-          
+          echo "🔐 Validating OAuth and database in production..."
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
-          
+
           # Wait for application to be ready
-          echo "⏳ Waiting for application to be ready..."
           sleep 10
-          
-          # Run OAuth health validation in container context
+
+          # OAuth validation
           echo "🔍 Running OAuth validation..."
           if docker compose exec -T backend test -f "/app/scripts/validate-oauth-health.sh"; then
-            # Run OAuth validation from within container (production network context)
             if docker compose exec -T backend bash -c "cd /app && ./scripts/validate-oauth-health.sh"; then
-              echo "✅ OAuth validation passed in production"
+              echo "✅ OAuth validation passed"
             else
-              echo "⚠️ OAuth validation failed in production - check configuration"
-              echo "📄 Recent backend logs:"
-              docker compose logs --tail=20 backend
+              echo "⚠️ OAuth validation failed - check configuration"
+              docker compose logs --tail=10 backend
             fi
           else
-            echo "⚠️ OAuth validation script not found in container - skipping"
+            echo "⚠️ OAuth script not found - skipping"
           fi
-      
-      - name: "🗄️ Post-deployment database validation"
-        run: |
-          echo "🗄️ Validating database migration status in production..."
-          
-          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
-          cd "$DEPLOY_DIR"
-          
-          # Verify database migration status
-          echo "🔍 Checking final migration status..."
-          if docker compose exec -T backend npm run db:migrate:status; then
-            echo "✅ Database migration status verified"
-          else
-            echo "⚠️ Cannot verify database migration status"
-          fi
-          
-          # Run database migration rollback safety check
+
+          # Database migration status
+          echo ""
+          echo "🗄️ Checking database migration status..."
+          docker compose exec -T backend npm run db:migrate:status && echo "✅ Migration status OK" || echo "⚠️ Cannot verify migration status"
+
+          # Rollback safety check
           if docker compose exec -T backend test -f "/app/scripts/migration-rollback-safety.sh"; then
             echo "🔍 Running rollback safety check..."
-            if docker compose exec -T backend bash -c "cd /app && ./scripts/migration-rollback-safety.sh check"; then
-              echo "✅ Migration rollback safety verified"
-            else
-              echo "⚠️ Migration rollback safety check failed"
-            fi
-          else
-            echo "⚠️ Migration rollback safety script not found - skipping"
+            docker compose exec -T backend bash -c "cd /app && ./scripts/migration-rollback-safety.sh check" && echo "✅ Rollback safety OK" || echo "⚠️ Rollback safety check failed"
           fi
       
       - name: "🏥 Health checks & validation (service readiness)"
