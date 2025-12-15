@@ -1,5 +1,5 @@
 # CodeQL Configuration
-# Defines custom sanitizers for log injection prevention
+# Custom model packs are auto-detected from .github/codeql/extensions/
 
 name: "Custom CodeQL Config"
 
@@ -7,7 +7,3 @@ name: "Custom CodeQL Config"
 queries:
   - uses: security-extended
   - uses: security-and-quality
-
-# Path to custom model extensions
-model-packs:
-  - ./.github/codeql/custom-models
