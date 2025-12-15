@@ -267,9 +267,17 @@ function createApp(redisAvailable: boolean) {
   app.use(passport.initialize());
   app.use(passport.session());
 
-  // CSRF protection - skip for health checks and OAuth routes
+  // CSRF protection - skip for health checks, OAuth, and auth routes
+  // Auth routes (login/register/logout) don't need CSRF because:
+  // - Login/register: user isn't authenticated yet (no session to hijack)
+  // - Logout: uses refresh token validation, not session cookie
   app.use((req, res, next) => {
-    if (req.path === '/health' || req.path === '/api/health' || req.path.startsWith('/api/oauth/')) {
+    if (
+      req.path === '/health' ||
+      req.path === '/api/health' ||
+      req.path.startsWith('/api/oauth/') ||
+      req.path.startsWith('/api/auth/')
+    ) {
       return next();
     }
     csrfProtection(req, res, next);
