@@ -1005,3 +1005,241 @@ CREATE TRIGGER trigger_create_default_notification_preferences
     AFTER INSERT ON users
     FOR EACH ROW
     EXECUTE FUNCTION create_default_notification_preferences();
+
+-- =====================================================
+-- COUPON SYSTEM FUNCTIONS
+-- =====================================================
+
+-- CreateFunction: generate_qr_code
+-- Generates a unique 16-character QR code for user coupons
+CREATE OR REPLACE FUNCTION generate_qr_code()
+RETURNS TEXT AS $$
+DECLARE
+    qr_code TEXT;
+    exists_check INTEGER;
+BEGIN
+    LOOP
+        -- Generate 16-character alphanumeric code
+        qr_code := upper(substr(md5(random()::text || clock_timestamp()::text), 1, 16));
+
+        -- Check if it already exists
+        SELECT COUNT(*) INTO exists_check FROM user_coupons WHERE qr_code = qr_code;
+
+        -- Exit loop if unique
+        EXIT WHEN exists_check = 0;
+    END LOOP;
+
+    RETURN qr_code;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION generate_qr_code() IS 'Generates a unique 16-character alphanumeric QR code for user coupons';
+
+-- CreateTriggerFunction: set_qr_code
+-- Automatically sets QR code when inserting new user_coupons
+CREATE OR REPLACE FUNCTION set_qr_code()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.qr_code IS NULL OR NEW.qr_code = '' THEN
+        NEW.qr_code := generate_qr_code();
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION set_qr_code() IS 'Trigger function to automatically generate QR code for new user coupons';
+
+-- CreateTrigger: generate_qr_code_trigger
+CREATE TRIGGER generate_qr_code_trigger
+    BEFORE INSERT ON user_coupons
+    FOR EACH ROW
+    EXECUTE FUNCTION set_qr_code();
+
+-- CreateFunction: assign_coupon_to_user
+-- Assigns a coupon to a user with validation
+CREATE OR REPLACE FUNCTION assign_coupon_to_user(
+    p_coupon_id UUID,
+    p_user_id UUID,
+    p_assigned_by UUID DEFAULT NULL,
+    p_assigned_reason TEXT DEFAULT NULL,
+    p_custom_expiry TIMESTAMP WITH TIME ZONE DEFAULT NULL
+)
+RETURNS UUID AS $$
+DECLARE
+    user_coupon_id UUID;
+    coupon_record RECORD;
+    user_usage_count INTEGER;
+    expiry_date TIMESTAMP WITH TIME ZONE;
+BEGIN
+    -- Get coupon details and validate
+    SELECT * INTO coupon_record FROM coupons WHERE id = p_coupon_id AND status = 'active';
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Coupon not found or not active';
+    END IF;
+
+    -- Check if coupon is still valid
+    IF coupon_record.valid_until IS NOT NULL AND coupon_record.valid_until < NOW() THEN
+        RAISE EXCEPTION 'Coupon has expired';
+    END IF;
+
+    -- Check total usage limit
+    IF coupon_record.usage_limit IS NOT NULL AND coupon_record.used_count >= coupon_record.usage_limit THEN
+        RAISE EXCEPTION 'Coupon usage limit exceeded';
+    END IF;
+
+    -- Check per-user usage limit
+    SELECT COUNT(*) INTO user_usage_count
+    FROM user_coupons
+    WHERE coupon_id = p_coupon_id AND user_id = p_user_id AND status != 'revoked';
+
+    IF coupon_record.usage_limit_per_user IS NOT NULL AND user_usage_count >= coupon_record.usage_limit_per_user THEN
+        RAISE EXCEPTION 'User usage limit exceeded for this coupon';
+    END IF;
+
+    -- Determine expiry date
+    expiry_date := COALESCE(p_custom_expiry, coupon_record.valid_until);
+
+    -- Create user coupon
+    INSERT INTO user_coupons (
+        user_id,
+        coupon_id,
+        assigned_by,
+        assigned_reason,
+        expires_at
+    )
+    VALUES (
+        p_user_id,
+        p_coupon_id,
+        p_assigned_by,
+        p_assigned_reason,
+        expiry_date
+    )
+    RETURNING id INTO user_coupon_id;
+
+    RETURN user_coupon_id;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION assign_coupon_to_user(UUID, UUID, UUID, TEXT, TIMESTAMP WITH TIME ZONE) IS 'Assigns a coupon to a user with validation for limits and expiry';
+
+-- CreateFunction: redeem_coupon
+-- Redeems a coupon by QR code and calculates discount
+CREATE OR REPLACE FUNCTION redeem_coupon(
+    p_qr_code TEXT,
+    p_original_amount DECIMAL(10,2),
+    p_redeemed_by_admin UUID DEFAULT NULL,
+    p_transaction_reference VARCHAR(255) DEFAULT NULL,
+    p_location VARCHAR(255) DEFAULT NULL,
+    p_metadata JSONB DEFAULT '{}'
+)
+RETURNS TABLE(
+    success BOOLEAN,
+    message TEXT,
+    discount_amount DECIMAL(10,2),
+    final_amount DECIMAL(10,2),
+    user_coupon_id UUID
+) AS $$
+DECLARE
+    user_coupon_record RECORD;
+    calculated_discount DECIMAL(10,2);
+    final_amount_calc DECIMAL(10,2);
+    redemption_id UUID;
+BEGIN
+    -- Find user coupon by QR code
+    SELECT uc.id as uc_id, uc.status as uc_status, uc.expires_at as uc_expires_at,
+           c.type, c.value, c.currency, c.minimum_spend, c.maximum_discount, c.id as coupon_id
+    INTO user_coupon_record
+    FROM user_coupons uc
+    JOIN coupons c ON uc.coupon_id = c.id
+    WHERE uc.qr_code = p_qr_code;
+
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT false, 'Invalid QR code'::TEXT, 0.00::DECIMAL(10,2), p_original_amount, NULL::UUID;
+        RETURN;
+    END IF;
+
+    -- Validate coupon status
+    IF user_coupon_record.uc_status != 'available' THEN
+        RETURN QUERY SELECT false, 'Coupon is not available for use'::TEXT, 0.00::DECIMAL(10,2), p_original_amount, user_coupon_record.uc_id;
+        RETURN;
+    END IF;
+
+    -- Check expiry
+    IF user_coupon_record.uc_expires_at IS NOT NULL AND user_coupon_record.uc_expires_at < NOW() THEN
+        -- Update status to expired
+        UPDATE user_coupons SET status = 'expired' WHERE id = user_coupon_record.uc_id;
+        RETURN QUERY SELECT false, 'Coupon has expired'::TEXT, 0.00::DECIMAL(10,2), p_original_amount, user_coupon_record.uc_id;
+        RETURN;
+    END IF;
+
+    -- Check minimum spend
+    IF user_coupon_record.minimum_spend IS NOT NULL AND p_original_amount < user_coupon_record.minimum_spend THEN
+        RETURN QUERY SELECT false, format('Minimum spend of %s required', user_coupon_record.minimum_spend)::TEXT, 0.00::DECIMAL(10,2), p_original_amount, user_coupon_record.uc_id;
+        RETURN;
+    END IF;
+
+    -- Calculate discount
+    CASE user_coupon_record.type
+        WHEN 'percentage' THEN
+            calculated_discount := p_original_amount * (user_coupon_record.value / 100);
+            -- Apply maximum discount if set
+            IF user_coupon_record.maximum_discount IS NOT NULL AND calculated_discount > user_coupon_record.maximum_discount THEN
+                calculated_discount := user_coupon_record.maximum_discount;
+            END IF;
+        WHEN 'fixed_amount' THEN
+            calculated_discount := LEAST(user_coupon_record.value, p_original_amount);
+        WHEN 'bogo' THEN
+            -- For BOGO, assume 50% discount (can be customized)
+            calculated_discount := p_original_amount * 0.5;
+        ELSE
+            -- For other types, treat as percentage with value as discount
+            calculated_discount := p_original_amount * (user_coupon_record.value / 100);
+    END CASE;
+
+    final_amount_calc := GREATEST(0, p_original_amount - calculated_discount);
+
+    -- Mark coupon as used
+    UPDATE user_coupons
+    SET
+        status = 'used',
+        used_at = NOW(),
+        used_by_admin = p_redeemed_by_admin,
+        redemption_location = p_location
+    WHERE id = user_coupon_record.uc_id;
+
+    -- Update coupon usage count
+    UPDATE coupons
+    SET used_count = used_count + 1
+    WHERE id = user_coupon_record.coupon_id;
+
+    -- Record redemption history
+    INSERT INTO coupon_redemptions (
+        user_coupon_id,
+        original_amount,
+        discount_amount,
+        final_amount,
+        currency,
+        transaction_reference,
+        staff_member_id,
+        location,
+        metadata
+    )
+    VALUES (
+        user_coupon_record.uc_id,
+        p_original_amount,
+        calculated_discount,
+        final_amount_calc,
+        user_coupon_record.currency,
+        p_transaction_reference,
+        p_redeemed_by_admin,
+        p_location,
+        p_metadata
+    )
+    RETURNING id INTO redemption_id;
+
+    RETURN QUERY SELECT true, 'Coupon redeemed successfully'::TEXT, calculated_discount, final_amount_calc, user_coupon_record.uc_id;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION redeem_coupon(TEXT, DECIMAL, UUID, VARCHAR, VARCHAR, JSONB) IS 'Redeems a coupon by QR code, calculates discount, and records the redemption';
