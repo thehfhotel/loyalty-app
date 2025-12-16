@@ -128,9 +128,9 @@ test.describe('User Profile Management', () => {
       });
 
       expect(response.status()).toBe(200);
-      const profile = await response.json();
-      expect(profile.firstName).toBe(testFirstName);
-      expect(profile.lastName).toBe(testLastName);
+      const data = await response.json();
+      expect(data.profile.firstName).toBe(testFirstName);
+      expect(data.profile.lastName).toBe(testLastName);
     });
 
     test('should update basic profile fields', async ({ request }) => {
@@ -163,10 +163,10 @@ test.describe('User Profile Management', () => {
       });
 
       expect(response.status()).toBe(200);
-      const profile = await response.json();
-      expect(profile.firstName).toBe(updateData.firstName);
-      expect(profile.lastName).toBe(updateData.lastName);
-      expect(profile.phone).toBe(updateData.phone);
+      const data = await response.json();
+      expect(data.profile.firstName).toBe(updateData.firstName);
+      expect(data.profile.lastName).toBe(updateData.lastName);
+      expect(data.profile.phone).toBe(updateData.phone);
     });
 
     test('should update dateOfBirth', async ({ request }) => {
@@ -193,8 +193,8 @@ test.describe('User Profile Management', () => {
       });
 
       expect(response.status()).toBe(200);
-      const profile = await response.json();
-      expect(profile.dateOfBirth).toBeTruthy();
+      const data = await response.json();
+      expect(data.profile.dateOfBirth).toBeTruthy();
     });
 
     test('should save gender via complete-profile', async ({ request }) => {
@@ -339,7 +339,8 @@ test.describe('User Profile Management', () => {
       });
 
       expect(getResponse.status()).toBe(200);
-      const profile = await getResponse.json();
+      const getData = await getResponse.json();
+      const profile = getData.profile;
 
       expect(profile.firstName).toBe(updateData.firstName);
       expect(profile.lastName).toBe(updateData.lastName);
