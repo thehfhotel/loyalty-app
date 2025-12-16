@@ -334,7 +334,7 @@ async function main() {
 
   if (runs.length === 0) {
     process.stdout.write(
-      `No completed runs found for ${workflow.name} on ${args.branch} in the last ${args.days} days.\\n`
+      `No completed runs found for ${workflow.name} on ${args.branch} in the last ${args.days} days.\n`
     );
     return;
   }
@@ -351,22 +351,22 @@ async function main() {
     `Runs analyzed: ${runs.length}`,
   ];
 
-  process.stdout.write(`${header.join(" | ")}\\n`);
-  process.stdout.write("------------------------------------------------------------\\n");
+  process.stdout.write(`${header.join(" | ")}\n`);
+  process.stdout.write("------------------------------------------------------------\n");
   process.stdout.write(
-    `Change failure rate: ${formatRate(cfr.rate)} (${cfr.failureCount} fail / ${cfr.successCount} success, event=${args.event})\\n`
+    `Change failure rate: ${formatRate(cfr.rate)} (${cfr.failureCount} fail / ${cfr.successCount} success, event=${args.event})\n`
   );
   process.stdout.write(
-    `Flaky rate: ${formatRate(flaky.rate)} (${flaky.flakyCommits} / ${flaky.commitCount} commits with runs)\\n`
+    `Flaky rate: ${formatRate(flaky.rate)} (${flaky.flakyCommits} / ${flaky.commitCount} commits with runs)\n`
   );
   process.stdout.write(
     `Time to fix: avg ${formatDuration(ttf.averageMs)} | median ${formatDuration(
       ttf.medianMs
-    )} (${ttf.incidents} incidents)\\n`
+    )} (${ttf.incidents} incidents)\n`
   );
 }
 
 main().catch((err) => {
-  process.stderr.write(`Error: ${err.message}\\n`);
+  process.stderr.write(`Error: ${err.message}\n`);
   process.exit(1);
 });
