@@ -24,8 +24,7 @@ module.exports = {
     '!src/generated/**',
     '!src/index.ts',
     '!src/test-prisma.ts',
-    '!src/__tests__/**/*.test.ts',
-    '!src/__tests__/setup.ts',
+    '!src/__tests__/**',  // Exclude all test files, fixtures, factories, utils
     '!src/types/**',
   ],
   // Coverage thresholds disabled - tracking via reports instead
