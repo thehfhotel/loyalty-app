@@ -1,4 +1,4 @@
-/* eslint-disable curly -- Test file uses single-line conditionals for concise error handling */
+/* eslint-disable curly, @typescript-eslint/no-non-null-assertion -- Test file uses single-line conditionals and non-null assertions */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
