@@ -114,9 +114,8 @@ allure-report/
 **/allure-results/
 **/allure-report/
 
-# Test outputs and temporary plans
+# Test outputs
 test-results/
-docs/plans/
 
 # CI-generated docker-compose files (not committed)
 docker-compose.e2e.ci.yml
