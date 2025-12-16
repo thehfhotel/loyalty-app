@@ -4,8 +4,7 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { createContext } from '../../../trpc/context';
-import type { Context } from '../../../trpc/context';
+import { createContext, type Context } from '../../../trpc/context';
 import type { JWTPayload } from '../../../types/auth';
 import type { CreateExpressContextOptions } from '@trpc/server/adapters/express';
 
