@@ -13,17 +13,18 @@ export function validateRequest(options: ZodSchema | ValidationOptions) {
     try {
       // If it's a single schema, assume it's for body validation (backward compatibility)
       if ('parse' in options) {
-        options.parse(req.body);
+        // Assign parsed result back to req.body to apply transforms
+        req.body = options.parse(req.body);
       } else {
-        // Validate different parts of the request
+        // Validate different parts of the request and apply transforms
         if (options.body) {
-          options.body.parse(req.body);
+          req.body = options.body.parse(req.body);
         }
         if (options.params) {
-          options.params.parse(req.params);
+          req.params = options.params.parse(req.params);
         }
         if (options.query) {
-          options.query.parse(req.query);
+          req.query = options.query.parse(req.query) as typeof req.query;
         }
       }
       next();
