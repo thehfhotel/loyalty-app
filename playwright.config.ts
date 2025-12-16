@@ -5,12 +5,12 @@ import { defineConfig, devices } from '@playwright/test';
  * See https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
-  /* Global setup and teardown for E2E infrastructure
-   * Note: In CI, the workflow manages containers directly, so we skip global setup/teardown
-   * In local dev, global-setup.ts manages the docker-compose.e2e.local.yml stack
+  /* Global setup and teardown for E2E environment configuration
+   * Note: E2E tests are designed to run in CI where the workflow manages Docker containers.
+   * Global setup configures environment variables.
    */
-  globalSetup: process.env.CI ? undefined : './tests/setup/global-setup.ts',
-  globalTeardown: process.env.CI ? undefined : './tests/setup/global-teardown.ts',
+  globalSetup: './tests/setup/global-setup.ts',
+  globalTeardown: './tests/setup/global-teardown.ts',
   testDir: './tests',
 
   /* Run tests in files in parallel */

@@ -778,6 +778,9 @@ jobs:
                   condition: service_healthy
                 redis:
                   condition: service_healthy
+              volumes:
+                # Mount E2E-specific admin config for testing
+                - ./backend/config/admins.e2e.json:/app/config/admins.json:ro
               healthcheck:
                 test: ["CMD-SHELL", "curl -f http://localhost:4202/api/health || exit 1"]
                 interval: 10s
@@ -2766,6 +2769,13 @@ jobs:
           path: allure-results-e2e/
         continue-on-error: true
 
+      - name: "📥 Download coverage report"
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: coverage-report-${{ github.run_id }}
+          path: coverage-report/
+        continue-on-error: true
+
       - name: "🔀 Merge all test results"
         run: |
           # Verify Node.js version
@@ -2871,27 +2881,28 @@ jobs:
           <head>
               <meta charset="UTF-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <meta http-equiv="refresh" content="0; url=../${{ github.run_number }}/">
               <title>[$ENV_NAME] Test Report #${{ github.run_number }}</title>
               <style>
-                  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
-                  .container { text-align: center; padding: 2rem; background: rgba(255,255,255,0.1); border-radius: 10px; backdrop-filter: blur(10px); }
+                  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+                  .container { text-align: center; padding: 2rem; background: rgba(255,255,255,0.1); border-radius: 10px; backdrop-filter: blur(10px); max-width: 500px; }
                   .badge { display: inline-block; padding: 0.5rem 1rem; background: $BADGE_COLOR; border-radius: 20px; font-weight: bold; margin-bottom: 1rem; }
-                  .spinner { margin: 1rem auto; width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
-                  @keyframes spin { to { transform: rotate(360deg); } }
-                  a { color: white; } .meta { font-size: 0.9rem; opacity: 0.8; margin-top: 1rem; }
+                  .links { display: flex; gap: 1rem; justify-content: center; margin: 1.5rem 0; flex-wrap: wrap; }
+                  .link-btn { display: inline-block; padding: 0.75rem 1.5rem; background: rgba(255,255,255,0.2); border-radius: 8px; color: white; text-decoration: none; transition: background 0.2s; }
+                  .link-btn:hover { background: rgba(255,255,255,0.3); }
+                  .link-btn.primary { background: rgba(255,255,255,0.3); }
+                  .meta { font-size: 0.9rem; opacity: 0.8; margin-top: 1rem; }
               </style>
           </head>
           <body>
               <div class="container">
                   <div class="badge">$BADGE_TEXT</div>
-                  <h2>Loading Test Report...</h2>
-                  <div class="spinner"></div>
-                  <p>Report #${{ github.run_number }}</p>
-                  <p><a href="../${{ github.run_number }}/">Click here if not redirected</a></p>
+                  <h2>Test Reports #${{ github.run_number }}</h2>
+                  <div class="links">
+                      <a href="../${{ github.run_number }}/" class="link-btn primary">📊 Allure Report</a>
+                      <a href="../${{ github.run_number }}/coverage/lcov-report/" class="link-btn">📈 Coverage Report</a>
+                  </div>
                   <div class="meta">Branch: $BRANCH_NAME | Commit: ${{ github.sha }}</div>
               </div>
-              <script>setTimeout(() => window.location.href = '../${{ github.run_number }}/', 100);</script>
           </body>
           </html>
           REDIRECT_EOF
@@ -2907,6 +2918,15 @@ jobs:
           else
             mkdir -p pages-artifact/test-reports/${{ github.run_number }}
             echo "<h1>No test results</h1>" > pages-artifact/test-reports/${{ github.run_number }}/index.html
+          fi
+
+          # Include coverage report if available
+          if [ -d "coverage-report" ] && [ "$(ls -A coverage-report 2>/dev/null)" ]; then
+            mkdir -p pages-artifact/test-reports/${{ github.run_number }}/coverage
+            cp -r coverage-report/* pages-artifact/test-reports/${{ github.run_number }}/coverage/
+            echo "✅ Coverage report copied"
+          else
+            echo "⚠️ No coverage report found"
           fi
 
           mkdir -p pages-artifact/test-reports/latest

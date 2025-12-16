@@ -121,20 +121,9 @@ export LINE_CHANNEL_SECRET="your-line-channel-secret"
 npm run test:e2e
 ```
 
-### Local Docker Compose
+### E2E Tests in CI Only
 
-The local E2E environment uses `docker-compose.e2e.local.yml`:
-
-```bash
-# Start E2E infrastructure
-docker compose -f docker-compose.e2e.local.yml up -d
-
-# Run tests
-npm run test:e2e
-
-# Cleanup
-docker compose -f docker-compose.e2e.local.yml down -v
-```
+E2E tests are designed to run in CI/CD only. The GitHub Actions workflow handles Docker container orchestration automatically.
 
 ## CI/CD Environment
 

@@ -205,33 +205,17 @@ Before creating frontend API calls:
 
 ### E2E Testing
 
+**E2E tests run in CI only.** The GitHub Actions workflow manages Docker containers.
+
 **Ports:** Frontend: 3201, Backend: 4202, DB: 5436, Redis: 6381
 
-**Requirements:** Clean ports before tests, health checks with retry logic, clean volumes between runs.
+**Docker Compose (CI):**
+- Generated inline in `.github/workflows/deploy.yml`
+- Services: postgres, redis, backend, frontend (all containerized)
+- Uses host network mode for Docker-in-Docker compatibility
+- E2E admin config (`backend/config/admins.e2e.json`) is mounted for test admin privileges
 
-#### Docker Compose Files
-
-The project uses **two distinct** E2E docker-compose configurations:
-
-**1. docker-compose.e2e.local.yml** - Local Development
-- **Purpose**: Playwright test development and debugging
-- **Usage**: `npm run test:e2e` (via Playwright's global-setup.ts)
-- **Services**: postgres, redis, backend only
-- **Frontend**: Run separately with `npm run dev` for hot-reload
-- **Volume Mounts**: Yes (`./backend:/app`) for live code changes
-- **Lifecycle**: Persistent (manually managed)
-- **Location**: Committed to repository
-
-**2. docker-compose.e2e.ci.yml** - CI/CD
-- **Purpose**: GitHub Actions automated testing
-- **Usage**: Generated inline in `.github/workflows/deploy.yml`
-- **Services**: postgres, redis, backend, frontend (all containerized)
-- **Frontend**: Containerized build (no hot-reload needed)
-- **Volume Mounts**: No (immutable builds)
-- **Lifecycle**: Generated → Used → Deleted per workflow run
-- **Location**: NOT committed (generated, in .gitignore)
-
-**CRITICAL: Both files MUST use identical network configuration:**
+**Network Configuration:**
 ```yaml
 # Required for Docker-in-Docker (GitHub self-hosted runners)
 services:
@@ -244,21 +228,13 @@ services:
     command: redis-server --port 6381
   backend:
     network_mode: host
+    volumes:
+      - ./backend/config/admins.e2e.json:/app/config/admins.json:ro
     environment:
       PORT: 4202
       DATABASE_URL: postgresql://...@localhost:5436/...
       REDIS_URL: redis://localhost:6381
 ```
-
-**Why host network?**
-- GitHub self-hosted runners run in Docker Compose (Docker-in-Docker)
-- Host network ensures E2E containers can communicate reliably
-- tmpfs mount (`/dev/shm:size=256m`) more reliable than `shm_size` in DinD
-
-**Why two files?**
-- Different services: Local dev doesn't need containerized frontend
-- Different lifecycles: Local persistent, CI ephemeral
-- Different volume needs: Local needs hot-reload, CI needs immutability
 
 **Concurrency Control:**
 - E2E tests run sequentially (one at a time) to prevent port conflicts

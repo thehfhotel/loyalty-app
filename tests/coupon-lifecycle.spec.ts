@@ -8,8 +8,8 @@ import { retryRequest } from './helpers/retry';
 test.describe('Coupon Lifecycle Management', () => {
   const backendUrl = process.env.BACKEND_URL || 'http://localhost:4202';
 
-  // Admin credentials - use environment variables in CI
-  const adminEmail = process.env.E2E_ADMIN_EMAIL || `e2e-admin-${Date.now()}@example.com`;
+  // Admin credentials - use fixed email that matches admins.e2e.json (mounted in E2E Docker)
+  const adminEmail = process.env.E2E_ADMIN_EMAIL || 'e2e-admin@test.local';
   const adminPassword = process.env.E2E_ADMIN_PASSWORD || 'AdminPassword123!';
 
   // Customer credentials
