@@ -59,8 +59,11 @@ test.describe('OAuth Security Validation', () => {
       'X-Real-IP': '1.2.3.4'
     };
 
+    // Don't follow redirects - we just want to verify the endpoint handles
+    // proxy headers without crashing (not actually complete the OAuth flow)
     const response = await retryRequest(request, `${baseUrl}/api/oauth/google`, 3, {
-      headers: cloudflareHeaders
+      headers: cloudflareHeaders,
+      maxRedirects: 0
     });
 
     // Should handle proxy headers without causing redirect loops
