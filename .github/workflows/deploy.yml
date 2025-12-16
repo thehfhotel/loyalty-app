@@ -711,6 +711,18 @@ jobs:
         run: |
           echo "🚀 Starting isolated application stack for E2E tests..."
 
+          # Create E2E admin config file (ensures it exists for volume mount)
+          echo "📝 Creating E2E admin configuration..."
+          mkdir -p backend/config
+          cat > backend/config/admins.e2e.json << 'ADMINS_EOF'
+          {
+            "adminEmails": ["e2e-admin@test.local"],
+            "superAdminEmails": ["e2e-admin@test.local"],
+            "description": "E2E test admin configuration"
+          }
+          ADMINS_EOF
+          echo "✅ E2E admin config created"
+
           # Create the E2E Docker Compose file with host networking
           echo "📝 Creating E2E Docker Compose configuration with host network..."
           cat > docker-compose.e2e.ci.yml << EOF
