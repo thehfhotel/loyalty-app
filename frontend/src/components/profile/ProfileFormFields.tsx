@@ -4,7 +4,7 @@ import { FiUser, FiBriefcase, FiHeart, FiCalendar } from 'react-icons/fi';
 import { UseFormRegister, FieldErrors } from 'react-hook-form';
 import { getInterestOptions } from '../../utils/interestUtils';
 
-interface ProfileFormData {
+export interface ProfileFormData {
   firstName: string;
   lastName?: string;
   phone?: string;

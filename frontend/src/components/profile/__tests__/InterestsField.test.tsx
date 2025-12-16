@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm } from 'react-hook-form';
-import { InterestsField } from '../ProfileFormFields';
+import { InterestsField, ProfileFormData } from '../ProfileFormFields';
 
 // Mock i18next with actual translation keys from interestUtils.ts
 vi.mock('react-i18next', () => ({
@@ -45,7 +45,9 @@ function renderInterestsField(props: {
   isModal?: boolean;
 }) {
   const TestComponent = () => {
-    const { register, formState: { errors } } = useForm();
+    const { register, formState: { errors } } = useForm<ProfileFormData>({
+      defaultValues: { firstName: '', interests: props.watchedValue || '' }
+    });
     return (
       <InterestsField
         register={register}
@@ -61,8 +63,8 @@ function renderInterestsField(props: {
 
 // Helper component that simulates watchedValue prop changes
 function InterestsFieldWithWatch({ initialValue }: { initialValue: string }) {
-  const { register, formState: { errors } } = useForm({
-    defaultValues: { interests: initialValue }
+  const { register, formState: { errors } } = useForm<ProfileFormData>({
+    defaultValues: { firstName: '', interests: initialValue }
   });
 
   return (
@@ -224,7 +226,8 @@ describe('InterestsField', () => {
 
       // Find and click the X button for first selected item
       const removeButtons = screen.getAllByRole('button', { name: '×' });
-      await user.click(removeButtons[0]);
+      expect(removeButtons.length).toBeGreaterThan(0);
+      await user.click(removeButtons[0]!);
 
       // First item (Travel) should now be unchecked
       const travelCheckbox = screen.getByRole('checkbox', { name: /travel.*adventure/i });
