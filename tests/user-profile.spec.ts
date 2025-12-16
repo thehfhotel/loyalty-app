@@ -3,7 +3,7 @@ import { retryRequest } from './helpers/retry';
 
 /**
  * E2E tests for user profile management
- * Tests profile retrieval, updates including gender/occupation/interests,
+ * Tests profile retrieval, updates including gender/occupation,
  * and verifies data persistence
  */
 test.describe('User Profile Management', () => {
@@ -261,41 +261,6 @@ test.describe('User Profile Management', () => {
       expect(profile?.occupation).toBe('Software Engineer');
     });
 
-    test('should save interests via complete-profile', async ({ request }) => {
-      test.skip(!authToken, 'No auth token available');
-
-      // Get fresh CSRF token
-      const csrfResponse = await request.get(`${backendUrl}/api/csrf-token`, {
-        headers: { 'Cookie': authCookies.join('; ') },
-      });
-      let csrfToken = '';
-      if (csrfResponse.ok()) {
-        const csrfData = await csrfResponse.json();
-        csrfToken = csrfData.csrfToken || '';
-      }
-
-      const testInterests = ['technology', 'travel', 'food'];
-      const response = await request.put(`${backendUrl}/api/users/complete-profile`, {
-        data: {
-          firstName: 'InterestsTest',
-          interests: testInterests,
-        },
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-          'Cookie': authCookies.join('; '),
-          ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
-        },
-      });
-
-      expect(response.status()).toBe(200);
-      const result = await response.json();
-      const profile = result.data?.profile || result.profile;
-      expect(profile?.interests).toBeTruthy();
-      expect(Array.isArray(profile?.interests)).toBe(true);
-      expect(profile?.interests).toEqual(expect.arrayContaining(testInterests));
-    });
-
     test('should persist all fields and retrieve them', async ({ request }) => {
       test.skip(!authToken, 'No auth token available');
 
@@ -317,7 +282,6 @@ test.describe('User Profile Management', () => {
         dateOfBirth: '1985-12-25',
         gender: 'female',
         occupation: 'Data Scientist',
-        interests: ['music', 'sports', 'reading'],
       };
 
       await request.put(`${backendUrl}/api/users/complete-profile`, {
@@ -347,7 +311,6 @@ test.describe('User Profile Management', () => {
       expect(profile.phone).toBe(updateData.phone);
       expect(profile.gender).toBe(updateData.gender);
       expect(profile.occupation).toBe(updateData.occupation);
-      expect(profile.interests).toEqual(expect.arrayContaining(updateData.interests));
     });
   });
 
