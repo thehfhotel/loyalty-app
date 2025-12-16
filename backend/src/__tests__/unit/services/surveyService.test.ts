@@ -3275,4 +3275,976 @@ describe('SurveyService', () => {
     });
   });
 
+  describe('User Targeting', () => {
+    describe('tier restrictions', () => {
+      test('should include users matching tier restrictions', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 2,
+          created_at: '2023-01-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'Gold Users Survey',
+          description: 'Survey for Gold tier',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            tier_restrictions: ['2', '3']
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(1);
+        expect(surveys[0]?.id).toBe('survey-1');
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+
+      test('should exclude users not matching tier restrictions', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 1,
+          created_at: '2023-01-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'Platinum Only Survey',
+          description: 'Survey for Platinum tier',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            tier_restrictions: ['4']
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(0);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+
+      test('should exclude users with no tier when tier restrictions present', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: null,
+          created_at: '2023-01-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'Tiered Survey',
+          description: 'Survey with tier requirement',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            tier_restrictions: ['1', '2']
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(0);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+    });
+
+    describe('registration date filters', () => {
+      test('should include users registered after specified date', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 1,
+          created_at: '2023-06-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'New Users Survey',
+          description: 'Survey for recent users',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            registration_after: '2023-05-01T00:00:00Z'
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(1);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+
+      test('should exclude users registered before specified date', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 1,
+          created_at: '2023-03-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'New Users Survey',
+          description: 'Survey for recent users',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            registration_after: '2023-05-01T00:00:00Z'
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(0);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+
+      test('should include users registered before specified date', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 1,
+          created_at: '2023-03-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'Early Users Survey',
+          description: 'Survey for early adopters',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            registration_before: '2023-04-01T00:00:00Z'
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(1);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+
+      test('should apply both registration_after and registration_before', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 1,
+          created_at: '2023-03-15T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'Date Range Survey',
+          description: 'Survey for specific registration period',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            registration_after: '2023-03-01T00:00:00Z',
+            registration_before: '2023-04-01T00:00:00Z'
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(1);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+    });
+
+    describe('OAuth provider filters', () => {
+      test('should include users with matching OAuth provider', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 1,
+          oauth_provider: 'google',
+          created_at: '2023-01-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'OAuth Users Survey',
+          description: 'Survey for OAuth users',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            oauth_providers: ['google', 'facebook']
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(1);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+
+      test('should exclude users with non-matching OAuth provider', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 1,
+          oauth_provider: 'github',
+          created_at: '2023-01-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'OAuth Users Survey',
+          description: 'Survey for OAuth users',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            oauth_providers: ['google', 'facebook']
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(0);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+
+      test('should treat null oauth_provider as email', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 1,
+          oauth_provider: null,
+          created_at: '2023-01-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'Email Users Survey',
+          description: 'Survey for email users',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            oauth_providers: ['email']
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(1);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+    });
+
+    describe('excluded users', () => {
+      test('should exclude users in exclude_users list', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 1,
+          created_at: '2023-01-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'Survey with Exclusions',
+          description: 'Survey excluding specific users',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            exclude_users: ['user-1', 'user-2']
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(0);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+
+      test('should include users not in exclude_users list', async () => {
+        const userId = 'user-3';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 1,
+          created_at: '2023-01-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'Survey with Exclusions',
+          description: 'Survey excluding specific users',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            exclude_users: ['user-1', 'user-2']
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(1);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+    });
+
+    describe('combined targeting criteria', () => {
+      test('should apply all targeting criteria together', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 2,
+          oauth_provider: 'google',
+          created_at: '2023-06-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'Complex Targeting Survey',
+          description: 'Survey with multiple criteria',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            tier_restrictions: ['2', '3'],
+            registration_after: '2023-05-01T00:00:00Z',
+            oauth_providers: ['google', 'facebook'],
+            exclude_users: ['user-2']
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(1);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+
+      test('should exclude if any criteria fails', async () => {
+        const userId = 'user-1';
+        const user = {
+          id: userId,
+          email: 'user@example.com',
+          tier_id: 2,
+          oauth_provider: 'google',
+          created_at: '2023-03-01T00:00:00Z'
+        };
+
+        const survey = {
+          id: 'survey-1',
+          title: 'Complex Targeting Survey',
+          description: 'Survey with multiple criteria',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {
+            tier_restrictions: ['2', '3'],
+            registration_after: '2023-05-01T00:00:00Z',
+            oauth_providers: ['google', 'facebook'],
+            exclude_users: ['user-2']
+          },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        };
+
+        mockQuery
+          .mockResolvedValueOnce({ rows: [user] } as never)
+          .mockResolvedValueOnce({ rows: [survey] } as never);
+
+        const surveys = await surveyService.getPublicSurveys(userId);
+
+        expect(surveys).toHaveLength(0);
+        expect(mockClient.release).toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('getPublicSurveys', () => {
+    test('should return only active public surveys', async () => {
+      const userId = 'user-1';
+      const user = {
+        id: userId,
+        email: 'user@example.com',
+        tier_id: 1,
+        created_at: '2023-01-01T00:00:00Z'
+      };
+
+      const surveys = [
+        {
+          id: 'survey-1',
+          title: 'Active Public Survey',
+          description: 'Test',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {},
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        }
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [user] } as never)
+        .mockResolvedValueOnce({ rows: surveys } as never);
+
+      const result = await surveyService.getPublicSurveys(userId);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.access_type).toBe('public');
+      expect(result[0]?.status).toBe('active');
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('access_type = \'public\''),
+        []
+      );
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    test('should return empty array for non-existent user', async () => {
+      const userId = 'non-existent';
+
+      mockQuery.mockResolvedValueOnce({ rows: [] } as never);
+
+      const result = await surveyService.getPublicSurveys(userId);
+
+      expect(result).toEqual([]);
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    test('should filter surveys by targeting criteria', async () => {
+      const userId = 'user-1';
+      const user = {
+        id: userId,
+        email: 'user@example.com',
+        tier_id: 1,
+        created_at: '2023-01-01T00:00:00Z'
+      };
+
+      const surveys = [
+        {
+          id: 'survey-1',
+          title: 'Bronze Survey',
+          description: 'For Bronze tier',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: { tier_restrictions: ['1'] },
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        },
+        {
+          id: 'survey-2',
+          title: 'Gold Survey',
+          description: 'For Gold tier',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: { tier_restrictions: ['3'] },
+          created_by: 'admin',
+          created_at: '2023-01-02T00:00:00Z',
+          updated_at: '2023-01-02T00:00:00Z'
+        }
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [user] } as never)
+        .mockResolvedValueOnce({ rows: surveys } as never);
+
+      const result = await surveyService.getPublicSurveys(userId);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.id).toBe('survey-1');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+  });
+
+  describe('getInvitedSurveys', () => {
+    test('should return surveys where user has invitation', async () => {
+      const userId = 'user-1';
+      const surveys = [
+        {
+          id: 'survey-1',
+          title: 'Invited Survey',
+          description: 'Invite only',
+          status: 'active',
+          access_type: 'invite_only',
+          questions: [],
+          target_segment: {},
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        }
+      ];
+
+      mockQuery.mockResolvedValueOnce({ rows: surveys } as never);
+
+      const result = await surveyService.getInvitedSurveys(userId);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.access_type).toBe('invite_only');
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('survey_invitations'),
+        [userId]
+      );
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    test('should return empty array if no invitations', async () => {
+      const userId = 'user-1';
+
+      mockQuery.mockResolvedValueOnce({ rows: [] } as never);
+
+      const result = await surveyService.getInvitedSurveys(userId);
+
+      expect(result).toEqual([]);
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    test('should only include active invite-only surveys', async () => {
+      const userId = 'user-1';
+      const surveys = [
+        {
+          id: 'survey-1',
+          title: 'Active Invited Survey',
+          description: 'Active invite only',
+          status: 'active',
+          access_type: 'invite_only',
+          questions: [],
+          target_segment: {},
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        }
+      ];
+
+      mockQuery.mockResolvedValueOnce({ rows: surveys } as never);
+
+      const result = await surveyService.getInvitedSurveys(userId);
+
+      expect(result).toHaveLength(1);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('status = \'active\''),
+        [userId]
+      );
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+  });
+
+  describe('getAvailableSurveys', () => {
+    test('should combine public and invited surveys', async () => {
+      const userId = 'user-1';
+      const publicUser = {
+        id: userId,
+        email: 'user@example.com',
+        tier_id: 1,
+        created_at: '2023-01-01T00:00:00Z'
+      };
+
+      const publicSurveys = [
+        {
+          id: 'survey-1',
+          title: 'Public Survey',
+          description: 'Public',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {},
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        }
+      ];
+
+      const invitedSurveys = [
+        {
+          id: 'survey-2',
+          title: 'Invited Survey',
+          description: 'Invite only',
+          status: 'active',
+          access_type: 'invite_only',
+          questions: [],
+          target_segment: {},
+          created_by: 'admin',
+          created_at: '2023-01-02T00:00:00Z',
+          updated_at: '2023-01-02T00:00:00Z'
+        }
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [publicUser] } as never)
+        .mockResolvedValueOnce({ rows: publicSurveys } as never)
+        .mockResolvedValueOnce({ rows: invitedSurveys } as never);
+
+      const result = await surveyService.getAvailableSurveys(userId);
+
+      expect(result).toHaveLength(2);
+      expect(result.map(s => s.id)).toContain('survey-1');
+      expect(result.map(s => s.id)).toContain('survey-2');
+      expect(mockClient.release).toHaveBeenCalledTimes(2);
+    });
+
+    test('should deduplicate surveys appearing in both lists', async () => {
+      const userId = 'user-1';
+      const user = {
+        id: userId,
+        email: 'user@example.com',
+        tier_id: 1,
+        created_at: '2023-01-01T00:00:00Z'
+      };
+
+      const survey = {
+        id: 'survey-1',
+        title: 'Survey',
+        description: 'Test',
+        status: 'active',
+        access_type: 'public',
+        questions: [],
+        target_segment: {},
+        created_by: 'admin',
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-01T00:00:00Z'
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [user] } as never)
+        .mockResolvedValueOnce({ rows: [survey] } as never)
+        .mockResolvedValueOnce({ rows: [survey] } as never);
+
+      const result = await surveyService.getAvailableSurveys(userId);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.id).toBe('survey-1');
+      expect(mockClient.release).toHaveBeenCalledTimes(2);
+    });
+
+    test('should sort surveys by creation date descending', async () => {
+      const userId = 'user-1';
+      const user = {
+        id: userId,
+        email: 'user@example.com',
+        tier_id: 1,
+        created_at: '2023-01-01T00:00:00Z'
+      };
+
+      const surveys = [
+        {
+          id: 'survey-1',
+          title: 'Old Survey',
+          description: 'Old',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {},
+          created_by: 'admin',
+          created_at: '2023-01-01T00:00:00Z',
+          updated_at: '2023-01-01T00:00:00Z'
+        },
+        {
+          id: 'survey-2',
+          title: 'New Survey',
+          description: 'New',
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: {},
+          created_by: 'admin',
+          created_at: '2023-03-01T00:00:00Z',
+          updated_at: '2023-03-01T00:00:00Z'
+        }
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [user] } as never)
+        .mockResolvedValueOnce({ rows: surveys } as never)
+        .mockResolvedValueOnce({ rows: [] } as never);
+
+      const result = await surveyService.getAvailableSurveys(userId);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]?.id).toBe('survey-2');
+      expect(result[1]?.id).toBe('survey-1');
+      expect(mockClient.release).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('canUserAccessSurvey', () => {
+    test('should allow access to public survey matching targeting', async () => {
+      const userId = 'user-1';
+      const surveyId = 'survey-1';
+      const survey = {
+        id: surveyId,
+        title: 'Public Survey',
+        description: 'Test',
+        status: 'active',
+        access_type: 'public',
+        questions: [],
+        target_segment: {},
+        created_by: 'admin',
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-01T00:00:00Z'
+      };
+
+      const user = {
+        id: userId,
+        email: 'user@example.com',
+        tier_id: 1,
+        created_at: '2023-01-01T00:00:00Z'
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [survey] } as never)
+        .mockResolvedValueOnce({ rows: [user] } as never);
+
+      const result = await surveyService.canUserAccessSurvey(userId, surveyId);
+
+      expect(result).toBe(true);
+      expect(mockClient.release).toHaveBeenCalledTimes(2);
+    });
+
+    test('should deny access to inactive survey', async () => {
+      const userId = 'user-1';
+      const surveyId = 'survey-1';
+      const survey = {
+        id: surveyId,
+        title: 'Inactive Survey',
+        description: 'Test',
+        status: 'draft',
+        access_type: 'public',
+        questions: [],
+        target_segment: {},
+        created_by: 'admin',
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-01T00:00:00Z'
+      };
+
+      mockQuery.mockResolvedValueOnce({ rows: [survey] } as never);
+
+      const result = await surveyService.canUserAccessSurvey(userId, surveyId);
+
+      expect(result).toBe(false);
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    test('should deny access to non-existent survey', async () => {
+      const userId = 'user-1';
+      const surveyId = 'non-existent';
+
+      mockQuery.mockResolvedValueOnce({ rows: [] } as never);
+
+      const result = await surveyService.canUserAccessSurvey(userId, surveyId);
+
+      expect(result).toBe(false);
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    test('should deny access to public survey not matching targeting', async () => {
+      const userId = 'user-1';
+      const surveyId = 'survey-1';
+      const survey = {
+        id: surveyId,
+        title: 'Platinum Survey',
+        description: 'Test',
+        status: 'active',
+        access_type: 'public',
+        questions: [],
+        target_segment: {
+          tier_restrictions: ['4']
+        },
+        created_by: 'admin',
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-01T00:00:00Z'
+      };
+
+      const user = {
+        id: userId,
+        email: 'user@example.com',
+        tier_id: 1,
+        created_at: '2023-01-01T00:00:00Z'
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [survey] } as never)
+        .mockResolvedValueOnce({ rows: [user] } as never);
+
+      const result = await surveyService.canUserAccessSurvey(userId, surveyId);
+
+      expect(result).toBe(false);
+      expect(mockClient.release).toHaveBeenCalledTimes(2);
+    });
+
+    test('should allow access to invite-only survey with valid invitation', async () => {
+      const userId = 'user-1';
+      const surveyId = 'survey-1';
+      const survey = {
+        id: surveyId,
+        title: 'Invite Only Survey',
+        description: 'Test',
+        status: 'active',
+        access_type: 'invite_only',
+        questions: [],
+        target_segment: {},
+        created_by: 'admin',
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-01T00:00:00Z'
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [survey] } as never)
+        .mockResolvedValueOnce({ rows: [{ id: 'invitation-1' }] } as never);
+
+      const result = await surveyService.canUserAccessSurvey(userId, surveyId);
+
+      expect(result).toBe(true);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('survey_invitations'),
+        [surveyId, userId]
+      );
+      expect(mockClient.release).toHaveBeenCalledTimes(2);
+    });
+
+    test('should deny access to invite-only survey without invitation', async () => {
+      const userId = 'user-1';
+      const surveyId = 'survey-1';
+      const survey = {
+        id: surveyId,
+        title: 'Invite Only Survey',
+        description: 'Test',
+        status: 'active',
+        access_type: 'invite_only',
+        questions: [],
+        target_segment: {},
+        created_by: 'admin',
+        created_at: '2023-01-01T00:00:00Z',
+        updated_at: '2023-01-01T00:00:00Z'
+      };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [survey] } as never)
+        .mockResolvedValueOnce({ rows: [] } as never);
+
+      const result = await surveyService.canUserAccessSurvey(userId, surveyId);
+
+      expect(result).toBe(false);
+      expect(mockClient.release).toHaveBeenCalledTimes(2);
+    });
+  });
+
 });
