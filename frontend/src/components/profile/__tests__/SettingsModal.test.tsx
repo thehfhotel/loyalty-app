@@ -7,7 +7,7 @@ import { useAuthStore } from '../../../store/authStore';
 import { userService, UserProfile } from '../../../services/userService';
 
 // Mock dependencies
-const mockTranslate = vi.fn((key: string, params?: any) => {
+const mockTranslate = vi.fn((key: string) => {
   const translations: Record<string, string> = {
     'profile.editProfile': 'Edit Profile',
     'profile.email': 'Email',

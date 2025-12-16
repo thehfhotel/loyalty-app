@@ -1,15 +1,12 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { FiArrowLeft, FiCalendar, FiUsers, FiEye } from 'react-icons/fi';
 import { Survey } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
-import { translationService } from '../../services/translationService';
 import SurveyPreview from '../../components/surveys/SurveyPreview';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
-import LanguageTabs from '../../components/translation/LanguageTabs';
-import { MultilingualSurvey, SupportedLanguage } from '../../types/multilingual';
 import toast from 'react-hot-toast';
 import { logger } from '../../utils/logger';
 
@@ -17,11 +14,8 @@ const SurveyDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
   const [survey, setSurvey] = useState<Survey | null>(null);
-  const [multilingualSurvey, setMultilingualSurvey] = useState<MultilingualSurvey | null>(null);
-  const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('th');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [translationLoading, setTranslationLoading] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -41,27 +35,8 @@ const SurveyDetailsPage: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      const [surveyData, translationsData] = await Promise.all([
-        surveyService.getSurveyById(id),
-        translationService.getSurveyTranslations(id)
-      ]);
-      
+      const surveyData = await surveyService.getSurveyById(id);
       setSurvey(surveyData);
-      
-      // Load translations if available
-      if (translationsData) {
-        const multilingualData = {
-          ...translationsData,
-          originalLanguage: (translationsData.original_language ?? 'th') as SupportedLanguage,
-          availableLanguages: (translationsData.available_languages ?? ['th']) as SupportedLanguage[],
-          translationStatus: 'none' as const,
-          translations: (translationsData.translations ?? {}) as { [language: string]: unknown }
-        } as MultilingualSurvey;
-
-        setMultilingualSurvey(multilingualData);
-
-        setSelectedLanguage((translationsData.original_language ?? 'th') as SupportedLanguage);
-      }
     } catch (err) {
       logger.error('Error loading survey:', err);
       const errorMessage = err instanceof Error && 'response' in err
@@ -74,54 +49,10 @@ const SurveyDetailsPage: React.FC = () => {
     }
   };
 
-  // Memoize display content calculation for performance
-  const getDisplayContent = useCallback(() => {
-    if (!survey) {return null;}
-    
-    if (!multilingualSurvey || selectedLanguage === multilingualSurvey.originalLanguage) {
-      return survey;
-    }
-
-    // Check if translations exist
-    if (!multilingualSurvey.translations || typeof multilingualSurvey.translations !== 'object') {
-      return survey;
-    }
-
-    const translation = multilingualSurvey.translations[selectedLanguage];
-    if (!translation) {
-      return survey;
-    }
-
-    type Translation = { title?: string; description?: string; questions?: unknown[] };
-    return {
-      ...survey,
-      title: (translation as Translation)?.title ?? survey.title,
-      description: (translation as Translation)?.description ?? survey.description,
-      questions: (translation as Translation)?.questions ?? survey.questions
-    };
-  }, [survey, multilingualSurvey, selectedLanguage]);
-
   // Memoize date formatting for performance
   const formatDate = useMemo(() => (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
   }, []);
-
-  // Optimized language change handler with loading state
-  const handleLanguageChange = useCallback(async (language: SupportedLanguage) => {
-    if (language === selectedLanguage || translationLoading) {return;}
-    
-    setTranslationLoading(true);
-    try {
-      // Add a small delay to show loading state for better UX
-      await new Promise(resolve => setTimeout(resolve, 150));
-      setSelectedLanguage(language);
-    } finally {
-      setTranslationLoading(false);
-    }
-  }, [selectedLanguage, translationLoading]);
-
-  // Get display content based on selected language (moved here to fix hooks order)
-  const displayContent = useMemo(() => getDisplayContent(), [getDisplayContent]);
 
   if (loading) {
     return (
@@ -173,7 +104,7 @@ const SurveyDetailsPage: React.FC = () => {
               </Link>
               <div className="flex items-center">
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900">{displayContent?.title}</h1>
+                  <h1 className="text-2xl font-bold text-gray-900">{survey.title}</h1>
                   <div className="flex items-center space-x-4 text-sm text-gray-500 mt-1">
                     <span className="flex items-center">
                       <FiCalendar className="mr-1 h-3 w-3" />
@@ -199,9 +130,6 @@ const SurveyDetailsPage: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                <span className="ml-4 px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
-                  {selectedLanguage.toUpperCase()}
-                </span>
               </div>
             </div>
             <div className="flex items-center space-x-4">
@@ -215,39 +143,24 @@ const SurveyDetailsPage: React.FC = () => {
               <DashboardButton variant="outline" size="sm" />
             </div>
           </div>
-          
-          {/* Language Tabs - show if we have multilingual survey data */}
-          {multilingualSurvey && (
-            <div className="border-t border-gray-200">
-              <div className="px-4 sm:px-6 lg:px-8">
-                <LanguageTabs
-                  languages={['th', 'en', 'zh-CN']}
-                  currentLanguage={selectedLanguage}
-                  onLanguageChange={handleLanguageChange}
-                  isLoading={translationLoading}
-                  aria-label={t('translation.languages')}
-                />
-              </div>
-            </div>
-          )}
         </div>
       </header>
 
       {/* Content */}
       <main className="max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        {displayContent?.description && (
+        {survey.description && (
           <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-2">{t('surveys.description')}</h2>
-            <p className="text-gray-600">{displayContent.description}</p>
+            <p className="text-gray-600">{survey.description}</p>
           </div>
         )}
 
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            {t('surveys.preview', { count: displayContent?.questions?.length ?? 0 })}
+            {t('surveys.preview', { count: survey.questions?.length ?? 0 })}
           </h2>
           <SurveyPreview
-            survey={(displayContent ?? survey) as Survey}
+            survey={survey as Survey}
             onClose={() => window.history.back()}
           />
         </div>

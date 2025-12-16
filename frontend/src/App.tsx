@@ -20,7 +20,7 @@ import SurveyList from './pages/surveys/SurveyList';
 import TakeSurvey from './pages/surveys/TakeSurvey';
 import SurveyDetailsPage from './pages/surveys/SurveyDetailsPage';
 import SurveyManagement from './pages/admin/SurveyManagement';
-import SurveyBuilderWithTranslation from './pages/admin/SurveyBuilderWithTranslation';
+import SurveyBuilder from './pages/admin/SurveyBuilder';
 import SurveyAnalytics from './pages/admin/SurveyAnalytics';
 import SurveyPreviewPage from './pages/admin/SurveyPreview';
 import SurveyTemplates from './pages/admin/SurveyTemplates';
@@ -323,7 +323,7 @@ function App() {
           path="/admin/surveys/create"
           element={
             <ProtectedRoute requiredRole="admin">
-              <SurveyBuilderWithTranslation />
+              <SurveyBuilder />
             </ProtectedRoute>
           }
         />
@@ -331,7 +331,7 @@ function App() {
           path="/admin/surveys/:id/edit"
           element={
             <ProtectedRoute requiredRole="admin">
-              <SurveyBuilderWithTranslation />
+              <SurveyBuilder />
             </ProtectedRoute>
           }
         />

@@ -4,12 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { ConfirmDialog } from '../ConfirmDialog';
 
 describe('ConfirmDialog', () => {
-  let portalRoot: HTMLElement;
-
   beforeEach(() => {
     vi.clearAllMocks();
-    // Ensure document.body is clean for portal rendering
-    portalRoot = document.body;
   });
 
   afterEach(() => {

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FiMove, FiTrash2, FiPlus, FiX } from 'react-icons/fi';
+import { FiMove, FiPlus, FiX } from 'react-icons/fi';
 import { SurveyQuestion, QuestionOption } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 

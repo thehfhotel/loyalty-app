@@ -129,12 +129,8 @@ describe('AdminTransactionHistory', () => {
       });
     });
 
-    it('should render without crashing', async () => {
-      const { container } = render(<AdminTransactionHistory />);
-
-      await waitFor(() => {
-        expect(container).toBeTruthy();
-      });
+    it('should render without crashing', () => {
+      expect(() => render(<AdminTransactionHistory />)).not.toThrow();
     });
 
     it('should have proper heading', async () => {
@@ -203,7 +199,7 @@ describe('AdminTransactionHistory', () => {
     });
 
     it('should format positive points with plus sign and green color', async () => {
-      const { container } = render(<AdminTransactionHistory />);
+      render(<AdminTransactionHistory />);
 
       await waitFor(() => {
         const positivePoints = screen.getByText('+500 pts');
@@ -472,19 +468,19 @@ describe('AdminTransactionHistory', () => {
 
   describe('Scrollable Container', () => {
     it('should have max height constraint', async () => {
-      const { container } = render(<AdminTransactionHistory />);
+      render(<AdminTransactionHistory />);
 
       await waitFor(() => {
-        const scrollableDiv = container.querySelector('.max-h-64');
+        const scrollableDiv = document.querySelector('.max-h-64');
         expect(scrollableDiv).toBeInTheDocument();
       });
     });
 
     it('should have overflow-y-auto for scrolling', async () => {
-      const { container } = render(<AdminTransactionHistory />);
+      render(<AdminTransactionHistory />);
 
       await waitFor(() => {
-        const scrollableDiv = container.querySelector('.overflow-y-auto');
+        const scrollableDiv = document.querySelector('.overflow-y-auto');
         expect(scrollableDiv).toBeInTheDocument();
       });
     });
@@ -501,7 +497,7 @@ describe('AdminTransactionHistory', () => {
     });
 
     it('should style type badge correctly', async () => {
-      const { container } = render(<AdminTransactionHistory />);
+      render(<AdminTransactionHistory />);
 
       await waitFor(() => {
         const badge = screen.getByText('earned_stay').closest('div');
@@ -608,10 +604,10 @@ describe('AdminTransactionHistory', () => {
     });
 
     it('should have readable text sizes', async () => {
-      const { container } = render(<AdminTransactionHistory />);
+      render(<AdminTransactionHistory />);
 
       await waitFor(() => {
-        const textElements = container.querySelectorAll('.text-sm');
+        const textElements = document.querySelectorAll('.text-sm');
         expect(textElements.length).toBeGreaterThan(0);
       });
     });
@@ -644,10 +640,9 @@ describe('AdminTransactionHistory', () => {
         total: 1,
       });
 
-      const { container } = render(<AdminTransactionHistory />);
+      render(<AdminTransactionHistory />);
 
       await waitFor(() => {
-        expect(container).toBeTruthy();
         expect(screen.getByText('minimal@example.com')).toBeInTheDocument();
       });
     });
@@ -673,10 +668,10 @@ describe('AdminTransactionHistory', () => {
     });
 
     it('should remove last border from last transaction', async () => {
-      const { container } = render(<AdminTransactionHistory />);
+      render(<AdminTransactionHistory />);
 
       await waitFor(() => {
-        const transactions = container.querySelectorAll('.border-b');
+        const transactions = document.querySelectorAll('.border-b');
         const lastTransaction = transactions[transactions.length - 1];
         expect(lastTransaction).toHaveClass('last:border-b-0');
       });

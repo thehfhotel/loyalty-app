@@ -22,7 +22,6 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
   const [originalAmount, setOriginalAmount] = useState<string>('');
   const [transactionReference, setTransactionReference] = useState('');
   const [location, setLocation] = useState('');
-  const [isValidating, setIsValidating] = useState(false);
   const [isRedeeming, setIsRedeeming] = useState(false);
   const [validationResult, setValidationResult] = useState<{success: boolean; valid: boolean; message: string; data?: unknown} | null>(null);
   const [redemptionResult, setRedemptionResult] = useState<RedeemCouponResponse | null>(null);
@@ -81,15 +80,13 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
     }
 
     try {
-      setIsValidating(true);
       const result = await couponService.validateCoupon(code.trim());
       setValidationResult(result);
       return result;
     } catch (err: unknown) {
       logger.error('Error validating coupon:', err);
-      const errorMessage = err instanceof Error && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'message' in err.response.data
-        ? (err.response.data as { message: string }).message
-        : t('errors.validationFailed');
+      const errorResponse = (err as { response?: { data?: { message?: string } } })?.response?.data;
+      const errorMessage = errorResponse?.message ?? t('errors.validationFailed');
       setValidationResult({
         success: false,
         valid: false,
@@ -100,8 +97,6 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
         valid: false,
         message: errorMessage
       };
-    } finally {
-      setIsValidating(false);
     }
   };
 
@@ -125,7 +120,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
     e.preventDefault();
 
     let latestValidation = validationResult;
-    if (!latestValidation || latestValidation.message === undefined) {
+    if (!latestValidation?.message) {
       latestValidation = await validateCoupon(qrCode);
     }
 
@@ -185,8 +180,12 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
   };
 
   // Calculate preview of discount
-  const discountPreview = validationResult?.valid && originalAmount ?
-    couponService.calculateDiscount(validationResult.data as Coupon | UserActiveCoupon, parseFloat(originalAmount)) : null;
+  const discountPreview = validationResult?.valid && originalAmount
+    ? couponService.calculateDiscount(
+        (validationResult?.data as Coupon | UserActiveCoupon | undefined) ?? null,
+        parseFloat(originalAmount)
+      )
+    : null;
 
   return (
     <div className={`bg-white rounded-lg shadow-lg ${className}`}>

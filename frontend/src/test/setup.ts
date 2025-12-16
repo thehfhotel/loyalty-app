@@ -37,7 +37,12 @@ global.IntersectionObserver = class IntersectionObserver {
 } as unknown as typeof IntersectionObserver;
 
 // Polyfill minimal DragEvent/DataTransfer for jsdom
-if (typeof (global as any).DataTransfer === 'undefined') {
+const globalWithDrag = globalThis as typeof globalThis & {
+  DataTransfer?: typeof DataTransfer;
+  DragEvent?: typeof DragEvent;
+};
+
+if (typeof globalWithDrag.DataTransfer === 'undefined') {
   class DataTransferPolyfill {
     private data: Record<string, string> = {};
     dropEffect = 'none';
@@ -65,10 +70,10 @@ if (typeof (global as any).DataTransfer === 'undefined') {
     }
   }
 
-  (global as any).DataTransfer = DataTransferPolyfill as any;
+  globalWithDrag.DataTransfer = DataTransferPolyfill as unknown as typeof DataTransfer;
 }
 
-if (typeof (global as any).DragEvent === 'undefined') {
+if (typeof globalWithDrag.DragEvent === 'undefined') {
   class DragEventPolyfill extends Event {
     dataTransfer: DataTransfer | null;
 
@@ -78,5 +83,5 @@ if (typeof (global as any).DragEvent === 'undefined') {
     }
   }
 
-  (global as any).DragEvent = DragEventPolyfill as typeof DragEvent;
+  globalWithDrag.DragEvent = DragEventPolyfill as typeof DragEvent;
 }

@@ -168,24 +168,6 @@ export interface TranslationJob {
   error?: string;
 }
 
-// UI component props
-export interface LanguageTabsProps {
-  languages: SupportedLanguage[];
-  currentLanguage: SupportedLanguage;
-  onLanguageChange: (language: SupportedLanguage) => void;
-  translationStatus?: { [key in SupportedLanguage]?: TranslationStatus };
-  isLoading?: boolean;
-  className?: string;
-  'aria-label'?: string;
-}
-
-export interface TranslationButtonProps {
-  onTranslate: () => void;
-  isTranslating: boolean;
-  disabled?: boolean;
-  availableLanguages: SupportedLanguage[];
-}
-
 // Helper function types
 export type GetTextInLanguage = (
   multilingualText: MultilingualText | string | undefined,
