@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import SurveyCouponAssignments from '../SurveyCouponAssignments';
 import { surveyService } from '../../../services/surveyService';
 import { couponService } from '../../../services/couponService';
-import { SurveyCouponDetails } from '../../../types/survey';
+import { SurveyCouponDetails, SurveyCouponAssignment } from '../../../types/survey';
 import { Coupon } from '../../../types/coupon';
 import toast from 'react-hot-toast';
 
@@ -194,6 +194,10 @@ describe('SurveyCouponAssignments', () => {
     // Default mock implementations
     vi.mocked(surveyService.getSurveyCouponAssignments).mockResolvedValue({
       assignments: [mockAssignment, mockAssignment2],
+      total: 2,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
     });
 
     vi.mocked(couponService.listCoupons).mockResolvedValue({
@@ -204,8 +208,8 @@ describe('SurveyCouponAssignments', () => {
       totalPages: 1,
     });
 
-    vi.mocked(surveyService.assignCouponToSurvey).mockResolvedValue(undefined);
-    vi.mocked(surveyService.updateSurveyCouponAssignment).mockResolvedValue(undefined);
+    vi.mocked(surveyService.assignCouponToSurvey).mockResolvedValue({} as SurveyCouponAssignment);
+    vi.mocked(surveyService.updateSurveyCouponAssignment).mockResolvedValue({} as SurveyCouponAssignment);
     vi.mocked(surveyService.removeCouponFromSurvey).mockResolvedValue(undefined);
   });
 
@@ -258,6 +262,10 @@ describe('SurveyCouponAssignments', () => {
     it('should display empty state when no assignments exist', async () => {
       vi.mocked(surveyService.getSurveyCouponAssignments).mockResolvedValue({
         assignments: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
       });
 
       render(
@@ -277,6 +285,10 @@ describe('SurveyCouponAssignments', () => {
     it('should show gift icon in empty state', async () => {
       vi.mocked(surveyService.getSurveyCouponAssignments).mockResolvedValue({
         assignments: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
       });
 
       const { container } = render(
@@ -365,7 +377,7 @@ describe('SurveyCouponAssignments', () => {
       await waitFor(() => {
         const badges = screen.getAllByText('Active');
         expect(badges.length).toBeGreaterThan(0);
-        expect(badges[0]).toHaveClass('bg-green-100', 'text-green-800');
+        expect(badges[0]!).toHaveClass('bg-green-100', 'text-green-800');
       });
     });
 
@@ -400,7 +412,7 @@ describe('SurveyCouponAssignments', () => {
     });
 
     it('should display free upgrade type correctly', async () => {
-      const freeUpgradeAssignment = {
+      const freeUpgradeAssignment: SurveyCouponDetails = {
         ...mockAssignment,
         assignment_id: 'assignment-3',
         coupon_id: 'coupon-3',
@@ -412,6 +424,10 @@ describe('SurveyCouponAssignments', () => {
 
       vi.mocked(surveyService.getSurveyCouponAssignments).mockResolvedValue({
         assignments: [freeUpgradeAssignment],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
       });
 
       render(
@@ -428,7 +444,7 @@ describe('SurveyCouponAssignments', () => {
     });
 
     it('should display free service type correctly', async () => {
-      const freeServiceAssignment = {
+      const freeServiceAssignment: SurveyCouponDetails = {
         ...mockAssignment,
         assignment_id: 'assignment-4',
         coupon_id: 'coupon-4',
@@ -440,6 +456,10 @@ describe('SurveyCouponAssignments', () => {
 
       vi.mocked(surveyService.getSurveyCouponAssignments).mockResolvedValue({
         assignments: [freeServiceAssignment],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
       });
 
       render(
@@ -488,7 +508,7 @@ describe('SurveyCouponAssignments', () => {
       });
 
       const editButtons = screen.getAllByTitle('Edit');
-      await user.click(editButtons[0]);
+      await user.click(editButtons[0]!);
 
       await waitFor(() => {
         expect(screen.getByText('Edit Assignment')).toBeInTheDocument();
@@ -530,7 +550,7 @@ describe('SurveyCouponAssignments', () => {
       });
 
       const deleteButtons = screen.getAllByTitle('Remove');
-      await user.click(deleteButtons[0]);
+      await user.click(deleteButtons[0]!);
 
       await waitFor(() => {
         expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
@@ -720,7 +740,7 @@ describe('SurveyCouponAssignments', () => {
 
       // Submit form
       const submitButtons = screen.getAllByText('Assign');
-      await user.click(submitButtons[submitButtons.length - 1]); // Click the button in modal, not the main assign button
+      await user.click(submitButtons[submitButtons.length - 1]!); // Click the button in modal, not the main assign button
 
       await waitFor(() => {
         expect(surveyService.assignCouponToSurvey).toHaveBeenCalledWith({
@@ -763,7 +783,7 @@ describe('SurveyCouponAssignments', () => {
 
       // Submit form
       const submitButtons = screen.getAllByText('Assign');
-      await user.click(submitButtons[submitButtons.length - 1]);
+      await user.click(submitButtons[submitButtons.length - 1]!);
 
       await waitFor(() => {
         expect(toast.error).toHaveBeenCalledWith('Failed to assign coupon');
@@ -793,7 +813,7 @@ describe('SurveyCouponAssignments', () => {
       });
 
       const cancelButtons = screen.getAllByText('Cancel');
-      await user.click(cancelButtons[0]);
+      await user.click(cancelButtons[0]!);
 
       await waitFor(() => {
         // Modal should be closed, so we shouldn't see the dropdown
@@ -819,7 +839,7 @@ describe('SurveyCouponAssignments', () => {
       });
 
       const editButtons = screen.getAllByTitle('Edit');
-      await user.click(editButtons[0]);
+      await user.click(editButtons[0]!);
 
       await waitFor(() => {
         // Check if active checkbox is checked
@@ -828,15 +848,15 @@ describe('SurveyCouponAssignments', () => {
 
         // Check if max awards field has value
         const inputs = screen.getAllByPlaceholderText('Unlimited');
-        expect(inputs[0]).toHaveValue(100);
+        expect(inputs[0]!).toHaveValue(100);
 
         // Check if custom expiry has value
         const expiryInputs = screen.getAllByPlaceholderText('Use coupon expiry');
-        expect(expiryInputs[0]).toHaveValue(30);
+        expect(expiryInputs[0]!).toHaveValue(30);
 
         // Check if reason textarea has value
         const textareas = document.querySelectorAll('textarea');
-        expect(textareas[0]).toHaveValue('Survey completion reward');
+        expect(textareas[0]!).toHaveValue('Survey completion reward');
       });
     });
 
@@ -856,7 +876,7 @@ describe('SurveyCouponAssignments', () => {
       });
 
       const editButtons = screen.getAllByTitle('Edit');
-      await user.click(editButtons[0]);
+      await user.click(editButtons[0]!);
 
       await waitFor(() => {
         expect(screen.getByText('Edit Assignment')).toBeInTheDocument();
@@ -864,8 +884,8 @@ describe('SurveyCouponAssignments', () => {
 
       // Change max awards
       const maxAwardsInputs = screen.getAllByPlaceholderText('Unlimited');
-      await user.clear(maxAwardsInputs[0]);
-      await user.type(maxAwardsInputs[0], '200');
+      await user.clear(maxAwardsInputs[0]!);
+      await user.type(maxAwardsInputs[0]!, '200');
 
       // Submit form
       const saveButton = screen.getByText('Save');
@@ -905,7 +925,7 @@ describe('SurveyCouponAssignments', () => {
       });
 
       const editButtons = screen.getAllByTitle('Edit');
-      await user.click(editButtons[0]);
+      await user.click(editButtons[0]!);
 
       await waitFor(() => {
         expect(screen.getByText('Edit Assignment')).toBeInTheDocument();
@@ -935,14 +955,14 @@ describe('SurveyCouponAssignments', () => {
       });
 
       const editButtons = screen.getAllByTitle('Edit');
-      await user.click(editButtons[0]);
+      await user.click(editButtons[0]!);
 
       await waitFor(() => {
         expect(screen.getByText('Edit Assignment')).toBeInTheDocument();
       });
 
       const cancelButtons = screen.getAllByText('Cancel');
-      await user.click(cancelButtons[0]);
+      await user.click(cancelButtons[0]!);
 
       await waitFor(() => {
         expect(screen.queryByText('Edit Assignment')).not.toBeInTheDocument();
@@ -967,7 +987,7 @@ describe('SurveyCouponAssignments', () => {
       });
 
       const deleteButtons = screen.getAllByTitle('Remove');
-      await user.click(deleteButtons[0]);
+      await user.click(deleteButtons[0]!);
 
       await waitFor(() => {
         expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
@@ -998,7 +1018,7 @@ describe('SurveyCouponAssignments', () => {
       });
 
       const deleteButtons = screen.getAllByTitle('Remove');
-      await user.click(deleteButtons[0]);
+      await user.click(deleteButtons[0]!);
 
       await waitFor(() => {
         expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();
@@ -1032,7 +1052,7 @@ describe('SurveyCouponAssignments', () => {
       });
 
       const deleteButtons = screen.getAllByTitle('Remove');
-      await user.click(deleteButtons[0]);
+      await user.click(deleteButtons[0]!);
 
       await waitFor(() => {
         expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument();

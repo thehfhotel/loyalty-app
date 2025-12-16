@@ -341,9 +341,9 @@ describe('SurveyRewardHistory', () => {
     });
 
     it('should display Unknown User when user_name is null', async () => {
-      const rewardsWithoutName = [{
-        ...mockRewards[0],
-        user_name: null,
+      const rewardsWithoutName: SurveyRewardHistory[] = [{
+        ...mockRewards[0]!,
+        user_name: undefined,
       }];
 
       vi.mocked(surveyService.getSurveyRewardHistory).mockResolvedValueOnce({
@@ -915,12 +915,12 @@ describe('SurveyRewardHistory', () => {
     });
 
     it('should handle null values in reward data gracefully', async () => {
-      const rewardsWithNulls = [{
-        ...mockRewards[0],
-        user_name: null,
-        user_email: null,
-        coupon_code: null,
-        coupon_name: null,
+      const rewardsWithNulls: SurveyRewardHistory[] = [{
+        ...mockRewards[0]!,
+        user_name: undefined,
+        user_email: undefined,
+        coupon_code: undefined,
+        coupon_name: undefined,
       }];
 
       vi.mocked(surveyService.getSurveyRewardHistory).mockResolvedValueOnce({
@@ -957,7 +957,7 @@ describe('SurveyRewardHistory', () => {
         expect(viewDetailsLinks.length).toBeGreaterThan(0);
       });
 
-      const viewDetailsLink = screen.getAllByText('View Details')[0];
+      const viewDetailsLink = screen.getAllByText('View Details')[0]!;
       await user.click(viewDetailsLink);
 
       await waitFor(() => {
@@ -975,7 +975,7 @@ describe('SurveyRewardHistory', () => {
         expect(viewDetailsLinks.length).toBeGreaterThan(0);
       });
 
-      const viewDetailsLink = screen.getAllByText('View Details')[0];
+      const viewDetailsLink = screen.getAllByText('View Details')[0]!;
       await user.click(viewDetailsLink);
 
       await waitFor(() => {
@@ -986,9 +986,9 @@ describe('SurveyRewardHistory', () => {
     });
 
     it('should handle rewards without metadata', async () => {
-      const rewardsWithoutMetadata = [{
-        ...mockRewards[0],
-        metadata: null,
+      const rewardsWithoutMetadata: SurveyRewardHistory[] = [{
+        ...mockRewards[0]!,
+        metadata: {},
       }];
 
       vi.mocked(surveyService.getSurveyRewardHistory).mockResolvedValueOnce({
@@ -1120,8 +1120,8 @@ describe('SurveyRewardHistory', () => {
 
   describe('Edge Cases', () => {
     it('should handle very long user names', async () => {
-      const rewardsWithLongName = [{
-        ...mockRewards[0],
+      const rewardsWithLongName: SurveyRewardHistory[] = [{
+        ...mockRewards[0]!,
         user_name: 'Very Long Name That Exceeds Normal Length For Display Testing Purposes',
       }];
 
@@ -1139,8 +1139,8 @@ describe('SurveyRewardHistory', () => {
     });
 
     it('should handle very long coupon codes', async () => {
-      const rewardsWithLongCode = [{
-        ...mockRewards[0],
+      const rewardsWithLongCode: SurveyRewardHistory[] = [{
+        ...mockRewards[0]!,
         coupon_code: 'VERYLONGCOUPONCODE123456789',
       }];
 
