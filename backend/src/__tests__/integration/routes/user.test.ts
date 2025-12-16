@@ -119,7 +119,7 @@ describe('User Routes Integration Tests', () => {
       const updateData = {
         firstName: 'Updated',
         lastName: 'Name',
-        phoneNumber: '9876543210',
+        phone: '9876543210',
       };
 
       const mockUpdatedProfile = {
