@@ -2723,7 +2723,11 @@ jobs:
     name: "📊 Generate Unified Test Reports"
     runs-on: ubuntu-latest
     needs: [validate-and-test, e2e-tests]
-    if: always() && github.ref == 'refs/heads/main'
+    # Only generate reports if at least one test job succeeded (has actual results)
+    # Skip if both jobs failed/cancelled/skipped to avoid publishing empty "?" results
+    if: |
+      github.ref == 'refs/heads/main' &&
+      (needs.validate-and-test.result == 'success' || needs.e2e-tests.result == 'success')
 
     # Prevent multiple concurrent report generations to avoid artifact conflicts
     concurrency:
@@ -2932,7 +2936,8 @@ jobs:
     name: "📄 Deploy to GitHub Pages"
     runs-on: ubuntu-latest
     needs: [generate-test-reports]
-    if: always() && github.ref == 'refs/heads/main'
+    # Only deploy if report generation succeeded (has valid test results)
+    if: github.ref == 'refs/heads/main' && needs.generate-test-reports.result == 'success'
 
     permissions:
       pages: write
