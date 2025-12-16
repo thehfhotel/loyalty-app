@@ -114,7 +114,7 @@ export default function AdminTransactionHistory() {
                   {transaction.admin_email && (
                     <div className="flex items-center space-x-1 text-xs text-blue-600">
                       <FiUser className="w-3 h-3" />
-                      <span title={`Adjusted by ${transaction.admin_email}`}>
+                      <span title={`Adjusted by ${transaction.admin_email}`} className="text-blue-600">
                         Admin: {transaction.admin_email}
                       </span>
                     </div>
@@ -125,7 +125,7 @@ export default function AdminTransactionHistory() {
                    !transaction.admin_reason.toLowerCase().includes('baht') &&
                    !transaction.admin_reason.toLowerCase().includes('฿') && (
                     <div className="text-xs text-gray-500 italic">
-                      &ldquo;{transaction.admin_reason}&rdquo;
+                      {transaction.admin_reason}
                     </div>
                   )}
                 </div>

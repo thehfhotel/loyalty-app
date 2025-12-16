@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FiGlobe, FiPlus, FiTrash2, FiCheck } from 'react-icons/fi';
 
 interface Language {
@@ -35,12 +35,28 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
   type = 'text',
   required = false
 }) => {
+  const initializeTranslations = (initialValue: Record<string, string>) => ({
+    en: initialValue?.en ?? '',
+    ...initialValue
+  });
+
+  const [translations, setTranslations] = useState<Record<string, string>>(initializeTranslations(value));
   const [activeTab, setActiveTab] = useState<string>('en');
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
+
+  useEffect(() => {
+    setTranslations(initializeTranslations(value));
+  }, [value]);
+
+  useEffect(() => {
+    if (activeTab !== 'en' && translations[activeTab] === undefined) {
+      setActiveTab('en');
+    }
+  }, [activeTab, translations]);
   
   // Get currently enabled languages
   const enabledLanguages = supportedLanguages.filter(lang => 
-    value[lang.code] !== undefined || lang.code === 'en'
+    translations[lang.code] !== undefined || lang.code === 'en'
   );
   
   // Get available languages to add
@@ -49,19 +65,26 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
   );
 
   const handleTextChange = (langCode: string, text: string) => {
-    const newTranslations = {
-      ...value,
-      [langCode]: text
-    };
-    onChange(newTranslations);
+    setTranslations(prev => {
+      const newTranslations = {
+        ...prev,
+        [langCode]: text
+      };
+      onChange(newTranslations);
+      return newTranslations;
+    });
   };
 
   const addLanguage = (langCode: string) => {
-    const newTranslations = {
-      ...value,
-      [langCode]: value['en'] ?? '' // Default to English text
-    };
-    onChange(newTranslations);
+    setTranslations(prev => {
+      const newTranslations = {
+        ...prev,
+        [langCode]: prev['en'] ?? '' // Default to English text
+      };
+      onChange(newTranslations);
+      return newTranslations;
+    });
+
     setActiveTab(langCode);
     setShowLanguageSelector(false);
   };
@@ -69,9 +92,12 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
   const removeLanguage = (langCode: string) => {
     if (langCode === 'en') {return;} // Don't allow removing English
     
-    const newTranslations = { ...value };
-    delete newTranslations[langCode];
-    onChange(newTranslations);
+    setTranslations(prev => {
+      const newTranslations = { ...prev };
+      delete newTranslations[langCode];
+      onChange(newTranslations);
+      return newTranslations;
+    });
     
     if (activeTab === langCode) {
       setActiveTab('en');
@@ -80,7 +106,7 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
 
   // Provide a safe fallback - supportedLanguages always has 'en' as first element
   const currentLang = supportedLanguages.find(lang => lang.code === activeTab) ?? supportedLanguages[0] ?? { code: 'en', name: 'English', flag: '🇺🇸' };
-  const currentText = value[activeTab] ?? '';
+  const currentText = translations[activeTab] ?? '';
 
   return (
     <div className="space-y-3">
@@ -92,34 +118,43 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
       {/* Language Tabs */}
       <div className="flex items-center space-x-2 border-b border-gray-200">
         <div className="flex space-x-1">
-          {enabledLanguages.map(lang => (
-            <button
-              key={lang.code}
-              onClick={() => setActiveTab(lang.code)}
-              className={`px-3 py-2 text-sm font-medium rounded-t-md flex items-center space-x-2 ${
-                activeTab === lang.code
-                  ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <span>{lang.flag}</span>
-              <span>{lang.name}</span>
-              {value[lang.code] && (
-                <FiCheck className="h-3 w-3 text-green-500" />
-              )}
-              {lang.code !== 'en' && (
+          {enabledLanguages.map(lang => {
+            const isActive = activeTab === lang.code;
+            return (
+              <div key={lang.code} className="flex items-center space-x-1">
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeLanguage(lang.code);
-                  }}
-                  className="ml-1 text-red-500 hover:text-red-700"
+                  type="button"
+                  onClick={() => setActiveTab(lang.code)}
+                  className={`px-3 py-2 text-sm font-medium rounded-t-md flex items-center space-x-2 ${
+                    isActive
+                      ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
                 >
-                  <FiTrash2 className="h-3 w-3" />
+                  <span className="flex items-center space-x-2">
+                    <span>{lang.flag}</span>
+                    <span>{lang.name}</span>
+                    {translations[lang.code] && (
+                      <FiCheck className="h-3 w-3 text-green-500" />
+                    )}
+                  </span>
+                  {lang.code !== 'en' && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${lang.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        removeLanguage(lang.code);
+                      }}
+                      className="p-1 text-red-500 hover:text-red-700"
+                    >
+                      <FiTrash2 className="h-3 w-3" />
+                    </button>
+                  )}
                 </button>
-              )}
-            </button>
-          ))}
+              </div>
+            );
+          })}
         </div>
 
         {/* Add Language Button */}
@@ -160,9 +195,10 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
           <span className="text-xs text-gray-500">
             Editing: {currentLang.flag} {currentLang.name}
           </span>
-          {activeTab !== 'en' && value['en'] && (
+          {activeTab !== 'en' && translations['en'] && (
             <button
-              onClick={() => handleTextChange(activeTab, value['en'] ?? '')}
+              type="button"
+              onClick={() => handleTextChange(activeTab, translations['en'] ?? '')}
               className="text-xs text-blue-600 hover:text-blue-800"
             >
               Copy from English
@@ -193,16 +229,16 @@ const MultiLanguageEditor: React.FC<MultiLanguageEditorProps> = ({
       <div className="text-xs text-gray-500">
         <div className="flex items-center space-x-4">
           <span>
-            Translations: {Object.keys(value).filter(key => value[key]?.trim()).length} / {enabledLanguages.length}
+            Translations: {Object.keys(translations).filter(key => translations[key]?.trim()).length} / {enabledLanguages.length}
           </span>
           <div className="flex space-x-1">
             {enabledLanguages.map(lang => (
               <span
                 key={lang.code}
                 className={`inline-block w-2 h-2 rounded-full ${
-                  value[lang.code]?.trim() ? 'bg-green-400' : 'bg-gray-300'
+                  translations[lang.code]?.trim() ? 'bg-green-400' : 'bg-gray-300'
                 }`}
-                title={`${lang.name}: ${value[lang.code]?.trim() ? 'Translated' : 'Missing'}`}
+                title={`${lang.name}: ${translations[lang.code]?.trim() ? 'Translated' : 'Missing'}`}
               />
             ))}
           </div>

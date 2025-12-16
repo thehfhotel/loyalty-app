@@ -406,7 +406,7 @@ describe('QRCodeDisplay', () => {
 
       // Give the async error handler time to execute
       await waitFor(() => {
-        expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to copy QR code:', expect.any(Error));
+        expect(consoleErrorSpy).toHaveBeenCalledWith('[ERROR]', 'Failed to copy QR code:', expect.any(Error));
       });
 
       consoleErrorSpy.mockRestore();
@@ -466,7 +466,7 @@ describe('QRCodeDisplay', () => {
       await user.click(shareButton);
 
       await waitFor(() => {
-        expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to share:', expect.any(Error));
+        expect(consoleErrorSpy).toHaveBeenCalledWith('[ERROR]', 'Failed to share:', expect.any(Error));
       });
 
       consoleErrorSpy.mockRestore();

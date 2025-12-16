@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FiMove, FiTrash2, FiPlus, FiX } from 'react-icons/fi';
 import { SurveyQuestion, QuestionOption } from '../../types/survey';
@@ -27,48 +27,108 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
 }) => {
   const { t } = useTranslation();
   const [isDragging, setIsDragging] = useState(false);
+  const ratingDefaults = question.type === 'rating_10'
+    ? { min: 1, max: 10 }
+    : { min: 1, max: 5 };
+
+  const [questionText, setQuestionText] = useState(question.text ?? '');
+  const [description, setDescription] = useState(question.description ?? '');
+  const [options, setOptions] = useState<QuestionOption[]>(question.options ?? []);
+  const [minRating, setMinRating] = useState<string>((question.min_rating ?? ratingDefaults.min).toString());
+  const [maxRating, setMaxRating] = useState<string>((question.max_rating ?? ratingDefaults.max).toString());
+  const [isRequired, setIsRequired] = useState<boolean>(question.required ?? false);
+
+  useEffect(() => {
+    const defaults = question.type === 'rating_10'
+      ? { min: 1, max: 10 }
+      : { min: 1, max: 5 };
+
+    setQuestionText(question.text ?? '');
+    setDescription(question.description ?? '');
+    setOptions(question.options ?? []);
+    setMinRating((question.min_rating ?? defaults.min).toString());
+    setMaxRating((question.max_rating ?? defaults.max).toString());
+    setIsRequired(question.required ?? false);
+  }, [question]);
+
+  const handleQuestionTextChange = (text: string) => {
+    setQuestionText(text);
+    onUpdate({ text });
+  };
+
+  const handleDescriptionChange = (newDescription: string) => {
+    setDescription(newDescription);
+    onUpdate({ description: newDescription });
+  };
 
   const addOption = () => {
-    if (!question.options) {return;}
-    
-    const newOption: QuestionOption = {
-      id: surveyService.generateOptionId(),
-      text: t('surveys.admin.questionEditor.newOptionText', { number: question.options.length + 1 }),
-      value: (question.options.length + 1).toString() // Auto-generate sequential numeric value
-    };
-    
-    onUpdate({
-      options: [...question.options, newOption]
+    setOptions(prevOptions => {
+      const safeOptions = prevOptions ?? [];
+      const newOption: QuestionOption = {
+        id: surveyService.generateOptionId(),
+        text: t('surveys.admin.questionEditor.newOptionText', { number: safeOptions.length + 1 }),
+        value: (safeOptions.length + 1).toString() // Auto-generate sequential numeric value
+      };
+
+      const updatedOptions = [...safeOptions, newOption];
+      onUpdate({ options: updatedOptions });
+      return updatedOptions;
     });
   };
 
   const updateOption = (optionId: string, field: 'text' | 'value', value: string) => {
-    if (!question.options) {return;}
-    
-    // Only allow text updates from UI, value is auto-generated
     if (field === 'value') {return;}
-    
-    const updatedOptions = question.options.map((option, index) =>
-      option.id === optionId 
-        ? { ...option, text: value, value: (index + 1).toString() } // Keep value as sequential number
-        : option
-    );
-    
-    onUpdate({ options: updatedOptions });
+
+    setOptions(prevOptions => {
+      const updatedOptions = (prevOptions ?? []).map((option, index) =>
+        option.id === optionId
+          ? { ...option, text: value, value: (index + 1).toString() } // Keep value as sequential number
+          : option
+      );
+
+      onUpdate({ options: updatedOptions });
+      return updatedOptions;
+    });
   };
 
   const removeOption = (optionId: string) => {
-    if (!question.options || question.options.length <= 2) {return;}
-    
-    // Re-index values when removing an option
-    const filteredOptions = question.options
-      .filter(option => option.id !== optionId)
-      .map((option, index) => ({
-        ...option,
-        value: (index + 1).toString() // Re-index values sequentially
-      }));
-    
-    onUpdate({ options: filteredOptions });
+    setOptions(prevOptions => {
+      if (!prevOptions || prevOptions.length <= 2) {return prevOptions;}
+
+      // Re-index values when removing an option
+      const filteredOptions = prevOptions
+        .filter(option => option.id !== optionId)
+        .map((option, index) => ({
+          ...option,
+          value: (index + 1).toString() // Re-index values sequentially
+        }));
+
+      onUpdate({ options: filteredOptions });
+      return filteredOptions;
+    });
+  };
+
+  const handleRequiredToggle = (checked: boolean) => {
+    setIsRequired(checked);
+    onUpdate({ required: checked });
+  };
+
+  const handleMinRatingChange = (value: string) => {
+    setMinRating(value);
+    const parsed = Number.parseInt(value, 10);
+
+    if (!Number.isNaN(parsed)) {
+      onUpdate({ min_rating: parsed });
+    }
+  };
+
+  const handleMaxRatingChange = (value: string) => {
+    setMaxRating(value);
+    const parsed = Number.parseInt(value, 10);
+
+    if (!Number.isNaN(parsed)) {
+      onUpdate({ max_rating: parsed });
+    }
   };
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -105,6 +165,9 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
     }
   };
 
+  const parsedMaxRating = Number.parseInt(maxRating, 10);
+  const displayMaxRating = Number.isNaN(parsedMaxRating) ? ratingDefaults.max : parsedMaxRating;
+
   return (
     <div
       className={`border rounded-lg p-4 bg-white ${isDragging ? 'opacity-50' : ''}`}
@@ -118,7 +181,10 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center space-x-2">
           {canMove && (
-            <button className="p-1 text-gray-400 hover:text-gray-600 cursor-move">
+            <button
+              role="presentation"
+              className="p-1 text-gray-400 hover:text-gray-600 cursor-move"
+            >
               <FiMove className="h-4 w-4" />
             </button>
           )}
@@ -133,9 +199,10 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
         <button
           onClick={onRemove}
           disabled={disabled}
+          aria-label="trash"
           className="p-1 text-gray-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <FiTrash2 className="h-4 w-4" />
+          <span className="text-sm font-medium">Trash</span>
         </button>
       </div>
 
@@ -146,18 +213,18 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
             {t('surveys.admin.questionEditor.questionText')}
           </label>
           <textarea
-            value={question.text}
-            onChange={(e) => onUpdate({ text: e.target.value })}
+            value={questionText}
+            onChange={(e) => handleQuestionTextChange(e.target.value)}
             disabled={disabled}
             rows={2}
             className={`block w-full rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
-              !question.text || question.text.trim() === '' 
+              !questionText || questionText.trim() === '' 
                 ? 'border-red-300 focus:border-red-500 focus:ring-red-500' 
                 : 'border-gray-300'
             } ${disabled ? 'bg-gray-100' : ''}`}
             placeholder={t('surveys.admin.questionEditor.questionTextPlaceholder')}
           />
-          {(!question.text || question.text.trim() === '') && (
+          {(!questionText || questionText.trim() === '') && (
             <p className="mt-1 text-sm text-red-600">{t('surveys.admin.questionEditor.fieldRequired')}</p>
           )}
         </div>
@@ -169,8 +236,8 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
           </label>
           <input
             type="text"
-            value={question.description ?? ''}
-            onChange={(e) => onUpdate({ description: e.target.value })}
+            value={description}
+            onChange={(e) => handleDescriptionChange(e.target.value)}
             disabled={disabled}
             className={`block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${disabled ? 'bg-gray-100' : ''}`}
             placeholder={t('surveys.admin.questionEditor.descriptionPlaceholder')}
@@ -184,7 +251,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
               {t('surveys.admin.questionEditor.answerOptions')}
             </label>
             <div className="space-y-2">
-              {question.options?.map((option, index) => (
+              {options?.map((option, index) => (
                 <div key={option.id} className="flex items-center space-x-2">
                   <span className="text-sm font-medium text-gray-500 w-6">{index + 1}.</span>
                   <input
@@ -195,12 +262,13 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
                     className={`flex-1 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${disabled ? 'bg-gray-100' : ''}`}
                     placeholder={t('surveys.admin.questionEditor.optionTextPlaceholder')}
                   />
-                  {question.options && question.options.length > 2 && (
+                  {options && options.length > 2 && (
                     <button
                       onClick={() => removeOption(option.id)}
                       disabled={disabled}
                       className="p-1 text-gray-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
+                      <span aria-hidden="true">×</span>
                       <FiX className="h-4 w-4" />
                     </button>
                   )}
@@ -227,8 +295,8 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
               </label>
               <input
                 type="number"
-                value={question.min_rating ?? 1}
-                onChange={(e) => onUpdate({ min_rating: parseInt(e.target.value) })}
+                value={minRating}
+                onChange={(e) => handleMinRatingChange(e.target.value)}
                 disabled={disabled}
                 min="1"
                 max={question.type === 'rating_5' ? 5 : 10}
@@ -241,8 +309,8 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
               </label>
               <input
                 type="number"
-                value={question.max_rating ?? (question.type === 'rating_5' ? 5 : 10)}
-                onChange={(e) => onUpdate({ max_rating: parseInt(e.target.value) })}
+                value={maxRating}
+                onChange={(e) => handleMaxRatingChange(e.target.value)}
                 disabled={disabled}
                 min="1"
                 max={question.type === 'rating_5' ? 5 : 10}
@@ -257,8 +325,8 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
           <input
             id={`required-${question.id}`}
             type="checkbox"
-            checked={question.required}
-            onChange={(e) => onUpdate({ required: e.target.checked })}
+            checked={isRequired}
+            onChange={(e) => handleRequiredToggle(e.target.checked)}
             disabled={disabled}
             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
           />
@@ -272,16 +340,16 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
           <p className="text-xs text-gray-500 mb-2 font-medium">{t('surveys.admin.questionEditor.preview')}</p>
           <div className="text-sm">
             <p className="font-medium text-gray-900 mb-1">
-              {question.text || t('surveys.admin.questionEditor.previewPlaceholder')}
-              {question.required && <span className="text-red-500 ml-1">*</span>}
+              {questionText || t('surveys.admin.questionEditor.previewPlaceholder')}
+              {isRequired && <span className="text-red-500 ml-1">*</span>}
             </p>
-            {question.description && (
-              <p className="text-xs text-gray-600 mb-2">{question.description}</p>
+            {description && (
+              <p className="text-xs text-gray-600 mb-2">{description}</p>
             )}
             
             {question.type === 'single_choice' && (
               <div className="space-y-1">
-                {question.options?.map((option) => (
+                {options?.map((option) => (
                   <label key={option.id} className="flex items-center">
                     <input type="radio" name={`preview-${question.id}`} className="mr-2" />
                     <span className="text-sm">{option.text}</span>
@@ -292,7 +360,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
             
             {question.type === 'multiple_choice' && (
               <div className="space-y-1">
-                {question.options?.map((option) => (
+                {options?.map((option) => (
                   <label key={option.id} className="flex items-center">
                     <input type="checkbox" className="mr-2" />
                     <span className="text-sm">{option.text}</span>
@@ -321,7 +389,7 @@ const QuestionEditor: React.FC<QuestionEditorProps> = ({
             
             {(question.type === 'rating_5' || question.type === 'rating_10') && (
               <div className="flex items-center space-x-1">
-                {Array.from({ length: question.max_rating ?? (question.type === 'rating_5' ? 5 : 10) }, (_, i) => (
+                {Array.from({ length: displayMaxRating }, (_, i) => (
                   <span key={i} className="text-gray-300 text-lg">★</span>
                 ))}
               </div>

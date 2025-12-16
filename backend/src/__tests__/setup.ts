@@ -15,6 +15,8 @@
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-jwt-secret-key-that-is-at-least-sixty-four-characters-long-for-security';
 process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-key-that-is-at-least-sixty-four-characters-long';
+// Provide placeholder database URL so Prisma modules can initialize during tests
+process.env.DATABASE_URL ??= 'postgresql://placeholder:placeholder@localhost:5432/placeholder';
 
 import { v4 as uuidv4 } from 'uuid';
 

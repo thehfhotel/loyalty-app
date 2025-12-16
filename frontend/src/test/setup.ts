@@ -35,3 +35,48 @@ global.IntersectionObserver = class IntersectionObserver {
   }
   unobserve() {}
 } as unknown as typeof IntersectionObserver;
+
+// Polyfill minimal DragEvent/DataTransfer for jsdom
+if (typeof (global as any).DataTransfer === 'undefined') {
+  class DataTransferPolyfill {
+    private data: Record<string, string> = {};
+    dropEffect = 'none';
+    effectAllowed = 'all';
+    files: File[] = [];
+    items: DataTransferItem[] = [];
+    types: string[] = [];
+
+    setData(format: string, data: string) {
+      this.data[format] = data;
+      this.types = Object.keys(this.data);
+    }
+
+    getData(format: string) {
+      return this.data[format] ?? '';
+    }
+
+    clearData(format?: string) {
+      if (format) {
+        delete this.data[format];
+      } else {
+        this.data = {};
+      }
+      this.types = Object.keys(this.data);
+    }
+  }
+
+  (global as any).DataTransfer = DataTransferPolyfill as any;
+}
+
+if (typeof (global as any).DragEvent === 'undefined') {
+  class DragEventPolyfill extends Event {
+    dataTransfer: DataTransfer | null;
+
+    constructor(type: string, eventInitDict: DragEventInit = {}) {
+      super(type, eventInitDict);
+      this.dataTransfer = eventInitDict.dataTransfer ?? null;
+    }
+  }
+
+  (global as any).DragEvent = DragEventPolyfill as typeof DragEvent;
+}

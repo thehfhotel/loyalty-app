@@ -497,6 +497,7 @@ describe('ProtectedRoute', () => {
       await waitFor(() => {
         expect(mockCheckAuthStatus).toHaveBeenCalled();
         expect(consoleWarnSpy).toHaveBeenCalledWith(
+          '[WARN]',
           'Auth verification failed in ProtectedRoute:',
           expect.any(Error)
         );

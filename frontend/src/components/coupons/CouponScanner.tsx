@@ -22,11 +22,13 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
   const [originalAmount, setOriginalAmount] = useState<string>('');
   const [transactionReference, setTransactionReference] = useState('');
   const [location, setLocation] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [isRedeeming, setIsRedeeming] = useState(false);
   const [validationResult, setValidationResult] = useState<{success: boolean; valid: boolean; message: string; data?: unknown} | null>(null);
   const [redemptionResult, setRedemptionResult] = useState<RedeemCouponResponse | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [cameraActive, setCameraActive] = useState(false);
+  const validationTimeout = useRef<number | null>(null);
 
   // Camera functionality (simplified - in production, use a proper QR code scanner library)
   const startCamera = useCallback(async () => {
@@ -64,16 +66,25 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
     return () => stopCamera();
   }, [scanMode, startCamera]);
 
+  useEffect(() => {
+    return () => {
+      if (validationTimeout.current) {
+        window.clearTimeout(validationTimeout.current);
+      }
+    };
+  }, []);
+
   const validateCoupon = async (code: string) => {
     if (!code.trim()) {
       setValidationResult(null);
-      return;
+      return null;
     }
 
     try {
-      setLoading(true);
+      setIsValidating(true);
       const result = await couponService.validateCoupon(code.trim());
       setValidationResult(result);
+      return result;
     } catch (err: unknown) {
       logger.error('Error validating coupon:', err);
       const errorMessage = err instanceof Error && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'message' in err.response.data
@@ -84,26 +95,41 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
         valid: false,
         message: errorMessage
       });
+      return {
+        success: false,
+        valid: false,
+        message: errorMessage
+      };
     } finally {
-      setLoading(false);
+      setIsValidating(false);
     }
   };
 
   const handleQRCodeChange = (value: string) => {
     setQrCode(value);
     setRedemptionResult(null);
-    // Auto-validate when QR code is entered
-    if (value.length >= 8) { // Assuming minimum QR code length
-      validateCoupon(value);
-    } else {
-      setValidationResult(null);
+    if (validationTimeout.current) {
+      window.clearTimeout(validationTimeout.current);
     }
+
+    validationTimeout.current = window.setTimeout(() => {
+      if (value.trim().length >= 6) {
+        validateCoupon(value);
+      } else {
+        setValidationResult(null);
+      }
+    }, 150);
   };
 
   const handleRedeemCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!qrCode.trim() || !originalAmount || !validationResult?.valid) {
+
+    let latestValidation = validationResult;
+    if (!latestValidation || latestValidation.message === undefined) {
+      latestValidation = await validateCoupon(qrCode);
+    }
+
+    if (!qrCode.trim() || !originalAmount || !latestValidation?.valid) {
       return;
     }
 
@@ -114,7 +140,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
     }
 
     try {
-      setLoading(true);
+      setIsRedeeming(true);
       
       const request: RedeemCouponRequest = {
         qrCode: qrCode.trim(),
@@ -154,7 +180,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
       };
       setRedemptionResult(errorResult);
     } finally {
-      setLoading(false);
+      setIsRedeeming(false);
     }
   };
 
@@ -222,7 +248,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
         )}
 
         {/* Redemption Form */}
-        <form onSubmit={handleRedeemCoupon} className="space-y-4">
+        <form onSubmit={handleRedeemCoupon} className="space-y-4" noValidate>
           {/* QR Code Input */}
           <div>
             <label htmlFor="qrCode" className="block text-sm font-medium text-gray-700 mb-1">
@@ -248,8 +274,8 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
             }`}
             >
               <div className={`flex items-center ${
-                validationResult.valid ? 'text-green-800' : 'text-red-800'
-              }`}
+                validationResult.valid ? 'text-green-800' : 'text-red-800 bg-red-50 border-red-200'
+              } ${validationResult.valid ? '' : 'bg-red-50 border border-red-200 rounded-md p-2'}`}
               >
                 <span className="mr-2">
                   {validationResult.valid ? '✅' : '❌'}
@@ -350,10 +376,10 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={loading || !validationResult?.valid || !originalAmount}
+            disabled={isRedeeming || !qrCode.trim() || !originalAmount}
             className="w-full bg-blue-600 text-white py-3 px-4 rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? t('common.processing') : t('coupons.redeemCoupon')}
+            {isRedeeming ? t('common.processing') : t('coupons.redeemCoupon')}
           </button>
         </form>
 
