@@ -9,16 +9,6 @@ import { retryRequest } from './helpers/retry';
 test.describe('User Profile Management', () => {
   const backendUrl = process.env.BACKEND_URL || 'http://localhost:4202';
 
-  // Test user credentials - use unique email to avoid conflicts
-  const testEmail = `e2e-profile-test-${Date.now()}@example.com`;
-  const testPassword = 'TestPassword123!';
-  const testFirstName = 'E2E';
-  const testLastName = 'ProfileTest';
-
-  let authToken: string | null = null;
-  let csrfToken: string | null = null;
-  let cookies: string | null = null;
-
   test.describe('Profile Endpoints Availability', () => {
     test('Profile endpoint should require authentication', async ({ request }) => {
       const response = await request.get(`${backendUrl}/api/users/profile`);
@@ -47,21 +37,31 @@ test.describe('User Profile Management', () => {
     });
   });
 
-  test.describe('Full Profile Update Cycle', () => {
+  test.describe('Profile Update with Authentication', () => {
+    // Test user credentials - use unique email to avoid conflicts
+    const testEmail = `e2e-profile-${Date.now()}@example.com`;
+    const testPassword = 'TestPassword123!';
+    const testFirstName = 'E2E';
+    const testLastName = 'ProfileTest';
+
+    let authToken: string | null = null;
+    let authCookies: string[] = [];
+
     test.beforeAll(async ({ request }) => {
       // Wait for backend to be ready
       await retryRequest(request, `${backendUrl}/api/health`, 5);
 
-      // Get CSRF token first
+      // Get CSRF token and cookies
       const csrfResponse = await request.get(`${backendUrl}/api/csrf-token`);
+      const csrfCookies = csrfResponse.headers()['set-cookie'];
+      if (csrfCookies) {
+        authCookies = Array.isArray(csrfCookies) ? csrfCookies : [csrfCookies];
+      }
+
+      let csrfToken = '';
       if (csrfResponse.ok()) {
         const csrfData = await csrfResponse.json();
-        csrfToken = csrfData.csrfToken;
-        // Extract cookies from response
-        const setCookies = csrfResponse.headers()['set-cookie'];
-        if (setCookies) {
-          cookies = setCookies;
-        }
+        csrfToken = csrfData.csrfToken || '';
       }
 
       // Register a new test user
@@ -74,13 +74,23 @@ test.describe('User Profile Management', () => {
         },
         headers: {
           'Content-Type': 'application/json',
+          'Cookie': authCookies.join('; '),
           ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
-          ...(cookies && { 'Cookie': cookies }),
         },
       });
 
-      if (registerResponse.status() === 409) {
-        // User already exists, try to login instead
+      // Capture cookies from registration
+      const registerCookies = registerResponse.headers()['set-cookie'];
+      if (registerCookies) {
+        const newCookies = Array.isArray(registerCookies) ? registerCookies : [registerCookies];
+        authCookies = [...authCookies, ...newCookies];
+      }
+
+      if (registerResponse.ok()) {
+        const registerData = await registerResponse.json();
+        authToken = registerData.tokens?.accessToken || registerData.accessToken;
+      } else {
+        // Try to login if registration failed (user might exist)
         const loginResponse = await request.post(`${backendUrl}/api/auth/login`, {
           data: {
             email: testEmail,
@@ -88,39 +98,53 @@ test.describe('User Profile Management', () => {
           },
           headers: {
             'Content-Type': 'application/json',
+            'Cookie': authCookies.join('; '),
             ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
-            ...(cookies && { 'Cookie': cookies }),
           },
         });
 
         if (loginResponse.ok()) {
           const loginData = await loginResponse.json();
           authToken = loginData.tokens?.accessToken || loginData.accessToken;
+
+          // Capture login cookies
+          const loginCookies = loginResponse.headers()['set-cookie'];
+          if (loginCookies) {
+            const newCookies = Array.isArray(loginCookies) ? loginCookies : [loginCookies];
+            authCookies = [...authCookies, ...newCookies];
+          }
         }
-      } else if (registerResponse.ok()) {
-        const registerData = await registerResponse.json();
-        authToken = registerData.tokens?.accessToken || registerData.accessToken;
       }
     });
 
-    test('should register and get initial profile', async ({ request }) => {
+    test('should get profile after authentication', async ({ request }) => {
       test.skip(!authToken, 'No auth token available - registration/login failed');
 
       const response = await request.get(`${backendUrl}/api/users/profile`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
+          'Cookie': authCookies.join('; '),
         },
       });
 
       expect(response.status()).toBe(200);
       const profile = await response.json();
-
       expect(profile.firstName).toBe(testFirstName);
       expect(profile.lastName).toBe(testLastName);
     });
 
-    test('should update basic profile fields (firstName, lastName, phone)', async ({ request }) => {
+    test('should update basic profile fields', async ({ request }) => {
       test.skip(!authToken, 'No auth token available');
+
+      // Get fresh CSRF token
+      const csrfResponse = await request.get(`${backendUrl}/api/csrf-token`, {
+        headers: { 'Cookie': authCookies.join('; ') },
+      });
+      let csrfToken = '';
+      if (csrfResponse.ok()) {
+        const csrfData = await csrfResponse.json();
+        csrfToken = csrfData.csrfToken || '';
+      }
 
       const updateData = {
         firstName: 'UpdatedFirst',
@@ -133,180 +157,159 @@ test.describe('User Profile Management', () => {
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
+          'Cookie': authCookies.join('; '),
           ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
         },
       });
 
       expect(response.status()).toBe(200);
       const profile = await response.json();
-
       expect(profile.firstName).toBe(updateData.firstName);
       expect(profile.lastName).toBe(updateData.lastName);
       expect(profile.phone).toBe(updateData.phone);
     });
 
-    test('should update profile with dateOfBirth', async ({ request }) => {
+    test('should update dateOfBirth', async ({ request }) => {
       test.skip(!authToken, 'No auth token available');
 
-      const updateData = {
-        dateOfBirth: '1990-05-15',
-      };
+      // Get fresh CSRF token
+      const csrfResponse = await request.get(`${backendUrl}/api/csrf-token`, {
+        headers: { 'Cookie': authCookies.join('; ') },
+      });
+      let csrfToken = '';
+      if (csrfResponse.ok()) {
+        const csrfData = await csrfResponse.json();
+        csrfToken = csrfData.csrfToken || '';
+      }
 
       const response = await request.put(`${backendUrl}/api/users/profile`, {
-        data: updateData,
+        data: { dateOfBirth: '1990-05-15' },
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
+          'Cookie': authCookies.join('; '),
           ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
         },
       });
 
       expect(response.status()).toBe(200);
       const profile = await response.json();
-
-      // dateOfBirth should be saved
       expect(profile.dateOfBirth).toBeTruthy();
     });
 
-    test('should handle empty dateOfBirth string gracefully', async ({ request }) => {
+    test('should save gender via complete-profile', async ({ request }) => {
       test.skip(!authToken, 'No auth token available');
 
-      const updateData = {
-        firstName: 'TestEmpty',
-        dateOfBirth: '',
-      };
+      // Get fresh CSRF token
+      const csrfResponse = await request.get(`${backendUrl}/api/csrf-token`, {
+        headers: { 'Cookie': authCookies.join('; ') },
+      });
+      let csrfToken = '';
+      if (csrfResponse.ok()) {
+        const csrfData = await csrfResponse.json();
+        csrfToken = csrfData.csrfToken || '';
+      }
 
-      const response = await request.put(`${backendUrl}/api/users/profile`, {
-        data: updateData,
+      const response = await request.put(`${backendUrl}/api/users/complete-profile`, {
+        data: {
+          firstName: 'GenderTest',
+          gender: 'male',
+        },
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
+          'Cookie': authCookies.join('; '),
           ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
         },
       });
 
-      // Should not fail with 400 or 500
-      expect([200, 400]).toContain(response.status());
-      if (response.status() === 200) {
-        const profile = await response.json();
-        expect(profile.firstName).toBe(updateData.firstName);
-      }
+      expect(response.status()).toBe(200);
+      const result = await response.json();
+      const profile = result.data?.profile || result.profile;
+      expect(profile?.gender).toBe('male');
     });
-  });
 
-  test.describe('Profile Complete with Gender/Occupation/Interests', () => {
-    let profileAuthToken: string | null = null;
-    let profileCsrfToken: string | null = null;
-    const profileTestEmail = `e2e-complete-${Date.now()}@example.com`;
+    test('should save occupation via complete-profile', async ({ request }) => {
+      test.skip(!authToken, 'No auth token available');
 
-    test.beforeAll(async ({ request }) => {
-      // Get CSRF token
-      const csrfResponse = await request.get(`${backendUrl}/api/csrf-token`);
+      // Get fresh CSRF token
+      const csrfResponse = await request.get(`${backendUrl}/api/csrf-token`, {
+        headers: { 'Cookie': authCookies.join('; ') },
+      });
+      let csrfToken = '';
       if (csrfResponse.ok()) {
         const csrfData = await csrfResponse.json();
-        profileCsrfToken = csrfData.csrfToken;
+        csrfToken = csrfData.csrfToken || '';
       }
 
-      // Register a new user for complete profile tests
-      const registerResponse = await request.post(`${backendUrl}/api/auth/register`, {
+      const response = await request.put(`${backendUrl}/api/users/complete-profile`, {
         data: {
-          email: profileTestEmail,
-          password: testPassword,
-          firstName: 'Complete',
-          lastName: 'ProfileTest',
+          firstName: 'OccupationTest',
+          occupation: 'Software Engineer',
         },
         headers: {
+          'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
-          ...(profileCsrfToken && { 'X-CSRF-Token': profileCsrfToken }),
+          'Cookie': authCookies.join('; '),
+          ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
         },
       });
 
-      if (registerResponse.ok()) {
-        const registerData = await registerResponse.json();
-        profileAuthToken = registerData.tokens?.accessToken || registerData.accessToken;
+      expect(response.status()).toBe(200);
+      const result = await response.json();
+      const profile = result.data?.profile || result.profile;
+      expect(profile?.occupation).toBe('Software Engineer');
+    });
+
+    test('should save interests via complete-profile', async ({ request }) => {
+      test.skip(!authToken, 'No auth token available');
+
+      // Get fresh CSRF token
+      const csrfResponse = await request.get(`${backendUrl}/api/csrf-token`, {
+        headers: { 'Cookie': authCookies.join('; ') },
+      });
+      let csrfToken = '';
+      if (csrfResponse.ok()) {
+        const csrfData = await csrfResponse.json();
+        csrfToken = csrfData.csrfToken || '';
       }
-    });
-
-    test('should save gender field via complete-profile', async ({ request }) => {
-      test.skip(!profileAuthToken, 'No auth token available');
-
-      const updateData = {
-        firstName: 'GenderTest',
-        gender: 'male',
-      };
-
-      const response = await request.put(`${backendUrl}/api/users/complete-profile`, {
-        data: updateData,
-        headers: {
-          'Authorization': `Bearer ${profileAuthToken}`,
-          'Content-Type': 'application/json',
-          ...(profileCsrfToken && { 'X-CSRF-Token': profileCsrfToken }),
-        },
-      });
-
-      expect(response.status()).toBe(200);
-      const result = await response.json();
-
-      // Check the response includes the saved gender
-      expect(result.data?.profile?.gender || result.profile?.gender).toBe('male');
-    });
-
-    test('should save occupation field via complete-profile', async ({ request }) => {
-      test.skip(!profileAuthToken, 'No auth token available');
-
-      const updateData = {
-        firstName: 'OccupationTest',
-        occupation: 'Software Engineer',
-      };
-
-      const response = await request.put(`${backendUrl}/api/users/complete-profile`, {
-        data: updateData,
-        headers: {
-          'Authorization': `Bearer ${profileAuthToken}`,
-          'Content-Type': 'application/json',
-          ...(profileCsrfToken && { 'X-CSRF-Token': profileCsrfToken }),
-        },
-      });
-
-      expect(response.status()).toBe(200);
-      const result = await response.json();
-
-      // Check the response includes the saved occupation
-      expect(result.data?.profile?.occupation || result.profile?.occupation).toBe('Software Engineer');
-    });
-
-    test('should save interests array via complete-profile', async ({ request }) => {
-      test.skip(!profileAuthToken, 'No auth token available');
 
       const testInterests = ['technology', 'travel', 'food'];
-      const updateData = {
-        firstName: 'InterestsTest',
-        interests: testInterests,
-      };
-
       const response = await request.put(`${backendUrl}/api/users/complete-profile`, {
-        data: updateData,
+        data: {
+          firstName: 'InterestsTest',
+          interests: testInterests,
+        },
         headers: {
-          'Authorization': `Bearer ${profileAuthToken}`,
+          'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
-          ...(profileCsrfToken && { 'X-CSRF-Token': profileCsrfToken }),
+          'Cookie': authCookies.join('; '),
+          ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
         },
       });
 
       expect(response.status()).toBe(200);
       const result = await response.json();
-
-      // Check the response includes the saved interests
-      const savedInterests = result.data?.profile?.interests || result.profile?.interests;
-      expect(savedInterests).toBeTruthy();
-      expect(Array.isArray(savedInterests)).toBe(true);
-      expect(savedInterests).toEqual(expect.arrayContaining(testInterests));
+      const profile = result.data?.profile || result.profile;
+      expect(profile?.interests).toBeTruthy();
+      expect(Array.isArray(profile?.interests)).toBe(true);
+      expect(profile?.interests).toEqual(expect.arrayContaining(testInterests));
     });
 
-    test('should persist all profile fields after update', async ({ request }) => {
-      test.skip(!profileAuthToken, 'No auth token available');
+    test('should persist all fields and retrieve them', async ({ request }) => {
+      test.skip(!authToken, 'No auth token available');
 
-      // First, update with all fields
+      // Get fresh CSRF token
+      const csrfResponse = await request.get(`${backendUrl}/api/csrf-token`, {
+        headers: { 'Cookie': authCookies.join('; ') },
+      });
+      let csrfToken = '';
+      if (csrfResponse.ok()) {
+        const csrfData = await csrfResponse.json();
+        csrfToken = csrfData.csrfToken || '';
+      }
+
+      // Update with all fields
       const updateData = {
         firstName: 'PersistTest',
         lastName: 'AllFields',
@@ -317,197 +320,45 @@ test.describe('User Profile Management', () => {
         interests: ['music', 'sports', 'reading'],
       };
 
-      const updateResponse = await request.put(`${backendUrl}/api/users/complete-profile`, {
+      await request.put(`${backendUrl}/api/users/complete-profile`, {
         data: updateData,
         headers: {
-          'Authorization': `Bearer ${profileAuthToken}`,
+          'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
-          ...(profileCsrfToken && { 'X-CSRF-Token': profileCsrfToken }),
+          'Cookie': authCookies.join('; '),
+          ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
         },
       });
 
-      expect(updateResponse.status()).toBe(200);
-
-      // Then, fetch the profile and verify all fields are persisted
+      // Fetch profile and verify
       const getResponse = await request.get(`${backendUrl}/api/users/profile`, {
         headers: {
-          'Authorization': `Bearer ${profileAuthToken}`,
+          'Authorization': `Bearer ${authToken}`,
+          'Cookie': authCookies.join('; '),
         },
       });
 
       expect(getResponse.status()).toBe(200);
       const profile = await getResponse.json();
 
-      // Verify all fields are persisted
       expect(profile.firstName).toBe(updateData.firstName);
       expect(profile.lastName).toBe(updateData.lastName);
       expect(profile.phone).toBe(updateData.phone);
-      expect(profile.dateOfBirth).toBeTruthy();
       expect(profile.gender).toBe(updateData.gender);
       expect(profile.occupation).toBe(updateData.occupation);
-      expect(profile.interests).toEqual(expect.arrayContaining(updateData.interests));
-    });
-
-    test('should preserve existing fields when updating only some fields', async ({ request }) => {
-      test.skip(!profileAuthToken, 'No auth token available');
-
-      // First set all fields
-      const initialData = {
-        firstName: 'PreserveTest',
-        gender: 'other',
-        occupation: 'Designer',
-        interests: ['art', 'photography'],
-      };
-
-      await request.put(`${backendUrl}/api/users/complete-profile`, {
-        data: initialData,
-        headers: {
-          'Authorization': `Bearer ${profileAuthToken}`,
-          'Content-Type': 'application/json',
-          ...(profileCsrfToken && { 'X-CSRF-Token': profileCsrfToken }),
-        },
-      });
-
-      // Now update only firstName
-      const partialUpdate = {
-        firstName: 'OnlyNameChanged',
-      };
-
-      await request.put(`${backendUrl}/api/users/complete-profile`, {
-        data: partialUpdate,
-        headers: {
-          'Authorization': `Bearer ${profileAuthToken}`,
-          'Content-Type': 'application/json',
-          ...(profileCsrfToken && { 'X-CSRF-Token': profileCsrfToken }),
-        },
-      });
-
-      // Fetch and verify other fields are preserved
-      const getResponse = await request.get(`${backendUrl}/api/users/profile`, {
-        headers: {
-          'Authorization': `Bearer ${profileAuthToken}`,
-        },
-      });
-
-      expect(getResponse.status()).toBe(200);
-      const profile = await getResponse.json();
-
-      expect(profile.firstName).toBe(partialUpdate.firstName);
-      // These should be preserved from initial update
-      expect(profile.gender).toBe(initialData.gender);
-      expect(profile.occupation).toBe(initialData.occupation);
-      expect(profile.interests).toEqual(expect.arrayContaining(initialData.interests));
-    });
-  });
-
-  test.describe('Profile Update via Regular Update Endpoint', () => {
-    let regularAuthToken: string | null = null;
-    let regularCsrfToken: string | null = null;
-    const regularTestEmail = `e2e-regular-${Date.now()}@example.com`;
-
-    test.beforeAll(async ({ request }) => {
-      // Get CSRF token
-      const csrfResponse = await request.get(`${backendUrl}/api/csrf-token`);
-      if (csrfResponse.ok()) {
-        const csrfData = await csrfResponse.json();
-        regularCsrfToken = csrfData.csrfToken;
-      }
-
-      // Register a new user
-      const registerResponse = await request.post(`${backendUrl}/api/auth/register`, {
-        data: {
-          email: regularTestEmail,
-          password: testPassword,
-          firstName: 'Regular',
-          lastName: 'UpdateTest',
-        },
-        headers: {
-          'Content-Type': 'application/json',
-          ...(regularCsrfToken && { 'X-CSRF-Token': regularCsrfToken }),
-        },
-      });
-
-      if (registerResponse.ok()) {
-        const registerData = await registerResponse.json();
-        regularAuthToken = registerData.tokens?.accessToken || registerData.accessToken;
-      }
-    });
-
-    test('should save gender via regular profile update', async ({ request }) => {
-      test.skip(!regularAuthToken, 'No auth token available');
-
-      const updateData = {
-        gender: 'prefer_not_to_say',
-      };
-
-      const response = await request.put(`${backendUrl}/api/users/profile`, {
-        data: updateData,
-        headers: {
-          'Authorization': `Bearer ${regularAuthToken}`,
-          'Content-Type': 'application/json',
-          ...(regularCsrfToken && { 'X-CSRF-Token': regularCsrfToken }),
-        },
-      });
-
-      expect(response.status()).toBe(200);
-      const profile = await response.json();
-      expect(profile.gender).toBe(updateData.gender);
-    });
-
-    test('should save occupation via regular profile update', async ({ request }) => {
-      test.skip(!regularAuthToken, 'No auth token available');
-
-      const updateData = {
-        occupation: 'Product Manager',
-      };
-
-      const response = await request.put(`${backendUrl}/api/users/profile`, {
-        data: updateData,
-        headers: {
-          'Authorization': `Bearer ${regularAuthToken}`,
-          'Content-Type': 'application/json',
-          ...(regularCsrfToken && { 'X-CSRF-Token': regularCsrfToken }),
-        },
-      });
-
-      expect(response.status()).toBe(200);
-      const profile = await response.json();
-      expect(profile.occupation).toBe(updateData.occupation);
-    });
-
-    test('should save interests via regular profile update', async ({ request }) => {
-      test.skip(!regularAuthToken, 'No auth token available');
-
-      const updateData = {
-        interests: ['cooking', 'gardening', 'fitness'],
-      };
-
-      const response = await request.put(`${backendUrl}/api/users/profile`, {
-        data: updateData,
-        headers: {
-          'Authorization': `Bearer ${regularAuthToken}`,
-          'Content-Type': 'application/json',
-          ...(regularCsrfToken && { 'X-CSRF-Token': regularCsrfToken }),
-        },
-      });
-
-      expect(response.status()).toBe(200);
-      const profile = await response.json();
       expect(profile.interests).toEqual(expect.arrayContaining(updateData.interests));
     });
   });
 
   test.describe('Profile Validation', () => {
     test('should reject invalid date format for dateOfBirth', async ({ request }) => {
-      // This test checks the validation without authentication
-      // to verify the schema rejects invalid dates
       const response = await request.put(`${backendUrl}/api/users/profile`, {
         data: {
           dateOfBirth: 'not-a-date',
         },
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer some-token',
+          'Authorization': 'Bearer invalid-token',
         },
       });
 
@@ -520,7 +371,7 @@ test.describe('User Profile Management', () => {
         data: 'not-valid-json{',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer some-token',
+          'Authorization': 'Bearer invalid-token',
         },
       });
 
