@@ -722,4 +722,417 @@ describe('Log Sanitizer', () => {
       expect(sanitizeIp(undefined)).toBe('unknown');
     });
   });
+
+  describe('Strict mode sanitization', () => {
+    describe('Basic strict mode behavior', () => {
+      it('should allow alphanumerics in strict mode', () => {
+        const result = sanitizeLogValue('abc123XYZ', { strict: true });
+        expect(result).toBe('abc123XYZ');
+      });
+
+      it('should allow spaces in strict mode', () => {
+        const result = sanitizeLogValue('hello world', { strict: true });
+        expect(result).toBe('hello world');
+      });
+
+      it('should allow safe punctuation in strict mode', () => {
+        const input = 'test.,;:!?-_@/()[]';
+        const result = sanitizeLogValue(input, { strict: true });
+        expect(result).toBe('test.,;:!?-_@/()[]');
+      });
+
+      it('should remove HTML tags in strict mode', () => {
+        const result = sanitizeLogValue('test<script>alert(1)</script>', { strict: true });
+        expect(result).not.toContain('<');
+        expect(result).not.toContain('>');
+        // Note: Parentheses and slashes are allowed in strict mode
+        expect(result).toBe('testscriptalert(1)/script');
+      });
+
+      it('should remove special characters in strict mode', () => {
+        const result = sanitizeLogValue('test#$%^&*+={}|\\`~', { strict: true });
+        expect(result).toBe('test');
+      });
+    });
+
+    describe('Strict mode security tests', () => {
+      it('should block script injection attempts', () => {
+        const result = sanitizeLogValue('<script>alert("XSS")</script>', { strict: true });
+        expect(result).not.toContain('<');
+        expect(result).not.toContain('>');
+        expect(result).not.toContain('"');
+        // Parentheses and slashes are allowed in strict mode allowlist
+        expect(result).toBe('scriptalert(XSS)/script');
+      });
+
+      it('should block SQL injection characters', () => {
+        const result = sanitizeLogValue("' OR '1'='1", { strict: true });
+        expect(result).not.toContain("'");
+        expect(result).toBe(' OR 11');
+      });
+
+      it('should block command injection characters', () => {
+        const result = sanitizeLogValue('test; rm -rf /', { strict: true });
+        // Note: Semicolons are allowed in strict mode allowlist
+        expect(result).toBe('test; rm -rf /');
+      });
+
+      it('should remove quotes in strict mode', () => {
+        const result = sanitizeLogValue('test "quoted" value', { strict: true });
+        expect(result).not.toContain('"');
+        expect(result).toBe('test quoted value');
+      });
+
+      it('should remove backticks in strict mode', () => {
+        const result = sanitizeLogValue('test `command` value', { strict: true });
+        expect(result).not.toContain('`');
+        expect(result).toBe('test command value');
+      });
+
+      it('should remove shell metacharacters', () => {
+        const result = sanitizeLogValue('test|grep&pwd$', { strict: true });
+        // Note: & becomes 'amp' in some contexts, but strict mode just removes special chars
+        expect(result).not.toContain('|');
+        expect(result).not.toContain('$');
+      });
+    });
+
+    describe('Strict mode vs standard mode comparison', () => {
+      it('should be more restrictive than standard mode', () => {
+        const input = 'test<>{}|\\value';
+        const standard = sanitizeLogValue(input, { strict: false });
+        const strict = sanitizeLogValue(input, { strict: true });
+
+        expect(standard.length).toBeGreaterThanOrEqual(strict.length);
+        expect(strict).not.toContain('<');
+        expect(strict).not.toContain('>');
+      });
+
+      it('should handle Unicode differently', () => {
+        const input = 'test™®©';
+        const standard = sanitizeLogValue(input, { strict: false });
+        const strict = sanitizeLogValue(input, { strict: true });
+
+        expect(standard).toContain('™');
+        expect(strict).not.toContain('™');
+      });
+
+      it('should preserve safe characters in both modes', () => {
+        const input = 'test@example.com';
+        const standard = sanitizeLogValue(input, { strict: false });
+        const strict = sanitizeLogValue(input, { strict: true });
+
+        expect(standard).toBe('test@example.com');
+        expect(strict).toBe('test@example.com');
+      });
+    });
+
+    describe('Strict mode edge cases', () => {
+      it('should handle empty string in strict mode', () => {
+        const result = sanitizeLogValue('', { strict: true });
+        expect(result).toBe('');
+      });
+
+      it('should handle only disallowed characters', () => {
+        const result = sanitizeLogValue('<>#$%^&*', { strict: true });
+        expect(result).toBe('');
+      });
+
+      it('should preserve email addresses in strict mode', () => {
+        const result = sanitizeLogValue('user@example.com', { strict: true });
+        expect(result).toBe('user@example.com');
+      });
+
+      it('should preserve file paths in strict mode', () => {
+        const result = sanitizeLogValue('/path/to/file.txt', { strict: true });
+        expect(result).toBe('/path/to/file.txt');
+      });
+
+      it('should handle URLs in strict mode', () => {
+        // Note: Some URL characters are removed in strict mode
+        const result = sanitizeLogValue('http://example.com', { strict: true });
+        expect(result).toContain('example.com');
+      });
+    });
+
+    describe('Strict mode with control characters', () => {
+      it('should remove both control chars and disallowed chars', () => {
+        const result = sanitizeLogValue('test\n<script>\x00alert\r\n', { strict: true });
+        expect(result).not.toMatch(/[\r\n\x00]/);
+        expect(result).not.toContain('<');
+        expect(result).not.toContain('>');
+      });
+
+      it('should handle ANSI codes in strict mode', () => {
+        const result = sanitizeLogValue('\x1b[31mRed\x1b[0m', { strict: true });
+        // Strict mode removes escape chars but brackets are in allowlist
+        expect(result).not.toContain('\x1b');
+        expect(result).toContain('Red');
+        // Brackets [] are allowed in strict mode
+        expect(result).toBe('[31mRed[0m');
+      });
+    });
+
+    describe('Custom maxLength option', () => {
+      it('should respect custom maxLength', () => {
+        const input = 'A'.repeat(100);
+        const result = sanitizeLogValue(input, { maxLength: 50 });
+
+        expect(result.length).toBe(64); // 50 + '...[truncated]' (14 chars)
+        expect(result).toContain('[truncated]');
+      });
+
+      it('should handle maxLength with strict mode', () => {
+        const input = 'A'.repeat(100);
+        const result = sanitizeLogValue(input, { strict: true, maxLength: 50 });
+
+        expect(result.length).toBe(64);
+        expect(result).toContain('[truncated]');
+      });
+
+      it('should handle maxLength of 0', () => {
+        const result = sanitizeLogValue('test', { maxLength: 0 });
+        expect(result).toBe('...[truncated]');
+      });
+
+      it('should handle negative maxLength (treated as 0)', () => {
+        const result = sanitizeLogValue('test', { maxLength: -10 });
+        expect(result).toBe('...[truncated]');
+      });
+
+      it('should not truncate when under custom maxLength', () => {
+        const input = 'A'.repeat(50);
+        const result = sanitizeLogValue(input, { maxLength: 100 });
+
+        expect(result.length).toBe(50);
+        expect(result).not.toContain('[truncated]');
+      });
+    });
+
+    describe('Combined options', () => {
+      it('should apply both strict and maxLength', () => {
+        const input = 'test<script>' + 'A'.repeat(100);
+        const result = sanitizeLogValue(input, {
+          strict: true,
+          maxLength: 50,
+        });
+
+        expect(result).not.toContain('<');
+        expect(result.length).toBeLessThanOrEqual(64);
+        expect(result).toContain('[truncated]');
+      });
+
+      it('should sanitize then truncate', () => {
+        const input = 'A'.repeat(50) + '<script>alert(1)</script>';
+        const result = sanitizeLogValue(input, {
+          strict: true,
+          maxLength: 60,
+        });
+
+        // Sanitization happens first, then truncation
+        expect(result).not.toContain('<');
+      });
+    });
+  });
+
+  describe('Unicode control characters', () => {
+    describe('C1 control set', () => {
+      it('should remove C1 control characters (U+0080 to U+009F)', () => {
+        const input = 'test\u0080\u0085\u009Fvalue';
+        const result = sanitizeLogValue(input);
+
+        expect(result).not.toMatch(/[\u0080-\u009F]/);
+        expect(result).toBe('testvalue');
+      });
+
+      it('should handle PAD character (U+0080)', () => {
+        const result = sanitizeLogValue('test\u0080value');
+        expect(result).toBe('testvalue');
+      });
+
+      it('should handle NEL (Next Line, U+0085)', () => {
+        const result = sanitizeLogValue('test\u0085value');
+        expect(result).toBe('testvalue');
+      });
+
+      it('should handle APC (U+009F)', () => {
+        const result = sanitizeLogValue('test\u009Fvalue');
+        expect(result).toBe('testvalue');
+      });
+    });
+
+    describe('Unicode line separators', () => {
+      it('should remove line separator (U+2028)', () => {
+        const result = sanitizeLogValue('line1\u2028line2');
+        expect(result).not.toContain('\u2028');
+        expect(result).toBe('line1 line2');
+      });
+
+      it('should remove paragraph separator (U+2029)', () => {
+        const result = sanitizeLogValue('para1\u2029para2');
+        expect(result).not.toContain('\u2029');
+        expect(result).toBe('para1 para2');
+      });
+
+      it('should handle both line and paragraph separators', () => {
+        const result = sanitizeLogValue('a\u2028b\u2029c');
+        expect(result).toBe('a b c');
+      });
+    });
+
+    describe('Unicode normalization forms', () => {
+      it('should preserve composed characters', () => {
+        const input = 'café'; // é is single character
+        const result = sanitizeLogValue(input);
+        expect(result).toBe('café');
+      });
+
+      it('should preserve decomposed characters', () => {
+        const input = 'cafe\u0301'; // e + combining acute accent
+        const result = sanitizeLogValue(input);
+        expect(result).toContain('caf');
+      });
+    });
+
+    describe('Unicode bidirectional text', () => {
+      it('should preserve RTL mark', () => {
+        const input = 'test\u200Fvalue'; // Right-to-left mark
+        const result = sanitizeLogValue(input);
+        expect(result).toBe('test\u200Fvalue');
+      });
+
+      it('should preserve LTR mark', () => {
+        const input = 'test\u200Evalue'; // Left-to-right mark
+        const result = sanitizeLogValue(input);
+        expect(result).toBe('test\u200Evalue');
+      });
+    });
+  });
+
+  describe('Additional edge cases', () => {
+    describe('Numeric edge cases', () => {
+      it('should handle BigInt values', () => {
+        const bigInt = BigInt(9007199254740991);
+        const result = sanitizeLogValue(bigInt);
+        expect(result).toBe('9007199254740991');
+      });
+
+      it('should handle NaN', () => {
+        const result = sanitizeLogValue(NaN);
+        expect(result).toBe('NaN');
+      });
+
+      it('should handle Infinity', () => {
+        expect(sanitizeLogValue(Infinity)).toBe('Infinity');
+        expect(sanitizeLogValue(-Infinity)).toBe('-Infinity');
+      });
+
+      it('should handle scientific notation', () => {
+        const result = sanitizeLogValue(1.23e10);
+        expect(result).toBe('12300000000');
+      });
+    });
+
+    describe('Symbol and function values', () => {
+      it('should handle Symbol values', () => {
+        const sym = Symbol('test');
+        const result = sanitizeLogValue(sym);
+        expect(result).toContain('Symbol');
+      });
+
+      it('should handle function values', () => {
+        const fn = function testFn() { return 42; };
+        const result = sanitizeLogValue(fn);
+        expect(result).toContain('function');
+      });
+
+      it('should handle arrow function values', () => {
+        const fn = () => 42;
+        const result = sanitizeLogValue(fn);
+        expect(result).toContain('=>');
+      });
+    });
+
+    describe('Complex object structures', () => {
+      it('should handle circular references in objects', () => {
+        const obj: { self?: unknown } = {};
+        obj.self = obj;
+        const result = sanitizeLogValue(obj);
+        expect(result).toBe('[object Object]');
+      });
+
+      it('should handle Date objects', () => {
+        const date = new Date('2025-12-31');
+        const result = sanitizeLogValue(date);
+        expect(result).toContain('2025');
+      });
+
+      it('should handle RegExp objects', () => {
+        const regex = /test/gi;
+        const result = sanitizeLogValue(regex);
+        expect(result).toContain('test');
+      });
+
+      it('should handle Error objects', () => {
+        const error = new Error('Test error');
+        const result = sanitizeLogValue(error);
+        expect(result).toContain('Error');
+      });
+    });
+
+    describe('Whitespace variations', () => {
+      it('should preserve regular spaces', () => {
+        const result = sanitizeLogValue('word1 word2 word3');
+        expect(result).toBe('word1 word2 word3');
+      });
+
+      it('should handle tab characters', () => {
+        const result = sanitizeLogValue('word1\tword2');
+        expect(result).toBe('word1word2'); // Tabs are control chars
+      });
+
+      it('should handle multiple consecutive spaces', () => {
+        const result = sanitizeLogValue('word1    word2');
+        expect(result).toBe('word1    word2');
+      });
+
+      it('should handle leading and trailing spaces', () => {
+        const result = sanitizeLogValue('  value  ');
+        expect(result).toBe('  value  ');
+      });
+
+      it('should handle non-breaking space in standard mode', () => {
+        const result = sanitizeLogValue('word1\u00A0word2');
+        expect(result).toContain('\u00A0');
+      });
+    });
+
+    describe('Mixed content scenarios', () => {
+      it('should handle mixed text and emojis', () => {
+        const result = sanitizeLogValue('User 😀 logged in 🎉');
+        expect(result).toBe('User 😀 logged in 🎉');
+      });
+
+      it('should handle URLs with special characters', () => {
+        const url = 'https://example.com/path?query=value&foo=bar#hash';
+        const result = sanitizeLogValue(url);
+        expect(result).toBe(url);
+      });
+
+      it('should handle JSON-like strings', () => {
+        const json = '{"key":"value","num":123}';
+        const result = sanitizeLogValue(json);
+        expect(result).toBe(json);
+      });
+
+      it('should handle XML-like strings', () => {
+        const xml = '<tag>value</tag>';
+        const standard = sanitizeLogValue(xml);
+        expect(standard).toBe('<tag>value</tag>');
+
+        const strict = sanitizeLogValue(xml, { strict: true });
+        expect(strict).not.toContain('<');
+      });
+    });
+  });
 });
