@@ -112,6 +112,7 @@ describe('CouponAssignmentsModal', () => {
     assignments: mockAssignments,
     summary: mockSummary,
     page: 1,
+    limit: 10,
     totalPages: 1,
     total: 3,
   };
@@ -123,7 +124,11 @@ describe('CouponAssignmentsModal', () => {
 
     // Default mock implementation
     vi.mocked(couponService.getCouponAssignments).mockResolvedValue(mockAssignmentsResponse);
-    vi.mocked(couponService.revokeUserCouponsForCoupon).mockResolvedValue(undefined);
+    vi.mocked(couponService.revokeUserCouponsForCoupon).mockResolvedValue({
+      success: true,
+      message: 'Coupons revoked successfully',
+      revokedCount: 1,
+    });
   });
 
   describe('Basic Rendering', () => {
@@ -330,6 +335,7 @@ describe('CouponAssignmentsModal', () => {
         }],
         summary: mockSummary,
         page: 1,
+        limit: 10,
         totalPages: 1,
         total: 1,
       });
@@ -378,6 +384,7 @@ describe('CouponAssignmentsModal', () => {
         }],
         summary: mockSummary,
         page: 1,
+        limit: 10,
         totalPages: 1,
         total: 1,
       });
@@ -458,6 +465,7 @@ describe('CouponAssignmentsModal', () => {
           totalAvailable: 0,
         },
         page: 1,
+        limit: 10,
         totalPages: 0,
         total: 0,
       });
@@ -479,6 +487,7 @@ describe('CouponAssignmentsModal', () => {
           totalAvailable: 0,
         },
         page: 1,
+        limit: 10,
         totalPages: 0,
         total: 0,
       });
@@ -691,7 +700,7 @@ describe('CouponAssignmentsModal', () => {
         expect(screen.getAllByText('Remove')[0]).toBeInTheDocument();
       });
 
-      const removeButton = screen.getAllByText('Remove')[0];
+      const removeButton = screen.getAllByText('Remove')[0]!;
       await user.click(removeButton);
 
       await waitFor(() => {
@@ -707,7 +716,7 @@ describe('CouponAssignmentsModal', () => {
         expect(screen.getAllByText('Remove')[0]).toBeInTheDocument();
       });
 
-      const removeButton = screen.getAllByText('Remove')[0];
+      const removeButton = screen.getAllByText('Remove')[0]!;
       await user.click(removeButton);
 
       await waitFor(() => {
@@ -724,7 +733,7 @@ describe('CouponAssignmentsModal', () => {
         expect(screen.getAllByText('Remove')[0]).toBeInTheDocument();
       });
 
-      const removeButton = screen.getAllByText('Remove')[0];
+      const removeButton = screen.getAllByText('Remove')[0]!;
       await user.click(removeButton);
 
       await waitFor(() => {
@@ -740,7 +749,7 @@ describe('CouponAssignmentsModal', () => {
         expect(screen.getAllByText('Remove')[0]).toBeInTheDocument();
       });
 
-      const removeButton = screen.getAllByText('Remove')[0];
+      const removeButton = screen.getAllByText('Remove')[0]!;
       await user.click(removeButton);
 
       await waitFor(() => {
@@ -763,7 +772,7 @@ describe('CouponAssignmentsModal', () => {
         expect(screen.getAllByText('Remove')[0]).toBeInTheDocument();
       });
 
-      const removeButton = screen.getAllByText('Remove')[0];
+      const removeButton = screen.getAllByText('Remove')[0]!;
       await user.click(removeButton);
 
       await waitFor(() => {
@@ -792,7 +801,7 @@ describe('CouponAssignmentsModal', () => {
 
       vi.clearAllMocks();
 
-      const removeButton = screen.getAllByText('Remove')[0];
+      const removeButton = screen.getAllByText('Remove')[0]!;
       await user.click(removeButton);
 
       await waitFor(() => {
@@ -819,7 +828,7 @@ describe('CouponAssignmentsModal', () => {
         expect(screen.getAllByText('Remove')[0]).toBeInTheDocument();
       });
 
-      const removeButton = screen.getAllByText('Remove')[0];
+      const removeButton = screen.getAllByText('Remove')[0]!;
       await user.click(removeButton);
 
       await waitFor(() => {
@@ -845,7 +854,7 @@ describe('CouponAssignmentsModal', () => {
         expect(screen.getAllByText('Remove')[0]).toBeInTheDocument();
       });
 
-      const removeButton = screen.getAllByText('Remove')[0];
+      const removeButton = screen.getAllByText('Remove')[0]!;
       await user.click(removeButton);
 
       await waitFor(() => {
@@ -872,7 +881,7 @@ describe('CouponAssignmentsModal', () => {
         expect(screen.getAllByText('Remove')[0]).toBeInTheDocument();
       });
 
-      const removeButton = screen.getAllByText('Remove')[0];
+      const removeButton = screen.getAllByText('Remove')[0]!;
       await user.click(removeButton);
 
       await waitFor(() => {

@@ -342,7 +342,7 @@ describe('SettingsModal', () => {
 
       await waitFor(() => {
         expect(onSubmit).toHaveBeenCalled();
-        const callArgs = onSubmit.mock.calls[0][0];
+        const callArgs = onSubmit.mock.calls[0]![0];
         expect(callArgs.firstName).toBe('Jane');
       });
     });
@@ -450,8 +450,8 @@ describe('SettingsModal', () => {
       expect(screen.getByTestId('emoji-selector')).toBeInTheDocument();
 
       const closeButtons = screen.getAllByTestId('x-icon');
-      const selectorCloseButton = closeButtons[1];
-      await user.click(selectorCloseButton.parentElement as HTMLElement);
+      const selectorCloseButton = closeButtons[1]!;
+      await user.click(selectorCloseButton.parentElement!);
 
       await waitFor(() => {
         expect(screen.queryByTestId('emoji-selector')).not.toBeInTheDocument();

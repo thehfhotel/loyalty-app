@@ -1,9 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-non-null-assertion */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import QuestionEditor from '../QuestionEditor';
-import { SurveyQuestion, QuestionOption } from '../../../types/survey';
+import { SurveyQuestion } from '../../../types/survey';
 import { surveyService } from '../../../services/surveyService';
 
 // Mock dependencies
@@ -506,9 +505,9 @@ describe('QuestionEditor', () => {
       await user.type(optionInput, 'Purple');
 
       expect(mockOnUpdate).toHaveBeenCalled();
-      const lastCall = mockOnUpdate.mock.calls[mockOnUpdate.mock.calls.length - 1][0];
+      const lastCall = mockOnUpdate.mock.calls[mockOnUpdate.mock.calls.length - 1]![0];
       expect(lastCall.options).toBeDefined();
-      expect(lastCall.options![0].text).toBe('Purple');
+      expect(lastCall.options![0]!.text).toBe('Purple');
     });
 
     it('should remove option when X button clicked', async () => {
@@ -634,7 +633,7 @@ describe('QuestionEditor', () => {
         />
       );
 
-      const minInput = screen.getAllByRole('spinbutton')[0];
+      const minInput = screen.getAllByRole('spinbutton')[0]!;
       await user.clear(minInput);
       await user.type(minInput, '2');
 
@@ -656,7 +655,7 @@ describe('QuestionEditor', () => {
         />
       );
 
-      const maxInput = screen.getAllByRole('spinbutton')[1];
+      const maxInput = screen.getAllByRole('spinbutton')[1]!;
       await user.clear(maxInput);
       await user.type(maxInput, '4');
 
@@ -807,7 +806,7 @@ describe('QuestionEditor', () => {
     });
 
     it('should show radio buttons in preview for single_choice', () => {
-      const { container } = render(
+      render(
         <QuestionEditor
           question={baseSingleChoiceQuestion}
           index={0}
@@ -826,7 +825,7 @@ describe('QuestionEditor', () => {
 
     it('should show checkboxes in preview for multiple_choice', () => {
       const multipleChoiceQuestion = { ...baseSingleChoiceQuestion, type: 'multiple_choice' as const };
-      const { container } = render(
+      render(
         <QuestionEditor
           question={multipleChoiceQuestion}
           index={0}

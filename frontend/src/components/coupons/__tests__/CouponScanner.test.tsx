@@ -5,7 +5,7 @@ import CouponScanner from '../CouponScanner';
 import { couponService } from '../../../services/couponService';
 import { logger } from '../../../utils/logger';
 import { notify } from '../../../utils/notificationManager';
-import { Coupon, UserActiveCoupon } from '../../../types/coupon';
+import { UserActiveCoupon } from '../../../types/coupon';
 
 // Mock dependencies
 const mockTranslate = vi.fn((key: string) => {
@@ -74,7 +74,7 @@ Object.defineProperty(global.navigator, 'mediaDevices', {
 });
 
 describe('CouponScanner', () => {
-  const mockValidCoupon: Coupon | UserActiveCoupon = {
+  const mockValidCoupon: UserActiveCoupon = {
     couponId: 'coupon-1',
     code: 'SAVE20',
     name: '20% Off Coupon',
@@ -103,7 +103,7 @@ describe('CouponScanner', () => {
       success: true,
       valid: true,
       message: 'Valid coupon',
-      data: mockValidCoupon,
+      data: mockValidCoupon as unknown as import('../../../types/coupon').Coupon,
     });
 
     vi.mocked(couponService.redeemCoupon).mockResolvedValue({
@@ -118,7 +118,6 @@ describe('CouponScanner', () => {
       isValid: true,
       discountAmount: 200,
       finalAmount: 800,
-      message: 'Valid discount',
     });
 
     vi.mocked(couponService.formatCouponValue).mockReturnValue('20% off');

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useForm } from 'react-hook-form';
-import { GenderField, OccupationField, DateOfBirthField } from '../ProfileFormFields';
+import { GenderField, OccupationField, DateOfBirthField, ProfileFormData } from '../ProfileFormFields';
 
 // Mock react-i18next
 vi.mock('react-i18next', () => ({
@@ -48,12 +48,6 @@ vi.mock('react-icons/fi', () => ({
   FiBriefcase: () => <span data-testid="icon-briefcase">Briefcase Icon</span>,
   FiCalendar: () => <span data-testid="icon-calendar">Calendar Icon</span>,
 }));
-
-interface ProfileFormData {
-  gender?: string;
-  occupation?: string;
-  dateOfBirth?: string;
-}
 
 // Helper to render GenderField with form context
 function renderGenderField(props: {

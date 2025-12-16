@@ -1,6 +1,5 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import MultiLanguageEditor from '../MultiLanguageEditor';
 
@@ -233,14 +232,14 @@ describe('MultiLanguageEditor', () => {
       await user.clear(input);
       await user.type(input, 'Hi');
 
-      const lastCall = mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1][0];
+      const lastCall = mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1]![0];
       expect(lastCall.en).toBe('Hi');
       expect(lastCall.th).toBe('สวัสดี');
     });
 
     it('should edit content in different languages independently', async () => {
       const user = userEvent.setup();
-      const { rerender } = render(
+      render(
         <MultiLanguageEditor
           value={{ en: 'Hello', th: 'สวัสดี' }}
           onChange={mockOnChange}
@@ -255,7 +254,7 @@ describe('MultiLanguageEditor', () => {
       await user.clear(input);
       await user.type(input, 'หวัดดี');
 
-      const lastCall = mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1][0];
+      const lastCall = mockOnChange.mock.calls[mockOnChange.mock.calls.length - 1]![0];
       expect(lastCall.th).toBe('หวัดดี');
       expect(lastCall.en).toBe('Hello');
     });
@@ -752,7 +751,6 @@ describe('MultiLanguageEditor', () => {
 
     it('should handle very long text content', async () => {
       const longText = 'A'.repeat(500);
-      const user = userEvent.setup();
       render(
         <MultiLanguageEditor
           value={{ en: longText }}

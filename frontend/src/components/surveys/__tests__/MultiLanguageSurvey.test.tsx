@@ -215,7 +215,7 @@ describe('MultiLanguageSurvey', () => {
 
       // Find Thai option in the dropdown and click it
       const thaiOptions = screen.getAllByText('ไทย');
-      const thaiOption = thaiOptions[thaiOptions.length - 1]; // Get last one (in dropdown)
+      const thaiOption = thaiOptions[thaiOptions.length - 1]!; // Get last one (in dropdown)
       await user.click(thaiOption);
 
       // Check if callback was called, may need to wait for state update
@@ -241,7 +241,7 @@ describe('MultiLanguageSurvey', () => {
       const dropdown = screen.getByText('中文').closest('div');
       expect(dropdown).toBeInTheDocument();
 
-      const thaiOption = screen.getAllByText('ไทย')[1];
+      const thaiOption = screen.getAllByText('ไทย')[1]!;
       await user.click(thaiOption);
 
       await waitFor(() => {
@@ -264,7 +264,7 @@ describe('MultiLanguageSurvey', () => {
       const button = screen.getByRole('button');
       await user.click(button);
 
-      const englishOption = screen.getAllByText('English')[1].closest('button');
+      const englishOption = screen.getAllByText('English')[1]!.closest('button');
       const checkmark = englishOption?.querySelector('svg');
       expect(checkmark).toBeInTheDocument();
     });
@@ -283,7 +283,7 @@ describe('MultiLanguageSurvey', () => {
       const button = screen.getByRole('button');
       await user.click(button);
 
-      const englishOption = screen.getAllByText('English')[1].closest('button');
+      const englishOption = screen.getAllByText('English')[1]!.closest('button');
       expect(englishOption).toHaveClass('bg-blue-50', 'text-blue-700');
     });
   });
@@ -926,13 +926,13 @@ describe('MultiLanguageSurvey', () => {
         />
       );
 
-      const redLabel = screen.getByText('Red');
+      screen.getByText('Red'); // Verify label exists
       const redInput = screen.getByLabelText('Red');
       expect(redInput).toBeInTheDocument();
     });
 
     it('should have aria-label on language selector button', () => {
-      const { container } = render(
+      render(
         <MultiLanguageSurvey
           questions={mockQuestions}
           onLanguageChange={mockOnLanguageChange}

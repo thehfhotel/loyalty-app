@@ -126,7 +126,7 @@ describe('QuestionRenderer', () => {
     });
 
     it('should display required asterisk for required questions', () => {
-      const { container } = render(
+      render(
         <QuestionRenderer
           question={singleChoiceQuestion}
           answer={null}
@@ -222,7 +222,7 @@ describe('QuestionRenderer', () => {
       );
 
       const radioButtons = screen.getAllByRole('radio');
-      await user.click(radioButtons[1]); // Click Blue
+      await user.click(radioButtons[1]!); // Click Blue
 
       expect(mockOnAnswerChange).toHaveBeenCalledWith('q1', '2');
     });
@@ -237,7 +237,7 @@ describe('QuestionRenderer', () => {
       );
 
       const radioButtons = screen.getAllByRole('radio') as HTMLInputElement[];
-      expect(radioButtons[1]).toBeChecked();
+      expect(radioButtons[1]!).toBeChecked();
     });
 
     it('should apply hover styling to option labels', () => {
@@ -314,7 +314,7 @@ describe('QuestionRenderer', () => {
       );
 
       const checkboxes = screen.getAllByRole('checkbox');
-      await user.click(checkboxes[0]); // Check Option A
+      await user.click(checkboxes[0]!); // Check Option A
 
       expect(mockOnAnswerChange).toHaveBeenCalledWith('q2', ['1']);
     });
@@ -331,7 +331,7 @@ describe('QuestionRenderer', () => {
       );
 
       const checkboxes = screen.getAllByRole('checkbox');
-      await user.click(checkboxes[1]); // Check Option B
+      await user.click(checkboxes[1]!); // Check Option B
 
       expect(mockOnAnswerChange).toHaveBeenCalledWith('q2', ['1', '2']);
     });
@@ -348,7 +348,7 @@ describe('QuestionRenderer', () => {
       );
 
       const checkboxes = screen.getAllByRole('checkbox');
-      await user.click(checkboxes[1]); // Uncheck Option B
+      await user.click(checkboxes[1]!); // Uncheck Option B
 
       expect(mockOnAnswerChange).toHaveBeenCalledWith('q2', ['1', '3']);
     });
@@ -365,7 +365,7 @@ describe('QuestionRenderer', () => {
       );
 
       const checkboxes = screen.getAllByRole('checkbox');
-      await user.click(checkboxes[0]);
+      await user.click(checkboxes[0]!);
 
       expect(mockOnAnswerChange).toHaveBeenCalledWith('q2', ['1']);
     });
@@ -762,7 +762,7 @@ describe('QuestionRenderer', () => {
       );
 
       const radioButtons = screen.getAllByRole('radio');
-      await user.click(radioButtons[0]); // Click Yes
+      await user.click(radioButtons[0]!); // Click Yes
 
       expect(mockOnAnswerChange).toHaveBeenCalledWith('q7', 'yes');
     });
@@ -779,7 +779,7 @@ describe('QuestionRenderer', () => {
       );
 
       const radioButtons = screen.getAllByRole('radio');
-      await user.click(radioButtons[1]); // Click No
+      await user.click(radioButtons[1]!); // Click No
 
       expect(mockOnAnswerChange).toHaveBeenCalledWith('q7', 'no');
     });
@@ -993,7 +993,7 @@ describe('QuestionRenderer', () => {
       );
 
       const checkboxes = screen.getAllByRole('checkbox');
-      await user.click(checkboxes[0]);
+      await user.click(checkboxes[0]!);
 
       expect(mockOnAnswerChange).toHaveBeenCalledWith('q2', ['1']);
     });

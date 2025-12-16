@@ -147,7 +147,7 @@ describe('CouponDetailsModal', () => {
       render(<CouponDetailsModal coupon={mockCoupon} onClose={onClose} />);
 
       const closeButtons = screen.getAllByText('×');
-      await user.click(closeButtons[0]);
+      await user.click(closeButtons[0]!);
 
       expect(onClose).toHaveBeenCalledTimes(1);
     });
@@ -542,7 +542,7 @@ describe('CouponDetailsModal', () => {
       expect(footerCloseButton).toBeInTheDocument();
 
       // Both should call onClose
-      await user.click(headerCloseButtons[0]);
+      await user.click(headerCloseButtons[0]!);
       expect(onClose).toHaveBeenCalledTimes(1);
 
       await user.click(footerCloseButton);
@@ -666,7 +666,7 @@ describe('CouponDetailsModal', () => {
       render(<CouponDetailsModal coupon={mockCoupon} onClose={onClose} />);
 
       const closeButton = screen.getByText('Close');
-      const headerCloseButton = screen.getAllByText('×')[0];
+      const headerCloseButton = screen.getAllByText('×')[0]!;
 
       expect(closeButton.tagName).toBe('BUTTON');
       expect(headerCloseButton.tagName).toBe('BUTTON');

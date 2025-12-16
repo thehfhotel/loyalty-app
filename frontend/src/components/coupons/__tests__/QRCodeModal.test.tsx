@@ -93,7 +93,7 @@ describe('QRCodeModal', () => {
     });
 
     // Default QRCode mock - success
-    vi.mocked(QRCode.toDataURL).mockResolvedValue('data:image/png;base64,mockQRCode');
+    (vi.mocked(QRCode.toDataURL) as unknown as ReturnType<typeof vi.fn>).mockResolvedValue('data:image/png;base64,mockQRCode');
   });
 
   afterEach(() => {
@@ -634,7 +634,7 @@ describe('QRCodeModal', () => {
     });
 
     it('should have clipboard icon on copy button', () => {
-      const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+      render(<QRCodeModal coupon={mockCoupon} />);
 
       // The button contains the emoji and text
       const copyButton = screen.getByText('Copy Code');

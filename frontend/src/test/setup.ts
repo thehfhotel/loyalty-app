@@ -83,5 +83,5 @@ if (typeof globalWithDrag.DragEvent === 'undefined') {
     }
   }
 
-  globalWithDrag.DragEvent = DragEventPolyfill as typeof DragEvent;
+  globalWithDrag.DragEvent = DragEventPolyfill as unknown as typeof DragEvent;
 }

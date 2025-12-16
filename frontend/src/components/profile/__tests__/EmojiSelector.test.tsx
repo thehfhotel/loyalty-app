@@ -524,12 +524,12 @@ describe('EmojiSelector', () => {
       );
 
       // Click multiple emojis rapidly
-      await user.click(buttons[0]);
-      await user.click(buttons[1]);
-      await user.click(buttons[2]);
+      await user.click(buttons[0]!);
+      await user.click(buttons[1]!);
+      await user.click(buttons[2]!);
 
       // Last clicked should be selected
-      expect(buttons[2]).toHaveClass('border-blue-500', 'bg-blue-100');
+      expect(buttons[2]!).toHaveClass('border-blue-500', 'bg-blue-100');
     });
 
     it('should handle undefined currentEmoji', () => {
@@ -540,7 +540,6 @@ describe('EmojiSelector', () => {
     });
 
     it('should maintain selection after multiple renders', async () => {
-      const user = userEvent.setup();
       const mockOnSelect = vi.fn();
       const { rerender } = render(<EmojiSelector currentEmoji="😀" onSelect={mockOnSelect} />);
 
@@ -886,7 +885,7 @@ describe('EmojiSelectorInline', () => {
 
       render(<EmojiSelectorInline onSelect={mockOnSelect} />);
 
-      const button = screen.getAllByRole('button')[0];
+      const button = screen.getAllByRole('button')[0]!;
       await user.click(button);
 
       expect(mockOnSelect).toHaveBeenCalled();

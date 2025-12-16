@@ -81,7 +81,7 @@ describe('SurveyPreview', () => {
 
   const singleQuestionSurvey: Survey = {
     ...mockSurvey,
-    questions: [mockSurvey.questions[0]],
+    questions: [mockSurvey.questions[0]!],
   };
 
   beforeEach(() => {
@@ -153,7 +153,7 @@ describe('SurveyPreview', () => {
     });
 
     it('should update progress when questions answered', () => {
-      const { rerender } = render(
+      render(
         <SurveyPreview survey={mockSurvey} onClose={mockOnClose} />
       );
 
@@ -325,7 +325,10 @@ describe('SurveyPreview', () => {
       );
 
       // Click on third dot
-      await user.click(navDots[2]);
+      const thirdDot = navDots[2];
+      if (thirdDot) {
+        await user.click(thirdDot);
+      }
 
       expect(screen.getByTestId('question-renderer-q3')).toBeInTheDocument();
     });

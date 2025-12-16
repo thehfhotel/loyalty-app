@@ -237,9 +237,22 @@ describe('AdminTransactionHistory', () => {
     });
 
     it('should display user email when name not available', async () => {
+      const baseTransaction = mockTransactions[0]!;
       const transactionWithoutName: AdminTransaction[] = [
         {
-          ...mockTransactions[0],
+          id: baseTransaction.id,
+          user_id: baseTransaction.user_id,
+          points: baseTransaction.points,
+          type: baseTransaction.type,
+          description: baseTransaction.description,
+          reference_id: baseTransaction.reference_id,
+          admin_user_id: baseTransaction.admin_user_id,
+          admin_reason: baseTransaction.admin_reason,
+          admin_email: baseTransaction.admin_email,
+          expires_at: baseTransaction.expires_at,
+          created_at: baseTransaction.created_at,
+          user_email: baseTransaction.user_email,
+          user_membership_id: baseTransaction.user_membership_id,
           user_first_name: null,
           user_last_name: null,
         },
@@ -295,9 +308,23 @@ describe('AdminTransactionHistory', () => {
     });
 
     it('should not display admin reason containing THB', async () => {
+      const baseTransaction = mockTransactions[2]!;
       const transactionWithTHB: AdminTransaction[] = [
         {
-          ...mockTransactions[2],
+          id: baseTransaction.id,
+          user_id: baseTransaction.user_id,
+          points: baseTransaction.points,
+          type: baseTransaction.type,
+          description: baseTransaction.description,
+          reference_id: baseTransaction.reference_id,
+          admin_user_id: baseTransaction.admin_user_id,
+          admin_email: baseTransaction.admin_email,
+          expires_at: baseTransaction.expires_at,
+          created_at: baseTransaction.created_at,
+          user_email: baseTransaction.user_email,
+          user_membership_id: baseTransaction.user_membership_id,
+          user_first_name: baseTransaction.user_first_name,
+          user_last_name: baseTransaction.user_last_name,
           admin_reason: 'Spent 5000 THB at hotel',
         },
       ];
@@ -315,9 +342,23 @@ describe('AdminTransactionHistory', () => {
     });
 
     it('should not display admin reason containing baht', async () => {
+      const baseTransaction = mockTransactions[2]!;
       const transactionWithBaht: AdminTransaction[] = [
         {
-          ...mockTransactions[2],
+          id: baseTransaction.id,
+          user_id: baseTransaction.user_id,
+          points: baseTransaction.points,
+          type: baseTransaction.type,
+          description: baseTransaction.description,
+          reference_id: baseTransaction.reference_id,
+          admin_user_id: baseTransaction.admin_user_id,
+          admin_email: baseTransaction.admin_email,
+          expires_at: baseTransaction.expires_at,
+          created_at: baseTransaction.created_at,
+          user_email: baseTransaction.user_email,
+          user_membership_id: baseTransaction.user_membership_id,
+          user_first_name: baseTransaction.user_first_name,
+          user_last_name: baseTransaction.user_last_name,
           admin_reason: 'Purchase of 2000 baht',
         },
       ];
@@ -508,9 +549,22 @@ describe('AdminTransactionHistory', () => {
 
   describe('Transaction Formatting', () => {
     it('should handle zero points with earned_stay type', async () => {
+      const baseTransaction = mockTransactions[0]!;
       const zeroPointsTransaction: AdminTransaction[] = [
         {
-          ...mockTransactions[0],
+          id: baseTransaction.id,
+          user_id: baseTransaction.user_id,
+          description: baseTransaction.description,
+          reference_id: baseTransaction.reference_id,
+          admin_user_id: baseTransaction.admin_user_id,
+          admin_reason: baseTransaction.admin_reason,
+          admin_email: baseTransaction.admin_email,
+          expires_at: baseTransaction.expires_at,
+          created_at: baseTransaction.created_at,
+          user_email: baseTransaction.user_email,
+          user_membership_id: baseTransaction.user_membership_id,
+          user_first_name: baseTransaction.user_first_name,
+          user_last_name: baseTransaction.user_last_name,
           points: 0,
           type: 'earned_stay',
         },
@@ -539,9 +593,22 @@ describe('AdminTransactionHistory', () => {
     });
 
     it('should display partial user names correctly', async () => {
+      const baseTransaction = mockTransactions[0]!;
       const partialNameTransaction: AdminTransaction[] = [
         {
-          ...mockTransactions[0],
+          id: baseTransaction.id,
+          user_id: baseTransaction.user_id,
+          points: baseTransaction.points,
+          type: baseTransaction.type,
+          description: baseTransaction.description,
+          reference_id: baseTransaction.reference_id,
+          admin_user_id: baseTransaction.admin_user_id,
+          admin_reason: baseTransaction.admin_reason,
+          admin_email: baseTransaction.admin_email,
+          expires_at: baseTransaction.expires_at,
+          created_at: baseTransaction.created_at,
+          user_email: baseTransaction.user_email,
+          user_membership_id: baseTransaction.user_membership_id,
           user_first_name: 'John',
           user_last_name: null,
         },
@@ -648,9 +715,23 @@ describe('AdminTransactionHistory', () => {
     });
 
     it('should handle very large point values', async () => {
+      const baseTransaction = mockTransactions[0]!;
       const largePointsTransaction: AdminTransaction[] = [
         {
-          ...mockTransactions[0],
+          id: baseTransaction.id,
+          user_id: baseTransaction.user_id,
+          type: baseTransaction.type,
+          description: baseTransaction.description,
+          reference_id: baseTransaction.reference_id,
+          admin_user_id: baseTransaction.admin_user_id,
+          admin_reason: baseTransaction.admin_reason,
+          admin_email: baseTransaction.admin_email,
+          expires_at: baseTransaction.expires_at,
+          created_at: baseTransaction.created_at,
+          user_email: baseTransaction.user_email,
+          user_membership_id: baseTransaction.user_membership_id,
+          user_first_name: baseTransaction.user_first_name,
+          user_last_name: baseTransaction.user_last_name,
           points: 999999,
         },
       ];

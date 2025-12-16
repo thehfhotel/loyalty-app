@@ -180,11 +180,9 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
   };
 
   // Calculate preview of discount
-  const discountPreview = validationResult?.valid && originalAmount
-    ? couponService.calculateDiscount(
-        (validationResult?.data as Coupon | UserActiveCoupon | undefined) ?? null,
-        parseFloat(originalAmount)
-      )
+  const couponData = validationResult?.data as Coupon | UserActiveCoupon | undefined;
+  const discountPreview = validationResult?.valid && originalAmount && couponData
+    ? couponService.calculateDiscount(couponData, parseFloat(originalAmount))
     : null;
 
   return (
