@@ -236,8 +236,8 @@ jobs:
             echo "❌ Shared workspace not found at $SHARED_WORKSPACE"
             exit 1
           fi
-          rsync -a "$SHARED_WORKSPACE/" .
-          echo "✅ Workspace ready"
+          rsync -a --delete "$SHARED_WORKSPACE/" .
+          echo "✅ Workspace ready (stale files removed)"
 
           echo "📦 Restoring backend node_modules..."
           cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/backend-node_modules/node_modules ./backend/ || exit 1
@@ -704,8 +704,8 @@ jobs:
             echo "❌ Shared workspace not found at $SHARED_WORKSPACE"
             exit 1
           fi
-          rsync -a "$SHARED_WORKSPACE/" .
-          echo "✅ Workspace ready"
+          rsync -a --delete "$SHARED_WORKSPACE/" .
+          echo "✅ Workspace ready (stale files removed)"
 
           echo "📦 Restoring root node_modules (Playwright)..."
           cp -r /tmp/runner-cache/${{ env.CACHE_VERSION }}/root-node_modules/node_modules ./ || exit 1
