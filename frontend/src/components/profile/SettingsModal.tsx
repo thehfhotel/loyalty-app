@@ -59,6 +59,7 @@ export default function SettingsModal({
     handleSubmit,
     formState: { errors },
     reset,
+    watch,
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
@@ -66,14 +67,17 @@ export default function SettingsModal({
       firstName: profile?.firstName ?? '',
       lastName: profile?.lastName ?? '',
       phone: profile?.phone ?? '',
-      dateOfBirth: profile?.dateOfBirth 
-        ? new Date(profile.dateOfBirth).toISOString().split('T')[0] 
+      dateOfBirth: profile?.dateOfBirth
+        ? new Date(profile.dateOfBirth).toISOString().split('T')[0]
         : '',
       gender: profile?.gender ?? '',
       occupation: profile?.occupation ?? '',
       interests: profile?.interests?.join(', ') ?? '',
     }
   });
+
+  // Watch the interests field to sync with InterestsField component
+  const watchedInterests = watch('interests');
 
   // Reset form when profile or user changes
   React.useEffect(() => {
@@ -330,10 +334,11 @@ export default function SettingsModal({
                 isModal={false}
               />
 
-              <InterestsField 
+              <InterestsField
                 register={register}
                 errors={errors}
                 isModal={false}
+                watchedValue={watchedInterests}
               />
 
               <div className="flex justify-end space-x-3 pt-4">

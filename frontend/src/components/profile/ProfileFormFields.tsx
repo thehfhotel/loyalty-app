@@ -20,6 +20,7 @@ interface ProfileFormFieldsProps {
   errors: FieldErrors<ProfileFormData>;
   showRequiredAsterisk?: boolean;
   isModal?: boolean;
+  watchedValue?: string; // For fields that need to sync with external value changes
 }
 
 export function GenderField({ register, errors, showRequiredAsterisk = false, isModal = false }: ProfileFormFieldsProps) {
@@ -155,10 +156,10 @@ export function OccupationField({ register, errors, showRequiredAsterisk = false
   );
 }
 
-export function InterestsField({ register, errors, showRequiredAsterisk = false, isModal = false }: ProfileFormFieldsProps) {
+export function InterestsField({ register, errors, showRequiredAsterisk = false, isModal = false, watchedValue }: ProfileFormFieldsProps) {
   const { t } = useTranslation();
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
-  
+
   // Create unique field ID to prevent conflicts between modal and profile page
   const fieldId = isModal ? 'interests-modal' : 'interests';
 
@@ -169,9 +170,9 @@ export function InterestsField({ register, errors, showRequiredAsterisk = false,
     const newInterests = selectedInterests.includes(displayName)
       ? selectedInterests.filter(i => i !== displayName)
       : [...selectedInterests, displayName];
-    
+
     setSelectedInterests(newInterests);
-    
+
     // Update the hidden input field (store English display names)
     const hiddenInput = document.getElementById(fieldId) as HTMLInputElement;
     if (hiddenInput) {
@@ -181,41 +182,25 @@ export function InterestsField({ register, errors, showRequiredAsterisk = false,
     }
   };
 
-  // Initialize selected interests from existing value
+  // Sync with watched value from react-hook-form (handles form reset properly)
   React.useEffect(() => {
-    const hiddenInput = document.getElementById(fieldId) as HTMLInputElement;
-    if (hiddenInput?.value) {
-      const existing = hiddenInput.value.split(', ').filter(i => i.trim());
-      setSelectedInterests(existing);
-    } else {
-      // Clear selections if no value
-      setSelectedInterests([]);
+    if (watchedValue !== undefined) {
+      const interests = watchedValue ? watchedValue.split(', ').filter(i => i.trim()) : [];
+      setSelectedInterests(interests);
     }
-  }, [fieldId]);
-  
-  // Watch for external value changes (form reset)
+  }, [watchedValue]);
+
+  // Initialize selected interests from existing value on mount (fallback)
   React.useEffect(() => {
-    const hiddenInput = document.getElementById(fieldId) as HTMLInputElement;
-    if (hiddenInput) {
-      const handleValueChange = () => {
-        if (hiddenInput.value) {
-          const existing = hiddenInput.value.split(', ').filter(i => i.trim());
-          setSelectedInterests(existing);
-        } else {
-          setSelectedInterests([]);
-        }
-      };
-      
-      // Add event listeners for value changes
-      hiddenInput.addEventListener('input', handleValueChange);
-      hiddenInput.addEventListener('change', handleValueChange);
-      
-      return () => {
-        hiddenInput.removeEventListener('input', handleValueChange);
-        hiddenInput.removeEventListener('change', handleValueChange);
-      };
+    // Only run if watchedValue is not provided (fallback behavior)
+    if (watchedValue === undefined) {
+      const hiddenInput = document.getElementById(fieldId) as HTMLInputElement;
+      if (hiddenInput?.value) {
+        const existing = hiddenInput.value.split(', ').filter(i => i.trim());
+        setSelectedInterests(existing);
+      }
     }
-  }, [fieldId, register]);
+  }, [fieldId, watchedValue]);
 
   return (
     <div>
