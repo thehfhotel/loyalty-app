@@ -530,6 +530,76 @@ jobs:
             exit 1
           fi
 
+      - name: "📊 Write test summary to job summary"
+        if: always()
+        run: |
+          UNIT_PASSED="${{ steps.unit-test-results.outputs.passed }}"
+          INTEGRATION_PASSED="${{ steps.integration-test-results.outputs.passed }}"
+
+          # Determine status emoji
+          if [ "$UNIT_PASSED" == "true" ]; then
+            UNIT_STATUS="✅ Passed"
+          else
+            UNIT_STATUS="❌ Failed"
+          fi
+
+          if [ "$INTEGRATION_PASSED" == "true" ]; then
+            INTEGRATION_STATUS="✅ Passed"
+          else
+            INTEGRATION_STATUS="❌ Failed"
+          fi
+
+          # Start summary
+          echo "## 🧪 Unit & Integration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|:-----------|:-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit Tests | $UNIT_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration Tests | $INTEGRATION_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Coverage report
+          if [ -f backend/coverage/coverage-summary.json ]; then
+            echo "## 📊 Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            LINES_COVERED=$(jq '.total.lines.covered' backend/coverage/coverage-summary.json)
+            LINES_TOTAL=$(jq '.total.lines.total' backend/coverage/coverage-summary.json)
+            LINES_PCT=$(jq '.total.lines.pct' backend/coverage/coverage-summary.json)
+
+            STMTS_COVERED=$(jq '.total.statements.covered' backend/coverage/coverage-summary.json)
+            STMTS_TOTAL=$(jq '.total.statements.total' backend/coverage/coverage-summary.json)
+            STMTS_PCT=$(jq '.total.statements.pct' backend/coverage/coverage-summary.json)
+
+            FUNCS_COVERED=$(jq '.total.functions.covered' backend/coverage/coverage-summary.json)
+            FUNCS_TOTAL=$(jq '.total.functions.total' backend/coverage/coverage-summary.json)
+            FUNCS_PCT=$(jq '.total.functions.pct' backend/coverage/coverage-summary.json)
+
+            BRANCHES_COVERED=$(jq '.total.branches.covered' backend/coverage/coverage-summary.json)
+            BRANCHES_TOTAL=$(jq '.total.branches.total' backend/coverage/coverage-summary.json)
+            BRANCHES_PCT=$(jq '.total.branches.pct' backend/coverage/coverage-summary.json)
+
+            echo "| Metric | Covered | Total | Percentage |" >> $GITHUB_STEP_SUMMARY
+            echo "|:-------|--------:|------:|-----------:|" >> $GITHUB_STEP_SUMMARY
+            echo "| Lines | $LINES_COVERED | $LINES_TOTAL | ${LINES_PCT}% |" >> $GITHUB_STEP_SUMMARY
+            echo "| Statements | $STMTS_COVERED | $STMTS_TOTAL | ${STMTS_PCT}% |" >> $GITHUB_STEP_SUMMARY
+            echo "| Functions | $FUNCS_COVERED | $FUNCS_TOTAL | ${FUNCS_PCT}% |" >> $GITHUB_STEP_SUMMARY
+            echo "| Branches | $BRANCHES_COVERED | $BRANCHES_TOTAL | ${BRANCHES_PCT}% |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Download reports info
+          echo "## 📥 Download Reports" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Coverage reports are available as workflow artifacts for 30 days." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Report | Path |" >> $GITHUB_STEP_SUMMARY
+          echo "|:-------|:-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| HTML Report | \`backend/coverage/lcov-report/index.html\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| LCOV Data | \`backend/coverage/lcov.info\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| JSON Summary | \`backend/coverage/coverage-summary.json\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
       # =========================================================================
       # FINAL: PR COMMENT & CLEANUP
       # =========================================================================
@@ -1065,6 +1135,45 @@ jobs:
             echo "passed=false" >> $GITHUB_OUTPUT
             exit 1
           fi
+
+      - name: "📊 Write E2E test summary to job summary"
+        if: always()
+        run: |
+          E2E_PASSED="${{ steps.e2e-results.outputs.passed }}"
+
+          # Determine status
+          if [ "$E2E_PASSED" == "true" ]; then
+            E2E_STATUS="✅ Passed"
+            STATUS_MSG="All E2E tests completed successfully!"
+          else
+            E2E_STATUS="❌ Failed"
+            STATUS_MSG="Some E2E tests failed. Check the Allure report for details."
+          fi
+
+          echo "## 🎭 E2E Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|:-----------|:-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Playwright E2E Tests | $E2E_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> $STATUS_MSG" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Test artifacts info
+          echo "## 📥 E2E Test Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "E2E test results are available as workflow artifacts for 7 days." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Artifact | Description |" >> $GITHUB_STEP_SUMMARY
+          echo "|:---------|:------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| \`allure-results-e2e-*\` | Allure test results for report generation |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Link to test reports page
+          echo "## 🔗 View Reports" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📊 [View Allure Report](https://jwinut.github.io/loyalty-app/test-reports/latest/)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
       - name: "📤 Upload E2E Allure results to GitHub artifacts"
         if: always()
