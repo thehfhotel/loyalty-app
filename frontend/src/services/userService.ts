@@ -12,7 +12,6 @@ export interface UserProfile {
   membershipId?: string;
   gender?: string;
   occupation?: string;
-  interests?: string[];
   profileCompleted?: boolean;
   profileCompletedAt?: string;
   newMemberCouponAwarded?: boolean;
@@ -93,7 +92,6 @@ export const userService = {
     dateOfBirth?: string;
     gender?: string;
     occupation?: string;
-    interests?: string[];
   }): Promise<{ profile: UserProfile; couponAwarded: boolean; coupon?: Coupon; pointsAwarded?: number }> {
     const response = await api.put('/users/complete-profile', data);
     return response.data.data;

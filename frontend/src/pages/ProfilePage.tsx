@@ -12,7 +12,6 @@ import { FiCopy, FiSettings } from 'react-icons/fi';
 import EmailDisplay from '../components/common/EmailDisplay';
 import MainLayout from '../components/layout/MainLayout';
 import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
-import { getTranslatedInterest } from '../utils/interestUtils';
 import SettingsModal from '../components/profile/SettingsModal';
 import EmojiAvatar from '../components/profile/EmojiAvatar';
 import { ConfirmDialog } from '../components/common/ConfirmDialog';
@@ -25,7 +24,6 @@ const profileSchema = z.object({
   dateOfBirth: z.string().optional(),
   gender: z.string().optional(),
   occupation: z.string().optional(),
-  interests: z.string().optional(), // Comma-separated string
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -81,9 +79,6 @@ export default function ProfilePage() {
           : '',
         gender: profileData.gender ?? '',
         occupation: profileData.occupation ?? '',
-        interests: Array.isArray(profileData.interests)
-          ? profileData.interests.join(', ')
-          : '',
       });
     } catch (error: unknown) {
       notify.error(t('profile.profileLoadError'));
@@ -97,7 +92,7 @@ export default function ProfilePage() {
     setIsSaving(true);
     try {
       // Check if this is a profile completion (has new fields)
-      const hasNewFields = data.dateOfBirth ?? data.gender ?? data.occupation ?? data.interests;
+      const hasNewFields = data.dateOfBirth ?? data.gender ?? data.occupation;
       
       let response;
       if (hasNewFields) {
@@ -109,7 +104,6 @@ export default function ProfilePage() {
           dateOfBirth: data.dateOfBirth ?? undefined,
           gender: data.gender ?? undefined,
           occupation: data.occupation ?? undefined,
-          interests: data.interests ? data.interests.split(',').map(i => i.trim()).filter(i => i) : undefined,
         });
         
         setProfile(response.profile);
@@ -346,24 +340,6 @@ export default function ProfilePage() {
                     <div>
                       <dt className="font-medium text-gray-500">{t('profile.occupation')}</dt>
                       <dd className="mt-1 text-gray-900">{profile.occupation}</dd>
-                    </div>
-                  )}
-
-                  {profile?.interests && profile.interests.length > 0 && (
-                    <div>
-                      <dt className="font-medium text-gray-500">{t('profile.interests')}</dt>
-                      <dd className="mt-1">
-                        <div className="flex flex-wrap gap-1">
-                          {profile.interests.map((interest, index) => (
-                            <span 
-                              key={index}
-                              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                            >
-                              {getTranslatedInterest(interest, t)}
-                            </span>
-                          ))}
-                        </div>
-                      </dd>
                     </div>
                   )}
 

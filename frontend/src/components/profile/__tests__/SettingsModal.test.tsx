@@ -25,7 +25,6 @@ const mockTranslate = vi.fn((key: string) => {
     'profile.dateOfBirth': 'Date of Birth',
     'profile.gender': 'Gender',
     'profile.occupation': 'Occupation',
-    'profile.interests': 'Interests',
   };
 
   return translations[key] || key;
@@ -86,12 +85,6 @@ vi.mock('../ProfileFormFields', () => ({
       {errors?.occupation && <span>{errors.occupation.message}</span>}
     </div>
   ),
-  InterestsField: ({ register, errors, watchedValue }: any) => (
-    <div data-testid="interests-field" data-watched-value={watchedValue}>
-      <input {...register('interests')} data-testid="interests-input" />
-      {errors?.interests && <span>{errors.interests.message}</span>}
-    </div>
-  ),
   DateOfBirthField: ({ register, errors }: any) => (
     <div data-testid="dob-field">
       <input {...register('dateOfBirth')} data-testid="dob-input" />
@@ -121,7 +114,6 @@ describe('SettingsModal', () => {
     membershipId: 'M123',
     gender: 'male',
     occupation: 'Engineer',
-    interests: ['Technology', 'Sports'],
     profileCompleted: true,
     createdAt: '2024-01-01',
     updatedAt: '2024-01-01',
@@ -229,7 +221,6 @@ describe('SettingsModal', () => {
       expect(screen.getByTestId('dob-field')).toBeInTheDocument();
       expect(screen.getByTestId('gender-field')).toBeInTheDocument();
       expect(screen.getByTestId('occupation-field')).toBeInTheDocument();
-      expect(screen.getByTestId('interests-field')).toBeInTheDocument();
     });
 
     it('should render field icons', () => {
@@ -748,14 +739,6 @@ describe('SettingsModal', () => {
       expect(emailInput).toHaveValue('newemail@example.com');
     });
 
-    it('should handle profile with null interests', () => {
-      const profileWithNullInterests = { ...mockProfile, interests: undefined };
-      render(<SettingsModal {...defaultProps} profile={profileWithNullInterests} />);
-
-      const interestsField = screen.getByTestId('interests-field');
-      expect(interestsField).toHaveAttribute('data-watched-value', '');
-    });
-
     it('should format dateOfBirth to ISO date string', () => {
       render(<SettingsModal {...defaultProps} />);
 
@@ -872,14 +855,6 @@ describe('SettingsModal', () => {
       expect(screen.getByText('Edit Profile')).toBeInTheDocument();
     });
 
-    it('should handle empty interests array', () => {
-      const profileWithEmptyInterests = { ...mockProfile, interests: [] };
-      render(<SettingsModal {...defaultProps} profile={profileWithEmptyInterests} />);
-
-      const interestsField = screen.getByTestId('interests-field');
-      expect(interestsField).toHaveAttribute('data-watched-value', '');
-    });
-
     it('should convert dateOfBirth Date object to string', () => {
       const profileWithDateObject = {
         ...mockProfile,
@@ -892,22 +867,4 @@ describe('SettingsModal', () => {
     });
   });
 
-  describe('Watch Functionality', () => {
-    it('should pass watched interests value to InterestsField', async () => {
-      const user = userEvent.setup();
-      render(<SettingsModal {...defaultProps} />);
-
-      const interestsField = screen.getByTestId('interests-field');
-      expect(interestsField).toHaveAttribute('data-watched-value', 'Technology, Sports');
-
-      // Type in the interests input to trigger watch
-      const interestsInput = screen.getByTestId('interests-input');
-      await user.clear(interestsInput);
-      await user.type(interestsInput, 'Gaming, Reading');
-
-      await waitFor(() => {
-        expect(interestsField).toHaveAttribute('data-watched-value', 'Gaming, Reading');
-      });
-    });
-  });
 });

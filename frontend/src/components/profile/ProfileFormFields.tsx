@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FiUser, FiBriefcase, FiHeart, FiCalendar } from 'react-icons/fi';
+import { FiUser, FiBriefcase, FiCalendar } from 'react-icons/fi';
 import { UseFormRegister, FieldErrors } from 'react-hook-form';
-import { getInterestOptions } from '../../utils/interestUtils';
 
 export interface ProfileFormData {
   firstName: string;
@@ -11,7 +10,6 @@ export interface ProfileFormData {
   dateOfBirth?: string;
   gender?: string;
   occupation?: string;
-  interests?: string;
   email?: string;
 }
 
@@ -20,7 +18,6 @@ interface ProfileFormFieldsProps {
   errors: FieldErrors<ProfileFormData>;
   showRequiredAsterisk?: boolean;
   isModal?: boolean;
-  watchedValue?: string; // For fields that need to sync with external value changes
 }
 
 export function GenderField({ register, errors, showRequiredAsterisk = false, isModal = false }: ProfileFormFieldsProps) {
@@ -151,133 +148,6 @@ export function OccupationField({ register, errors, showRequiredAsterisk = false
       </div>
       {errors.occupation && (
         <p className="mt-1 text-sm text-red-600">{String(errors.occupation.message) || 'Invalid value'}</p>
-      )}
-    </div>
-  );
-}
-
-export function InterestsField({ register, errors, showRequiredAsterisk = false, isModal = false, watchedValue }: ProfileFormFieldsProps) {
-  const { t } = useTranslation();
-  const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
-
-  // Create unique field ID to prevent conflicts between modal and profile page
-  const fieldId = isModal ? 'interests-modal' : 'interests';
-
-  // Get translated interest options
-  const interestOptions = getInterestOptions(t);
-
-  const handleInterestToggle = (displayName: string) => {
-    const newInterests = selectedInterests.includes(displayName)
-      ? selectedInterests.filter(i => i !== displayName)
-      : [...selectedInterests, displayName];
-
-    setSelectedInterests(newInterests);
-
-    // Update the hidden input field (store English display names)
-    const hiddenInput = document.getElementById(fieldId) as HTMLInputElement;
-    if (hiddenInput) {
-      hiddenInput.value = newInterests.join(', ');
-      hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
-      hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-  };
-
-  // Sync with watched value from react-hook-form (handles form reset properly)
-  React.useEffect(() => {
-    if (watchedValue !== undefined) {
-      const interests = watchedValue ? watchedValue.split(', ').filter(i => i.trim()) : [];
-      setSelectedInterests(interests);
-    }
-  }, [watchedValue]);
-
-  // Initialize selected interests from existing value on mount (fallback)
-  React.useEffect(() => {
-    // Only run if watchedValue is not provided (fallback behavior)
-    if (watchedValue === undefined) {
-      const hiddenInput = document.getElementById(fieldId) as HTMLInputElement;
-      if (hiddenInput?.value) {
-        const existing = hiddenInput.value.split(', ').filter(i => i.trim());
-        setSelectedInterests(existing);
-      }
-    }
-  }, [fieldId, watchedValue]);
-
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-3">
-        {!isModal && <FiHeart className="inline h-5 w-5 mr-2 text-gray-400" />}
-        {isModal && <FiHeart className="inline h-4 w-4 mr-2" />}
-        {t('profile.interests')} {showRequiredAsterisk && '*'}
-      </label>
-      
-      {/* Open Grid Layout - Same for both modal and profile page */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-3">
-        {interestOptions.map((option) => (
-          <label 
-            key={option.key}
-            className={`flex items-center space-x-2 p-2 rounded-lg border cursor-pointer transition-all ${
-              selectedInterests.includes(option.displayName)
-                ? 'bg-blue-50 border-blue-300 text-blue-800' 
-                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
-            }`}
-          >
-            <input
-              type="checkbox"
-              checked={selectedInterests.includes(option.displayName)}
-              onChange={() => handleInterestToggle(option.displayName)}
-              className={`rounded border-gray-300 focus:ring-2 ${
-                isModal 
-                  ? 'text-blue-600 focus:ring-blue-500' 
-                  : 'text-primary-600 focus:ring-primary-500'
-              }`}
-            />
-            <span className="text-xs font-medium leading-tight">{option.translatedName}</span>
-          </label>
-        ))}
-      </div>
-      
-      {/* Hidden input for form registration */}
-      <input
-        type="hidden"
-        id={fieldId}
-        {...register('interests')}
-      />
-      
-      <p className="text-xs text-gray-500 mb-2">
-        {t('profile.selectInterestsHelp', 'Select all interests that match your preferences')}
-      </p>
-      
-      {selectedInterests.length > 0 && (
-        <div className="mb-2">
-          <p className="text-xs text-gray-600 mb-1">{t('profile.selectedInterests', 'Selected')} ({selectedInterests.length}):</p>
-          <div className="flex flex-wrap gap-1">
-            {selectedInterests.map((interest, index) => {
-              // Find the translated name for this interest
-              const option = interestOptions.find(opt => opt.displayName === interest);
-              const displayText = option ? option.translatedName : interest;
-              
-              return (
-                <span 
-                  key={index}
-                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                >
-                  {displayText}
-                  <button
-                    type="button"
-                    onClick={() => handleInterestToggle(interest)}
-                    className="ml-1 text-blue-600 hover:text-blue-800 focus:outline-none"
-                  >
-                    ×
-                  </button>
-                </span>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      
-      {errors.interests && (
-        <p className="mt-1 text-sm text-red-600">{String(errors.interests.message) || 'Invalid value'}</p>
       )}
     </div>
   );

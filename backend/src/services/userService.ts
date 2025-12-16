@@ -81,13 +81,12 @@ export class UserService {
       throw new AppError(404, 'Profile not found');
     }
 
-    // Extract gender, occupation, interests from preferences for frontend convenience
+    // Extract gender, occupation from preferences for frontend convenience
     const prefs = profile.preferences as Record<string, unknown> | null;
     return {
       ...profile,
       gender: prefs?.gender as string | undefined,
       occupation: prefs?.occupation as string | undefined,
-      interests: prefs?.interests as string[] | undefined,
     };
   }
 
@@ -116,11 +115,10 @@ export class UserService {
       values.push(data.dateOfBirth);
     }
 
-    // Handle preferences - merge gender, occupation, interests into preferences JSON
+    // Handle preferences - merge gender, occupation into preferences JSON
     const hasPreferencesUpdate = data.preferences !== undefined ||
       data.gender !== undefined ||
-      data.occupation !== undefined ||
-      data.interests !== undefined;
+      data.occupation !== undefined;
 
     if (hasPreferencesUpdate) {
       // Get current preferences to merge with new values
@@ -135,7 +133,6 @@ export class UserService {
         ...(data.preferences ?? {}),
         ...(data.gender !== undefined && { gender: data.gender }),
         ...(data.occupation !== undefined && { occupation: data.occupation }),
-        ...(data.interests !== undefined && { interests: data.interests }),
       };
 
       updateFields.push(`preferences = $${paramCount++}`);
@@ -170,13 +167,12 @@ export class UserService {
       throw new AppError(404, 'Profile not found');
     }
 
-    // Extract gender, occupation, interests from preferences for frontend convenience
+    // Extract gender, occupation from preferences for frontend convenience
     const prefs = updatedProfile.preferences as Record<string, unknown> | null;
     return {
       ...updatedProfile,
       gender: prefs?.gender as string | undefined,
       occupation: prefs?.occupation as string | undefined,
-      interests: prefs?.interests as string[] | undefined,
     };
   }
 
@@ -282,7 +278,6 @@ export class UserService {
     dateOfBirth?: string;
     gender?: string;
     occupation?: string;
-    interests?: string[];
   }): Promise<ProfileUpdateResult> {
     // Update profile with new data
     const updateFields: string[] = [];
@@ -306,10 +301,9 @@ export class UserService {
       values.push(data.dateOfBirth);
     }
 
-    // Handle preferences - merge gender, occupation, interests into preferences JSON
+    // Handle preferences - merge gender, occupation into preferences JSON
     const hasPreferencesUpdate = data.gender !== undefined ||
-      data.occupation !== undefined ||
-      data.interests !== undefined;
+      data.occupation !== undefined;
 
     if (hasPreferencesUpdate) {
       // Get current preferences to merge with new values
@@ -323,7 +317,6 @@ export class UserService {
         ...currentPrefs,
         ...(data.gender !== undefined && { gender: data.gender }),
         ...(data.occupation !== undefined && { occupation: data.occupation }),
-        ...(data.interests !== undefined && { interests: data.interests }),
       };
 
       updateFields.push(`preferences = $${paramCount++}`);
@@ -365,13 +358,12 @@ export class UserService {
       throw new AppError(404, 'Profile not found');
     }
 
-    // Extract gender, occupation, interests from preferences for frontend convenience
+    // Extract gender, occupation from preferences for frontend convenience
     const prefs = updatedProfile.preferences as Record<string, unknown> | null;
     const profileWithExtractedFields = {
       ...updatedProfile,
       gender: prefs?.gender as string | undefined,
       occupation: prefs?.occupation as string | undefined,
-      interests: prefs?.interests as string[] | undefined,
     };
 
     // Note: Profile completion rewards will be implemented when the feature columns are added

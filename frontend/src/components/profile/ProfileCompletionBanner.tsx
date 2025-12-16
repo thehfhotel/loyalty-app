@@ -8,7 +8,7 @@ import { useAuthStore } from '../../store/authStore';
 import { userService } from '../../services/userService';
 import { notify } from '../../utils/notificationManager';
 import { logger } from '../../utils/logger';
-import { GenderField, OccupationField, InterestsField, DateOfBirthField } from './ProfileFormFields';
+import { GenderField, OccupationField, DateOfBirthField } from './ProfileFormFields';
 
 interface ProfileStatus {
   isComplete: boolean;
@@ -26,7 +26,6 @@ const profileCompletionSchema = z.object({
   dateOfBirth: z.string().optional(),
   gender: z.string().optional(),
   occupation: z.string().optional(),
-  interests: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().optional(),
 });
@@ -131,7 +130,6 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
         dateOfBirth: data.dateOfBirth ?? undefined,
         gender: data.gender ?? undefined,
         occupation: data.occupation ?? undefined,
-        interests: data.interests ? data.interests.split(',').map(i => i.trim()).filter(i => i) : undefined,
       });
 
       // Show reward notifications
@@ -183,7 +181,6 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
         case 'date_of_birth': return t('profile.dateOfBirth');
         case 'gender': return t('profile.gender');
         case 'occupation': return t('profile.occupation');
-        case 'interests': return t('profile.interests');
         case 'phone': return t('profile.phone');
         default: {
           // Fallback for unknown fields - capitalize and remove underscores
@@ -333,16 +330,7 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
                         )}
 
                         {profileStatus?.missingFields?.includes('occupation') && (
-                          <OccupationField 
-                            register={register}
-                            errors={errors}
-                            showRequiredAsterisk={true}
-                            isModal={true}
-                          />
-                        )}
-
-                        {profileStatus?.missingFields?.includes('interests') && (
-                          <InterestsField 
+                          <OccupationField
                             register={register}
                             errors={errors}
                             showRequiredAsterisk={true}

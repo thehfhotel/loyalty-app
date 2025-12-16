@@ -20,7 +20,6 @@ const mockTranslate = vi.fn((key: string, params?: any) => {
     'profile.dateOfBirth': 'Date of Birth',
     'profile.gender': 'Gender',
     'profile.occupation': 'Occupation',
-    'profile.interests': 'Interests',
     'profile.phone': 'Phone',
     'common.and': 'and',
     'profile.profileCompleted': 'Profile completed successfully',
@@ -55,7 +54,6 @@ vi.mock('../../../utils/notificationManager');
 vi.mock('../ProfileFormFields', () => ({
   GenderField: () => <div data-testid="gender-field">Gender Field</div>,
   OccupationField: () => <div data-testid="occupation-field">Occupation Field</div>,
-  InterestsField: () => <div data-testid="interests-field">Interests Field</div>,
   DateOfBirthField: () => <div data-testid="dob-field">Date of Birth Field</div>,
 }));
 
@@ -480,19 +478,6 @@ describe('ProfileCompletionBanner', () => {
       });
     });
 
-    it('should handle interests field name', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
-        isComplete: false,
-        missingFields: ['interests'],
-        newMemberCouponAvailable: true,
-      });
-
-      render(<ProfileCompletionBanner />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Missing: Interests')).toBeInTheDocument();
-      });
-    });
   });
 
   describe('Modal Open/Close', () => {
@@ -791,26 +776,6 @@ describe('ProfileCompletionBanner', () => {
       });
     });
 
-    it('should render interests field component when missing', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
-        isComplete: false,
-        missingFields: ['interests'],
-        newMemberCouponAvailable: true,
-      });
-
-      render(<ProfileCompletionBanner />);
-
-      await waitFor(() => {
-        const openButton = screen.getAllByText('Complete Profile')[0];
-        if (!openButton) throw new Error('Open button not found');
-        fireEvent.click(openButton);
-      });
-
-      await waitFor(() => {
-        expect(screen.getByTestId('interests-field')).toBeInTheDocument();
-      });
-    });
-
     it('should render multiple fields when multiple missing', async () => {
       (userService.getProfileCompletionStatus as any).mockResolvedValue({
         isComplete: false,
@@ -874,7 +839,6 @@ describe('ProfileCompletionBanner', () => {
           dateOfBirth: undefined,
           gender: undefined,
           occupation: undefined,
-          interests: undefined,
         });
       });
     });

@@ -10,7 +10,7 @@ import EmojiAvatar from './EmojiAvatar';
 import { EmojiSelectorInline } from './EmojiSelector';
 import { notify } from '../../utils/notificationManager';
 import { extractEmojiFromUrl } from '../../utils/emojiUtils';
-import { GenderField, OccupationField, InterestsField, DateOfBirthField } from './ProfileFormFields';
+import { GenderField, OccupationField, DateOfBirthField } from './ProfileFormFields';
 
 const profileSchema = z.object({
   email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
@@ -20,7 +20,6 @@ const profileSchema = z.object({
   dateOfBirth: z.string().optional(),
   gender: z.string().optional(),
   occupation: z.string().optional(),
-  interests: z.string().optional(), // Comma-separated string
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -59,7 +58,6 @@ export default function SettingsModal({
     handleSubmit,
     formState: { errors },
     reset,
-    watch,
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
@@ -72,12 +70,8 @@ export default function SettingsModal({
         : '',
       gender: profile?.gender ?? '',
       occupation: profile?.occupation ?? '',
-      interests: profile?.interests?.join(', ') ?? '',
     }
   });
-
-  // Watch the interests field to sync with InterestsField component
-  const watchedInterests = watch('interests');
 
   // Reset form when profile or user changes
   React.useEffect(() => {
@@ -87,12 +81,11 @@ export default function SettingsModal({
         firstName: profile.firstName,
         lastName: profile.lastName,
         phone: profile.phone ?? '',
-        dateOfBirth: profile.dateOfBirth 
-          ? new Date(profile.dateOfBirth).toISOString().split('T')[0] 
+        dateOfBirth: profile.dateOfBirth
+          ? new Date(profile.dateOfBirth).toISOString().split('T')[0]
           : '',
         gender: profile.gender ?? '',
         occupation: profile.occupation ?? '',
-        interests: profile.interests?.join(', ') ?? '',
       });
     }
   }, [profile, user, reset]);
@@ -328,17 +321,10 @@ export default function SettingsModal({
                 isModal={false}
               />
 
-              <OccupationField 
+              <OccupationField
                 register={register}
                 errors={errors}
                 isModal={false}
-              />
-
-              <InterestsField
-                register={register}
-                errors={errors}
-                isModal={false}
-                watchedValue={watchedInterests}
               />
 
               <div className="flex justify-end space-x-3 pt-4">

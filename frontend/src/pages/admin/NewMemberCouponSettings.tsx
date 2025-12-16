@@ -172,7 +172,7 @@ export default function NewMemberCouponSettings() {
                 <p className="font-medium mb-1">How it works:</p>
                 <ul className="space-y-1 list-disc list-inside">
                   <li>New users see a banner prompting them to complete their profile</li>
-                  <li>When they fill in all required fields (name, birthday, gender, occupation, interests), they automatically receive the configured rewards</li>
+                  <li>When they fill in all required fields (name, birthday, gender, occupation), they automatically receive the configured rewards</li>
                   <li>You can award a coupon, loyalty points, or both</li>
                   <li>Each user can only receive these rewards once</li>
                 </ul>

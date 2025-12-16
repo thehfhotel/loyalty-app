@@ -53,7 +53,6 @@ export interface UserProfile {
   membershipId?: string;
   gender?: string;
   occupation?: string;
-  interests?: string[];
   profileCompleted?: boolean;
   profileCompletedAt?: Date;
   newMemberCouponAwarded?: boolean;
