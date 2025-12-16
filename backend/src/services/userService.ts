@@ -108,9 +108,31 @@ export class UserService {
       updateFields.push(`date_of_birth = $${paramCount++}`);
       values.push(data.dateOfBirth);
     }
-    if (data.preferences !== undefined) {
+
+    // Handle preferences - merge gender, occupation, interests into preferences JSON
+    const hasPreferencesUpdate = data.preferences !== undefined ||
+      data.gender !== undefined ||
+      data.occupation !== undefined ||
+      data.interests !== undefined;
+
+    if (hasPreferencesUpdate) {
+      // Get current preferences to merge with new values
+      const [currentProfile] = await query<{ preferences: Record<string, unknown> | null }>(
+        'SELECT preferences FROM user_profiles WHERE user_id = $1',
+        [userId]
+      );
+
+      const currentPrefs = (currentProfile?.preferences as Record<string, unknown>) || {};
+      const newPrefs = {
+        ...currentPrefs,
+        ...(data.preferences ?? {}),
+        ...(data.gender !== undefined && { gender: data.gender }),
+        ...(data.occupation !== undefined && { occupation: data.occupation }),
+        ...(data.interests !== undefined && { interests: data.interests }),
+      };
+
       updateFields.push(`preferences = $${paramCount++}`);
-      values.push(data.preferences);
+      values.push(newPrefs);
     }
 
     if (updateFields.length === 0) {

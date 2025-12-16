@@ -11,6 +11,10 @@ export const updateProfileSchema = z.object({
     })
     .optional(),
   preferences: z.record(z.unknown()).optional(),
+  // Additional profile fields stored in preferences JSON
+  gender: z.string().optional(),
+  occupation: z.string().optional(),
+  interests: z.array(z.string()).optional(),
 });
 
 export interface ProfileUpdate {
