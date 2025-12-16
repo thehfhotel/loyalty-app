@@ -1,0 +1,42 @@
+name: Deploy Workflow Auto-Retry
+
+on:
+  workflow_run:
+    workflows: ["Optimized CI/CD Pipeline with Security & Testing"]
+    types:
+      - completed
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  retry-once:
+    name: "🔁 Retry deploy workflow (once)"
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.run_attempt == 1 &&
+      contains(fromJson('["failure","timed_out","startup_failure"]'), github.event.workflow_run.conclusion)
+
+    steps:
+      - name: "🔁 Request rerun"
+        uses: actions/github-script@60a0edeb27ef6df274b9e29c456255c2195ef30d # v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const runId = context.payload.workflow_run.id;
+            const attempt = context.payload.workflow_run.run_attempt;
+            const conclusion = context.payload.workflow_run.conclusion;
+
+            core.info(`Requesting rerun for workflow_run ${runId} (attempt ${attempt}, conclusion ${conclusion})`);
+
+            await github.rest.actions.reRunWorkflow({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+            });
+
+            core.summary
+              .addHeading('Deploy workflow retry requested')
+              .addRaw(`Run ID: ${runId} | Attempt: ${attempt} | Conclusion: ${conclusion} -> rerun requested`, true);
+            await core.summary.write();

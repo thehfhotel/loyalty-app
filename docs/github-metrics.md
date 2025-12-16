@@ -53,6 +53,13 @@ Time to fix: avg 9.78h | median 20.8m (27 incidents)
   - Uses `GITHUB_TOKEN` and passes `--repo "$GITHUB_REPOSITORY"` to avoid relying on local git remotes
   - Output: appends the metrics to the workflow summary (`$GITHUB_STEP_SUMMARY`) for easy viewing on the run page
 
+## Deploy auto-retry
+
+- Workflow: `.github/workflows/deploy-autoretry.yml`
+- Behavior: if the deploy workflow (`Optimized CI/CD Pipeline with Security & Testing`) ends in `failure`/`timed_out` on its first attempt, it auto-requests a full rerun (one retry max). Canceled/approval-rejected runs are ignored.
+- Permissions: `actions:write`, `contents:read`
+- Runner: `ubuntu-latest`
+- Summary: adds a short note to the retry workflow’s run summary when a rerun is requested.
 ## Interpretation notes
 
 - Flaky rate flags commits where at least one failed attempt was followed by a success on the same SHA. It does not inspect job-level test details or artifact data.
