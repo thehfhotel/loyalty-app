@@ -22,7 +22,7 @@ permissions:
 
 env:
   NODE_VERSION: 24
-  CACHE_VERSION: v2
+  CACHE_VERSION: v3
 
 jobs:
   # =============================================================================
