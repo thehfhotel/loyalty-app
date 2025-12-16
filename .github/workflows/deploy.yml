@@ -711,17 +711,18 @@ jobs:
         run: |
           echo "🚀 Starting isolated application stack for E2E tests..."
 
-          # Create E2E admin config file (ensures it exists for volume mount)
+          # Create E2E admin config (overwrites default for E2E testing)
+          # This gets baked into the Docker image during build
           echo "📝 Creating E2E admin configuration..."
           mkdir -p backend/config
-          cat > backend/config/admins.e2e.json << 'ADMINS_EOF'
+          cat > backend/config/admins.json << 'ADMINS_EOF'
           {
             "adminEmails": ["e2e-admin@test.local"],
             "superAdminEmails": ["e2e-admin@test.local"],
-            "description": "E2E test admin configuration"
+            "description": "E2E test admin configuration - created by CI workflow"
           }
           ADMINS_EOF
-          echo "✅ E2E admin config created"
+          echo "✅ E2E admin config created (will be included in Docker build)"
 
           # Create the E2E Docker Compose file with host networking
           echo "📝 Creating E2E Docker Compose configuration with host network..."
@@ -790,9 +791,6 @@ jobs:
                   condition: service_healthy
                 redis:
                   condition: service_healthy
-              volumes:
-                # Mount E2E-specific admin config for testing
-                - ./backend/config/admins.e2e.json:/app/config/admins.json:ro
               healthcheck:
                 test: ["CMD-SHELL", "curl -f http://localhost:4202/api/health || exit 1"]
                 interval: 10s

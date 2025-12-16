@@ -1,9 +1,0 @@
-{
-  "adminEmails": [
-    "e2e-admin@test.local"
-  ],
-  "superAdminEmails": [
-    "e2e-admin@test.local"
-  ],
-  "description": "E2E test admin configuration. This file is mounted in E2E Docker containers only and is isolated from dev/prod environments."
-}
