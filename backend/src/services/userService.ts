@@ -60,7 +60,7 @@ export class UserService {
   // private notificationService = new NotificationService();
 
   async getProfile(userId: string): Promise<UserProfile> {
-    const [profile] = await query<UserProfile>(
+    const [profile] = await query<UserProfile & { preferences?: Record<string, unknown> }>(
       `SELECT
         user_id AS "userId",
         first_name AS "firstName",
@@ -81,7 +81,14 @@ export class UserService {
       throw new AppError(404, 'Profile not found');
     }
 
-    return profile;
+    // Extract gender, occupation, interests from preferences for frontend convenience
+    const prefs = profile.preferences as Record<string, unknown> | null;
+    return {
+      ...profile,
+      gender: prefs?.gender as string | undefined,
+      occupation: prefs?.occupation as string | undefined,
+      interests: prefs?.interests as string[] | undefined,
+    };
   }
 
   async updateProfile(
@@ -141,11 +148,11 @@ export class UserService {
 
     values.push(userId);
 
-    const [updatedProfile] = await query<UserProfile>(
-      `UPDATE user_profiles 
+    const [updatedProfile] = await query<UserProfile & { preferences?: Record<string, unknown> }>(
+      `UPDATE user_profiles
       SET ${updateFields.join(', ')}
       WHERE user_id = $${paramCount}
-      RETURNING 
+      RETURNING
         user_id AS "userId",
         first_name AS "firstName",
         last_name AS "lastName",
@@ -163,7 +170,14 @@ export class UserService {
       throw new AppError(404, 'Profile not found');
     }
 
-    return updatedProfile;
+    // Extract gender, occupation, interests from preferences for frontend convenience
+    const prefs = updatedProfile.preferences as Record<string, unknown> | null;
+    return {
+      ...updatedProfile,
+      gender: prefs?.gender as string | undefined,
+      occupation: prefs?.occupation as string | undefined,
+      interests: prefs?.interests as string[] | undefined,
+    };
   }
 
   async updateAvatar(userId: string, avatarUrl: string): Promise<void> {
@@ -266,6 +280,9 @@ export class UserService {
     lastName?: string;
     phone?: string;
     dateOfBirth?: string;
+    gender?: string;
+    occupation?: string;
+    interests?: string[];
   }): Promise<ProfileUpdateResult> {
     // Update profile with new data
     const updateFields: string[] = [];
@@ -289,6 +306,30 @@ export class UserService {
       values.push(data.dateOfBirth);
     }
 
+    // Handle preferences - merge gender, occupation, interests into preferences JSON
+    const hasPreferencesUpdate = data.gender !== undefined ||
+      data.occupation !== undefined ||
+      data.interests !== undefined;
+
+    if (hasPreferencesUpdate) {
+      // Get current preferences to merge with new values
+      const [currentProfile] = await query<{ preferences: Record<string, unknown> | null }>(
+        'SELECT preferences FROM user_profiles WHERE user_id = $1',
+        [userId]
+      );
+
+      const currentPrefs = (currentProfile?.preferences as Record<string, unknown>) ?? {};
+      const newPrefs = {
+        ...currentPrefs,
+        ...(data.gender !== undefined && { gender: data.gender }),
+        ...(data.occupation !== undefined && { occupation: data.occupation }),
+        ...(data.interests !== undefined && { interests: data.interests }),
+      };
+
+      updateFields.push(`preferences = $${paramCount++}`);
+      values.push(newPrefs);
+    }
+
     if (updateFields.length === 0) {
       const currentProfile = await this.getProfile(userId);
       return {
@@ -302,7 +343,7 @@ export class UserService {
     values.push(userId);
 
     // Get updated profile to check completion status
-    const [updatedProfile] = await query<UserProfile>(
+    const [updatedProfile] = await query<UserProfile & { preferences?: Record<string, unknown> }>(
       `UPDATE user_profiles
       SET ${updateFields.join(', ')}, updated_at = NOW()
       WHERE user_id = $${paramCount}
@@ -324,9 +365,18 @@ export class UserService {
       throw new AppError(404, 'Profile not found');
     }
 
+    // Extract gender, occupation, interests from preferences for frontend convenience
+    const prefs = updatedProfile.preferences as Record<string, unknown> | null;
+    const profileWithExtractedFields = {
+      ...updatedProfile,
+      gender: prefs?.gender as string | undefined,
+      occupation: prefs?.occupation as string | undefined,
+      interests: prefs?.interests as string[] | undefined,
+    };
+
     // Note: Profile completion rewards will be implemented when the feature columns are added
     return {
-      profile: updatedProfile,
+      profile: profileWithExtractedFields,
       couponAwarded: false,
       coupon: null as CouponData | null,
       pointsAwarded: 0
