@@ -45,7 +45,7 @@ export default function DashboardPage() {
                       <FiGift className="w-8 h-8" style={{ color: loyaltyStatus.tier_color }} />
                     </div>
                     <div>
-                      <h2 className="text-xl font-bold text-gray-900">
+                      <h2 className="text-xl font-bold text-gray-900" data-testid="loyalty-tier">
                         {t('loyalty.tier')} {loyaltyStatus.tier_name}
                       </h2>
                     </div>
@@ -64,7 +64,7 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div>
-                        <div className="text-2xl font-bold" style={{ color: loyaltyStatus.tier_color }}>
+                        <div className="text-2xl font-bold" style={{ color: loyaltyStatus.tier_color }} data-testid="loyalty-points">
                           {loyaltyStatus.current_points.toLocaleString()}
                         </div>
                         <div className="text-sm text-gray-600">
