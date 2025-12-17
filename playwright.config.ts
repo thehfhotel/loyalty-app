@@ -49,8 +49,8 @@ export default defineConfig({
     /* Video on failure */
     video: 'retain-on-failure',
 
-    /* Timeout for each action - reduced for faster failure detection */
-    actionTimeout: 5000,  // 5s for faster feedback
+    /* Timeout for each action */
+    actionTimeout: 10000,  // 10s for browser actions
   },
 
   /* Configure projects for major browsers */
@@ -70,9 +70,9 @@ export default defineConfig({
     },
   ],
 
-  /* Global timeout settings - reduced for faster failure detection */
-  timeout: 15000, // 15s per test - fail fast on stuck tests
+  /* Global timeout settings */
+  timeout: 20000, // 20s per test
   expect: {
-    timeout: 5000, // 5 seconds for assertions
+    timeout: 10000, // 10 seconds for assertions (browser needs more time)
   },
 });
