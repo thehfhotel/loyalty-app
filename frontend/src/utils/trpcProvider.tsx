@@ -3,25 +3,42 @@
  * Wraps the app to provide tRPC and React Query functionality
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
 import { trpc } from './trpc';
 import { API_BASE_URL } from './apiConfig';
 import { useAuthStore } from '../store/authStore';
-import { getCsrfToken } from './axiosInterceptor';
+import { fetchCsrfToken } from './axiosInterceptor';
 
-// Log tRPC configuration for E2E debugging
 const TRPC_URL = `${API_BASE_URL}/trpc`;
-console.log('[trpcProvider] tRPC URL:', TRPC_URL);
+
+// Module-level CSRF token cache for synchronous access
+let cachedCsrfToken: string | null = null;
 
 export function TRPCProvider({ children }: { children: React.ReactNode }) {
+  // Pre-fetch CSRF token on mount (only once)
+  useEffect(() => {
+    if (!cachedCsrfToken) {
+      fetchCsrfToken()
+        .then((token) => {
+          cachedCsrfToken = token;
+        })
+        .catch(() => {
+          // Silent fail - will retry on next mutation
+        });
+    }
+  }, []);
+
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: {
         refetchOnWindowFocus: false,
         retry: 1,
         staleTime: 5 * 60 * 1000, // 5 minutes
+      },
+      mutations: {
+        retry: 0, // Don't retry mutations automatically
       },
     },
   }));
@@ -31,56 +48,24 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
       links: [
         httpBatchLink({
           url: TRPC_URL,
-          // Include credentials (cookies) in requests
           fetch(url, options) {
-            // Log headers to debug auth issues
-            const headers = options?.headers as Record<string, string> | undefined;
-            console.error('[tRPC fetch] Request headers:', {
-              hasAuthHeader: !!headers?.authorization || !!headers?.Authorization,
-              authHeaderPreview: headers?.authorization?.substring(0, 30) || headers?.Authorization?.substring(0, 30) || 'none',
-              allHeaders: Object.keys(headers || {})
-            });
-            console.log('[tRPC fetch] Making request:', {
-              url: typeof url === 'string' ? url : url.toString(),
-              method: options?.method || 'GET',
-            });
-            const fetchPromise = fetch(url, {
+            return fetch(url, {
               ...options,
               credentials: 'include',
             });
-            fetchPromise.then(
-              (res) => console.log('[tRPC fetch] Response:', res.status, res.statusText),
-              (err) => console.log('[tRPC fetch] Error:', err.message)
-            );
-            return fetchPromise;
           },
-          // Add auth headers and CSRF token from zustand store (reads from in-memory state)
-          async headers() {
-            // Read token directly from zustand store state (synchronous)
+          // Add auth headers and CSRF token synchronously
+          headers() {
             const state = useAuthStore.getState();
             const token = state.accessToken;
-            // Use console.error for logging so it's not stripped in production builds
-            console.error('[tRPC headers] Auth state:', {
-              hasToken: !!token,
-              isAuthenticated: state.isAuthenticated,
-              hasUser: !!state.user,
-              tokenPrefix: token ? token.substring(0, 20) + '...' : null
-            });
-
-            // Get CSRF token for mutations
-            let csrfToken: string | undefined;
-            try {
-              csrfToken = await getCsrfToken();
-            } catch {
-              console.warn('[tRPC headers] Could not get CSRF token');
-            }
 
             const headers: Record<string, string> = {};
             if (token) {
               headers.authorization = `Bearer ${token}`;
             }
-            if (csrfToken) {
-              headers['X-CSRF-Token'] = csrfToken;
+            // Use cached CSRF token (pre-fetched on mount)
+            if (cachedCsrfToken) {
+              headers['X-CSRF-Token'] = cachedCsrfToken;
             }
             return headers;
           },
@@ -96,4 +81,11 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
       </QueryClientProvider>
     </trpc.Provider>
   );
+}
+
+/**
+ * Clear the cached CSRF token (call on logout)
+ */
+export function clearTrpcCsrfToken(): void {
+  cachedCsrfToken = null;
 }
