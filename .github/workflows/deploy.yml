@@ -1110,9 +1110,9 @@ jobs:
             exit 1
           fi
 
-          # Run all E2E tests against isolated environment (BLOCKING - must pass to succeed)
-          echo "🎭 Running E2E tests - failures will BLOCK the pipeline..."
-          npx playwright test
+          # Run all E2E tests (API + browser projects) against isolated environment (BLOCKING - must pass to succeed)
+          echo "🎭 Running E2E tests (api + browser projects) - failures will BLOCK the pipeline..."
+          npx playwright test --project=api --project=browser
 
       - name: "🗄️ Verify database migration rollback safety (non-blocking)"
         run: |
