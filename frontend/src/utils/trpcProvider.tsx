@@ -49,9 +49,15 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
           // Add auth headers from zustand store (reads from in-memory state)
           headers() {
             // Read token directly from zustand store state (synchronous)
-            // This is more reliable than reading from localStorage which is async
-            const token = useAuthStore.getState().accessToken;
-            console.log('[tRPC headers] Token present:', !!token);
+            const state = useAuthStore.getState();
+            const token = state.accessToken;
+            // Use console.error for logging so it's not stripped in production builds
+            console.error('[tRPC headers] Auth state:', {
+              hasToken: !!token,
+              isAuthenticated: state.isAuthenticated,
+              hasUser: !!state.user,
+              tokenPrefix: token ? token.substring(0, 20) + '...' : null
+            });
             return token ? { authorization: `Bearer ${token}` } : {};
           },
         }),

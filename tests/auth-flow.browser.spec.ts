@@ -3,10 +3,17 @@ import { loginViaUI, logout, TEST_USER, getAuthState } from './helpers/auth';
 
 test.describe('Auth flow (browser)', () => {
   test.beforeEach(async ({ page }) => {
-    // Capture console logs for debugging
+    // Capture console logs for debugging - include tRPC headers and all auth/trpc related logs
+    // Also capture errors since console.error is not stripped in production builds
     page.on('console', msg => {
-      if (msg.text().includes('apiConfig') || msg.text().includes('trpcProvider') || msg.text().includes('Auth Debug') || msg.text().includes('tRPC fetch')) {
-        console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`);
+      const text = msg.text();
+      const type = msg.type();
+      // Always capture errors
+      if (type === 'error') {
+        console.log(`[Browser Console] ${type}: ${text}`);
+      } else if (text.includes('apiConfig') || text.includes('trpcProvider') || text.includes('Auth Debug') ||
+          text.includes('tRPC fetch') || text.includes('tRPC headers') || text.includes('auth-storage')) {
+        console.log(`[Browser Console] ${type}: ${text}`);
       }
     });
 
@@ -19,6 +26,18 @@ test.describe('Auth flow (browser)', () => {
     await loginViaUI(page, TEST_USER.email, TEST_USER.password);
 
     await expect(page).toHaveURL(/\/dashboard/);
+
+    // Log the auth state from localStorage to verify tokens are stored
+    const authState = await page.evaluate(() => {
+      const stored = localStorage.getItem('auth-storage');
+      return stored ? JSON.parse(stored) : null;
+    });
+    console.log('[Test] Auth state after login:', JSON.stringify(authState?.state ? {
+      hasToken: !!authState.state.accessToken,
+      hasRefreshToken: !!authState.state.refreshToken,
+      isAuthenticated: authState.state.isAuthenticated,
+      hasUser: !!authState.state.user
+    } : null));
 
     // Wait for loading to finish (either data loads, error occurs, or timeout)
     // Check which state the dashboard is in for debugging
