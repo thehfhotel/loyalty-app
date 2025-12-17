@@ -18,7 +18,10 @@ const profileSchema = z.object({
   email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
   firstName: z.string().min(1, 'First name is required'),
   lastName: z.string().optional(),
-  phone: z.string().optional(),
+  phone: z.string()
+    .regex(/^[+\d\s()-]{6,}$/, 'Please enter a valid phone number')
+    .optional()
+    .or(z.literal('')),
   dateOfBirth: z.string().optional(),
   gender: z.string().optional(),
   occupation: z.string().optional(),

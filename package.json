@@ -12,7 +12,7 @@
     "test:unit": "cd backend && npm run test:unit",
     "test:integration": "cd backend && npm run test:integration",
     "test:e2e": "E2E_BACKEND_PORT=4202 E2E_DB_PORT=5436 E2E_REDIS_PORT=6381 npx playwright test",
-    "test:build-validation": "npx playwright test tests/build-validation.spec.ts",
+    "test:build-validation": "npx playwright test tests/build-validation.api.spec.ts",
     "test:coverage": "cd backend && npm run test:coverage",
     "lint": "npm run lint:backend && npm run lint:frontend",
     "lint:backend": "cd backend && npm run lint",

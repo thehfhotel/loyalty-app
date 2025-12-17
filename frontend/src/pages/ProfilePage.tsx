@@ -21,7 +21,10 @@ const profileSchema = z.object({
   email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
   firstName: z.string().min(1, 'First name is required'),
   lastName: z.string().optional(),
-  phone: z.string().optional(),
+  phone: z.string()
+    .regex(/^[+\d\s()-]{6,}$/, 'Please enter a valid phone number')
+    .optional()
+    .or(z.literal('')),
   dateOfBirth: z.string().optional(),
   gender: z.string().optional(),
   occupation: z.string().optional(),
@@ -257,7 +260,7 @@ export default function ProfilePage() {
               
               <div className="flex-1 min-w-0">
                 <div className="flex items-center space-x-3 mb-4">
-                  <h3 className="text-lg font-medium text-gray-900">
+                  <h3 className="text-lg font-medium text-gray-900" data-testid="profile-name">
                     {profile ? `${profile.firstName} ${profile.lastName}` : 'Loading...'}
                   </h3>
                   {user?.role && user.role !== 'customer' && (
@@ -279,7 +282,7 @@ export default function ProfilePage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                   <div>
                     <dt className="font-medium text-gray-500">{t('profile.email')}</dt>
-                    <dd className="mt-1">
+                    <dd className="mt-1" data-testid="profile-email">
                       <EmailDisplay 
                         email={user?.email} 
                         linkToProfile={true}

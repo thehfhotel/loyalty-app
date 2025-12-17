@@ -49,6 +49,7 @@ const DashboardButton: React.FC<DashboardButtonProps> = ({
       onClick={handleDashboardClick}
       className={combinedClasses}
       type="button"
+      data-testid="nav-dashboard"
       aria-label={t('navigation.backToDashboard')}
     >
       {showIcon && (

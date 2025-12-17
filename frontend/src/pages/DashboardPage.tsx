@@ -134,6 +134,7 @@ export default function DashboardPage() {
               {/* Profile & Loyalty Card */}
               <Link
                 to="/profile"
+                data-testid="nav-profile"
                 className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
               >
                 <div className="p-5">

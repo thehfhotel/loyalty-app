@@ -23,13 +23,17 @@ export default function PointsAndTierCard({ loyaltyStatus }: PointsAndTierCardPr
             <h3 className="text-lg font-semibold text-gray-900">
               {t('loyalty.pointsBalance')}
             </h3>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600" data-testid="loyalty-tier">
               {loyaltyStatus.tier_name} {t('loyalty.member')}
             </p>
           </div>
         </div>
         <div className="text-right">
-          <div className="text-3xl font-bold" style={{ color: loyaltyStatus.tier_color }}>
+          <div
+            className="text-3xl font-bold"
+            style={{ color: loyaltyStatus.tier_color }}
+            data-testid="loyalty-points"
+          >
             {loyaltyStatus.current_points.toLocaleString()}
           </div>
           <div className="text-sm text-gray-600">

@@ -4,6 +4,9 @@ import { defineConfig, devices } from '@playwright/test';
  * Playwright E2E Test Configuration
  * See https://playwright.dev/docs/test-configuration
  */
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4202';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3201';
+
 export default defineConfig({
   /* Global setup and teardown for E2E environment configuration
    * Note: E2E tests are designed to run in CI where the workflow manages Docker containers.
@@ -37,9 +40,6 @@ export default defineConfig({
 
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
-    /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: process.env.BACKEND_URL || 'http://localhost:4202',
-
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
 
@@ -56,8 +56,17 @@ export default defineConfig({
   /* Configure projects for major browsers */
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: 'api',
+      use: { baseURL: BACKEND_URL },
+      testMatch: /.*\.api\.spec\.ts/,
+    },
+    {
+      name: 'browser',
+      use: {
+        baseURL: FRONTEND_URL,
+        ...devices['Desktop Chrome'],
+      },
+      testMatch: /.*\.browser\.spec\.ts/,
     },
   ],
 

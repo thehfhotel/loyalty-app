@@ -41,6 +41,7 @@ export default function MainLayout({ children, title, showProfileBanner = true, 
               <NotificationCenter />
               <button
                 onClick={logout}
+                data-testid="logout-button"
                 className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
               >
                 <FiLogOut className="mr-2 h-4 w-4" />

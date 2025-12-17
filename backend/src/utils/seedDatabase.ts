@@ -1,4 +1,7 @@
+import bcrypt from 'bcryptjs';
 import { getPool, connectDatabase } from '../config/database';
+import { membershipIdService } from '../services/membershipIdService';
+import { loyaltyService } from '../services/loyaltyService';
 import { logger } from './logger';
 
 export interface SeedSurvey {
@@ -142,6 +145,16 @@ export const SAMPLE_TIERS: SeedTier[] = [
   }
 ];
 
+export const E2E_TEST_USER = {
+  email: 'e2e-browser@test.com',
+  password: 'E2ETestPassword123!',
+  firstName: 'E2E',
+  lastName: 'Browser',
+  role: 'customer',
+  isActive: true,
+  emailVerified: true,
+};
+
 export async function seedTiers(): Promise<void> {
   try {
     const pool = getPool();
@@ -184,6 +197,63 @@ export async function seedTiers(): Promise<void> {
     logger.info('Tiers seeding completed');
   } catch (error) {
     logger.error('Tiers seeding failed:', error);
+  }
+}
+
+export async function seedE2ETestUser(): Promise<void> {
+  try {
+    const pool = getPool();
+
+    logger.info('Starting E2E browser test user seeding...');
+
+    const existingUser = await pool.query(
+      'SELECT id FROM users WHERE email = $1',
+      [E2E_TEST_USER.email]
+    );
+
+    if (existingUser.rows.length > 0) {
+      logger.info('E2E browser test user already exists, skipping creation');
+      await loyaltyService.ensureUserLoyaltyEnrollment(existingUser.rows[0].id);
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(E2E_TEST_USER.password, 10);
+    const membershipId = await membershipIdService.generateUniqueMembershipId();
+
+    const userInsert = await pool.query(
+      `INSERT INTO users (email, password_hash, role, is_active, email_verified, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+       RETURNING id`,
+      [
+        E2E_TEST_USER.email,
+        passwordHash,
+        E2E_TEST_USER.role,
+        E2E_TEST_USER.isActive,
+        E2E_TEST_USER.emailVerified
+      ]
+    );
+
+    const userId = userInsert.rows[0]?.id;
+    if (!userId) {
+      throw new Error('Failed to create E2E browser test user');
+    }
+
+    await pool.query(
+      `INSERT INTO user_profiles (user_id, first_name, last_name, membership_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, NOW(), NOW())
+       ON CONFLICT (user_id) DO UPDATE
+         SET first_name = EXCLUDED.first_name,
+             last_name = EXCLUDED.last_name,
+             membership_id = COALESCE(user_profiles.membership_id, EXCLUDED.membership_id),
+             updated_at = NOW()`,
+      [userId, E2E_TEST_USER.firstName, E2E_TEST_USER.lastName, membershipId]
+    );
+
+    await loyaltyService.ensureUserLoyaltyEnrollment(userId);
+
+    logger.info('✅ Seeded E2E browser test user');
+  } catch (error) {
+    logger.error('Failed to seed E2E browser test user:', error);
   }
 }
 
@@ -309,6 +379,9 @@ async function seedDatabase() {
 
   // Seed tiers first (they're referenced by user_loyalty)
   await seedTiers();
+
+  // Seed browser E2E test user
+  await seedE2ETestUser();
 
   // Then seed surveys
   await seedSurveys();
