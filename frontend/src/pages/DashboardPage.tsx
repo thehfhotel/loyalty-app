@@ -24,7 +24,7 @@ export default function DashboardPage() {
 
   if (loyaltyLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center" data-testid="dashboard-loading">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600" />
           <p className="mt-4 text-gray-600">{t('profile.loading')}</p>

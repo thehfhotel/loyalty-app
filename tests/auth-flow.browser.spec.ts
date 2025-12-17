@@ -12,6 +12,21 @@ test.describe('Auth flow (browser)', () => {
     await loginViaUI(page, TEST_USER.email, TEST_USER.password);
 
     await expect(page).toHaveURL(/\/dashboard/);
+
+    // Wait for loading to finish (either data loads, error occurs, or timeout)
+    // Check which state the dashboard is in for debugging
+    const loadingVisible = await page.getByTestId('dashboard-loading').isVisible().catch(() => false);
+    const errorVisible = await page.getByTestId('loyalty-error').isVisible().catch(() => false);
+    const pointsVisible = await page.getByTestId('loyalty-points').isVisible().catch(() => false);
+
+    console.log(`Dashboard state: loading=${loadingVisible}, error=${errorVisible}, points=${pointsVisible}`);
+
+    // If stuck in loading or showing error, log the page content for debugging
+    if (loadingVisible || errorVisible || !pointsVisible) {
+      const html = await page.content();
+      console.log('Page HTML (truncated):', html.substring(0, 2000));
+    }
+
     await expect(page.getByTestId('loyalty-points')).toBeVisible();
     await expect(page.getByTestId('logout-button')).toBeVisible();
   });
