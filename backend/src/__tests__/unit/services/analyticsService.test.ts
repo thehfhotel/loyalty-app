@@ -555,5 +555,729 @@ describe('AnalyticsService', () => {
 
       expect(mockQuery).toHaveBeenCalledTimes(5);
     });
+
+    it('should rollback on error in trackMultipleProfileChanges', async () => {
+      const userId = 'user-rollback';
+      const changes = [
+        { field: 'field1', oldValue: 'old1', newValue: 'new1' },
+        { field: 'field2', oldValue: 'old2', newValue: 'new2' }
+      ];
+
+      // Mock BEGIN success, first INSERT success, second INSERT failure
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] } as never) // BEGIN
+        .mockResolvedValueOnce({ rows: [] } as never) // First INSERT
+        .mockRejectedValueOnce(new Error('Insert failed') as never); // Second INSERT fails
+
+      await expect(
+        analyticsService.trackMultipleProfileChanges(userId, changes, 'user')
+      ).rejects.toThrow('Insert failed');
+
+      // Should call ROLLBACK
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+  });
+
+  describe('getCouponUsageAnalytics', () => {
+    it('should get analytics without filters', async () => {
+      // Mock total stats query
+      mockQuery.mockResolvedValueOnce([
+        { totalEvents: 100, uniqueUsers: 50 }
+      ] as never);
+
+      // Mock events by type query
+      mockQuery.mockResolvedValueOnce([
+        { eventType: 'view', count: 50 },
+        { eventType: 'assign', count: 30 },
+        { eventType: 'redeem_success', count: 15 }
+      ] as never);
+
+      // Mock top sources query
+      mockQuery.mockResolvedValueOnce([
+        { source: 'admin_assign', count: 20 },
+        { source: 'profile_completion', count: 10 }
+      ] as never);
+
+      // Mock daily stats query
+      mockQuery.mockResolvedValueOnce([
+        { date: '2023-01-01', views: 10, assignments: 8, redemptions: 4 },
+        { date: '2023-01-02', views: 15, assignments: 12, redemptions: 6 }
+      ] as never);
+
+      const result = await analyticsService.getCouponUsageAnalytics();
+
+      expect(result.totalEvents).toBe(100);
+      expect(result.uniqueUsers).toBe(50);
+      expect(result.eventsByType.view).toBe(50);
+      expect(result.eventsByType.assign).toBe(30);
+      expect(result.eventsByType.redeem_success).toBe(15);
+      expect(result.conversionRate).toBe(50); // 15/30 * 100
+      expect(result.topSources).toHaveLength(2);
+      expect(result.dailyStats).toHaveLength(2);
+      expect(result.dailyStats[0]?.conversionRate).toBe(50); // 4/8 * 100
+    });
+
+    it('should get analytics with date filters', async () => {
+      const startDate = new Date('2023-01-01');
+      const endDate = new Date('2023-01-31');
+
+      mockQuery.mockResolvedValueOnce([
+        { totalEvents: 50, uniqueUsers: 25 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { eventType: 'view', count: 30 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { source: 'admin_assign', count: 20 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { date: '2023-01-15', views: 10, assignments: 5, redemptions: 2 }
+      ] as never);
+
+      const result = await analyticsService.getCouponUsageAnalytics(startDate, endDate);
+
+      expect(result.totalEvents).toBe(50);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE'),
+        expect.arrayContaining([startDate, endDate])
+      );
+    });
+
+    it('should get analytics with couponId filter', async () => {
+      const couponId = 'coupon-123';
+
+      mockQuery.mockResolvedValueOnce([
+        { totalEvents: 20, uniqueUsers: 15 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { eventType: 'view', count: 20 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { source: 'admin_assign', count: 15 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { date: '2023-01-01', views: 20, assignments: 0, redemptions: 0 }
+      ] as never);
+
+      const result = await analyticsService.getCouponUsageAnalytics(undefined, undefined, couponId);
+
+      expect(result.totalEvents).toBe(20);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('coupon_id = $1'),
+        expect.arrayContaining([couponId])
+      );
+    });
+
+    it('should get analytics with userId filter', async () => {
+      const userId = 'user-123';
+
+      mockQuery.mockResolvedValueOnce([
+        { totalEvents: 10, uniqueUsers: 1 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { eventType: 'view', count: 5 },
+        { eventType: 'redeem_success', count: 2 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { source: 'profile_completion', count: 5 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { date: '2023-01-01', views: 5, assignments: 3, redemptions: 2 }
+      ] as never);
+
+      const result = await analyticsService.getCouponUsageAnalytics(
+        undefined,
+        undefined,
+        undefined,
+        userId
+      );
+
+      expect(result.totalEvents).toBe(10);
+      expect(result.uniqueUsers).toBe(1);
+    });
+
+    it('should calculate conversion rate correctly with zero assignments', async () => {
+      mockQuery.mockResolvedValueOnce([
+        { totalEvents: 50, uniqueUsers: 25 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { eventType: 'view', count: 50 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { source: 'unknown', count: 50 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { date: '2023-01-01', views: 50, assignments: 0, redemptions: 0 }
+      ] as never);
+
+      const result = await analyticsService.getCouponUsageAnalytics();
+
+      expect(result.conversionRate).toBe(0);
+      expect(result.dailyStats[0]?.conversionRate).toBe(0);
+    });
+
+    it('should throw error when totalStats is null', async () => {
+      // Mock totalStats as empty array (no results)
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock eventsByType query to avoid reduce error
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock topSources query
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock dailyStats query
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      await expect(
+        analyticsService.getCouponUsageAnalytics()
+      ).rejects.toThrow('Failed to get usage analytics stats');
+    });
+
+    it('should get analytics with all filters', async () => {
+      const startDate = new Date('2023-01-01');
+      const endDate = new Date('2023-01-31');
+      const couponId = 'coupon-123';
+      const userId = 'user-123';
+
+      mockQuery.mockResolvedValueOnce([
+        { totalEvents: 5, uniqueUsers: 1 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { eventType: 'view', count: 3 },
+        { eventType: 'assign', count: 1 },
+        { eventType: 'redeem_success', count: 1 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { source: 'admin_assign', count: 1 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { date: '2023-01-15', views: 3, assignments: 1, redemptions: 1 }
+      ] as never);
+
+      const result = await analyticsService.getCouponUsageAnalytics(
+        startDate,
+        endDate,
+        couponId,
+        userId
+      );
+
+      expect(result.totalEvents).toBe(5);
+      expect(result.uniqueUsers).toBe(1);
+      expect(result.conversionRate).toBe(100); // 1/1 * 100
+    });
+  });
+
+  describe('getProfileChangeAnalytics', () => {
+    it('should get analytics without filters', async () => {
+      // Mock total changes query
+      mockQuery.mockResolvedValueOnce([
+        { totalChanges: 200, uniqueUsers: 75 }
+      ] as never);
+
+      // Mock changes by field query
+      mockQuery.mockResolvedValueOnce([
+        { field: 'email', count: 50 },
+        { field: 'phone_number', count: 40 },
+        { field: 'display_name', count: 30 }
+      ] as never);
+
+      // Mock changes by source query
+      mockQuery.mockResolvedValueOnce([
+        { changeSource: 'user', count: 150 },
+        { changeSource: 'admin', count: 30 },
+        { changeSource: 'system', count: 20 }
+      ] as never);
+
+      // Mock completion milestones query
+      mockQuery.mockResolvedValueOnce([
+        {
+          userId: 'user-1',
+          firstName: 'John',
+          lastName: 'Doe',
+          email: 'john@test.com',
+          completedAt: new Date('2023-01-15')
+        },
+        {
+          userId: 'user-2',
+          firstName: 'Jane',
+          lastName: 'Smith',
+          email: 'jane@test.com',
+          completedAt: new Date('2023-01-10')
+        }
+      ] as never);
+
+      // Mock fields completed for first milestone
+      mockQuery.mockResolvedValueOnce([
+        { field: 'email' },
+        { field: 'phone_number' },
+        { field: 'display_name' }
+      ] as never);
+
+      // Mock fields completed for second milestone
+      mockQuery.mockResolvedValueOnce([
+        { field: 'email' },
+        { field: 'display_name' }
+      ] as never);
+
+      // Mock daily activity query
+      mockQuery.mockResolvedValueOnce([
+        { date: '2023-01-01', totalChanges: 10, uniqueUsers: 5 },
+        { date: '2023-01-02', totalChanges: 15, uniqueUsers: 8 }
+      ] as never);
+
+      // Mock top field for first day
+      mockQuery.mockResolvedValueOnce([
+        { field: 'email', count: 5 }
+      ] as never);
+
+      // Mock top field for second day
+      mockQuery.mockResolvedValueOnce([
+        { field: 'phone_number', count: 8 }
+      ] as never);
+
+      const result = await analyticsService.getProfileChangeAnalytics();
+
+      expect(result.totalChanges).toBe(200);
+      expect(result.uniqueUsers).toBe(75);
+      expect(result.changesByField.email).toBe(50);
+      expect(result.changesByField.phone_number).toBe(40);
+      expect(result.changesBySource.user).toBe(150);
+      expect(result.changesBySource.admin).toBe(30);
+      expect(result.completionMilestones).toHaveLength(2);
+      expect(result.completionMilestones[0]?.fieldsCompleted).toEqual(['email', 'phone_number', 'display_name']);
+      expect(result.dailyActivity).toHaveLength(2);
+      expect(result.dailyActivity[0]?.topField).toBe('email');
+    });
+
+    it('should get analytics with date filters', async () => {
+      const startDate = new Date('2023-01-01');
+      const endDate = new Date('2023-01-31');
+
+      mockQuery.mockResolvedValueOnce([
+        { totalChanges: 100, uniqueUsers: 40 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { field: 'email', count: 50 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { changeSource: 'user', count: 90 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([] as never); // No milestones
+
+      mockQuery.mockResolvedValueOnce([
+        { date: '2023-01-15', totalChanges: 50, uniqueUsers: 25 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { field: 'email', count: 25 }
+      ] as never);
+
+      const result = await analyticsService.getProfileChangeAnalytics(startDate, endDate);
+
+      expect(result.totalChanges).toBe(100);
+      expect(result.uniqueUsers).toBe(40);
+      expect(result.completionMilestones).toHaveLength(0);
+    });
+
+    it('should get analytics with userId filter', async () => {
+      const userId = 'user-specific';
+
+      mockQuery.mockResolvedValueOnce([
+        { totalChanges: 5, uniqueUsers: 1 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { field: 'email', count: 2 },
+        { field: 'phone_number', count: 3 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { changeSource: 'user', count: 5 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { date: '2023-01-01', totalChanges: 5, uniqueUsers: 1 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { field: 'phone_number', count: 3 }
+      ] as never);
+
+      const result = await analyticsService.getProfileChangeAnalytics(
+        undefined,
+        undefined,
+        userId
+      );
+
+      expect(result.totalChanges).toBe(5);
+      expect(result.uniqueUsers).toBe(1);
+    });
+
+    it('should handle empty top field for a day', async () => {
+      mockQuery.mockResolvedValueOnce([
+        { totalChanges: 10, uniqueUsers: 5 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { field: 'email', count: 10 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { changeSource: 'user', count: 10 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { date: '2023-01-01', totalChanges: 10, uniqueUsers: 5 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([] as never); // No top field
+
+      const result = await analyticsService.getProfileChangeAnalytics();
+
+      expect(result.dailyActivity[0]?.topField).toBe('none');
+    });
+
+    it('should throw error when totalStats is null', async () => {
+      // Mock totalStats as empty array (no results)
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock changesByField query
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock changesBySource query
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock completionMilestones query
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock dailyActivity query
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      await expect(
+        analyticsService.getProfileChangeAnalytics()
+      ).rejects.toThrow('Failed to get profile change analytics stats');
+    });
+
+    it('should get analytics with all filters', async () => {
+      const startDate = new Date('2023-01-01');
+      const endDate = new Date('2023-01-31');
+      const userId = 'user-123';
+
+      mockQuery.mockResolvedValueOnce([
+        { totalChanges: 5, uniqueUsers: 1 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { field: 'email', count: 5 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { changeSource: 'user', count: 5 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { date: '2023-01-15', totalChanges: 5, uniqueUsers: 1 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { field: 'email', count: 5 }
+      ] as never);
+
+      const result = await analyticsService.getProfileChangeAnalytics(
+        startDate,
+        endDate,
+        userId
+      );
+
+      expect(result.totalChanges).toBe(5);
+      expect(result.uniqueUsers).toBe(1);
+    });
+  });
+
+  describe('updateDailyUserAnalytics', () => {
+    it('should update analytics for current date by default', async () => {
+      mockQuery.mockResolvedValueOnce([
+        { id: 'analytics-1' },
+        { id: 'analytics-2' },
+        { id: 'analytics-3' }
+      ] as never);
+
+      const result = await analyticsService.updateDailyUserAnalytics();
+
+      expect(result).toBe(3);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO user_analytics'),
+        expect.any(Array)
+      );
+    });
+
+    it('should update analytics for specific date', async () => {
+      const specificDate = new Date('2023-01-15');
+
+      mockQuery.mockResolvedValueOnce([
+        { id: 'analytics-1' },
+        { id: 'analytics-2' }
+      ] as never);
+
+      const result = await analyticsService.updateDailyUserAnalytics(specificDate);
+
+      expect(result).toBe(2);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO user_analytics'),
+        expect.arrayContaining([specificDate])
+      );
+    });
+
+    it('should return 0 when no users have activity', async () => {
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      const result = await analyticsService.updateDailyUserAnalytics();
+
+      expect(result).toBe(0);
+    });
+
+    it('should handle upsert correctly', async () => {
+      const specificDate = new Date('2023-01-15');
+
+      mockQuery.mockResolvedValueOnce([
+        { id: 'analytics-1' }
+      ] as never);
+
+      await analyticsService.updateDailyUserAnalytics(specificDate);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('ON CONFLICT (user_id, analytics_date) DO UPDATE SET'),
+        expect.any(Array)
+      );
+    });
+  });
+
+  describe('getUserEngagementMetrics', () => {
+    it('should get engagement metrics without filters', async () => {
+      // Mock overall metrics query
+      mockQuery.mockResolvedValueOnce([
+        {
+          activeUsers: 100,
+          totalSessions: 500,
+          avgCouponsPerUser: 5.5,
+          avgProfileChangesPerUser: 3.2
+        }
+      ] as never);
+
+      // Mock engagement data query
+      mockQuery.mockResolvedValueOnce([
+        { userId: 'user-1', totalInteractions: 10 },
+        { userId: 'user-2', totalInteractions: 5 },
+        { userId: 'user-3', totalInteractions: 3 },
+        { userId: 'user-4', totalInteractions: 1 },
+        { userId: 'user-5', totalInteractions: 8 }
+      ] as never);
+
+      // Mock top users query
+      mockQuery.mockResolvedValueOnce([
+        {
+          userId: 'user-1',
+          firstName: 'John',
+          lastName: 'Doe',
+          email: 'john@test.com',
+          totalInteractions: 10,
+          couponsViewed: 5,
+          couponsRedeemed: 3,
+          profileChanges: 2
+        },
+        {
+          userId: 'user-2',
+          firstName: 'Jane',
+          lastName: 'Smith',
+          email: 'jane@test.com',
+          totalInteractions: 8,
+          couponsViewed: 4,
+          couponsRedeemed: 2,
+          profileChanges: 2
+        }
+      ] as never);
+
+      const result = await analyticsService.getUserEngagementMetrics();
+
+      expect(result.activeUsers).toBe(100);
+      expect(result.totalSessions).toBe(500);
+      expect(result.avgCouponsPerUser).toBe(5.5);
+      expect(result.avgProfileChangesPerUser).toBe(3.2);
+      expect(result.userSegments.highEngagement).toBe(3); // >= 5 interactions
+      expect(result.userSegments.mediumEngagement).toBe(1); // 2-4 interactions
+      expect(result.userSegments.lowEngagement).toBe(1); // 1 interaction
+      expect(result.topUsers).toHaveLength(2);
+      expect(result.topUsers[0]?.totalInteractions).toBe(10);
+    });
+
+    it('should get engagement metrics with date filters', async () => {
+      const startDate = new Date('2023-01-01');
+      const endDate = new Date('2023-01-31');
+
+      mockQuery.mockResolvedValueOnce([
+        {
+          activeUsers: 50,
+          totalSessions: 200,
+          avgCouponsPerUser: 3.0,
+          avgProfileChangesPerUser: 2.0
+        }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        { userId: 'user-1', totalInteractions: 6 },
+        { userId: 'user-2', totalInteractions: 2 }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([
+        {
+          userId: 'user-1',
+          firstName: 'John',
+          lastName: 'Doe',
+          email: 'john@test.com',
+          totalInteractions: 6,
+          couponsViewed: 3,
+          couponsRedeemed: 2,
+          profileChanges: 1
+        }
+      ] as never);
+
+      const result = await analyticsService.getUserEngagementMetrics(startDate, endDate);
+
+      expect(result.activeUsers).toBe(50);
+      expect(result.totalSessions).toBe(200);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE'),
+        expect.arrayContaining([startDate, endDate])
+      );
+    });
+
+    it('should handle null avgCouponsPerUser', async () => {
+      mockQuery.mockResolvedValueOnce([
+        {
+          activeUsers: 10,
+          totalSessions: 20,
+          avgCouponsPerUser: null,
+          avgProfileChangesPerUser: null
+        }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      const result = await analyticsService.getUserEngagementMetrics();
+
+      expect(result.avgCouponsPerUser).toBe(0);
+      expect(result.avgProfileChangesPerUser).toBe(0);
+    });
+
+    it('should throw error when overallMetrics is null', async () => {
+      // Mock overallMetrics as empty array (no results)
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock engagementData query to avoid reduce error
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock topUsers query
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      await expect(
+        analyticsService.getUserEngagementMetrics()
+      ).rejects.toThrow('Failed to get user engagement metrics');
+    });
+
+    it('should segment users correctly', async () => {
+      mockQuery.mockResolvedValueOnce([
+        {
+          activeUsers: 6,
+          totalSessions: 30,
+          avgCouponsPerUser: 5.0,
+          avgProfileChangesPerUser: 2.0
+        }
+      ] as never);
+
+      // Test all three segments
+      mockQuery.mockResolvedValueOnce([
+        { userId: 'user-1', totalInteractions: 10 }, // high
+        { userId: 'user-2', totalInteractions: 5 },  // high
+        { userId: 'user-3', totalInteractions: 4 },  // medium
+        { userId: 'user-4', totalInteractions: 2 },  // medium
+        { userId: 'user-5', totalInteractions: 1 },  // low
+        { userId: 'user-6', totalInteractions: 1 }   // low
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      const result = await analyticsService.getUserEngagementMetrics();
+
+      expect(result.userSegments.highEngagement).toBe(2);
+      expect(result.userSegments.mediumEngagement).toBe(2);
+      expect(result.userSegments.lowEngagement).toBe(2);
+    });
+
+    it('should limit top users to 20', async () => {
+      mockQuery.mockResolvedValueOnce([
+        {
+          activeUsers: 100,
+          totalSessions: 500,
+          avgCouponsPerUser: 5.0,
+          avgProfileChangesPerUser: 3.0
+        }
+      ] as never);
+
+      mockQuery.mockResolvedValueOnce(
+        Array.from({ length: 100 }, (_, i) => ({
+          userId: `user-${i}`,
+          totalInteractions: 100 - i
+        })) as never
+      );
+
+      const topUsers = Array.from({ length: 25 }, (_, i) => ({
+        userId: `user-${i}`,
+        firstName: `First${i}`,
+        lastName: `Last${i}`,
+        email: `user${i}@test.com`,
+        totalInteractions: 100 - i,
+        couponsViewed: 50 - i,
+        couponsRedeemed: 25 - i,
+        profileChanges: 25 - i
+      }));
+
+      mockQuery.mockResolvedValueOnce(topUsers as never);
+
+      await analyticsService.getUserEngagementMetrics();
+
+      // Query should limit to 20 even though we return 25 in mock
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('LIMIT 20'),
+        expect.any(Array)
+      );
+    });
   });
 });

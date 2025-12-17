@@ -26,6 +26,9 @@ jest.mock('helmet', () => ({
 // Mock logger
 jest.mock('../../../utils/logger');
 
+// Create a mockable isProduction function
+const mockIsProduction = jest.fn(() => false);
+
 // Mock environment configuration to prevent process.exit during tests
 jest.mock('../../../config/environment', () => ({
   env: {
@@ -47,7 +50,9 @@ jest.mock('../../../config/environment', () => ({
     rateLimitWindowMs: 900000, // 15 minutes
     rateLimitMaxRequests: 100
   },
-  isProduction: () => false
+  get isProduction() {
+    return mockIsProduction;
+  }
 }));
 
 describe('Security Middleware', () => {
@@ -80,7 +85,8 @@ describe('Security Middleware', () => {
       json: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
       setHeader: jest.fn(),
-      removeHeader: jest.fn()
+      removeHeader: jest.fn(),
+      redirect: jest.fn()
     };
 
     mockNext = jest.fn();
@@ -406,6 +412,472 @@ describe('Security Middleware', () => {
       });
 
       // The middleware should continue even if setHeader throws
+      customSecurityHeaders(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+  });
+
+  describe('Input Sanitization - Edge Cases', () => {
+    test('should handle very long strings', () => {
+      mockReq.body = {
+        longString: 'a'.repeat(20000)
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+      // String should be truncated to MAX_INPUT_LENGTH
+      expect((mockReq.body as { longString: string }).longString.length).toBeLessThanOrEqual(10000);
+    });
+
+    test('should handle strings at MAX_INPUT_LENGTH boundary', () => {
+      mockReq.body = {
+        maxString: 'b'.repeat(10000)
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+      expect((mockReq.body as { maxString: string }).maxString.length).toBe(10000);
+    });
+
+    test('should sanitize nested circular references', () => {
+      const obj1: Record<string, unknown> = {};
+      const obj2: Record<string, unknown> = { ref: obj1 };
+      obj1.ref = obj2;
+      mockReq.body = { circular: obj1 };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle arrays with circular references', () => {
+      const arr: unknown[] = [];
+      arr.push(arr);
+      mockReq.body = { circularArray: arr };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should sanitize multiple whitespace types', () => {
+      mockReq.body = {
+        multiSpace: 'test  \t\t  multiple   spaces'
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+      // Multiple spaces/tabs should be collapsed to single space
+      expect((mockReq.body as { multiSpace: string }).multiSpace).toContain(' ');
+    });
+
+    test('should handle data: URLs', () => {
+      mockReq.body = {
+        dataUrl: 'data:text/html,<script>alert(1)</script>'
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+      // data: URL should be removed
+      const sanitized = (mockReq.body as { dataUrl: string }).dataUrl.toLowerCase();
+      expect(sanitized).not.toContain('data:');
+    });
+
+    test('should handle javascript: with spaces', () => {
+      mockReq.body = {
+        jsUrl: 'java script :alert(1)'
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle event handlers with hyphens', () => {
+      mockReq.body = {
+        handler: 'on-custom-event=handler'
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle nested event handlers', () => {
+      mockReq.body = {
+        nested: 'oonclicknclick=alert'
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should sanitize query parameters with unsafe keys', () => {
+      mockReq.query = {
+        '__proto__': 'malicious',
+        'constructor': 'bad',
+        'prototype': 'evil'
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle query parameters with special characters in keys', () => {
+      mockReq.query = {
+        'key<script>': 'value',
+        'key&param': 'value2'
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle null values in body', () => {
+      mockReq.body = {
+        nullValue: null,
+        undefinedValue: undefined,
+        emptyString: ''
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle boolean values', () => {
+      mockReq.body = {
+        boolTrue: true,
+        boolFalse: false
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+      expect((mockReq.body as { boolTrue: boolean }).boolTrue).toBe(true);
+      expect((mockReq.body as { boolFalse: boolean }).boolFalse).toBe(false);
+    });
+
+    test('should handle numeric values', () => {
+      mockReq.body = {
+        integer: 123,
+        float: 45.67,
+        negative: -89
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+      expect((mockReq.body as { integer: number }).integer).toBe(123);
+    });
+
+    test('should handle Date objects', () => {
+      const testDate = new Date('2024-01-01');
+      mockReq.body = {
+        date: testDate
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle mixed arrays', () => {
+      mockReq.body = {
+        mixedArray: [
+          'string',
+          123,
+          true,
+          null,
+          { nested: 'object' },
+          ['nested', 'array']
+        ]
+      };
+
+      inputSanitization(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+  });
+
+  describe('Security Monitoring - Edge Cases', () => {
+    test('should detect directory traversal attempts', () => {
+      mockReq.originalUrl = '/api/files/../../etc/passwd';
+
+      securityMonitoring(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should detect SQL injection in URL', () => {
+      mockReq.originalUrl = "/api/users?id=1' UNION SELECT * FROM users--";
+
+      securityMonitoring(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should detect XSS attempts in User-Agent', () => {
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'User-Agent') return '<script>alert(1)</script>';
+        if (header === 'host') return 'localhost';
+        return undefined;
+      }) as Request['get'];
+
+      securityMonitoring(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should detect null byte injection', () => {
+      mockReq.originalUrl = '/api/file%00.txt';
+
+      securityMonitoring(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle missing User-Agent', () => {
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'User-Agent') return undefined;
+        if (header === 'host') return 'localhost';
+        return undefined;
+      }) as Request['get'];
+
+      securityMonitoring(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle empty body', () => {
+      mockReq.body = {};
+
+      securityMonitoring(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle undefined body', () => {
+      mockReq.body = undefined;
+
+      securityMonitoring(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+  });
+
+  describe('File Upload Security - Edge Cases', () => {
+    test('should reject file exceeding max size', () => {
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'content-length') return '10485760'; // 10MB > 5MB limit
+        return undefined;
+      }) as Request['get'];
+
+      fileUploadSecurity(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(413);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'File too large',
+        message: expect.stringContaining('exceeds the maximum'),
+      });
+    });
+
+    test('should allow file at exact max size', () => {
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'content-length') return '5242880'; // Exactly 5MB
+        return undefined;
+      }) as Request['get'];
+
+      fileUploadSecurity(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle missing content-length header', () => {
+      mockReq.get = jest.fn(() => undefined) as Request['get'];
+
+      fileUploadSecurity(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle invalid content-length value', () => {
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'content-length') return 'invalid';
+        return undefined;
+      }) as Request['get'];
+
+      fileUploadSecurity(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle negative content-length', () => {
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'content-length') return '-1000';
+        return undefined;
+      }) as Request['get'];
+
+      fileUploadSecurity(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle zero content-length', () => {
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'content-length') return '0';
+        return undefined;
+      }) as Request['get'];
+
+      fileUploadSecurity(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+  });
+
+  describe('Production Security - Edge Cases', () => {
+    const originalEnv = process.env.NODE_ENV;
+
+    beforeEach(() => {
+      mockIsProduction.mockReturnValue(true);
+    });
+
+    afterEach(() => {
+      process.env.NODE_ENV = originalEnv;
+      mockIsProduction.mockReturnValue(false);
+    });
+
+    test('should handle suspicious x-forwarded-for header', () => {
+      process.env.NODE_ENV = 'production';
+
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'x-forwarded-for') return '../../../etc/passwd';
+        return undefined;
+      }) as Request['get'];
+
+      productionSecurity(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Invalid request headers' });
+    });
+
+    test('should handle suspicious x-real-ip header', () => {
+      process.env.NODE_ENV = 'production';
+
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'x-real-ip') return '<script>alert(1)</script>';
+        return undefined;
+      }) as Request['get'];
+
+      productionSecurity(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+    });
+
+    test('should handle malformed cf-visitor JSON', () => {
+      process.env.NODE_ENV = 'production';
+
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'cf-visitor') return 'invalid-json{';
+        if (header === 'x-forwarded-proto') return 'http';
+        if (header === 'host') return 'example.com';
+        return undefined;
+      }) as Request['get'];
+
+      Object.defineProperty(mockReq, 'secure', { value: false, writable: true });
+      Object.defineProperty(mockReq, 'url', { value: '/test', writable: true });
+
+      productionSecurity(mockReq as Request, mockRes as Response, mockNext);
+      // Should redirect to HTTPS due to malformed cf-visitor
+      expect(mockRes.redirect).toHaveBeenCalledWith(301, 'https://example.com/test');
+    });
+
+    test('should handle cf-visitor with http scheme', () => {
+      process.env.NODE_ENV = 'production';
+
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'cf-visitor') return '{"scheme":"http"}';
+        if (header === 'host') return 'example.com';
+        if (header === 'x-forwarded-proto') return 'http';
+        return undefined;
+      }) as Request['get'];
+
+      Object.defineProperty(mockReq, 'secure', { value: false, writable: true });
+      Object.defineProperty(mockReq, 'url', { value: '/test', writable: true });
+
+      productionSecurity(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockRes.redirect).toHaveBeenCalledWith(301, 'https://example.com/test');
+    });
+
+    test('should allow cf-visitor with https scheme', () => {
+      process.env.NODE_ENV = 'production';
+
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'cf-visitor') return '{"scheme":"https"}';
+        return undefined;
+      }) as Request['get'];
+
+      Object.defineProperty(mockReq, 'secure', { value: false, writable: true });
+
+      productionSecurity(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle x-forwarded-proto https', () => {
+      process.env.NODE_ENV = 'production';
+
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'x-forwarded-proto') return 'https';
+        if (header === 'X-Forwarded-Proto') return 'https';
+        return undefined;
+      }) as Request['get'];
+
+      Object.defineProperty(mockReq, 'secure', { value: false, writable: true });
+
+      productionSecurity(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should skip checks in non-production', () => {
+      process.env.NODE_ENV = 'development';
+      mockIsProduction.mockReturnValue(false);
+
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'x-forwarded-for') return '../../../evil';
+        return undefined;
+      }) as Request['get'];
+
+      Object.defineProperty(mockReq, 'secure', { value: false, writable: true });
+
+      productionSecurity(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+      expect(mockRes.status).not.toHaveBeenCalled();
+    });
+
+    test('should handle multiple suspicious headers', () => {
+      process.env.NODE_ENV = 'production';
+
+      mockReq.get = jest.fn((header: string) => {
+        if (header === 'x-forwarded-for') return '<script>';
+        if (header === 'x-real-ip') return 'valid-ip';
+        if (header === 'x-originating-ip') return 'valid-ip';
+        return undefined;
+      }) as Request['get'];
+
+      productionSecurity(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+    });
+  });
+
+  describe('Custom Security Headers - Edge Cases', () => {
+    test('should set headers for non-API routes', () => {
+      Object.defineProperty(mockReq, 'path', { value: '/health', writable: true });
+
+      customSecurityHeaders(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(mockRes.setHeader).toHaveBeenCalledWith('X-Frame-Options', 'DENY');
+      expect(mockRes.removeHeader).toHaveBeenCalledWith('X-Powered-By');
+      // Should not set cache headers for non-API routes
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle setHeader throwing error', () => {
+      let callCount = 0;
+      (mockRes.setHeader as jest.Mock).mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('Cannot set header');
+        }
+      });
+
+      customSecurityHeaders(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    test('should handle removeHeader throwing error', () => {
+      (mockRes.removeHeader as jest.Mock).mockImplementation(() => {
+        throw new Error('Cannot remove header');
+      });
+
       customSecurityHeaders(mockReq as Request, mockRes as Response, mockNext);
       expect(mockNext).toHaveBeenCalled();
     });

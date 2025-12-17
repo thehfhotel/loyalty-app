@@ -717,4 +717,353 @@ describe('CouponService', () => {
       expect(result.message).toBe('Coupon usage limit reached');
     });
   });
+
+  describe('updateCoupon', () => {
+    it('should update coupon successfully', async () => {
+      const couponId = 'coupon-123';
+      const updateData = {
+        name: 'Updated Coupon',
+        description: 'Updated description',
+        value: 25,
+      };
+
+      const existingCoupon = {
+        id: couponId,
+        code: 'SUMMER20',
+        name: 'Summer Sale',
+        type: 'percentage',
+        value: 20,
+        status: 'active',
+      };
+
+      const updatedCoupon = {
+        ...existingCoupon,
+        ...updateData,
+      };
+
+      mockQuery.mockResolvedValueOnce([existingCoupon] as never);
+      (mockClient.query as unknown as jest.Mock)
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
+        .mockResolvedValueOnce({ rows: [updatedCoupon], command: 'UPDATE' } as never)
+        .mockResolvedValueOnce({ rows: [], command: 'COMMIT' } as never);
+
+      const result = await couponService.updateCoupon(couponId, updateData, 'admin-123');
+
+      expect(result.name).toBe('Updated Coupon');
+      expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('should throw error if coupon not found', async () => {
+      mockQuery.mockResolvedValueOnce([] as never);
+      (mockClient.query as unknown as jest.Mock)
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
+        .mockResolvedValueOnce({ rows: [], command: 'ROLLBACK' } as never);
+
+      await expect(couponService.updateCoupon('non-existent', { name: 'Test' }, 'admin-123'))
+        .rejects.toMatchObject({
+          statusCode: 404,
+          message: 'Coupon not found',
+        });
+    });
+
+    it('should throw error if code already exists', async () => {
+      const existingCoupon = { id: 'coupon-123', code: 'OLD', name: 'Old' };
+
+      mockQuery
+        .mockResolvedValueOnce([existingCoupon] as never)
+        .mockResolvedValueOnce([{ id: 'other-coupon' }] as never);
+
+      (mockClient.query as unknown as jest.Mock)
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
+        .mockResolvedValueOnce({ rows: [], command: 'ROLLBACK' } as never);
+
+      await expect(couponService.updateCoupon('coupon-123', { code: 'NEW' }, 'admin-123'))
+        .rejects.toMatchObject({
+          statusCode: 409,
+          message: 'Coupon code already exists',
+        });
+    });
+
+    it('should throw error if no fields to update', async () => {
+      const existingCoupon = { id: 'coupon-123', code: 'TEST', name: 'Test' };
+
+      mockQuery.mockResolvedValueOnce([existingCoupon] as never);
+      (mockClient.query as unknown as jest.Mock)
+        .mockResolvedValueOnce({ rows: [], command: 'BEGIN' } as never)
+        .mockResolvedValueOnce({ rows: [], command: 'ROLLBACK' } as never);
+
+      await expect(couponService.updateCoupon('coupon-123', {}, 'admin-123'))
+        .rejects.toMatchObject({
+          statusCode: 400,
+          message: 'No fields to update',
+        });
+    });
+  });
+
+  describe('getCouponWithTranslations', () => {
+    it('should return coupon with translations', async () => {
+      const mockCoupon = {
+        id: 'coupon-123',
+        code: 'TEST',
+        name: 'Test Coupon',
+        description: 'Test description',
+        type: 'percentage',
+        value: 10,
+        status: 'active',
+        translated_name: 'ทดสอบคูปอง',
+        translated_description: 'คำอธิบายการทดสอบ',
+        translated_terms_and_conditions: null,
+        terms_and_conditions: null,
+      };
+
+      mockQuery.mockResolvedValueOnce([mockCoupon] as never);
+
+      const result = await couponService.getCouponWithTranslations('coupon-123', 'en');
+
+      expect(result?.name).toBe('ทดสอบคูปอง');
+      expect(result?.description).toBe('คำอธิบายการทดสอบ');
+    });
+
+    it('should return original if no translation available', async () => {
+      const mockCoupon = {
+        id: 'coupon-123',
+        name: 'Test Coupon',
+        description: 'Test description',
+      };
+
+      mockQuery
+        .mockResolvedValueOnce([mockCoupon] as never) // Translation query
+        .mockResolvedValueOnce([mockCoupon] as never); // Fallback to original
+
+      const result = await couponService.getCouponWithTranslations('coupon-123', 'th');
+
+      expect(result?.name).toBe('Test Coupon');
+    });
+
+    it('should handle errors gracefully', async () => {
+      mockQuery.mockRejectedValueOnce(new Error('Database error') as never);
+
+      const result = await couponService.getCouponWithTranslations('coupon-123', 'th');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getUserCouponByQR', () => {
+    it('should return user coupon by QR code', async () => {
+      const mockCoupon = {
+        userCouponId: 'uc-123',
+        userId: 'user-123',
+        status: 'available',
+        qrCode: 'QR-123',
+        code: 'SUMMER20',
+        name: 'Summer Sale',
+      };
+
+      mockQuery.mockResolvedValueOnce([mockCoupon] as never);
+
+      const result = await couponService.getUserCouponByQR('QR-123');
+
+      expect(result).toEqual(mockCoupon);
+    });
+
+    it('should return null if not found', async () => {
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      const result = await couponService.getUserCouponByQR('INVALID');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getUserCouponsByStatus', () => {
+    it('should get used coupons', async () => {
+      const mockCoupons = [{
+        userCouponId: 'uc-1',
+        userId: 'user-123',
+        status: 'used',
+        usedAt: new Date().toISOString(),
+      }];
+
+      mockQuery
+        .mockResolvedValueOnce([{ count: 1 }] as never)
+        .mockResolvedValueOnce(mockCoupons);
+
+      const result = await couponService.getUserCouponsByStatus('user-123', 'used', 1, 10);
+
+      expect(result.coupons).toHaveLength(1);
+      expect(result.total).toBe(1);
+    });
+
+    it('should get expired coupons', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: 2 }] as never)
+        .mockResolvedValueOnce([{}, {}] as never);
+
+      const result = await couponService.getUserCouponsByStatus('user-123', 'expired', 1, 10);
+
+      expect(result.coupons).toHaveLength(2);
+    });
+
+    it('should get revoked coupons', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: 1 }] as never)
+        .mockResolvedValueOnce([{}] as never);
+
+      const result = await couponService.getUserCouponsByStatus('user-123', 'revoked', 1, 10);
+
+      expect(result.coupons).toHaveLength(1);
+    });
+  });
+
+  describe('getCouponRedemptions', () => {
+    it('should return redemption history', async () => {
+      const mockRedemptions = [
+        {
+          id: 'r-1',
+          userCouponId: 'uc-1',
+          originalAmount: 1000,
+          discountAmount: 200,
+          finalAmount: 800,
+        },
+        {
+          id: 'r-2',
+          userCouponId: 'uc-2',
+          originalAmount: 500,
+          discountAmount: 100,
+          finalAmount: 400,
+        },
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce([{ count: 2 }] as never)
+        .mockResolvedValueOnce(mockRedemptions);
+
+      const result = await couponService.getCouponRedemptions('coupon-123', 1, 20);
+
+      expect(result.redemptions).toHaveLength(2);
+      expect(result.total).toBe(2);
+    });
+  });
+
+  describe('getCouponAnalytics', () => {
+    it('should return analytics data', async () => {
+      const mockAnalytics = [
+        {
+          id: 'a-1',
+          couponId: 'coupon-123',
+          analyticsDate: new Date().toISOString(),
+          totalAssigned: 100,
+          totalUsed: 50,
+          conversionRate: 50,
+        },
+      ];
+
+      mockQuery
+        .mockResolvedValueOnce([{ count: 1 }] as never)
+        .mockResolvedValueOnce(mockAnalytics);
+
+      const result = await couponService.getCouponAnalytics('coupon-123', undefined, undefined, 1, 20);
+
+      expect(result.analytics).toHaveLength(1);
+      expect(result.total).toBe(1);
+    });
+
+    it('should filter by date range', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: 0 }] as never)
+        .mockResolvedValueOnce([] as never);
+
+      const startDate = new Date('2024-01-01');
+      const endDate = new Date('2024-12-31');
+
+      await couponService.getCouponAnalytics('coupon-123', startDate, endDate, 1, 20);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('analytics_date'),
+        expect.arrayContaining([startDate, endDate])
+      );
+    });
+  });
+
+  describe('updateDailyAnalytics', () => {
+    it('should update analytics for a date', async () => {
+      mockQuery.mockResolvedValueOnce([{ update_coupon_analytics: 5 }] as never);
+
+      const result = await couponService.updateDailyAnalytics(new Date());
+
+      expect(result).toBe(5);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('update_coupon_analytics'),
+        expect.any(Array)
+      );
+    });
+
+    it('should throw error if update fails', async () => {
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      await expect(couponService.updateDailyAnalytics())
+        .rejects.toMatchObject({
+          statusCode: 500,
+          message: 'Failed to update coupon analytics',
+        });
+    });
+  });
+
+  describe('getCouponAssignments', () => {
+    it('should return coupon assignments with summary', async () => {
+      const mockAssignments = [
+        {
+          userId: 'user-1',
+          firstName: 'John',
+          lastName: 'Doe',
+          email: 'john@example.com',
+          assignedCount: 2,
+          usedCount: 1,
+          availableCount: 1,
+          latestAssignment: new Date(),
+        },
+      ];
+
+      const mockSummary = {
+        totalUsers: 10,
+        totalAssigned: 15,
+        totalUsed: 8,
+        totalAvailable: 7,
+      };
+
+      mockQuery
+        .mockResolvedValueOnce([{ count: 10 }] as never)
+        .mockResolvedValueOnce([mockSummary] as never)
+        .mockResolvedValueOnce(mockAssignments);
+
+      const result = await couponService.getCouponAssignments('coupon-123', 1, 20);
+
+      expect(result.assignments).toHaveLength(1);
+      expect(result.summary).toEqual(mockSummary);
+      expect(result.total).toBe(10);
+    });
+  });
+
+  describe('revokeUserCouponsForCoupon', () => {
+    it('should revoke all available coupons for user and coupon', async () => {
+      mockQuery.mockResolvedValueOnce([{ id: 'uc-1' }, { id: 'uc-2' }] as never);
+
+      const result = await couponService.revokeUserCouponsForCoupon('user-123', 'coupon-123', 'admin-123', 'Policy violation');
+
+      expect(result).toBe(2);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE user_coupons'),
+        expect.arrayContaining(['user-123', 'coupon-123'])
+      );
+    });
+
+    it('should return 0 if no coupons to revoke', async () => {
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      const result = await couponService.revokeUserCouponsForCoupon('user-123', 'coupon-123', 'admin-123');
+
+      expect(result).toBe(0);
+    });
+  });
 });

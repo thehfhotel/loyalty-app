@@ -368,4 +368,555 @@ describe('UserService', () => {
         .rejects.toThrow();
     });
   });
+
+  describe('updateAvatar', () => {
+    it('should update user avatar successfully', async () => {
+      const userId = 'user-123';
+      const avatarUrl = 'https://example.com/avatar.jpg';
+
+      mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      await userService.updateAvatar(userId, avatarUrl);
+
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE user_profiles'),
+        [avatarUrl, userId]
+      );
+    });
+
+    it('should throw error if user not found', async () => {
+      mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      await expect(userService.updateAvatar('non-existent', 'url'))
+        .rejects.toThrow('User profile not found');
+    });
+  });
+
+  describe('deleteAvatar', () => {
+    it('should delete user avatar', async () => {
+      const userId = 'user-123';
+
+      mockQuery.mockResolvedValueOnce([{ userId }] as never);
+
+      await userService.deleteAvatar(userId);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE user_profiles'),
+        [userId]
+      );
+    });
+  });
+
+  describe('updateUserEmail', () => {
+    it('should update user email successfully', async () => {
+      const userId = 'user-123';
+      const newEmail = 'newemail@example.com';
+
+      mockQuery.mockResolvedValueOnce([] as never); // No existing user with this email
+      mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+      await userService.updateUserEmail(userId, newEmail);
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT id FROM users'),
+        [newEmail, userId]
+      );
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE users'),
+        [newEmail, userId]
+      );
+    });
+
+    it('should throw error if email already in use', async () => {
+      mockQuery.mockResolvedValueOnce([{ id: 'other-user' }] as never);
+
+      await expect(userService.updateUserEmail('user-123', 'existing@example.com'))
+        .rejects.toMatchObject({
+          statusCode: 409,
+          message: 'Email is already in use by another account',
+        });
+    });
+
+    it('should throw error if user not found', async () => {
+      mockQuery.mockResolvedValueOnce([] as never);
+      mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      await expect(userService.updateUserEmail('non-existent', 'email@example.com'))
+        .rejects.toMatchObject({
+          statusCode: 404,
+          message: 'User not found',
+        });
+    });
+  });
+
+  describe('getProfileCompletionStatus', () => {
+    it('should return complete status when all fields present', async () => {
+      mockQuery.mockResolvedValueOnce([{
+        userId: 'user-123',
+        firstName: 'John',
+        lastName: 'Doe',
+        phone: '+1234567890',
+        dateOfBirth: new Date('1990-01-01'),
+        membershipId: 'MEM12345',
+      }] as never);
+
+      const result = await userService.getProfileCompletionStatus('user-123');
+
+      expect(result.isComplete).toBe(true);
+      expect(result.missingFields).toHaveLength(0);
+    });
+
+    it('should return incomplete status with missing fields', async () => {
+      mockQuery.mockResolvedValueOnce([{
+        userId: 'user-123',
+        firstName: 'John',
+        membershipId: 'MEM12345',
+      }] as never);
+
+      const result = await userService.getProfileCompletionStatus('user-123');
+
+      expect(result.isComplete).toBe(false);
+      expect(result.missingFields).toContain('lastName');
+      expect(result.missingFields).toContain('phone');
+      expect(result.missingFields).toContain('dateOfBirth');
+    });
+
+    it('should handle errors and wrap them', async () => {
+      mockQuery.mockRejectedValueOnce(new Error('Database error') as never);
+
+      await expect(userService.getProfileCompletionStatus('user-123'))
+        .rejects.toThrow('Failed to get profile completion status');
+    });
+  });
+
+  describe('getUserById', () => {
+    it('should return user by ID', async () => {
+      const mockUser = {
+        userId: 'user-123',
+        email: 'test@example.com',
+        role: 'customer',
+        isActive: true,
+        firstName: 'John',
+        lastName: 'Doe',
+      };
+
+      mockQuery.mockResolvedValueOnce([mockUser] as never);
+
+      const result = await userService.getUserById('user-123');
+
+      expect(result).toEqual(mockUser);
+    });
+
+    it('should throw error if user not found', async () => {
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      await expect(userService.getUserById('non-existent'))
+        .rejects.toMatchObject({
+          statusCode: 404,
+          message: 'User not found',
+        });
+    });
+  });
+
+  describe('getNewMemberCouponSettings', () => {
+    it('should return existing settings', async () => {
+      const mockSettings = {
+        id: 1,
+        isEnabled: true,
+        selectedCouponId: 'coupon-123',
+        pointsEnabled: true,
+        pointsAmount: 100,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      mockQuery.mockResolvedValueOnce([mockSettings] as never);
+
+      const result = await userService.getNewMemberCouponSettings();
+
+      expect(result).toEqual(mockSettings);
+    });
+
+    it('should create default settings if none exist', async () => {
+      const mockDefaultSettings = {
+        id: 1,
+        isEnabled: false,
+        selectedCouponId: null,
+        pointsEnabled: false,
+        pointsAmount: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      mockQuery
+        .mockResolvedValueOnce([] as never) // No existing settings
+        .mockResolvedValueOnce([mockDefaultSettings] as never); // Created settings
+
+      const result = await userService.getNewMemberCouponSettings();
+
+      expect(result).toEqual(mockDefaultSettings);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO new_member_coupon_settings'),
+        [false, null, false, null]
+      );
+    });
+
+    it('should throw error if default creation fails', async () => {
+      mockQuery
+        .mockResolvedValueOnce([] as never) // No existing settings
+        .mockResolvedValueOnce([] as never); // Failed to create
+
+      await expect(userService.getNewMemberCouponSettings())
+        .rejects.toMatchObject({
+          statusCode: 500,
+          message: 'Failed to create default coupon settings',
+        });
+    });
+  });
+
+  describe('updateNewMemberCouponSettings', () => {
+    it('should update settings successfully', async () => {
+      const mockCurrentSettings = {
+        id: 1,
+        isEnabled: false,
+        selectedCouponId: null,
+        pointsEnabled: false,
+        pointsAmount: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const mockCoupon = {
+        id: 'coupon-123',
+        code: 'WELCOME',
+        name: 'Welcome Coupon',
+        status: 'active',
+        validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
+      };
+
+      const mockUpdatedSettings = {
+        ...mockCurrentSettings,
+        isEnabled: true,
+        selectedCouponId: 'coupon-123',
+        pointsEnabled: true,
+        pointsAmount: 500,
+      };
+
+      mockQuery
+        .mockResolvedValueOnce([mockCurrentSettings] as never) // getNewMemberCouponSettings
+        .mockResolvedValueOnce([mockCoupon] as never) // Validate coupon
+        .mockResolvedValueOnce([mockUpdatedSettings] as never); // Update settings
+
+      const result = await userService.updateNewMemberCouponSettings({
+        isEnabled: true,
+        selectedCouponId: 'coupon-123',
+        pointsEnabled: true,
+        pointsAmount: 500,
+      });
+
+      expect(result).toEqual(mockUpdatedSettings);
+    });
+
+    it('should throw error if selected coupon not found', async () => {
+      const mockCurrentSettings = {
+        id: 1,
+        isEnabled: false,
+        selectedCouponId: null,
+        pointsEnabled: false,
+        pointsAmount: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      mockQuery
+        .mockResolvedValueOnce([mockCurrentSettings] as never)
+        .mockResolvedValueOnce([] as never); // Coupon not found
+
+      await expect(userService.updateNewMemberCouponSettings({
+        isEnabled: true,
+        selectedCouponId: 'non-existent',
+        pointsEnabled: false,
+        pointsAmount: null,
+      })).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Selected coupon not found',
+      });
+    });
+
+    it('should throw error if coupon is not active', async () => {
+      const mockCurrentSettings = {
+        id: 1,
+        isEnabled: false,
+        selectedCouponId: null,
+        pointsEnabled: false,
+        pointsAmount: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const mockInactiveCoupon = {
+        id: 'coupon-123',
+        code: 'EXPIRED',
+        name: 'Expired Coupon',
+        status: 'expired',
+        validUntil: null,
+      };
+
+      mockQuery
+        .mockResolvedValueOnce([mockCurrentSettings] as never)
+        .mockResolvedValueOnce([mockInactiveCoupon] as never);
+
+      await expect(userService.updateNewMemberCouponSettings({
+        isEnabled: true,
+        selectedCouponId: 'coupon-123',
+        pointsEnabled: false,
+        pointsAmount: null,
+      })).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining('Only active coupons can be used'),
+      });
+    });
+
+    it('should throw error if coupon has expired', async () => {
+      const mockCurrentSettings = {
+        id: 1,
+        isEnabled: false,
+        selectedCouponId: null,
+        pointsEnabled: false,
+        pointsAmount: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const mockExpiredCoupon = {
+        id: 'coupon-123',
+        code: 'EXPIRED',
+        name: 'Expired Coupon',
+        status: 'active',
+        validUntil: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // Yesterday
+      };
+
+      mockQuery
+        .mockResolvedValueOnce([mockCurrentSettings] as never)
+        .mockResolvedValueOnce([mockExpiredCoupon] as never);
+
+      await expect(userService.updateNewMemberCouponSettings({
+        isEnabled: true,
+        selectedCouponId: 'coupon-123',
+        pointsEnabled: false,
+        pointsAmount: null,
+      })).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining('has expired'),
+      });
+    });
+
+    it('should throw error if points amount is invalid when enabled', async () => {
+      const mockCurrentSettings = {
+        id: 1,
+        isEnabled: false,
+        selectedCouponId: null,
+        pointsEnabled: false,
+        pointsAmount: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      mockQuery.mockResolvedValueOnce([mockCurrentSettings] as never);
+
+      await expect(userService.updateNewMemberCouponSettings({
+        isEnabled: false,
+        selectedCouponId: null,
+        pointsEnabled: true,
+        pointsAmount: 0,
+      })).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Points amount must be a positive number when points are enabled',
+      });
+    });
+
+    it('should throw error if points amount exceeds maximum', async () => {
+      const mockCurrentSettings = {
+        id: 1,
+        isEnabled: false,
+        selectedCouponId: null,
+        pointsEnabled: false,
+        pointsAmount: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      mockQuery.mockResolvedValueOnce([mockCurrentSettings] as never);
+
+      await expect(userService.updateNewMemberCouponSettings({
+        isEnabled: false,
+        selectedCouponId: null,
+        pointsEnabled: true,
+        pointsAmount: 15000,
+      })).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Points amount cannot exceed 10,000 points',
+      });
+    });
+
+    it('should throw error if update fails', async () => {
+      const mockCurrentSettings = {
+        id: 1,
+        isEnabled: false,
+        selectedCouponId: null,
+        pointsEnabled: false,
+        pointsAmount: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      mockQuery
+        .mockResolvedValueOnce([mockCurrentSettings] as never)
+        .mockResolvedValueOnce([] as never); // Update failed
+
+      await expect(userService.updateNewMemberCouponSettings({
+        isEnabled: false,
+        selectedCouponId: null,
+        pointsEnabled: false,
+        pointsAmount: null,
+      })).rejects.toMatchObject({
+        statusCode: 404,
+        message: 'Failed to update new member coupon settings',
+      });
+    });
+  });
+
+  describe('getCouponStatusForAdmin', () => {
+    it('should return coupon status with no warning for valid coupon', async () => {
+      const mockCoupon = {
+        id: 'coupon-123',
+        code: 'SUMMER20',
+        name: 'Summer Sale',
+        status: 'active',
+        validFrom: null,
+        validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      mockQuery.mockResolvedValueOnce([mockCoupon] as never);
+
+      const result = await userService.getCouponStatusForAdmin('coupon-123');
+
+      expect(result.id).toBe('coupon-123');
+      expect(result.isExpired).toBe(false);
+      expect(result.warningLevel).toBe('none');
+      expect(result.daysUntilExpiry).toBeGreaterThan(7);
+    });
+
+    it('should return warning level for soon-to-expire coupon', async () => {
+      const mockCoupon = {
+        id: 'coupon-123',
+        code: 'EXPIRING',
+        name: 'Expiring Soon',
+        status: 'active',
+        validFrom: null,
+        validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days
+      };
+
+      mockQuery.mockResolvedValueOnce([mockCoupon] as never);
+
+      const result = await userService.getCouponStatusForAdmin('coupon-123');
+
+      expect(result.warningLevel).toBe('warning');
+      expect(result.daysUntilExpiry).toBeLessThanOrEqual(7);
+    });
+
+    it('should return danger level for expired coupon', async () => {
+      const mockCoupon = {
+        id: 'coupon-123',
+        code: 'EXPIRED',
+        name: 'Expired Coupon',
+        status: 'active',
+        validFrom: null,
+        validUntil: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // Yesterday
+      };
+
+      mockQuery.mockResolvedValueOnce([mockCoupon] as never);
+
+      const result = await userService.getCouponStatusForAdmin('coupon-123');
+
+      expect(result.isExpired).toBe(true);
+      expect(result.warningLevel).toBe('danger');
+    });
+
+    it('should handle coupon with no expiry date', async () => {
+      const mockCoupon = {
+        id: 'coupon-123',
+        code: 'FOREVER',
+        name: 'No Expiry',
+        status: 'active',
+        validFrom: null,
+        validUntil: null,
+      };
+
+      mockQuery.mockResolvedValueOnce([mockCoupon] as never);
+
+      const result = await userService.getCouponStatusForAdmin('coupon-123');
+
+      expect(result.isExpired).toBe(false);
+      expect(result.daysUntilExpiry).toBeNull();
+      expect(result.warningLevel).toBe('none');
+    });
+
+    it('should throw error if coupon not found', async () => {
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      await expect(userService.getCouponStatusForAdmin('non-existent'))
+        .rejects.toMatchObject({
+          statusCode: 404,
+          message: 'Coupon not found',
+        });
+    });
+  });
+
+  describe('updateProfile with preferences', () => {
+    it('should merge preferences correctly', async () => {
+      const userId = 'user-123';
+      const currentPrefs = { theme: 'dark', language: 'en' };
+      const newPrefs = { notifications: true };
+
+      mockQuery
+        .mockResolvedValueOnce([{ preferences: currentPrefs }] as never) // Get current prefs
+        .mockResolvedValueOnce([{
+          userId,
+          firstName: 'John',
+          preferences: { ...currentPrefs, ...newPrefs },
+          membershipId: 'MEM12345',
+        }] as never); // Updated profile
+
+      const result = await userService.updateProfile(userId, {
+        preferences: newPrefs,
+      });
+
+      expect(result).toBeDefined();
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT preferences'),
+        [userId]
+      );
+    });
+
+    it('should handle gender and occupation in preferences', async () => {
+      const userId = 'user-123';
+
+      mockQuery
+        .mockResolvedValueOnce([{ preferences: {} }] as never)
+        .mockResolvedValueOnce([{
+          userId,
+          preferences: { gender: 'male', occupation: 'engineer' },
+          membershipId: 'MEM12345',
+        }] as never);
+
+      const result = await userService.updateProfile(userId, {
+        gender: 'male',
+        occupation: 'engineer',
+      });
+
+      expect(result.gender).toBe('male');
+      expect(result.occupation).toBe('engineer');
+    });
+  });
 });

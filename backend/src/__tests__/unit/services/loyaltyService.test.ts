@@ -992,4 +992,690 @@ describeActual('LoyaltyService - Database Operations', () => {
       expectActual(mockClient.release).toHaveBeenCalled();
     });
   });
+
+  describeActual('getAllTiers', () => {
+    test('should get all active tiers', async () => {
+      const mockTiers = [
+        { id: 't1', name: 'Bronze', min_points: 0, min_nights: 0, sort_order: 1 },
+        { id: 't2', name: 'Silver', min_points: 1000, min_nights: 1, sort_order: 2 },
+        { id: 't3', name: 'Gold', min_points: 5000, min_nights: 10, sort_order: 3 },
+        { id: 't4', name: 'Platinum', min_points: 10000, min_nights: 20, sort_order: 4 }
+      ];
+
+      mockPoolQuery.mockResolvedValueOnce({ rows: mockTiers } as never);
+
+      const result = await loyaltyService.getAllTiers();
+
+      expectActual(result).toEqual(mockTiers);
+      expectActual(mockPoolQuery).toHaveBeenCalledWith(
+        expectActual.stringContaining('SELECT * FROM tiers WHERE is_active = true ORDER BY sort_order ASC')
+      );
+    });
+
+    test('should handle errors in getAllTiers', async () => {
+      mockPoolQuery.mockRejectedValueOnce(new Error('Database error') as never);
+
+      await expectActual(
+        loyaltyService.getAllTiers()
+      ).rejects.toThrow('Failed to fetch loyalty tiers');
+    });
+  });
+
+  describeActual('initializeUserLoyalty', () => {
+    test('should throw error when no active tiers exist', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] } as never); // No tiers
+
+      await expectActual(
+        loyaltyService.initializeUserLoyalty('user-no-tiers')
+      ).rejects.toThrow('Failed to initialize user loyalty');
+    });
+
+    test('should handle existing user loyalty gracefully', async () => {
+      const userId = 'user-existing';
+
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'bronze-tier' }] } as never) // Get bronze tier
+        .mockResolvedValueOnce({ rows: [] } as never); // Insert returns empty (conflict - already exists)
+
+      await loyaltyService.initializeUserLoyalty(userId);
+
+      expectActual(mockPoolQuery).toHaveBeenCalledTimes(2);
+    });
+
+    test('should initialize new user with bronze tier', async () => {
+      const userId = 'user-new';
+
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'bronze-tier' }] } as never) // Get bronze tier
+        .mockResolvedValueOnce({ rows: [{ user_id: userId }] } as never); // Insert successful
+
+      await loyaltyService.initializeUserLoyalty(userId);
+
+      expectActual(mockPoolQuery).toHaveBeenCalledWith(
+        expectActual.stringContaining('INSERT INTO user_loyalty'),
+        [userId, 'bronze-tier']
+      );
+    });
+  });
+
+  describeActual('ensureUserLoyaltyEnrollment', () => {
+    test('should ensure user loyalty enrollment without throwing', async () => {
+      const userId = 'user-enroll';
+
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'bronze-tier' }] } as never)
+        .mockResolvedValueOnce({ rows: [{ user_id: userId }] } as never);
+
+      await loyaltyService.ensureUserLoyaltyEnrollment(userId);
+
+      expectActual(mockPoolQuery).toHaveBeenCalled();
+    });
+
+    test('should not throw error on enrollment failure', async () => {
+      const userId = 'user-fail-enroll';
+
+      mockPoolQuery.mockRejectedValueOnce(new Error('Database error') as never);
+
+      // Should not throw - enrollment failure shouldn't break login
+      await expectActual(
+        loyaltyService.ensureUserLoyaltyEnrollment(userId)
+      ).resolves.not.toThrow();
+    });
+  });
+
+  describeActual('awardPoints', () => {
+    test('should award points with all parameters', async () => {
+      const userId = 'user-award-full';
+      const points = 1000;
+      const expiresAt = new Date('2026-12-31');
+
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{ transaction_id: 'txn-full' }]
+      } as never);
+
+      const result = await loyaltyService.awardPoints(
+        userId,
+        points,
+        'admin_award',
+        'Full award',
+        'REF-123',
+        'admin-1',
+        'Test reason',
+        expiresAt
+      );
+
+      expectActual(result).toBe('txn-full');
+    });
+
+    test('should handle errors in awardPoints', async () => {
+      const userId = 'user-award-error';
+
+      mockPoolQuery.mockRejectedValueOnce(new Error('Award failed') as never);
+
+      await expectActual(
+        loyaltyService.awardPoints(userId, 100)
+      ).rejects.toThrow('Failed to award points');
+    });
+  });
+
+  describeActual('getUserPointsHistory error handling', () => {
+    test('should handle errors in getUserPointsHistory', async () => {
+      const userId = 'user-history-error';
+
+      mockPoolQuery.mockRejectedValueOnce(new Error('Query failed') as never);
+
+      await expectActual(
+        loyaltyService.getUserPointsHistory(userId)
+      ).rejects.toThrow('Failed to fetch points history');
+    });
+  });
+
+  describeActual('getAdminTransactions', () => {
+    test('should get admin transactions with pagination', async () => {
+      const mockTransactions = [
+        {
+          id: 'txn-1',
+          user_id: 'user-1',
+          points: 500,
+          type: 'admin_award',
+          admin_user_id: 'admin-1',
+          admin_email: 'admin@test.com'
+        },
+        {
+          id: 'txn-2',
+          user_id: 'user-2',
+          points: -100,
+          type: 'admin_deduction',
+          admin_user_id: 'admin-1'
+        }
+      ];
+
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: mockTransactions } as never)
+        .mockResolvedValueOnce({ rows: [{ total: '2' }] } as never);
+
+      const result = await loyaltyService.getAdminTransactions(10, 0);
+
+      expectActual(result.transactions).toEqual(mockTransactions);
+      expectActual(result.total).toBe(2);
+      expectActual(mockPoolQuery).toHaveBeenCalledWith(
+        expectActual.stringContaining('admin_award'),
+        [10, 0]
+      );
+    });
+
+    test('should handle earned_stay transactions in admin view', async () => {
+      const mockTransactions = [
+        {
+          id: 'txn-stay',
+          user_id: 'user-1',
+          points: 1000,
+          type: 'earned_stay',
+          nights_stayed: 2
+        }
+      ];
+
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: mockTransactions } as never)
+        .mockResolvedValueOnce({ rows: [{ total: '1' }] } as never);
+
+      const result = await loyaltyService.getAdminTransactions(50, 0);
+
+      expectActual(result.transactions).toHaveLength(1);
+      expectActual(result.transactions[0]?.type).toBe('earned_stay');
+    });
+
+    test('should handle errors in getAdminTransactions', async () => {
+      mockPoolQuery.mockRejectedValueOnce(new Error('Query failed') as never);
+
+      await expectActual(
+        loyaltyService.getAdminTransactions()
+      ).rejects.toThrow('Failed to fetch admin transactions');
+    });
+  });
+
+  describeActual('getAllUsersLoyaltyStatus', () => {
+    test('should get all users loyalty status with pagination', async () => {
+      const mockUsers = [
+        {
+          user_id: 'user-1',
+          current_points: 5000,
+          total_nights: 15,
+          tier_name: 'Gold',
+          email: 'user1@test.com',
+          membership_id: 'MEM-001'
+        },
+        {
+          user_id: 'user-2',
+          current_points: 1000,
+          total_nights: 3,
+          tier_name: 'Silver',
+          email: 'user2@test.com',
+          membership_id: 'MEM-002'
+        }
+      ];
+
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: mockUsers } as never)
+        .mockResolvedValueOnce({ rows: [{ total: '2' }] } as never);
+
+      const result = await loyaltyService.getAllUsersLoyaltyStatus(50, 0);
+
+      expectActual(result.users).toEqual(mockUsers);
+      expectActual(result.total).toBe(2);
+    });
+
+    test('should filter users by search term', async () => {
+      const searchTerm = 'john';
+      const mockUsers = [
+        {
+          user_id: 'user-john',
+          email: 'john@test.com',
+          first_name: 'John',
+          total_nights: 10
+        }
+      ];
+
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: mockUsers } as never)
+        .mockResolvedValueOnce({ rows: [{ total: '1' }] } as never);
+
+      const result = await loyaltyService.getAllUsersLoyaltyStatus(50, 0, searchTerm);
+
+      expectActual(result.users).toHaveLength(1);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expectActual((result.users[0] as any)?.email).toContain('john');
+    });
+
+    test('should handle errors in getAllUsersLoyaltyStatus', async () => {
+      mockPoolQuery.mockRejectedValueOnce(new Error('Query failed') as never);
+
+      await expectActual(
+        loyaltyService.getAllUsersLoyaltyStatus()
+      ).rejects.toThrow('Failed to fetch users loyalty status');
+    });
+  });
+
+  describeActual('getPointsEarningRules', () => {
+    test('should get active earning rules', async () => {
+      const mockRules = [
+        {
+          id: 'rule-1',
+          points_per_unit: 10,
+          is_active: true,
+          multiplier_by_tier: { Bronze: 1.0, Silver: 1.2, Gold: 1.5, Platinum: 2.0 }
+        }
+      ];
+
+      mockPoolQuery.mockResolvedValueOnce({ rows: mockRules } as never);
+
+      const result = await loyaltyService.getPointsEarningRules();
+
+      expectActual(result).toEqual(mockRules);
+      expectActual(mockPoolQuery).toHaveBeenCalledWith(
+        expectActual.stringContaining('points_earning_rules')
+      );
+    });
+
+    test('should handle errors in getPointsEarningRules', async () => {
+      mockPoolQuery.mockRejectedValueOnce(new Error('Query failed') as never);
+
+      await expectActual(
+        loyaltyService.getPointsEarningRules()
+      ).rejects.toThrow('Failed to fetch points earning rules');
+    });
+  });
+
+  describeActual('awardNights', () => {
+    test('should award nights successfully', async () => {
+      const userId = 'user-award-nights';
+      const nights = 5;
+      const adminUserId = 'admin-1';
+      const adminReason = 'Compensation';
+
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] } as never) // BEGIN
+        .mockResolvedValueOnce({ rows: [] } as never) // Ensure user loyalty
+        .mockResolvedValueOnce({ rows: [{ id: 'txn-nights' }] } as never) // Insert transaction
+        .mockResolvedValueOnce({ rows: [] } as never) // Update user_loyalty
+        .mockResolvedValueOnce({ rows: [{ total_nights: 5 }] } as never) // Get total nights
+        .mockResolvedValueOnce({ rows: [{ tier_name: 'Bronze' }] } as never) // Previous tier
+        .mockResolvedValueOnce({ rows: [{ new_tier_name: 'Silver' }] } as never) // New tier
+        .mockResolvedValueOnce({ rows: [] } as never); // COMMIT
+
+      const result = await loyaltyService.awardNights(userId, nights, adminUserId, adminReason);
+
+      expectActual(result.newTotalNights).toBe(5);
+      expectActual(result.newTierName).toBe('Silver');
+      expectActual(result.transactionId).toBe('txn-nights');
+    });
+
+    test('should reject zero or negative nights award', async () => {
+      await expectActual(
+        loyaltyService.awardNights('user-1', 0, 'admin-1', 'reason')
+      ).rejects.toThrow('Failed to award nights');
+
+      await expectActual(
+        loyaltyService.awardNights('user-1', -5, 'admin-1', 'reason')
+      ).rejects.toThrow('Failed to award nights');
+    });
+
+    test('should handle errors in awardNights', async () => {
+      mockClient.query.mockRejectedValueOnce(new Error('Database error') as never);
+
+      await expectActual(
+        loyaltyService.awardNights('user-1', 5, 'admin-1', 'reason')
+      ).rejects.toThrow('Failed to award nights');
+    });
+  });
+
+  describeActual('deductNights', () => {
+    test('should deduct nights successfully', async () => {
+      const userId = 'user-deduct-nights';
+      const nights = 3;
+      const adminUserId = 'admin-1';
+      const adminReason = 'Correction';
+
+      // Mock getUserLoyaltyStatus
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{
+          user_id: userId,
+          current_points: 1000,
+          total_nights: 10,
+          tier_name: 'Gold'
+        }]
+      } as never);
+
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] } as never) // BEGIN
+        .mockResolvedValueOnce({ rows: [] } as never) // Ensure user loyalty
+        .mockResolvedValueOnce({ rows: [{ id: 'txn-deduct-nights' }] } as never) // Insert transaction
+        .mockResolvedValueOnce({ rows: [] } as never) // Update user_loyalty
+        .mockResolvedValueOnce({ rows: [{ total_nights: 7 }] } as never) // Get total nights
+        .mockResolvedValueOnce({ rows: [{ tier_name: 'Gold' }] } as never) // Previous tier
+        .mockResolvedValueOnce({ rows: [{ new_tier_name: 'Silver' }] } as never) // Downgraded tier
+        .mockResolvedValueOnce({ rows: [] } as never); // COMMIT
+
+      const result = await loyaltyService.deductNights(userId, nights, adminUserId, adminReason);
+
+      expectActual(result.newTotalNights).toBe(7);
+      expectActual(result.newTierName).toBe('Silver');
+    });
+
+    test('should reject zero or negative nights deduction', async () => {
+      await expectActual(
+        loyaltyService.deductNights('user-1', 0, 'admin-1', 'reason')
+      ).rejects.toThrow('Failed to deduct nights');
+    });
+
+    test('should reject deduction when insufficient nights', async () => {
+      const userId = 'user-insufficient-nights';
+
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{
+          user_id: userId,
+          current_points: 500,
+          total_nights: 2,
+          tier_name: 'Silver'
+        }]
+      } as never);
+
+      await expectActual(
+        loyaltyService.deductNights(userId, 5, 'admin-1', 'reason')
+      ).rejects.toThrow('Failed to deduct nights');
+    });
+
+    test('should handle errors in deductNights', async () => {
+      mockPoolQuery.mockRejectedValueOnce(new Error('Database error') as never);
+
+      await expectActual(
+        loyaltyService.deductNights('user-1', 3, 'admin-1', 'reason')
+      ).rejects.toThrow('Failed to deduct nights');
+    });
+  });
+
+  describeActual('earnPointsForStay', () => {
+    test('should calculate and award points for stay with tier multiplier', async () => {
+      const userId = 'user-stay-earn';
+      const amountSpent = 1000;
+      const stayId = 'STAY-001';
+
+      // Mock getUserLoyaltyStatus
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{
+          user_id: userId,
+          current_points: 2000,
+          total_nights: 15,
+          tier_name: 'Gold'
+        }]
+      } as never);
+
+      // Mock getPointsEarningRules
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{
+          points_per_unit: 10,
+          multiplier_by_tier: { Bronze: 1.0, Silver: 1.2, Gold: 1.5, Platinum: 2.0 }
+        }]
+      } as never);
+
+      // Mock awardPoints
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{ transaction_id: 'txn-stay-earn' }]
+      } as never);
+
+      const result = await loyaltyService.earnPointsForStay(userId, amountSpent, stayId);
+
+      expectActual(result).toBe('txn-stay-earn');
+      // Gold tier: 1000 * 10 * 1.5 = 15000 points
+      expectActual(mockPoolQuery).toHaveBeenCalledWith(
+        expectActual.stringContaining('award_points'),
+        expectActual.arrayContaining([userId, 15000])
+      );
+    });
+
+    test('should handle user not found error', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] } as never); // No user
+
+      await expectActual(
+        loyaltyService.earnPointsForStay('user-not-found', 1000)
+      ).rejects.toThrow('Failed to earn points for stay');
+    });
+
+    test('should handle no earning rules configured', async () => {
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: [{ tier_name: 'Bronze' }] } as never) // User exists
+        .mockResolvedValueOnce({ rows: [] } as never); // No rules
+
+      await expectActual(
+        loyaltyService.earnPointsForStay('user-1', 1000)
+      ).rejects.toThrow('Failed to earn points for stay');
+    });
+
+    test('should handle errors in earnPointsForStay', async () => {
+      mockPoolQuery.mockRejectedValueOnce(new Error('Database error') as never);
+
+      await expectActual(
+        loyaltyService.earnPointsForStay('user-1', 1000)
+      ).rejects.toThrow('Failed to earn points for stay');
+    });
+  });
+
+  describeActual('getTransactionHistory', () => {
+    test('should get paginated transaction history', async () => {
+      const userId = 'user-paginated';
+      const page = 2;
+      const pageSize = 10;
+
+      const mockTransactions = Array.from({ length: 10 }, (_, i) => ({
+        id: `txn-${i}`,
+        user_id: userId,
+        points: 100,
+        type: 'earned_stay'
+      }));
+
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: mockTransactions } as never)
+        .mockResolvedValueOnce({ rows: [{ total: '50' }] } as never);
+
+      const result = await loyaltyService.getTransactionHistory(userId, page, pageSize);
+
+      expectActual(result.transactions).toHaveLength(10);
+      expectActual(result.total).toBe(50);
+      expectActual(result.page).toBe(2);
+      expectActual(result.pageSize).toBe(10);
+      expectActual(result.totalPages).toBe(5); // 50 / 10
+    });
+
+    test('should calculate total pages correctly', async () => {
+      const userId = 'user-pages';
+
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: [] } as never)
+        .mockResolvedValueOnce({ rows: [{ total: '23' }] } as never);
+
+      const result = await loyaltyService.getTransactionHistory(userId, 1, 10);
+
+      expectActual(result.totalPages).toBe(3); // ceil(23 / 10)
+    });
+  });
+
+  describeActual('getTierConfiguration', () => {
+    test('should get tier configuration', async () => {
+      const mockTiers = [
+        {
+          id: 't1',
+          name: 'Bronze',
+          required_points: 0,
+          benefits: { description: 'Base benefits', perks: [] },
+          color: '#CD7F32',
+          icon: 'star'
+        },
+        {
+          id: 't2',
+          name: 'Silver',
+          required_points: 1000,
+          benefits: { description: 'Silver benefits', perks: ['perk1'] },
+          color: '#C0C0C0',
+          icon: 'star'
+        }
+      ];
+
+      mockPoolQuery.mockResolvedValueOnce({ rows: mockTiers } as never);
+
+      const result = await loyaltyService.getTierConfiguration();
+
+      expectActual(result).toEqual(mockTiers);
+      expectActual(mockPoolQuery).toHaveBeenCalledWith(
+        expectActual.stringContaining('min_points as required_points')
+      );
+    });
+
+    test('should handle errors in getTierConfiguration', async () => {
+      mockPoolQuery.mockRejectedValueOnce(new Error('Query failed') as never);
+
+      await expectActual(
+        loyaltyService.getTierConfiguration()
+      ).rejects.toThrow('Failed to fetch tier configuration');
+    });
+  });
+
+  describeActual('updateTierConfiguration', () => {
+    test('should update tier name', async () => {
+      const tierId = 'tier-1';
+      const config = { name: 'Premium Gold' };
+
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{
+          id: tierId,
+          name: 'Premium Gold',
+          required_points: 5000,
+          benefits: [],
+          color: '#FFD700',
+          icon: 'star'
+        }]
+      } as never);
+
+      const result = await loyaltyService.updateTierConfiguration(tierId, config);
+
+      expectActual(result.name).toBe('Premium Gold');
+    });
+
+    test('should update tier points requirement', async () => {
+      const tierId = 'tier-2';
+      const config = { required_points: 8000 };
+
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{
+          id: tierId,
+          name: 'Gold',
+          required_points: 8000,
+          benefits: [],
+          color: '#FFD700',
+          icon: 'star'
+        }]
+      } as never);
+
+      const result = await loyaltyService.updateTierConfiguration(tierId, config);
+
+      expectActual(result.required_points).toBe(8000);
+    });
+
+    test('should update tier benefits', async () => {
+      const tierId = 'tier-3';
+      const config = { benefits: ['Free breakfast', 'Late checkout'] };
+
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{
+          id: tierId,
+          name: 'Platinum',
+          required_points: 10000,
+          benefits: ['Free breakfast', 'Late checkout'],
+          color: '#E5E4E2',
+          icon: 'star'
+        }]
+      } as never);
+
+      const result = await loyaltyService.updateTierConfiguration(tierId, config);
+
+      expectActual(result.benefits).toEqual(['Free breakfast', 'Late checkout']);
+    });
+
+    test('should update tier color', async () => {
+      const tierId = 'tier-4';
+      const config = { color: '#FF0000' };
+
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{
+          id: tierId,
+          name: 'Ruby',
+          required_points: 15000,
+          benefits: [],
+          color: '#FF0000',
+          icon: 'star'
+        }]
+      } as never);
+
+      const result = await loyaltyService.updateTierConfiguration(tierId, config);
+
+      expectActual(result.color).toBe('#FF0000');
+    });
+
+    test('should update multiple tier properties', async () => {
+      const tierId = 'tier-5';
+      const config = {
+        name: 'Diamond',
+        required_points: 20000,
+        color: '#B9F2FF',
+        benefits: ['Concierge', 'Room upgrade']
+      };
+
+      mockPoolQuery.mockResolvedValueOnce({
+        rows: [{
+          id: tierId,
+          name: 'Diamond',
+          required_points: 20000,
+          benefits: ['Concierge', 'Room upgrade'],
+          color: '#B9F2FF',
+          icon: 'star'
+        }]
+      } as never);
+
+      const result = await loyaltyService.updateTierConfiguration(tierId, config);
+
+      expectActual(result.name).toBe('Diamond');
+      expectActual(result.required_points).toBe(20000);
+      expectActual(result.color).toBe('#B9F2FF');
+    });
+
+    test('should throw error when no fields to update', async () => {
+      const tierId = 'tier-6';
+      const config = {};
+
+      await expectActual(
+        loyaltyService.updateTierConfiguration(tierId, config)
+      ).rejects.toThrow('Failed to update tier configuration');
+    });
+
+    test('should throw error when tier not found', async () => {
+      const tierId = 'non-existent-tier';
+      const config = { name: 'New Name' };
+
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] } as never);
+
+      await expectActual(
+        loyaltyService.updateTierConfiguration(tierId, config)
+      ).rejects.toThrow('Failed to update tier configuration');
+    });
+
+    test('should handle errors in updateTierConfiguration', async () => {
+      const tierId = 'tier-error';
+      const config = { name: 'Error Tier' };
+
+      mockPoolQuery.mockRejectedValueOnce(new Error('Update failed') as never);
+
+      await expectActual(
+        loyaltyService.updateTierConfiguration(tierId, config)
+      ).rejects.toThrow('Failed to update tier configuration');
+    });
+  });
 });
