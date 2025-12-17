@@ -83,7 +83,7 @@ export async function optionalAuth(
       }
     }
     next();
-  } catch (error) {
+  } catch {
     // Don't fail on auth errors - just continue without auth
     next();
   }
