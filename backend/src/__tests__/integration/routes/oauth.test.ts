@@ -9,9 +9,13 @@
 import request from 'supertest';
 import express, { Express } from 'express';
 import { Session, SessionData } from 'express-session';
+import passport from 'passport';
 import oauthRoutes from '../../../routes/oauth';
 import { createTestApp } from '../../fixtures';
 import { oauthStateService } from '../../../services/oauthStateService';
+import { oauthService } from '../../../services/oauthService';
+import { AuthService } from '../../../services/authService';
+import { query } from '../../../config/database';
 
 // Mock dependencies
 jest.mock('../../../services/oauthStateService');
@@ -663,8 +667,7 @@ describe('OAuth Routes Integration Tests', () => {
 
   describe('Google callback success flow coverage', () => {
     beforeEach(() => {
-      const passport = require('passport');
-      passport.authenticate = jest.fn((_strategy, _options, callback) => {
+      jest.mocked(passport).authenticate.mockImplementation((_strategy, _options, callback) => {
         return (_req: express.Request, _res: express.Response, _next: express.NextFunction) => {
           // Simulate successful authentication
           const mockOAuthResult = {
@@ -709,8 +712,7 @@ describe('OAuth Routes Integration Tests', () => {
     });
 
     it('should include isNewUser flag in success URL', async () => {
-      const passport = require('passport');
-      passport.authenticate = jest.fn((_strategy, _options, callback) => {
+      jest.mocked(passport).authenticate.mockImplementation((_strategy, _options, callback) => {
         return (_req: express.Request, _res: express.Response, _next: express.NextFunction) => {
           const mockOAuthResult = {
             user: {
@@ -739,8 +741,7 @@ describe('OAuth Routes Integration Tests', () => {
 
   describe('Google callback error scenarios', () => {
     it('should handle passport authentication error', async () => {
-      const passport = require('passport');
-      passport.authenticate = jest.fn((_strategy, _options, callback) => {
+      jest.mocked(passport).authenticate.mockImplementation((_strategy, _options, callback) => {
         return (_req: express.Request, _res: express.Response, _next: express.NextFunction) => {
           callback(new Error('Authentication failed'), null, null);
         };
@@ -755,8 +756,7 @@ describe('OAuth Routes Integration Tests', () => {
     });
 
     it('should handle missing user from passport', async () => {
-      const passport = require('passport');
-      passport.authenticate = jest.fn((_strategy, _options, callback) => {
+      jest.mocked(passport).authenticate.mockImplementation((_strategy, _options, callback) => {
         return (_req: express.Request, _res: express.Response, _next: express.NextFunction) => {
           callback(null, null, { message: 'User not found' });
         };
@@ -771,8 +771,7 @@ describe('OAuth Routes Integration Tests', () => {
     });
 
     it('should handle missing OAuth result data', async () => {
-      const passport = require('passport');
-      passport.authenticate = jest.fn((_strategy, _options, callback) => {
+      jest.mocked(passport).authenticate.mockImplementation((_strategy, _options, callback) => {
         return (_req: express.Request, _res: express.Response, _next: express.NextFunction) => {
           callback(null, null, null);
         };
@@ -787,8 +786,7 @@ describe('OAuth Routes Integration Tests', () => {
     });
 
     it('should handle incomplete OAuth result (missing tokens)', async () => {
-      const passport = require('passport');
-      passport.authenticate = jest.fn((_strategy, _options, callback) => {
+      jest.mocked(passport).authenticate.mockImplementation((_strategy, _options, callback) => {
         return (_req: express.Request, _res: express.Response, _next: express.NextFunction) => {
           const incompleteResult = {
             user: { id: 'user-123', email: 'test@example.com' },
@@ -808,8 +806,7 @@ describe('OAuth Routes Integration Tests', () => {
     });
 
     it('should handle callback error with mobile Safari', async () => {
-      const passport = require('passport');
-      passport.authenticate = jest.fn((_strategy, _options, _callback) => {
+      jest.mocked(passport).authenticate.mockImplementation((_strategy, _options, _callback) => {
         return (_req: express.Request, _res: express.Response, _next: express.NextFunction) => {
           throw new Error('Callback processing error');
         };
@@ -893,8 +890,7 @@ describe('OAuth Routes Integration Tests', () => {
         });
 
       // Mock oauthService
-      const { oauthService } = require('../../../services/oauthService');
-      oauthService.handleLineAuth = jest.fn().mockResolvedValue({
+      jest.mocked(oauthService).handleLineAuth.mockResolvedValue({
         user: {
           id: 'user-123',
           email: 'lineuser@example.com',
@@ -992,8 +988,7 @@ describe('OAuth Routes Integration Tests', () => {
           }),
         });
 
-      const { oauthService } = require('../../../services/oauthService');
-      oauthService.handleLineAuth = jest.fn().mockResolvedValue(null);
+      jest.mocked(oauthService).handleLineAuth.mockResolvedValue(null);
 
       const response = await request(app)
         .get('/api/oauth/line/callback')
@@ -1030,8 +1025,7 @@ describe('OAuth Routes Integration Tests', () => {
           }),
         });
 
-      const { oauthService } = require('../../../services/oauthService');
-      oauthService.handleLineAuth = jest.fn().mockResolvedValue({
+      jest.mocked(oauthService).handleLineAuth.mockResolvedValue({
         user: { id: 'user-mobile', email: 'mobile@example.com' },
         tokens: { accessToken: 'mobile-token', refreshToken: 'mobile-refresh' },
         isNewUser: true,
@@ -1135,17 +1129,14 @@ describe('OAuth Routes Integration Tests', () => {
 
   describe('OAuth /me endpoint', () => {
     it('should return user data with valid token', async () => {
-      const { AuthService } = require('../../../services/authService');
-      const { query } = require('../../../config/database');
-
-      AuthService.mockImplementation(() => ({
+      jest.mocked(AuthService).mockImplementation(() => ({
         verifyToken: jest.fn().mockResolvedValue({
           id: 'user-123',
           email: 'test@example.com',
         }),
       }));
 
-      query.mockResolvedValue([
+      jest.mocked(query).mockResolvedValue([
         {
           id: 'user-123',
           email: 'test@example.com',
@@ -1168,16 +1159,13 @@ describe('OAuth Routes Integration Tests', () => {
     });
 
     it('should return 404 when user not found', async () => {
-      const { AuthService } = require('../../../services/authService');
-      const { query } = require('../../../config/database');
-
-      AuthService.mockImplementation(() => ({
+      jest.mocked(AuthService).mockImplementation(() => ({
         verifyToken: jest.fn().mockResolvedValue({
           id: 'nonexistent-user',
         }),
       }));
 
-      query.mockResolvedValue([]);
+      jest.mocked(query).mockResolvedValue([]);
 
       const response = await request(app)
         .get('/api/oauth/me')
@@ -1188,9 +1176,7 @@ describe('OAuth Routes Integration Tests', () => {
     });
 
     it('should return 401 with invalid token', async () => {
-      const { AuthService } = require('../../../services/authService');
-
-      AuthService.mockImplementation(() => ({
+      jest.mocked(AuthService).mockImplementation(() => ({
         verifyToken: jest.fn().mockRejectedValue(new Error('Invalid token')),
       }));
 

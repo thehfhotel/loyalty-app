@@ -151,7 +151,7 @@ describe('SeedDatabase Utils', () => {
     it('should skip existing tiers', async () => {
       // Mock Bronze already exists
       mockQuery.mockImplementation((((query: string, params?: unknown[]) => {
-        if (query.includes('SELECT') && params && params[0] === 'Bronze') {
+        if (query.includes('SELECT') && params?.[0] === 'Bronze') {
           return Promise.resolve({ rows: [{ id: '123' }] });
         }
         return Promise.resolve({ rows: [] });
@@ -188,7 +188,7 @@ describe('SeedDatabase Utils', () => {
 
     it('should handle individual tier seeding errors', async () => {
       mockQuery.mockImplementation(((query: string, params?: unknown[]) => {
-        if (query.includes('INSERT') && params && params[0] === 'Silver') {
+        if (query.includes('INSERT') && params?.[0] === 'Silver') {
           return Promise.reject(new Error('Database error'));
         }
         return Promise.resolve({ rows: [] });
@@ -376,7 +376,7 @@ describe('SeedDatabase Utils', () => {
         if (query.includes('SELECT EXISTS')) {
           return Promise.resolve({ rows: [{ exists: true }] });
         }
-        if (query.includes('SELECT id FROM surveys') && params && params[0] === firstSurveyId) {
+        if (query.includes('SELECT id FROM surveys') && params?.[0] === firstSurveyId) {
           return Promise.resolve({ rows: [{ id: firstSurveyId }] });
         }
         return Promise.resolve({ rows: [] });
