@@ -3,12 +3,13 @@
  * Wraps the app to provide tRPC and React Query functionality
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
 import { trpc } from './trpc';
 import { API_BASE_URL } from './apiConfig';
 import { useAuthStore } from '../store/authStore';
+import { getCsrfToken } from './axiosInterceptor';
 
 // Log tRPC configuration for E2E debugging
 const TRPC_URL = `${API_BASE_URL}/trpc`;
@@ -53,8 +54,8 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
             );
             return fetchPromise;
           },
-          // Add auth headers from zustand store (reads from in-memory state)
-          headers() {
+          // Add auth headers and CSRF token from zustand store (reads from in-memory state)
+          async headers() {
             // Read token directly from zustand store state (synchronous)
             const state = useAuthStore.getState();
             const token = state.accessToken;
@@ -65,7 +66,23 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
               hasUser: !!state.user,
               tokenPrefix: token ? token.substring(0, 20) + '...' : null
             });
-            return token ? { authorization: `Bearer ${token}` } : {};
+
+            // Get CSRF token for mutations
+            let csrfToken: string | undefined;
+            try {
+              csrfToken = await getCsrfToken();
+            } catch {
+              console.warn('[tRPC headers] Could not get CSRF token');
+            }
+
+            const headers: Record<string, string> = {};
+            if (token) {
+              headers.authorization = `Bearer ${token}`;
+            }
+            if (csrfToken) {
+              headers['X-CSRF-Token'] = csrfToken;
+            }
+            return headers;
           },
         }),
       ],

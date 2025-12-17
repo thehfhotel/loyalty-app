@@ -11,8 +11,8 @@ test.describe('tRPC integration (browser)', () => {
   test('Dashboard loads loyalty data', async ({ page }) => {
     await loginViaUI(page, TEST_USER.email, TEST_USER.password);
 
-    await expect(page.getByTestId('loyalty-points')).toBeVisible();
-    await expect(page.getByTestId('loyalty-tier')).toBeVisible();
+    await expect(page.getByTestId('dashboard-points')).toBeVisible();
+    await expect(page.getByTestId('dashboard-tier')).toBeVisible();
   });
 
   test('Profile loads user data', async ({ page }) => {
@@ -33,7 +33,7 @@ test.describe('tRPC integration (browser)', () => {
 
     await loginViaUI(page, TEST_USER.email, TEST_USER.password);
     await page.goto('/dashboard');
-    await expect(page.getByTestId('loyalty-points')).toBeVisible();
+    await expect(page.getByTestId('dashboard-points')).toBeVisible();
     await page.waitForTimeout(1000);
 
     expect(trpcStatuses.length).toBeGreaterThan(0);
@@ -44,11 +44,11 @@ test.describe('tRPC integration (browser)', () => {
     await loginViaUI(page, TEST_USER.email, TEST_USER.password);
     await page.goto('/dashboard');
 
-    const pointsText = (await page.getByTestId('loyalty-points').innerText()).trim();
-    const tierText = (await page.getByTestId('loyalty-tier').innerText()).trim();
+    const pointsText = (await page.getByTestId('dashboard-points').innerText()).trim();
+    const tierText = (await page.getByTestId('dashboard-tier').innerText()).trim();
 
     await page.reload();
-    await expect(page.getByTestId('loyalty-points')).toHaveText(pointsText);
-    await expect(page.getByTestId('loyalty-tier')).toHaveText(tierText);
+    await expect(page.getByTestId('dashboard-points')).toHaveText(pointsText);
+    await expect(page.getByTestId('dashboard-tier')).toHaveText(tierText);
   });
 });

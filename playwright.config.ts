@@ -25,8 +25,8 @@ export default defineConfig({
   /* Disable test-level retries - rely on request-level retries instead for faster feedback */
   retries: 0,  // Disabled: request-level retries handle transient failures more efficiently
 
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
+  /* Use single worker for consistent test execution */
+  workers: 1,
 
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: [

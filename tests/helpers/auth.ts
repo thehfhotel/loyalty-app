@@ -11,10 +11,12 @@ const AUTH_STORAGE_KEY = 'auth-storage';
 
 export async function loginViaUI(page: Page, email: string, password: string): Promise<void> {
   await page.goto('/login');
+  await page.waitForLoadState('networkidle');
   await page.fill('[data-testid="login-email"]', email);
   await page.fill('[data-testid="login-password"]', password);
   await page.click('[data-testid="login-submit"]');
-  await page.waitForURL('**/dashboard');
+  // Use regex pattern with extended timeout for more reliable matching
+  await page.waitForURL(/\/dashboard/, { timeout: 15000 });
 }
 
 export async function loginViaLocalStorage(page: Page, authState: unknown): Promise<void> {
@@ -37,6 +39,7 @@ export async function getAuthState<T = unknown>(page: Page): Promise<T | null> {
 
 export async function logout(page: Page): Promise<void> {
   await page.click('[data-testid="logout-button"]');
-  await page.waitForURL('**/login');
+  // Wait for navigation to login page (may include query params like ?returnUrl=...)
+  await page.waitForURL(/\/login/, { timeout: 15000 });
   await expect(page).toHaveURL(/\/login/);
 }
