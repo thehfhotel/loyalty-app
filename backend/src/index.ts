@@ -30,6 +30,7 @@ import {
   productionSecurity
 } from './middleware/security';
 import { csrfProtection, getCsrfToken } from './middleware/csrf';
+import { optionalAuth } from './middleware/auth';
 import { connectDatabase } from './config/database';
 import { connectRedis, getRedisClient } from './config/redis';
 import { seedMembershipSequence, seedTiers, seedSurveys, seedE2ETestUser } from './utils/seedDatabase';
@@ -393,9 +394,11 @@ function configureApp(app: express.Express) {
   app.use('/api/analytics', apiRateLimit, userRateLimit, analyticsRoutes);
 
   // tRPC endpoint - Type-safe API with end-to-end type safety
+  // optionalAuth parses JWT token if present, setting req.user for authenticated requests
   app.use(
     '/api/trpc',
     apiRateLimit,
+    optionalAuth,
     createExpressMiddleware({
       router: appRouter,
       createContext,
