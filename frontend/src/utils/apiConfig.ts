@@ -21,20 +21,25 @@ const isBrowser = typeof window !== 'undefined';
  * Get the API base URL with environment-aware fallback strategy
  *
  * @returns {string} The API base URL
- * @throws {Error} In production if VITE_API_URL is not configured
+ *
+ * IMPORTANT: In browser context, we ALWAYS use relative URLs (/api) so that:
+ * 1. Requests go through the proxy (Vite dev server or nginx)
+ * 2. CORS is handled automatically (same-origin requests)
+ * 3. SSL certificates work correctly
+ *
+ * The VITE_API_URL is used to configure the proxy target, not for direct requests.
  */
 export const getApiUrl = (): string => {
-  const envUrl = import.meta.env.VITE_API_URL;
-
-  // If environment variable is set, use it (both dev and prod)
-  if (envUrl) {
-    return envUrl;
-  }
-
-  // In browser context, use relative URL (will be proxied by nginx)
-  // This works when frontend is accessed through nginx at http://localhost:5001
+  // In browser context, ALWAYS use relative URL to go through proxy
+  // This ensures CORS is handled correctly by the proxy layer
   if (isBrowser) {
     return '/api';
+  }
+
+  // For non-browser contexts (SSR, build time), use environment variable if set
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) {
+    return envUrl;
   }
 
   // In development mode (build time), allow fallback with warning
@@ -46,12 +51,8 @@ export const getApiUrl = (): string => {
     return '/api';
   }
 
-  // In production, fail fast with clear error message
-  throw new Error(
-    'VITE_API_URL must be set in production environment. ' +
-    'Check your .env.production file and docker-compose configuration. ' +
-    'Expected format: https://yourdomain.com/api'
-  );
+  // Default fallback - relative URL works in most cases
+  return '/api';
 };
 
 /**
