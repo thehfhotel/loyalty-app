@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
 import { trpc } from './trpc';
 import { API_BASE_URL } from './apiConfig';
+import { useAuthStore } from '../store/authStore';
 
 // Log tRPC configuration for E2E debugging
 const TRPC_URL = `${API_BASE_URL}/trpc`;
@@ -45,20 +46,13 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
             );
             return fetchPromise;
           },
-          // Add auth headers from zustand persisted store
+          // Add auth headers from zustand store (reads from in-memory state)
           headers() {
-            // Read token from zustand persisted auth store
-            const authStorage = localStorage.getItem('auth-storage');
-            if (authStorage) {
-              try {
-                const parsed = JSON.parse(authStorage);
-                const token = parsed.state?.accessToken;
-                return token ? { authorization: `Bearer ${token}` } : {};
-              } catch {
-                return {};
-              }
-            }
-            return {};
+            // Read token directly from zustand store state (synchronous)
+            // This is more reliable than reading from localStorage which is async
+            const token = useAuthStore.getState().accessToken;
+            console.log('[tRPC headers] Token present:', !!token);
+            return token ? { authorization: `Bearer ${token}` } : {};
           },
         }),
       ],
