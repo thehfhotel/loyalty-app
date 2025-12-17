@@ -31,10 +31,19 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
           url: TRPC_URL,
           // Include credentials (cookies) in requests
           fetch(url, options) {
-            return fetch(url, {
+            console.log('[tRPC fetch] Making request:', {
+              url: typeof url === 'string' ? url : url.toString(),
+              method: options?.method || 'GET',
+            });
+            const fetchPromise = fetch(url, {
               ...options,
               credentials: 'include',
             });
+            fetchPromise.then(
+              (res) => console.log('[tRPC fetch] Response:', res.status, res.statusText),
+              (err) => console.log('[tRPC fetch] Error:', err.message)
+            );
+            return fetchPromise;
           },
           // Add auth headers from zustand persisted store
           headers() {

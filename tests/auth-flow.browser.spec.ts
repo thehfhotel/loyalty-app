@@ -5,7 +5,7 @@ test.describe('Auth flow (browser)', () => {
   test.beforeEach(async ({ page }) => {
     // Capture console logs for debugging
     page.on('console', msg => {
-      if (msg.text().includes('apiConfig') || msg.text().includes('trpcProvider') || msg.text().includes('Auth Debug')) {
+      if (msg.text().includes('apiConfig') || msg.text().includes('trpcProvider') || msg.text().includes('Auth Debug') || msg.text().includes('tRPC fetch')) {
         console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`);
       }
     });
