@@ -32,6 +32,13 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
           url: TRPC_URL,
           // Include credentials (cookies) in requests
           fetch(url, options) {
+            // Log headers to debug auth issues
+            const headers = options?.headers as Record<string, string> | undefined;
+            console.error('[tRPC fetch] Request headers:', {
+              hasAuthHeader: !!headers?.authorization || !!headers?.Authorization,
+              authHeaderPreview: headers?.authorization?.substring(0, 30) || headers?.Authorization?.substring(0, 30) || 'none',
+              allHeaders: Object.keys(headers || {})
+            });
             console.log('[tRPC fetch] Making request:', {
               url: typeof url === 'string' ? url : url.toString(),
               method: options?.method || 'GET',
