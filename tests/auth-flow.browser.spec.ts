@@ -3,6 +3,13 @@ import { loginViaUI, logout, TEST_USER, getAuthState } from './helpers/auth';
 
 test.describe('Auth flow (browser)', () => {
   test.beforeEach(async ({ page }) => {
+    // Capture console logs for debugging
+    page.on('console', msg => {
+      if (msg.text().includes('apiConfig') || msg.text().includes('trpcProvider') || msg.text().includes('Auth Debug')) {
+        console.log(`[Browser Console] ${msg.type()}: ${msg.text()}`);
+      }
+    });
+
     await page.goto('/');
     await page.context().clearCookies();
     await page.evaluate(() => localStorage.clear());

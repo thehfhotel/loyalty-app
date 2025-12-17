@@ -9,6 +9,10 @@ import { httpBatchLink } from '@trpc/client';
 import { trpc } from './trpc';
 import { API_BASE_URL } from './apiConfig';
 
+// Log tRPC configuration for E2E debugging
+const TRPC_URL = `${API_BASE_URL}/trpc`;
+console.log('[trpcProvider] tRPC URL:', TRPC_URL);
+
 export function TRPCProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
@@ -24,7 +28,7 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
     trpc.createClient({
       links: [
         httpBatchLink({
-          url: `${API_BASE_URL}/trpc`,
+          url: TRPC_URL,
           // Include credentials (cookies) in requests
           fetch(url, options) {
             return fetch(url, {
