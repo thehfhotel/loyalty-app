@@ -22,6 +22,17 @@ const resolvePort = () => {
 const devServerPort = resolvePort();
 const previewServerPort = Number(process.env.PREVIEW_PORT ?? devServerPort);
 
+// Calculate proxy target for API requests
+// VITE_API_URL is used to configure the proxy target, not for direct browser requests
+const apiUrl = process.env.VITE_API_URL || process.env.BACKEND_URL;
+const proxyTarget = apiUrl?.replace('/api', '') || 'http://localhost:5001';
+
+// Log proxy configuration for debugging in E2E and development
+console.log('[vite.config.ts] Proxy configuration:');
+console.log('  VITE_API_URL:', process.env.VITE_API_URL);
+console.log('  BACKEND_URL:', process.env.BACKEND_URL);
+console.log('  Proxy target:', proxyTarget);
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -98,10 +109,21 @@ export default defineConfig({
     ],
     proxy: {
       '/api': {
-        // Use environment variable or default to dev port 5001
-        target: process.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5001',
+        // Use calculated proxy target from environment
+        target: proxyTarget,
         changeOrigin: true,
-        secure: false
+        secure: false,
+        configure: (proxy) => {
+          proxy.on('error', (err, _req, _res) => {
+            console.log('[vite proxy] Error:', err.message);
+          });
+          proxy.on('proxyReq', (proxyReq, req) => {
+            console.log('[vite proxy] Request:', req.method, req.url, '->', proxyTarget + req.url);
+          });
+          proxy.on('proxyRes', (proxyRes, req) => {
+            console.log('[vite proxy] Response:', req.method, req.url, proxyRes.statusCode);
+          });
+        }
       }
     }
   },
