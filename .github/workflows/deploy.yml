@@ -873,13 +873,12 @@ jobs:
                 context: ./frontend
                 dockerfile: Dockerfile
                 target: development
-                args:
-                  VITE_API_URL: http://localhost:4202/api
               container_name: loyalty_frontend_e2e
               network_mode: host
               environment:
                 NODE_ENV: development
                 PORT: 3201
+                VITE_API_URL: http://localhost:4202/api
               depends_on:
                 backend:
                   condition: service_healthy
