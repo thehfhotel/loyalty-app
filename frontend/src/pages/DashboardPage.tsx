@@ -14,7 +14,7 @@ export default function DashboardPage() {
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   // Use tRPC hooks for data fetching
-  const { data: loyaltyStatus, isLoading: loyaltyLoading } = trpc.loyalty.getStatus.useQuery({});
+  const { data: loyaltyStatus, isLoading: loyaltyLoading, error: loyaltyError } = trpc.loyalty.getStatus.useQuery({});
   const { data: transactionsData } = trpc.loyalty.getTransactions.useQuery({
     page: 1,
     pageSize: 10
@@ -30,6 +30,18 @@ export default function DashboardPage() {
           <p className="mt-4 text-gray-600">{t('profile.loading')}</p>
         </div>
       </div>
+    );
+  }
+
+  // Show error state if query failed - for debugging
+  if (loyaltyError) {
+    return (
+      <MainLayout title={t('dashboard.title', { name: user?.firstName ?? '' })}>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-6" data-testid="loyalty-error">
+          <h2 className="text-lg font-semibold text-red-800 mb-2">{t('common.error')}</h2>
+          <p className="text-red-600">{loyaltyError.message || 'Failed to load loyalty status'}</p>
+        </div>
+      </MainLayout>
     );
   }
 
