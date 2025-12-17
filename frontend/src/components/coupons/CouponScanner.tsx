@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RedeemCouponRequest, RedeemCouponResponse, Coupon, UserActiveCoupon } from '../../types/coupon';
+import { RedeemCouponResponse, Coupon, UserActiveCoupon } from '../../types/coupon';
 import { couponService } from '../../services/couponService';
 import { logger } from '../../utils/logger';
 import { notify } from '../../utils/notificationManager';
+import { trpc } from '../../hooks/useTRPC';
+import { getTRPCErrorMessage } from '../../hooks/useTRPC';
 
 interface CouponScannerProps {
   onRedemptionComplete?: (result: RedeemCouponResponse) => void;
@@ -28,6 +30,9 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [cameraActive, setCameraActive] = useState(false);
   const validationTimeout = useRef<number | null>(null);
+
+  // tRPC mutation for redeeming coupons
+  const redeemCouponMutation = trpc.coupon.redeemCoupon.useMutation();
 
   // Camera functionality (simplified - in production, use a proper QR code scanner library)
   const startCamera = useCallback(async () => {
@@ -136,8 +141,8 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
 
     try {
       setIsRedeeming(true);
-      
-      const request: RedeemCouponRequest = {
+
+      const result = await redeemCouponMutation.mutateAsync({
         qrCode: qrCode.trim(),
         originalAmount: amount,
         transactionReference: transactionReference.trim() || undefined,
@@ -146,27 +151,24 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
           redemptionChannel: 'staff_interface',
           timestamp: new Date().toISOString()
         }
-      };
+      });
 
-      const result = await couponService.redeemCoupon(request);
       setRedemptionResult(result);
-      
+
       if (result.success) {
         // Reset form for next redemption
         setQrCode('');
         setOriginalAmount('');
         setTransactionReference('');
         setValidationResult(null);
-        
+
         if (onRedemptionComplete) {
           onRedemptionComplete(result);
         }
       }
     } catch (err: unknown) {
       logger.error('Error redeeming coupon:', err);
-      const errorMessage = err instanceof Error && 'response' in err && err.response && typeof err.response === 'object' && 'data' in err.response && err.response.data && typeof err.response.data === 'object' && 'message' in err.response.data
-        ? (err.response.data as { message: string }).message
-        : t('errors.redemptionFailed');
+      const errorMessage = getTRPCErrorMessage(err);
       const errorResult: RedeemCouponResponse = {
         success: false,
         message: errorMessage,

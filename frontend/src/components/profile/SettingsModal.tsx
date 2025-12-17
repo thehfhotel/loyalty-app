@@ -4,13 +4,15 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
 import { FiX, FiUser, FiPhone, FiCamera, FiSmile, FiMail } from 'react-icons/fi';
-import { UserProfile, userService } from '../../services/userService';
+import { UserProfile } from '../../services/userService';
 import { useAuthStore } from '../../store/authStore';
 import EmojiAvatar from './EmojiAvatar';
 import { EmojiSelectorInline } from './EmojiSelector';
 import { notify } from '../../utils/notificationManager';
 import { extractEmojiFromUrl } from '../../utils/emojiUtils';
 import { GenderField, OccupationField, DateOfBirthField } from './ProfileFormFields';
+import { trpc, getTRPCErrorMessage } from '../../hooks/useTRPC';
+import { logger } from '../../utils/logger';
 
 const profileSchema = z.object({
   email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
@@ -33,7 +35,7 @@ interface SettingsModalProps {
   onAvatarUpload: (event: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
   onDeleteAvatar: () => Promise<void>;
   uploadingAvatar: boolean;
-  onProfileUpdate?: (profile: UserProfile) => void;
+  onProfileUpdate?: () => Promise<void>;
 }
 
 export default function SettingsModal({
@@ -51,7 +53,9 @@ export default function SettingsModal({
   const user = useAuthStore((state) => state.user);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showEmojiSelector, setShowEmojiSelector] = React.useState(false);
-  const [updatingEmoji, setUpdatingEmoji] = React.useState(false);
+
+  // tRPC hooks
+  const updateEmojiAvatarMutation = trpc.user.updateEmojiAvatar.useMutation();
 
   const {
     register,
@@ -91,19 +95,14 @@ export default function SettingsModal({
   }, [profile, user, reset]);
 
   const handleEmojiSelect = async (emoji: string) => {
-    setUpdatingEmoji(true);
     try {
-      const updatedProfile = await userService.updateEmojiAvatar(emoji);
-      onProfileUpdate?.(updatedProfile);
+      await updateEmojiAvatarMutation.mutateAsync({ emoji });
+      await onProfileUpdate?.();
       setShowEmojiSelector(false);
       notify.success('Profile picture updated!');
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error && 'response' in error 
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
-        : undefined;
-      notify.error(errorMessage ?? 'Failed to update profile picture');
-    } finally {
-      setUpdatingEmoji(false);
+      notify.error(getTRPCErrorMessage(error) ?? 'Failed to update profile picture');
+      logger.error('Update emoji avatar error:', error);
     }
   };
 
@@ -140,42 +139,42 @@ export default function SettingsModal({
               
               <div className="flex items-center space-x-4 mb-4">
                 <div className="relative">
-                  <EmojiAvatar 
-                    avatarUrl={profile?.avatarUrl} 
-                    size="lg" 
-                    className={updatingEmoji ? 'opacity-50' : ''}
+                  <EmojiAvatar
+                    avatarUrl={profile?.avatarUrl}
+                    size="lg"
+                    className={updateEmojiAvatarMutation.isPending ? 'opacity-50' : ''}
                   />
-                  {updatingEmoji && (
+                  {updateEmojiAvatarMutation.isPending && (
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600" />
                     </div>
                   )}
                 </div>
-                
+
                 <div className="flex-1">
                   <div className="flex flex-wrap gap-2 mb-2">
                     <button
                       onClick={() => setShowEmojiSelector(!showEmojiSelector)}
-                      disabled={updatingEmoji}
+                      disabled={updateEmojiAvatarMutation.isPending}
                       className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-primary-700 bg-primary-100 hover:bg-primary-200 disabled:opacity-50"
                     >
                       <FiSmile className="mr-1 h-4 w-4" />
                       Choose Emoji
                     </button>
-                    
+
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadingAvatar || updatingEmoji}
+                      disabled={uploadingAvatar || updateEmojiAvatarMutation.isPending}
                       className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
                     >
                       <FiCamera className="mr-1 h-4 w-4" />
                       Upload Image
                     </button>
-                    
+
                     {profile?.avatarUrl && (
                       <button
                         onClick={onDeleteAvatar}
-                        disabled={uploadingAvatar || updatingEmoji}
+                        disabled={uploadingAvatar || updateEmojiAvatarMutation.isPending}
                         className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50 px-2 py-1"
                       >
                         Remove

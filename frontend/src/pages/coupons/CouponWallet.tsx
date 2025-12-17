@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { UserActiveCoupon } from '../../types/coupon';
 import { couponService } from '../../services/couponService';
@@ -6,73 +6,47 @@ import CouponCard from '../../components/coupons/CouponCard';
 import QRCodeModal from '../../components/coupons/QRCodeModal';
 import CouponDetailsModal from '../../components/coupons/CouponDetailsModal';
 import DashboardButton from '../../components/navigation/DashboardButton';
-import { logger } from '../../utils/logger';
+import { trpc } from '../../hooks/useTRPC';
+import { getTRPCErrorMessage } from '../../hooks/useTRPC';
 
 type CouponFilter = 'active' | 'used' | 'expired';
 
 const CouponWallet: React.FC = () => {
   const { t } = useTranslation();
-  const [coupons, setCoupons] = useState<UserActiveCoupon[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedCoupon, setSelectedCoupon] = useState<UserActiveCoupon | null>(null);
   const [showQRCode, setShowQRCode] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
   const [activeFilter, setActiveFilter] = useState<CouponFilter>('active');
 
-  const loadCoupons = useCallback(async (pageNum: number = 1, append: boolean = false, filter: CouponFilter = activeFilter) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      let status: 'used' | 'expired' | 'available' | undefined;
-      switch (filter) {
-        case 'used':
-          status = 'used';
-          break;
-        case 'expired':
-          status = 'expired';
-          break;
-        case 'active':
-        default:
-          status = undefined; // Use default (active coupons)
-          break;
-      }
-
-      const response = await couponService.getUserCoupons(pageNum, 20, status);
-      
-      if (append) {
-        setCoupons(prev => [...prev, ...response.coupons]);
-      } else {
-        setCoupons(response.coupons);
-      }
-      
-      setHasMore(pageNum < response.totalPages);
-      setPage(pageNum);
-    } catch (err) {
-      logger.error('Error loading coupons:', err);
-      const errorMessage = err instanceof Error && 'response' in err
-        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
-        : undefined;
-      setError(errorMessage ?? t('errors.failedToLoadCoupons'));
-    } finally {
-      setLoading(false);
+  // Map filter to tRPC status
+  const getStatusFromFilter = (filter: CouponFilter): 'available' | 'used' | 'expired' | undefined => {
+    switch (filter) {
+      case 'used':
+        return 'used';
+      case 'expired':
+        return 'expired';
+      case 'active':
+      default:
+        return undefined; // Use default (active coupons)
     }
-  }, [activeFilter, t]);
+  };
 
-  useEffect(() => {
-    loadCoupons();
-  }, [activeFilter, loadCoupons]); // Reload when filter changes
+  // Fetch coupons using tRPC
+  const { data: couponResponse, isLoading, error, refetch } = trpc.coupon.getMyCoupons.useQuery({
+    page,
+    limit: 20,
+    status: getStatusFromFilter(activeFilter),
+  });
+
+  const coupons = couponResponse?.coupons ?? [];
+  const totalPages = couponResponse?.totalPages ?? 1;
+  const hasMore = page < totalPages;
 
   const handleFilterChange = (filter: CouponFilter) => {
     if (filter !== activeFilter) {
       setActiveFilter(filter);
       setPage(1);
-      setCoupons([]);
-      setHasMore(false);
-      // loadCoupons will be called by useEffect when activeFilter changes
     }
   };
 
@@ -92,14 +66,14 @@ const CouponWallet: React.FC = () => {
   };
 
   const handleLoadMore = () => {
-    if (hasMore && !loading) {
-      loadCoupons(page + 1, true, activeFilter);
+    if (hasMore && !isLoading) {
+      setPage(page + 1);
     }
   };
 
   const handleRefresh = () => {
     setPage(1);
-    loadCoupons(1, false, activeFilter);
+    refetch();
   };
 
   // Separate coupons by expiry status (only for active filter)
@@ -110,7 +84,9 @@ const CouponWallet: React.FC = () => {
     ? coupons.filter(coupon => couponService.isExpiringSoon(coupon))
     : [];
 
-  if (loading && coupons.length === 0) {
+  const errorMessage = error ? getTRPCErrorMessage(error) : null;
+
+  if (isLoading && coupons.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 p-4">
         <div className="max-w-4xl mx-auto">
@@ -146,10 +122,10 @@ const CouponWallet: React.FC = () => {
             <div className="flex items-center space-x-3">
               <button
                 onClick={handleRefresh}
-                disabled={loading}
+                disabled={isLoading}
                 className="inline-flex items-center font-medium border border-gray-300 bg-white text-gray-700 px-4 py-2 text-sm rounded-md hover:bg-gray-50 disabled:opacity-50 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
-                {loading ? t('common.loading') : t('common.refresh')}
+                {isLoading ? t('common.loading') : t('common.refresh')}
               </button>
               <DashboardButton variant="outline" size="md" />
             </div>
@@ -201,7 +177,7 @@ const CouponWallet: React.FC = () => {
           </div>
         </div>
 
-        {error && (
+        {errorMessage && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
             <div className="flex">
               <div className="text-red-400 mr-3">⚠️</div>
@@ -209,7 +185,7 @@ const CouponWallet: React.FC = () => {
                 <h3 className="text-red-800 font-medium">
                   {t('errors.error')}
                 </h3>
-                <p className="text-red-700 mt-1">{error}</p>
+                <p className="text-red-700 mt-1">{errorMessage}</p>
                 <button
                   onClick={handleRefresh}
                   className="text-red-600 underline hover:text-red-800 mt-2"
@@ -221,7 +197,7 @@ const CouponWallet: React.FC = () => {
           </div>
         )}
 
-        {coupons.length === 0 && !loading && !error && (
+        {coupons.length === 0 && !isLoading && !errorMessage && (
           <div className="bg-white rounded-lg shadow p-8 text-center">
             <div className="text-6xl mb-4">
               {activeFilter === 'used' ? '✓' : activeFilter === 'expired' ? '⏰' : '🎫'}
@@ -353,10 +329,10 @@ const CouponWallet: React.FC = () => {
           <div className="text-center mt-8">
             <button
               onClick={handleLoadMore}
-              disabled={loading}
+              disabled={isLoading}
               className="bg-gray-100 text-gray-700 px-6 py-3 rounded-md hover:bg-gray-200 disabled:opacity-50 transition-colors"
             >
-              {loading ? t('common.loading') : t('common.loadMore')}
+              {isLoading ? t('common.loading') : t('common.loadMore')}
             </button>
           </div>
         )}

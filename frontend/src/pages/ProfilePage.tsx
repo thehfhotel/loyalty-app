@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
-import { userService, UserProfile } from '../services/userService';
+import { userService } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
 import { logger } from '../utils/logger';
@@ -15,6 +15,7 @@ import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
 import SettingsModal from '../components/profile/SettingsModal';
 import EmojiAvatar from '../components/profile/EmojiAvatar';
 import { ConfirmDialog } from '../components/common/ConfirmDialog';
+import { trpc, getTRPCErrorMessage } from '../hooks/useTRPC';
 
 const profileSchema = z.object({
   email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
@@ -33,14 +34,17 @@ export default function ProfilePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const updateUser = useAuthStore((state) => state.updateUser);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // tRPC hooks
+  const { data: profile, isLoading, refetch } = trpc.user.getProfile.useQuery();
+  const updateProfileMutation = trpc.user.updateProfile.useMutation();
+  const completeProfileMutation = trpc.user.completeProfile.useMutation();
+  const updateEmailMutation = trpc.user.updateEmail.useMutation();
+  const deleteAvatarMutation = trpc.user.deleteAvatar.useMutation();
 
   const {
     register: _register,
@@ -50,11 +54,6 @@ export default function ProfilePage() {
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
   });
-
-  useEffect(() => {
-    loadProfile();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Handle URL parameters to open settings modal
   useEffect(() => {
@@ -66,38 +65,30 @@ export default function ProfilePage() {
     }
   }, [searchParams, setSearchParams]);
 
-  const loadProfile = async () => {
-    try {
-      const profileData = await userService.getProfile();
-      setProfile(profileData);
+  // Reset form when profile loads
+  useEffect(() => {
+    if (profile) {
       reset({
-        firstName: profileData.firstName,
-        lastName: profileData.lastName,
-        phone: profileData.phone ?? '',
-        dateOfBirth: profileData.dateOfBirth
-          ? new Date(profileData.dateOfBirth).toISOString().split('T')[0]
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        phone: profile.phone ?? '',
+        dateOfBirth: profile.dateOfBirth
+          ? new Date(profile.dateOfBirth).toISOString().split('T')[0]
           : '',
-        gender: profileData.gender ?? '',
-        occupation: profileData.occupation ?? '',
+        gender: profile.gender ?? '',
+        occupation: profile.occupation ?? '',
       });
-    } catch (error: unknown) {
-      notify.error(t('profile.profileLoadError'));
-      logger.error('Profile load error:', error);
-    } finally {
-      setIsLoading(false);
     }
-  };
+  }, [profile, reset]);
 
   const onSubmit = async (data: ProfileFormData) => {
-    setIsSaving(true);
     try {
       // Check if this is a profile completion (has new fields)
       const hasNewFields = data.dateOfBirth ?? data.gender ?? data.occupation;
-      
-      let response;
+
       if (hasNewFields) {
         // Use complete profile endpoint for potential coupon rewards
-        response = await userService.completeProfile({
+        const response = await completeProfileMutation.mutateAsync({
           firstName: data.firstName,
           lastName: data.lastName,
           phone: data.phone ?? undefined,
@@ -105,13 +96,14 @@ export default function ProfilePage() {
           gender: data.gender ?? undefined,
           occupation: data.occupation ?? undefined,
         });
-        
-        setProfile(response.profile);
-        
+
+        // Refetch profile to get updated data
+        await refetch();
+
         // Show reward notifications
         const rewards = [];
         if (response.couponAwarded && response.coupon) {
-          rewards.push(`coupon: ${response.coupon.name}`);
+          rewards.push(`coupon: ${response.coupon.title}`);
         }
         if (response.pointsAwarded && response.pointsAwarded > 0) {
           rewards.push(`${response.pointsAwarded.toLocaleString()} loyalty points`);
@@ -119,7 +111,7 @@ export default function ProfilePage() {
 
         if (rewards.length > 0) {
           notify.success(
-            `🎉 Profile completed! You received: ${rewards.join(' and ')}`,
+            `Profile completed! You received: ${rewards.join(' and ')}`,
             { duration: 8000 }
           );
         } else {
@@ -127,31 +119,29 @@ export default function ProfilePage() {
         }
       } else {
         // Regular profile update
-        const updatedProfile = await userService.updateProfile({
+        await updateProfileMutation.mutateAsync({
           firstName: data.firstName,
           lastName: data.lastName,
           phone: data.phone ?? undefined,
           dateOfBirth: data.dateOfBirth ?? undefined,
         });
-        setProfile(updatedProfile);
+
+        // Refetch profile to get updated data
+        await refetch();
         notify.success(t('profile.profileUpdated'));
       }
-      
+
       // Update email if changed
       if (data.email && data.email !== user?.email) {
-        await userService.updateEmail(data.email);
+        await updateEmailMutation.mutateAsync({ email: data.email });
         updateUser({ email: data.email });
         notify.success(t('profile.emailUpdated'));
       }
-      
+
       setShowSettingsModal(false);
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error && 'response' in error 
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
-        : undefined;
-      notify.error(errorMessage ?? t('profile.profileUpdateError'));
-    } finally {
-      setIsSaving(false);
+      notify.error(getTRPCErrorMessage(error) ?? t('profile.profileUpdateError'));
+      logger.error('Profile update error:', error);
     }
   };
 
@@ -177,24 +167,22 @@ export default function ProfilePage() {
 
     try {
       const response = await userService.uploadAvatar(file);
-      
-      // Update local profile state immediately for instant display
-      if (profile && response.data?.avatarUrl) {
-        setProfile({
-          ...profile,
-          avatarUrl: response.data.avatarUrl
-        });
-        
-        // Update auth store to persist avatar across restarts
+
+      // Refetch profile to get updated avatar
+      await refetch();
+
+      // Update auth store to persist avatar across restarts
+      if (response.data?.avatarUrl) {
         updateUser({ avatarUrl: response.data.avatarUrl });
       }
-      
+
       notify.success(t('profile.photoUpdated'));
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error && 'response' in error 
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
         : undefined;
       notify.error(errorMessage ?? t('profile.photoUploadError'));
+      logger.error('Avatar upload error:', error);
     } finally {
       setUploadingAvatar(false);
       // Reset file input
@@ -209,25 +197,18 @@ export default function ProfilePage() {
     setShowDeleteConfirm(false);
 
     try {
-      await userService.deleteAvatar();
+      await deleteAvatarMutation.mutateAsync();
 
-      // Update local profile state
-      if (profile) {
-        setProfile({
-          ...profile,
-          avatarUrl: undefined
-        });
+      // Refetch profile to get updated data
+      await refetch();
 
-        // Update auth store to persist removal across restarts
-        updateUser({ avatarUrl: undefined });
-      }
+      // Update auth store to persist removal across restarts
+      updateUser({ avatarUrl: undefined });
 
       notify.success(t('profile.photoRemoved'));
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error && 'response' in error
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
-        : undefined;
-      notify.error(errorMessage ?? t('profile.photoRemoveError'));
+      notify.error(getTRPCErrorMessage(error) ?? t('profile.photoRemoveError'));
+      logger.error('Delete avatar error:', error);
     } finally {
       setUploadingAvatar(false);
     }
@@ -382,15 +363,14 @@ export default function ProfilePage() {
         <SettingsModal
           isOpen={showSettingsModal}
           onClose={() => setShowSettingsModal(false)}
-          profile={profile}
+          profile={profile ?? null}
           onSubmit={onSubmit}
-          isSaving={isSaving}
+          isSaving={updateProfileMutation.isPending || completeProfileMutation.isPending || updateEmailMutation.isPending}
           onAvatarUpload={handleAvatarUpload}
           onDeleteAvatar={async () => setShowDeleteConfirm(true)}
           uploadingAvatar={uploadingAvatar}
-          onProfileUpdate={(updatedProfile) => {
-            setProfile(updatedProfile);
-            updateUser({ avatarUrl: updatedProfile.avatarUrl });
+          onProfileUpdate={async () => {
+            await refetch();
           }}
         />
 

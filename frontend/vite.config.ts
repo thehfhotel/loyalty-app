@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import path from 'path'
 
 const resolvePort = () => {
   const portSources = [
@@ -22,6 +23,11 @@ const devServerPort = resolvePort();
 const previewServerPort = Number(process.env.PREVIEW_PORT ?? devServerPort);
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
   plugins: [
     react(),
     VitePWA({

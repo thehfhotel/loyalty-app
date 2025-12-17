@@ -1,56 +1,46 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { FiUsers, FiEye, FiCalendar, FiRefreshCw } from 'react-icons/fi';
 import { Survey } from '../../types/survey';
-import { surveyService } from '../../services/surveyService';
 import { useAuthRedirect } from '../../hooks/useAuthRedirect';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
-import { logger } from '../../utils/logger';
+import { trpc } from '../../hooks/useTRPC';
+import { getTRPCErrorMessage } from '../../hooks/useTRPC';
 
 const SurveyList: React.FC = () => {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuthRedirect(); // Additional auth check
-  const [publicSurveys, setPublicSurveys] = useState<Survey[]>([]);
-  const [invitedSurveys, setInvitedSurveys] = useState<Survey[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'public' | 'invited'>('public');
 
-  const loadSurveys = useCallback(async () => {
-    // Don't attempt to load if not authenticated
-    if (!isAuthenticated) {
-      setLoading(false);
-      return;
-    }
+  // Fetch public surveys using tRPC
+  const {
+    data: publicSurveys = [],
+    isLoading: loadingPublic,
+    error: publicError,
+    refetch: refetchPublic
+  } = trpc.survey.getPublicSurveys.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
 
-    try {
-      setLoading(true);
-      setError(null);
-      const [publicSurveysData, invitedSurveysData] = await Promise.all([
-        surveyService.getPublicSurveys(),
-        surveyService.getInvitedSurveys()
-      ]);
-      setPublicSurveys(publicSurveysData);
-      setInvitedSurveys(invitedSurveysData);
-    } catch (err) {
-      logger.error('Error loading surveys:', err);
-      const errorMessage = err instanceof Error && 'response' in err
-        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
-        : undefined;
-      setError(errorMessage ?? t('surveys.errors.loadFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }, [isAuthenticated, t]);
+  // Fetch invited surveys using tRPC
+  const {
+    data: invitedSurveys = [],
+    isLoading: loadingInvited,
+    error: invitedError,
+    refetch: refetchInvited
+  } = trpc.survey.getInvitedSurveys.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
 
-  useEffect(() => {
-    // Only load surveys if authenticated
-    if (isAuthenticated) {
-      loadSurveys();
-    }
-  }, [isAuthenticated, loadSurveys]);
+  const loading = loadingPublic || loadingInvited;
+  const error = publicError || invitedError;
+  const errorMessage = error ? getTRPCErrorMessage(error) : null;
+
+  const loadSurveys = async () => {
+    await Promise.all([refetchPublic(), refetchInvited()]);
+  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
@@ -165,11 +155,11 @@ const SurveyList: React.FC = () => {
           </div>
         )}
 
-        {error && (
+        {errorMessage && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
             <div className="flex">
               <div className="ml-3">
-                <p className="text-sm">{error}</p>
+                <p className="text-sm">{errorMessage}</p>
               </div>
             </div>
           </div>
@@ -231,7 +221,7 @@ const SurveyList: React.FC = () => {
           </div>
         </div>
 
-        {currentSurveys.length === 0 && !loading && !error ? (
+        {currentSurveys.length === 0 && !loading && !errorMessage ? (
           <div className="text-center py-12">
             <div className="text-gray-500 text-lg mb-4">
               {activeTab === 'public' ? '📋' : '✉️'} {t('surveys.noSurveys', 'No surveys available')}

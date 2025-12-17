@@ -63,9 +63,11 @@ export default function PointsBalance({
           {t('loyalty.tierBenefits')}
         </div>
         <div className="text-sm text-gray-600">
-          {loyaltyStatus.tier_benefits?.description ?? t('loyalty.noDescription')}
+          {typeof loyaltyStatus.tier_benefits === 'object' && loyaltyStatus.tier_benefits !== null && 'description' in loyaltyStatus.tier_benefits && typeof loyaltyStatus.tier_benefits.description === 'string'
+            ? loyaltyStatus.tier_benefits.description
+            : t('loyalty.noDescription')}
         </div>
-        {loyaltyStatus.tier_benefits?.perks && loyaltyStatus.tier_benefits.perks.length > 0 && (
+        {typeof loyaltyStatus.tier_benefits === 'object' && loyaltyStatus.tier_benefits !== null && 'perks' in loyaltyStatus.tier_benefits && Array.isArray(loyaltyStatus.tier_benefits.perks) && loyaltyStatus.tier_benefits.perks.length > 0 && (
           <div className="mt-2">
             <ul className="text-xs text-gray-600 space-y-1">
               {loyaltyStatus.tier_benefits.perks.slice(0, 2).map((perk, index) => (

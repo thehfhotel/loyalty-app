@@ -34,7 +34,7 @@ export interface UserLoyaltyStatus {
   total_nights: number; // Total nights stayed - ONLY factor determining tier
   tier_name: string;
   tier_color: string;
-  tier_benefits: {
+  tier_benefits: Record<string, unknown> | {
     description: string;
     perks: string[];
   };

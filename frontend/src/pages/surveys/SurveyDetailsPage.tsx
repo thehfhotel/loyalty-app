@@ -1,53 +1,39 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { FiArrowLeft, FiCalendar, FiUsers, FiEye } from 'react-icons/fi';
 import { Survey } from '../../types/survey';
-import { surveyService } from '../../services/surveyService';
 import SurveyPreview from '../../components/surveys/SurveyPreview';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import toast from 'react-hot-toast';
-import { logger } from '../../utils/logger';
+import { trpc } from '../../hooks/useTRPC';
+import { getTRPCErrorMessage } from '../../hooks/useTRPC';
 
 const SurveyDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
-  const [survey, setSurvey] = useState<Survey | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (id) {
-      loadSurvey();
+  // Fetch survey using tRPC
+  const {
+    data: survey,
+    isLoading: loading,
+    error: surveyError
+  } = trpc.survey.getSurveyById.useQuery(
+    { surveyId: id! },
+    {
+      enabled: !!id
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  );
 
-  const loadSurvey = async () => {
-    if (!id) {
-      setError('Survey ID is required');
-      setLoading(false);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const surveyData = await surveyService.getSurveyById(id);
-      setSurvey(surveyData);
-    } catch (err) {
-      logger.error('Error loading survey:', err);
-      const errorMessage = err instanceof Error && 'response' in err
-        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
-        : undefined;
-      setError(errorMessage ?? t('surveys.errors.loadFailed'));
+  // Show error toast when error occurs
+  React.useEffect(() => {
+    if (surveyError) {
       toast.error(t('surveys.errors.loadFailed'));
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [surveyError, t]);
+
+  const error = surveyError ? getTRPCErrorMessage(surveyError) : null;
 
   // Memoize date formatting for performance
   const formatDate = useMemo(() => (dateString: string) => {

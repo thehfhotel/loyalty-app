@@ -1,55 +1,43 @@
-import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import {
-  loyaltyService,
-  UserLoyaltyStatus,
-  Tier,
-  PointsTransaction,
   PointsCalculation
 } from '../../services/loyaltyService';
 import PointsBalance from '../../components/loyalty/PointsBalance';
 import TierStatus from '../../components/loyalty/TierStatus';
 import TransactionList from '../../components/loyalty/TransactionList';
 import DashboardButton from '../../components/navigation/DashboardButton';
-import { logger } from '../../utils/logger';
+import { trpc } from '../../hooks/useTRPC';
 
 export default function LoyaltyDashboard() {
   const { t } = useTranslation();
 
-  const [loyaltyStatus, setLoyaltyStatus] = useState<UserLoyaltyStatus | null>(null);
-  const [allTiers, setAllTiers] = useState<Tier[]>([]);
-  const [pointsCalculation, setPointsCalculation] = useState<PointsCalculation | null>(null);
-  const [transactions, setTransactions] = useState<PointsTransaction[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Use tRPC hooks for data fetching
+  const { data: loyaltyStatus, isLoading: isLoadingStatus, error: statusError } = trpc.loyalty.getStatus.useQuery({});
+  const { data: allTiers, isLoading: isLoadingTiers } = trpc.loyalty.getAllTiers.useQuery();
+  const { data: transactionsData, isLoading: isLoadingTransactions } = trpc.loyalty.getTransactions.useQuery({
+    page: 1,
+    pageSize: 20
+  });
 
-  const loadLoyaltyData = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      
-      // Load all data in parallel
-      const [statusResult, tiersResult, calculationResult, historyResult] = await Promise.all([
-        loyaltyService.getUserLoyaltyStatus(),
-        loyaltyService.getTiers(),
-        loyaltyService.getPointsCalculation(),
-        loyaltyService.getPointsHistory(20, 0)
-      ]);
+  // Combine loading states
+  const isLoading = isLoadingStatus || isLoadingTiers || isLoadingTransactions;
 
-      setLoyaltyStatus(statusResult);
-      setAllTiers(tiersResult);
-      setPointsCalculation(calculationResult);
-      setTransactions(historyResult.transactions);
-    } catch (error) {
-      logger.error('Error loading loyalty data:', error);
-      toast.error(t('errors.networkError'));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [t]);
+  // Extract data from tRPC responses
+  const transactions = transactionsData?.transactions ?? [];
 
-  useEffect(() => {
-    loadLoyaltyData();
-  }, [loadLoyaltyData]);
+  // Show error toast if status fails to load
+  if (statusError && !isLoading) {
+    toast.error(t('errors.networkError'));
+  }
+
+  // Create a mock PointsCalculation from loyaltyStatus for compatibility
+  // Points never expire according to the component comments
+  const pointsCalculation: PointsCalculation | null = loyaltyStatus ? {
+    current_points: loyaltyStatus.current_points,
+    expiring_points: 0,
+    next_expiry_date: null
+  } : null;
 
 
   if (isLoading) {
@@ -77,7 +65,7 @@ export default function LoyaltyDashboard() {
         <div className="text-center">
           <p className="text-gray-600 mb-4">{t('errors.networkError')}</p>
           <button
-            onClick={loadLoyaltyData}
+            onClick={() => window.location.reload()}
             className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
           >
             {t('common.refresh')}
@@ -128,7 +116,7 @@ export default function LoyaltyDashboard() {
           <div className="space-y-6">
             <TierStatus
               loyaltyStatus={loyaltyStatus}
-              allTiers={allTiers}
+              allTiers={allTiers ?? []}
             />
           </div>
         </div>

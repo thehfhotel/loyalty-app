@@ -43,7 +43,7 @@ export default function PointsAndTierCard({ loyaltyStatus }: PointsAndTierCardPr
         <div className="text-sm font-medium text-gray-700 mb-3">
           {t('loyalty.tierBenefits')}
         </div>
-        {loyaltyStatus.tier_benefits?.perks && loyaltyStatus.tier_benefits.perks.length > 0 && (
+        {typeof loyaltyStatus.tier_benefits === 'object' && loyaltyStatus.tier_benefits !== null && 'perks' in loyaltyStatus.tier_benefits && Array.isArray(loyaltyStatus.tier_benefits.perks) && loyaltyStatus.tier_benefits.perks.length > 0 && (
           <ul className="space-y-2">
             {loyaltyStatus.tier_benefits.perks.map((perk, index) => (
               <li key={index} className="flex items-start space-x-2">

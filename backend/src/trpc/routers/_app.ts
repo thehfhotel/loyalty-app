@@ -5,17 +5,21 @@
 
 import { router } from '../trpc';
 import { loyaltyRouter } from './loyalty';
+import { userRouter } from './user';
+import { couponRouter } from './coupon';
+import { surveyRouter } from './survey';
+import { notificationRouter } from './notification';
 
 /**
  * Main application router
- * Add new routers here as you create them
+ * All tRPC sub-routers combined into a single type-safe API
  */
 export const appRouter = router({
   loyalty: loyaltyRouter,
-  // Add more routers here:
-  // user: userRouter,
-  // coupon: couponRouter,
-  // survey: surveyRouter,
+  user: userRouter,
+  coupon: couponRouter,
+  survey: surveyRouter,
+  notification: notificationRouter,
 });
 
 // Export type definition for use in frontend

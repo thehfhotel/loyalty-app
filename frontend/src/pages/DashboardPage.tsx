@@ -1,17 +1,10 @@
-import { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { FiUser, FiAward, FiUsers, FiGift } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import toast from 'react-hot-toast';
 import MainLayout from '../components/layout/MainLayout';
-import {
-  loyaltyService,
-  UserLoyaltyStatus,
-  PointsTransaction
-} from '../services/loyaltyService';
 import LoyaltyCarousel from '../components/loyalty/LoyaltyCarousel';
-import { logger } from '../utils/logger';
+import { trpc } from '../hooks/useTRPC';
 
 export default function DashboardPage() {
   const { t } = useTranslation();
@@ -20,35 +13,14 @@ export default function DashboardPage() {
   // Check user roles
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
-  // Loyalty data states
-  const [loyaltyStatus, setLoyaltyStatus] = useState<UserLoyaltyStatus | null>(null);
-  const [transactions, setTransactions] = useState<PointsTransaction[]>([]);
-  const [loyaltyLoading, setLoyaltyLoading] = useState(true);
+  // Use tRPC hooks for data fetching
+  const { data: loyaltyStatus, isLoading: loyaltyLoading } = trpc.loyalty.getStatus.useQuery({});
+  const { data: transactionsData } = trpc.loyalty.getTransactions.useQuery({
+    page: 1,
+    pageSize: 10
+  });
 
-  useEffect(() => {
-    loadLoyaltyData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const loadLoyaltyData = async () => {
-    try {
-      setLoyaltyLoading(true);
-
-      // Load all loyalty data in parallel
-      const [statusResult, historyResult] = await Promise.all([
-        loyaltyService.getUserLoyaltyStatus(),
-        loyaltyService.getPointsHistory(10, 0)
-      ]);
-
-      setLoyaltyStatus(statusResult);
-      setTransactions(historyResult.transactions);
-    } catch (error) {
-      logger.error('Error loading loyalty data:', error);
-      toast.error(t('errors.networkError'));
-    } finally {
-      setLoyaltyLoading(false);
-    }
-  };
+  const transactions = transactionsData?.transactions ?? [];
 
   if (loyaltyLoading) {
     return (

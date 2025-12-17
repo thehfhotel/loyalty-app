@@ -1,64 +1,64 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Survey, SurveyQuestion } from '../../types/survey';
+import { SurveyQuestion } from '../../types/survey';
 import { surveyService } from '../../services/surveyService';
 import QuestionRenderer from '../../components/surveys/QuestionRenderer';
 import SurveyProgress from '../../components/surveys/SurveyProgress';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
-import { logger } from '../../utils/logger';
+import { trpc } from '../../hooks/useTRPC';
+import { getTRPCErrorMessage } from '../../hooks/useTRPC';
 
 const TakeSurvey: React.FC = () => {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const [survey, setSurvey] = useState<Survey | null>(null);
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const loadSurvey = useCallback(async (surveyId: string) => {
-    try {
-      setLoading(true);
-      setError(null);
+  // Fetch survey using tRPC
+  const {
+    data: survey,
+    isLoading: loadingSurvey,
+    error: surveyError
+  } = trpc.survey.getSurveyById.useQuery(
+    { surveyId: id! },
+    { enabled: !!id }
+  );
 
-      const [surveyData, responseData] = await Promise.all([
-        surveyService.getSurveyById(surveyId),
-        surveyService.getUserResponse(surveyId)
-      ]);
+  // Fetch user's previous response using tRPC
+  const {
+    data: previousResponse
+  } = trpc.survey.getUserResponse.useQuery(
+    { surveyId: id! },
+    { enabled: !!id }
+  );
 
-      setSurvey(surveyData);
+  // Submit response mutation
+  const submitResponseMutation = trpc.survey.submitResponse.useMutation();
 
-      if (responseData) {
-        // Allow retaking surveys - always start fresh for multiple submissions
-        setAnswers({});
-        setCurrentQuestion(0);
-      }
-    } catch (err) {
-      logger.error('Error loading survey:', err);
-      const errorMessage = err instanceof Error && 'response' in err
-        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
-        : undefined;
-      setError(errorMessage ?? t('surveys.errors.loadFailed'));
-    } finally {
-      setLoading(false);
+  const loading = loadingSurvey;
+  const error = surveyError ? getTRPCErrorMessage(surveyError) : null;
+
+  // Reset answers when previous response is loaded (allow fresh start for retakes)
+  useEffect(() => {
+    if (previousResponse) {
+      // Allow retaking surveys - always start fresh for multiple submissions
+      setAnswers({});
+      setCurrentQuestion(0);
     }
-  }, [t]);
+  }, [previousResponse]);
 
   const saveProgress = useCallback(async (isCompletingNow = false) => {
     if (!survey || !id) {return;}
 
     try {
-      setSaving(true);
-      
       const isComplete = isCompletingNow || surveyService.isResponseComplete(survey, answers);
-      
-      await surveyService.submitResponse({
+
+      await submitResponseMutation.mutateAsync({
         survey_id: id,
         answers,
         is_completed: isComplete
@@ -68,21 +68,10 @@ const TakeSurvey: React.FC = () => {
         setCurrentQuestion(survey.questions?.length ?? 0);
       }
     } catch (err) {
-      logger.error('Error saving progress:', err);
-      const errorMessage = err instanceof Error && 'response' in err
-        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
-        : undefined;
-      setError(errorMessage ?? t('surveys.errors.saveFailed'));
-    } finally {
-      setSaving(false);
+      // Error is already handled by tRPC
+      console.error('Error saving progress:', err);
     }
-  }, [survey, id, answers, t]);
-
-  useEffect(() => {
-    if (id) {
-      loadSurvey(id);
-    }
-  }, [id, loadSurvey]);
+  }, [survey, id, answers, submitResponseMutation]);
 
   // Auto-save every 30 seconds
   useEffect(() => {
@@ -268,18 +257,18 @@ const TakeSurvey: React.FC = () => {
               </button>
 
               <div className="flex items-center space-x-2">
-                {saving && (
+                {submitResponseMutation.isPending && (
                   <span className="text-sm text-gray-500">
                     {t('surveys.saving')}
                   </span>
                 )}
-                
+
                 <button
                   onClick={goToNext}
-                  disabled={saving}
+                  disabled={submitResponseMutation.isPending}
                   className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-2 px-4 rounded-md transition-colors"
                 >
-                  {isLastQuestion 
+                  {isLastQuestion
                     ? t('surveys.complete')
                     : t('surveys.next')
                   }

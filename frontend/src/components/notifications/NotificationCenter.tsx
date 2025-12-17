@@ -1,64 +1,49 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FiBell, FiCheck, FiX, FiTrash2 } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
 import { formatDistanceToNow } from 'date-fns';
-import { logger } from '../../utils/logger';
-import axios from 'axios';
-import { addAuthTokenInterceptor } from '../../utils/axiosInterceptor';
-import { API_BASE_URL } from '../../utils/apiConfig';
-
-interface NotificationData {
-  coupon?: {
-    id: string;
-    name: string;
-    code?: string;
-  };
-  pointsAwarded?: number;
-  surveyId?: string;
-  userId?: string;
-  [key: string]: unknown;
-}
-
-interface Notification {
-  id: string;
-  title: string;
-  message: string;
-  type: 'info' | 'success' | 'warning' | 'error' | 'system' | 'reward' | 'coupon' | 'survey' | 'profile';
-  data?: NotificationData;
-  readAt?: string;
-  createdAt: string;
-  expiresAt?: string;
-}
-
-interface NotificationSummary {
-  total: number;
-  unread: number;
-  notifications: Notification[];
-}
+import { trpc } from '../../hooks/useTRPC';
+import type { Notification, NotificationType } from '../../../../backend/src/types/notification';
 
 export default function NotificationCenter() {
   const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
   const [isOpen, setIsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationSummary>({
-    total: 0,
-    unread: 0,
-    notifications: []
-  });
-  const [isLoading, setIsLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Create axios instance with auth and CSRF interceptors
-  const api = useMemo(() => {
-    const instance = axios.create({
-      baseURL: API_BASE_URL,
-      headers: { 'Content-Type': 'application/json' },
-      withCredentials: true,
-    });
-    addAuthTokenInterceptor(instance);
-    return instance;
-  }, []);
+  // Fetch notifications using tRPC
+  const {
+    data: notificationsData,
+    isLoading,
+    refetch: refetchNotifications
+  } = trpc.notification.getNotifications.useQuery(
+    { page: 1, limit: 10, includeRead: true },
+    { enabled: !!user }
+  );
+
+  // Mutations
+  const markAsReadMutation = trpc.notification.markMultipleAsRead.useMutation({
+    onSuccess: () => {
+      refetchNotifications();
+    }
+  });
+
+  const markAllAsReadMutation = trpc.notification.markAllAsRead.useMutation({
+    onSuccess: () => {
+      refetchNotifications();
+    }
+  });
+
+  const deleteNotificationMutation = trpc.notification.deleteNotification.useMutation({
+    onSuccess: () => {
+      refetchNotifications();
+    }
+  });
+
+  const notifications: Notification[] = notificationsData?.notifications || [];
+  const unreadCount = notificationsData?.unread || 0;
+  const totalCount = notificationsData?.total || 0;
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -72,41 +57,13 @@ export default function NotificationCenter() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const fetchNotifications = useCallback(async () => {
-    if (!user) {return;}
-
-    setIsLoading(true);
-    try {
-      const response = await api.get('/notifications?limit=10&includeRead=true');
-      const result = response.data;
-      // Count unread notifications from the response
-      const unreadCount = result.notifications?.filter((n: Notification) => !n.readAt).length ?? 0;
-      setNotifications({
-        total: result.pagination?.total ?? result.notifications?.length ?? 0,
-        unread: unreadCount,
-        notifications: result.notifications ?? []
-      });
-    } catch (error) {
-      logger.error('Error fetching notifications:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [user, api]);
-
-  // Fetch notifications on mount and when user changes
-  useEffect(() => {
-    if (user) {
-      fetchNotifications();
-    }
-  }, [user, fetchNotifications]);
-
   // Refresh notifications and mark as read when dropdown opens
   useEffect(() => {
     if (isOpen && user) {
-      fetchNotifications();
+      refetchNotifications();
       // Auto-mark all as read when user opens the dropdown
-      if (notifications.unread > 0) {
-        markAllAsRead();
+      if (unreadCount > 0) {
+        markAllAsReadMutation.mutate();
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,38 +73,19 @@ export default function NotificationCenter() {
     if (!user || notificationIds.length === 0) {return;}
 
     try {
-      await api.post('/notifications/mark-read', { notificationIds });
-      // Update local state
-      setNotifications(prev => ({
-        ...prev,
-        unread: Math.max(0, prev.unread - notificationIds.length),
-        notifications: prev.notifications.map(notif =>
-          notificationIds.includes(notif.id)
-            ? { ...notif, readAt: new Date().toISOString() }
-            : notif
-        )
-      }));
+      await markAsReadMutation.mutateAsync({ notificationIds });
     } catch (error) {
-      logger.error('Error marking notifications as read:', error);
+      console.error('Error marking notifications as read:', error);
     }
   };
 
   const markAllAsRead = async () => {
-    if (!user || (notifications?.unread ?? 0) === 0) {return;}
+    if (!user || unreadCount === 0) {return;}
 
     try {
-      await api.post('/notifications/mark-all-read');
-      // Update local state
-      setNotifications(prev => ({
-        ...prev,
-        unread: 0,
-        notifications: prev.notifications.map(notif => ({
-          ...notif,
-          readAt: notif.readAt ?? new Date().toISOString()
-        }))
-      }));
+      await markAllAsReadMutation.mutateAsync();
     } catch (error) {
-      logger.error('Error marking all notifications as read:', error);
+      console.error('Error marking all notifications as read:', error);
     }
   };
 
@@ -155,20 +93,13 @@ export default function NotificationCenter() {
     if (!user) {return;}
 
     try {
-      await api.delete(`/notifications/${notificationId}`);
-      // Update local state
-      const deletedNotification = notifications.notifications.find(n => n.id === notificationId);
-      setNotifications(prev => ({
-        total: prev.total - 1,
-        unread: deletedNotification && !deletedNotification.readAt ? prev.unread - 1 : prev.unread,
-        notifications: prev.notifications.filter(n => n.id !== notificationId)
-      }));
+      await deleteNotificationMutation.mutateAsync({ notificationId });
     } catch (error) {
-      logger.error('Error deleting notification:', error);
+      console.error('Error deleting notification:', error);
     }
   };
 
-  const getNotificationIcon = (type: Notification['type']) => {
+  const getNotificationIcon = (type: NotificationType) => {
     switch (type) {
       case 'success':
       case 'reward':
@@ -185,12 +116,16 @@ export default function NotificationCenter() {
         return '📝';
       case 'system':
         return '⚙️';
+      case 'tier_change':
+        return '⭐';
+      case 'points':
+        return '💰';
       default:
         return 'ℹ️';
     }
   };
 
-  const getNotificationColor = (type: Notification['type']) => {
+  const getNotificationColor = (type: NotificationType) => {
     switch (type) {
       case 'success':
       case 'reward':
@@ -207,6 +142,10 @@ export default function NotificationCenter() {
         return 'text-indigo-600 bg-indigo-50 border-indigo-200';
       case 'system':
         return 'text-gray-600 bg-gray-50 border-gray-200';
+      case 'tier_change':
+        return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+      case 'points':
+        return 'text-green-600 bg-green-50 border-green-200';
       default:
         return 'text-gray-600 bg-gray-50 border-gray-200';
     }
@@ -223,9 +162,9 @@ export default function NotificationCenter() {
         aria-label="Notifications"
       >
         <FiBell className="h-6 w-6" />
-        {(notifications?.unread ?? 0) > 0 && (
+        {unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 text-xs text-white rounded-full flex items-center justify-center font-semibold">
-            {(notifications?.unread ?? 0) > 9 ? '9+' : (notifications?.unread ?? 0)}
+            {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
       </button>
@@ -240,7 +179,7 @@ export default function NotificationCenter() {
                 {t('notifications.title', 'Notifications')}
               </h3>
               <div className="flex items-center space-x-2">
-                {(notifications?.unread ?? 0) > 0 && (
+                {unreadCount > 0 && (
                   <button
                     onClick={markAllAsRead}
                     className="text-sm text-primary-600 hover:text-primary-700 font-medium"
@@ -256,9 +195,9 @@ export default function NotificationCenter() {
                 </button>
               </div>
             </div>
-            {(notifications?.unread ?? 0) > 0 && (
+            {unreadCount > 0 && (
               <p className="text-sm text-gray-500 mt-1">
-                {t('notifications.unreadCount', '{{count}} unread', { count: notifications?.unread ?? 0 })}
+                {t('notifications.unreadCount', '{{count}} unread', { count: unreadCount })}
               </p>
             )}
           </div>
@@ -270,14 +209,14 @@ export default function NotificationCenter() {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2" />
                 {t('notifications.loading', 'Loading...')}
               </div>
-            ) : notifications.notifications.length === 0 ? (
+            ) : notifications.length === 0 ? (
               <div className="px-4 py-8 text-center text-gray-500">
                 <FiBell className="h-12 w-12 mx-auto mb-2 text-gray-300" />
                 <p>{t('notifications.empty', 'No notifications yet')}</p>
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {notifications.notifications.map((notification) => (
+                {notifications.map((notification) => (
                   <div
                     key={notification.id}
                     className={`px-4 py-3 hover:bg-gray-50 transition-colors ${
@@ -337,16 +276,31 @@ export default function NotificationCenter() {
                         {/* Additional data display */}
                         {notification.data && (
                           <div className="mt-2">
-                            {notification.data.coupon && (
-                              <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getNotificationColor('coupon')}`}>
-                                🎫 {notification.data.coupon.name}
-                              </div>
-                            )}
-                            {notification.data.pointsAwarded && (
-                              <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getNotificationColor('reward')} ml-2`}>
-                                ⭐ +{notification.data.pointsAwarded} points
-                              </div>
-                            )}
+                            {(() => {
+                              const coupon = notification.data?.coupon;
+                              if (coupon && typeof coupon === 'object' && coupon !== null && 'name' in coupon) {
+                                const couponName = (coupon as { name: unknown }).name;
+                                if (typeof couponName === 'string') {
+                                  return (
+                                    <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getNotificationColor('coupon')}`}>
+                                      🎫 {couponName}
+                                    </div>
+                                  );
+                                }
+                              }
+                              return null;
+                            })()}
+                            {(() => {
+                              const points = notification.data?.pointsAwarded;
+                              if (typeof points === 'number') {
+                                return (
+                                  <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getNotificationColor('reward')} ml-2`}>
+                                    ⭐ +{points} points
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                         )}
                       </div>
@@ -358,7 +312,7 @@ export default function NotificationCenter() {
           </div>
 
           {/* Footer */}
-          {notifications.total > 10 && (
+          {totalCount > 10 && (
             <div className="px-4 py-3 border-t border-gray-200 text-center">
               <button className="text-sm text-primary-600 hover:text-primary-700 font-medium">
                 {t('notifications.viewAll', 'View all notifications')}

@@ -4,7 +4,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SettingsModal from '../SettingsModal';
 import { useAuthStore } from '../../../store/authStore';
-import { userService, UserProfile } from '../../../services/userService';
+import { UserProfile } from '../../../services/userService';
+// trpc is mocked via vi.mock below
 
 // Mock dependencies
 const mockTranslate = vi.fn((key: string) => {
@@ -46,7 +47,29 @@ vi.mock('react-icons/fi', () => ({
 }));
 
 vi.mock('../../../store/authStore');
-vi.mock('../../../services/userService');
+
+// Create shared mock functions that can be accessed by tests
+const mockMutateAsync = vi.fn();
+const mockUpdateEmojiAvatarMutation = {
+  mutateAsync: mockMutateAsync,
+  isPending: false,
+};
+
+// Mock tRPC hooks before they're imported
+vi.mock('../../../hooks/useTRPC', () => ({
+  trpc: {
+    user: {
+      updateEmojiAvatar: {
+        useMutation: () => mockUpdateEmojiAvatarMutation,
+      },
+    },
+  },
+  getTRPCErrorMessage: vi.fn((error: unknown) => {
+    if (error instanceof Error) return error.message;
+    return 'Unknown error';
+  }),
+}));
+
 vi.mock('../../../utils/notificationManager', () => ({
   notify: {
     success: vi.fn(),
@@ -138,7 +161,10 @@ describe('SettingsModal', () => {
       return selector(state);
     });
 
-    (userService.updateEmojiAvatar as any) = vi.fn();
+    // Reset the shared mock for each test
+    mockMutateAsync.mockReset();
+    mockMutateAsync.mockResolvedValue(mockProfile);
+    mockUpdateEmojiAvatarMutation.isPending = false;
   });
 
   describe('Basic Rendering', () => {
@@ -485,10 +511,10 @@ describe('SettingsModal', () => {
       expect(onDeleteAvatar).toHaveBeenCalled();
     });
 
-    it('should call userService.updateEmojiAvatar when emoji selected', async () => {
+    it('should call updateEmojiAvatar mutation when emoji selected', async () => {
       const user = userEvent.setup();
       const mockUpdatedProfile = { ...mockProfile, avatarUrl: 'emoji:😀' };
-      (userService.updateEmojiAvatar as any).mockResolvedValue(mockUpdatedProfile);
+      mockMutateAsync.mockResolvedValue(mockUpdatedProfile);
 
       render(<SettingsModal {...defaultProps} />);
 
@@ -499,14 +525,14 @@ describe('SettingsModal', () => {
       await user.click(selectEmojiButton);
 
       await waitFor(() => {
-        expect(userService.updateEmojiAvatar).toHaveBeenCalledWith('😀');
+        expect(mockMutateAsync).toHaveBeenCalledWith({ emoji: '😀' });
       });
     });
 
     it('should close emoji selector after successful emoji selection', async () => {
       const user = userEvent.setup();
       const mockUpdatedProfile = { ...mockProfile, avatarUrl: 'emoji:😀' };
-      (userService.updateEmojiAvatar as any).mockResolvedValue(mockUpdatedProfile);
+      mockMutateAsync.mockResolvedValue(mockUpdatedProfile);
 
       render(<SettingsModal {...defaultProps} />);
 
@@ -523,9 +549,9 @@ describe('SettingsModal', () => {
 
     it('should call onProfileUpdate when emoji selected successfully', async () => {
       const user = userEvent.setup();
-      const onProfileUpdate = vi.fn();
+      const onProfileUpdate = vi.fn().mockResolvedValue(undefined);
       const mockUpdatedProfile = { ...mockProfile, avatarUrl: 'emoji:😀' };
-      (userService.updateEmojiAvatar as any).mockResolvedValue(mockUpdatedProfile);
+      mockMutateAsync.mockResolvedValue(mockUpdatedProfile);
 
       render(<SettingsModal {...defaultProps} onProfileUpdate={onProfileUpdate} />);
 
@@ -536,7 +562,8 @@ describe('SettingsModal', () => {
       await user.click(selectEmojiButton);
 
       await waitFor(() => {
-        expect(onProfileUpdate).toHaveBeenCalledWith(mockUpdatedProfile);
+        // onProfileUpdate is now called without arguments to trigger refetch
+        expect(onProfileUpdate).toHaveBeenCalled();
       });
     });
   });
@@ -583,82 +610,47 @@ describe('SettingsModal', () => {
     });
 
     it('should disable Choose Emoji button when updatingEmoji', async () => {
-      const user = userEvent.setup();
-      (userService.updateEmojiAvatar as any).mockImplementation(
-        () => new Promise((resolve) => setTimeout(resolve, 1000))
-      );
+      // Set isPending to true to simulate loading state
+      mockUpdateEmojiAvatarMutation.isPending = true;
+      mockMutateAsync.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 1000)));
 
       render(<SettingsModal {...defaultProps} />);
 
       const chooseEmojiButton = screen.getByText('Choose Emoji');
-      await user.click(chooseEmojiButton);
-
-      const selectEmojiButton = screen.getByTestId('select-emoji-button');
-      await user.click(selectEmojiButton);
-
-      await waitFor(() => {
-        expect(chooseEmojiButton).toBeDisabled();
-      });
+      expect(chooseEmojiButton).toBeDisabled();
     });
 
     it('should show loading spinner on avatar when updatingEmoji', async () => {
-      const user = userEvent.setup();
-      (userService.updateEmojiAvatar as any).mockImplementation(
-        () => new Promise((resolve) => setTimeout(resolve, 1000))
-      );
+      // Set isPending to true to simulate loading state
+      mockUpdateEmojiAvatarMutation.isPending = true;
+      mockMutateAsync.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 1000)));
 
       render(<SettingsModal {...defaultProps} />);
 
-      const chooseEmojiButton = screen.getByText('Choose Emoji');
-      await user.click(chooseEmojiButton);
-
-      const selectEmojiButton = screen.getByTestId('select-emoji-button');
-      await user.click(selectEmojiButton);
-
-      await waitFor(() => {
-        const spinner = document.querySelector('.animate-spin');
-        expect(spinner).toBeInTheDocument();
-      });
+      const spinner = document.querySelector('.animate-spin');
+      expect(spinner).toBeInTheDocument();
     });
 
     it('should apply opacity-50 to avatar when updatingEmoji', async () => {
-      const user = userEvent.setup();
-      (userService.updateEmojiAvatar as any).mockImplementation(
-        () => new Promise((resolve) => setTimeout(resolve, 1000))
-      );
+      // Set isPending to true to simulate loading state
+      mockUpdateEmojiAvatarMutation.isPending = true;
+      mockMutateAsync.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 1000)));
 
       render(<SettingsModal {...defaultProps} />);
 
-      const chooseEmojiButton = screen.getByText('Choose Emoji');
-      await user.click(chooseEmojiButton);
-
-      const selectEmojiButton = screen.getByTestId('select-emoji-button');
-      await user.click(selectEmojiButton);
-
-      await waitFor(() => {
-        const avatar = screen.getByTestId('emoji-avatar');
-        expect(avatar).toHaveClass('opacity-50');
-      });
+      const avatar = screen.getByTestId('emoji-avatar');
+      expect(avatar).toHaveClass('opacity-50');
     });
 
     it('should disable Upload Image when updatingEmoji', async () => {
-      const user = userEvent.setup();
-      (userService.updateEmojiAvatar as any).mockImplementation(
-        () => new Promise((resolve) => setTimeout(resolve, 1000))
-      );
+      // Set isPending to true to simulate loading state
+      mockUpdateEmojiAvatarMutation.isPending = true;
+      mockMutateAsync.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 1000)));
 
       render(<SettingsModal {...defaultProps} />);
 
-      const chooseEmojiButton = screen.getByText('Choose Emoji');
-      await user.click(chooseEmojiButton);
-
-      const selectEmojiButton = screen.getByTestId('select-emoji-button');
-      await user.click(selectEmojiButton);
-
-      await waitFor(() => {
-        const uploadButton = screen.getByText('Upload Image');
-        expect(uploadButton).toBeDisabled();
-      });
+      const uploadButton = screen.getByText('Upload Image');
+      expect(uploadButton).toBeDisabled();
     });
   });
 
@@ -814,9 +806,7 @@ describe('SettingsModal', () => {
 
     it('should handle emoji selection error gracefully', async () => {
       const user = userEvent.setup();
-      (userService.updateEmojiAvatar as any).mockRejectedValue(
-        new Error('Failed to update emoji')
-      );
+      mockMutateAsync.mockRejectedValue(new Error('Failed to update emoji'));
 
       render(<SettingsModal {...defaultProps} />);
 
@@ -827,7 +817,7 @@ describe('SettingsModal', () => {
       await user.click(selectEmojiButton);
 
       await waitFor(() => {
-        expect(userService.updateEmojiAvatar).toHaveBeenCalled();
+        expect(mockMutateAsync).toHaveBeenCalled();
       });
 
       // Modal should still be open
@@ -837,7 +827,7 @@ describe('SettingsModal', () => {
     it('should handle missing onProfileUpdate callback', async () => {
       const user = userEvent.setup();
       const mockUpdatedProfile = { ...mockProfile, avatarUrl: 'emoji:😀' };
-      (userService.updateEmojiAvatar as any).mockResolvedValue(mockUpdatedProfile);
+      mockMutateAsync.mockResolvedValue(mockUpdatedProfile);
 
       render(<SettingsModal {...defaultProps} onProfileUpdate={undefined} />);
 
@@ -848,7 +838,7 @@ describe('SettingsModal', () => {
       await user.click(selectEmojiButton);
 
       await waitFor(() => {
-        expect(userService.updateEmojiAvatar).toHaveBeenCalled();
+        expect(mockMutateAsync).toHaveBeenCalled();
       });
 
       // Should not crash

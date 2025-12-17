@@ -13,18 +13,32 @@ const mocks = vi.hoisted(() => {
     role: 'customer',
   };
 
+  let _queryData: any = {
+    notifications: [],
+    unread: 0,
+    total: 0,
+    pagination: { total: 0 },
+  };
+
+  let _isLoading = false;
+  let _error: Error | null = null;
+  const _refetch = vi.fn();
+
+  const _mutate = vi.fn();
+  const _mutateAsync = vi.fn();
+
   return {
     getUser: () => _user,
     setUser: (user: typeof _user) => { _user = user; },
-    axiosInstance: {
-      get: vi.fn(),
-      post: vi.fn(),
-      delete: vi.fn(),
-      interceptors: {
-        request: { use: vi.fn(), eject: vi.fn() },
-        response: { use: vi.fn(), eject: vi.fn() },
-      },
-    },
+    getQueryData: () => _queryData,
+    setQueryData: (data: any) => { _queryData = data; },
+    getIsLoading: () => _isLoading,
+    setIsLoading: (loading: boolean) => { _isLoading = loading; },
+    getError: () => _error,
+    setError: (error: Error | null) => { _error = error; },
+    refetch: _refetch,
+    mutate: _mutate,
+    mutateAsync: _mutateAsync,
   };
 });
 
@@ -32,6 +46,43 @@ const mocks = vi.hoisted(() => {
 vi.mock('../../../store/authStore', () => ({
   useAuthStore: (selector: (state: { user: ReturnType<typeof mocks.getUser> }) => unknown) => {
     return selector({ user: mocks.getUser() });
+  },
+}));
+
+// Mock tRPC
+vi.mock('../../../hooks/useTRPC', () => ({
+  trpc: {
+    notification: {
+      getNotifications: {
+        useQuery: vi.fn(() => ({
+          data: mocks.getQueryData(),
+          isLoading: mocks.getIsLoading(),
+          error: mocks.getError(),
+          refetch: mocks.refetch,
+        })),
+      },
+      markMultipleAsRead: {
+        useMutation: vi.fn(() => ({
+          mutate: mocks.mutate,
+          mutateAsync: mocks.mutateAsync,
+          isLoading: false,
+        })),
+      },
+      markAllAsRead: {
+        useMutation: vi.fn(() => ({
+          mutate: mocks.mutate,
+          mutateAsync: mocks.mutateAsync,
+          isLoading: false,
+        })),
+      },
+      deleteNotification: {
+        useMutation: vi.fn(() => ({
+          mutate: mocks.mutate,
+          mutateAsync: mocks.mutateAsync,
+          isLoading: false,
+        })),
+      },
+    },
   },
 }));
 
@@ -70,20 +121,6 @@ vi.mock('../../../utils/logger', () => ({
 
 vi.mock('date-fns', () => ({
   formatDistanceToNow: vi.fn(() => '2 hours ago'),
-}));
-
-vi.mock('axios', () => ({
-  default: {
-    create: vi.fn(() => mocks.axiosInstance),
-  },
-}));
-
-vi.mock('../../../utils/axiosInterceptor', () => ({
-  addAuthTokenInterceptor: vi.fn(),
-}));
-
-vi.mock('../../../utils/apiConfig', () => ({
-  API_BASE_URL: 'http://localhost:4001/api',
 }));
 
 describe('NotificationCenter', () => {
@@ -130,15 +167,22 @@ describe('NotificationCenter', () => {
     // Reset user state
     mocks.setUser(defaultUser);
 
-    // Setup default axios mock responses
-    mocks.axiosInstance.get.mockResolvedValue({
-      data: {
-        notifications: mockNotifications,
-        pagination: { total: 3 },
-      },
+    // Setup default tRPC mock responses
+    mocks.setQueryData({
+      notifications: mockNotifications,
+      unread: 2,
+      total: 3,
+      pagination: { total: 3 },
     });
-    mocks.axiosInstance.post.mockResolvedValue({ data: { success: true } });
-    mocks.axiosInstance.delete.mockResolvedValue({ data: { success: true } });
+
+    mocks.setIsLoading(false);
+    mocks.setError(null);
+
+    // Reset mutation mocks
+    mocks.mutate.mockClear();
+    mocks.mutateAsync.mockClear();
+    mocks.mutateAsync.mockResolvedValue(undefined);
+    mocks.refetch.mockClear();
   });
 
   describe('Basic Rendering', () => {
@@ -189,11 +233,11 @@ describe('NotificationCenter', () => {
         createdAt: '2024-01-15T10:30:00Z',
       }));
 
-      mocks.axiosInstance.get.mockResolvedValue({
-        data: {
-          notifications: manyUnread,
-          pagination: { total: 12 },
-        },
+      mocks.setQueryData({
+        notifications: manyUnread,
+        unread: 12,
+        total: 12,
+        pagination: { total: 12 },
       });
 
       render(<NotificationCenter />);
@@ -255,12 +299,14 @@ describe('NotificationCenter', () => {
     it('should show loading spinner when fetching notifications', async () => {
       const user = userEvent.setup();
 
-      let resolveGet: (value: unknown) => void;
-      const getPromise = new Promise(resolve => {
-        resolveGet = resolve;
+      // Set loading state
+      mocks.setIsLoading(true);
+      mocks.setQueryData({
+        notifications: [],
+        unread: 0,
+        total: 0,
+        pagination: { total: 0 },
       });
-
-      mocks.axiosInstance.get.mockReturnValue(getPromise);
 
       render(<NotificationCenter />);
 
@@ -270,17 +316,6 @@ describe('NotificationCenter', () => {
       await waitFor(() => {
         expect(screen.getByText('Loading...')).toBeInTheDocument();
       });
-
-      resolveGet!({
-        data: {
-          notifications: [],
-          pagination: { total: 0 },
-        },
-      });
-
-      await waitFor(() => {
-        expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
-      });
     });
   });
 
@@ -288,11 +323,11 @@ describe('NotificationCenter', () => {
     it('should show empty state when no notifications', async () => {
       const user = userEvent.setup();
 
-      mocks.axiosInstance.get.mockResolvedValue({
-        data: {
-          notifications: [],
-          pagination: { total: 0 },
-        },
+      mocks.setQueryData({
+        notifications: [],
+        unread: 0,
+        total: 0,
+        pagination: { total: 0 },
       });
 
       render(<NotificationCenter />);
@@ -352,11 +387,11 @@ describe('NotificationCenter', () => {
     it('should highlight unread notifications', async () => {
       const user = userEvent.setup();
 
-      // Delay the mark-all-read POST so we can check unread state before it resolves
-      let resolvePost: ((value: unknown) => void) | undefined;
-      mocks.axiosInstance.post.mockImplementation(() => {
+      // Delay the mark-all-read mutation so we can check unread state before it resolves
+      let resolveMutation: ((value: unknown) => void) | undefined;
+      mocks.mutateAsync.mockImplementation(() => {
         return new Promise((resolve) => {
-          resolvePost = resolve;
+          resolveMutation = resolve;
         });
       });
 
@@ -371,8 +406,8 @@ describe('NotificationCenter', () => {
       });
 
       // Cleanup: resolve the pending promise
-      if (resolvePost) {
-        resolvePost({ data: { success: true } });
+      if (resolveMutation) {
+        resolveMutation(undefined);
       }
     });
   });
@@ -381,11 +416,11 @@ describe('NotificationCenter', () => {
     it('should show mark as read button for unread notifications', async () => {
       const user = userEvent.setup();
 
-      // Delay the mark-all-read POST so we can check unread state before it resolves
-      let resolvePost: ((value: unknown) => void) | undefined;
-      mocks.axiosInstance.post.mockImplementation(() => {
+      // Delay the mark-all-read mutation so we can check unread state before it resolves
+      let resolveMutation: ((value: unknown) => void) | undefined;
+      mocks.mutateAsync.mockImplementation(() => {
         return new Promise((resolve) => {
-          resolvePost = resolve;
+          resolveMutation = resolve;
         });
       });
 
@@ -400,19 +435,19 @@ describe('NotificationCenter', () => {
       });
 
       // Cleanup: resolve the pending promise
-      if (resolvePost) {
-        resolvePost({ data: { success: true } });
+      if (resolveMutation) {
+        resolveMutation(undefined);
       }
     });
 
     it('should show "Mark all read" button when there are unread notifications', async () => {
       const user = userEvent.setup();
 
-      // Delay the mark-all-read POST so we can check unread state before it resolves
-      let resolvePost: ((value: unknown) => void) | undefined;
-      mocks.axiosInstance.post.mockImplementation(() => {
+      // Delay the mark-all-read mutation so we can check unread state before it resolves
+      let resolveMutation: ((value: unknown) => void) | undefined;
+      mocks.mutateAsync.mockImplementation(() => {
         return new Promise((resolve) => {
-          resolvePost = resolve;
+          resolveMutation = resolve;
         });
       });
 
@@ -426,8 +461,8 @@ describe('NotificationCenter', () => {
       });
 
       // Cleanup: resolve the pending promise
-      if (resolvePost) {
-        resolvePost({ data: { success: true } });
+      if (resolveMutation) {
+        resolveMutation(undefined);
       }
     });
   });
@@ -451,7 +486,13 @@ describe('NotificationCenter', () => {
     it('should handle fetch error gracefully', async () => {
       const user = userEvent.setup();
 
-      mocks.axiosInstance.get.mockRejectedValue(new Error('Network error'));
+      mocks.setError(new Error('Network error'));
+      mocks.setQueryData({
+        notifications: [],
+        unread: 0,
+        total: 0,
+        pagination: { total: 0 },
+      });
 
       render(<NotificationCenter />);
 

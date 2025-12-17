@@ -46,10 +46,30 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../../services/couponService', () => ({
   couponService: {
     validateCoupon: vi.fn(),
-    redeemCoupon: vi.fn(),
     calculateDiscount: vi.fn(),
     formatCouponValue: vi.fn(),
   },
+}));
+
+// Mock tRPC
+const mockRedeemCouponMutate = vi.fn();
+vi.mock('../../../hooks/useTRPC', () => ({
+  trpc: {
+    coupon: {
+      redeemCoupon: {
+        useMutation: vi.fn(() => ({
+          mutateAsync: mockRedeemCouponMutate,
+          isPending: false,
+        })),
+      },
+    },
+  },
+  getTRPCErrorMessage: vi.fn((err: unknown) => {
+    if (err instanceof Error) {
+      return err.message;
+    }
+    return 'An error occurred';
+  }),
 }));
 
 vi.mock('../../../utils/logger', () => ({
@@ -106,7 +126,7 @@ describe('CouponScanner', () => {
       data: mockValidCoupon as unknown as import('../../../types/coupon').Coupon,
     });
 
-    vi.mocked(couponService.redeemCoupon).mockResolvedValue({
+    mockRedeemCouponMutate.mockResolvedValue({
       success: true,
       message: 'Coupon redeemed successfully',
       discountAmount: 200,
@@ -519,7 +539,7 @@ describe('CouponScanner', () => {
       });
     });
 
-    it('should call redeemCoupon service on submit', async () => {
+    it('should call redeemCoupon mutation on submit', async () => {
       const user = userEvent.setup();
       render(<CouponScanner />);
 
@@ -537,7 +557,7 @@ describe('CouponScanner', () => {
       await user.click(submitButton);
 
       await waitFor(() => {
-        expect(couponService.redeemCoupon).toHaveBeenCalledWith(
+        expect(mockRedeemCouponMutate).toHaveBeenCalledWith(
           expect.objectContaining({
             qrCode: 'QR123456',
             originalAmount: 1000,
@@ -570,7 +590,7 @@ describe('CouponScanner', () => {
       await user.click(submitButton);
 
       await waitFor(() => {
-        expect(couponService.redeemCoupon).toHaveBeenCalledWith(
+        expect(mockRedeemCouponMutate).toHaveBeenCalledWith(
           expect.objectContaining({
             qrCode: 'QR123456',
             originalAmount: 1000,
@@ -661,7 +681,7 @@ describe('CouponScanner', () => {
     it('should handle redemption error', async () => {
       const user = userEvent.setup();
       const error = new Error('Network error');
-      vi.mocked(couponService.redeemCoupon).mockRejectedValueOnce(error);
+      mockRedeemCouponMutate.mockRejectedValueOnce(error);
 
       render(<CouponScanner />);
 
@@ -680,7 +700,7 @@ describe('CouponScanner', () => {
 
       await waitFor(() => {
         expect(logger.error).toHaveBeenCalledWith('Error redeeming coupon:', error);
-        expect(screen.getByText('Redemption failed')).toBeInTheDocument();
+        expect(screen.getByText('Network error')).toBeInTheDocument();
       });
     });
 
@@ -730,7 +750,7 @@ describe('CouponScanner', () => {
 
     it('should show loading state during redemption', async () => {
       const user = userEvent.setup();
-      vi.mocked(couponService.redeemCoupon).mockImplementation(
+      mockRedeemCouponMutate.mockImplementation(
         () => new Promise((resolve) => setTimeout(() => resolve({
           success: true,
           message: 'Success',

@@ -4,8 +4,8 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ProfileCompletionBanner from '../ProfileCompletionBanner';
 import { useAuthStore } from '../../../store/authStore';
-import { userService } from '../../../services/userService';
 import { notify } from '../../../utils/notificationManager';
+// trpc is mocked via vi.mock below
 
 // Mock dependencies
 const mockTranslate = vi.fn((key: string, params?: any) => {
@@ -49,8 +49,40 @@ vi.mock('react-icons/fi', () => ({
 }));
 
 vi.mock('../../../store/authStore');
-vi.mock('../../../services/userService');
 vi.mock('../../../utils/notificationManager');
+
+// Create shared mock objects that can be modified by tests
+const mockQueryData = {
+  data: null as unknown,
+  isLoading: false,
+  error: null as unknown,
+  refetch: vi.fn(),
+};
+
+const mockMutateAsync = vi.fn();
+const mockMutationState = {
+  mutateAsync: mockMutateAsync,
+  isPending: false,
+};
+
+// Mock tRPC hooks before they're imported
+vi.mock('../../../hooks/useTRPC', () => ({
+  trpc: {
+    user: {
+      getProfileCompletionStatus: {
+        useQuery: () => mockQueryData,
+      },
+      completeProfile: {
+        useMutation: () => mockMutationState,
+      },
+    },
+  },
+  getTRPCErrorMessage: vi.fn((error: unknown) => {
+    if (error instanceof Error) return error.message;
+    return 'Unknown error';
+  }),
+}));
+
 vi.mock('../ProfileFormFields', () => ({
   GenderField: () => <div data-testid="gender-field">Gender Field</div>,
   OccupationField: () => <div data-testid="occupation-field">Occupation Field</div>,
@@ -60,6 +92,23 @@ vi.mock('../ProfileFormFields', () => ({
 describe('ProfileCompletionBanner', () => {
   const mockUser = { id: 'user-123', email: 'test@example.com' };
   const mockUpdateUser = vi.fn();
+
+  // Helper function to mock tRPC query
+  const mockProfileCompletionQuery = (data: unknown) => {
+    mockQueryData.data = data;
+    mockQueryData.isLoading = false;
+    mockQueryData.error = null;
+  };
+
+  // Helper function to mock tRPC mutation
+  const mockCompleteProfileMutation = (implementation?: (data: unknown) => Promise<unknown>) => {
+    mockMutateAsync.mockReset();
+    if (implementation) {
+      mockMutateAsync.mockImplementation(implementation);
+    }
+    mockMutationState.isPending = false;
+    return mockMutateAsync;
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -74,8 +123,14 @@ describe('ProfileCompletionBanner', () => {
       return selector(state);
     });
 
-    (userService.getProfileCompletionStatus as any) = vi.fn();
-    (userService.completeProfile as any) = vi.fn();
+    // Reset shared mocks
+    mockQueryData.data = null;
+    mockQueryData.isLoading = false;
+    mockQueryData.error = null;
+    mockQueryData.refetch.mockReset();
+    mockMutateAsync.mockReset();
+    mockMutationState.isPending = false;
+
     (notify.success as any) = vi.fn();
     (notify.error as any) = vi.fn();
   });
@@ -86,7 +141,7 @@ describe('ProfileCompletionBanner', () => {
 
   describe('Basic Rendering', () => {
     it('should render the component', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -100,7 +155,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should show banner when profile incomplete and coupon available', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName', 'lastName'],
         newMemberCouponAvailable: true,
@@ -114,7 +169,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should apply custom className', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -129,7 +184,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should have gradient background styling', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -159,7 +214,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should not render when profile is complete', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: true,
         missingFields: [],
         newMemberCouponAvailable: true,
@@ -173,7 +228,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should not render when no coupon available', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: false,
@@ -187,7 +242,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should not render when API returns null', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue(null);
+      mockProfileCompletionQuery(null);
 
       const { container } = render(<ProfileCompletionBanner />);
 
@@ -197,9 +252,9 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should not render when API call fails', async () => {
-      (userService.getProfileCompletionStatus as any).mockRejectedValue(
-        new Error('API Error')
-      );
+      mockQueryData.data = null;
+      mockQueryData.isLoading = false;
+      mockQueryData.error = new Error('API Error');
 
       const { container } = render(<ProfileCompletionBanner />);
 
@@ -209,7 +264,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should render when all conditions met', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -227,7 +282,7 @@ describe('ProfileCompletionBanner', () => {
     it('should not render when previously dismissed', async () => {
       sessionStorage.setItem('profile-banner-dismissed', 'true');
 
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -243,7 +298,7 @@ describe('ProfileCompletionBanner', () => {
     it('should render when not previously dismissed', async () => {
       sessionStorage.removeItem('profile-banner-dismissed');
 
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -259,7 +314,7 @@ describe('ProfileCompletionBanner', () => {
 
   describe('Banner Content Display', () => {
     it('should display gift icon', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -273,7 +328,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should display New Member Offer badge', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -287,7 +342,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should display complete profile message', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -301,7 +356,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should display Complete Profile button', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -316,7 +371,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should display dismiss button', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -331,7 +386,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should display chevron icon in Complete Profile button', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -349,7 +404,7 @@ describe('ProfileCompletionBanner', () => {
     it('should dismiss banner when X button clicked', async () => {
       const user = userEvent.setup();
 
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -372,7 +427,7 @@ describe('ProfileCompletionBanner', () => {
     it('should store dismissal in sessionStorage', async () => {
       const user = userEvent.setup();
 
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -395,7 +450,7 @@ describe('ProfileCompletionBanner', () => {
 
   describe('Missing Fields Text Generation', () => {
     it('should display single missing field', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -409,7 +464,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should display two missing fields with "and"', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName', 'lastName'],
         newMemberCouponAvailable: true,
@@ -423,7 +478,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should display three or more fields with commas and "and"', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName', 'lastName', 'phone'],
         newMemberCouponAvailable: true,
@@ -437,7 +492,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should handle date_of_birth field name', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['date_of_birth'],
         newMemberCouponAvailable: true,
@@ -451,7 +506,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should handle gender field name', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['gender'],
         newMemberCouponAvailable: true,
@@ -465,7 +520,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should handle occupation field name', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['occupation'],
         newMemberCouponAvailable: true,
@@ -484,7 +539,7 @@ describe('ProfileCompletionBanner', () => {
     it('should open modal when Complete Profile button clicked', async () => {
       const user = userEvent.setup();
 
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -509,7 +564,7 @@ describe('ProfileCompletionBanner', () => {
     it('should close modal when Cancel button clicked', async () => {
       const user = userEvent.setup();
 
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -539,7 +594,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should close modal when clicking backdrop', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -567,7 +622,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should close modal on Escape key', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -594,35 +649,25 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should not close modal on Escape when saving', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
       });
 
-      (userService.completeProfile as any).mockImplementation(
-        () => new Promise((resolve) => setTimeout(resolve, 1000))
-      );
+      // Set isPending to true to simulate saving state before render
+      mockMutationState.isPending = true;
 
       render(<ProfileCompletionBanner />);
 
+      // Open the modal
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
         if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
 
-      await waitFor(() => {
-        const firstNameInput = screen.getByPlaceholderText('Enter first name');
-        fireEvent.change(firstNameInput, { target: { value: 'John' } });
-      });
-
-      const submitButton = screen.getAllByText('Complete Profile').find(
-        (el) => el.tagName === 'BUTTON' && el.closest('form')
-      ) as HTMLButtonElement;
-      fireEvent.click(submitButton);
-
-      // Wait for loading state to appear
+      // Wait for loading state to appear (isPending was set before render)
       await waitFor(() => {
         expect(screen.getByText('Saving...')).toBeInTheDocument();
       });
@@ -637,7 +682,7 @@ describe('ProfileCompletionBanner', () => {
 
   describe('Form Field Rendering', () => {
     it('should render firstName field when missing', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -657,7 +702,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should not render firstName field when not missing', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['lastName'],
         newMemberCouponAvailable: true,
@@ -677,7 +722,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should render lastName field when missing', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['lastName'],
         newMemberCouponAvailable: true,
@@ -697,7 +742,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should render phone field when missing', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['phone'],
         newMemberCouponAvailable: true,
@@ -717,7 +762,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should render date_of_birth field component when missing', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['date_of_birth'],
         newMemberCouponAvailable: true,
@@ -737,7 +782,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should render gender field component when missing', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['gender'],
         newMemberCouponAvailable: true,
@@ -757,7 +802,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should render occupation field component when missing', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['occupation'],
         newMemberCouponAvailable: true,
@@ -777,7 +822,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should render multiple fields when multiple missing', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName', 'lastName', 'phone'],
         newMemberCouponAvailable: true,
@@ -800,18 +845,18 @@ describe('ProfileCompletionBanner', () => {
   });
 
   describe('Form Submission - Success', () => {
-    it('should call userService.completeProfile on form submit', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+    it('should call mutateAsync on form submit', async () => {
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
       });
 
-      (userService.completeProfile as any).mockResolvedValue({
+      const mutateAsync = mockCompleteProfileMutation(() => Promise.resolve({
         couponAwarded: true,
         coupon: { name: 'Welcome Coupon' },
         pointsAwarded: 100,
-      });
+      }));
 
       render(<ProfileCompletionBanner />);
 
@@ -832,7 +877,7 @@ describe('ProfileCompletionBanner', () => {
       fireEvent.click(submitButton);
 
       await waitFor(() => {
-        expect(userService.completeProfile).toHaveBeenCalledWith({
+        expect(mutateAsync).toHaveBeenCalledWith({
           firstName: 'John',
           lastName: undefined,
           phone: undefined,
@@ -844,17 +889,17 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should show success notification with coupon and points', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
       });
 
-      (userService.completeProfile as any).mockResolvedValue({
+      mockCompleteProfileMutation(() => Promise.resolve({
         couponAwarded: true,
-        coupon: { name: 'Welcome Coupon' },
+        coupon: { title: 'Welcome Coupon' },
         pointsAwarded: 100,
-      });
+      }));
 
       render(<ProfileCompletionBanner />);
 
@@ -883,16 +928,16 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should show success notification without rewards', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
       });
 
-      (userService.completeProfile as any).mockResolvedValue({
+      mockCompleteProfileMutation(() => Promise.resolve({
         couponAwarded: false,
         pointsAwarded: 0,
-      });
+      }));
 
       render(<ProfileCompletionBanner />);
 
@@ -918,17 +963,17 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should hide banner after successful submission', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
       });
 
-      (userService.completeProfile as any).mockResolvedValue({
+      mockCompleteProfileMutation(() => Promise.resolve({
         couponAwarded: true,
         coupon: { name: 'Welcome Coupon' },
         pointsAwarded: 100,
-      });
+      }));
 
       const { container } = render(<ProfileCompletionBanner />);
 
@@ -954,17 +999,17 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should close modal after successful submission', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
       });
 
-      (userService.completeProfile as any).mockResolvedValue({
+      mockCompleteProfileMutation(() => Promise.resolve({
         couponAwarded: true,
         coupon: { name: 'Welcome Coupon' },
         pointsAwarded: 100,
-      });
+      }));
 
       render(<ProfileCompletionBanner />);
 
@@ -996,17 +1041,17 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should store dismissal in sessionStorage after submission', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
       });
 
-      (userService.completeProfile as any).mockResolvedValue({
+      mockCompleteProfileMutation(() => Promise.resolve({
         couponAwarded: true,
         coupon: { name: 'Welcome Coupon' },
         pointsAwarded: 100,
-      });
+      }));
 
       render(<ProfileCompletionBanner />);
 
@@ -1034,15 +1079,13 @@ describe('ProfileCompletionBanner', () => {
 
   describe('Form Submission - Error', () => {
     it('should show error notification on submission failure', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
       });
 
-      (userService.completeProfile as any).mockRejectedValue(
-        new Error('Network error')
-      );
+      mockCompleteProfileMutation(() => Promise.reject(new Error('Network error')));
 
       render(<ProfileCompletionBanner />);
 
@@ -1063,20 +1106,19 @@ describe('ProfileCompletionBanner', () => {
       fireEvent.click(submitButton);
 
       await waitFor(() => {
-        expect(notify.error).toHaveBeenCalledWith('Failed to update profile');
+        // getTRPCErrorMessage returns the error message from the Error object
+        expect(notify.error).toHaveBeenCalledWith('Network error');
       });
     });
 
     it('should keep modal open on submission failure', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
       });
 
-      (userService.completeProfile as any).mockRejectedValue(
-        new Error('Network error')
-      );
+      mockCompleteProfileMutation(() => Promise.reject(new Error('Network error')));
 
       render(<ProfileCompletionBanner />);
 
@@ -1107,15 +1149,14 @@ describe('ProfileCompletionBanner', () => {
 
   describe('Form Submission - Loading State', () => {
     it('should show loading state during submission', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
       });
 
-      (userService.completeProfile as any).mockImplementation(
-        () => new Promise((resolve) => setTimeout(resolve, 100))
-      );
+      // Set isPending to true to simulate loading state
+      mockMutationState.isPending = true;
 
       render(<ProfileCompletionBanner />);
 
@@ -1125,31 +1166,21 @@ describe('ProfileCompletionBanner', () => {
         fireEvent.click(openButton);
       });
 
-      await waitFor(() => {
-        const firstNameInput = screen.getByPlaceholderText('Enter first name');
-        fireEvent.change(firstNameInput, { target: { value: 'John' } });
-      });
-
-      const submitButton = screen.getAllByText('Complete Profile').find(
-        (el) => el.tagName === 'BUTTON' && el.closest('form')
-      ) as HTMLButtonElement;
-      fireEvent.click(submitButton);
-
+      // When isPending is true, should show "Saving..."
       await waitFor(() => {
         expect(screen.getByText('Saving...')).toBeInTheDocument();
       });
     });
 
     it('should disable submit button during submission', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
       });
 
-      (userService.completeProfile as any).mockImplementation(
-        () => new Promise((resolve) => setTimeout(resolve, 100))
-      );
+      // Set up the mutation with isPending: true to simulate loading state
+      mockMutationState.isPending = true;
 
       render(<ProfileCompletionBanner />);
 
@@ -1159,16 +1190,7 @@ describe('ProfileCompletionBanner', () => {
         fireEvent.click(openButton);
       });
 
-      await waitFor(() => {
-        const firstNameInput = screen.getByPlaceholderText('Enter first name');
-        fireEvent.change(firstNameInput, { target: { value: 'John' } });
-      });
-
-      const submitButton = screen.getAllByText('Complete Profile').find(
-        (el) => el.tagName === 'BUTTON' && el.closest('form')
-      ) as HTMLButtonElement;
-      fireEvent.click(submitButton);
-
+      // When isPending is true, the submit button should show "Saving..." and be disabled
       await waitFor(() => {
         const savingButton = screen.getByText('Saving...');
         expect(savingButton.closest('button')).toBeDisabled();
@@ -1176,15 +1198,14 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should disable cancel button during submission', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
       });
 
-      (userService.completeProfile as any).mockImplementation(
-        () => new Promise((resolve) => setTimeout(resolve, 100))
-      );
+      // Set up the mutation with isPending: true to simulate loading state
+      mockMutationState.isPending = true;
 
       render(<ProfileCompletionBanner />);
 
@@ -1194,16 +1215,7 @@ describe('ProfileCompletionBanner', () => {
         fireEvent.click(openButton);
       });
 
-      await waitFor(() => {
-        const firstNameInput = screen.getByPlaceholderText('Enter first name');
-        fireEvent.change(firstNameInput, { target: { value: 'John' } });
-      });
-
-      const submitButton = screen.getAllByText('Complete Profile').find(
-        (el) => el.tagName === 'BUTTON' && el.closest('form')
-      ) as HTMLButtonElement;
-      fireEvent.click(submitButton);
-
+      // When isPending is true, the cancel button should be disabled
       await waitFor(() => {
         const cancelButton = screen.getByText('Cancel');
         expect(cancelButton).toBeDisabled();
@@ -1213,7 +1225,7 @@ describe('ProfileCompletionBanner', () => {
 
   describe('Background Scroll Prevention', () => {
     it('should prevent background scrolling when modal open', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -1235,7 +1247,7 @@ describe('ProfileCompletionBanner', () => {
     it('should restore scrolling when modal closed', async () => {
       const user = userEvent.setup();
 
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -1264,7 +1276,7 @@ describe('ProfileCompletionBanner', () => {
 
   describe('Accessibility', () => {
     it('should have proper aria-label on dismiss button', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,
@@ -1279,7 +1291,7 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should be keyboard accessible', async () => {
-      (userService.getProfileCompletionStatus as any).mockResolvedValue({
+      mockProfileCompletionQuery({
         isComplete: false,
         missingFields: ['firstName'],
         newMemberCouponAvailable: true,

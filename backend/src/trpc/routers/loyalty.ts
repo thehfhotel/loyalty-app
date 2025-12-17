@@ -100,6 +100,13 @@ export const loyaltyRouter = router({
     }),
 
   /**
+   * Get all tiers with full details
+   */
+  getAllTiers: protectedProcedure.query(async () => {
+    return await loyaltyService.getAllTiers();
+  }),
+
+  /**
    * Get tier configuration
    */
   getTierConfig: protectedProcedure.query(async () => {

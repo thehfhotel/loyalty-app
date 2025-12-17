@@ -5,16 +5,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuthStore } from '../../store/authStore';
-import { userService } from '../../services/userService';
 import { notify } from '../../utils/notificationManager';
 import { logger } from '../../utils/logger';
 import { GenderField, OccupationField, DateOfBirthField } from './ProfileFormFields';
-
-interface ProfileStatus {
-  isComplete: boolean;
-  missingFields: string[];
-  newMemberCouponAvailable: boolean;
-}
+import { trpc, getTRPCErrorMessage } from '../../hooks/useTRPC';
 
 interface ProfileCompletionBannerProps {
   className?: string;
@@ -35,11 +29,18 @@ type ProfileCompletionFormData = z.infer<typeof profileCompletionSchema>;
 export default function ProfileCompletionBanner({ className = '' }: ProfileCompletionBannerProps) {
   const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
-  const [profileStatus, setProfileStatus] = useState<ProfileStatus | null>(null);
   const [isDismissed, setIsDismissed] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+
+  // tRPC hooks
+  const { data: profileStatus, isLoading, refetch } = trpc.user.getProfileCompletionStatus.useQuery(
+    undefined,
+    {
+      enabled: !!user?.id,
+      retry: false
+    }
+  );
+  const completeProfileMutation = trpc.user.completeProfile.useMutation();
 
   // Check if banner was previously dismissed in this session
   useEffect(() => {
@@ -48,32 +49,6 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
       setIsDismissed(true);
     }
   }, []);
-
-  useEffect(() => {
-    const checkProfileStatus = async () => {
-      if (!user?.id) {
-        setIsLoading(false);
-        return;
-      }
-
-      try {
-        const response = await userService.getProfileCompletionStatus();
-        setProfileStatus(response);
-      } catch (error) {
-        logger.error('Failed to check profile completion status:', error);
-        // For debugging: log the full error details
-        if (error instanceof Error) {
-          logger.error('Error details:', error.message);
-        }
-        // Set profile status to null on error to hide banner
-        setProfileStatus(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkProfileStatus();
-  }, [user?.id]);
 
   const {
     register,
@@ -102,7 +77,7 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
   // Handle keyboard events for modal
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && showModal && !isSaving) {
+      if (event.key === 'Escape' && showModal && !completeProfileMutation.isPending) {
         handleCloseModal();
       }
     };
@@ -118,12 +93,11 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'unset';
     };
-  }, [showModal, isSaving, handleCloseModal]);
+  }, [showModal, completeProfileMutation.isPending, handleCloseModal]);
 
   const onSubmit = async (data: ProfileCompletionFormData) => {
-    setIsSaving(true);
     try {
-      const response = await userService.completeProfile({
+      const response = await completeProfileMutation.mutateAsync({
         firstName: data.firstName,
         lastName: data.lastName,
         phone: data.phone ?? undefined,
@@ -135,7 +109,7 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
       // Show reward notifications
       const rewards = [];
       if (response.couponAwarded && response.coupon) {
-        rewards.push(`coupon: ${response.coupon.name}`);
+        rewards.push(`coupon: ${response.coupon.title}`);
       }
       if (response.pointsAwarded && response.pointsAwarded > 0) {
         rewards.push(`${response.pointsAwarded.toLocaleString()} loyalty points`);
@@ -143,7 +117,7 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
 
       if (rewards.length > 0) {
         notify.success(
-          `🎉 Profile completed! You received: ${rewards.join(' and ')}`,
+          `Profile completed! You received: ${rewards.join(' and ')}`,
           { duration: 8000 }
         );
       } else {
@@ -156,16 +130,11 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
       sessionStorage.setItem('profile-banner-dismissed', 'true');
 
       // Refresh profile status
-      const newStatus = await userService.getProfileCompletionStatus();
-      setProfileStatus(newStatus);
+      await refetch();
 
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error && 'response' in error 
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
-        : undefined;
-      notify.error(errorMessage ?? t('profile.profileUpdateError'));
-    } finally {
-      setIsSaving(false);
+      notify.error(getTRPCErrorMessage(error) ?? t('profile.profileUpdateError'));
+      logger.error('Profile completion error:', error);
     }
   };
 
@@ -360,10 +329,10 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
                 <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                   <button
                     type="submit"
-                    disabled={isSaving}
+                    disabled={completeProfileMutation.isPending}
                     className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isSaving ? (
+                    {completeProfileMutation.isPending ? (
                       <>
                         <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -381,7 +350,7 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
                   <button
                     type="button"
                     onClick={handleCloseModal}
-                    disabled={isSaving}
+                    disabled={completeProfileMutation.isPending}
                     className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
                   >
                     {t('common.cancel')}
