@@ -32,13 +32,20 @@ export function TRPCProvider({ children }: { children: React.ReactNode }) {
               credentials: 'include',
             });
           },
-          // Add auth headers if needed
+          // Add auth headers from zustand persisted store
           headers() {
-            // Get token from localStorage or auth store
-            const token = localStorage.getItem('token');
-            return token ? {
-              authorization: `Bearer ${token}`,
-            } : {};
+            // Read token from zustand persisted auth store
+            const authStorage = localStorage.getItem('auth-storage');
+            if (authStorage) {
+              try {
+                const parsed = JSON.parse(authStorage);
+                const token = parsed.state?.accessToken;
+                return token ? { authorization: `Bearer ${token}` } : {};
+              } catch {
+                return {};
+              }
+            }
+            return {};
           },
         }),
       ],
