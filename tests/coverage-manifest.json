@@ -1,0 +1,68 @@
+{
+  "totalPages": 19,
+  "testedPages": 12,
+  "coverage": "63.2%",
+  "lastUpdated": "2025-12-20",
+  "pages": {
+    "public": {
+      "total": 4,
+      "tested": 4,
+      "coverage": "100%",
+      "pages": [
+        { "path": "/login", "tested": true, "testFile": "login-flow.browser.spec.ts" },
+        { "path": "/register", "tested": true, "testFile": "login-flow.browser.spec.ts" },
+        { "path": "/reset-password", "tested": true, "testFile": "login-flow.browser.spec.ts" },
+        { "path": "/oauth/success", "tested": true, "testFile": "login-flow.browser.spec.ts" }
+      ]
+    },
+    "user": {
+      "total": 6,
+      "tested": 6,
+      "coverage": "100%",
+      "pages": [
+        { "path": "/dashboard", "tested": true, "testFile": "dashboard.browser.spec.ts" },
+        { "path": "/profile", "tested": true, "testFile": "profile-flow.browser.spec.ts" },
+        { "path": "/coupons", "tested": true, "testFile": "coupon-flow.browser.spec.ts" },
+        { "path": "/surveys", "tested": true, "testFile": "survey-flow.browser.spec.ts" },
+        { "path": "/surveys/:id/take", "tested": true, "testFile": "survey-flow.browser.spec.ts" },
+        { "path": "/surveys/:id/details", "tested": true, "testFile": "survey-flow.browser.spec.ts" }
+      ]
+    },
+    "admin": {
+      "total": 9,
+      "tested": 2,
+      "coverage": "22.2%",
+      "pages": [
+        { "path": "/admin/loyalty", "tested": true, "testFile": "admin-loyalty.browser.spec.ts" },
+        { "path": "/admin/users", "tested": true, "testFile": "admin-users.browser.spec.ts" },
+        { "path": "/admin/coupons", "tested": false },
+        { "path": "/admin/surveys", "tested": false },
+        { "path": "/admin/surveys/create", "tested": false },
+        { "path": "/admin/surveys/:id/edit", "tested": false },
+        { "path": "/admin/surveys/:id/analytics", "tested": false },
+        { "path": "/admin/surveys/:id/preview", "tested": false },
+        { "path": "/admin/surveys/templates", "tested": false }
+      ]
+    }
+  },
+  "flows": {
+    "total": 9,
+    "tested": 9,
+    "coverage": "100%",
+    "userFlows": [
+      { "name": "Login Flow", "tested": true },
+      { "name": "Registration Flow", "tested": true },
+      { "name": "OAuth Flow", "tested": true },
+      { "name": "Dashboard Access", "tested": true },
+      { "name": "Profile Management", "tested": true },
+      { "name": "Coupon Wallet", "tested": true },
+      { "name": "Survey Taking", "tested": true },
+      { "name": "Admin User Management", "tested": true },
+      { "name": "Admin Loyalty Management", "tested": true }
+    ]
+  },
+  "apiTests": {
+    "total": 195,
+    "description": "E2E API tests covering critical user flows"
+  }
+}

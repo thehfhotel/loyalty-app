@@ -640,6 +640,56 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
           fi
 
+          # Test Coverage Statistics (Load Test, E2E, Integration)
+          echo "## 📈 Test Coverage Statistics" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Load Test Coverage
+          if [ -f "backend/src/__tests__/performance/k6/coverage-manifest.json" ]; then
+            LOAD_TESTED=$(jq '.testedEndpoints' backend/src/__tests__/performance/k6/coverage-manifest.json)
+            LOAD_TOTAL=$(jq '.totalEndpoints' backend/src/__tests__/performance/k6/coverage-manifest.json)
+            LOAD_PCT=$(echo "scale=1; $LOAD_TESTED * 100 / $LOAD_TOTAL" | bc)
+            echo "### 🔄 Load Test Coverage" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|:-------|------:|" >> $GITHUB_STEP_SUMMARY
+            echo "| Endpoints Tested | $LOAD_TESTED / $LOAD_TOTAL |" >> $GITHUB_STEP_SUMMARY
+            echo "| Coverage | ${LOAD_PCT}% |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # E2E Coverage
+          if [ -f "tests/coverage-manifest.json" ]; then
+            E2E_TESTED=$(jq '.testedPages' tests/coverage-manifest.json)
+            E2E_TOTAL=$(jq '.totalPages' tests/coverage-manifest.json)
+            E2E_PCT=$(echo "scale=1; $E2E_TESTED * 100 / $E2E_TOTAL" | bc)
+            E2E_FLOWS=$(jq '.flows.tested' tests/coverage-manifest.json)
+            E2E_FLOWS_TOTAL=$(jq '.flows.total' tests/coverage-manifest.json)
+            echo "### 🎭 E2E Test Coverage" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|:-------|------:|" >> $GITHUB_STEP_SUMMARY
+            echo "| Pages Tested | $E2E_TESTED / $E2E_TOTAL |" >> $GITHUB_STEP_SUMMARY
+            echo "| Page Coverage | ${E2E_PCT}% |" >> $GITHUB_STEP_SUMMARY
+            echo "| User Flows | $E2E_FLOWS / $E2E_FLOWS_TOTAL |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Integration Test Coverage Summary
+          if [ -f backend/coverage/coverage-summary.json ]; then
+            INT_LINES=$(jq '.total.lines.pct' backend/coverage/coverage-summary.json)
+            INT_FUNCS=$(jq '.total.functions.pct' backend/coverage/coverage-summary.json)
+            INT_BRANCH=$(jq '.total.branches.pct' backend/coverage/coverage-summary.json)
+            echo "### 🔬 Code Coverage Summary" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Coverage |" >> $GITHUB_STEP_SUMMARY
+            echo "|:-------|----------:|" >> $GITHUB_STEP_SUMMARY
+            echo "| Lines | ${INT_LINES}% |" >> $GITHUB_STEP_SUMMARY
+            echo "| Functions | ${INT_FUNCS}% |" >> $GITHUB_STEP_SUMMARY
+            echo "| Branches | ${INT_BRANCH}% |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
           # Download reports info
           echo "## 📥 Download Reports" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
