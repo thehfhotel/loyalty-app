@@ -129,7 +129,7 @@ describe('RequestLogger Middleware', () => {
     });
   });
 
-  describe('Performance Tracking', () => {
+  describe('Duration Tracking Capability', () => {
     test('should track request duration', () => {
       requestLogger(mockReq as Request, mockRes as Response, mockNext);
 

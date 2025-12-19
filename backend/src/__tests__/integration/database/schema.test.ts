@@ -299,7 +299,7 @@ describe('Database Schema Integration', () => {
     });
   });
 
-  describe('Database Performance', () => {
+  describe('Query Shape Validation', () => {
     it('should efficiently query users by email', async () => {
       const user = await createTestUser({
         email: 'performance-test@example.com',

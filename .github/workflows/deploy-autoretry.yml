@@ -14,6 +14,11 @@ jobs:
   retry-once:
     name: "🔁 Retry deploy workflow (once)"
     runs-on: ubuntu-latest
+    # Only retry on transient failures, NOT on:
+    # - cancelled: User intentionally stopped the workflow
+    # - action_required: Workflow waiting for approval/rejected
+    # - skipped: Workflow conditions not met
+    # - success: Already passed
     if: >
       github.event.workflow_run.run_attempt == 1 &&
       contains(fromJson('["failure","timed_out","startup_failure"]'), github.event.workflow_run.conclusion)
@@ -39,6 +44,29 @@ jobs:
               core.summary
                 .addHeading('⏭️ Rerun skipped - workflow too old')
                 .addRaw(`Run ID: ${runId} | Age: ${ageInDays.toFixed(1)} days | GitHub only allows reruns within 30 days`, true);
+              await core.summary.write();
+              return;
+            }
+
+            // Check if failure was due to rejected deployment approval
+            // When deployment is rejected, the "Confirm" job fails but it's intentional
+            const { data: jobs } = await github.rest.actions.listJobsForWorkflowRunAttempt({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+              attempt_number: attempt,
+            });
+
+            const rejectedDeployment = jobs.jobs.find(job =>
+              job.name.toLowerCase().includes('confirm') &&
+              job.conclusion === 'failure'
+            );
+
+            if (rejectedDeployment) {
+              core.warning(`Skipping rerun: deployment was rejected (job: ${rejectedDeployment.name})`);
+              core.summary
+                .addHeading('⏭️ Rerun skipped - deployment rejected')
+                .addRaw(`Run ID: ${runId} | Job "${rejectedDeployment.name}" was rejected - not a transient failure`, true);
               await core.summary.write();
               return;
             }
