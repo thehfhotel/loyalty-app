@@ -648,7 +648,7 @@ jobs:
           if [ -f "backend/src/__tests__/performance/k6/coverage-manifest.json" ]; then
             LOAD_TESTED=$(jq '.testedEndpoints' backend/src/__tests__/performance/k6/coverage-manifest.json)
             LOAD_TOTAL=$(jq '.totalEndpoints' backend/src/__tests__/performance/k6/coverage-manifest.json)
-            LOAD_PCT=$(echo "scale=1; $LOAD_TESTED * 100 / $LOAD_TOTAL" | bc)
+            LOAD_PCT=$(awk "BEGIN {printf \"%.1f\", $LOAD_TESTED * 100 / $LOAD_TOTAL}")
             echo "### 🔄 Load Test Coverage" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
@@ -662,7 +662,7 @@ jobs:
           if [ -f "tests/coverage-manifest.json" ]; then
             E2E_TESTED=$(jq '.testedPages' tests/coverage-manifest.json)
             E2E_TOTAL=$(jq '.totalPages' tests/coverage-manifest.json)
-            E2E_PCT=$(echo "scale=1; $E2E_TESTED * 100 / $E2E_TOTAL" | bc)
+            E2E_PCT=$(awk "BEGIN {printf \"%.1f\", $E2E_TESTED * 100 / $E2E_TOTAL}")
             E2E_FLOWS=$(jq '.flows.tested' tests/coverage-manifest.json)
             E2E_FLOWS_TOTAL=$(jq '.flows.total' tests/coverage-manifest.json)
             echo "### 🎭 E2E Test Coverage" >> $GITHUB_STEP_SUMMARY
