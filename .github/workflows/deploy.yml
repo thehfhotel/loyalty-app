@@ -258,118 +258,134 @@ jobs:
       - name: "🔒 Security & code quality: TypeScript, ESLint, npm audit, validations"
         id: security-results
         run: |
+          # Timing helper function
+          STEP_START=$(date +%s)
+          declare -A TIMINGS
+          time_step() {
+            local name="$1"
+            local start="$2"
+            local end=$(date +%s)
+            local duration=$((end - start))
+            TIMINGS["$name"]=$duration
+            echo "  ⏱️  $name: ${duration}s"
+          }
+
           # Verify Node.js version
           echo "🔍 Node.js: $(node --version) | npm: $(npm --version)"
           NODE_MAJOR=$(node --version | cut -d'.' -f1 | tr -d 'v')
           if [ "$NODE_MAJOR" -lt "${{ env.NODE_VERSION }}" ]; then
-            echo "❌ Node.js version mismatch!"
-            echo "   Expected: ${{ env.NODE_VERSION }}.x"
-            echo "   Got: $(node --version)"
-            echo "   Fix: Ensure actions/setup-node ran successfully"
+            echo "❌ Node.js version mismatch! Expected: ${{ env.NODE_VERSION }}.x, Got: $(node --version)"
             exit 1
           fi
 
-          echo "=========================================="
-          echo "🔍 TypeScript type checking"
-          echo "=========================================="
-          echo "Checking backend..."
+          echo ""
+          echo "Running security & code quality checks (quiet mode)..."
+          echo ""
+
+          # 1. TypeScript type checking
+          T1=$(date +%s)
           cd backend
           set +e
-          npm run typecheck 2>&1 | tee ../tsc-backend.txt
+          npm run typecheck > /tmp/tsc-backend.log 2>&1
           TSC_BACKEND=$?
           set -e
-          rm -f ../tsc-backend.txt
           if [ $TSC_BACKEND -ne 0 ]; then
-            echo "❌ Backend TypeScript check failed"
+            echo "❌ Backend TypeScript check failed:"
+            cat /tmp/tsc-backend.log
             exit 1
           fi
 
-          echo "Checking frontend..."
           cd ../frontend
           set +e
-          npm run typecheck 2>&1 | tee ../tsc-frontend.txt
+          npm run typecheck > /tmp/tsc-frontend.log 2>&1
           TSC_FRONTEND=$?
           set -e
-          rm -f ../tsc-frontend.txt
           if [ $TSC_FRONTEND -ne 0 ]; then
-            echo "❌ Frontend TypeScript check failed"
+            echo "❌ Frontend TypeScript check failed:"
+            cat /tmp/tsc-frontend.log
             exit 1
           fi
           cd ..
-          echo "✅ TypeScript checks passed"
+          time_step "TypeScript" $T1
 
-          echo ""
-          echo "=========================================="
-          echo "🔒 Security linting (ESLint + security rules)"
-          echo "=========================================="
+          # 2. Security linting (ESLint)
+          T2=$(date +%s)
           cd backend
           set +e
-          npm run lint:security 2>&1 | tee lint-output.txt
+          npm run lint:security > /tmp/lint-output.log 2>&1
           LINT_EXIT=$?
           set -e
-
-          # Extract error count
-          ERROR_COUNT=$(grep -oP '✖.*\(\K[0-9]+(?= error)' lint-output.txt || echo "0")
-          rm -f lint-output.txt
+          ERROR_COUNT=$(grep -oP '✖.*\(\K[0-9]+(?= error)' /tmp/lint-output.log 2>/dev/null || echo "0")
           if [ "$ERROR_COUNT" != "0" ]; then
-            echo "❌ ESLint found $ERROR_COUNT errors"
+            echo "❌ ESLint found $ERROR_COUNT errors:"
+            cat /tmp/lint-output.log
             exit 1
           fi
-          echo "✅ Security linting passed"
           cd ..
+          time_step "ESLint" $T2
 
-          echo ""
-          echo "=========================================="
-          echo "🛡️ npm security audit"
-          echo "=========================================="
+          # 3. npm security audit
+          T3=$(date +%s)
           cd backend
           set +e
-          npm audit --audit-level=moderate 2>&1 | tee ../audit-output.txt
+          npm audit --audit-level=moderate > /tmp/audit-output.log 2>&1
           AUDIT_EXIT=$?
           set -e
-          rm -f ../audit-output.txt
-
           if [ $AUDIT_EXIT -ne 0 ]; then
-            echo "❌ npm audit found security vulnerabilities"
+            echo "❌ npm audit found security vulnerabilities:"
+            cat /tmp/audit-output.log
             exit 1
           fi
-          echo "✅ npm audit passed"
+          time_step "npm audit" $T3
 
-          echo ""
-          echo "=========================================="
-          echo "🔒 Custom security validation"
-          echo "=========================================="
-          node scripts/validate-security.js 2>&1 | tee ../security-val.txt
-          rm -f ../security-val.txt
+          # 4. Custom security validation
+          T4=$(date +%s)
+          node scripts/validate-security.js > /tmp/security-val.log 2>&1 || {
+            echo "❌ Custom security validation failed:"
+            cat /tmp/security-val.log
+            exit 1
+          }
           cd ..
+          time_step "Security validation" $T4
 
-          echo ""
-          echo "=========================================="
-          echo "🛡️ Test integrity validation"
-          echo "=========================================="
+          # 5. Test integrity validation
+          T5=$(date +%s)
           if [ -f "./scripts/validate-test-integrity.sh" ]; then
-            ./scripts/validate-test-integrity.sh
-          else
-            echo "⚠️ Test integrity script not found - skipping"
+            ./scripts/validate-test-integrity.sh > /tmp/test-integrity.log 2>&1 || {
+              echo "❌ Test integrity validation failed:"
+              cat /tmp/test-integrity.log
+              exit 1
+            }
           fi
+          time_step "Test integrity" $T5
 
-          echo ""
-          echo "=========================================="
-          echo "🔐 Environment & secrets validation"
-          echo "=========================================="
+          # 6. Environment validation
+          T6=$(date +%s)
           if [ -f "./scripts/validate-environment.sh" ]; then
-            ./scripts/validate-environment.sh build || exit 1
+            ./scripts/validate-environment.sh build > /tmp/env-val.log 2>&1 || {
+              echo "❌ Environment validation failed:"
+              cat /tmp/env-val.log
+              exit 1
+            }
           fi
-          echo "✅ Environment validation passed"
+          time_step "Environment" $T6
 
+          # 7. Enhanced security audit
+          T7=$(date +%s)
+          ./scripts/security-audit.sh > /tmp/security-audit.log 2>&1 || {
+            echo "❌ Enhanced security audit failed:"
+            cat /tmp/security-audit.log
+            exit 1
+          }
+          time_step "Security audit" $T7
+
+          # Summary
+          TOTAL=$(($(date +%s) - STEP_START))
           echo ""
           echo "=========================================="
-          echo "🔐 Enhanced security audit (20-user prototype)"
-          echo "=========================================="
-          ./scripts/security-audit.sh || exit 1
-
-          echo ""
           echo "✅ All security & code quality checks passed"
+          echo "   Total time: ${TOTAL}s"
+          echo "=========================================="
           echo "passed=true" >> $GITHUB_OUTPUT
 
       # =========================================================================
