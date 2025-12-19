@@ -1344,12 +1344,12 @@ jobs:
             echo "### 🚀 k6 Load Test Summary" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
 
-            # Extract key metrics from k6 summary
-            HTTP_REQS=$(jq -r '.metrics.http_reqs.values.count // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
-            HTTP_REQ_DURATION_AVG=$(jq -r '.metrics.http_req_duration.values.avg // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
-            HTTP_REQ_DURATION_P95=$(jq -r '.metrics.http_req_duration.values["p(95)"] // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
-            HTTP_REQ_FAILED=$(jq -r '.metrics.http_req_failed.values.rate // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
-            ITERATIONS=$(jq -r '.metrics.iterations.values.count // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
+            # Extract key metrics from k6 summary (k6 --summary-export format)
+            HTTP_REQS=$(jq -r '.metrics.http_reqs.count // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
+            HTTP_REQ_DURATION_AVG=$(jq -r '.metrics.http_req_duration.avg // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
+            HTTP_REQ_DURATION_P95=$(jq -r '.metrics.http_req_duration["p(95)"] // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
+            HTTP_REQ_FAILED=$(jq -r '.metrics.http_req_failed.rate // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
+            ITERATIONS=$(jq -r '.metrics.iterations.count // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
 
             echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
             echo "|:-------|------:|" >> $GITHUB_STEP_SUMMARY
