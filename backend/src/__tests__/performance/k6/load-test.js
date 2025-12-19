@@ -8,7 +8,7 @@ const healthLatency = new Trend('health_check_latency');
 const authLatency = new Trend('auth_latency');
 const loyaltyLatency = new Trend('loyalty_latency');
 
-// Test configuration for 20-100 concurrent users
+// Test configuration for 20-100 concurrent users (stress test up to 300)
 export const options = {
   scenarios: {
     smoke: {
@@ -24,7 +24,9 @@ export const options = {
         { duration: '30s', target: 20 },   // Ramp up to minimum expected (20 users)
         { duration: '1m', target: 50 },    // Increase to average load (50 users)
         { duration: '1m', target: 100 },   // Peak load (100 users)
-        { duration: '30s', target: 50 },   // Scale down to average
+        { duration: '1m', target: 200 },   // Stress: 2x peak
+        { duration: '1m', target: 300 },   // Stress: 3x peak (find breaking point)
+        { duration: '30s', target: 100 },  // Scale back to peak
         { duration: '30s', target: 0 },    // Ramp down to 0
       ],
       tags: { test_type: 'load' },
