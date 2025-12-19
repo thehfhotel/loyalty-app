@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { TEST_USER } from './helpers/auth';
 
 test.describe('Form validations (browser)', () => {
+  // Run tests serially to avoid session conflicts during parallel login
+  test.describe.configure({ mode: 'serial' });
+
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');
     await page.context().clearCookies();

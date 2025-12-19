@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 import { TEST_USER } from './helpers/auth';
 
 test.describe('Profile flow (browser)', () => {
+  // Run tests serially to avoid session conflicts during parallel login
+  test.describe.configure({ mode: 'serial' });
   // Increase timeout for this test suite as profile operations can be slow
   test.setTimeout(30000);
 

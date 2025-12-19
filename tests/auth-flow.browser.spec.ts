@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { loginViaUI, logout, TEST_USER, getAuthState } from './helpers/auth';
 
 test.describe('Auth flow (browser)', () => {
+  // Run tests serially to avoid session conflicts during parallel login
+  test.describe.configure({ mode: 'serial' });
+
   test.beforeEach(async ({ page }) => {
     // Capture console logs for debugging - include tRPC headers and all auth/trpc related logs
     // Also capture errors since console.error is not stripped in production builds
