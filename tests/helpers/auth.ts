@@ -10,7 +10,7 @@ export const TEST_USER = {
 const AUTH_STORAGE_KEY = 'auth-storage';
 
 export async function loginViaUI(page: Page, email: string, password: string): Promise<void> {
-  const maxRetries = 2;
+  const maxRetries = 1;
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -27,14 +27,14 @@ export async function loginViaUI(page: Page, email: string, password: string): P
       await page.fill('[data-testid="login-password"]', password);
       await page.click('[data-testid="login-submit"]');
 
-      // Wait for successful navigation to dashboard
-      await page.waitForURL(/\/dashboard/, { timeout: 20000 });
+      // Wait for successful navigation to dashboard (reduced timeout to fit within test timeout)
+      await page.waitForURL(/\/dashboard/, { timeout: 10000 });
       return; // Success - exit the retry loop
     } catch (error) {
       lastError = error as Error;
-      if (attempt < maxRetries) {
-        // Wait before retry to allow any session conflicts to resolve
-        await page.waitForTimeout(1000);
+      // Only retry if page is still open
+      if (attempt < maxRetries && !page.isClosed()) {
+        await page.waitForTimeout(500);
       }
     }
   }

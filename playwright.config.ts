@@ -67,6 +67,7 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
       },
       testMatch: /.*\.browser\.spec\.ts/,
+      timeout: 30000, // 30s for browser tests (login can take time)
     },
   ],
 
