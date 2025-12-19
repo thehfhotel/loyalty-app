@@ -56,18 +56,56 @@ export async function seedPerfTestData(userCount: number = 100): Promise<void> {
     await client.query('BEGIN');
 
     try {
+      // Get the Bronze tier ID (first tier)
+      const tierResult = await client.query(
+        `SELECT id FROM tiers WHERE name = 'Bronze' OR sort_order = 1 LIMIT 1`
+      );
+      const tierId = tierResult.rows[0]?.id;
+
+      if (!tierId) {
+        throw new Error('Bronze tier not found. Make sure tiers are seeded first.');
+      }
+
       for (let i = 0; i < userCount; i++) {
         const email = `perftest_user_${i}@example.com`;
-        const password = '$2b$10$abcdefghijklmnopqrstuvwxyz1234567890'; // Dummy bcrypt hash
+        const passwordHash = '$2b$10$abcdefghijklmnopqrstuvwxyz1234567890'; // Dummy bcrypt hash
         const firstName = `PerfTest${i}`;
         const lastName = `User${i}`;
 
-        // Insert user
+        // Check if user already exists
+        const existingUser = await client.query(
+          `SELECT id FROM users WHERE email = $1`,
+          [email]
+        );
+
+        if (existingUser.rows.length > 0) {
+          continue; // Skip existing user
+        }
+
+        // Insert user into users table
+        const userResult = await client.query(
+          `INSERT INTO users (email, password_hash, role, is_active, email_verified)
+           VALUES ($1, $2, 'customer', true, true)
+           RETURNING id`,
+          [email, passwordHash]
+        );
+        const userId = userResult.rows[0].id;
+
+        // Generate membership ID
+        const membershipId = `P${String(i + 1).padStart(7, '0')}`;
+
+        // Insert into user_profiles
         await client.query(
-          `INSERT INTO users (email, password, first_name, last_name, membership_id, tier_id, current_points, total_nights)
-           VALUES ($1, $2, $3, $4, nextval('membership_id_sequence'), 1, 0, 0)
-           ON CONFLICT (email) DO NOTHING`,
-          [email, password, firstName, lastName]
+          `INSERT INTO user_profiles (user_id, first_name, last_name, membership_id)
+           VALUES ($1, $2, $3, $4)`,
+          [userId, firstName, lastName, membershipId]
+        );
+
+        // Insert into user_loyalty
+        await client.query(
+          `INSERT INTO user_loyalty (user_id, current_points, total_nights, tier_id)
+           VALUES ($1, 0, 0, $2)`,
+          [userId, tierId]
         );
       }
 
