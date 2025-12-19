@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TEST_USER, loginViaUI } from './helpers/auth';
+import { getTestUserForWorker, loginViaUI } from './helpers/auth';
 
 test.describe('Profile flow (browser)', () => {
   // Run tests serially to avoid session conflicts during parallel login
@@ -7,27 +7,29 @@ test.describe('Profile flow (browser)', () => {
   // Increase timeout for this test suite as profile operations can be slow
   test.setTimeout(30000);
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    const user = getTestUserForWorker(testInfo.workerIndex);
     // Clear state
     await page.goto('/');
     await page.context().clearCookies();
     await page.evaluate(() => localStorage.clear());
 
     // Use login helper with retry logic
-    await loginViaUI(page, TEST_USER.email, TEST_USER.password);
+    await loginViaUI(page, user.email, user.password);
 
     // Navigate to profile
     await page.goto('/profile');
     await page.waitForLoadState('networkidle');
   });
 
-  test('View profile page', async ({ page }) => {
+  test('View profile page', async ({ page }, testInfo) => {
+    const user = getTestUserForWorker(testInfo.workerIndex);
     // Check for profile name - try both test IDs and heading element
     const profileName = page.getByTestId('profile-name').or(page.getByRole('heading', { level: 3 }));
     await expect(profileName).toBeVisible();
     await expect(profileName).toContainText(/E2E/i);
     // Check email is visible somewhere on page
-    await expect(page.getByText(TEST_USER.email)).toBeVisible();
+    await expect(page.getByText(user.email)).toBeVisible();
   });
 
   test('Update profile name', async ({ page }) => {

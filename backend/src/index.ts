@@ -33,7 +33,7 @@ import { csrfProtection, getCsrfToken } from './middleware/csrf';
 import { optionalAuth } from './middleware/auth';
 import { connectDatabase } from './config/database';
 import { connectRedis, getRedisClient } from './config/redis';
-import { seedMembershipSequence, seedTiers, seedSurveys, seedE2ETestUser } from './utils/seedDatabase';
+import { seedMembershipSequence, seedTiers, seedSurveys, seedE2ETestUser, seedE2ETestUser2 } from './utils/seedDatabase';
 import { initializeStorage } from './config/storage';
 import { StorageService } from './services/storageService';
 import authRoutes from './routes/auth';
@@ -447,7 +447,8 @@ async function startServer() {
     // Seed sample data (development only)
     if (process.env.NODE_ENV === 'development') {
       logger.info('🌱 Seeding sample data for development...');
-      await seedE2ETestUser(); // E2E browser test user
+      await seedE2ETestUser(); // E2E browser test user 1
+      await seedE2ETestUser2(); // E2E browser test user 2 (for parallel workers)
       await seedSurveys(); // Optional: Sample surveys for testing
       logger.info('✅ Sample data seeded');
       // Note: Admin users register normally and get auto-upgraded on login

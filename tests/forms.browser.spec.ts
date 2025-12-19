@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TEST_USER, loginViaUI } from './helpers/auth';
+import { getTestUserForWorker, loginViaUI } from './helpers/auth';
 
 test.describe('Form validations (browser)', () => {
   // Run tests serially to avoid session conflicts during parallel login
@@ -33,8 +33,9 @@ test.describe('Form validations (browser)', () => {
     expect(isInvalid).toBeTruthy();
   });
 
-  test('Login - empty password', async ({ page }) => {
-    await page.fill('[data-testid="login-email"]', TEST_USER.email);
+  test('Login - empty password', async ({ page }, testInfo) => {
+    const user = getTestUserForWorker(testInfo.workerIndex);
+    await page.fill('[data-testid="login-email"]', user.email);
     await page.click('[data-testid="login-submit"]');
 
     // Check for validation message in English or Thai
@@ -56,12 +57,13 @@ test.describe('Form validations (browser)', () => {
     await expect(page.getByText(/at least 8|อย่างน้อย 8|ตัวอักษร/i)).toBeVisible();
   });
 
-  test('Profile - phone format validation', async ({ page }) => {
+  test('Profile - phone format validation', async ({ page }, testInfo) => {
+    const user = getTestUserForWorker(testInfo.workerIndex);
     // Extended timeout for this test
     test.setTimeout(45000);
 
     // Use robust login helper with retry logic
-    await loginViaUI(page, TEST_USER.email, TEST_USER.password);
+    await loginViaUI(page, user.email, user.password);
 
     // Navigate to profile
     await page.goto('/profile');

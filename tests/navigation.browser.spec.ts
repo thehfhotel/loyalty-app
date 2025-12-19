@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginViaUI, TEST_USER } from './helpers/auth';
+import { loginViaUI, getTestUserForWorker } from './helpers/auth';
 
 test.describe('Navigation (browser)', () => {
   // Run tests serially to avoid session conflicts during parallel login
@@ -10,16 +10,18 @@ test.describe('Navigation (browser)', () => {
     await page.evaluate(() => localStorage.clear());
   });
 
-  test('Navigate dashboard -> profile', async ({ page }) => {
-    await loginViaUI(page, TEST_USER.email, TEST_USER.password);
+  test('Navigate dashboard -> profile', async ({ page }, testInfo) => {
+    const user = getTestUserForWorker(testInfo.workerIndex);
+    await loginViaUI(page, user.email, user.password);
     await page.getByTestId('nav-profile').click();
 
     await expect(page).toHaveURL(/\/profile/);
     await expect(page.getByTestId('profile-name')).toBeVisible();
   });
 
-  test('Navigate profile -> dashboard', async ({ page }) => {
-    await loginViaUI(page, TEST_USER.email, TEST_USER.password);
+  test('Navigate profile -> dashboard', async ({ page }, testInfo) => {
+    const user = getTestUserForWorker(testInfo.workerIndex);
+    await loginViaUI(page, user.email, user.password);
     await page.goto('/profile');
     await page.getByTestId('nav-dashboard').click();
 
@@ -27,11 +29,12 @@ test.describe('Navigation (browser)', () => {
     await expect(page.getByTestId('loyalty-points')).toBeVisible();
   });
 
-  test('Deep link to profile works when authenticated', async ({ page }) => {
-    await loginViaUI(page, TEST_USER.email, TEST_USER.password);
+  test('Deep link to profile works when authenticated', async ({ page }, testInfo) => {
+    const user = getTestUserForWorker(testInfo.workerIndex);
+    await loginViaUI(page, user.email, user.password);
     await page.goto('/profile');
 
-    await expect(page.getByTestId('profile-email')).toContainText(TEST_USER.email);
+    await expect(page.getByTestId('profile-email')).toContainText(user.email);
   });
 
   test('Deep link without auth redirects to login', async ({ page }) => {

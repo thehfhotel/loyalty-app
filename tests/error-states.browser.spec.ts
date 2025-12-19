@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginViaUI, TEST_USER } from './helpers/auth';
+import { loginViaUI, getTestUserForWorker } from './helpers/auth';
 
 test.describe('Error states (browser)', () => {
   // Run tests serially to avoid session conflicts during parallel login
@@ -12,14 +12,15 @@ test.describe('Error states (browser)', () => {
     await page.context().setOffline(false);
   });
 
-  test('Network error handling shows feedback', async ({ page }) => {
+  test('Network error handling shows feedback', async ({ page }, testInfo) => {
+    const user = getTestUserForWorker(testInfo.workerIndex);
     // First navigate to login page while online
     await page.goto('/login');
     await page.waitForLoadState('networkidle');
 
     // Fill the form first
-    await page.fill('[data-testid="login-email"]', TEST_USER.email);
-    await page.fill('[data-testid="login-password"]', TEST_USER.password);
+    await page.fill('[data-testid="login-email"]', user.email);
+    await page.fill('[data-testid="login-password"]', user.password);
 
     // Then go offline and try to submit
     await page.context().setOffline(true);
@@ -32,8 +33,9 @@ test.describe('Error states (browser)', () => {
     await page.context().setOffline(false);
   });
 
-  test('Session expiry redirects to login', async ({ page }) => {
-    await loginViaUI(page, TEST_USER.email, TEST_USER.password);
+  test('Session expiry redirects to login', async ({ page }, testInfo) => {
+    const user = getTestUserForWorker(testInfo.workerIndex);
+    await loginViaUI(page, user.email, user.password);
     await page.goto('/dashboard');
 
     await page.evaluate(() => localStorage.removeItem('auth-storage'));
@@ -43,8 +45,9 @@ test.describe('Error states (browser)', () => {
     await expect(page.getByTestId('login-email')).toBeVisible();
   });
 
-  test('Profile save error is surfaced', async ({ page }) => {
-    await loginViaUI(page, TEST_USER.email, TEST_USER.password);
+  test('Profile save error is surfaced', async ({ page }, testInfo) => {
+    const user = getTestUserForWorker(testInfo.workerIndex);
+    await loginViaUI(page, user.email, user.password);
     await page.goto('/profile');
     await page.waitForLoadState('networkidle');
 
@@ -62,7 +65,8 @@ test.describe('Error states (browser)', () => {
     await page.unroute('**/trpc/user.updateProfile**');
   });
 
-  test('Retry loads data after transient failure', async ({ page }) => {
+  test('Retry loads data after transient failure', async ({ page }, testInfo) => {
+    const user = getTestUserForWorker(testInfo.workerIndex);
     let attempt = 0;
     await page.route('**/trpc/loyalty.getStatus**', (route) => {
       attempt += 1;
@@ -72,7 +76,7 @@ test.describe('Error states (browser)', () => {
       return route.continue();
     });
 
-    await loginViaUI(page, TEST_USER.email, TEST_USER.password);
+    await loginViaUI(page, user.email, user.password);
     await page.goto('/dashboard');
 
     await page.reload();
