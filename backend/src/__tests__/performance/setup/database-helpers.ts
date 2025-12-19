@@ -46,6 +46,35 @@ export async function withClient<T>(
 }
 
 /**
+ * Seed tiers if they don't exist
+ */
+async function ensureTiersExist(client: PoolClient): Promise<void> {
+  const tiersExist = await client.query('SELECT COUNT(*) FROM tiers');
+  if (parseInt(tiersExist.rows[0].count, 10) > 0) {
+    return; // Tiers already exist
+  }
+
+  console.log('Seeding tiers for performance testing...');
+
+  const tiers = [
+    { name: 'Bronze', min_nights: 0, color: '#CD7F32', sort_order: 1 },
+    { name: 'Silver', min_nights: 1, color: '#C0C0C0', sort_order: 2 },
+    { name: 'Gold', min_nights: 10, color: '#FFD700', sort_order: 3 },
+    { name: 'Platinum', min_nights: 20, color: '#E5E4E2', sort_order: 4 },
+  ];
+
+  for (const tier of tiers) {
+    await client.query(
+      `INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
+       VALUES ($1, 0, $2, '{}', $3, $4, true)
+       ON CONFLICT (name) DO NOTHING`,
+      [tier.name, tier.min_nights, tier.color, tier.sort_order]
+    );
+  }
+  console.log('Tiers seeded successfully');
+}
+
+/**
  * Seed performance test data
  */
 export async function seedPerfTestData(userCount: number = 100): Promise<void> {
@@ -56,6 +85,9 @@ export async function seedPerfTestData(userCount: number = 100): Promise<void> {
     await client.query('BEGIN');
 
     try {
+      // Ensure tiers exist first
+      await ensureTiersExist(client);
+
       // Get the Bronze tier ID (first tier)
       const tierResult = await client.query(
         `SELECT id FROM tiers WHERE name = 'Bronze' OR sort_order = 1 LIMIT 1`
@@ -63,7 +95,7 @@ export async function seedPerfTestData(userCount: number = 100): Promise<void> {
       const tierId = tierResult.rows[0]?.id;
 
       if (!tierId) {
-        throw new Error('Bronze tier not found. Make sure tiers are seeded first.');
+        throw new Error('Bronze tier not found after seeding. Database may be misconfigured.');
       }
 
       for (let i = 0; i < userCount; i++) {
