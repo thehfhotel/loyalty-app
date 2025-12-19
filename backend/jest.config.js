@@ -4,7 +4,7 @@ module.exports = {
   // Allure reporting integration using custom environment that resolves Node env even when not hoisted
   testEnvironment: '<rootDir>/jest.allure.environment.js',
   roots: ['<rootDir>/src'],
-  testMatch: ['**/__tests__/**/*.test.ts', '**/*.test.ts'],
+  testMatch: ['**/__tests__/**/*.test.ts', '**/*.test.ts', '**/__tests__/**/*.benchmark.ts'],
   transform: {
     '^.+\\.ts$': 'ts-jest',
     // Transform ESM .js files from packages like uuid v13+
