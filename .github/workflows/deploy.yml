@@ -252,25 +252,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: "📋 Setup warning collection"
-        run: |
-          mkdir -p .warnings
-          # Code quality
-          : > .warnings/eslint.log
-          : > .warnings/typescript.log
-          # Security
-          : > .warnings/security.log
-          : > .warnings/audit.log
-          # Tests
-          : > .warnings/tests.log
-          : > .warnings/skipped.log
-          # Runtime
-          : > .warnings/deprecation.log
-          : > .warnings/versions.log
-          # Infrastructure
-          : > .warnings/docker.log
-          echo "✅ Warning collection initialized"
-
       # =========================================================================
       # PHASE 1: SECURITY & CODE QUALITY
       # =========================================================================
@@ -297,8 +278,6 @@ jobs:
           npm run typecheck 2>&1 | tee ../tsc-backend.txt
           TSC_BACKEND=$?
           set -e
-          # Capture TypeScript warnings/errors for reporting
-          grep -E "error TS|warning TS" ../tsc-backend.txt >> ../.warnings/typescript.log || true
           rm -f ../tsc-backend.txt
           if [ $TSC_BACKEND -ne 0 ]; then
             echo "❌ Backend TypeScript check failed"
@@ -311,7 +290,6 @@ jobs:
           npm run typecheck 2>&1 | tee ../tsc-frontend.txt
           TSC_FRONTEND=$?
           set -e
-          grep -E "error TS|warning TS" ../tsc-frontend.txt >> ../.warnings/typescript.log || true
           rm -f ../tsc-frontend.txt
           if [ $TSC_FRONTEND -ne 0 ]; then
             echo "❌ Frontend TypeScript check failed"
@@ -332,18 +310,12 @@ jobs:
 
           # Extract error count
           ERROR_COUNT=$(grep -oP '✖.*\(\K[0-9]+(?= error)' lint-output.txt || echo "0")
-
-          # Capture warnings for report (deduplicated)
-          grep -E "warning.*(typescript-eslint|security/)" lint-output.txt | sort -u > ../.warnings/eslint.log || true
-          WARN_SUMMARY=$(grep -oP '✖ \K[0-9]+ problems? \([0-9]+ errors?, [0-9]+ warnings?\)' lint-output.txt || echo "")
-          [ -n "$WARN_SUMMARY" ] && echo "Summary: $WARN_SUMMARY" >> ../.warnings/eslint.log
-
           rm -f lint-output.txt
           if [ "$ERROR_COUNT" != "0" ]; then
             echo "❌ ESLint found $ERROR_COUNT errors"
             exit 1
           fi
-          echo "✅ Security linting passed (warnings captured for report)"
+          echo "✅ Security linting passed"
           cd ..
 
           echo ""
@@ -355,9 +327,6 @@ jobs:
           npm audit --audit-level=moderate 2>&1 | tee ../audit-output.txt
           AUDIT_EXIT=$?
           set -e
-
-          # Capture vulnerability summary for report
-          grep -E "vulnerabilities|moderate|high|critical" ../audit-output.txt >> ../.warnings/audit.log || true
           rm -f ../audit-output.txt
 
           if [ $AUDIT_EXIT -ne 0 ]; then
@@ -371,7 +340,6 @@ jobs:
           echo "🔒 Custom security validation"
           echo "=========================================="
           node scripts/validate-security.js 2>&1 | tee ../security-val.txt
-          grep -iE "WARN|warning" ../security-val.txt >> ../.warnings/security.log || true
           rm -f ../security-val.txt
           cd ..
 
@@ -446,9 +414,7 @@ jobs:
 
           # Cleanup and start
           docker compose -f docker-compose.test.yml down -v 2>/dev/null || true
-          docker compose -f docker-compose.test.yml up -d 2>&1 | tee docker-output.txt
-          grep -iE "level=warning|WARN|orphan" docker-output.txt >> .warnings/docker.log || true
-          rm -f docker-output.txt
+          docker compose -f docker-compose.test.yml up -d
 
           # Wait for services
           echo "⏳ Waiting for postgres..."
@@ -493,21 +459,7 @@ jobs:
 
           echo ""
           echo "🧪 Running unit tests with coverage..."
-          npm run test:unit -- --coverage --passWithNoTests 2>&1 | tee ../test-unit-output.txt
-
-          # Capture deprecation warnings
-          grep -E "\[DEP[0-9]+\]|DeprecationWarning" ../test-unit-output.txt | sort -u >> ../.warnings/deprecation.log || true
-
-          # Capture skipped/pending tests
-          grep -E "○ skipped|⊘ pending|› .* \(skipped\)|test\.skip|it\.skip" ../test-unit-output.txt >> ../.warnings/skipped.log || true
-
-          # Capture test warnings and console.warn output
-          grep -iE "console\.warn|WARN:" ../test-unit-output.txt >> ../.warnings/tests.log || true
-
-          # Capture test summary for failures
-          grep -E "Tests:.*failed|failed,.*passed" ../test-unit-output.txt >> ../.warnings/tests.log || true
-
-          rm -f ../test-unit-output.txt
+          npm run test:unit -- --coverage --passWithNoTests
 
       - name: "📊 Upload unit test coverage report (retained 30 days)"
         if: always()
@@ -567,21 +519,7 @@ jobs:
 
           echo ""
           echo "🔗 Running integration tests..."
-          npm run test:integration 2>&1 | tee ../test-integration-output.txt
-
-          # Capture deprecation warnings
-          grep -E "\[DEP[0-9]+\]|DeprecationWarning" ../test-integration-output.txt | sort -u >> ../.warnings/deprecation.log || true
-
-          # Capture skipped/pending tests
-          grep -E "○ skipped|⊘ pending|› .* \(skipped\)|test\.skip|it\.skip" ../test-integration-output.txt >> ../.warnings/skipped.log || true
-
-          # Capture test warnings and console.warn output
-          grep -iE "console\.warn|WARN:" ../test-integration-output.txt >> ../.warnings/tests.log || true
-
-          # Capture test summary for failures
-          grep -E "Tests:.*failed|failed,.*passed" ../test-integration-output.txt >> ../.warnings/tests.log || true
-
-          rm -f ../test-integration-output.txt
+          npm run test:integration
 
       - name: "📊 Upload integration test Allure results (retained 7 days)"
         if: always()
@@ -697,178 +635,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
       # =========================================================================
-      # PHASE 5: WARNINGS COLLECTION & REPORT
-      # =========================================================================
-      - name: "📦 Check for outdated packages"
-        if: always()
-        continue-on-error: true
-        run: |
-          echo "=== Backend ===" >> .warnings/versions.log
-          cd backend
-          npm outdated 2>&1 | head -20 >> ../.warnings/versions.log || true
-
-          echo "" >> ../.warnings/versions.log
-          echo "=== Frontend ===" >> ../.warnings/versions.log
-          cd ../frontend
-          npm outdated 2>&1 | head -20 >> ../.warnings/versions.log || true
-
-      - name: "📊 Generate consolidated warnings report"
-        if: always()
-        run: |
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "## ⚠️ Pipeline Warnings Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Count warnings per category (use wc -l to avoid grep exit code issues)
-          ESLINT_COUNT=$(wc -l < .warnings/eslint.log 2>/dev/null | tr -d ' ') || ESLINT_COUNT=0
-          TS_COUNT=$(wc -l < .warnings/typescript.log 2>/dev/null | tr -d ' ') || TS_COUNT=0
-          SECURITY_COUNT=$(wc -l < .warnings/security.log 2>/dev/null | tr -d ' ') || SECURITY_COUNT=0
-          AUDIT_COUNT=$(wc -l < .warnings/audit.log 2>/dev/null | tr -d ' ') || AUDIT_COUNT=0
-          TESTS_COUNT=$(wc -l < .warnings/tests.log 2>/dev/null | tr -d ' ') || TESTS_COUNT=0
-          SKIPPED_COUNT=$(wc -l < .warnings/skipped.log 2>/dev/null | tr -d ' ') || SKIPPED_COUNT=0
-          DEPRECATION_COUNT=$(wc -l < .warnings/deprecation.log 2>/dev/null | tr -d ' ') || DEPRECATION_COUNT=0
-          VERSIONS_COUNT=$(wc -l < .warnings/versions.log 2>/dev/null | tr -d ' ') || VERSIONS_COUNT=0
-          DOCKER_COUNT=$(wc -l < .warnings/docker.log 2>/dev/null | tr -d ' ') || DOCKER_COUNT=0
-
-          TOTAL=$((ESLINT_COUNT + TS_COUNT + SECURITY_COUNT + AUDIT_COUNT + TESTS_COUNT + SKIPPED_COUNT + DEPRECATION_COUNT + VERSIONS_COUNT + DOCKER_COUNT))
-
-          if [ "$TOTAL" -gt 0 ]; then
-            echo "> **Note:** Warnings are informational only and do not affect build status." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-
-            # Summary table
-            echo "### 📊 Summary" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Category | Count |" >> $GITHUB_STEP_SUMMARY
-            echo "|:---------|------:|" >> $GITHUB_STEP_SUMMARY
-
-            # Code Quality
-            [ "$ESLINT_COUNT" -gt 0 ] && echo "| 🔍 ESLint | $ESLINT_COUNT |" >> $GITHUB_STEP_SUMMARY
-            [ "$TS_COUNT" -gt 0 ] && echo "| 📝 TypeScript | $TS_COUNT |" >> $GITHUB_STEP_SUMMARY
-
-            # Security
-            [ "$SECURITY_COUNT" -gt 0 ] && echo "| 🔒 Security | $SECURITY_COUNT |" >> $GITHUB_STEP_SUMMARY
-            [ "$AUDIT_COUNT" -gt 0 ] && echo "| 🛡️ npm Audit | $AUDIT_COUNT |" >> $GITHUB_STEP_SUMMARY
-
-            # Tests
-            [ "$TESTS_COUNT" -gt 0 ] && echo "| 🧪 Test Warnings | $TESTS_COUNT |" >> $GITHUB_STEP_SUMMARY
-            [ "$SKIPPED_COUNT" -gt 0 ] && echo "| ⏭️ Skipped Tests | $SKIPPED_COUNT |" >> $GITHUB_STEP_SUMMARY
-
-            # Runtime
-            [ "$DEPRECATION_COUNT" -gt 0 ] && echo "| ⚠️ Deprecations | $DEPRECATION_COUNT |" >> $GITHUB_STEP_SUMMARY
-            [ "$VERSIONS_COUNT" -gt 0 ] && echo "| 📦 Outdated Packages | $VERSIONS_COUNT |" >> $GITHUB_STEP_SUMMARY
-
-            # Infrastructure
-            [ "$DOCKER_COUNT" -gt 0 ] && echo "| 🐳 Docker | $DOCKER_COUNT |" >> $GITHUB_STEP_SUMMARY
-
-            echo "| **Total** | **$TOTAL** |" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-
-            echo "<details>" >> $GITHUB_STEP_SUMMARY
-            echo "<summary>📋 Click to expand warning details</summary>" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-
-            # ESLint warnings
-            if [ -s ".warnings/eslint.log" ]; then
-              echo "### 🔍 ESLint" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              head -50 ".warnings/eslint.log" >> $GITHUB_STEP_SUMMARY
-              [ $(wc -l < ".warnings/eslint.log") -gt 50 ] && echo "... (truncated, showing first 50 lines)" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
-
-            # TypeScript warnings
-            if [ -s ".warnings/typescript.log" ]; then
-              echo "### 📝 TypeScript" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              head -50 ".warnings/typescript.log" >> $GITHUB_STEP_SUMMARY
-              [ $(wc -l < ".warnings/typescript.log") -gt 50 ] && echo "... (truncated, showing first 50 lines)" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
-
-            # Security warnings
-            if [ -s ".warnings/security.log" ]; then
-              echo "### 🔒 Security" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              head -50 ".warnings/security.log" >> $GITHUB_STEP_SUMMARY
-              [ $(wc -l < ".warnings/security.log") -gt 50 ] && echo "... (truncated, showing first 50 lines)" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
-
-            # npm Audit warnings
-            if [ -s ".warnings/audit.log" ]; then
-              echo "### 🛡️ npm Audit" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              head -50 ".warnings/audit.log" >> $GITHUB_STEP_SUMMARY
-              [ $(wc -l < ".warnings/audit.log") -gt 50 ] && echo "... (truncated, showing first 50 lines)" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
-
-            # Test warnings
-            if [ -s ".warnings/tests.log" ]; then
-              echo "### 🧪 Test Warnings" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              head -50 ".warnings/tests.log" >> $GITHUB_STEP_SUMMARY
-              [ $(wc -l < ".warnings/tests.log") -gt 50 ] && echo "... (truncated, showing first 50 lines)" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
-
-            # Skipped tests
-            if [ -s ".warnings/skipped.log" ]; then
-              echo "### ⏭️ Skipped Tests" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              head -50 ".warnings/skipped.log" >> $GITHUB_STEP_SUMMARY
-              [ $(wc -l < ".warnings/skipped.log") -gt 50 ] && echo "... (truncated, showing first 50 lines)" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
-
-            # Deprecation warnings
-            if [ -s ".warnings/deprecation.log" ]; then
-              echo "### ⚠️ Deprecations" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              head -50 ".warnings/deprecation.log" >> $GITHUB_STEP_SUMMARY
-              [ $(wc -l < ".warnings/deprecation.log") -gt 50 ] && echo "... (truncated, showing first 50 lines)" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
-
-            # Version warnings
-            if [ -s ".warnings/versions.log" ]; then
-              echo "### 📦 Outdated Packages" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              head -50 ".warnings/versions.log" >> $GITHUB_STEP_SUMMARY
-              [ $(wc -l < ".warnings/versions.log") -gt 50 ] && echo "... (truncated, showing first 50 lines)" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
-
-            # Docker warnings
-            if [ -s ".warnings/docker.log" ]; then
-              echo "### 🐳 Docker" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              head -50 ".warnings/docker.log" >> $GITHUB_STEP_SUMMARY
-              [ $(wc -l < ".warnings/docker.log") -gt 50 ] && echo "... (truncated, showing first 50 lines)" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
-
-            echo "</details>" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ No warnings detected in this pipeline run." >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # Save warning count for PR comment
-          echo "TOTAL_WARNINGS=$TOTAL" >> $GITHUB_ENV
-          echo "SKIPPED_TESTS=$SKIPPED_COUNT" >> $GITHUB_ENV
-
-      # =========================================================================
       # FINAL: PR COMMENT & CLEANUP
       # =========================================================================
       - name: "💬 Post test results summary to pull request (unit + integration status)"
@@ -899,22 +665,6 @@ jobs:
               ].join('\n');
             }
 
-            // Add warnings section
-            const totalWarnings = '${{ env.TOTAL_WARNINGS }}' || '0';
-            const skippedTests = '${{ env.SKIPPED_TESTS }}' || '0';
-            let warningsSection = '';
-            if (parseInt(totalWarnings) > 0) {
-              warningsSection = [
-                '', '### ⚠️ Warnings',
-                '| Category | Count |',
-                '|----------|------:|',
-                `| Total Warnings | ${totalWarnings} |`,
-                `| Skipped Tests | ${skippedTests} |`,
-                '',
-                `> See [Job Summary](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`,
-              ].join('\n');
-            }
-
             const allPassed = unitPassed && integrationPassed;
             const comment = [
               '## 🧪 CI Test Results',
@@ -925,7 +675,6 @@ jobs:
               `| Integration Tests | ${integrationEmoji} ${integrationPassed ? 'Passed' : 'Failed'} |`,
               '| E2E Tests | ⏳ Pending |',
               coverageSection,
-              warningsSection,
               '',
               allPassed ? '> E2E tests starting next...' : '> ❌ Tests failed - pipeline stopped.',
               '',
@@ -958,7 +707,6 @@ jobs:
           docker rm -f loyalty_postgres_test loyalty_redis_test 2>/dev/null || true
           docker volume rm loyalty_postgres_test_data 2>/dev/null || true
           rm -f docker-compose.test.yml || true
-          rm -rf .warnings/ || true
           echo "✅ Cleanup complete"
 
   # Job 1D: E2E Tests (Conditional - only on main branch or PR to main)

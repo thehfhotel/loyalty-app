@@ -1,0 +1,201 @@
+name: Pipeline Warnings Report
+
+on:
+  workflow_run:
+    workflows: ["Optimized CI/CD Pipeline with Security & Testing"]
+    types:
+      - completed
+
+jobs:
+  generate-report:
+    name: "📊 Generate Warnings Report"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "📥 Download workflow run logs"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID=${{ github.event.workflow_run.id }}
+          echo "Downloading logs for run $RUN_ID..."
+          gh api repos/${{ github.repository }}/actions/runs/${RUN_ID}/logs > logs.zip || {
+            echo "Failed to download logs"
+            exit 0
+          }
+          unzip -o logs.zip -d logs/ || {
+            echo "Failed to unzip logs"
+            exit 0
+          }
+          echo "Logs downloaded and extracted"
+          ls -la logs/
+
+      - name: "🔍 Parse warnings from logs"
+        run: |
+          mkdir -p warnings
+
+          # ESLint warnings
+          grep -rhE "warning.*(typescript-eslint|security/)" logs/ 2>/dev/null | sort -u > warnings/eslint.txt || true
+
+          # TypeScript errors
+          grep -rhE "error TS|TS[0-9]+:" logs/ 2>/dev/null | sort -u > warnings/typescript.txt || true
+
+          # npm audit
+          grep -rhiE "vulnerabilities|moderate.*severity|high.*severity|critical" logs/ 2>/dev/null | sort -u > warnings/audit.txt || true
+
+          # Skipped tests
+          grep -rhE "○ skipped|⊘ pending|test\.skip|it\.skip|\(skipped\)" logs/ 2>/dev/null | sort -u > warnings/skipped.txt || true
+
+          # Deprecation warnings
+          grep -rhE "\[DEP[0-9]+\]|DeprecationWarning" logs/ 2>/dev/null | sort -u > warnings/deprecation.txt || true
+
+          # Docker warnings
+          grep -rhiE "level=warning|WARN.*docker|warning.*image|orphan" logs/ 2>/dev/null | sort -u > warnings/docker.txt || true
+
+          # Deployment/migration warnings
+          grep -rhiE "WARN.*deploy|warning.*migration|\[WARNING\]" logs/ 2>/dev/null | sort -u > warnings/deployment.txt || true
+
+          # Outdated packages
+          grep -rhiE "npm WARN deprecated|outdated|update available" logs/ 2>/dev/null | sort -u > warnings/outdated.txt || true
+
+          echo "Warnings parsed:"
+          wc -l warnings/*.txt || true
+
+      - name: "📊 Generate consolidated report"
+        run: |
+          echo "## ⚠️ Pipeline Warnings Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run:** [#${{ github.event.workflow_run.run_number }}](${{ github.event.workflow_run.html_url }})" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** \`${{ github.event.workflow_run.head_branch }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Conclusion:** ${{ github.event.workflow_run.conclusion }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Count warnings (handle empty files)
+          ESLINT=$(wc -l < warnings/eslint.txt 2>/dev/null | tr -d ' ') || ESLINT=0
+          TS=$(wc -l < warnings/typescript.txt 2>/dev/null | tr -d ' ') || TS=0
+          AUDIT=$(wc -l < warnings/audit.txt 2>/dev/null | tr -d ' ') || AUDIT=0
+          SKIPPED=$(wc -l < warnings/skipped.txt 2>/dev/null | tr -d ' ') || SKIPPED=0
+          DEPRECATION=$(wc -l < warnings/deprecation.txt 2>/dev/null | tr -d ' ') || DEPRECATION=0
+          DOCKER=$(wc -l < warnings/docker.txt 2>/dev/null | tr -d ' ') || DOCKER=0
+          DEPLOYMENT=$(wc -l < warnings/deployment.txt 2>/dev/null | tr -d ' ') || DEPLOYMENT=0
+          OUTDATED=$(wc -l < warnings/outdated.txt 2>/dev/null | tr -d ' ') || OUTDATED=0
+
+          # Ensure all are numbers
+          ESLINT=${ESLINT:-0}
+          TS=${TS:-0}
+          AUDIT=${AUDIT:-0}
+          SKIPPED=${SKIPPED:-0}
+          DEPRECATION=${DEPRECATION:-0}
+          DOCKER=${DOCKER:-0}
+          DEPLOYMENT=${DEPLOYMENT:-0}
+          OUTDATED=${OUTDATED:-0}
+
+          TOTAL=$((ESLINT + TS + AUDIT + SKIPPED + DEPRECATION + DOCKER + DEPLOYMENT + OUTDATED))
+
+          if [ "$TOTAL" -gt 0 ]; then
+            echo "> **Note:** Warnings are informational and did not block the pipeline." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            echo "### 📊 Summary" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Category | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|:---------|------:|" >> $GITHUB_STEP_SUMMARY
+            [ "$ESLINT" -gt 0 ] && echo "| 🔍 ESLint | $ESLINT |" >> $GITHUB_STEP_SUMMARY
+            [ "$TS" -gt 0 ] && echo "| 📝 TypeScript | $TS |" >> $GITHUB_STEP_SUMMARY
+            [ "$AUDIT" -gt 0 ] && echo "| 🛡️ npm Audit | $AUDIT |" >> $GITHUB_STEP_SUMMARY
+            [ "$SKIPPED" -gt 0 ] && echo "| ⏭️ Skipped Tests | $SKIPPED |" >> $GITHUB_STEP_SUMMARY
+            [ "$DEPRECATION" -gt 0 ] && echo "| ⚠️ Deprecations | $DEPRECATION |" >> $GITHUB_STEP_SUMMARY
+            [ "$DOCKER" -gt 0 ] && echo "| 🐳 Docker | $DOCKER |" >> $GITHUB_STEP_SUMMARY
+            [ "$DEPLOYMENT" -gt 0 ] && echo "| 🚀 Deployment | $DEPLOYMENT |" >> $GITHUB_STEP_SUMMARY
+            [ "$OUTDATED" -gt 0 ] && echo "| 📦 Outdated | $OUTDATED |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Total** | **$TOTAL** |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            # Add details in expandable sections
+            echo "<details>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary>📋 Click to expand warning details</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            # ESLint
+            if [ -s "warnings/eslint.txt" ]; then
+              echo "### 🔍 ESLint Warnings" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              head -50 "warnings/eslint.txt" >> $GITHUB_STEP_SUMMARY
+              [ $(wc -l < "warnings/eslint.txt") -gt 50 ] && echo "... (truncated)" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            # TypeScript
+            if [ -s "warnings/typescript.txt" ]; then
+              echo "### 📝 TypeScript Errors" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              head -50 "warnings/typescript.txt" >> $GITHUB_STEP_SUMMARY
+              [ $(wc -l < "warnings/typescript.txt") -gt 50 ] && echo "... (truncated)" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            # npm Audit
+            if [ -s "warnings/audit.txt" ]; then
+              echo "### 🛡️ npm Audit" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              head -50 "warnings/audit.txt" >> $GITHUB_STEP_SUMMARY
+              [ $(wc -l < "warnings/audit.txt") -gt 50 ] && echo "... (truncated)" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            # Skipped Tests
+            if [ -s "warnings/skipped.txt" ]; then
+              echo "### ⏭️ Skipped Tests" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              head -50 "warnings/skipped.txt" >> $GITHUB_STEP_SUMMARY
+              [ $(wc -l < "warnings/skipped.txt") -gt 50 ] && echo "... (truncated)" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            # Deprecation
+            if [ -s "warnings/deprecation.txt" ]; then
+              echo "### ⚠️ Deprecation Warnings" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              head -50 "warnings/deprecation.txt" >> $GITHUB_STEP_SUMMARY
+              [ $(wc -l < "warnings/deprecation.txt") -gt 50 ] && echo "... (truncated)" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            # Docker
+            if [ -s "warnings/docker.txt" ]; then
+              echo "### 🐳 Docker Warnings" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              head -50 "warnings/docker.txt" >> $GITHUB_STEP_SUMMARY
+              [ $(wc -l < "warnings/docker.txt") -gt 50 ] && echo "... (truncated)" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            # Deployment
+            if [ -s "warnings/deployment.txt" ]; then
+              echo "### 🚀 Deployment Warnings" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              head -50 "warnings/deployment.txt" >> $GITHUB_STEP_SUMMARY
+              [ $(wc -l < "warnings/deployment.txt") -gt 50 ] && echo "... (truncated)" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            # Outdated
+            if [ -s "warnings/outdated.txt" ]; then
+              echo "### 📦 Outdated Packages" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              head -50 "warnings/outdated.txt" >> $GITHUB_STEP_SUMMARY
+              [ $(wc -l < "warnings/outdated.txt") -gt 50 ] && echo "... (truncated)" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No warnings detected in this pipeline run." >> $GITHUB_STEP_SUMMARY
+          fi
