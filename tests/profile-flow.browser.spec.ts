@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TEST_USER } from './helpers/auth';
+import { TEST_USER, loginViaUI } from './helpers/auth';
 
 test.describe('Profile flow (browser)', () => {
   // Run tests serially to avoid session conflicts during parallel login
@@ -13,15 +13,8 @@ test.describe('Profile flow (browser)', () => {
     await page.context().clearCookies();
     await page.evaluate(() => localStorage.clear());
 
-    // Login with extended timeout
-    await page.goto('/login');
-    await page.waitForLoadState('networkidle');
-    await page.fill('[data-testid="login-email"]', TEST_USER.email);
-    await page.fill('[data-testid="login-password"]', TEST_USER.password);
-    await page.click('[data-testid="login-submit"]');
-
-    // Wait for dashboard with more flexible matching
-    await page.waitForURL(/\/dashboard/, { timeout: 15000 });
+    // Use login helper with retry logic
+    await loginViaUI(page, TEST_USER.email, TEST_USER.password);
 
     // Navigate to profile
     await page.goto('/profile');
