@@ -1565,14 +1565,15 @@ jobs:
           mkdir -p benchmark-results
 
           echo "🧪 Running database benchmarks..."
-          npm run test:perf:db || echo "⚠️ DB benchmarks had failures"
+          npm run test:perf:db 2>&1 | tee benchmark-results/db-benchmark.log || echo "⚠️ DB benchmarks had failures"
 
           echo "🧪 Running API benchmarks..."
-          npm run test:perf:api || echo "⚠️ API benchmarks had failures"
+          npm run test:perf:api 2>&1 | tee benchmark-results/api-benchmark.log || echo "⚠️ API benchmarks had failures"
 
           echo "🚀 Running k6 load tests..."
           k6 run src/__tests__/performance/k6/load-test.js \
-            --out json=benchmark-results/k6-results.json || echo "⚠️ k6 tests had failures"
+            --out json=benchmark-results/k6-results.json \
+            --summary-export=benchmark-results/k6-summary.json 2>&1 | tee benchmark-results/k6.log || echo "⚠️ k6 tests had failures"
 
       - name: "📤 Upload performance benchmark results"
         if: always() && steps.perf-tests.outcome != 'skipped'
@@ -1582,6 +1583,70 @@ jobs:
           path: backend/benchmark-results/
           retention-days: 30
           if-no-files-found: warn
+
+      - name: "📊 Write performance test summary"
+        if: always() && steps.perf-tests.outcome != 'skipped'
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## ⚡ Performance Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check if k6 summary exists
+          if [ -f "backend/benchmark-results/k6-summary.json" ]; then
+            echo "### 🚀 k6 Load Test Summary" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            # Extract key metrics from k6 summary
+            HTTP_REQS=$(jq -r '.metrics.http_reqs.values.count // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
+            HTTP_REQ_DURATION_AVG=$(jq -r '.metrics.http_req_duration.values.avg // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
+            HTTP_REQ_DURATION_P95=$(jq -r '.metrics.http_req_duration.values["p(95)"] // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
+            HTTP_REQ_FAILED=$(jq -r '.metrics.http_req_failed.values.rate // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
+            ITERATIONS=$(jq -r '.metrics.iterations.values.count // "N/A"' backend/benchmark-results/k6-summary.json 2>/dev/null || echo "N/A")
+
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|:-------|------:|" >> $GITHUB_STEP_SUMMARY
+            echo "| Total HTTP Requests | $HTTP_REQS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Avg Response Time | ${HTTP_REQ_DURATION_AVG}ms |" >> $GITHUB_STEP_SUMMARY
+            echo "| P95 Response Time | ${HTTP_REQ_DURATION_P95}ms |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed Request Rate | ${HTTP_REQ_FAILED} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Iterations | $ITERATIONS |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ k6 summary not available" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Add Jest benchmark results if available
+          if [ -f "backend/benchmark-results/db-benchmark.log" ]; then
+            echo "### 🗄️ Database Benchmark" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "<details>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary>Click to expand</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            # Extract benchmark results (lines with timing info)
+            grep -E "(PASS|FAIL|✓|✕|ms|benchmark)" backend/benchmark-results/db-benchmark.log | tail -30 >> $GITHUB_STEP_SUMMARY || echo "No benchmark data" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f "backend/benchmark-results/api-benchmark.log" ]; then
+            echo "### 🌐 API Benchmark" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "<details>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary>Click to expand</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -E "(PASS|FAIL|✓|✕|ms|benchmark)" backend/benchmark-results/api-benchmark.log | tail -30 >> $GITHUB_STEP_SUMMARY || echo "No benchmark data" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> 📥 Full benchmark results available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
 
       - name: "🧹 Teardown E2E Docker containers, volumes & generated config"
         if: always()
