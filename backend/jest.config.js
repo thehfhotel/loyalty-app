@@ -26,6 +26,7 @@ module.exports = {
     '!src/test-prisma.ts',
     '!src/__tests__/**',  // Exclude all test files, fixtures, factories, utils
     '!src/types/**',
+    '!src/routes/**',  // Routes are thin wrappers tested via integration tests
   ],
   // Coverage thresholds disabled - tracking via reports instead
   // Coverage is monitored but won't block CI/CD pipeline
