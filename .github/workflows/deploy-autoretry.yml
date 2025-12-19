@@ -27,8 +27,21 @@ jobs:
             const runId = context.payload.workflow_run.id;
             const attempt = context.payload.workflow_run.run_attempt;
             const conclusion = context.payload.workflow_run.conclusion;
+            const createdAt = new Date(context.payload.workflow_run.created_at);
+            const now = new Date();
+            const ageInDays = (now - createdAt) / (1000 * 60 * 60 * 24);
 
-            core.info(`Requesting rerun for workflow_run ${runId} (attempt ${attempt}, conclusion ${conclusion})`);
+            core.info(`Workflow run ${runId}: attempt ${attempt}, conclusion ${conclusion}, age ${ageInDays.toFixed(1)} days`);
+
+            // GitHub doesn't allow re-running workflows older than 30 days
+            if (ageInDays >= 30) {
+              core.warning(`Skipping rerun: workflow run ${runId} is ${ageInDays.toFixed(1)} days old (max 30 days)`);
+              core.summary
+                .addHeading('⏭️ Rerun skipped - workflow too old')
+                .addRaw(`Run ID: ${runId} | Age: ${ageInDays.toFixed(1)} days | GitHub only allows reruns within 30 days`, true);
+              await core.summary.write();
+              return;
+            }
 
             await github.rest.actions.reRunWorkflow({
               owner: context.repo.owner,
