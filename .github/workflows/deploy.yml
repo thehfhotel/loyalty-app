@@ -720,16 +720,16 @@ jobs:
           echo "## ⚠️ Pipeline Warnings Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # Count warnings per category
-          ESLINT_COUNT=$(grep -c . .warnings/eslint.log 2>/dev/null || echo 0)
-          TS_COUNT=$(grep -c . .warnings/typescript.log 2>/dev/null || echo 0)
-          SECURITY_COUNT=$(grep -c . .warnings/security.log 2>/dev/null || echo 0)
-          AUDIT_COUNT=$(grep -c . .warnings/audit.log 2>/dev/null || echo 0)
-          TESTS_COUNT=$(grep -c . .warnings/tests.log 2>/dev/null || echo 0)
-          SKIPPED_COUNT=$(grep -c . .warnings/skipped.log 2>/dev/null || echo 0)
-          DEPRECATION_COUNT=$(grep -c . .warnings/deprecation.log 2>/dev/null || echo 0)
-          VERSIONS_COUNT=$(grep -c . .warnings/versions.log 2>/dev/null || echo 0)
-          DOCKER_COUNT=$(grep -c . .warnings/docker.log 2>/dev/null || echo 0)
+          # Count warnings per category (use wc -l to avoid grep exit code issues)
+          ESLINT_COUNT=$(wc -l < .warnings/eslint.log 2>/dev/null | tr -d ' ') || ESLINT_COUNT=0
+          TS_COUNT=$(wc -l < .warnings/typescript.log 2>/dev/null | tr -d ' ') || TS_COUNT=0
+          SECURITY_COUNT=$(wc -l < .warnings/security.log 2>/dev/null | tr -d ' ') || SECURITY_COUNT=0
+          AUDIT_COUNT=$(wc -l < .warnings/audit.log 2>/dev/null | tr -d ' ') || AUDIT_COUNT=0
+          TESTS_COUNT=$(wc -l < .warnings/tests.log 2>/dev/null | tr -d ' ') || TESTS_COUNT=0
+          SKIPPED_COUNT=$(wc -l < .warnings/skipped.log 2>/dev/null | tr -d ' ') || SKIPPED_COUNT=0
+          DEPRECATION_COUNT=$(wc -l < .warnings/deprecation.log 2>/dev/null | tr -d ' ') || DEPRECATION_COUNT=0
+          VERSIONS_COUNT=$(wc -l < .warnings/versions.log 2>/dev/null | tr -d ' ') || VERSIONS_COUNT=0
+          DOCKER_COUNT=$(wc -l < .warnings/docker.log 2>/dev/null | tr -d ' ') || DOCKER_COUNT=0
 
           TOTAL=$((ESLINT_COUNT + TS_COUNT + SECURITY_COUNT + AUDIT_COUNT + TESTS_COUNT + SKIPPED_COUNT + DEPRECATION_COUNT + VERSIONS_COUNT + DOCKER_COUNT))
 

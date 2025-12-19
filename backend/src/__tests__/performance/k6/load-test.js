@@ -142,7 +142,6 @@ export function handleSummary(data) {
 // Simple text summary helper
 function textSummary(data, options = {}) {
   const indent = options.indent || '';
-  const enableColors = options.enableColors !== false;
 
   let summary = '\n';
 
