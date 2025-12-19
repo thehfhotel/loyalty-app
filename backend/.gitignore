@@ -9,3 +9,6 @@ allure-report/
 
 # Test results
 test-results/
+
+# Jest cache
+.jest-cache/

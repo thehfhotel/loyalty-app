@@ -5,6 +5,9 @@ module.exports = {
   testEnvironment: '<rootDir>/jest.allure.environment.js',
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.test.ts', '**/*.test.ts'],
+  // Enable caching for faster subsequent runs
+  cache: true,
+  cacheDirectory: '<rootDir>/.jest-cache',
   transform: {
     '^.+\\.ts$': 'ts-jest',
     // Transform ESM .js files from packages like uuid v13+
@@ -43,10 +46,12 @@ module.exports = {
   coverageReporters: ['text', 'lcov', 'html', 'json', 'json-summary'],
   setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
   testTimeout: 5000,
-  verbose: true,
+  // Disable verbose in CI for faster output
+  verbose: !process.env.CI,
   forceExit: true,
   clearMocks: true,
   resetMocks: true,
   restoreMocks: true,
-  maxWorkers: '50%', // Enable parallel test execution
+  // Use more workers in CI (75%) vs local (50%)
+  maxWorkers: process.env.CI ? '75%' : '50%',
 };
