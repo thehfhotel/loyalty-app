@@ -33,8 +33,8 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx src/utils/seedDatabase.ts",
     "test:perf": "npm run test:perf:db && npm run test:perf:api",
-    "test:perf:db": "node scripts/run-jest-with-pattern.cjs performance/benchmarks/database.benchmark",
-    "test:perf:api": "node scripts/run-jest-with-pattern.cjs performance/benchmarks/api.benchmark",
+    "test:perf:db": "node scripts/run-jest-with-pattern.cjs performance/benchmarks/database.benchmark --testMatch='**/__tests__/**/*.benchmark.ts'",
+    "test:perf:api": "node scripts/run-jest-with-pattern.cjs performance/benchmarks/api.benchmark --testMatch='**/__tests__/**/*.benchmark.ts'",
     "test:perf:k6": "k6 run src/__tests__/performance/k6/load-test.js",
     "test:perf:check": "bash scripts/check-perf-deps.sh"
   },
