@@ -8,7 +8,7 @@ const healthLatency = new Trend('health_check_latency');
 const authLatency = new Trend('auth_latency');
 const loyaltyLatency = new Trend('loyalty_latency');
 
-// Test configuration
+// Test configuration for 20-100 concurrent users
 export const options = {
   scenarios: {
     smoke: {
@@ -21,9 +21,11 @@ export const options = {
       executor: 'ramping-vus',
       startVUs: 0,
       stages: [
-        { duration: '30s', target: 5 },  // Ramp up to 5 VUs
-        { duration: '1m', target: 10 },  // Stay at 10 VUs
-        { duration: '30s', target: 0 },  // Ramp down to 0
+        { duration: '30s', target: 20 },   // Ramp up to minimum expected (20 users)
+        { duration: '1m', target: 50 },    // Increase to average load (50 users)
+        { duration: '1m', target: 100 },   // Peak load (100 users)
+        { duration: '30s', target: 50 },   // Scale down to average
+        { duration: '30s', target: 0 },    // Ramp down to 0
       ],
       tags: { test_type: 'load' },
     },
