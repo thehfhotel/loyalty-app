@@ -3,7 +3,7 @@
  * Tests Winston logger configuration, exports, and basic functionality
  */
 
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { logger } from '../../../utils/logger';
 import winston from 'winston';
 
@@ -331,6 +331,19 @@ describe('Logger Utils', () => {
   });
 
   describe('Performance', () => {
+    let originalLevel: string;
+
+    beforeEach(() => {
+      // Silence logger output during performance tests to avoid noise
+      originalLevel = logger.level;
+      logger.level = 'silent';
+    });
+
+    afterEach(() => {
+      // Restore original log level
+      logger.level = originalLevel;
+    });
+
     it('should handle high frequency logging efficiently', () => {
       const startTime = Date.now();
 
