@@ -11,11 +11,12 @@ import { browser } from 'k6/browser';
 import { check, sleep } from 'k6';
 import { Trend, Rate, Counter } from 'k6/metrics';
 
-import { browserOptions as options } from './config/base-options.js';
+import { browserOptions, browserSmokeOptions } from './config/base-options.js';
 import { PAGES } from './config/endpoints.js';
 import { TEST_USERS } from './config/test-data.js';
 
-export { options };
+// Use smoke options for quick tests (SMOKE=true k6 run browser-test.js)
+export const options = __ENV.SMOKE === 'true' ? browserSmokeOptions : browserOptions;
 
 // Custom metrics for browser tests
 const pageLoadTime = new Trend('page_load_time');

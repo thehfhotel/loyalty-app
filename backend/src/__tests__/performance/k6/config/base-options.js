@@ -52,6 +52,21 @@ export const browserScenarios = {
   },
 };
 
+// Browser smoke test (quick verification)
+export const browserSmokeScenarios = {
+  browser: {
+    executor: 'constant-vus',
+    vus: 1,
+    duration: '30s',
+    options: {
+      browser: {
+        type: 'chromium',
+      },
+    },
+    tags: { test_type: 'browser-smoke' },
+  },
+};
+
 // Standard API thresholds
 export const apiThresholds = {
   'http_req_duration': ['p(95)<500', 'p(99)<1000'],
@@ -81,5 +96,11 @@ export const smokeOptions = {
 // Combined options for browser tests
 export const browserOptions = {
   scenarios: browserScenarios,
+  thresholds: browserThresholds,
+};
+
+// Combined options for browser smoke tests (quick verification)
+export const browserSmokeOptions = {
+  scenarios: browserSmokeScenarios,
   thresholds: browserThresholds,
 };
