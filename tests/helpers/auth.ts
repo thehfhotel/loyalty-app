@@ -10,13 +10,36 @@ export const TEST_USER = {
 const AUTH_STORAGE_KEY = 'auth-storage';
 
 export async function loginViaUI(page: Page, email: string, password: string): Promise<void> {
-  await page.goto('/login');
-  await page.waitForLoadState('networkidle');
-  await page.fill('[data-testid="login-email"]', email);
-  await page.fill('[data-testid="login-password"]', password);
-  await page.click('[data-testid="login-submit"]');
-  // Use regex pattern with extended timeout for more reliable matching
-  await page.waitForURL(/\/dashboard/, { timeout: 15000 });
+  const maxRetries = 2;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // Clear any existing session state before login attempt
+      await page.context().clearCookies();
+      await page.goto('/login');
+      await page.waitForLoadState('networkidle');
+
+      // Ensure we're on the login page
+      await expect(page.locator('[data-testid="login-email"]')).toBeVisible({ timeout: 5000 });
+
+      await page.fill('[data-testid="login-email"]', email);
+      await page.fill('[data-testid="login-password"]', password);
+      await page.click('[data-testid="login-submit"]');
+
+      // Wait for successful navigation to dashboard
+      await page.waitForURL(/\/dashboard/, { timeout: 20000 });
+      return; // Success - exit the retry loop
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < maxRetries) {
+        // Wait before retry to allow any session conflicts to resolve
+        await page.waitForTimeout(1000);
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 export async function loginViaLocalStorage(page: Page, authState: unknown): Promise<void> {
