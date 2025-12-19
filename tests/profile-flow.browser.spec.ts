@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginViaUI, TEST_USER } from './helpers/auth';
+import { TEST_USER } from './helpers/auth';
 
 test.describe('Profile flow (browser)', () => {
   // Increase timeout for this test suite as profile operations can be slow

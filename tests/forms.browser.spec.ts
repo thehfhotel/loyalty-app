@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginViaUI, TEST_USER } from './helpers/auth';
+import { TEST_USER } from './helpers/auth';
 
 test.describe('Form validations (browser)', () => {
   test.beforeEach(async ({ page }) => {

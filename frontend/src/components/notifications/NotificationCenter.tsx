@@ -278,7 +278,7 @@ export default function NotificationCenter() {
                           <div className="mt-2">
                             {(() => {
                               const coupon = notification.data?.coupon;
-                              if (coupon && typeof coupon === 'object' && coupon !== null && 'name' in coupon) {
+                              if (coupon && typeof coupon === 'object' && 'name' in coupon) {
                                 const couponName = (coupon as { name: unknown }).name;
                                 if (typeof couponName === 'string') {
                                   return (

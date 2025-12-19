@@ -509,11 +509,13 @@ describe('Security Middleware', () => {
     });
 
     test('should sanitize query parameters with unsafe keys', () => {
-      mockReq.query = {
-        '__proto__': 'malicious',
-        'constructor': 'bad',
-        'prototype': 'evil'
-      };
+      // Use Object.create(null) to avoid prototype chain issues in test
+      // These keys are intentionally testing prototype pollution protection
+      const unsafeQuery = Object.create(null) as Record<string, string>;
+      unsafeQuery['__proto__'] = 'malicious';
+      unsafeQuery['constructor'] = 'bad';
+      unsafeQuery['prototype'] = 'evil';
+      mockReq.query = unsafeQuery;
 
       inputSanitization(mockReq as Request, mockRes as Response, mockNext);
       expect(mockNext).toHaveBeenCalled();
