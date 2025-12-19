@@ -516,39 +516,5 @@ describe('Date Formatter Utils', () => {
     });
   });
 
-  describe('Performance', () => {
-    it('should format dates quickly', () => {
-      const date = new Date('2025-06-15');
-      const startTime = Date.now();
-
-      for (let i = 0; i < 1000; i++) {
-        formatDateToDDMMYYYY(date);
-      }
-
-      const duration = Date.now() - startTime;
-      expect(duration).toBeLessThan(100);
-    });
-
-    it('should validate format quickly', () => {
-      const startTime = Date.now();
-
-      for (let i = 0; i < 1000; i++) {
-        isValidDDMMYYYYFormat('31/12/2025');
-      }
-
-      const duration = Date.now() - startTime;
-      expect(duration).toBeLessThan(50);
-    });
-
-    it('should parse dates quickly', () => {
-      const startTime = Date.now();
-
-      for (let i = 0; i < 1000; i++) {
-        parseDDMMYYYY('31/12/2025');
-      }
-
-      const duration = Date.now() - startTime;
-      expect(duration).toBeLessThan(100);
-    });
-  });
+  // Performance tests moved to: __tests__/performance/benchmarks/utils.benchmark.ts
 });

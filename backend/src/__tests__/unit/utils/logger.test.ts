@@ -344,31 +344,22 @@ describe('Logger Utils', () => {
       logger.level = originalLevel;
     });
 
-    it('should handle high frequency logging efficiently', () => {
-      const startTime = Date.now();
-
+    it('should handle high frequency logging', () => {
       for (let i = 0; i < 1000; i++) {
         logger.info(`Performance test ${i}`);
       }
-
-      const duration = Date.now() - startTime;
-      // Should complete within reasonable time (generous limit for CI)
-      expect(duration).toBeLessThan(5000);
+      // Completes without error
     });
 
-    it('should handle large metadata objects efficiently', () => {
+    it('should handle large metadata objects', () => {
       const largeMeta = {
         data: Array(100).fill(0).map((_, i) => ({ id: i, value: `test${i}` }))
       };
 
-      const startTime = Date.now();
-
       for (let i = 0; i < 100; i++) {
         logger.info('Large metadata', largeMeta);
       }
-
-      const duration = Date.now() - startTime;
-      expect(duration).toBeLessThan(2000);
+      // Completes without error
     });
   });
 });

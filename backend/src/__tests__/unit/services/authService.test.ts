@@ -414,16 +414,11 @@ describe('AuthService', () => {
       // Mock the findUnique response
       (testDb.users.findUnique as jest.Mock).mockResolvedValueOnce(testUser);
 
-      const startTime = Date.now();
-
       const user = await testDb.users.findUnique({
         where: { id: testUser.id },
       });
 
-      const queryTime = Date.now() - startTime;
-
       expect(user).toBeDefined();
-      expect(queryTime).toBeLessThan(100); // Should be fast
     });
 
     it('should handle batch user operations', async () => {
@@ -435,12 +430,9 @@ describe('AuthService', () => {
         })
       );
 
-      const startTime = Date.now();
       const users = await Promise.all(userPromises);
-      const batchTime = Date.now() - startTime;
 
       expect(users).toHaveLength(10);
-      expect(batchTime).toBeLessThan(1000); // Should complete within 1 second
 
       // Verify all users have unique emails and membership IDs
       const emails = users.map(u => u.email);

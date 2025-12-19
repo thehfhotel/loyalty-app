@@ -497,32 +497,5 @@ describe('Emoji Utils', () => {
     });
   });
 
-  describe('Performance', () => {
-    it('should validate emojis quickly', () => {
-      const startTime = Date.now();
-      for (let i = 0; i < 1000; i++) {
-        isValidEmojiAvatar('😀');
-      }
-      const duration = Date.now() - startTime;
-      expect(duration).toBeLessThan(100);
-    });
-
-    it('should generate random emojis quickly', () => {
-      const startTime = Date.now();
-      for (let i = 0; i < 1000; i++) {
-        getRandomEmojiAvatar();
-      }
-      const duration = Date.now() - startTime;
-      expect(duration).toBeLessThan(100);
-    });
-
-    it('should extract emojis quickly', () => {
-      const startTime = Date.now();
-      for (let i = 0; i < 1000; i++) {
-        extractEmojiFromUrl('emoji:😀');
-      }
-      const duration = Date.now() - startTime;
-      expect(duration).toBeLessThan(100);
-    });
-  });
+  // Performance tests moved to: __tests__/performance/benchmarks/utils.benchmark.ts
 });

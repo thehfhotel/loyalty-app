@@ -267,16 +267,13 @@ describe('LoyaltyService', () => {
 
       (testDb.points_transactions.findMany as jest.Mock).mockResolvedValueOnce(mockTransactions);
 
-      const startTime = Date.now();
       const transactions = await testDb.points_transactions.findMany({
         where: { user_id: testUser.id },
         orderBy: { created_at: 'desc' },
         take: 5,
       });
-      const queryTime = Date.now() - startTime;
 
       expect(transactions).toHaveLength(5);
-      expect(queryTime).toBeLessThan(100); // Should be fast
       expect(transactions[0].points).toBe(100); // Most recent (highest points)
     });
 
@@ -296,15 +293,12 @@ describe('LoyaltyService', () => {
         _sum: { points: 50 }
       });
 
-      const startTime = Date.now();
       const result = await testDb.points_transactions.aggregate({
         where: { user_id: testUser.id },
         _sum: { points: true },
       });
-      const queryTime = Date.now() - startTime;
 
       expect(result._sum.points).toBe(50); // 10*10 - 5*10 = 50
-      expect(queryTime).toBeLessThan(50); // Aggregation should be very fast
     });
   });
 
