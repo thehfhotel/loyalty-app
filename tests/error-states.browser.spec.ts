@@ -78,8 +78,10 @@ test.describe('Error states (browser)', () => {
 
     await loginViaUI(page, user.email, user.password);
     await page.goto('/dashboard');
+    await page.waitForLoadState('networkidle');
 
     await page.reload();
+    await page.waitForLoadState('networkidle');
     await expect(page.getByTestId('loyalty-points')).toBeVisible();
   });
 });

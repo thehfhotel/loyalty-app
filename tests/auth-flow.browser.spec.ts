@@ -96,6 +96,7 @@ test.describe('Auth flow (browser)', () => {
     expect(initialAuthState?.state?.isAuthenticated).toBeTruthy();
 
     await page.reload();
+    await page.waitForLoadState('networkidle');
 
     await expect(page).toHaveURL(/\/dashboard/);
     const rehydratedState = await getAuthState<{ state?: { isAuthenticated?: boolean; user?: { email?: string } } }>(page);

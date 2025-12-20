@@ -23,6 +23,7 @@ test.describe('Navigation (browser)', () => {
     const user = getTestUserForWorker(testInfo.workerIndex);
     await loginViaUI(page, user.email, user.password);
     await page.goto('/profile');
+    await page.waitForLoadState('networkidle');
     await page.getByTestId('nav-dashboard').click();
 
     await expect(page).toHaveURL(/\/dashboard/);
@@ -33,6 +34,7 @@ test.describe('Navigation (browser)', () => {
     const user = getTestUserForWorker(testInfo.workerIndex);
     await loginViaUI(page, user.email, user.password);
     await page.goto('/profile');
+    await page.waitForLoadState('networkidle');
 
     await expect(page.getByTestId('profile-email')).toContainText(user.email);
   });

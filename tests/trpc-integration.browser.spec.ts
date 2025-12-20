@@ -22,6 +22,7 @@ test.describe('tRPC integration (browser)', () => {
     const user = getTestUserForWorker(testInfo.workerIndex);
     await loginViaUI(page, user.email, user.password);
     await page.goto('/profile');
+    await page.waitForLoadState('networkidle');
 
     await expect(page.getByTestId('profile-name')).toContainText(/E2E/i);
     await expect(page.getByTestId('profile-email')).toContainText(user.email);
@@ -38,6 +39,7 @@ test.describe('tRPC integration (browser)', () => {
 
     await loginViaUI(page, user.email, user.password);
     await page.goto('/dashboard');
+    await page.waitForLoadState('networkidle');
     await expect(page.getByTestId('dashboard-points')).toBeVisible();
     await page.waitForTimeout(1000);
 
@@ -49,11 +51,13 @@ test.describe('tRPC integration (browser)', () => {
     const user = getTestUserForWorker(testInfo.workerIndex);
     await loginViaUI(page, user.email, user.password);
     await page.goto('/dashboard');
+    await page.waitForLoadState('networkidle');
 
     const pointsText = (await page.getByTestId('dashboard-points').innerText()).trim();
     const tierText = (await page.getByTestId('dashboard-tier').innerText()).trim();
 
     await page.reload();
+    await page.waitForLoadState('networkidle');
     await expect(page.getByTestId('dashboard-points')).toHaveText(pointsText);
     await expect(page.getByTestId('dashboard-tier')).toHaveText(tierText);
   });
