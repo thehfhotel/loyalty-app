@@ -1109,7 +1109,12 @@ jobs:
           else
             echo "⚠️ Migration rollback safety script not found - skipping"
           fi
-      
+
+      - name: "📊 Record E2E test results"
+        id: e2e-results
+        if: steps.run-e2e-tests.outcome == 'success'
+        run: echo "passed=true" >> $GITHUB_OUTPUT
+
       - name: "📊 Write E2E test summary to job summary"
         if: always()
         run: |
