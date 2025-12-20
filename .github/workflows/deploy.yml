@@ -1018,118 +1018,35 @@ jobs:
           echo "✅ Port cleanup completed"
           netstat -tlnp | grep -E ":320[1-9]|:420[2-9]|:543[6-9]|:638[1-9]" || echo "No conflicting ports found"
           
-          # Start containers and capture any startup failures
-          if docker compose -f docker-compose.e2e.ci.yml up -d --build; then
-            echo "✅ Docker containers started successfully"
+          # Start containers with --wait to ensure all services are healthy before continuing
+          echo "🚀 Starting E2E containers (with --wait for health checks)..."
+          if docker compose -f docker-compose.e2e.ci.yml up -d --build --wait --wait-timeout 300; then
+            echo "✅ All E2E containers are healthy and ready"
           else
-            echo "❌ Docker containers failed to start, capturing logs..."
+            echo "❌ Docker containers failed to start or become healthy"
+            echo "📊 Container status:"
+            docker compose -f docker-compose.e2e.ci.yml ps -a
+            echo ""
             echo "📄 Backend container logs:"
-            docker logs loyalty_backend_e2e 2>&1 || echo "No backend logs available"
+            docker logs loyalty_backend_e2e 2>&1 | tail -100 || echo "No backend logs available"
+            echo ""
             echo "📄 Frontend container logs:"
-            docker logs loyalty_frontend_e2e 2>&1 || echo "No frontend logs available"
+            docker logs loyalty_frontend_e2e 2>&1 | tail -100 || echo "No frontend logs available"
+            echo ""
             echo "📄 PostgreSQL container logs:"
-            docker logs loyalty_postgres_e2e 2>&1 || echo "No postgres logs available"
+            docker logs loyalty_postgres_e2e 2>&1 | tail -50 || echo "No postgres logs available"
+            echo ""
             echo "📄 Redis container logs:"
-            docker logs loyalty_redis_e2e 2>&1 || echo "No redis logs available"
-            echo "📊 Container status:"
-            docker compose -f docker-compose.e2e.ci.yml ps
+            docker logs loyalty_redis_e2e 2>&1 | tail -20 || echo "No redis logs available"
             exit 1
           fi
-          
-          # Wait for application to be ready
-          echo "⏳ Waiting for isolated application to be ready..."
-          
-          # Wait for backend with simplified retry logic 
-          echo "🔍 Waiting for backend to be ready..."
-          BACKEND_READY=false
-          for i in {1..60}; do
-            echo "Attempt $i/60: Testing backend connection..."
-            if curl -s http://localhost:4202/api/health >/dev/null 2>&1; then
-              echo "✅ Backend is responding!"
-              BACKEND_READY=true
-              break
-            fi
-            echo "Backend not ready yet, waiting 5 seconds..."
-            sleep 5
-          done
-          
-          if [ "$BACKEND_READY" = false ]; then
-            echo "❌ Backend failed to become ready after 5 minutes (60 attempts)"
-            echo "🔍 Final connection test:"
-            curl -v http://localhost:4202/api/health || echo "Final curl test failed"
-            echo "📄 Backend container logs:"
-            docker logs loyalty_backend_e2e 2>&1 || echo "No backend logs available"
-            echo "📊 Container status:"
-            docker compose -f docker-compose.e2e.ci.yml ps
-            echo "🌐 Port connectivity test:"
-            netstat -tlnp | grep :4202 || echo "Port 4202 not found in netstat"
-            exit 1
-          fi
-          
-          # Wait for frontend with simplified retry logic
-          echo "🔍 Waiting for frontend to be ready..."
-          FRONTEND_READY=false
-          for i in {1..40}; do
-            echo "Attempt $i/40: Testing frontend connection..."
-            if curl -s http://localhost:3201 >/dev/null 2>&1; then
-              echo "✅ Frontend is responding!"
-              FRONTEND_READY=true
-              break
-            fi
-            echo "Frontend not ready yet, waiting 3 seconds..."
-            sleep 3
-          done
-          
-          if [ "$FRONTEND_READY" = false ]; then
-            echo "❌ Frontend failed to become ready after 2 minutes (40 attempts)"
-            echo "🔍 Final frontend connection test:"
-            curl -v http://localhost:3201 || echo "Final frontend curl test failed"
-            echo "📄 Frontend container logs:"
-            docker logs loyalty_frontend_e2e 2>&1 || echo "No frontend logs available"
-            echo "📊 Container status:"
-            docker compose -f docker-compose.e2e.ci.yml ps
-            echo "🌐 Frontend port connectivity test:"
-            netstat -tlnp | grep :3201 || echo "Port 3201 not found in netstat"
-            exit 1
-          fi
-          
+
           echo "✅ Isolated application stack is ready for E2E testing"
           echo "🌐 Backend: http://localhost:4202/api/health"
           echo "🌐 Frontend: http://localhost:3201"
-
-          # Network diagnostics: Check what interfaces backend is listening on
           echo ""
-          echo "🔍 Network Diagnostics:"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-          echo "📡 Port 4202 listening status (host network):"
-          ss -tlnp | grep :4202 || netstat -tlnp | grep :4202 || echo "⚠️ Port 4202 not found in host network"
-
-          echo ""
-          echo "🐳 Backend container network info:"
-          docker exec loyalty_backend_e2e sh -c 'echo "Inside container - listening ports:" && netstat -tlnp 2>/dev/null || ss -tlnp' | grep -E "4202|State" || echo "⚠️ Could not get container network info"
-
-          echo ""
-          echo "🌐 Testing connectivity from different contexts:"
-          echo "  Host curl to localhost:4202:"
-          curl -s -o /dev/null -w "    Status: %{http_code}, Time: %{time_total}s\n" http://localhost:4202/api/health || echo "    ❌ Failed"
-
-          echo "  Host curl to 127.0.0.1:4202:"
-          curl -s -o /dev/null -w "    Status: %{http_code}, Time: %{time_total}s\n" http://127.0.0.1:4202/api/health || echo "    ❌ Failed"
-
-          echo "  Host curl to 0.0.0.0:4202:"
-          curl -s -o /dev/null -w "    Status: %{http_code}, Time: %{time_total}s\n" http://0.0.0.0:4202/api/health || echo "    ❌ Failed"
-
-          echo ""
-          echo "🔧 Backend container inspection:"
-          echo "  Container IP (if bridged):"
-          docker inspect loyalty_backend_e2e --format='    {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' || echo "    N/A (host network mode)"
-
-          echo "  Network mode:"
-          docker inspect loyalty_backend_e2e --format='    {{.HostConfig.NetworkMode}}'
-
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo ""
+          echo "📊 Container status:"
+          docker compose -f docker-compose.e2e.ci.yml ps
 
       - name: "🎭 Execute Playwright E2E test suite against isolated stack"
         id: run-e2e-tests
@@ -1171,47 +1088,12 @@ jobs:
           echo "🔍 Verifying Playwright installation..."
           npx playwright --version
 
-          # Playwright connectivity diagnostic
-          echo ""
-          echo "🧪 Playwright Connectivity Diagnostic:"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          node -e 'const http = require("http"); const urls = ["http://localhost:4202/api/health", "http://127.0.0.1:4202/api/health", "http://0.0.0.0:4202/api/health"]; console.log("Testing connectivity from Node.js (same context as Playwright):"); let completed = 0; urls.forEach(url => { const urlObj = new URL(url); const options = { hostname: urlObj.hostname, port: urlObj.port, path: urlObj.pathname, method: "GET", timeout: 5000 }; const req = http.request(options, (res) => { console.log(`  ✅ ${url}: HTTP ${res.statusCode}`); if (++completed === urls.length) process.exit(0); }); req.on("error", (e) => { console.log(`  ❌ ${url}: ${e.code} - ${e.message}`); if (++completed === urls.length) process.exit(0); }); req.on("timeout", () => { console.log(`  ⏱️ ${url}: Timeout`); req.destroy(); if (++completed === urls.length) process.exit(0); }); req.end(); }); setTimeout(() => process.exit(0), 7000);' || echo "⚠️ Node.js connectivity test failed"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo ""
+          # Quick health check before tests
+          echo "🏥 Final health check before tests..."
+          curl -sf http://localhost:4202/api/health > /dev/null && echo "✅ Backend healthy" || { echo "❌ Backend health check failed"; exit 1; }
+          curl -sf http://localhost:3201 > /dev/null && echo "✅ Frontend healthy" || { echo "❌ Frontend health check failed"; exit 1; }
 
-          # CRITICAL: Verify containers are still running RIGHT before test execution
-          echo "🔍 Pre-Test Container Status Check:"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          docker compose -f docker-compose.e2e.ci.yml ps
-          echo ""
-          echo "📋 Backend logs (last 30 lines):"
-          docker compose -f docker-compose.e2e.ci.yml logs --tail=30 backend
-          echo ""
-          echo "🏥 Final health check before tests:"
-          curl -f http://localhost:4202/api/health || echo "❌ Backend health check FAILED before test execution!"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo ""
-
-          # Abort early if the isolated stack has disappeared
-          RUNNING_SERVICES=$(docker compose -f docker-compose.e2e.ci.yml ps --services --filter "status=running" | tr '\n' ' ' | xargs)
-          if [ -z "$RUNNING_SERVICES" ] || ! echo "$RUNNING_SERVICES" | grep -q "backend"; then
-            echo "❌ Isolated E2E stack is not running. Capturing diagnostics before aborting..."
-            echo "📊 docker compose ps --all"
-            docker compose -f docker-compose.e2e.ci.yml ps -a || true
-            echo "📦 docker ps -a (host)"
-            docker ps -a || true
-            echo "📄 Backend logs:"
-            docker logs loyalty_backend_e2e 2>&1 || echo "No backend logs available"
-            echo "📄 Frontend logs:"
-            docker logs loyalty_frontend_e2e 2>&1 || echo "No frontend logs available"
-            echo "📄 PostgreSQL logs:"
-            docker logs loyalty_postgres_e2e 2>&1 || echo "No postgres logs available"
-            echo "📄 Redis logs:"
-            docker logs loyalty_redis_e2e 2>&1 || echo "No redis logs available"
-            exit 1
-          fi
-
-          # Run all E2E tests (API + browser projects) against isolated environment (BLOCKING - must pass to succeed)
+          # Run all E2E tests (API + browser projects) against isolated environment
           echo "🎭 Running E2E tests (api + browser projects) - failures will BLOCK the pipeline..."
           npx playwright test --project=api --project=browser
 
@@ -1224,26 +1106,11 @@ jobs:
             echo "⚠️ Migration rollback safety script not found - skipping"
           fi
       
-      - name: "📊 Record E2E test results (success/failure status)"
-        id: e2e-results
-        if: always()
-        run: |
-          if [ "${{ steps.run-e2e-tests.outcome }}" = "success" ]; then
-            echo "✅ E2E tests completed successfully"
-            echo "passed=true" >> $GITHUB_OUTPUT
-          else
-            echo "❌ E2E tests failed"
-            echo "passed=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-
       - name: "📊 Write E2E test summary to job summary"
         if: always()
         run: |
-          E2E_PASSED="${{ steps.e2e-results.outputs.passed }}"
-
-          # Determine status
-          if [ "$E2E_PASSED" == "true" ]; then
+          # Determine status directly from run-e2e-tests outcome
+          if [ "${{ steps.run-e2e-tests.outcome }}" == "success" ]; then
             E2E_STATUS="✅ Passed"
             STATUS_MSG="All E2E tests completed successfully!"
           else
