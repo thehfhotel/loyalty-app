@@ -41,7 +41,7 @@ test.describe('tRPC integration (browser)', () => {
     await page.goto('/dashboard');
     await page.waitForLoadState('networkidle');
     await expect(page.getByTestId('dashboard-points')).toBeVisible();
-    await page.waitForTimeout(1000);
+    // networkidle ensures all tRPC calls completed
 
     expect(trpcStatuses.length).toBeGreaterThan(0);
     expect(trpcStatuses).not.toContain(401);

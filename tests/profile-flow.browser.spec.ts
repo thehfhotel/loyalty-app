@@ -35,7 +35,9 @@ test.describe('Profile flow (browser)', () => {
   test('Update profile name', async ({ page }) => {
     // Click edit button (Thai: "แก้ไขการตั้งค่า")
     await page.getByRole('button', { name: /edit settings|แก้ไขการตั้งค่า/i }).click();
-    await page.waitForTimeout(300);
+    // Wait for modal to open
+    const modalHeading = page.getByRole('heading', { name: /แก้ไขโปรไฟล์|edit profile/i });
+    await expect(modalHeading).toBeVisible();
 
     const newFirstName = `E2E ${Date.now()}`;
     const newLastName = 'Browser';
@@ -46,21 +48,22 @@ test.describe('Profile flow (browser)', () => {
     // Click save (Thai: "บันทึก")
     await page.getByRole('button', { name: /^save$|^บันทึก$/i }).click();
 
-    // Wait for save to complete and check result
-    await page.waitForTimeout(1000);
+    // Wait for modal to close (indicates save completed)
+    await expect(modalHeading).not.toBeVisible({ timeout: 5000 });
 
-    // Check for success: either success message visible OR modal closed (indicating success)
+    // Check for success: either success message visible OR name updated on page
     const successVisible = await page.getByText(/profile updated|อัปเดต.*สำเร็จ|success/i).isVisible({ timeout: 3000 }).catch(() => false);
-    const modalClosed = !(await page.getByRole('heading', { name: /แก้ไขโปรไฟล์|edit profile/i }).isVisible().catch(() => false));
     const nameUpdated = await page.getByRole('heading', { level: 3 }).filter({ hasText: newFirstName }).isVisible().catch(() => false);
 
-    expect(successVisible || modalClosed || nameUpdated).toBeTruthy();
+    expect(successVisible || nameUpdated).toBeTruthy();
   });
 
   test('Update profile phone number', async ({ page }) => {
     // Click edit button (Thai: "แก้ไขการตั้งค่า")
     await page.getByRole('button', { name: /edit settings|แก้ไขการตั้งค่า/i }).click();
-    await page.waitForTimeout(300);
+    // Wait for modal to open
+    const modalHeading = page.getByRole('heading', { name: /แก้ไขโปรไฟล์|edit profile/i });
+    await expect(modalHeading).toBeVisible();
 
     const newPhone = '+1 (555) 010-2020';
     // Fill phone field (Thai: "เบอร์โทรศัพท์")
@@ -68,14 +71,13 @@ test.describe('Profile flow (browser)', () => {
     // Click save (Thai: "บันทึก")
     await page.getByRole('button', { name: /^save$|^บันทึก$/i }).click();
 
-    // Wait for save to complete
-    await page.waitForTimeout(1000);
+    // Wait for modal to close (indicates save completed)
+    await expect(modalHeading).not.toBeVisible({ timeout: 5000 });
 
-    // Check for success: message visible, phone updated, or modal closed
+    // Check for success: message visible or phone updated on page
     const successVisible = await page.getByText(/profile updated|อัปเดต.*สำเร็จ|success/i).isVisible({ timeout: 3000 }).catch(() => false);
     const phoneVisible = await page.getByText(newPhone).isVisible().catch(() => false);
-    const modalClosed = !(await page.getByRole('heading', { name: /แก้ไขโปรไฟล์|edit profile/i }).isVisible().catch(() => false));
-    expect(successVisible || phoneVisible || modalClosed).toBeTruthy();
+    expect(successVisible || phoneVisible).toBeTruthy();
   });
 
   test('Profile validation errors surface in modal', async ({ page }) => {
@@ -96,11 +98,12 @@ test.describe('Profile flow (browser)', () => {
   test('Emoji avatar selection updates profile', async ({ page }) => {
     // Click edit button (Thai: "แก้ไขการตั้งค่า")
     await page.getByRole('button', { name: /edit settings|แก้ไขการตั้งค่า/i }).click();
-    await page.waitForTimeout(300);
+    // Wait for modal to open
+    const modalHeading = page.getByRole('heading', { name: /แก้ไขโปรไฟล์|edit profile/i });
+    await expect(modalHeading).toBeVisible();
 
     // Click choose emoji button (English: "Choose Emoji")
     await page.getByRole('button', { name: /choose emoji|เลือกอิโมจิ/i }).click();
-    await page.waitForTimeout(500);
 
     // Emoji picker should be visible with emoji buttons (like "😀")
     const emojiPicker = page.locator('[class*="grid"]').filter({ has: page.getByRole('button', { name: '😀' }) });
@@ -108,7 +111,9 @@ test.describe('Profile flow (browser)', () => {
 
     // Click an emoji
     await page.getByRole('button', { name: '😀' }).click();
-    await page.waitForTimeout(500);
+
+    // Wait for either: emoji selected in avatar area, or success message, or modal still responding
+    await page.waitForLoadState('networkidle');
 
     // Test passes if:
     // 1. Success message visible, OR
@@ -116,7 +121,7 @@ test.describe('Profile flow (browser)', () => {
     // 3. Edit modal is still open (UI responded to click)
     const successVisible = await page.getByText(/profile.*updated|อัปเดต.*สำเร็จ|avatar.*updated|รูปโปรไฟล์/i).isVisible().catch(() => false);
     const emojiInProfile = await page.locator('[class*="avatar"], [class*="profile"]').filter({ hasText: '😀' }).isVisible().catch(() => false);
-    const modalStillOpen = await page.getByRole('heading', { name: /แก้ไขโปรไฟล์|edit profile/i }).isVisible().catch(() => false);
+    const modalStillOpen = await modalHeading.isVisible().catch(() => false);
 
     expect(successVisible || emojiInProfile || modalStillOpen).toBeTruthy();
   });

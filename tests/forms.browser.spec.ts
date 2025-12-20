@@ -73,7 +73,8 @@ test.describe('Form validations (browser)', () => {
 
     // Click edit settings button (Thai: "แก้ไขการตั้งค่า")
     await page.getByRole('button', { name: /edit settings|แก้ไขการตั้งค่า/i }).click();
-    await page.waitForTimeout(300);
+    // Wait for modal to open
+    await expect(page.getByRole('heading', { name: /แก้ไขโปรไฟล์|edit profile/i })).toBeVisible();
 
     // Find phone input and fill with invalid value (Thai: "เบอร์โทรศัพท์")
     const phoneInput = page.getByLabel(/phone|เบอร์โทรศัพท์|โทรศัพท์/i);
