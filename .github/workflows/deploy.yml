@@ -767,6 +767,16 @@ jobs:
               });
             }
 
+      - name: "📤 Upload build logs"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.run_id }}
+          path: |
+            /tmp/lint-output.log
+          retention-days: 14
+          if-no-files-found: ignore
+
       - name: "🧹 Cleanup: stop postgres/redis containers, remove volumes and compose file"
         if: always()
         run: |
@@ -1339,6 +1349,26 @@ jobs:
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "> 📥 Full benchmark results available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
+
+      - name: "📤 Capture container logs on failure"
+        if: failure()
+        run: |
+          mkdir -p container-logs
+          echo "📄 Capturing E2E container logs for debugging..."
+          docker logs loyalty_backend_e2e > container-logs/backend.log 2>&1 || echo "No backend logs" > container-logs/backend.log
+          docker logs loyalty_frontend_e2e > container-logs/frontend.log 2>&1 || echo "No frontend logs" > container-logs/frontend.log
+          docker logs loyalty_postgres_e2e > container-logs/postgres.log 2>&1 || echo "No postgres logs" > container-logs/postgres.log
+          docker logs loyalty_redis_e2e > container-logs/redis.log 2>&1 || echo "No redis logs" > container-logs/redis.log
+          echo "✅ Container logs captured"
+
+      - name: "📤 Upload container logs"
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-logs-${{ github.run_id }}
+          path: container-logs/
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: "🧹 Teardown E2E Docker containers, volumes & generated config"
         if: always()

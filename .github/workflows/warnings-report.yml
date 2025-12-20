@@ -200,6 +200,39 @@ jobs:
             fi
 
             echo "</details>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> 📥 **Full logs available**: Download the \`warnings-report-${{ github.event.workflow_run.id }}\` artifact for complete (untruncated) warning details." >> $GITHUB_STEP_SUMMARY
           else
             echo "✅ No warnings detected in this pipeline run." >> $GITHUB_STEP_SUMMARY
           fi
+
+          # Generate JSON summary for tooling
+          cat > warnings/summary.json << EOF
+          {
+            "run_id": ${{ github.event.workflow_run.id }},
+            "run_number": ${{ github.event.workflow_run.run_number }},
+            "branch": "${{ github.event.workflow_run.head_branch }}",
+            "conclusion": "${{ github.event.workflow_run.conclusion }}",
+            "counts": {
+              "eslint": ${ESLINT:-0},
+              "typescript": ${TS:-0},
+              "audit": ${AUDIT:-0},
+              "skipped_tests": ${SKIPPED:-0},
+              "deprecation": ${DEPRECATION:-0},
+              "docker": ${DOCKER:-0},
+              "deployment": ${DEPLOYMENT:-0},
+              "outdated": ${OUTDATED:-0},
+              "total": ${TOTAL:-0}
+            }
+          }
+          EOF
+
+          echo "📊 Warnings report generated with $TOTAL total warnings"
+
+      - name: "📤 Upload warnings report artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: warnings-report-${{ github.event.workflow_run.id }}
+          path: warnings/
+          retention-days: 30
+          if-no-files-found: ignore
