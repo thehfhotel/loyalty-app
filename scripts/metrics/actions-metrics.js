@@ -244,6 +244,10 @@ function computeFlakyRate(runs) {
       if (run.conclusion === "success" && sawFailure) {
         isFlaky = true;
       }
+      // Detect re-run flakiness: run_attempt > 1 with success means earlier attempt(s) failed
+      if (run.run_attempt > 1 && run.conclusion === "success") {
+        isFlaky = true;
+      }
     });
 
     if (isFlaky) flakyCommits += 1;
