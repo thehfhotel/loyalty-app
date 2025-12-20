@@ -7,6 +7,7 @@ test.describe('Form validations (browser)', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');
+    await page.waitForLoadState('networkidle');
     await page.context().clearCookies();
     await page.evaluate(() => localStorage.clear());
   });
@@ -45,6 +46,7 @@ test.describe('Form validations (browser)', () => {
 
   test('Registration - password requirements enforced', async ({ page }) => {
     await page.goto('/register');
+    await page.waitForLoadState('networkidle');
 
     await page.fill('#firstName', 'Test');
     await page.fill('#lastName', 'User');
