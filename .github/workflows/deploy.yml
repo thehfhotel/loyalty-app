@@ -1024,12 +1024,12 @@ jobs:
           
           # Start containers with --wait to ensure all services are healthy before continuing
           echo "🚀 Starting E2E containers (with --wait for health checks)..."
-          if docker compose -f docker-compose.e2e.ci.yml up -d --build --wait --wait-timeout 300; then
+          if docker compose -p loyalty-e2e-tests -f docker-compose.e2e.ci.yml up -d --build --wait --wait-timeout 300; then
             echo "✅ All E2E containers are healthy and ready"
           else
             echo "❌ Docker containers failed to start or become healthy"
             echo "📊 Container status:"
-            docker compose -f docker-compose.e2e.ci.yml ps -a
+            docker compose -p loyalty-e2e-tests -f docker-compose.e2e.ci.yml ps -a
             echo ""
             echo "📄 Backend container logs:"
             docker logs loyalty_backend_e2e 2>&1 | tail -100 || echo "No backend logs available"
@@ -1050,7 +1050,7 @@ jobs:
           echo "🌐 Frontend: http://localhost:3201"
           echo ""
           echo "📊 Container status:"
-          docker compose -f docker-compose.e2e.ci.yml ps
+          docker compose -p loyalty-e2e-tests -f docker-compose.e2e.ci.yml ps
 
       - name: "🎭 Execute Playwright E2E test suite against isolated stack"
         id: run-e2e-tests
@@ -1339,7 +1339,7 @@ jobs:
         if: always()
         run: |
           echo "🧹 Cleaning up isolated E2E environment..."
-          docker compose -f docker-compose.e2e.ci.yml down -v --remove-orphans || true
+          docker compose -p loyalty-e2e-tests -f docker-compose.e2e.ci.yml down -v --remove-orphans || true
 
           # SAFETY: Only remove test-specific volumes, NEVER docker system prune
           # docker system prune can destroy production containers/volumes!
