@@ -999,10 +999,14 @@ jobs:
           
           echo "✅ E2E Docker Compose configuration created"
           
-          # Use project-specific compose teardown to avoid stopping production containers
-          echo "🧹 Cleaning up any existing E2E containers and ports..."
+          # Force remove any stale E2E containers by name (from previous runs with different project names)
+          echo "🧹 Force removing any stale E2E containers..."
+          docker rm -f loyalty_postgres_e2e loyalty_redis_e2e loyalty_backend_e2e loyalty_frontend_e2e 2>/dev/null || true
+
+          # Also cleanup with docker compose (for volumes and networks)
+          echo "🧹 Cleaning up E2E volumes and networks..."
           docker compose -p loyalty-e2e-tests -f docker-compose.e2e.ci.yml down -v --remove-orphans 2>/dev/null || true
-          
+
           # Check for processes using E2E ports and kill them
           echo "🔍 Checking for processes using E2E ports..."
           for port in 3201 4202 5436 6381; do
