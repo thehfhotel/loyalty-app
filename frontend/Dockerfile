@@ -52,7 +52,7 @@ RUN test -f dist/index.html && \
 # =============================================================================
 # STAGE 3: Production runtime (nginx - minimal)
 # =============================================================================
-FROM nginx:alpine@sha256:052b75ab72f690f33debaa51c7e08d9b969a0447a133eb2b99cc905d9188cb2b AS production
+FROM nginx:alpine@sha256:8491795299c8e739b7fcc6285d531d9812ce2666e07bd3dd8db00020ad132295 AS production
 
 # Update packages to fix CVEs (e.g., CVE-2025-62408 in c-ares)
 RUN apk upgrade --no-cache
