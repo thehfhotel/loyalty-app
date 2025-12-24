@@ -8,7 +8,7 @@ import http from 'k6/http';
 import { check, sleep, group } from 'k6';
 import { smokeOptions } from '../../config/base-options.js';
 import { OAUTH } from '../../config/endpoints.js';
-import { errorRate, oauthLatency, recordRequest } from '../../utils/metrics.js';
+import { oauthLatency, recordRequest } from '../../utils/metrics.js';
 
 export const options = smokeOptions;
 

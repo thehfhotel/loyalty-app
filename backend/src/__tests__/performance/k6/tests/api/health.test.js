@@ -7,7 +7,7 @@ import http from 'k6/http';
 import { check, sleep, group } from 'k6';
 import { smokeOptions } from '../../config/base-options.js';
 import { HEALTH } from '../../config/endpoints.js';
-import { errorRate, healthLatency, recordRequest } from '../../utils/metrics.js';
+import { healthLatency, recordRequest } from '../../utils/metrics.js';
 
 export const options = smokeOptions;
 

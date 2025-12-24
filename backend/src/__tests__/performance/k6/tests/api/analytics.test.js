@@ -9,7 +9,7 @@ import { smokeOptions } from '../../config/base-options.js';
 import { ANALYTICS } from '../../config/endpoints.js';
 import { TEST_USERS } from '../../config/test-data.js';
 import { login, getAuthHeaders } from '../../utils/auth.js';
-import { errorRate, analyticsLatency, recordRequest } from '../../utils/metrics.js';
+import { analyticsLatency, recordRequest } from '../../utils/metrics.js';
 
 export const options = smokeOptions;
 

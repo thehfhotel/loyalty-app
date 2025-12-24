@@ -8,16 +8,15 @@
 
 import http from 'k6/http';
 import { check, sleep, group } from 'k6';
-import { Rate, Trend } from 'k6/metrics';
 
 // Configuration
 import { fullApiOptions as options } from './config/base-options.js';
 import { AUTH, USERS, LOYALTY, COUPONS, SURVEYS, NOTIFICATIONS, OAUTH, ANALYTICS, MEMBERSHIP, TRANSLATION, HEALTH } from './config/endpoints.js';
-import { TEST_USERS, TEST_DATA } from './config/test-data.js';
+import { TEST_USERS } from './config/test-data.js';
 
 // Utils
-import { login, getAuthHeaders, getJsonHeaders, logout } from './utils/auth.js';
-import { errorRate, healthLatency, authLatency, userLatency, loyaltyLatency, couponLatency, surveyLatency, notificationLatency, oauthLatency, analyticsLatency, membershipLatency, translationLatency, recordRequest } from './utils/metrics.js';
+import { login, getAuthHeaders, getJsonHeaders } from './utils/auth.js';
+import { healthLatency, authLatency, userLatency, loyaltyLatency, couponLatency, surveyLatency, notificationLatency, oauthLatency, analyticsLatency, membershipLatency, translationLatency, recordRequest } from './utils/metrics.js';
 
 export { options };
 

@@ -8,8 +8,8 @@ import { check, sleep, group } from 'k6';
 import { smokeOptions } from '../../config/base-options.js';
 import { NOTIFICATIONS } from '../../config/endpoints.js';
 import { TEST_USERS } from '../../config/test-data.js';
-import { login, getAuthHeaders, getJsonHeaders } from '../../utils/auth.js';
-import { errorRate, notificationLatency, recordRequest } from '../../utils/metrics.js';
+import { login, getAuthHeaders } from '../../utils/auth.js';
+import { notificationLatency, recordRequest } from '../../utils/metrics.js';
 
 export const options = smokeOptions;
 

@@ -7,9 +7,9 @@ import http from 'k6/http';
 import { check, sleep, group } from 'k6';
 import { smokeOptions } from '../../config/base-options.js';
 import { USERS } from '../../config/endpoints.js';
-import { TEST_USERS, PROFILE_UPDATE_DATA } from '../../config/test-data.js';
+import { TEST_USERS } from '../../config/test-data.js';
 import { login, getAuthHeaders } from '../../utils/auth.js';
-import { errorRate, userLatency, recordRequest } from '../../utils/metrics.js';
+import { userLatency, recordRequest } from '../../utils/metrics.js';
 
 export const options = smokeOptions;
 
