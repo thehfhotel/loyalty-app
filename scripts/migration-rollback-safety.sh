@@ -38,6 +38,14 @@ BACKUP_DIR="./database/backups"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 MAX_BACKUPS=10
 
+# CI Environment Detection
+# In CI environments, some checks (backups, pg_dump) are not applicable
+if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
+    IS_CI=true
+else
+    IS_CI=false
+fi
+
 echo "🛡️ Migration Rollback Safety"
 echo "========================================"
 
@@ -88,9 +96,16 @@ mkdir -p "$BACKUP_DIR"
 create_database_backup() {
     local backup_name="$1"
     local backup_file="$BACKUP_DIR/${backup_name}.sql"
-    
+
+    # Skip backup creation in CI environment
+    if [ "$IS_CI" = true ]; then
+        print_status "Skipping database backup in CI environment"
+        print_status "CI uses ephemeral databases - backups are not applicable"
+        return 0
+    fi
+
     print_status "Creating database backup: $backup_name"
-    
+
     cd backend
     
     # Get database URL from environment or .env
@@ -264,42 +279,56 @@ show_rollback_procedures() {
 check_rollback_safety() {
     local safety_score=0
     local max_score=7
-    
+
     print_status "Checking rollback safety status..."
+
+    # Adjust max score for CI environment (3 checks are skipped)
+    if [ "$IS_CI" = true ]; then
+        print_status "Running in CI environment - backup checks will be skipped"
+        max_score=4
+    fi
     echo ""
-    
-    # Check 1: Backup availability
-    if [ -d "$BACKUP_DIR" ] && [ "$(ls -A "$BACKUP_DIR"/*.sql 2>/dev/null)" ]; then
+
+    # Check 1: Backup availability (skip in CI - no local backups needed)
+    if [ "$IS_CI" = true ]; then
+        print_status "⊘ Backup check skipped (CI environment)"
+    elif [ -d "$BACKUP_DIR" ] && [ "$(ls -A "$BACKUP_DIR"/*.sql 2>/dev/null)" ]; then
         print_success "✓ Database backups available"
         ((safety_score++))
     else
         print_warning "✗ No database backups found"
     fi
-    
-    # Check 2: Recent backup (within last 24 hours)
-    local recent_backup=false
-    if [ -d "$BACKUP_DIR" ]; then
-        for backup_file in "$BACKUP_DIR"/*.sql; do
-            if [ -f "$backup_file" ]; then
-                local file_age_hours
-                file_age_hours=$(( ($(date +%s) - $(date -r "$backup_file" +%s 2>/dev/null || stat -c %Y "$backup_file" 2>/dev/null || echo 0)) / 3600 ))
-                if [ $file_age_hours -lt 24 ]; then
-                    recent_backup=true
-                    break
-                fi
-            fi
-        done
-    fi
-    
-    if [ "$recent_backup" = true ]; then
-        print_success "✓ Recent backup available (< 24 hours)"
-        ((safety_score++))
+
+    # Check 2: Recent backup (within last 24 hours) (skip in CI)
+    if [ "$IS_CI" = true ]; then
+        print_status "⊘ Recent backup check skipped (CI environment)"
     else
-        print_warning "✗ No recent backups (create one before migration)"
+        local recent_backup=false
+        if [ -d "$BACKUP_DIR" ]; then
+            for backup_file in "$BACKUP_DIR"/*.sql; do
+                if [ -f "$backup_file" ]; then
+                    local file_age_hours
+                    file_age_hours=$(( ($(date +%s) - $(date -r "$backup_file" +%s 2>/dev/null || stat -c %Y "$backup_file" 2>/dev/null || echo 0)) / 3600 ))
+                    if [ $file_age_hours -lt 24 ]; then
+                        recent_backup=true
+                        break
+                    fi
+                fi
+            done
+        fi
+
+        if [ "$recent_backup" = true ]; then
+            print_success "✓ Recent backup available (< 24 hours)"
+            ((safety_score++))
+        else
+            print_warning "✗ No recent backups (create one before migration)"
+        fi
     fi
-    
-    # Check 3: pg_dump availability
-    if command -v pg_dump >/dev/null 2>&1; then
+
+    # Check 3: pg_dump availability (skip in CI - not installed on runners)
+    if [ "$IS_CI" = true ]; then
+        print_status "⊘ pg_dump check skipped (CI environment)"
+    elif command -v pg_dump >/dev/null 2>&1; then
         print_success "✓ pg_dump available for backups"
         ((safety_score++))
     else
