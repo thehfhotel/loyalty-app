@@ -47,24 +47,30 @@ WARNINGS=0
 ERRORS=0
 CRITICAL_ISSUES=0
 
-# Ensure we're in the right directory
-if [ ! -f "package.json" ]; then
-    print_error "Must run from project root directory"
+# Determine project root - handle being called from different directories
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Ensure we're working with the right directories
+if [ ! -f "$PROJECT_ROOT/package.json" ]; then
+    print_error "Cannot find project root (package.json not found at $PROJECT_ROOT)"
     exit 1
 fi
 
 # Check if backend directory exists
-if [ ! -d "backend" ]; then
-    print_error "Backend directory not found"
+if [ ! -d "$PROJECT_ROOT/backend" ]; then
+    print_error "Backend directory not found at $PROJECT_ROOT/backend"
     exit 1
 fi
+
+BACKEND_DIR="$PROJECT_ROOT/backend"
 
 # Function to check database connectivity
 check_database_connection() {
     print_status "Checking database connectivity..."
-    
-    # Check if we can connect to the database
-    if cd backend && timeout $DB_TIMEOUT npm run db:generate >/dev/null 2>&1; then
+
+    # Check if we can connect to the database (run in subshell to avoid directory issues)
+    if (cd "$BACKEND_DIR" && timeout $DB_TIMEOUT npm run db:generate >/dev/null 2>&1); then
         print_success "Database connection successful"
         return 0
     else
@@ -83,18 +89,16 @@ check_database_connection() {
 # Function to validate Prisma client generation
 validate_prisma_client() {
     print_status "Validating Prisma client generation..."
-    
-    cd backend
-    
+
     # Check if Prisma schema exists
-    if [ ! -f "prisma/schema.prisma" ]; then
-        print_error "Prisma schema not found at backend/prisma/schema.prisma"
+    if [ ! -f "$BACKEND_DIR/prisma/schema.prisma" ]; then
+        print_error "Prisma schema not found at $BACKEND_DIR/prisma/schema.prisma"
         ((ERRORS++))
         return 1
     fi
-    
-    # Generate Prisma client with timeout
-    if timeout $DB_TIMEOUT npm run db:generate >/dev/null 2>&1; then
+
+    # Generate Prisma client with timeout (run in subshell)
+    if (cd "$BACKEND_DIR" && timeout $DB_TIMEOUT npm run db:generate >/dev/null 2>&1); then
         print_success "Prisma client generation successful"
     else
         local exit_code=$?
@@ -107,31 +111,28 @@ validate_prisma_client() {
         ((CRITICAL_ISSUES++))
         return 1
     fi
-    
+
     # Check if generated client files exist (Prisma 7.x uses src/generated/prisma)
-    if [ -d "src/generated/prisma" ]; then
+    if [ -d "$BACKEND_DIR/src/generated/prisma" ]; then
         print_success "Prisma client files generated successfully"
     else
-        print_error "Prisma client files not found at src/generated/prisma"
+        print_error "Prisma client files not found at $BACKEND_DIR/src/generated/prisma"
         ((ERRORS++))
         return 1
     fi
-    
-    cd ..
+
     return 0
 }
 
 # Function to check migration status
 check_migration_status() {
     print_status "Checking current migration status..."
-    
-    cd backend
-    
-    # Check migration status with timeout
+
+    # Check migration status with timeout (run in subshell)
     local migration_output
-    if migration_output=$(timeout $DB_TIMEOUT npm run db:migrate:status 2>&1); then
+    if migration_output=$(cd "$BACKEND_DIR" && timeout $DB_TIMEOUT npm run db:migrate:status 2>&1); then
         print_success "Migration status check successful"
-        
+
         # Parse migration output for issues
         if echo "$migration_output" | grep -q "Database schema is up to date"; then
             print_success "Database schema is up to date"
@@ -151,31 +152,22 @@ check_migration_status() {
         fi
         ((ERRORS++))
     fi
-    
-    cd ..
 }
 
 # Function to validate database schema requirements
 validate_schema_requirements() {
     print_status "Validating database schema requirements..."
-    
-    cd backend
-    
+
     # Check for UUID extension (historical issue from git history)
     print_status "Checking UUID extension availability..."
-    
-    # Create a test query to check UUID extension
-    local uuid_check_query="SELECT extension_name FROM pg_extension WHERE extension_name = 'uuid-ossp';"
-    
-    # Use a simple connection test instead of complex query for validation
-    if timeout $DB_TIMEOUT npx prisma db execute --stdin <<< "SELECT 1;" >/dev/null 2>&1; then
+
+    # Use a simple connection test instead of complex query for validation (run in subshell)
+    if (cd "$BACKEND_DIR" && timeout $DB_TIMEOUT npx prisma db execute --stdin <<< "SELECT 1;" >/dev/null 2>&1); then
         print_success "Database query execution working"
     else
         print_warning "Database query execution test failed"
         ((WARNINGS++))
     fi
-    
-    cd ..
 }
 
 # Function to check available disk space and memory
@@ -228,18 +220,16 @@ check_system_resources() {
 # Function to validate migration rollback capability
 validate_rollback_capability() {
     print_status "Validating migration rollback capability..."
-    
-    cd backend
-    
+
     # Check if we have migration files
-    if [ -d "prisma/migrations" ] && [ "$(ls -A prisma/migrations 2>/dev/null)" ]; then
+    if [ -d "$BACKEND_DIR/prisma/migrations" ] && [ "$(ls -A "$BACKEND_DIR/prisma/migrations" 2>/dev/null)" ]; then
         print_success "Migration files found"
-        
+
         # Count migration files
         local migration_count
-        migration_count=$(find prisma/migrations -name "migration.sql" | wc -l)
+        migration_count=$(find "$BACKEND_DIR/prisma/migrations" -name "migration.sql" | wc -l)
         print_status "Found $migration_count migration files"
-        
+
         if [ $migration_count -gt 0 ]; then
             print_success "Rollback capability available"
         else
@@ -250,27 +240,23 @@ validate_rollback_capability() {
         print_warning "No migration directory or files found"
         ((WARNINGS++))
     fi
-    
-    cd ..
 }
 
 # Function to test connection under load
 test_connection_stability() {
     print_status "Testing database connection stability..."
-    
-    cd backend
-    
+
     # Test multiple rapid connections (simulate migration load)
     local connection_failures=0
     local total_tests=5
-    
+
     for i in $(seq 1 $total_tests); do
-        if ! timeout 10 npm run db:generate >/dev/null 2>&1; then
+        if ! (cd "$BACKEND_DIR" && timeout 10 npm run db:generate >/dev/null 2>&1); then
             ((connection_failures++))
         fi
         sleep 1
     done
-    
+
     if [ $connection_failures -eq 0 ]; then
         print_success "Database connection stable under load"
     elif [ $connection_failures -lt 3 ]; then
@@ -281,23 +267,19 @@ test_connection_stability() {
         print_status "This could cause migration failures like those in git history"
         ((CRITICAL_ISSUES++))
     fi
-    
-    cd ..
 }
 
 # Function to check for common migration blockers
 check_migration_blockers() {
     print_status "Checking for common migration blockers..."
-    
-    cd backend
-    
+
     # Check for active database connections that might block migrations
     print_status "Checking for potential blocking connections..."
-    
+
     # Check if any other processes are using the database
     local node_processes
     node_processes=$(pgrep -f "node.*prisma\|npm.*dev\|tsx.*watch" | wc -l)
-    
+
     if [ $node_processes -gt 0 ]; then
         print_warning "$node_processes Node.js processes detected - may interfere with migrations"
         print_status "Consider stopping development servers before migration"
@@ -305,16 +287,14 @@ check_migration_blockers() {
     else
         print_success "No potentially blocking Node.js processes detected"
     fi
-    
+
     # Check for lock files that might indicate stuck processes
-    if [ -f ".migration.lock" ] || [ -f "prisma/.migration.lock" ]; then
+    if [ -f "$BACKEND_DIR/.migration.lock" ] || [ -f "$BACKEND_DIR/prisma/.migration.lock" ]; then
         print_warning "Migration lock files detected - previous migration may have failed"
         ((WARNINGS++))
     else
         print_success "No migration lock files found"
     fi
-    
-    cd ..
 }
 
 # Main validation
