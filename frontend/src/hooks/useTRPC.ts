@@ -6,6 +6,7 @@
 import { TRPCClientError } from '@trpc/client';
 import type { AppRouter } from '../../../backend/src/trpc/routers/_app';
 import { trpc } from '../utils/trpc';
+import i18next from 'i18next';
 
 /**
  * Re-export the tRPC client for easy imports
@@ -22,10 +23,39 @@ export function isTRPCError(error: unknown): error is TRPCClientError<AppRouter>
 }
 
 /**
- * Extract error message from tRPC error
+ * Extract error code from tRPC error
+ * Returns the custom error code if available (e.g., 'EMAIL_ALREADY_IN_USE')
+ */
+export function getTRPCCustomErrorCode(error: unknown): string | undefined {
+  if (isTRPCError(error)) {
+    // Try to get custom code from error data
+    // tRPC preserves the data field from backend errors
+    const errorData = error.data as { code?: string } | undefined;
+    return errorData?.code;
+  }
+  return undefined;
+}
+
+/**
+ * Extract error message from tRPC error with translation support
  * Handles both tRPC errors and generic errors
+ * Maps error codes to translation keys when available
  */
 export function getTRPCErrorMessage(error: unknown): string {
+  // Check for custom error code and translate if available
+  const customCode = getTRPCCustomErrorCode(error);
+  if (customCode) {
+    const errorCodeMap: Record<string, string> = {
+      'EMAIL_ALREADY_REGISTERED': 'errors.emailAlreadyRegistered',
+      'EMAIL_ALREADY_IN_USE': 'errors.emailAlreadyInUse',
+    };
+
+    const translationKey = errorCodeMap[customCode];
+    if (translationKey) {
+      return i18next.t(translationKey);
+    }
+  }
+
   if (isTRPCError(error)) {
     // Return the error message from tRPC
     return error.message;

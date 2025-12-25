@@ -217,8 +217,14 @@
     "emailNotVerified": "邮箱未验证",
     "verifyEmailDescription": "请验证您的邮箱以接收通知和账户恢复",
     "emailVerified": "邮箱验证成功",
+    "verifyEmail": "验证邮箱",
+    "verificationCodeSent": "验证码已发送至：",
+    "enterCode": "输入验证码",
+    "invalidCodeFormat": "请输入有效的验证码 (XXXX-XXXX)",
+    "verifyCode": "验证",
     "resendCode": "重新发送验证码",
     "codeResent": "验证码已重新发送！",
+    "codeExpiry": "验证码1小时后过期。如果未收到，请检查垃圾邮件文件夹。",
     "occupations": {
       "student": "学生",
       "business_owner": "企业主",
@@ -339,7 +345,9 @@
     "unknownErrorDescription": "发生了意外情况。请重试，如果问题持续存在，请联系技术支持。",
     "tryAgain": "重试",
     "goHome": "返回仪表板",
-    "contactSupport": "联系技术支持"
+    "contactSupport": "联系技术支持",
+    "emailAlreadyRegistered": "此邮箱已被注册",
+    "emailAlreadyInUse": "此邮箱已被其他账户使用"
   },
   "languages": {
     "en": "English",

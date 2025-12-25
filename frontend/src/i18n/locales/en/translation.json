@@ -348,7 +348,9 @@
     "unknownErrorDescription": "Something unexpected happened. Please try again or contact support if the problem persists.",
     "tryAgain": "Try Again",
     "goHome": "Return to Dashboard",
-    "contactSupport": "Contact Support"
+    "contactSupport": "Contact Support",
+    "emailAlreadyRegistered": "This email is already registered",
+    "emailAlreadyInUse": "This email is already in use by another account"
   },
   "languages": {
     "en": "English",

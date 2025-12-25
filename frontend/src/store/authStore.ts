@@ -4,6 +4,8 @@ import { authService } from '../services/authService';
 import { notify } from '../utils/notificationManager';
 import { User } from '../types/api';
 import { logger } from '../utils/logger';
+import { ApiError } from '../utils/axiosInterceptor';
+import i18next from 'i18next';
 
 interface HttpError {
   response?: {
@@ -11,6 +13,25 @@ interface HttpError {
   };
   name?: string;
   code?: string;
+}
+
+// Helper function to get error message with translation support
+function getErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.code) {
+    // Map error codes to translation keys
+    const errorCodeMap: Record<string, string> = {
+      'EMAIL_ALREADY_REGISTERED': 'errors.emailAlreadyRegistered',
+      'EMAIL_ALREADY_IN_USE': 'errors.emailAlreadyInUse',
+    };
+
+    const translationKey = errorCodeMap[error.code];
+    if (translationKey) {
+      return i18next.t(translationKey);
+    }
+  }
+
+  // Fallback to error message
+  return error instanceof Error ? error.message : 'An error occurred';
 }
 
 interface AuthState {
@@ -78,7 +99,7 @@ export const useAuthStore = create<AuthState>()(
           notify.success('Account created successfully!');
         } catch (error: unknown) {
           set({ isLoading: false });
-          notify.error(error instanceof Error ? error.message : 'Registration failed');
+          notify.error(getErrorMessage(error));
           throw error;
         }
       },

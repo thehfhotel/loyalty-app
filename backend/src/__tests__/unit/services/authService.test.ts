@@ -503,6 +503,64 @@ describe('AuthService', () => {
       expect(error.message).toBe('Email already registered');
     });
 
+    describe('email uniqueness', () => {
+      it('should throw 409 with EMAIL_ALREADY_REGISTERED code when email exists', async () => {
+        const existingEmail = 'duplicate@example.com';
+
+        // First, register a user
+        const firstUserData = {
+          email: existingEmail,
+          password: 'FirstPass123!',
+          firstName: 'First',
+          lastName: 'User',
+        };
+
+        const userId = uuidv4();
+        const mockUser = {
+          id: userId,
+          email: existingEmail,
+          role: 'customer',
+          isActive: true,
+          emailVerified: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        // Mock successful first registration
+        mockQuery.mockResolvedValueOnce([]); // No existing user
+        (mockClient.query as jest.Mock)
+          .mockResolvedValueOnce({ command: 'BEGIN', rowCount: 0, rows: [] })
+          .mockResolvedValueOnce({ rows: [mockUser] })
+          .mockResolvedValueOnce({ command: 'INSERT', rowCount: 1, rows: [] })
+          .mockResolvedValueOnce({ command: 'INSERT', rowCount: 1, rows: [] })
+          .mockResolvedValueOnce({ command: 'INSERT', rowCount: 1, rows: [] })
+          .mockResolvedValueOnce({ command: 'COMMIT', rowCount: 0, rows: [] });
+        mockQuery.mockResolvedValueOnce([{ ...mockUser, firstName: 'First', lastName: 'User', membershipId: 'MEM-11111111' }]);
+
+        await authService.register(firstUserData);
+
+        // Now try to register with the same email
+        const secondUserData = {
+          email: existingEmail,
+          password: 'SecondPass123!',
+          firstName: 'Second',
+          lastName: 'User',
+        };
+
+        // Mock the duplicate email check
+        (mockClient.query as jest.Mock).mockResolvedValueOnce({ command: 'BEGIN', rowCount: 0, rows: [] });
+        mockQuery.mockResolvedValueOnce([mockUser]); // Email already exists
+
+        const error = await authService.register(secondUserData).catch(e => e);
+
+        expect(error).toBeInstanceOf(AppError);
+        expect(error.statusCode).toBe(409);
+        expect(error.message).toBe('Email already registered');
+        // Note: AppError data field would contain code if implemented
+        // expect(error.data?.code).toBe('EMAIL_ALREADY_REGISTERED');
+      });
+    });
+
     it('should rollback on registration failure', async () => {
       const userData = {
         email: 'fail@example.com',

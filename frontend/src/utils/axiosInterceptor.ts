@@ -67,12 +67,29 @@ interface RetryableRequestConfig extends InternalAxiosRequestConfig {
 interface ApiErrorResponse {
   error?: string;
   message?: string;
+  code?: string;
+}
+
+// Custom error class to preserve error code from backend
+export class ApiError extends Error {
+  constructor(message: string, public code?: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
 }
 
 // Helper to extract error message from axios error response
 function extractErrorMessage(error: AxiosError): string {
   const data = error.response?.data as ApiErrorResponse | undefined;
   return data?.error ?? data?.message ?? error.message;
+}
+
+// Helper to create error with code preserved
+function createApiError(error: AxiosError): Error {
+  const data = error.response?.data as ApiErrorResponse | undefined;
+  const message = data?.error ?? data?.message ?? error.message;
+  const code = data?.code;
+  return code ? new ApiError(message, code) : new Error(message);
 }
 
 export function setupAxiosInterceptors() {
@@ -88,7 +105,7 @@ export function setupAxiosInterceptors() {
         const authPages = ['/login', '/register', '/reset-password', '/oauth/success'];
         if (authPages.some(page => currentPath.startsWith(page))) {
           // Extract backend error message from response body
-          return Promise.reject(new Error(extractErrorMessage(error)));
+          return Promise.reject(createApiError(error));
         }
 
         // Try to refresh token first - but only if we have a refresh token
@@ -137,8 +154,8 @@ export function setupAxiosInterceptors() {
         return new Promise(() => {}); // Never resolves, preventing continued execution
       }
 
-      // For all other errors, extract backend error message if available
-      return Promise.reject(new Error(extractErrorMessage(error)));
+      // For all other errors, extract backend error message and code if available
+      return Promise.reject(createApiError(error));
     }
   );
 }
@@ -224,7 +241,7 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
           return axiosInstance.request(originalRequest);
         } catch (csrfError) {
           logger.error('[CSRF] Failed to refresh token:', csrfError);
-          return Promise.reject(new Error(extractErrorMessage(error)));
+          return Promise.reject(createApiError(error));
         }
       }
 
@@ -238,7 +255,7 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
         const authPages = ['/login', '/register', '/reset-password', '/oauth/success'];
         if (authPages.some(page => currentPath.startsWith(page))) {
           // Extract backend error message from response body
-          return Promise.reject(new Error(extractErrorMessage(error)));
+          return Promise.reject(createApiError(error));
         }
 
         // Try to refresh token first - but only if we have a refresh token
@@ -282,8 +299,8 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
         return new Promise(() => {}); // Never resolves, preventing continued execution
       }
 
-      // For all other errors, extract backend error message if available
-      return Promise.reject(new Error(extractErrorMessage(error)));
+      // For all other errors, extract backend error message and code if available
+      return Promise.reject(createApiError(error));
     }
   );
 }

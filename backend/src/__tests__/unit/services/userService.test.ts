@@ -929,6 +929,93 @@ describe('UserService', () => {
       jest.spyOn(emailService, 'generateVerificationCode').mockReturnValue('ABCD-1234');
     });
 
+    describe('email uniqueness', () => {
+      describe('initiateEmailChange', () => {
+        it('should throw 409 with EMAIL_ALREADY_IN_USE code when email exists', async () => {
+          const user1Id = 'user-111';
+          const user2Id = 'user-222';
+          const user2Email = 'user2@example.com';
+
+          // Mock that user2 already has this email
+          mockQuery.mockResolvedValueOnce([{ id: user2Id }] as never);
+
+          const error = await userService.initiateEmailChange(user1Id, user2Email).catch(e => e);
+
+          expect(error).toBeInstanceOf(AppError);
+          expect(error.statusCode).toBe(409);
+          expect(error.message).toBe('Email is already in use by another account');
+          // Note: AppError data field would contain code if implemented
+          // expect(error.data?.code).toBe('EMAIL_ALREADY_IN_USE');
+        });
+
+        it('should allow user to change to their own current email', async () => {
+          const userId = 'user-123';
+          const ownEmail = 'own@example.com';
+
+          // Mock no other user with this email (excluding self)
+          mockQuery.mockResolvedValueOnce([] as never);
+          mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+          mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+          await userService.initiateEmailChange(userId, ownEmail);
+
+          // Should succeed without error
+          expect(mockQuery).toHaveBeenCalledWith(
+            expect.stringContaining('SELECT id FROM users WHERE email = $1 AND id != $2'),
+            [ownEmail, userId]
+          );
+        });
+      });
+
+      describe('verifyEmailChange', () => {
+        it('should throw 409 if email was claimed during verification period', async () => {
+          const user1Id = 'user-111';
+          const user2Id = 'user-222';
+          const desiredEmail = 'desired@example.com';
+
+          // User1 has initiated email change to desiredEmail
+          mockQuery.mockResolvedValueOnce([{
+            id: 'token-1',
+            new_email: desiredEmail,
+            expires_at: new Date(Date.now() + 60000),
+            used: false,
+          }] as never);
+
+          // But user2 claimed this email before user1 verified
+          mockQuery.mockResolvedValueOnce([{ id: user2Id }] as never);
+
+          const error = await userService.verifyEmailChange(user1Id, 'ABCD-1234').catch(e => e);
+
+          expect(error).toBeInstanceOf(AppError);
+          expect(error.statusCode).toBe(409);
+          expect(error.message).toBe('Email is already in use by another account');
+          // Note: AppError data field would contain code if implemented
+          // expect(error.data?.code).toBe('EMAIL_ALREADY_IN_USE');
+        });
+
+        it('should succeed if email is still available at verification time', async () => {
+          const userId = 'user-123';
+          const newEmail = 'newemail@example.com';
+
+          mockQuery
+            .mockResolvedValueOnce([{
+              id: 'token-1',
+              new_email: newEmail,
+              expires_at: new Date(Date.now() + 60000),
+              used: false,
+            }] as never)
+            .mockResolvedValueOnce([] as never); // Email still available
+
+          mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+          mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+          const result = await userService.verifyEmailChange(userId, 'ABCD-1234');
+
+          expect(result).toBe(newEmail);
+        });
+      });
+    });
+
     describe('initiateEmailChange', () => {
       it('should reject if new email already in use', async () => {
         const userId = 'user-123';

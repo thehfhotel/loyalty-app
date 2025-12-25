@@ -223,7 +223,7 @@ export class UserService {
     );
 
     if (existingUser) {
-      throw new AppError(409, 'Email is already in use by another account');
+      throw new AppError(409, 'Email is already in use by another account', { code: 'EMAIL_ALREADY_IN_USE' });
     }
 
     // Update user email
@@ -390,7 +390,7 @@ export class UserService {
     );
 
     if (existingUser) {
-      throw new AppError(409, 'Email is already in use by another account');
+      throw new AppError(409, 'Email is already in use by another account', { code: 'EMAIL_ALREADY_IN_USE' });
     }
 
     // Invalidate any existing pending tokens for this user
@@ -444,7 +444,7 @@ export class UserService {
     );
 
     if (existingUser) {
-      throw new AppError(409, 'Email is already in use by another account');
+      throw new AppError(409, 'Email is already in use by another account', { code: 'EMAIL_ALREADY_IN_USE' });
     }
 
     // Update user email and mark as verified

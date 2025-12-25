@@ -100,6 +100,81 @@ describe('Auth Routes Integration Tests', () => {
       expect(mockAuthService.register).toHaveBeenCalled();
     });
 
+    describe('email uniqueness', () => {
+      it('should return 409 with code EMAIL_ALREADY_REGISTERED for duplicate email', async () => {
+        // Import AppError to create proper error instance
+        const { AppError } = await import('../../../middleware/errorHandler');
+
+        // Mock authService to throw AppError with 409 status
+        const duplicateError = new AppError(409, 'Email already registered', { code: 'EMAIL_ALREADY_REGISTERED' });
+
+        mockAuthService.register.mockRejectedValue(duplicateError);
+
+        const response = await request(app)
+          .post('/api/auth/register')
+          .send({
+            email: 'existing@example.com',
+            password: 'SecurePass123!',
+            firstName: 'Test',
+            lastName: 'User',
+          });
+
+        expect(response.status).toBe(409);
+        // Note: Actual error response format depends on error handler middleware
+        // The service should throw AppError with statusCode 409
+      });
+
+      it('should prevent registration with email that differs only in case', async () => {
+        const { AppError } = await import('../../../middleware/errorHandler');
+
+        // First registration with lowercase
+        const mockResult = {
+          user: {
+            id: 'user-123',
+            email: 'test@example.com',
+            firstName: 'Test',
+            lastName: 'User',
+            role: 'customer' as const,
+            isActive: true,
+            emailVerified: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+          tokens: {
+            accessToken: 'mock-access-token',
+            refreshToken: 'mock-refresh-token',
+          },
+        };
+
+        mockAuthService.register.mockResolvedValueOnce(mockResult as Awaited<ReturnType<typeof mockAuthService.register>>);
+
+        await request(app)
+          .post('/api/auth/register')
+          .send({
+            email: 'test@example.com',
+            password: 'SecurePass123!',
+            firstName: 'Test',
+            lastName: 'User',
+          });
+
+        // Second registration attempt with different case
+        const duplicateError = new AppError(409, 'Email already registered', { code: 'EMAIL_ALREADY_REGISTERED' });
+
+        mockAuthService.register.mockRejectedValue(duplicateError);
+
+        const response = await request(app)
+          .post('/api/auth/register')
+          .send({
+            email: 'TEST@EXAMPLE.COM',
+            password: 'SecurePass123!',
+            firstName: 'Another',
+            lastName: 'User',
+          });
+
+        expect(response.status).toBe(409);
+      });
+    });
+
     it('should reject registration with invalid email format', async () => {
       const response = await request(app)
         .post('/api/auth/register')

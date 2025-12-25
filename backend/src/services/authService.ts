@@ -52,7 +52,7 @@ export class AuthService {
       );
 
       if (existingUser.length > 0) {
-        throw new AppError(409, 'Email already registered');
+        throw new AppError(409, 'Email already registered', { code: 'EMAIL_ALREADY_REGISTERED' });
       }
 
       // Hash password

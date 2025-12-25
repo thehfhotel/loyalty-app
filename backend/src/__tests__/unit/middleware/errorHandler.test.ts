@@ -48,8 +48,8 @@ describe('ErrorHandler Middleware', () => {
     });
 
     it('should set isOperational flag', () => {
-      const operationalError = new AppError(400, 'Bad request', true);
-      const nonOperationalError = new AppError(500, 'Server error', false);
+      const operationalError = new AppError(400, 'Bad request', undefined, true);
+      const nonOperationalError = new AppError(500, 'Server error', undefined, false);
 
       expect(operationalError.isOperational).toBe(true);
       expect(nonOperationalError.isOperational).toBe(false);
@@ -289,6 +289,41 @@ describe('ErrorHandler Middleware', () => {
       expect(statusMock).toHaveBeenCalledWith(418);
       expect(jsonMock).toHaveBeenCalledWith({
         error: "I'm a teapot",
+      });
+    });
+
+    it('should include error code when data is provided', () => {
+      const error = new AppError(409, 'Email already registered', { code: 'EMAIL_ALREADY_REGISTERED' });
+
+      errorHandler(
+        error,
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext
+      );
+
+      expect(statusMock).toHaveBeenCalledWith(409);
+      expect(jsonMock).toHaveBeenCalledWith({
+        error: 'Email already registered',
+        code: 'EMAIL_ALREADY_REGISTERED',
+      });
+    });
+
+    it('should include multiple data fields when provided', () => {
+      const error = new AppError(400, 'Invalid request', { code: 'INVALID_INPUT', field: 'email' });
+
+      errorHandler(
+        error,
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext
+      );
+
+      expect(statusMock).toHaveBeenCalledWith(400);
+      expect(jsonMock).toHaveBeenCalledWith({
+        error: 'Invalid request',
+        code: 'INVALID_INPUT',
+        field: 'email',
       });
     });
   });
