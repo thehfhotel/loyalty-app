@@ -6,6 +6,8 @@
  * Unit tests should verify correctness, not speed.
  */
 
+/* eslint-disable no-console */
+
 import {
   formatDateToDDMMYYYY,
   isValidDDMMYYYYFormat,

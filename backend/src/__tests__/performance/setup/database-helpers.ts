@@ -1,7 +1,9 @@
+/* eslint-disable no-console */
+
 import { Pool, PoolClient } from 'pg';
 
 const DATABASE_URL =
-  process.env.DATABASE_URL ||
+  process.env.DATABASE_URL ??
   'postgresql://loyalty:loyalty_password@localhost:5436/loyalty_db';
 
 let pool: Pool | null = null;
@@ -10,14 +12,12 @@ let pool: Pool | null = null;
  * Get or create the database connection pool
  */
 export function getDbPool(): Pool {
-  if (!pool) {
-    pool = new Pool({
-      connectionString: DATABASE_URL,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-    });
-  }
+  pool ??= new Pool({
+    connectionString: DATABASE_URL,
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  });
   return pool;
 }
 
@@ -77,7 +77,7 @@ async function ensureTiersExist(client: PoolClient): Promise<void> {
 /**
  * Seed performance test data
  */
-export async function seedPerfTestData(userCount: number = 100): Promise<void> {
+export async function seedPerfTestData(userCount = 100): Promise<void> {
   await withClient(async (client) => {
     console.log(`Seeding ${userCount} test users for performance testing...`);
 

@@ -397,7 +397,6 @@ jobs:
       - name: "🐳 Start shared postgres/redis containers & create unit + integration databases"
         run: |
           cat > docker-compose.test.yml << 'EOF'
-          version: '3.8'
           services:
             postgres:
               image: postgres:15-alpine
@@ -1514,9 +1513,6 @@ jobs:
           GOOGLE_CLIENT_ID: "dummy-google-client-id"
           GOOGLE_CLIENT_SECRET: "dummy-google-client-secret"
           GOOGLE_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/google/callback"
-          FACEBOOK_APP_ID: "dummy-facebook-app-id"
-          FACEBOOK_APP_SECRET: "dummy-facebook-app-secret"
-          FACEBOOK_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/facebook/callback"
           LINE_CHANNEL_ID: "dummy-line-channel-id"
           LINE_CHANNEL_SECRET: "dummy-line-channel-secret"
           LINE_CALLBACK_URL: "https://loyalty.saichon.com/api/oauth/line/callback"

@@ -13,7 +13,7 @@ export interface BenchmarkResult {
   stdDev: number;
 }
 
-export const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4202';
+export const BACKEND_URL = process.env.BACKEND_URL ?? 'http://localhost:4202';
 
 /**
  * Calculate statistics from an array of timing values
@@ -62,8 +62,8 @@ export function calculateStats(times: number[]): {
  */
 export async function benchmark(
   fn: () => Promise<void> | void,
-  iterations: number = 100,
-  warmup: number = 10
+  iterations = 100,
+  warmup = 10
 ): Promise<number[]> {
   const times: number[] = [];
 

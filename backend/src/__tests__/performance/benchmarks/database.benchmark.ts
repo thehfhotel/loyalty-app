@@ -3,6 +3,8 @@
  * Tests database query performance using real PostgreSQL queries
  */
 
+/* eslint-disable no-console */
+
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import {
@@ -41,7 +43,7 @@ afterAll(async () => {
   const resultsDir = join(__dirname, '../../../benchmark-results');
   try {
     mkdirSync(resultsDir, { recursive: true });
-  } catch (error) {
+  } catch {
     // Directory might already exist, ignore error
   }
 
