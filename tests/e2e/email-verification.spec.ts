@@ -326,7 +326,7 @@ test.describe('Email Verification Flow', () => {
       expect(hasError).toBeTruthy();
     });
 
-      test('should enable resend button after cooldown', async () => {
+      test('should show resend button that is enabled (no cooldown)', async () => {
       // Navigate to profile page
       await retryPageGoto(page, `${frontendUrl}/profile`, 2);
 
@@ -358,49 +358,55 @@ test.describe('Email Verification Flow', () => {
       // Wait for verification modal
       await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
 
-      // Resend button should be disabled initially (60s cooldown)
+      // Resend button should be visible and enabled (no cooldown)
       const resendButton = page.locator('[data-testid="resend-code-button"]');
       await expect(resendButton).toBeVisible();
-
-      // Check if button is disabled
-      const isDisabled = await resendButton.isDisabled();
-      expect(isDisabled).toBeTruthy();
-
-      // Verify cooldown text is shown
-      const buttonText = await resendButton.textContent();
-      expect(buttonText).toMatch(/\d+s/); // Should show countdown like "59s", "58s", etc.
+      await expect(resendButton).toBeEnabled();
     });
 
-      test('should allow resending verification code after cooldown expires', async () => {
-      // This test would require either:
-      // 1. Waiting 60 seconds (not practical for E2E)
-      // 2. Mocking/stubbing the timer
-      // 3. Having a test-only endpoint to reset cooldown
-      //
-      // For now, we'll skip this test with a note
-      test.skip(true, 'Requires timer mocking or test-only endpoint to reset cooldown');
-
-      // Example implementation if cooldown reset was available:
-      /*
+      test('should show confirmation message after resending code', async () => {
+      // Navigate to profile page
       await retryPageGoto(page, `${frontendUrl}/profile`, 2);
 
-      // ... trigger email change and open verification modal ...
-
-      // Reset cooldown via test endpoint
-      await page.request.post(`${backendUrl}/api/test/reset-resend-cooldown`, {
-        headers: { Authorization: `Bearer ${authToken}` }
+      // Open settings modal
+      await page.waitForSelector('[data-testid="settings-button"]', { timeout: 10000 }).catch(() => {
+        return page.waitForSelector('button:has-text("Settings")', { timeout: 5000 });
       });
 
-      const resendButton = page.locator('[data-testid="resend-code-button"]');
-      await expect(resendButton).toBeEnabled();
+      const settingsButton = await page.locator('[data-testid="settings-button"]').or(
+        page.locator('button:has-text("Settings")')
+      ).first();
+      await settingsButton.click();
 
+      // Change email to trigger verification
+      const newEmail = `resend-confirm-${Date.now()}@example.com`;
+      const emailInput = await page.locator('input[type="email"]').or(
+        page.locator('input[name="email"]')
+      ).first();
+
+      await emailInput.clear();
+      await emailInput.fill(newEmail);
+
+      // Submit
+      const saveButton = await page.locator('[data-testid="save-settings-button"]').or(
+        page.locator('button:has-text("Save")')
+      ).first();
+      await saveButton.click();
+
+      // Wait for verification modal
+      await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
+
+      // Click resend button
+      const resendButton = page.locator('[data-testid="resend-code-button"]');
       await resendButton.click();
 
-      // Verify success message or cooldown resets
-      await page.waitForTimeout(500);
-      const buttonText = await resendButton.textContent();
-      expect(buttonText).toMatch(/\d+s/); // Cooldown should restart
-      */
+      // Wait for success confirmation to appear
+      const successMessage = page.locator('[data-testid="resend-success"]');
+      await expect(successMessage).toBeVisible({ timeout: 5000 });
+
+      // Check that success message contains confirmation text
+      const successText = await successMessage.textContent();
+      expect(successText).toMatch(/sent|ส่ง|发送/i); // "sent" in EN, TH, or CN
     });
 
       test('should close verification modal and keep email unchanged when cancelled', async () => {

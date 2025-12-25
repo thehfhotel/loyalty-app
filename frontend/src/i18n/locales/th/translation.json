@@ -216,6 +216,8 @@
     "emailNotVerified": "อีเมลยังไม่ได้รับการยืนยัน",
     "verifyEmailDescription": "กรุณายืนยันอีเมลของคุณเพื่อรับการแจ้งเตือนและกู้คืนบัญชี",
     "emailVerified": "ยืนยันอีเมลสำเร็จ",
+    "resendCode": "ส่งรหัสอีกครั้ง",
+    "codeResent": "ส่งรหัสใหม่แล้ว!",
     "occupations": {
       "student": "นักเรียน/นักศึกษา",
       "business_owner": "เจ้าของธุรกิจ",

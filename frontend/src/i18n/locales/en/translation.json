@@ -226,7 +226,7 @@
     "invalidCodeFormat": "Please enter a valid code (XXXX-XXXX)",
     "verifyCode": "Verify Code",
     "resendCode": "Resend code",
-    "resendIn": "Resend in {{seconds}}s",
+    "codeResent": "New code sent!",
     "codeExpiry": "Code expires in 1 hour. Check your spam folder if you don't see it.",
     "occupations": {
       "student": "Student",

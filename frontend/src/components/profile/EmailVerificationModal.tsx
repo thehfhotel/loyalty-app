@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiX, FiMail, FiRefreshCw } from 'react-icons/fi';
+import { FiX, FiMail, FiRefreshCw, FiCheck } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '../../utils/trpc';
 
@@ -21,7 +21,7 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
   const { t } = useTranslation();
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendSuccess, setResendSuccess] = useState(false);
 
   const verifyMutation = isRegistration
     ? trpc.user.verifyRegistrationEmail.useMutation({
@@ -46,35 +46,38 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
   const resendMutation = isRegistration
     ? trpc.user.resendRegistrationVerification.useMutation({
         onSuccess: () => {
-          setResendCooldown(60);
+          setResendSuccess(true);
           setError(null);
         },
         onError: (err) => {
           setError(err.message || 'Failed to resend code');
+          setResendSuccess(false);
         },
       })
     : trpc.user.resendVerificationCode.useMutation({
         onSuccess: () => {
-          setResendCooldown(60);
+          setResendSuccess(true);
           setError(null);
         },
         onError: (err) => {
           setError(err.message || 'Failed to resend code');
+          setResendSuccess(false);
         },
       });
 
+  // Clear resend success message after 3 seconds
   useEffect(() => {
-    if (resendCooldown > 0) {
-      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+    if (resendSuccess) {
+      const timer = setTimeout(() => setResendSuccess(false), 3000);
       return () => clearTimeout(timer);
     }
-  }, [resendCooldown]);
+  }, [resendSuccess]);
 
   useEffect(() => {
     if (isOpen) {
       setCode('');
       setError(null);
-      setResendCooldown(60); // Initial cooldown after modal opens
+      setResendSuccess(false);
     }
   }, [isOpen]);
 
@@ -103,9 +106,7 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
   };
 
   const handleResend = () => {
-    if (resendCooldown > 0) {
-      return;
-    }
+    setResendSuccess(false);
     resendMutation.mutate();
   };
 
@@ -175,18 +176,23 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
           </button>
 
           <div className="mt-4 text-center">
-            <button
-              type="button"
-              onClick={handleResend}
-              disabled={resendCooldown > 0 || resendMutation.isPending}
-              className="text-blue-600 hover:text-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-1 mx-auto"
-              data-testid="resend-code-button"
-            >
-              <FiRefreshCw className={resendMutation.isPending ? 'animate-spin' : ''} size={14} />
-              {resendCooldown > 0
-                ? t('profile.resendIn', 'Resend in {{seconds}}s', { seconds: resendCooldown })
-                : t('profile.resendCode', 'Resend code')}
-            </button>
+            {resendSuccess ? (
+              <div className="text-green-600 text-sm flex items-center justify-center gap-1" data-testid="resend-success">
+                <FiCheck size={14} />
+                {t('profile.codeResent', 'New code sent!')}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resendMutation.isPending}
+                className="text-blue-600 hover:text-blue-800 disabled:text-gray-400 disabled:cursor-not-allowed text-sm flex items-center justify-center gap-1 mx-auto"
+                data-testid="resend-code-button"
+              >
+                <FiRefreshCw className={resendMutation.isPending ? 'animate-spin' : ''} size={14} />
+                {t('profile.resendCode', 'Resend code')}
+              </button>
+            )}
           </div>
 
           <p className="mt-4 text-xs text-gray-500 text-center">
