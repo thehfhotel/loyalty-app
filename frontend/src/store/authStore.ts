@@ -172,20 +172,24 @@ export const useAuthStore = create<AuthState>()(
           // (e.g., OAuth flow interrupted, or state corruption)
           const updates: Partial<AuthState> = {};
 
-          if (response.data) {
-            if (response.data.email !== state.user?.email ||
-                response.data.avatarUrl !== state.user?.avatarUrl ||
-                response.data.firstName !== state.user?.firstName ||
-                response.data.lastName !== state.user?.lastName) {
-              updates.user = response.data;
+          // Note: Backend returns { user: ... } not { data: ... }
+          const userData = (response as { user?: User }).user;
+
+          if (userData) {
+            if (userData.email !== state.user?.email ||
+                userData.avatarUrl !== state.user?.avatarUrl ||
+                userData.firstName !== state.user?.firstName ||
+                userData.lastName !== state.user?.lastName ||
+                userData.emailVerified !== state.user?.emailVerified) {
+              updates.user = userData;
             }
           }
 
           // Ensure isAuthenticated is true when tokens are valid
           if (!state.isAuthenticated) {
             updates.isAuthenticated = true;
-            if (response.data && !state.user) {
-              updates.user = response.data;
+            if (userData && !state.user) {
+              updates.user = userData;
             }
           }
 
