@@ -379,4 +379,134 @@ describe('EmailService', () => {
       });
     });
   });
+
+  describe('sendRegistrationVerificationEmail', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockSendMail.mockResolvedValue({
+        messageId: 'test-message-id',
+        accepted: ['recipient@example.com'],
+        rejected: [],
+        response: '250 OK',
+      });
+    });
+
+    it('should send welcome email with correct recipient', async () => {
+      const recipient = 'newuser@example.com';
+      const code = 'TEST-1234';
+
+      await emailService.sendRegistrationVerificationEmail(recipient, code);
+
+      expect(mockSendMail).toHaveBeenCalledTimes(1);
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: recipient,
+        })
+      );
+    });
+
+    it('should include verification code in email body', async () => {
+      const recipient = 'newuser@example.com';
+      const code = 'ABCD-1234';
+
+      await emailService.sendRegistrationVerificationEmail(recipient, code);
+
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining(code),
+          html: expect.stringContaining(code),
+        })
+      );
+    });
+
+    it('should have appropriate welcome subject line', async () => {
+      const recipient = 'newuser@example.com';
+      const code = 'TEST-1234';
+
+      await emailService.sendRegistrationVerificationEmail(recipient, code);
+
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: expect.stringContaining('Welcome'),
+        })
+      );
+    });
+
+    it('should handle SMTP errors gracefully', async () => {
+      const recipient = 'newuser@example.com';
+      const code = 'TEST-1234';
+      const smtpError = new Error('SMTP connection failed');
+
+      mockSendMail.mockRejectedValueOnce(smtpError);
+
+      await expect(
+        emailService.sendRegistrationVerificationEmail(recipient, code)
+      ).rejects.toThrow('SMTP connection failed');
+    });
+
+    it('should include expiration information in text body', async () => {
+      const recipient = 'newuser@example.com';
+      const code = 'TEST-1234';
+
+      await emailService.sendRegistrationVerificationEmail(recipient, code);
+
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining('expires in 1 hour'),
+        })
+      );
+    });
+
+    it('should include expiration information in html body', async () => {
+      const recipient = 'newuser@example.com';
+      const code = 'TEST-1234';
+
+      await emailService.sendRegistrationVerificationEmail(recipient, code);
+
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          html: expect.stringContaining('expires in 1 hour'),
+        })
+      );
+    });
+
+    it('should send email with from address', async () => {
+      const recipient = 'newuser@example.com';
+      const code = 'TEST-1234';
+
+      await emailService.sendRegistrationVerificationEmail(recipient, code);
+
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          from: expect.any(String),
+        })
+      );
+    });
+
+    it('should include registration context in email body', async () => {
+      const recipient = 'newuser@example.com';
+      const code = 'TEST-1234';
+
+      await emailService.sendRegistrationVerificationEmail(recipient, code);
+
+      expect(mockSendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining('loyalty program'),
+          html: expect.stringContaining('loyalty program'),
+        })
+      );
+    });
+
+    it('should handle network errors gracefully', async () => {
+      const recipient = 'newuser@example.com';
+      const code = 'TEST-1234';
+      const networkError = new Error('Network timeout');
+
+      mockSendMail.mockRejectedValueOnce(networkError);
+
+      await expect(
+        emailService.sendRegistrationVerificationEmail(recipient, code)
+      ).rejects.toThrow('Network timeout');
+    });
+  });
 });

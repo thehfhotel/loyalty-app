@@ -211,6 +211,11 @@
     "selectOccupation": "เลือกอาชีพของคุณ",
     "selectInterestsHelp": "เลือกความสนใจทั้งหมดที่ตรงกับความชอบของคุณ",
     "selectedInterests": "เลือกแล้ว",
+    "verifyNow": "ยืนยัน",
+    "notVerified": "ยังไม่ยืนยัน",
+    "emailNotVerified": "อีเมลยังไม่ได้รับการยืนยัน",
+    "verifyEmailDescription": "กรุณายืนยันอีเมลของคุณเพื่อรับการแจ้งเตือนและกู้คืนบัญชี",
+    "emailVerified": "ยืนยันอีเมลสำเร็จ",
     "occupations": {
       "student": "นักเรียน/นักศึกษา",
       "business_owner": "เจ้าของธุรกิจ",

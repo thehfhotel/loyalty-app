@@ -12,6 +12,7 @@ import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
 import { membershipIdService } from './membershipIdService';
 import { getRandomEmojiAvatar, generateEmojiAvatarUrl } from '../utils/emojiUtils';
+import { userService } from './userService';
 
 // Cryptographic secrets - NO fallback defaults for security
 // Environment validation is enforced by config/environment.ts
@@ -97,9 +98,17 @@ export class AuthService {
       // Auto-enroll in loyalty program (after transaction commit)
       await loyaltyService.ensureUserLoyaltyEnrollment(user.id);
 
+      // Send registration verification email (non-blocking, don't fail registration if email fails)
+      try {
+        await userService.initiateRegistrationVerification(user.id, data.email);
+      } catch (emailError) {
+        // Log error but don't fail registration
+        logger.error('Failed to send registration verification email:', emailError);
+      }
+
       // Get complete user profile including avatar (even though avatar will be null for new users)
       const userProfile = await this.getUserProfile(user.id);
-      
+
       return { user: userProfile, tokens };
     } catch (error) {
       await client.query('ROLLBACK');

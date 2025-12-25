@@ -1216,4 +1216,264 @@ describe('UserService', () => {
       });
     });
   });
+
+  describe('Registration Email Verification', () => {
+    beforeEach(() => {
+      // Mock the email service methods for registration verification
+      jest.spyOn(emailService.emailService, 'sendRegistrationVerificationEmail').mockResolvedValue(undefined);
+      jest.spyOn(emailService, 'generateVerificationCode').mockReturnValue('ABCD-1234');
+    });
+
+    describe('initiateRegistrationVerification', () => {
+      it('should create verification token for current email', async () => {
+        const userId = 'user-123';
+        const email = 'user@example.com';
+
+        // Mock invalidating previous tokens
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+        // Mock creating new token
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.initiateRegistrationVerification(userId, email);
+
+        // Verify the insert query was called with correct parameters (code is generated, so we check other params)
+        expect(mockQueryWithMeta).toHaveBeenCalledWith(
+          expect.stringContaining('INSERT INTO email_verification_tokens'),
+          expect.arrayContaining([userId, email, expect.any(String), expect.any(Date)])
+        );
+      });
+
+      it('should invalidate previous pending tokens for user', async () => {
+        const userId = 'user-123';
+        const email = 'user@example.com';
+
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 2 });
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.initiateRegistrationVerification(userId, email);
+
+        // Verify the invalidation query was called
+        expect(mockQueryWithMeta).toHaveBeenCalledWith(
+          expect.stringContaining('UPDATE email_verification_tokens SET used = true'),
+          [userId]
+        );
+      });
+
+      it('should send registration verification email', async () => {
+        const userId = 'user-123';
+        const email = 'user@example.com';
+
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.initiateRegistrationVerification(userId, email);
+
+        // Verify email was sent - the mock should have been called
+        expect(emailService.emailService.sendRegistrationVerificationEmail).toHaveBeenCalledTimes(1);
+        expect(emailService.emailService.sendRegistrationVerificationEmail).toHaveBeenCalledWith(
+          email,
+          expect.stringMatching(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/)
+        );
+      });
+
+      it('should not change email_verified status', async () => {
+        const userId = 'user-123';
+        const email = 'user@example.com';
+
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.initiateRegistrationVerification(userId, email);
+
+        // Verify no UPDATE on users table was called to change email_verified
+        expect(mockQueryWithMeta).not.toHaveBeenCalledWith(
+          expect.stringContaining('UPDATE users SET email_verified'),
+          expect.anything()
+        );
+      });
+    });
+
+    describe('verifyRegistrationEmail', () => {
+      it('should reject invalid verification code', async () => {
+        const userId = 'user-123';
+        const code = 'INVALID-CODE';
+
+        // Mock no token found
+        mockQuery.mockResolvedValueOnce([] as never);
+
+        await expect(userService.verifyRegistrationEmail(userId, code))
+          .rejects.toMatchObject({
+            statusCode: 400,
+            message: 'Invalid verification code',
+          });
+      });
+
+      it('should reject expired codes', async () => {
+        const userId = 'user-123';
+        const code = 'ABCD-1234';
+
+        // Mock expired token
+        mockQuery.mockResolvedValueOnce([{
+          id: 'token-1',
+          new_email: 'user@example.com',
+          expires_at: new Date(Date.now() - 1000), // Expired
+          used: false,
+        }] as never);
+
+        await expect(userService.verifyRegistrationEmail(userId, code))
+          .rejects.toMatchObject({
+            statusCode: 400,
+            message: 'Verification code has expired',
+          });
+      });
+
+      it('should reject already-used codes', async () => {
+        const userId = 'user-123';
+        const code = 'ABCD-1234';
+
+        // Mock used token
+        mockQuery.mockResolvedValueOnce([{
+          id: 'token-1',
+          new_email: 'user@example.com',
+          expires_at: new Date(Date.now() + 60000),
+          used: true,
+        }] as never);
+
+        await expect(userService.verifyRegistrationEmail(userId, code))
+          .rejects.toMatchObject({
+            statusCode: 400,
+            message: 'Verification code has already been used',
+          });
+      });
+
+      it('should set email_verified to true on valid code', async () => {
+        const userId = 'user-123';
+        const code = 'ABCD-1234';
+        const email = 'user@example.com';
+
+        // Mock valid token
+        mockQuery.mockResolvedValueOnce([{
+          id: 'token-1',
+          new_email: email,
+          expires_at: new Date(Date.now() + 60000),
+          used: false,
+        }] as never);
+
+        // Mock update user email_verified
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+        // Mock mark token as used
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.verifyRegistrationEmail(userId, code);
+
+        // Verify email_verified was set to true
+        expect(mockQueryWithMeta).toHaveBeenCalledWith(
+          expect.stringContaining('UPDATE users SET email_verified = true'),
+          [userId]
+        );
+      });
+
+      it('should mark token as used after verification', async () => {
+        const userId = 'user-123';
+        const code = 'ABCD-1234';
+
+        mockQuery.mockResolvedValueOnce([{
+          id: 'token-1',
+          new_email: 'user@example.com',
+          expires_at: new Date(Date.now() + 60000),
+          used: false,
+        }] as never);
+
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.verifyRegistrationEmail(userId, code);
+
+        expect(mockQueryWithMeta).toHaveBeenCalledWith(
+          expect.stringContaining('UPDATE email_verification_tokens SET used = true'),
+          ['token-1']
+        );
+      });
+
+      it('should not change email address', async () => {
+        const userId = 'user-123';
+        const code = 'ABCD-1234';
+
+        mockQuery.mockResolvedValueOnce([{
+          id: 'token-1',
+          new_email: 'user@example.com',
+          expires_at: new Date(Date.now() + 60000),
+          used: false,
+        }] as never);
+
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.verifyRegistrationEmail(userId, code);
+
+        // Verify no UPDATE on users table was called to change email
+        expect(mockQueryWithMeta).not.toHaveBeenCalledWith(
+          expect.stringContaining('UPDATE users SET email ='),
+          expect.anything()
+        );
+      });
+    });
+
+    describe('getEmailVerificationStatus', () => {
+      it('should return emailVerified: false for unverified user', async () => {
+        const userId = 'user-123';
+
+        mockQuery.mockResolvedValueOnce([{
+          email: 'user@example.com',
+          email_verified: false,
+        }] as never);
+
+        const result = await userService.getEmailVerificationStatus(userId);
+
+        expect(result).toEqual({
+          emailVerified: false,
+          email: 'user@example.com',
+        });
+      });
+
+      it('should return emailVerified: true for verified user', async () => {
+        const userId = 'user-123';
+
+        mockQuery.mockResolvedValueOnce([{
+          email: 'user@example.com',
+          email_verified: true,
+        }] as never);
+
+        const result = await userService.getEmailVerificationStatus(userId);
+
+        expect(result).toEqual({
+          emailVerified: true,
+          email: 'user@example.com',
+        });
+      });
+
+      it('should return user email', async () => {
+        const userId = 'user-123';
+        const email = 'test@example.com';
+
+        mockQuery.mockResolvedValueOnce([{
+          email,
+          email_verified: false,
+        }] as never);
+
+        const result = await userService.getEmailVerificationStatus(userId);
+
+        expect(result.email).toBe(email);
+      });
+
+      it('should throw error if user not found', async () => {
+        const userId = 'non-existent';
+
+        mockQuery.mockResolvedValueOnce([] as never);
+
+        await expect(userService.getEmailVerificationStatus(userId))
+          .rejects.toThrow(AppError);
+      });
+    });
+  });
 });

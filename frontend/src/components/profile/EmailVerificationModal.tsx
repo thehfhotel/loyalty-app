@@ -8,6 +8,7 @@ interface EmailVerificationModalProps {
   onClose: () => void;
   newEmail: string;
   onVerified: (email: string) => void;
+  isRegistration?: boolean;
 }
 
 export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
@@ -15,31 +16,52 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
   onClose,
   newEmail,
   onVerified,
+  isRegistration = false,
 }) => {
   const { t } = useTranslation();
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
 
-  const verifyMutation = trpc.user.verifyEmail.useMutation({
-    onSuccess: (data) => {
-      onVerified(data.email);
-      onClose();
-    },
-    onError: (err) => {
-      setError(err.message || 'Verification failed');
-    },
-  });
+  const verifyMutation = isRegistration
+    ? trpc.user.verifyRegistrationEmail.useMutation({
+        onSuccess: () => {
+          onVerified(newEmail);
+          onClose();
+        },
+        onError: (err) => {
+          setError(err.message || 'Verification failed');
+        },
+      })
+    : trpc.user.verifyEmail.useMutation({
+        onSuccess: (data) => {
+          onVerified(data.email);
+          onClose();
+        },
+        onError: (err) => {
+          setError(err.message || 'Verification failed');
+        },
+      });
 
-  const resendMutation = trpc.user.resendVerificationCode.useMutation({
-    onSuccess: () => {
-      setResendCooldown(60);
-      setError(null);
-    },
-    onError: (err) => {
-      setError(err.message || 'Failed to resend code');
-    },
-  });
+  const resendMutation = isRegistration
+    ? trpc.user.resendRegistrationVerification.useMutation({
+        onSuccess: () => {
+          setResendCooldown(60);
+          setError(null);
+        },
+        onError: (err) => {
+          setError(err.message || 'Failed to resend code');
+        },
+      })
+    : trpc.user.resendVerificationCode.useMutation({
+        onSuccess: () => {
+          setResendCooldown(60);
+          setError(null);
+        },
+        onError: (err) => {
+          setError(err.message || 'Failed to resend code');
+        },
+      });
 
   useEffect(() => {
     if (resendCooldown > 0) {

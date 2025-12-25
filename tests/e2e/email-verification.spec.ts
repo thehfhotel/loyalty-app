@@ -5,6 +5,7 @@ import { retryPageGoto } from '../helpers/retry';
  * Email Verification E2E Tests
  *
  * Tests the email verification flow including:
+ * - Registration verification (new user email verification)
  * - Modal display after email change
  * - Invalid verification code handling
  * - Resend code functionality
@@ -60,359 +61,457 @@ test.describe('Email Verification Flow', () => {
     await page.close();
   });
 
-  test('should show verification modal when updating email', async () => {
-    // Navigate to profile page
-    await retryPageGoto(page, `${frontendUrl}/profile`, 2);
+  test.describe('Registration Verification', () => {
+    test('should show "not verified" indicator on profile for unverified user', async () => {
+      // Navigate to profile page
+      await retryPageGoto(page, `${frontendUrl}/profile`, 2);
 
-    // Wait for page to load
-    await page.waitForSelector('[data-testid="settings-button"]', { timeout: 10000 }).catch(() => {
-      // Fallback: look for settings button by text or icon
-      return page.waitForSelector('button:has-text("Settings")', { timeout: 5000 });
+      // Wait for page to load
+      await page.waitForSelector('[data-testid="profile-email"]', { timeout: 10000 });
+
+      // Check for not verified indicator (ยังไม่ยืนยัน)
+      const emailSection = page.locator('[data-testid="profile-email"]');
+      const sectionText = await emailSection.textContent();
+
+      // Should contain the "not verified" text in Thai
+      const hasNotVerifiedText = sectionText && (
+        sectionText.includes('ยังไม่ยืนยัน') ||
+        sectionText.includes('not verified') ||
+        sectionText.includes('Not verified')
+      );
+
+      expect(hasNotVerifiedText).toBeTruthy();
     });
 
-    // Click settings button to open modal
-    const settingsButton = await page.locator('[data-testid="settings-button"]').or(
-      page.locator('button:has-text("Settings")')
-    ).first();
-    await settingsButton.click();
+    test('should show verify button next to email label', async () => {
+      await retryPageGoto(page, `${frontendUrl}/profile`, 2);
 
-    // Wait for settings modal
-    await page.waitForSelector('[data-testid="settings-modal"]', { timeout: 5000 }).catch(() => {
-      // Fallback: wait for modal with heading
-      return page.waitForSelector('h2:has-text("Settings")', { timeout: 5000 });
+      // Wait for profile to load
+      await page.waitForSelector('[data-testid="profile-email"]', { timeout: 10000 });
+
+      // Check for verify button
+      const verifyButton = page.locator('[data-testid="verify-email-button"]');
+      await expect(verifyButton).toBeVisible({ timeout: 5000 });
+
+      // Button should contain "ยืนยัน" (verify in Thai) or similar text
+      const buttonText = await verifyButton.textContent();
+      expect(buttonText).toMatch(/ยืนยัน|verify/i);
     });
 
-    // Change email address
-    const newEmail = `new-email-${Date.now()}@example.com`;
-    const emailInput = await page.locator('input[type="email"]').or(
-      page.locator('input[name="email"]')
-    ).first();
+    test('should open verification modal when clicking verify button', async () => {
+      await retryPageGoto(page, `${frontendUrl}/profile`, 2);
 
-    await emailInput.clear();
-    await emailInput.fill(newEmail);
+      await page.waitForSelector('[data-testid="profile-email"]', { timeout: 10000 });
 
-    // Submit the form
-    const saveButton = await page.locator('[data-testid="save-settings-button"]').or(
-      page.locator('button:has-text("Save")')
-    ).first();
-    await saveButton.click();
+      // Click verify button
+      const verifyButton = page.locator('[data-testid="verify-email-button"]');
+      await verifyButton.click();
 
-    // Verify EmailVerificationModal appears
-    await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
+      // Verify EmailVerificationModal appears
+      await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
 
-    const modal = page.locator('[data-testid="email-verification-modal"]');
-    await expect(modal).toBeVisible();
+      const modal = page.locator('[data-testid="email-verification-modal"]');
+      await expect(modal).toBeVisible();
 
-    // Verify the new email is displayed in the modal
-    const modalText = await modal.textContent();
-    expect(modalText).toContain(newEmail);
+      // Modal should have verification code input
+      const codeInput = page.locator('[data-testid="verification-code-input"]');
+      await expect(codeInput).toBeVisible();
 
-    // Verify modal contains verification code input
-    const codeInput = page.locator('[data-testid="verification-code-input"]');
-    await expect(codeInput).toBeVisible();
+      // Verify button should exist
+      const modalVerifyButton = page.locator('[data-testid="verify-button"]');
+      await expect(modalVerifyButton).toBeVisible();
+    });
 
-    // Verify verify button exists
-    const verifyButton = page.locator('[data-testid="verify-button"]');
-    await expect(verifyButton).toBeVisible();
+    test('should handle invalid verification code for registration', async () => {
+      await retryPageGoto(page, `${frontendUrl}/profile`, 2);
+
+      await page.waitForSelector('[data-testid="profile-email"]', { timeout: 10000 });
+
+      // Open verification modal
+      const verifyButton = page.locator('[data-testid="verify-email-button"]');
+      await verifyButton.click();
+
+      await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
+
+      // Enter invalid code
+      const codeInput = page.locator('[data-testid="verification-code-input"]');
+      await codeInput.fill('INVALID-CODE');
+
+      // Click verify
+      const modalVerifyButton = page.locator('[data-testid="verify-button"]');
+      await modalVerifyButton.click();
+
+      // Wait for error to appear
+      await page.waitForTimeout(1000);
+
+      // Verify error message appears
+      const modalContent = await page.locator('[data-testid="email-verification-modal"]').textContent();
+      const hasError = modalContent && (
+        modalContent.includes('invalid') ||
+        modalContent.includes('Invalid') ||
+        modalContent.includes('ไม่ถูกต้อง') ||
+        modalContent.includes('Verification failed')
+      );
+
+      expect(hasError).toBeTruthy();
+    });
   });
 
-  test('should handle invalid verification code format', async () => {
-    // Navigate to profile page
-    await retryPageGoto(page, `${frontendUrl}/profile`, 2);
+  test.describe('Email Change Verification', () => {
+      test('should show verification modal when updating email', async () => {
+      // Navigate to profile page
+      await retryPageGoto(page, `${frontendUrl}/profile`, 2);
 
-    // Open settings modal
-    await page.waitForSelector('[data-testid="settings-button"]', { timeout: 10000 }).catch(() => {
-      return page.waitForSelector('button:has-text("Settings")', { timeout: 5000 });
+      // Wait for page to load
+      await page.waitForSelector('[data-testid="settings-button"]', { timeout: 10000 }).catch(() => {
+        // Fallback: look for settings button by text or icon
+        return page.waitForSelector('button:has-text("Settings")', { timeout: 5000 });
+      });
+
+      // Click settings button to open modal
+      const settingsButton = await page.locator('[data-testid="settings-button"]').or(
+        page.locator('button:has-text("Settings")')
+      ).first();
+      await settingsButton.click();
+
+      // Wait for settings modal
+      await page.waitForSelector('[data-testid="settings-modal"]', { timeout: 5000 }).catch(() => {
+        // Fallback: wait for modal with heading
+        return page.waitForSelector('h2:has-text("Settings")', { timeout: 5000 });
+      });
+
+      // Change email address
+      const newEmail = `new-email-${Date.now()}@example.com`;
+      const emailInput = await page.locator('input[type="email"]').or(
+        page.locator('input[name="email"]')
+      ).first();
+
+      await emailInput.clear();
+      await emailInput.fill(newEmail);
+
+      // Submit the form
+      const saveButton = await page.locator('[data-testid="save-settings-button"]').or(
+        page.locator('button:has-text("Save")')
+      ).first();
+      await saveButton.click();
+
+      // Verify EmailVerificationModal appears
+      await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
+
+      const modal = page.locator('[data-testid="email-verification-modal"]');
+      await expect(modal).toBeVisible();
+
+      // Verify the new email is displayed in the modal
+      const modalText = await modal.textContent();
+      expect(modalText).toContain(newEmail);
+
+      // Verify modal contains verification code input
+      const codeInput = page.locator('[data-testid="verification-code-input"]');
+      await expect(codeInput).toBeVisible();
+
+      // Verify verify button exists
+      const verifyButton = page.locator('[data-testid="verify-button"]');
+      await expect(verifyButton).toBeVisible();
     });
 
-    const settingsButton = await page.locator('[data-testid="settings-button"]').or(
-      page.locator('button:has-text("Settings")')
-    ).first();
-    await settingsButton.click();
+      test('should handle invalid verification code format', async () => {
+      // Navigate to profile page
+      await retryPageGoto(page, `${frontendUrl}/profile`, 2);
 
-    // Change email to trigger verification
-    const newEmail = `invalid-test-${Date.now()}@example.com`;
-    const emailInput = await page.locator('input[type="email"]').or(
-      page.locator('input[name="email"]')
-    ).first();
+      // Open settings modal
+      await page.waitForSelector('[data-testid="settings-button"]', { timeout: 10000 }).catch(() => {
+        return page.waitForSelector('button:has-text("Settings")', { timeout: 5000 });
+      });
 
-    await emailInput.clear();
-    await emailInput.fill(newEmail);
+      const settingsButton = await page.locator('[data-testid="settings-button"]').or(
+        page.locator('button:has-text("Settings")')
+      ).first();
+      await settingsButton.click();
 
-    // Submit
-    const saveButton = await page.locator('[data-testid="save-settings-button"]').or(
-      page.locator('button:has-text("Save")')
-    ).first();
-    await saveButton.click();
+      // Change email to trigger verification
+      const newEmail = `invalid-test-${Date.now()}@example.com`;
+      const emailInput = await page.locator('input[type="email"]').or(
+        page.locator('input[name="email"]')
+      ).first();
 
-    // Wait for verification modal
-    await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
+      await emailInput.clear();
+      await emailInput.fill(newEmail);
 
-    // Enter invalid code format (too short)
-    const codeInput = page.locator('[data-testid="verification-code-input"]');
-    await codeInput.fill('ABCD');
+      // Submit
+      const saveButton = await page.locator('[data-testid="save-settings-button"]').or(
+        page.locator('button:has-text("Save")')
+      ).first();
+      await saveButton.click();
 
-    // Click verify button
-    const verifyButton = page.locator('[data-testid="verify-button"]');
-    await verifyButton.click();
+      // Wait for verification modal
+      await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
 
-    // Wait a bit for error to appear
-    await page.waitForTimeout(500);
+      // Enter invalid code format (too short)
+      const codeInput = page.locator('[data-testid="verification-code-input"]');
+      await codeInput.fill('ABCD');
 
-    // Verify error message appears (checking for common error text patterns)
-    const modalContent = await page.locator('[data-testid="email-verification-modal"]').textContent();
-    const hasError = modalContent && (
-      modalContent.includes('invalid') ||
-      modalContent.includes('Invalid') ||
-      modalContent.includes('format') ||
-      modalContent.includes('XXXX-XXXX')
-    );
+      // Click verify button
+      const verifyButton = page.locator('[data-testid="verify-button"]');
+      await verifyButton.click();
 
-    expect(hasError).toBeTruthy();
-  });
+      // Wait a bit for error to appear
+      await page.waitForTimeout(500);
 
-  test('should handle invalid verification code from backend', async () => {
-    // Navigate to profile page
-    await retryPageGoto(page, `${frontendUrl}/profile`, 2);
+      // Verify error message appears (checking for common error text patterns)
+      const modalContent = await page.locator('[data-testid="email-verification-modal"]').textContent();
+      const hasError = modalContent && (
+        modalContent.includes('invalid') ||
+        modalContent.includes('Invalid') ||
+        modalContent.includes('format') ||
+        modalContent.includes('XXXX-XXXX')
+      );
 
-    // Open settings modal
-    await page.waitForSelector('[data-testid="settings-button"]', { timeout: 10000 }).catch(() => {
-      return page.waitForSelector('button:has-text("Settings")', { timeout: 5000 });
+      expect(hasError).toBeTruthy();
     });
 
-    const settingsButton = await page.locator('[data-testid="settings-button"]').or(
-      page.locator('button:has-text("Settings")')
-    ).first();
-    await settingsButton.click();
+      test('should handle invalid verification code from backend', async () => {
+      // Navigate to profile page
+      await retryPageGoto(page, `${frontendUrl}/profile`, 2);
 
-    // Change email to trigger verification
-    const newEmail = `backend-invalid-${Date.now()}@example.com`;
-    const emailInput = await page.locator('input[type="email"]').or(
-      page.locator('input[name="email"]')
-    ).first();
+      // Open settings modal
+      await page.waitForSelector('[data-testid="settings-button"]', { timeout: 10000 }).catch(() => {
+        return page.waitForSelector('button:has-text("Settings")', { timeout: 5000 });
+      });
 
-    await emailInput.clear();
-    await emailInput.fill(newEmail);
+      const settingsButton = await page.locator('[data-testid="settings-button"]').or(
+        page.locator('button:has-text("Settings")')
+      ).first();
+      await settingsButton.click();
 
-    // Submit
-    const saveButton = await page.locator('[data-testid="save-settings-button"]').or(
-      page.locator('button:has-text("Save")')
-    ).first();
-    await saveButton.click();
+      // Change email to trigger verification
+      const newEmail = `backend-invalid-${Date.now()}@example.com`;
+      const emailInput = await page.locator('input[type="email"]').or(
+        page.locator('input[name="email"]')
+      ).first();
 
-    // Wait for verification modal
-    await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
+      await emailInput.clear();
+      await emailInput.fill(newEmail);
 
-    // Enter valid format but wrong code
-    const codeInput = page.locator('[data-testid="verification-code-input"]');
-    await codeInput.fill('ABCD-1234');
+      // Submit
+      const saveButton = await page.locator('[data-testid="save-settings-button"]').or(
+        page.locator('button:has-text("Save")')
+      ).first();
+      await saveButton.click();
 
-    // Click verify button
-    const verifyButton = page.locator('[data-testid="verify-button"]');
-    await verifyButton.click();
+      // Wait for verification modal
+      await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
 
-    // Wait for backend response
-    await page.waitForTimeout(1000);
+      // Enter valid format but wrong code
+      const codeInput = page.locator('[data-testid="verification-code-input"]');
+      await codeInput.fill('ABCD-1234');
 
-    // Verify error message appears from backend
-    const modalContent = await page.locator('[data-testid="email-verification-modal"]').textContent();
-    const hasError = modalContent && (
-      modalContent.includes('invalid') ||
-      modalContent.includes('Invalid') ||
-      modalContent.includes('expired') ||
-      modalContent.includes('Expired') ||
-      modalContent.includes('Verification failed') ||
-      modalContent.includes('verification failed')
-    );
+      // Click verify button
+      const verifyButton = page.locator('[data-testid="verify-button"]');
+      await verifyButton.click();
 
-    expect(hasError).toBeTruthy();
-  });
+      // Wait for backend response
+      await page.waitForTimeout(1000);
 
-  test('should enable resend button after cooldown', async () => {
-    // Navigate to profile page
-    await retryPageGoto(page, `${frontendUrl}/profile`, 2);
+      // Verify error message appears from backend
+      const modalContent = await page.locator('[data-testid="email-verification-modal"]').textContent();
+      const hasError = modalContent && (
+        modalContent.includes('invalid') ||
+        modalContent.includes('Invalid') ||
+        modalContent.includes('expired') ||
+        modalContent.includes('Expired') ||
+        modalContent.includes('Verification failed') ||
+        modalContent.includes('verification failed')
+      );
 
-    // Open settings modal
-    await page.waitForSelector('[data-testid="settings-button"]', { timeout: 10000 }).catch(() => {
-      return page.waitForSelector('button:has-text("Settings")', { timeout: 5000 });
+      expect(hasError).toBeTruthy();
     });
 
-    const settingsButton = await page.locator('[data-testid="settings-button"]').or(
-      page.locator('button:has-text("Settings")')
-    ).first();
-    await settingsButton.click();
+      test('should enable resend button after cooldown', async () => {
+      // Navigate to profile page
+      await retryPageGoto(page, `${frontendUrl}/profile`, 2);
 
-    // Change email to trigger verification
-    const newEmail = `resend-test-${Date.now()}@example.com`;
-    const emailInput = await page.locator('input[type="email"]').or(
-      page.locator('input[name="email"]')
-    ).first();
+      // Open settings modal
+      await page.waitForSelector('[data-testid="settings-button"]', { timeout: 10000 }).catch(() => {
+        return page.waitForSelector('button:has-text("Settings")', { timeout: 5000 });
+      });
 
-    await emailInput.clear();
-    await emailInput.fill(newEmail);
+      const settingsButton = await page.locator('[data-testid="settings-button"]').or(
+        page.locator('button:has-text("Settings")')
+      ).first();
+      await settingsButton.click();
 
-    // Submit
-    const saveButton = await page.locator('[data-testid="save-settings-button"]').or(
-      page.locator('button:has-text("Save")')
-    ).first();
-    await saveButton.click();
+      // Change email to trigger verification
+      const newEmail = `resend-test-${Date.now()}@example.com`;
+      const emailInput = await page.locator('input[type="email"]').or(
+        page.locator('input[name="email"]')
+      ).first();
 
-    // Wait for verification modal
-    await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
+      await emailInput.clear();
+      await emailInput.fill(newEmail);
 
-    // Resend button should be disabled initially (60s cooldown)
-    const resendButton = page.locator('[data-testid="resend-code-button"]');
-    await expect(resendButton).toBeVisible();
+      // Submit
+      const saveButton = await page.locator('[data-testid="save-settings-button"]').or(
+        page.locator('button:has-text("Save")')
+      ).first();
+      await saveButton.click();
 
-    // Check if button is disabled
-    const isDisabled = await resendButton.isDisabled();
-    expect(isDisabled).toBeTruthy();
+      // Wait for verification modal
+      await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
 
-    // Verify cooldown text is shown
-    const buttonText = await resendButton.textContent();
-    expect(buttonText).toMatch(/\d+s/); // Should show countdown like "59s", "58s", etc.
-  });
+      // Resend button should be disabled initially (60s cooldown)
+      const resendButton = page.locator('[data-testid="resend-code-button"]');
+      await expect(resendButton).toBeVisible();
 
-  test('should allow resending verification code after cooldown expires', async () => {
-    // This test would require either:
-    // 1. Waiting 60 seconds (not practical for E2E)
-    // 2. Mocking/stubbing the timer
-    // 3. Having a test-only endpoint to reset cooldown
-    //
-    // For now, we'll skip this test with a note
-    test.skip(true, 'Requires timer mocking or test-only endpoint to reset cooldown');
+      // Check if button is disabled
+      const isDisabled = await resendButton.isDisabled();
+      expect(isDisabled).toBeTruthy();
 
-    // Example implementation if cooldown reset was available:
-    /*
-    await retryPageGoto(page, `${frontendUrl}/profile`, 2);
-
-    // ... trigger email change and open verification modal ...
-
-    // Reset cooldown via test endpoint
-    await page.request.post(`${backendUrl}/api/test/reset-resend-cooldown`, {
-      headers: { Authorization: `Bearer ${authToken}` }
+      // Verify cooldown text is shown
+      const buttonText = await resendButton.textContent();
+      expect(buttonText).toMatch(/\d+s/); // Should show countdown like "59s", "58s", etc.
     });
 
-    const resendButton = page.locator('[data-testid="resend-code-button"]');
-    await expect(resendButton).toBeEnabled();
+      test('should allow resending verification code after cooldown expires', async () => {
+      // This test would require either:
+      // 1. Waiting 60 seconds (not practical for E2E)
+      // 2. Mocking/stubbing the timer
+      // 3. Having a test-only endpoint to reset cooldown
+      //
+      // For now, we'll skip this test with a note
+      test.skip(true, 'Requires timer mocking or test-only endpoint to reset cooldown');
 
-    await resendButton.click();
+      // Example implementation if cooldown reset was available:
+      /*
+      await retryPageGoto(page, `${frontendUrl}/profile`, 2);
 
-    // Verify success message or cooldown resets
-    await page.waitForTimeout(500);
-    const buttonText = await resendButton.textContent();
-    expect(buttonText).toMatch(/\d+s/); // Cooldown should restart
-    */
-  });
+      // ... trigger email change and open verification modal ...
 
-  test('should close verification modal and keep email unchanged when cancelled', async () => {
-    // Get current email before test
-    const profileResponse = await page.request.get(`${backendUrl}/api/users/profile`, {
-      headers: { Authorization: `Bearer ${authToken}` }
-    });
-    const initialProfile = await profileResponse.json();
-    const initialEmail = initialProfile.email;
+      // Reset cooldown via test endpoint
+      await page.request.post(`${backendUrl}/api/test/reset-resend-cooldown`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
 
-    // Navigate to profile page
-    await retryPageGoto(page, `${frontendUrl}/profile`, 2);
+      const resendButton = page.locator('[data-testid="resend-code-button"]');
+      await expect(resendButton).toBeEnabled();
 
-    // Open settings modal
-    await page.waitForSelector('[data-testid="settings-button"]', { timeout: 10000 }).catch(() => {
-      return page.waitForSelector('button:has-text("Settings")', { timeout: 5000 });
-    });
+      await resendButton.click();
 
-    const settingsButton = await page.locator('[data-testid="settings-button"]').or(
-      page.locator('button:has-text("Settings")')
-    ).first();
-    await settingsButton.click();
-
-    // Change email to trigger verification
-    const newEmail = `cancel-test-${Date.now()}@example.com`;
-    const emailInput = await page.locator('input[type="email"]').or(
-      page.locator('input[name="email"]')
-    ).first();
-
-    await emailInput.clear();
-    await emailInput.fill(newEmail);
-
-    // Submit
-    const saveButton = await page.locator('[data-testid="save-settings-button"]').or(
-      page.locator('button:has-text("Save")')
-    ).first();
-    await saveButton.click();
-
-    // Wait for verification modal
-    await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
-
-    // Close the modal (look for X button or close button)
-    const closeButton = await page.locator('[data-testid="email-verification-modal"] button[aria-label="Close"]').or(
-      page.locator('[data-testid="email-verification-modal"] button:has-text("Close")')
-    ).first();
-
-    await closeButton.click();
-
-    // Wait for modal to close
-    await page.waitForSelector('[data-testid="email-verification-modal"]', {
-      state: 'hidden',
-      timeout: 2000
+      // Verify success message or cooldown resets
+      await page.waitForTimeout(500);
+      const buttonText = await resendButton.textContent();
+      expect(buttonText).toMatch(/\d+s/); // Cooldown should restart
+      */
     });
 
-    // Verify modal is no longer visible
-    const modal = page.locator('[data-testid="email-verification-modal"]');
-    await expect(modal).not.toBeVisible();
+      test('should close verification modal and keep email unchanged when cancelled', async () => {
+      // Get current email before test
+      const profileResponse = await page.request.get(`${backendUrl}/api/users/profile`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      const initialProfile = await profileResponse.json();
+      const initialEmail = initialProfile.email;
 
-    // Verify email hasn't changed in backend
-    const finalProfileResponse = await page.request.get(`${backendUrl}/api/users/profile`, {
-      headers: { Authorization: `Bearer ${authToken}` }
+      // Navigate to profile page
+      await retryPageGoto(page, `${frontendUrl}/profile`, 2);
+
+      // Open settings modal
+      await page.waitForSelector('[data-testid="settings-button"]', { timeout: 10000 }).catch(() => {
+        return page.waitForSelector('button:has-text("Settings")', { timeout: 5000 });
+      });
+
+      const settingsButton = await page.locator('[data-testid="settings-button"]').or(
+        page.locator('button:has-text("Settings")')
+      ).first();
+      await settingsButton.click();
+
+      // Change email to trigger verification
+      const newEmail = `cancel-test-${Date.now()}@example.com`;
+      const emailInput = await page.locator('input[type="email"]').or(
+        page.locator('input[name="email"]')
+      ).first();
+
+      await emailInput.clear();
+      await emailInput.fill(newEmail);
+
+      // Submit
+      const saveButton = await page.locator('[data-testid="save-settings-button"]').or(
+        page.locator('button:has-text("Save")')
+      ).first();
+      await saveButton.click();
+
+      // Wait for verification modal
+      await page.waitForSelector('[data-testid="email-verification-modal"]', { timeout: 5000 });
+
+      // Close the modal (look for X button or close button)
+      const closeButton = await page.locator('[data-testid="email-verification-modal"] button[aria-label="Close"]').or(
+        page.locator('[data-testid="email-verification-modal"] button:has-text("Close")')
+      ).first();
+
+      await closeButton.click();
+
+      // Wait for modal to close
+      await page.waitForSelector('[data-testid="email-verification-modal"]', {
+        state: 'hidden',
+        timeout: 2000
+      });
+
+      // Verify modal is no longer visible
+      const modal = page.locator('[data-testid="email-verification-modal"]');
+      await expect(modal).not.toBeVisible();
+
+      // Verify email hasn't changed in backend
+      const finalProfileResponse = await page.request.get(`${backendUrl}/api/users/profile`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      const finalProfile = await finalProfileResponse.json();
+
+      expect(finalProfile.email).toBe(initialEmail);
+      expect(finalProfile.email).not.toBe(newEmail);
     });
-    const finalProfile = await finalProfileResponse.json();
 
-    expect(finalProfile.email).toBe(initialEmail);
-    expect(finalProfile.email).not.toBe(newEmail);
-  });
+      test.skip('should update email after successful verification', async () => {
+      // This test requires a backend test endpoint to retrieve the verification code
+      // Skip until such endpoint is available
 
-  test.skip('should update email after successful verification', async () => {
-    // This test requires a backend test endpoint to retrieve the verification code
-    // Skip until such endpoint is available
+      // Example implementation if test endpoint existed:
+      /*
+      await retryPageGoto(page, `${frontendUrl}/profile`, 2);
 
-    // Example implementation if test endpoint existed:
-    /*
-    await retryPageGoto(page, `${frontendUrl}/profile`, 2);
+      // ... trigger email change and open verification modal ...
 
-    // ... trigger email change and open verification modal ...
+      const newEmail = `success-test-${Date.now()}@example.com`;
 
-    const newEmail = `success-test-${Date.now()}@example.com`;
+      // Get verification code from test endpoint
+      const codeResponse = await page.request.get(`${backendUrl}/api/test/get-verification-code`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      const { code } = await codeResponse.json();
 
-    // Get verification code from test endpoint
-    const codeResponse = await page.request.get(`${backendUrl}/api/test/get-verification-code`, {
-      headers: { Authorization: `Bearer ${authToken}` }
+      // Enter the correct code
+      const codeInput = page.locator('[data-testid="verification-code-input"]');
+      await codeInput.fill(code);
+
+      // Click verify
+      const verifyButton = page.locator('[data-testid="verify-button"]');
+      await verifyButton.click();
+
+      // Wait for success
+      await page.waitForTimeout(1000);
+
+      // Modal should close
+      const modal = page.locator('[data-testid="email-verification-modal"]');
+      await expect(modal).not.toBeVisible();
+
+      // Verify email was updated
+      const profileResponse = await page.request.get(`${backendUrl}/api/users/profile`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      const profile = await profileResponse.json();
+      expect(profile.email).toBe(newEmail);
+
+      // Verify success notification appears
+      await expect(page.locator('text=/email.*updated/i')).toBeVisible();
+      */
     });
-    const { code } = await codeResponse.json();
-
-    // Enter the correct code
-    const codeInput = page.locator('[data-testid="verification-code-input"]');
-    await codeInput.fill(code);
-
-    // Click verify
-    const verifyButton = page.locator('[data-testid="verify-button"]');
-    await verifyButton.click();
-
-    // Wait for success
-    await page.waitForTimeout(1000);
-
-    // Modal should close
-    const modal = page.locator('[data-testid="email-verification-modal"]');
-    await expect(modal).not.toBeVisible();
-
-    // Verify email was updated
-    const profileResponse = await page.request.get(`${backendUrl}/api/users/profile`, {
-      headers: { Authorization: `Bearer ${authToken}` }
-    });
-    const profile = await profileResponse.json();
-    expect(profile.email).toBe(newEmail);
-
-    // Verify success notification appears
-    await expect(page.locator('text=/email.*updated/i')).toBeVisible();
-    */
   });
 });

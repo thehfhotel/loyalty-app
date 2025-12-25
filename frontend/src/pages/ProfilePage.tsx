@@ -104,9 +104,9 @@ export default function ProfilePage() {
 
   const handleEmailVerified = (email: string) => {
     // Update the auth store with the verified email
-    updateUser({ email });
+    updateUser({ email, emailVerified: true });
     setShowVerificationModal(false);
-    notify.success(t('profile.emailUpdated'));
+    notify.success(t('profile.emailVerified'));
   };
 
   const onSubmit = async (data: ProfileFormData) => {
@@ -299,13 +299,32 @@ export default function ProfilePage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                   <div>
-                    <dt className="font-medium text-gray-500">{t('profile.email')}</dt>
-                    <dd className="mt-1" data-testid="profile-email">
+                    <dt className="font-medium text-gray-500 flex items-center gap-2">
+                      {t('profile.email')}
+                      {user?.emailVerified === false && (
+                        <button
+                          onClick={() => {
+                            setPendingEmail(user?.email || '');
+                            setShowVerificationModal(true);
+                          }}
+                          className="text-sm px-2 py-0.5 rounded bg-amber-100 text-amber-700 hover:bg-amber-200"
+                          data-testid="verify-email-button"
+                        >
+                          {t('profile.verifyNow', 'ยืนยัน')}
+                        </button>
+                      )}
+                    </dt>
+                    <dd className="mt-1 flex items-center gap-2" data-testid="profile-email">
                       <EmailDisplay
                         email={user?.email}
                         linkToProfile={true}
                         showIcon={false}
                       />
+                      {user?.emailVerified === false && (
+                        <span className="text-xs text-amber-600">
+                          ({t('profile.notVerified', 'ยังไม่ยืนยัน')})
+                        </span>
+                      )}
                     </dd>
                   </div>
 
@@ -402,6 +421,7 @@ export default function ProfilePage() {
           onClose={() => setShowVerificationModal(false)}
           newEmail={pendingEmail}
           onVerified={handleEmailVerified}
+          isRegistration={user?.emailVerified === false}
         />
 
         {/* Confirm Delete Avatar Dialog */}

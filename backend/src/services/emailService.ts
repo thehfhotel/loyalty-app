@@ -53,6 +53,29 @@ class EmailService {
 
     logger.info('Verification email sent', { to });
   }
+
+  async sendRegistrationVerificationEmail(to: string, code: string): Promise<void> {
+    const from = process.env.SMTP_FROM ?? 'noreply@example.com';
+
+    await this.transporter.sendMail({
+      from,
+      to,
+      subject: 'Welcome! Please verify your email address',
+      text: `Welcome to our loyalty program!\n\nYour verification code is: ${code}\n\nThis code expires in 1 hour.\n\nPlease enter this code in your profile to verify your email address.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Welcome to our loyalty program!</h2>
+          <p>Thank you for registering. Please verify your email address using the code below:</p>
+          <h1 style="font-size: 32px; letter-spacing: 4px; background: #f5f5f5; padding: 20px; text-align: center; font-family: monospace;">${code}</h1>
+          <p>This code expires in 1 hour.</p>
+          <p>Enter this code in your profile settings to complete verification.</p>
+          <p style="color: #666; font-size: 12px;">If you didn't create an account, please ignore this email.</p>
+        </div>
+      `,
+    });
+
+    logger.info('Registration verification email sent', { to });
+  }
 }
 
 export const emailService = new EmailService();

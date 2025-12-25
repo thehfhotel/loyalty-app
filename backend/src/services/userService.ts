@@ -835,11 +835,11 @@ export class UserService {
       validFrom: string | null;
       validUntil: string | null;
     }>(
-      `SELECT 
+      `SELECT
         id, code, name, status,
         valid_from AS "validFrom",
         valid_until AS "validUntil"
-      FROM coupons 
+      FROM coupons
       WHERE id = $1`,
       [couponId]
     );
@@ -850,8 +850,8 @@ export class UserService {
 
     const now = new Date();
     const isExpired = coupon.validUntil ? new Date(coupon.validUntil) <= now : false;
-    const daysUntilExpiry = coupon.validUntil 
-      ? Math.ceil((new Date(coupon.validUntil).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) 
+    const daysUntilExpiry = coupon.validUntil
+      ? Math.ceil((new Date(coupon.validUntil).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
       : null;
 
     let warningLevel: 'none' | 'warning' | 'danger' = 'none';
@@ -871,6 +871,97 @@ export class UserService {
       isExpired,
       daysUntilExpiry,
       warningLevel
+    };
+  }
+
+  async initiateRegistrationVerification(userId: string, email: string): Promise<void> {
+    // Invalidate any existing pending tokens for this user
+    await queryWithMeta(
+      'UPDATE email_verification_tokens SET used = true WHERE user_id = $1 AND used = false',
+      [userId]
+    );
+
+    // Generate verification code
+    const code = generateVerificationCode();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Store the token (use same email for new_email since this is registration, not email change)
+    await queryWithMeta(
+      `INSERT INTO email_verification_tokens (user_id, new_email, code, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [userId, email, code, expiresAt]
+    );
+
+    // Send registration verification email
+    await emailService.sendRegistrationVerificationEmail(email, code);
+
+    logger.info('Registration verification email sent', { userId, email });
+  }
+
+  async verifyRegistrationEmail(userId: string, code: string): Promise<void> {
+    // Find valid token (for registration, new_email matches current email)
+    const [token] = await query<{id: string; new_email: string; expires_at: Date; used: boolean}>(
+      `SELECT id, new_email, expires_at, used
+       FROM email_verification_tokens
+       WHERE user_id = $1 AND code = $2`,
+      [userId, code]
+    );
+
+    if (!token) {
+      throw new AppError(400, 'Invalid verification code');
+    }
+
+    if (token.used) {
+      throw new AppError(400, 'Verification code has already been used');
+    }
+
+    if (new Date(token.expires_at) < new Date()) {
+      throw new AppError(400, 'Verification code has expired');
+    }
+
+    // Set email_verified = true (don't change email address for registration verification)
+    await queryWithMeta(
+      'UPDATE users SET email_verified = true, updated_at = NOW() WHERE id = $1',
+      [userId]
+    );
+
+    // Mark token as used
+    await queryWithMeta(
+      'UPDATE email_verification_tokens SET used = true WHERE id = $1',
+      [token.id]
+    );
+
+    logger.info('Registration email verified', { userId });
+  }
+
+  async resendRegistrationVerification(userId: string): Promise<void> {
+    // Get current user email
+    const [user] = await query<{email: string}>(
+      'SELECT email FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (!user) {
+      throw new AppError(404, 'User not found');
+    }
+
+    // Generate new verification and send
+    await this.initiateRegistrationVerification(userId, user.email);
+  }
+
+  async getEmailVerificationStatus(userId: string): Promise<{emailVerified: boolean; email: string}> {
+    const [user] = await query<{email: string; email_verified: boolean}>(
+      'SELECT email, email_verified FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (!user) {
+      throw new AppError(404, 'User not found');
+    }
+
+    return {
+      emailVerified: user.email_verified ?? false,
+      email: user.email
     };
   }
 }

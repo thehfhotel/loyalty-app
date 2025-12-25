@@ -178,4 +178,33 @@ export const userRouter = router({
     await userService.deleteAvatar(ctx.user.id);
     return { success: true };
   }),
+
+  /**
+   * Verify registration email with code
+   */
+  verifyRegistrationEmail: protectedProcedure
+    .input(
+      z.object({
+        code: z.string().regex(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/, 'Invalid code format'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await userService.verifyRegistrationEmail(ctx.user.id, input.code);
+      return { success: true };
+    }),
+
+  /**
+   * Resend registration verification code
+   */
+  resendRegistrationVerification: protectedProcedure.mutation(async ({ ctx }) => {
+    await userService.resendRegistrationVerification(ctx.user.id);
+    return { success: true, message: 'Verification code resent' };
+  }),
+
+  /**
+   * Get email verification status
+   */
+  getEmailVerificationStatus: protectedProcedure.query(async ({ ctx }) => {
+    return await userService.getEmailVerificationStatus(ctx.user.id);
+  }),
 });
