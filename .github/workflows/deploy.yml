@@ -1877,19 +1877,28 @@ jobs:
           cd "$DEPLOY_DIR"
 
           # Wait for database to be ready and responsive
+          # Note: Dev environment uses loyalty_dev user, not loyalty
           echo "⏳ Waiting for database to be fully ready..."
+          DB_READY=false
           for i in {1..10}; do
-            if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty -d loyalty_dev_db -c "SELECT 1" >/dev/null 2>&1; then
+            if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty_dev -d loyalty_dev_db -c "SELECT 1" >/dev/null 2>&1; then
               echo "✅ Database connection verified"
+              DB_READY=true
               break
             fi
             echo "  Attempt $i/10: Database not ready, waiting..."
             sleep 2
           done
 
+          if [ "$DB_READY" != "true" ]; then
+            echo "❌ Database failed to become ready after 10 attempts"
+            echo "  Check postgres container logs for errors"
+            exit 1
+          fi
+
           # Verify critical tables exist
           echo "📋 Checking critical tables..."
-          TABLES_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty -d loyalty_dev_db -t -c "
+          TABLES_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty_dev -d loyalty_dev_db -t -c "
             SELECT string_agg(tablename, ',')
             FROM pg_tables
             WHERE schemaname = 'public'
@@ -1898,11 +1907,11 @@ jobs:
 
           echo "  Raw tables check result: '$TABLES_CHECK'"
 
-          # Check if the query failed entirely
+          # Check if the query failed entirely - this is a FATAL error
           if echo "$TABLES_CHECK" | grep -qiE "error|fatal|connection refused"; then
-            echo "⚠️ Database query failed - skipping schema verification"
-            echo "  This may indicate the database needs more time to initialize"
-            exit 0
+            echo "❌ Database query failed - deployment cannot continue"
+            echo "  Error: $TABLES_CHECK"
+            exit 1
           fi
 
           REQUIRED_TABLES="users,coupons,user_coupons,tiers,user_loyalty,user_audit_log,surveys"
@@ -1923,7 +1932,7 @@ jobs:
 
           # Verify critical stored procedures exist
           echo "📋 Checking critical stored procedures..."
-          FUNCTIONS_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty -d loyalty_dev_db -t -c "
+          FUNCTIONS_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty_dev -d loyalty_dev_db -t -c "
             SELECT string_agg(proname, ',')
             FROM pg_proc p
             JOIN pg_namespace n ON p.pronamespace = n.oid
@@ -1938,10 +1947,11 @@ jobs:
 
           echo "  Raw functions check result: '$FUNCTIONS_CHECK'"
 
-          # Check if the query failed entirely
+          # Check if the query failed entirely - this is a FATAL error
           if echo "$FUNCTIONS_CHECK" | grep -qiE "error|fatal|connection refused"; then
-            echo "⚠️ Stored procedures query failed - skipping verification"
-            echo "  This may indicate the database needs more time to initialize"
+            echo "❌ Stored procedures query failed - deployment cannot continue"
+            echo "  Error: $FUNCTIONS_CHECK"
+            exit 1
           else
             REQUIRED_FUNCTIONS="assign_coupon_to_user,redeem_coupon,award_points,recalculate_user_tier_by_nights"
             MISSING_FUNCTIONS=""
@@ -1962,7 +1972,7 @@ jobs:
 
           # Verify critical triggers exist
           echo "📋 Checking critical triggers..."
-          TRIGGERS_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty -d loyalty_dev_db -t -c "
+          TRIGGERS_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty_dev -d loyalty_dev_db -t -c "
             SELECT string_agg(tgname, ',')
             FROM pg_trigger t
             JOIN pg_class c ON t.tgrelid = c.oid
@@ -1972,9 +1982,11 @@ jobs:
 
           echo "  Raw triggers check result: '$TRIGGERS_CHECK'"
 
-          # Check if the query failed entirely
+          # Check if the query failed entirely - this is a FATAL error
           if echo "$TRIGGERS_CHECK" | grep -qiE "error|fatal|connection refused"; then
-            echo "⚠️ Triggers query failed - skipping verification"
+            echo "❌ Triggers query failed - deployment cannot continue"
+            echo "  Error: $TRIGGERS_CHECK"
+            exit 1
           else
             REQUIRED_TRIGGERS="trigger_update_user_tier_on_nights,set_membership_id_trigger,audit_user_changes"
             MISSING_TRIGGERS=""
