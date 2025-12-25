@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Mock objects in tests */
 /**
  * tRPC Context Unit Tests
  * Tests context creation from Express request
@@ -226,7 +227,7 @@ describe('tRPC Context', () => {
         const context = createContext(options);
 
         expect(context.user).toEqual(mockUser);
-        expect(Object.keys(context.user || {})).toEqual(['id', 'email', 'role']);
+        expect(Object.keys(context.user ?? {})).toEqual(['id', 'email', 'role']);
       });
 
       it('should handle user with special characters in id', () => {

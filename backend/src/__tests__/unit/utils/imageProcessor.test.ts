@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Mock fs/sharp objects in tests */
 /**
  * ImageProcessor Unit Tests
  * Tests image processing, avatar management, backup operations, and storage statistics

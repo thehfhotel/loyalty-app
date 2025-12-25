@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Mock objects in tests */
 import { TRPCError } from '@trpc/server';
 import { router, publicProcedure, protectedProcedure, adminProcedure } from '../../../trpc/trpc';
 import type { Context } from '../../../trpc/context';
@@ -12,7 +13,7 @@ describe('tRPC Middleware Procedures', () => {
   const createTestRouter = () => {
     return router({
       publicTest: publicProcedure.query(({ ctx }) => {
-        return { userId: ctx.user?.id || null };
+        return { userId: ctx.user?.id ?? null };
       }),
       publicWithUser: publicProcedure.query(({ ctx }) => {
         return { user: ctx.user };

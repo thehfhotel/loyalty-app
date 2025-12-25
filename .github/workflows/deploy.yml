@@ -1566,12 +1566,24 @@ jobs:
           echo "🔍 Verifying tagged images..."
           docker images | grep -E "loyalty-app-(backend|frontend)" | grep -E "$SHORT_SHA|latest"
 
-          # Quick smoke test
+          # Quick smoke test - bypass entrypoint to verify runtime and build artifacts
           echo "🧪 Running smoke tests..."
-          if docker run --rm loyalty-app-backend:$SHORT_SHA node --version >/dev/null 2>&1; then
-            echo "✅ Backend image smoke test passed"
+
+          # Backend: Verify Node.js and compiled production code exist
+          if docker run --rm --entrypoint sh loyalty-app-backend:$SHORT_SHA -c "node --version && test -f /app/dist/index.js" >/dev/null 2>&1; then
+            NODE_VERSION=$(docker run --rm --entrypoint node loyalty-app-backend:$SHORT_SHA --version 2>/dev/null || echo "unknown")
+            echo "✅ Backend smoke test passed ($NODE_VERSION, dist/index.js verified)"
           else
-            echo "⚠️ Backend smoke test failed (non-critical)"
+            echo "❌ Backend smoke test failed - Node.js or dist/index.js missing"
+            exit 1
+          fi
+
+          # Frontend: Verify nginx and built HTML exist
+          if docker run --rm --entrypoint sh loyalty-app-frontend:$SHORT_SHA -c "nginx -v 2>&1 && test -f /usr/share/nginx/html/index.html" >/dev/null 2>&1; then
+            echo "✅ Frontend smoke test passed (nginx + index.html verified)"
+          else
+            echo "❌ Frontend smoke test failed - nginx or index.html missing"
+            exit 1
           fi
 
           # Output image tags for deployment job

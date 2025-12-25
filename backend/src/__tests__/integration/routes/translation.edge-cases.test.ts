@@ -46,7 +46,7 @@ jest.mock('../../../middleware/auth', () => ({
 
 // Mock validateRequest middleware
 jest.mock('../../../middleware/validateRequest', () => ({
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   validateRequest: (_schema: unknown) => (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
     next();
   }

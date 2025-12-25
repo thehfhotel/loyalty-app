@@ -183,7 +183,7 @@ class TranslationService {
   /**
    * Translate using Google Translate (placeholder implementation)
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   private async translateWithGoogle(_request: TranslationRequest): Promise<TranslationResponse> {
     // Placeholder implementation - parameters will be used when implemented
     throw new Error('Google Translate integration not implemented yet');
@@ -192,7 +192,7 @@ class TranslationService {
   /**
    * Translate using LibreTranslate (placeholder implementation)
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   private async translateWithLibreTranslate(_request: TranslationRequest): Promise<TranslationResponse> {
     // Placeholder implementation - parameters will be used when implemented
     throw new Error('LibreTranslate integration not implemented yet');

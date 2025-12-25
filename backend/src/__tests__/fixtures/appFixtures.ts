@@ -56,7 +56,7 @@ export const createMockMulterMiddleware = () => {
  * Create mock error handler for testing error scenarios
  */
 export const createMockErrorHandler = () => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express error handlers require 4 parameters
+   
   return (error: Error, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({
       error: error.message || 'Internal server error',

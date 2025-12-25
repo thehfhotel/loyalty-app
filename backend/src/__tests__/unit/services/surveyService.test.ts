@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Mock objects in tests */
 /**
  * SurveyService Unit Tests
  * Tests survey management, responses, analytics, and coupon assignments

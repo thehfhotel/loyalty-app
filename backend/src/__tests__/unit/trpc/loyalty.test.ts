@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Mock objects in tests */
 import { TRPCError } from '@trpc/server';
 
 // Create mock loyaltyService instance

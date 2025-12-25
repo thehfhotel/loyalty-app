@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Mock objects in tests */
 import { Request, Response } from 'express';
 import { surveyController } from '../../../controllers/surveyController';
 import { surveyService } from '../../../services/surveyService';

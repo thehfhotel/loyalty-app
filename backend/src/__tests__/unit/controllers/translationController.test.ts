@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Mock service responses in tests */
 import { Request, Response, NextFunction } from 'express';
 import { translationController } from '../../../controllers/translationController';
 import { translationService } from '../../../services/translationService';
