@@ -1543,24 +1543,14 @@ jobs:
           COMMIT_SHA="${{ github.sha }}"
           SHORT_SHA="${COMMIT_SHA:0:7}"
 
-          # Get image names from docker compose
-          BACKEND_IMAGE=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml images -q backend | head -1)
-          FRONTEND_IMAGE=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml images -q frontend | head -1)
+          # Tag images with commit SHA (images are already built as loyalty-app-backend:latest)
+          docker tag loyalty-app-backend:latest loyalty-app-backend:$COMMIT_SHA
+          docker tag loyalty-app-backend:latest loyalty-app-backend:$SHORT_SHA
+          echo "✅ Backend image tagged: $COMMIT_SHA, $SHORT_SHA, latest"
 
-          # If images were built, tag them
-          if [ -n "$BACKEND_IMAGE" ]; then
-            docker tag $BACKEND_IMAGE loyalty-app-backend:$COMMIT_SHA
-            docker tag $BACKEND_IMAGE loyalty-app-backend:$SHORT_SHA
-            docker tag $BACKEND_IMAGE loyalty-app-backend:latest
-            echo "✅ Backend image tagged: $COMMIT_SHA, $SHORT_SHA, latest"
-          fi
-
-          if [ -n "$FRONTEND_IMAGE" ]; then
-            docker tag $FRONTEND_IMAGE loyalty-app-frontend:$COMMIT_SHA
-            docker tag $FRONTEND_IMAGE loyalty-app-frontend:$SHORT_SHA
-            docker tag $FRONTEND_IMAGE loyalty-app-frontend:latest
-            echo "✅ Frontend image tagged: $COMMIT_SHA, $SHORT_SHA, latest"
-          fi
+          docker tag loyalty-app-frontend:latest loyalty-app-frontend:$COMMIT_SHA
+          docker tag loyalty-app-frontend:latest loyalty-app-frontend:$SHORT_SHA
+          echo "✅ Frontend image tagged: $COMMIT_SHA, $SHORT_SHA, latest"
 
           # Verify images exist
           echo "🔍 Verifying tagged images..."
