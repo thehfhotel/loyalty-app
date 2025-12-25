@@ -1199,7 +1199,7 @@ describe('UserService', () => {
         const result = await userService.getPendingEmailChange(userId);
 
         expect(result).toEqual({
-          pendingEmail: 'newemail@example.com',
+          email: 'newemail@example.com',
           expiresAt: expiresAt,
         });
       });
