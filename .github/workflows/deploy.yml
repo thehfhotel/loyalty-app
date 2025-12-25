@@ -1683,6 +1683,11 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           LINE_CHANNEL_ID: ${{ secrets.LINE_CHANNEL_ID }}
           LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
         run: |
           echo "🔧 Configuring development environment..."
 
@@ -1720,6 +1725,13 @@ jobs:
           LINE_CHANNEL_ID=${LINE_CHANNEL_ID}
           LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET}
           LINE_CALLBACK_URL=https://loyalty-dev.saichon.com/api/oauth/line/callback
+
+          # Email Service (SMTP)
+          SMTP_HOST=${SMTP_HOST}
+          SMTP_PORT=${SMTP_PORT}
+          SMTP_USER=${SMTP_USER}
+          SMTP_PASS=${SMTP_PASS}
+          SMTP_FROM=${SMTP_FROM}
 
           # Azure Translation
           TRANSLATION_FEATURE_ENABLED=false
@@ -2253,6 +2265,12 @@ jobs:
           LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
           LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
           LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
+
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USER=${{ secrets.SMTP_USER }}
+          SMTP_PASS=${{ secrets.SMTP_PASS }}
+          SMTP_FROM=${{ secrets.SMTP_FROM }}
 
           LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
           LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
