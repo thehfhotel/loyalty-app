@@ -1568,11 +1568,12 @@ jobs:
             exit 1
           fi
 
-          # Frontend: Verify nginx and built HTML exist
-          if docker run --rm --entrypoint sh loyalty-app-frontend:$SHORT_SHA -c "nginx -v 2>&1 && test -f /usr/share/nginx/html/index.html" >/dev/null 2>&1; then
-            echo "✅ Frontend smoke test passed (nginx + index.html verified)"
+          # Frontend: Verify Node.js and package.json exist (uses development stage with Vite)
+          if docker run --rm --entrypoint sh loyalty-app-frontend:$SHORT_SHA -c "node --version && test -f /app/package.json" >/dev/null 2>&1; then
+            NODE_VERSION=$(docker run --rm --entrypoint node loyalty-app-frontend:$SHORT_SHA --version 2>/dev/null || echo "unknown")
+            echo "✅ Frontend smoke test passed ($NODE_VERSION, package.json verified)"
           else
-            echo "❌ Frontend smoke test failed - nginx or index.html missing"
+            echo "❌ Frontend smoke test failed - Node.js or package.json missing"
             exit 1
           fi
 
