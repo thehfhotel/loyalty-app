@@ -1183,6 +1183,7 @@ describe('SurveyService', () => {
       for (let i = 0; i < userIds.length; i++) {
         mockQuery
           .mockResolvedValueOnce({
+            // eslint-disable-next-line security/detect-object-injection -- Test loop index
             rows: [{ id: userIds[i], email: `user${i + 1}@example.com`, tier_id: 1, created_at: '2023-01-01T00:00:00Z' }]
           } as never)
           .mockResolvedValueOnce({ rows: [] } as never) // No existing invitation

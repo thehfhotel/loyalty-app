@@ -43,6 +43,7 @@ describe('CSRF Middleware', () => {
 
     mockResponse = {
       cookie: jest.fn((name: string, value: unknown, options?: unknown) => {
+        // eslint-disable-next-line security/detect-object-injection -- Test mock
         cookieJar[name] = { value, options };
         return mockResponse as Response;
       }) as Response['cookie'],

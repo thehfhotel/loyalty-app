@@ -428,6 +428,7 @@ describe('Emoji Utils', () => {
     it('should maintain emoji integrity through full cycle', () => {
       // Pick random emoji from list
       const randomIndex = Math.floor(Math.random() * PROFILE_EMOJIS.length);
+      // eslint-disable-next-line security/detect-object-injection -- Safe array access with computed index
       const emoji = PROFILE_EMOJIS[randomIndex];
 
       if (emoji) {

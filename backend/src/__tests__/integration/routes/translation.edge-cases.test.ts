@@ -81,6 +81,7 @@ describe('Translation Routes Edge Cases Integration Tests', () => {
       const { translationService } = jest.requireMock('../../../services/translationService');
       const mockTranslations: Record<string, string[]> = {};
       translateData.targetLanguages.forEach(lang => {
+        // eslint-disable-next-line security/detect-object-injection -- Test data setup
         mockTranslations[lang] = ['Translated text'];
       });
 
