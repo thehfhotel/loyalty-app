@@ -2,10 +2,12 @@ import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { UserService } from '../../../services/userService';
 import { AppError } from '../../../middleware/errorHandler';
 import * as database from '../../../config/database';
+import * as emailService from '../../../services/emailService';
 
 // Mock dependencies
 jest.mock('../../../config/database');
 jest.mock('../../../services/notificationService');
+jest.mock('../../../services/emailService');
 jest.mock('../../../utils/logger');
 
 describe('UserService', () => {
@@ -917,6 +919,301 @@ describe('UserService', () => {
 
       expect(result.gender).toBe('male');
       expect(result.occupation).toBe('engineer');
+    });
+  });
+
+  describe('Email Verification', () => {
+    beforeEach(() => {
+      // Mock the email service methods
+      jest.spyOn(emailService.emailService, 'sendVerificationEmail').mockResolvedValue(undefined);
+      jest.spyOn(emailService, 'generateVerificationCode').mockReturnValue('ABCD-1234');
+    });
+
+    describe('initiateEmailChange', () => {
+      it('should reject if new email already in use', async () => {
+        const userId = 'user-123';
+        const newEmail = 'existing@example.com';
+
+        // Mock email already exists for another user
+        mockQuery.mockResolvedValueOnce([{ id: 'other-user' }] as never);
+
+        await expect(userService.initiateEmailChange(userId, newEmail))
+          .rejects.toMatchObject({
+            statusCode: 409,
+            message: 'Email is already in use by another account',
+          });
+      });
+
+      it('should invalidate previous pending tokens for user', async () => {
+        const userId = 'user-123';
+        const newEmail = 'newemail@example.com';
+
+        // Mock no existing user with that email
+        mockQuery.mockResolvedValueOnce([] as never);
+        // Mock invalidating existing tokens
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 2 });
+        // Mock creating new token
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.initiateEmailChange(userId, newEmail);
+
+        // Verify the invalidation query was called
+        expect(mockQueryWithMeta).toHaveBeenCalledWith(
+          expect.stringContaining('UPDATE email_verification_tokens SET used = true'),
+          [userId]
+        );
+      });
+
+      it('should create new verification token in database', async () => {
+        const userId = 'user-123';
+        const newEmail = 'newemail@example.com';
+
+        mockQuery.mockResolvedValueOnce([] as never);
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // Invalidate
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 }); // Insert
+
+        await userService.initiateEmailChange(userId, newEmail);
+
+        // Verify the insert query was called with correct parameters
+        expect(mockQueryWithMeta).toHaveBeenCalledWith(
+          expect.stringContaining('INSERT INTO email_verification_tokens'),
+          expect.arrayContaining([userId, newEmail, 'ABCD-1234'])
+        );
+      });
+
+      it('should send verification email to new address', async () => {
+        const userId = 'user-123';
+        const newEmail = 'newemail@example.com';
+
+        mockQuery.mockResolvedValueOnce([] as never);
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.initiateEmailChange(userId, newEmail);
+
+        // Verify email was sent
+        expect(emailService.emailService.sendVerificationEmail).toHaveBeenCalledWith(
+          newEmail,
+          'ABCD-1234'
+        );
+      });
+
+      it('should succeed without updating user email yet', async () => {
+        const userId = 'user-123';
+        const newEmail = 'newemail@example.com';
+
+        mockQuery.mockResolvedValueOnce([] as never);
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.initiateEmailChange(userId, newEmail);
+
+        // Verify no UPDATE on users table was called
+        expect(mockQueryWithMeta).not.toHaveBeenCalledWith(
+          expect.stringContaining('UPDATE users SET email'),
+          expect.anything()
+        );
+      });
+    });
+
+    describe('verifyEmailChange', () => {
+      it('should reject invalid/non-existent codes', async () => {
+        const userId = 'user-123';
+        const code = 'INVALID-CODE';
+
+        // Mock no token found
+        mockQuery.mockResolvedValueOnce([] as never);
+
+        await expect(userService.verifyEmailChange(userId, code))
+          .rejects.toMatchObject({
+            statusCode: 400,
+            message: 'Invalid verification code',
+          });
+      });
+
+      it('should reject expired codes', async () => {
+        const userId = 'user-123';
+        const code = 'ABCD-1234';
+
+        // Mock expired token
+        mockQuery.mockResolvedValueOnce([{
+          id: 'token-1',
+          new_email: 'newemail@example.com',
+          expires_at: new Date(Date.now() - 1000), // Expired
+          used: false,
+        }] as never);
+
+        await expect(userService.verifyEmailChange(userId, code))
+          .rejects.toMatchObject({
+            statusCode: 400,
+            message: 'Verification code has expired',
+          });
+      });
+
+      it('should reject already-used codes', async () => {
+        const userId = 'user-123';
+        const code = 'ABCD-1234';
+
+        // Mock used token
+        mockQuery.mockResolvedValueOnce([{
+          id: 'token-1',
+          new_email: 'newemail@example.com',
+          expires_at: new Date(Date.now() + 60000),
+          used: true,
+        }] as never);
+
+        await expect(userService.verifyEmailChange(userId, code))
+          .rejects.toMatchObject({
+            statusCode: 400,
+            message: 'Verification code has already been used',
+          });
+      });
+
+      it('should update user email on valid code', async () => {
+        const userId = 'user-123';
+        const code = 'ABCD-1234';
+        const newEmail = 'newemail@example.com';
+
+        // Mock valid token
+        mockQuery
+          .mockResolvedValueOnce([{
+            id: 'token-1',
+            new_email: newEmail,
+            expires_at: new Date(Date.now() + 60000),
+            used: false,
+          }] as never)
+          // Mock email not taken
+          .mockResolvedValueOnce([] as never);
+
+        // Mock update user email
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+        // Mock mark token as used
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        const result = await userService.verifyEmailChange(userId, code);
+
+        expect(result).toBe(newEmail);
+        expect(mockQueryWithMeta).toHaveBeenCalledWith(
+          expect.stringContaining('UPDATE users SET email = $1, email_verified = true'),
+          [newEmail, userId]
+        );
+      });
+
+      it('should mark token as used after verification', async () => {
+        const userId = 'user-123';
+        const code = 'ABCD-1234';
+
+        mockQuery
+          .mockResolvedValueOnce([{
+            id: 'token-1',
+            new_email: 'newemail@example.com',
+            expires_at: new Date(Date.now() + 60000),
+            used: false,
+          }] as never)
+          .mockResolvedValueOnce([] as never);
+
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.verifyEmailChange(userId, code);
+
+        expect(mockQueryWithMeta).toHaveBeenCalledWith(
+          expect.stringContaining('UPDATE email_verification_tokens SET used = true'),
+          ['token-1']
+        );
+      });
+    });
+
+    describe('resendVerificationCode', () => {
+      it('should reject if no pending verification exists', async () => {
+        const userId = 'user-123';
+
+        mockQuery.mockResolvedValueOnce([] as never);
+
+        await expect(userService.resendVerificationCode(userId))
+          .rejects.toMatchObject({
+            statusCode: 404,
+            message: 'No pending email verification found',
+          });
+      });
+
+      it('should generate new code and update token', async () => {
+        const userId = 'user-123';
+
+        // Mock existing pending token
+        mockQuery.mockResolvedValueOnce([{
+          id: 'token-1',
+          new_email: 'newemail@example.com',
+        }] as never);
+
+        // Mock update token
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.resendVerificationCode(userId);
+
+        expect(mockQueryWithMeta).toHaveBeenCalledWith(
+          expect.stringContaining('UPDATE email_verification_tokens SET code = $1'),
+          expect.arrayContaining(['ABCD-1234'])
+        );
+      });
+
+      it('should send new email with new code', async () => {
+        const userId = 'user-123';
+
+        mockQuery.mockResolvedValueOnce([{
+          id: 'token-1',
+          new_email: 'newemail@example.com',
+        }] as never);
+
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        await userService.resendVerificationCode(userId);
+
+        expect(emailService.emailService.sendVerificationEmail).toHaveBeenCalledWith(
+          'newemail@example.com',
+          'ABCD-1234'
+        );
+      });
+    });
+
+    describe('getPendingEmailChange', () => {
+      it('should return null if no pending verification', async () => {
+        const userId = 'user-123';
+
+        mockQuery.mockResolvedValueOnce([] as never);
+
+        const result = await userService.getPendingEmailChange(userId);
+
+        expect(result).toBeNull();
+      });
+
+      it('should return pending email and expiry if exists', async () => {
+        const userId = 'user-123';
+        const expiresAt = new Date(Date.now() + 3600000);
+
+        mockQuery.mockResolvedValueOnce([{
+          new_email: 'newemail@example.com',
+          expires_at: expiresAt,
+        }] as never);
+
+        const result = await userService.getPendingEmailChange(userId);
+
+        expect(result).toEqual({
+          pendingEmail: 'newemail@example.com',
+          expiresAt: expiresAt,
+        });
+      });
+
+      it('should not return expired tokens', async () => {
+        const userId = 'user-123';
+
+        // The query should filter out expired tokens, so empty result
+        mockQuery.mockResolvedValueOnce([] as never);
+
+        const result = await userService.getPendingEmailChange(userId);
+
+        expect(result).toBeNull();
+      });
     });
   });
 });
