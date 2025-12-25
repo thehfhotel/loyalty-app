@@ -3,7 +3,8 @@ import crypto from 'crypto';
 import { logger } from '../utils/logger';
 
 export function generateVerificationCode(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  // Use uppercase only - frontend normalizes input to uppercase for user convenience
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   const bytes = crypto.randomBytes(8);
   let code = '';
   for (let i = 0; i < 8; i++) {

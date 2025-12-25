@@ -27,10 +27,10 @@ import { generateVerificationCode, emailService } from '../../../services/emailS
 
 describe('EmailService', () => {
   describe('generateVerificationCode', () => {
-    it('should generate code in xxxx-xxxx format', () => {
+    it('should generate code in XXXX-XXXX format (uppercase)', () => {
       const code = generateVerificationCode();
 
-      expect(code).toMatch(/^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}$/);
+      expect(code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
     });
 
     it('should generate code with exactly 9 characters (4 + dash + 4)', () => {
@@ -42,12 +42,12 @@ describe('EmailService', () => {
       expect(code.split('-')[1]).toHaveLength(4);
     });
 
-    it('should only contain alphanumeric characters (a-Z0-9)', () => {
+    it('should only contain uppercase alphanumeric characters (A-Z0-9)', () => {
       const code = generateVerificationCode();
       const codeWithoutDash = code.replace('-', '');
 
-      expect(codeWithoutDash).toMatch(/^[a-zA-Z0-9]{8}$/);
-      expect(codeWithoutDash).not.toMatch(/[^a-zA-Z0-9]/);
+      expect(codeWithoutDash).toMatch(/^[A-Z0-9]{8}$/);
+      expect(codeWithoutDash).not.toMatch(/[^A-Z0-9]/);
     });
 
     it('should generate unique codes on each call', () => {
@@ -62,8 +62,8 @@ describe('EmailService', () => {
       expect(codes.size).toBe(iterations);
     });
 
-    it('should only use characters from the defined charset', () => {
-      const validChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    it('should only use characters from the uppercase charset', () => {
+      const validChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
       const code = generateVerificationCode();
       const codeWithoutDash = code.replace('-', '');
 
@@ -364,7 +364,7 @@ describe('EmailService', () => {
 
       // Generate code
       const code = generateVerificationCode();
-      expect(code).toMatch(/^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}$/);
+      expect(code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
 
       // Send email
       await emailService.sendVerificationEmail(recipient, code);
