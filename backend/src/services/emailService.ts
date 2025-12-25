@@ -7,9 +7,10 @@ export function generateVerificationCode(): string {
   const bytes = crypto.randomBytes(8);
   let code = '';
   for (let i = 0; i < 8; i++) {
+    // eslint-disable-next-line security/detect-object-injection -- Safe: i is a loop counter 0-7
     const byte = bytes[i];
     if (byte !== undefined) {
-      code += chars[byte % chars.length];
+      code += chars.charAt(byte % chars.length);
     }
   }
   return `${code.slice(0, 4)}-${code.slice(4, 8)}`;
@@ -20,8 +21,8 @@ class EmailService {
 
   constructor() {
     this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.privateemail.com',
-      port: parseInt(process.env.SMTP_PORT || '465'),
+      host: process.env.SMTP_HOST ?? 'smtp.privateemail.com',
+      port: parseInt(process.env.SMTP_PORT ?? '465'),
       secure: true,
       auth: {
         user: process.env.SMTP_USER,
@@ -31,7 +32,7 @@ class EmailService {
   }
 
   async sendVerificationEmail(to: string, code: string): Promise<void> {
-    const from = process.env.SMTP_FROM || 'noreply@example.com';
+    const from = process.env.SMTP_FROM ?? 'noreply@example.com';
 
     await this.transporter.sendMail({
       from,
