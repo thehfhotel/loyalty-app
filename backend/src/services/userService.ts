@@ -6,6 +6,7 @@ import { validateEmojiAvatar, generateEmojiAvatarUrl } from '../utils/emojiUtils
 import { logger } from '../utils/logger';
 // import { NotificationService } from './notificationService'; // Disabled until profile completion rewards re-enabled
 import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
+import { emailService, generateVerificationCode } from './emailService';
 
 interface CouponData {
   id: string;
@@ -380,6 +381,138 @@ export class UserService {
   //   // Method implementation commented out until database schema is updated
   //   return { success: false };
   // }
+
+  async initiateEmailChange(userId: string, newEmail: string): Promise<void> {
+    // Check if email is already in use by another user
+    const [existingUser] = await query<{id: string}>(
+      'SELECT id FROM users WHERE email = $1 AND id != $2',
+      [newEmail, userId]
+    );
+
+    if (existingUser) {
+      throw new AppError(409, 'Email is already in use by another account');
+    }
+
+    // Invalidate any existing pending tokens for this user
+    await queryWithMeta(
+      'UPDATE email_verification_tokens SET used = true WHERE user_id = $1 AND used = false',
+      [userId]
+    );
+
+    // Generate verification code
+    const code = generateVerificationCode();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Store the token
+    await queryWithMeta(
+      `INSERT INTO email_verification_tokens (user_id, new_email, code, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [userId, newEmail, code, expiresAt]
+    );
+
+    // Send verification email
+    await emailService.sendVerificationEmail(newEmail, code);
+
+    logger.info('Email change initiated', { userId, newEmail });
+  }
+
+  async verifyEmailChange(userId: string, code: string): Promise<string> {
+    // Find valid token
+    const [token] = await query<{id: string; new_email: string; expires_at: Date; used: boolean}>(
+      `SELECT id, new_email, expires_at, used
+       FROM email_verification_tokens
+       WHERE user_id = $1 AND code = $2`,
+      [userId, code]
+    );
+
+    if (!token) {
+      throw new AppError(400, 'Invalid verification code');
+    }
+
+    if (token.used) {
+      throw new AppError(400, 'Verification code has already been used');
+    }
+
+    if (new Date(token.expires_at) < new Date()) {
+      throw new AppError(400, 'Verification code has expired');
+    }
+
+    // Check if email is still available (could have been taken since initiation)
+    const [existingUser] = await query<{id: string}>(
+      'SELECT id FROM users WHERE email = $1 AND id != $2',
+      [token.new_email, userId]
+    );
+
+    if (existingUser) {
+      throw new AppError(409, 'Email is already in use by another account');
+    }
+
+    // Update user email and mark as verified
+    await queryWithMeta(
+      'UPDATE users SET email = $1, email_verified = true, updated_at = NOW() WHERE id = $2',
+      [token.new_email, userId]
+    );
+
+    // Mark token as used
+    await queryWithMeta(
+      'UPDATE email_verification_tokens SET used = true WHERE id = $1',
+      [token.id]
+    );
+
+    logger.info('Email change verified', { userId, newEmail: token.new_email });
+
+    return token.new_email;
+  }
+
+  async resendVerificationCode(userId: string): Promise<void> {
+    // Find the latest pending token
+    const [token] = await query<{id: string; new_email: string}>(
+      `SELECT id, new_email
+       FROM email_verification_tokens
+       WHERE user_id = $1 AND used = false AND expires_at > NOW()
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (!token) {
+      throw new AppError(404, 'No pending email verification found');
+    }
+
+    // Generate new code and update expiration
+    const newCode = generateVerificationCode();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await queryWithMeta(
+      'UPDATE email_verification_tokens SET code = $1, expires_at = $2 WHERE id = $3',
+      [newCode, expiresAt, token.id]
+    );
+
+    // Send new verification email
+    await emailService.sendVerificationEmail(token.new_email, newCode);
+
+    logger.info('Verification code resent', { userId, newEmail: token.new_email });
+  }
+
+  async getPendingEmailChange(userId: string): Promise<{email: string; expiresAt: Date} | null> {
+    const [token] = await query<{new_email: string; expires_at: Date}>(
+      `SELECT new_email, expires_at
+       FROM email_verification_tokens
+       WHERE user_id = $1 AND used = false AND expires_at > NOW()
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (!token) {
+      return null;
+    }
+
+    return {
+      email: token.new_email,
+      expiresAt: new Date(token.expires_at),
+    };
+  }
 
   // Admin-only methods
   async getAllUsers(page = 1, limit = 10, search = ''): Promise<{ users: UserWithProfile[], total: number }> {

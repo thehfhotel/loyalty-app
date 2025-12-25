@@ -1,6 +1,6 @@
 /**
  * tRPC User Router
- * Type-safe user profile and settings endpoints
+ * Type-safe user profile, settings, and email verification endpoints
  */
 
 import { z } from 'zod';
@@ -66,7 +66,7 @@ export const userRouter = router({
   }),
 
   /**
-   * Update user email
+   * Initiate email change - sends verification code to new email
    */
   updateEmail: protectedProcedure
     .input(
@@ -75,9 +75,47 @@ export const userRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await userService.updateUserEmail(ctx.user.id, input.email);
-      return { success: true };
+      await userService.initiateEmailChange(ctx.user.id, input.email);
+      return {
+        success: true,
+        message: 'Verification code sent to new email address',
+        pendingVerification: true,
+      };
     }),
+
+  /**
+   * Verify email change with code
+   */
+  verifyEmail: protectedProcedure
+    .input(
+      z.object({
+        code: z
+          .string()
+          .regex(/^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}$/, 'Invalid code format'),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const newEmail = await userService.verifyEmailChange(
+        ctx.user.id,
+        input.code
+      );
+      return { success: true, email: newEmail };
+    }),
+
+  /**
+   * Resend verification code for pending email change
+   */
+  resendVerificationCode: protectedProcedure.mutation(async ({ ctx }) => {
+    await userService.resendVerificationCode(ctx.user.id);
+    return { success: true, message: 'Verification code resent' };
+  }),
+
+  /**
+   * Get pending email change status
+   */
+  getPendingEmailChange: protectedProcedure.query(async ({ ctx }) => {
+    return await userService.getPendingEmailChange(ctx.user.id);
+  }),
 
   /**
    * Update emoji avatar

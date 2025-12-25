@@ -193,7 +193,7 @@ router.put('/avatar/emoji', async (req, res, next) => {
   }
 });
 
-// Update email
+// Update email - now initiates verification
 router.put('/email', async (req, res, next) => {
   try {
     if (!req.user) {
@@ -201,27 +201,88 @@ router.put('/email', async (req, res, next) => {
     }
 
     const { email } = req.body;
-    
+
     if (!email || typeof email !== 'string') {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    logger.info('Updating user email', {
-      userId: req.user.id,
-      newEmail: email
-    });
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
 
-    // Update user email
-    await userService.updateUserEmail(req.user.id, email);
-
-    logger.info('Email updated successfully', {
-      userId: req.user.id
-    });
+    await userService.initiateEmailChange(req.user.id, email);
 
     return res.json({
       success: true,
-      message: 'Email updated successfully'
+      message: 'Verification code sent to new email address',
+      pendingVerification: true
     });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Verify email change
+router.post('/email/verify', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const { code } = req.body;
+
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ error: 'Verification code is required' });
+    }
+
+    // Validate code format: xxxx-xxxx
+    const codeRegex = /^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}$/;
+    if (!codeRegex.test(code)) {
+      return res.status(400).json({ error: 'Invalid code format' });
+    }
+
+    const newEmail = await userService.verifyEmailChange(req.user.id, code);
+
+    return res.json({
+      success: true,
+      message: 'Email verified successfully',
+      email: newEmail
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Resend verification code
+router.post('/email/resend', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    await userService.resendVerificationCode(req.user.id);
+
+    return res.json({
+      success: true,
+      message: 'Verification code resent'
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Get pending email verification status
+router.get('/email/pending', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const pending = await userService.getPendingEmailChange(req.user.id);
+
+    return res.json(pending);
   } catch (error) {
     return next(error);
   }

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -39,6 +39,7 @@ interface SettingsModalProps {
   onDeleteAvatar: () => Promise<void>;
   uploadingAvatar: boolean;
   onProfileUpdate?: () => Promise<void>;
+  onEmailVerificationNeeded?: (email: string) => void;
 }
 
 export default function SettingsModal({
@@ -50,12 +51,13 @@ export default function SettingsModal({
   onAvatarUpload,
   onDeleteAvatar,
   uploadingAvatar,
-  onProfileUpdate
+  onProfileUpdate,
+  onEmailVerificationNeeded
 }: SettingsModalProps) {
   const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showEmojiSelector, setShowEmojiSelector] = React.useState(false);
+  const [showEmojiSelector, setShowEmojiSelector] = useState(false);
 
   // tRPC hooks
   const updateEmojiAvatarMutation = trpc.user.updateEmojiAvatar.useMutation();
@@ -79,6 +81,18 @@ export default function SettingsModal({
       occupation: profile?.occupation ?? '',
     }
   });
+
+  const handleFormSubmit = async (data: ProfileFormData) => {
+    // Check if email has changed
+    if (data.email && data.email !== user?.email && onEmailVerificationNeeded) {
+      // Trigger email verification flow
+      onEmailVerificationNeeded(data.email);
+      return;
+    }
+
+    // Normal form submission
+    await onSubmit(data);
+  };
 
   // Reset form when profile or user changes
   React.useEffect(() => {
@@ -115,7 +129,7 @@ export default function SettingsModal({
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
         {/* Backdrop */}
-        <div 
+        <div
           className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
           onClick={onClose}
         />
@@ -139,7 +153,7 @@ export default function SettingsModal({
             {/* Profile Picture Section */}
             <div className="mb-6">
               <h4 className="text-md font-medium text-gray-900 mb-4">Profile Picture</h4>
-              
+
               <div className="flex items-center space-x-4 mb-4">
                 <div className="relative">
                   <EmojiAvatar
@@ -184,7 +198,7 @@ export default function SettingsModal({
                       </button>
                     )}
                   </div>
-                  
+
                   <p className="text-xs text-gray-500">
                     Choose an emoji or upload your own image for your profile picture
                   </p>
@@ -220,7 +234,7 @@ export default function SettingsModal({
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
               {/* Email Field */}
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700">
@@ -311,13 +325,13 @@ export default function SettingsModal({
                 )}
               </div>
 
-              <DateOfBirthField 
+              <DateOfBirthField
                 register={register}
                 errors={errors}
                 isModal={false}
               />
 
-              <GenderField 
+              <GenderField
                 register={register}
                 errors={errors}
                 isModal={false}
