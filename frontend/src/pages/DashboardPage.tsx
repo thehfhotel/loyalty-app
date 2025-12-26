@@ -1,5 +1,5 @@
 import { useAuthStore } from '../store/authStore';
-import { FiUser, FiAward, FiUsers, FiGift } from 'react-icons/fi';
+import { FiUser, FiAward, FiUsers, FiGift, FiMail } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import MainLayout from '../components/layout/MainLayout';
@@ -387,6 +387,30 @@ export default function DashboardPage() {
                           </dt>
                           <dd className="mt-1 text-sm font-medium text-gray-500">
                             {t('admin.loyalty.viewTransactionHistory')}
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+
+                {/* Email Service Card */}
+                <Link
+                  to="/admin/email-service"
+                  className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                >
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <FiMail className="h-6 w-6 text-blue-600" />
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-lg font-semibold text-gray-900 truncate">
+                            {t('dashboard.emailService')}
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium text-gray-500">
+                            {t('dashboard.emailServiceDesc')}
                           </dd>
                         </dl>
                       </div>

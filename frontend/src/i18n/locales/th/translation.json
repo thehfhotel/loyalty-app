@@ -137,7 +137,9 @@
     "surveyManagement": "จัดการแบบสำรวจ",
     "manageSurveysAdmin": "สร้างและจัดการแบบสำรวจ",
     "userManagement": "จัดการผู้ใช้",
-    "manageUsersAdmin": "จัดการบัญชีผู้ใช้ บทบาท และการเข้าถึงระบบ"
+    "manageUsersAdmin": "จัดการบัญชีผู้ใช้ บทบาท และการเข้าถึงระบบ",
+    "emailService": "บริการอีเมล",
+    "emailServiceDesc": "ตรวจสอบและทดสอบการส่งอีเมล"
   },
   "profile": {
     "title": "ข้อมูลส่วนตัว",
@@ -1205,5 +1207,33 @@
       "fetchDetailsFailed": "ไม่สามารถโหลดรายละเอียดผู้ใช้"
     },
     "confirmDelete": "คุณแน่ใจหรือว่าต้องการลบ {{name}}? การดำเนินการนี้ไม่สามารถย้อนกลับได้"
+  },
+  "emailService": {
+    "title": "บริการอีเมล",
+    "description": "ตรวจสอบและทดสอบการส่งอีเมล",
+    "status": {
+      "title": "สถานะบริการอีเมล",
+      "configured": "กำหนดค่าแล้ว",
+      "notConfigured": "ยังไม่ได้กำหนดค่า",
+      "smtpConnected": "SMTP เชื่อมต่อแล้ว",
+      "smtpDisconnected": "SMTP ไม่ได้เชื่อมต่อ",
+      "imapConnected": "IMAP เชื่อมต่อแล้ว",
+      "imapDisconnected": "IMAP ไม่ได้เชื่อมต่อ"
+    },
+    "test": {
+      "button": "ทดสอบอีเมล",
+      "running": "กำลังทดสอบ...",
+      "success": "ทดสอบอีเมลสำเร็จ",
+      "failed": "ทดสอบอีเมลล้มเหลว"
+    },
+    "results": {
+      "title": "ผลการทดสอบ",
+      "testId": "รหัสทดสอบ",
+      "smtpSent": "ส่ง SMTP",
+      "imapReceived": "รับ IMAP",
+      "deliveryTime": "เวลาส่ง",
+      "error": "ข้อผิดพลาด"
+    },
+    "lastTest": "ทดสอบล่าสุด"
   }
 }

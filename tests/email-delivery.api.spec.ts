@@ -27,21 +27,23 @@ test.describe('Email Delivery Tests', () => {
     });
   });
 
-  test.describe('Email Admin Endpoints', () => {
+  test.describe('Email Admin Endpoints (tRPC)', () => {
     test('Email status endpoint should require authentication', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/admin/email/status`);
-
-      expect([401, 403]).toContain(response.status());
-    });
-
-    test('Email config endpoint should require authentication', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/admin/email/config`);
+      const response = await request.post(`${backendUrl}/api/trpc/admin.email.getStatus`, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
       expect([401, 403]).toContain(response.status());
     });
 
     test('Email test endpoint should require authentication', async ({ request }) => {
-      const response = await request.post(`${backendUrl}/api/admin/email/test`);
+      const response = await request.post(`${backendUrl}/api/trpc/admin.email.runTest`, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
       expect([401, 403]).toContain(response.status());
     });
@@ -105,24 +107,31 @@ test.describe('Email Delivery Tests', () => {
         return;
       }
 
-      // Test email delivery
-      const testResponse = await request.post(`${backendUrl}/api/admin/email/test?timeout=60000`, {
+      // Test email delivery using tRPC endpoint
+      const testResponse = await request.post(`${backendUrl}/api/trpc/admin.email.runTest`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'X-CSRF-Token': csrfToken,
+          'Content-Type': 'application/json',
           ...(cookies && { 'Cookie': Array.isArray(cookies) ? cookies.join('; ') : cookies }),
+        },
+        data: {
+          timeout: 60000,
         },
       });
 
       expect(testResponse.ok()).toBeTruthy();
-      const result = await testResponse.json();
+      const responseData = await testResponse.json();
+
+      // tRPC wraps the result in a 'result' object
+      const result = responseData.result?.data || responseData;
 
       console.log('Email delivery test result:', JSON.stringify(result, null, 2));
 
       expect(result.success).toBe(true);
-      expect(result.result.smtpSent).toBe(true);
-      expect(result.result.imapReceived).toBe(true);
-      expect(result.result.deliveryTimeMs).toBeGreaterThan(0);
+      expect(result.smtpSent).toBe(true);
+      expect(result.imapReceived).toBe(true);
+      expect(result.deliveryTimeMs).toBeGreaterThan(0);
     });
   });
 });

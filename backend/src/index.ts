@@ -47,10 +47,10 @@ import membershipRoutes from './routes/membership';
 import translationRoutes from './routes/translation';
 import notificationRoutes from './routes/notifications';
 import analyticsRoutes from './routes/analyticsRoutes';
-import adminRoutes from './routes/admin';
 // Import and initialize OAuth service to register strategies
 import './services/oauthService';
 import { oauthCleanupService } from './services/oauthCleanupService';
+import { emailService } from './services/emailService';
 
 // tRPC imports
 import { createExpressMiddleware } from '@trpc/server/adapters/express';
@@ -407,7 +407,6 @@ function configureApp(app: express.Express) {
   app.use('/api/translation', apiRateLimit, translationRoutes); // Public translations use IP-based only
   app.use('/api/notifications', apiRateLimit, userRateLimit, notificationRoutes);
   app.use('/api/analytics', apiRateLimit, userRateLimit, analyticsRoutes);
-  app.use('/api/admin', apiRateLimit, adminRoutes);
 
   // tRPC endpoint - Type-safe API with end-to-end type safety
   // optionalAuth parses JWT token if present, setting req.user for authenticated requests
@@ -476,6 +475,11 @@ async function startServer() {
     httpServer.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
       logger.info(`Session store: ${redisAvailable ? 'Redis' : 'MemoryStore'}`);
+
+      // Log email configuration status
+      const emailConfigured = emailService.isEmailConfigured();
+      logger.info(`Email service: ${emailConfigured ? 'configured' : 'not configured'}`);
+
       logger.info('Backend server initialized with storage, survey data, and OAuth state cleanup');
     });
   } catch (error) {

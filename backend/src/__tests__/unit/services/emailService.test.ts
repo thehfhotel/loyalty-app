@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- Tests require dynamic reimporting to reset module state */
 /**
  * EmailService Unit Tests
  * Tests email verification code generation and email sending functionality
@@ -5,8 +6,10 @@
 
 // Mock nodemailer BEFORE importing emailService
 const mockSendMail = jest.fn();
+const mockVerify = jest.fn().mockResolvedValue(true);
 const mockCreateTransport = jest.fn(() => ({
   sendMail: mockSendMail,
+  verify: mockVerify,
 }));
 
 jest.mock('nodemailer', () => ({
@@ -511,6 +514,257 @@ describe('EmailService', () => {
       await expect(
         emailService.sendRegistrationVerificationEmail(recipient, code)
       ).rejects.toThrow('Network timeout');
+    });
+  });
+
+  describe('isEmailConfigured', () => {
+    it('should return true when SMTP_USER and SMTP_PASS are set', () => {
+      const result = emailService.isEmailConfigured();
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false when SMTP_USER is missing', () => {
+      const originalUser = process.env.SMTP_USER;
+      delete process.env.SMTP_USER;
+
+      // Re-import to create new service instance
+      jest.resetModules();
+      const { emailService: newService } = require('../../../services/emailService');
+
+      expect(newService.isEmailConfigured()).toBe(false);
+
+      // Restore
+      process.env.SMTP_USER = originalUser;
+    });
+
+    it('should return false when SMTP_PASS is missing', () => {
+      const originalPass = process.env.SMTP_PASS;
+      delete process.env.SMTP_PASS;
+
+      // Re-import to create new service instance
+      jest.resetModules();
+      const { emailService: newService } = require('../../../services/emailService');
+
+      expect(newService.isEmailConfigured()).toBe(false);
+
+      // Restore
+      process.env.SMTP_PASS = originalPass;
+    });
+
+    it('should return false when both SMTP_USER and SMTP_PASS are missing', () => {
+      const originalUser = process.env.SMTP_USER;
+      const originalPass = process.env.SMTP_PASS;
+      delete process.env.SMTP_USER;
+      delete process.env.SMTP_PASS;
+
+      // Re-import to create new service instance
+      jest.resetModules();
+      const { emailService: newService } = require('../../../services/emailService');
+
+      expect(newService.isEmailConfigured()).toBe(false);
+
+      // Restore
+      process.env.SMTP_USER = originalUser;
+      process.env.SMTP_PASS = originalPass;
+    });
+  });
+
+  describe('getHealthStatus', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockVerify.mockResolvedValue(true);
+    });
+
+    it('should return configured: false when not configured', async () => {
+      const originalUser = process.env.SMTP_USER;
+      const originalPass = process.env.SMTP_PASS;
+      delete process.env.SMTP_USER;
+      delete process.env.SMTP_PASS;
+
+      // Re-import to create new service instance
+      jest.resetModules();
+      const { emailService: newService } = require('../../../services/emailService');
+
+      const status = await newService.getHealthStatus();
+
+      expect(status.configured).toBe(false);
+      expect(status.smtpConnected).toBe(false);
+      expect(status.imapConnected).toBe(false);
+
+      // Restore
+      process.env.SMTP_USER = originalUser;
+      process.env.SMTP_PASS = originalPass;
+    });
+
+    it('should return smtpConnected: true when verify succeeds', async () => {
+      mockVerify.mockResolvedValue(true);
+
+      const status = await emailService.getHealthStatus();
+
+      expect(status.configured).toBe(true);
+      expect(status.smtpConnected).toBe(true);
+    });
+
+    it('should return smtpConnected: false when verify fails', async () => {
+      mockVerify.mockRejectedValue(new Error('Connection failed'));
+
+      const status = await emailService.getHealthStatus();
+
+      expect(status.configured).toBe(true);
+      expect(status.smtpConnected).toBe(false);
+    });
+
+    it('should return imapConnected: false when IMAP env vars missing', async () => {
+      const originalImapHost = process.env.IMAP_HOST;
+      delete process.env.IMAP_HOST;
+
+      const status = await emailService.getHealthStatus();
+
+      expect(status.imapConnected).toBe(false);
+
+      // Restore
+      if (originalImapHost) {
+        process.env.IMAP_HOST = originalImapHost;
+      }
+    });
+
+    it('should include lastTestResult if available', async () => {
+      // First run a test to set lastTestResult
+      const originalImapHost = process.env.IMAP_HOST;
+      const originalImapUser = process.env.IMAP_USER;
+      const originalImapPass = process.env.IMAP_PASS;
+
+      delete process.env.IMAP_HOST;
+      delete process.env.IMAP_USER;
+      delete process.env.IMAP_PASS;
+
+      await emailService.testEmailDelivery();
+
+      const status = await emailService.getHealthStatus();
+
+      expect(status.lastTestResult).toBeDefined();
+      expect(status.lastTestResult?.success).toBeDefined();
+      expect(status.lastTestResult?.timestamp).toBeDefined();
+
+      // Restore
+      if (originalImapHost) process.env.IMAP_HOST = originalImapHost;
+      if (originalImapUser) process.env.IMAP_USER = originalImapUser;
+      if (originalImapPass) process.env.IMAP_PASS = originalImapPass;
+    });
+  });
+
+  describe('testEmailDelivery', () => {
+    const mockImapConnect = jest.fn();
+    const mockImapLogout = jest.fn();
+    const mockImapGetMailboxLock = jest.fn();
+    const mockImapSearch = jest.fn();
+    const mockImapMessageDelete = jest.fn();
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockSendMail.mockResolvedValue({
+        messageId: 'test-message-id',
+        accepted: ['test@example.com'],
+        rejected: [],
+        response: '250 OK',
+      });
+
+      // Mock IMAP operations
+      mockImapConnect.mockResolvedValue(undefined);
+      mockImapLogout.mockResolvedValue(undefined);
+      mockImapSearch.mockResolvedValue([]);
+      mockImapMessageDelete.mockResolvedValue(undefined);
+
+      const mockLock = {
+        release: jest.fn(),
+      };
+      mockImapGetMailboxLock.mockResolvedValue(mockLock);
+
+      // Mock ImapFlow
+      jest.mock('imapflow', () => ({
+        ImapFlow: jest.fn().mockImplementation(() => ({
+          connect: mockImapConnect,
+          logout: mockImapLogout,
+          getMailboxLock: mockImapGetMailboxLock,
+          search: mockImapSearch,
+          messageDelete: mockImapMessageDelete,
+        })),
+      }));
+    });
+
+    it('should return error when SMTP not configured', async () => {
+      const originalUser = process.env.SMTP_USER;
+      const originalPass = process.env.SMTP_PASS;
+      delete process.env.SMTP_USER;
+      delete process.env.SMTP_PASS;
+
+      // Re-import to create new service instance
+      jest.resetModules();
+      const { emailService: newService } = require('../../../services/emailService');
+
+      const result = await newService.testEmailDelivery();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('SMTP not configured');
+
+      // Restore
+      process.env.SMTP_USER = originalUser;
+      process.env.SMTP_PASS = originalPass;
+    });
+
+    it('should return error when IMAP not configured', async () => {
+      const originalImapHost = process.env.IMAP_HOST;
+      const originalImapUser = process.env.IMAP_USER;
+      const originalImapPass = process.env.IMAP_PASS;
+
+      delete process.env.IMAP_HOST;
+      delete process.env.IMAP_USER;
+      delete process.env.IMAP_PASS;
+
+      const result = await emailService.testEmailDelivery();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('IMAP not configured');
+
+      // Restore
+      if (originalImapHost) process.env.IMAP_HOST = originalImapHost;
+      if (originalImapUser) process.env.IMAP_USER = originalImapUser;
+      if (originalImapPass) process.env.IMAP_PASS = originalImapPass;
+    });
+
+    it('should return smtpSent: false when email send fails', async () => {
+      // Set IMAP env vars so we get past IMAP check and test SMTP failure
+      process.env.IMAP_HOST = 'test.imap.com';
+      process.env.IMAP_USER = 'test@example.com';
+      process.env.IMAP_PASS = 'test-password';
+
+      mockSendMail.mockRejectedValue(new Error('SMTP send failed'));
+
+      const result = await emailService.testEmailDelivery();
+
+      expect(result.smtpSent).toBe(false);
+      expect(result.error).toContain('SMTP send failed');
+
+      // Clean up
+      delete process.env.IMAP_HOST;
+      delete process.env.IMAP_USER;
+      delete process.env.IMAP_PASS;
+    });
+
+    it('should generate unique testId', async () => {
+      const originalImapHost = process.env.IMAP_HOST;
+      delete process.env.IMAP_HOST;
+
+      const result1 = await emailService.testEmailDelivery();
+      const result2 = await emailService.testEmailDelivery();
+
+      expect(result1.testId).not.toBe(result2.testId);
+      expect(result1.testId).toMatch(/^email-test-/);
+      expect(result2.testId).toMatch(/^email-test-/);
+
+      // Restore
+      if (originalImapHost) process.env.IMAP_HOST = originalImapHost;
     });
   });
 });

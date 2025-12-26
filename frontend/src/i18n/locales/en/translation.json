@@ -141,7 +141,9 @@
     "welcomeMessage": "Welcome to Your Hotel Loyalty Rewards Program!",
     "welcomeDescription": "Start earning valuable points and unlock exclusive member benefits. Manage your profile, track your rewards progress, and discover personalized offers created just for you.",
     "surveys": "Customer Surveys",
-    "takeSurveys": "Share Your Experience"
+    "takeSurveys": "Share Your Experience",
+    "emailService": "Email Service",
+    "emailServiceDesc": "Monitor and test email delivery"
   },
   "profile": {
     "title": "My Profile",
@@ -1142,5 +1144,33 @@
       "fetchDetailsFailed": "Failed to fetch user details"
     },
     "confirmDelete": "Are you sure you want to delete {{name}}? This action cannot be undone."
+  },
+  "emailService": {
+    "title": "Email Service",
+    "description": "Monitor and test email delivery",
+    "status": {
+      "title": "Email Service Status",
+      "configured": "Configured",
+      "notConfigured": "Not Configured",
+      "smtpConnected": "SMTP Connected",
+      "smtpDisconnected": "SMTP Disconnected",
+      "imapConnected": "IMAP Connected",
+      "imapDisconnected": "IMAP Disconnected"
+    },
+    "test": {
+      "button": "Run Email Test",
+      "running": "Testing...",
+      "success": "Email test passed",
+      "failed": "Email test failed"
+    },
+    "results": {
+      "title": "Test Results",
+      "testId": "Test ID",
+      "smtpSent": "SMTP Sent",
+      "imapReceived": "IMAP Received",
+      "deliveryTime": "Delivery Time",
+      "error": "Error"
+    },
+    "lastTest": "Last Test"
   }
 }
