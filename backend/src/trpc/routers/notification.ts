@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc';
 import { notificationService } from '../../services/notificationService';
+import { AppError } from '../../middleware/errorHandler';
 
 export const notificationRouter = router({
   /**
@@ -57,7 +58,7 @@ export const notificationRouter = router({
       );
 
       if (markedCount === 0) {
-        throw new Error('Notification not found or already marked as read');
+        throw new AppError(404, 'Notification not found or already marked as read', { code: 'NOTIFICATION_NOT_FOUND' });
       }
 
       return { success: true, markedCount };
@@ -101,7 +102,7 @@ export const notificationRouter = router({
       );
 
       if (!wasDeleted) {
-        throw new Error('Notification not found or already deleted');
+        throw new AppError(404, 'Notification not found or already deleted', { code: 'NOTIFICATION_NOT_FOUND' });
       }
 
       return { success: true };

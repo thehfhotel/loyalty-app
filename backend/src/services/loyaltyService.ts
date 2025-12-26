@@ -2,6 +2,7 @@ import { getPool } from '../config/database';
 import { logger } from '../utils/logger';
 import { sanitizeUserId } from '../utils/logSanitizer';
 import { notificationService } from './notificationService';
+import { AppError } from '../middleware/errorHandler';
 
 export interface Tier {
   id: string;
@@ -61,7 +62,7 @@ export class LoyaltyService {
       return result.rows;
     } catch (error) {
       logger.error('Error fetching tiers:', error);
-      throw new Error('Failed to fetch loyalty tiers');
+      throw new AppError(500, 'Failed to fetch loyalty tiers', { code: 'INTERNAL_ERROR' });
     }
   }
 
@@ -107,7 +108,7 @@ export class LoyaltyService {
       return result.rows[0];
     } catch (error) {
       logger.error('Error fetching user loyalty status:', error);
-      throw new Error('Failed to fetch user loyalty status');
+      throw new AppError(500, 'Failed to fetch user loyalty status', { code: 'INTERNAL_ERROR' });
     }
   }
 
@@ -122,7 +123,7 @@ export class LoyaltyService {
       );
 
       if (bronzeTier.rows.length === 0) {
-        throw new Error('No active tiers found');
+        throw new AppError(500, 'No active tiers found', { code: 'SYSTEM_ERROR' });
       }
 
       const result = await getPool().query(
@@ -142,7 +143,7 @@ export class LoyaltyService {
       }
     } catch (error) {
       logger.error('Error initializing user loyalty:', error);
-      throw new Error('Failed to initialize user loyalty');
+      throw new AppError(500, 'Failed to initialize user loyalty', { code: 'INTERNAL_ERROR' });
     }
   }
 

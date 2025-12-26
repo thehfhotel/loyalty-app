@@ -108,7 +108,7 @@ class TranslationService {
       case 'libretranslate':
         return this.translateWithLibreTranslate(request);
       default:
-        throw new Error(`Unsupported translation provider: ${provider}`);
+        throw new AppError(400, `Unsupported translation provider: ${provider}`, { code: 'UNSUPPORTED_PROVIDER' });
     }
   }
 
@@ -176,7 +176,7 @@ class TranslationService {
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined
       });
-      throw new Error(`Azure translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new AppError(503, `Azure translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`, { code: 'TRANSLATION_SERVICE_ERROR' });
     }
   }
 
@@ -186,7 +186,7 @@ class TranslationService {
    
   private async translateWithGoogle(_request: TranslationRequest): Promise<TranslationResponse> {
     // Placeholder implementation - parameters will be used when implemented
-    throw new Error('Google Translate integration not implemented yet');
+    throw new AppError(501, 'Google Translate integration not implemented yet', { code: 'NOT_IMPLEMENTED' });
   }
 
   /**
@@ -195,7 +195,7 @@ class TranslationService {
    
   private async translateWithLibreTranslate(_request: TranslationRequest): Promise<TranslationResponse> {
     // Placeholder implementation - parameters will be used when implemented
-    throw new Error('LibreTranslate integration not implemented yet');
+    throw new AppError(501, 'LibreTranslate integration not implemented yet', { code: 'NOT_IMPLEMENTED' });
   }
 
   /**
@@ -297,7 +297,7 @@ class TranslationService {
       // Get survey data
       const surveyResult = await getPool().query('SELECT * FROM surveys WHERE id = $1', [job.entityId]);
       if (surveyResult.rows.length === 0) {
-        throw new Error('Survey not found');
+        throw new AppError(404, 'Survey not found', { code: 'SURVEY_NOT_FOUND' });
       }
 
       const survey = surveyResult.rows[0];
@@ -404,7 +404,7 @@ class TranslationService {
 
       const couponResult = await getPool().query('SELECT * FROM coupons WHERE id = $1', [job.entityId]);
       if (couponResult.rows.length === 0) {
-        throw new Error('Coupon not found');
+        throw new AppError(404, 'Coupon not found', { code: 'COUPON_NOT_FOUND' });
       }
 
       const coupon = couponResult.rows[0];

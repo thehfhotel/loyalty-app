@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { router, protectedProcedure, adminProcedure } from '../trpc';
 import { couponService } from '../../services/couponService';
+import { AppError } from '../../middleware/errorHandler';
 
 export const couponRouter = router({
   /**
@@ -49,7 +50,7 @@ export const couponRouter = router({
 
       // Only admins can view other users' coupons
       if (targetUserId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new Error('Forbidden: Cannot view other user\'s coupons');
+        throw new AppError(403, 'Forbidden: Cannot view other user\'s coupons', { code: 'FORBIDDEN' });
       }
 
       // If status is specified, get coupons by that status
@@ -81,12 +82,12 @@ export const couponRouter = router({
       const coupon = await couponService.getCouponById(input.couponId);
 
       if (!coupon) {
-        throw new Error('Coupon not found');
+        throw new AppError(404, 'Coupon not found', { code: 'COUPON_NOT_FOUND' });
       }
 
       // Non-admin users can only see active coupons
       if (ctx.user.role !== 'admin' && coupon.status !== 'active') {
-        throw new Error('Coupon not found');
+        throw new AppError(404, 'Coupon not found', { code: 'COUPON_NOT_FOUND' });
       }
 
       return coupon;
@@ -104,7 +105,7 @@ export const couponRouter = router({
     .mutation(async () => {
       // This would require a new service method to allow users to claim coupons
       // For now, throw an error indicating this feature is not yet implemented
-      throw new Error('Coupon claiming is not yet implemented. Coupons are assigned by administrators.');
+      throw new AppError(501, 'Coupon claiming is not yet implemented. Coupons are assigned by administrators.', { code: 'NOT_IMPLEMENTED' });
     }),
 
   /**
@@ -118,7 +119,7 @@ export const couponRouter = router({
       const userCoupon = await couponService.getUserCouponByQR(input.qrCode);
 
       if (!userCoupon) {
-        throw new Error('Invalid QR code');
+        throw new AppError(400, 'Invalid QR code', { code: 'INVALID_QR_CODE' });
       }
 
       return userCoupon;
@@ -164,7 +165,7 @@ export const couponRouter = router({
       );
 
       if (!success) {
-        throw new Error('User coupon not found or not available for revocation');
+        throw new AppError(404, 'User coupon not found or not available for revocation', { code: 'USER_COUPON_NOT_FOUND' });
       }
 
       return {

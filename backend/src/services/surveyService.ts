@@ -376,7 +376,7 @@ export class SurveyService {
       // Calculate progress based on answered questions
       const survey = await this.getSurveyById(data.survey_id);
       if (!survey) {
-        throw new Error('Survey not found');
+        throw new AppError(404, 'Survey not found', { code: 'SURVEY_NOT_FOUND' });
       }
 
       const totalQuestions = survey.questions.length;
@@ -888,7 +888,7 @@ export class SurveyService {
       // Get survey details and target segment
       const survey = await this.getSurveyById(surveyId);
       if (!survey) {
-        throw new Error('Survey not found');
+        throw new AppError(404, 'Survey not found', { code: 'SURVEY_NOT_FOUND' });
       }
 
       // Get all eligible users based on target segment
@@ -933,7 +933,7 @@ export class SurveyService {
       // Get survey details
       const survey = await this.getSurveyById(surveyId);
       if (!survey) {
-        throw new Error('Survey not found');
+        throw new AppError(404, 'Survey not found', { code: 'SURVEY_NOT_FOUND' });
       }
 
       let sent = 0;

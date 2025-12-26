@@ -126,7 +126,7 @@ export class OAuthService {
     
     if (!email) {
       logger.error('[OAuth Service] No email provided by Google');
-      throw new Error('No email provided by Google');
+      throw new AppError(400, 'No email provided by Google', { code: 'MISSING_EMAIL' });
     }
 
     // Check if user exists
@@ -316,7 +316,7 @@ export class OAuthService {
     
     if (!lineId) {
       logger.error('[OAuth Service] No LINE ID provided');
-      throw new Error('No LINE ID provided');
+      throw new AppError(400, 'No LINE ID provided', { code: 'MISSING_LINE_ID' });
     }
 
     // Use LINE provided email if available, otherwise leave as NULL

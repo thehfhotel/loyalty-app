@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { router, protectedProcedure, adminProcedure } from '../trpc';
 import { loyaltyService } from '../../services/loyaltyService';
+import { AppError } from '../../middleware/errorHandler';
 
 export const loyaltyRouter = router({
   /**
@@ -21,7 +22,7 @@ export const loyaltyRouter = router({
 
       // Only admins can view other users' status
       if (targetUserId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new Error('Forbidden: Cannot view other user\'s loyalty status');
+        throw new AppError(403, 'Forbidden: Cannot view other user\'s loyalty status', { code: 'FORBIDDEN' });
       }
 
       return await loyaltyService.getUserLoyaltyStatus(targetUserId);
@@ -41,7 +42,7 @@ export const loyaltyRouter = router({
 
       // Only admins can view other users' transactions
       if (targetUserId !== ctx.user.id && ctx.user.role !== 'admin') {
-        throw new Error('Forbidden: Cannot view other user\'s transactions');
+        throw new AppError(403, 'Forbidden: Cannot view other user\'s transactions', { code: 'FORBIDDEN' });
       }
 
       return await loyaltyService.getTransactionHistory(
