@@ -5,14 +5,15 @@ import { logger } from '../utils/logger';
 export function generateVerificationCode(): string {
   // Use uppercase only - frontend normalizes input to uppercase for user convenience
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const bytes = crypto.randomBytes(8);
+  const codeLength = 8;
+  const maxUnbiased = 256 - (256 % chars.length);
   let code = '';
-  for (let i = 0; i < 8; i++) {
-    // eslint-disable-next-line security/detect-object-injection -- Safe: i is a loop counter 0-7
-    const byte = bytes[i];
-    if (byte !== undefined) {
-      code += chars.charAt(byte % chars.length);
+  while (code.length < codeLength) {
+    const byte = crypto.randomBytes(1)[0];
+    if (byte >= maxUnbiased) {
+      continue;
     }
+    code += chars.charAt(byte % chars.length);
   }
   return `${code.slice(0, 4)}-${code.slice(4, 8)}`;
 }
