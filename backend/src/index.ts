@@ -47,6 +47,7 @@ import membershipRoutes from './routes/membership';
 import translationRoutes from './routes/translation';
 import notificationRoutes from './routes/notifications';
 import analyticsRoutes from './routes/analyticsRoutes';
+import adminRoutes from './routes/admin';
 // Import and initialize OAuth service to register strategies
 import './services/oauthService';
 import { oauthCleanupService } from './services/oauthCleanupService';
@@ -309,7 +310,8 @@ function configureApp(app: express.Express) {
         services: {
           database: 'unknown',
           redis: 'unknown',
-          storage: 'unknown'
+          storage: 'unknown',
+          email: 'unknown'
         },
         uptime: process.uptime(),
         memory: {
@@ -354,6 +356,19 @@ function configureApp(app: express.Express) {
         logger.warn('Storage health check failed:', error);
       }
 
+      // Check email service configuration
+      try {
+        const { emailService } = await import('./services/emailService');
+        if (emailService.isEmailConfigured()) {
+          healthStatus.services.email = 'configured';
+        } else {
+          healthStatus.services.email = 'not_configured';
+        }
+      } catch (error) {
+        healthStatus.services.email = 'error';
+        logger.warn('Email health check failed:', error);
+      }
+
       // Determine overall status code
       const statusCode = healthStatus.status === 'healthy' ? 200 :
         healthStatus.status === 'degraded' ? 200 : 503;
@@ -392,6 +407,7 @@ function configureApp(app: express.Express) {
   app.use('/api/translation', apiRateLimit, translationRoutes); // Public translations use IP-based only
   app.use('/api/notifications', apiRateLimit, userRateLimit, notificationRoutes);
   app.use('/api/analytics', apiRateLimit, userRateLimit, analyticsRoutes);
+  app.use('/api/admin', apiRateLimit, adminRoutes);
 
   // tRPC endpoint - Type-safe API with end-to-end type safety
   // optionalAuth parses JWT token if present, setting req.user for authenticated requests

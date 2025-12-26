@@ -119,3 +119,34 @@ export function requireAdmin() {
     }
   };
 }
+
+export function requireSuperAdmin() {
+  return async (req: Request, _res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        return next(new AppError(401, 'Not authenticated'));
+      }
+
+      // Fetch current role from database (not just JWT payload)
+      const [user] = await query<{ role: UserRole }>(
+        'SELECT role FROM users WHERE id = $1 AND is_active = true',
+        [req.user.id]
+      );
+
+      if (!user) {
+        return next(new AppError(401, 'User not found or inactive'));
+      }
+
+      // Update req.user with current role from database
+      req.user.role = user.role;
+
+      if (user.role !== 'super_admin') {
+        return next(new AppError(403, 'Super admin access required'));
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
