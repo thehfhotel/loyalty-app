@@ -52,7 +52,12 @@ export function getTRPCErrorMessage(error: unknown): string {
 
     const translationKey = errorCodeMap[customCode];
     if (translationKey) {
-      return i18next.t(translationKey);
+      // Get translated message, fallback to English message if translation not found
+      const translated = i18next.t(translationKey);
+      // If translation returns the key itself, it means translation was not found
+      if (translated !== translationKey) {
+        return translated;
+      }
     }
   }
 
