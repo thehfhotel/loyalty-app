@@ -88,14 +88,6 @@ export class AuthService {
       // codeql[js/log-injection] - Values sanitized via sanitizeLogValue/sanitizeEmail (removes newlines/control chars)
       logger.info(`User registered with membership ID: ${sanitizeLogValue(membershipId)}, emoji: ${sanitizeLogValue(randomEmoji)} (email: ${sanitizeEmail(data.email)})`);
 
-      // Create default notification preferences (non-blocking, trigger is fallback)
-      try {
-        await notificationService.createDefaultPreferences(user.id);
-      } catch (notifError) {
-        // Log error but don't fail registration - trigger will create preferences
-        logger.error('Failed to create notification preferences:', notifError);
-      }
-
       // Generate tokens (pass client for transaction)
       const tokens = await this.generateTokens(user, client);
 
@@ -104,7 +96,16 @@ export class AuthService {
 
       await client.query('COMMIT');
 
-      // Auto-enroll in loyalty program (after transaction commit)
+      // After transaction commit - these use separate connections and require the user to exist
+      // Create default notification preferences (non-blocking, trigger is fallback)
+      try {
+        await notificationService.createDefaultPreferences(user.id);
+      } catch (notifError) {
+        // Log error but don't fail registration - trigger will create preferences
+        logger.error('Failed to create notification preferences:', notifError);
+      }
+
+      // Auto-enroll in loyalty program
       await loyaltyService.ensureUserLoyaltyEnrollment(user.id);
 
       // Send registration verification email (non-blocking, don't fail registration if email fails)

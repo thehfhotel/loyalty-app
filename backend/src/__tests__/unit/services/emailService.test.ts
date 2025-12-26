@@ -23,6 +23,10 @@ jest.mock('../../../utils/logger', () => ({
   },
 }));
 
+// Set SMTP credentials before importing emailService so isConfigured=true
+process.env.SMTP_USER = 'test@example.com';
+process.env.SMTP_PASS = 'test-password';
+
 import { generateVerificationCode, emailService } from '../../../services/emailService';
 
 describe('EmailService', () => {

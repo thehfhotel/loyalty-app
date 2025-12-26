@@ -20,8 +20,12 @@ export function generateVerificationCode(): string {
 
 class EmailService {
   private transporter: nodemailer.Transporter;
+  private isConfigured: boolean;
 
   constructor() {
+    // Check if SMTP is configured (both user and pass must be set)
+    this.isConfigured = !!(process.env.SMTP_USER && process.env.SMTP_PASS);
+
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST ?? 'smtp.privateemail.com',
       port: parseInt(process.env.SMTP_PORT ?? '465'),
@@ -30,10 +34,19 @@ class EmailService {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+      // Add timeouts to prevent hanging on connection issues
+      connectionTimeout: 5000, // 5 seconds to establish connection
+      greetingTimeout: 5000,   // 5 seconds for server greeting
+      socketTimeout: 10000,    // 10 seconds for socket inactivity
     });
   }
 
   async sendVerificationEmail(to: string, code: string): Promise<void> {
+    if (!this.isConfigured) {
+      logger.warn('SMTP not configured, skipping verification email', { to });
+      return;
+    }
+
     const from = process.env.SMTP_FROM ?? 'noreply@example.com';
 
     await this.transporter.sendMail({
@@ -56,6 +69,11 @@ class EmailService {
   }
 
   async sendRegistrationVerificationEmail(to: string, code: string): Promise<void> {
+    if (!this.isConfigured) {
+      logger.warn('SMTP not configured, skipping registration verification email', { to });
+      return;
+    }
+
     const from = process.env.SMTP_FROM ?? 'noreply@example.com';
 
     await this.transporter.sendMail({
