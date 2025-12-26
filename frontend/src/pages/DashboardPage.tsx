@@ -357,10 +357,10 @@ export default function DashboardPage() {
                       <div className="ml-5 w-0 flex-1">
                         <dl>
                           <dt className="text-lg font-semibold text-gray-900 truncate">
-                            New Member Coupons
+                            {t('admin.newMemberCoupons.menuTitle')}
                           </dt>
                           <dd className="mt-1 text-sm font-medium text-gray-500">
-                            Configure welcome coupons
+                            {t('admin.newMemberCoupons.menuDescription')}
                           </dd>
                         </dl>
                       </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FiGift, FiCheck, FiX, FiInfo, FiAlertTriangle, FiAlertCircle } from 'react-icons/fi';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import MainLayout from '../../components/layout/MainLayout';
 import { adminService, CouponStatusForAdmin } from '../../services/adminService';
 import { couponService } from '../../services/couponService';
@@ -18,6 +19,7 @@ interface NewMemberCouponSettings {
 }
 
 export default function NewMemberCouponSettings() {
+  const { t } = useTranslation();
   const [settings, setSettings] = useState<NewMemberCouponSettings | null>(null);
   const [availableCoupons, setAvailableCoupons] = useState<Coupon[]>([]);
   const [couponStatus, setCouponStatus] = useState<CouponStatusForAdmin | null>(null);
@@ -94,7 +96,7 @@ export default function NewMemberCouponSettings() {
       const errorMessage = error instanceof Error && 'response' in error
         ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
         : undefined;
-      toast.error(errorMessage ?? 'Failed to load settings');
+      toast.error(errorMessage ?? t('admin.newMemberCoupons.loadError'));
     } finally {
       setIsLoading(false);
     }
@@ -115,13 +117,13 @@ export default function NewMemberCouponSettings() {
       const updatedSettings = await adminService.updateNewMemberCouponSettings(updateData);
       setSettings(updatedSettings);
       setHasChanged(false);
-      toast.success('New member coupon settings updated successfully');
+      toast.success(t('admin.newMemberCoupons.updateSuccess'));
     } catch (error: unknown) {
       logger.error('Failed to update settings:', error);
       const errorMessage = error instanceof Error && 'response' in error
         ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
         : undefined;
-      toast.error(errorMessage ?? 'Failed to update settings');
+      toast.error(errorMessage ?? t('admin.newMemberCoupons.updateError'));
     } finally {
       setIsSaving(false);
     }
@@ -139,11 +141,11 @@ export default function NewMemberCouponSettings() {
 
   if (isLoading) {
     return (
-      <MainLayout title="New Member Rewards Settings" showProfileBanner={false}>
+      <MainLayout title={t('admin.newMemberCoupons.title')} showProfileBanner={false}>
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto" />
-            <p className="mt-4 text-gray-600">Loading settings...</p>
+            <p className="mt-4 text-gray-600">{t('admin.newMemberCoupons.loading')}</p>
           </div>
         </div>
       </MainLayout>
@@ -151,7 +153,7 @@ export default function NewMemberCouponSettings() {
   }
 
   return (
-    <MainLayout title="New Member Rewards Settings" showProfileBanner={false} showDashboardButton={true}>
+    <MainLayout title={t('admin.newMemberCoupons.title')} showProfileBanner={false} showDashboardButton={true}>
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-8">
@@ -160,7 +162,7 @@ export default function NewMemberCouponSettings() {
               <FiGift className="h-6 w-6 text-blue-600" />
             </div>
             <div>
-              <p className="text-gray-600">Configure welcome rewards (coupons and points) for new members who complete their profile</p>
+              <p className="text-gray-600">{t('admin.newMemberCoupons.description')}</p>
             </div>
           </div>
           
@@ -169,12 +171,12 @@ export default function NewMemberCouponSettings() {
             <div className="flex items-start space-x-3">
               <FiInfo className="h-5 w-5 text-blue-600 mt-0.5" />
               <div className="text-sm text-blue-800">
-                <p className="font-medium mb-1">How it works:</p>
+                <p className="font-medium mb-1">{t('admin.newMemberCoupons.howItWorks')}</p>
                 <ul className="space-y-1 list-disc list-inside">
-                  <li>New users see a banner prompting them to complete their profile</li>
-                  <li>When they fill in all required fields (name, birthday, gender, occupation), they automatically receive the configured rewards</li>
-                  <li>You can award a coupon, loyalty points, or both</li>
-                  <li>Each user can only receive these rewards once</li>
+                  <li>{t('admin.newMemberCoupons.howItWorksItems.banner')}</li>
+                  <li>{t('admin.newMemberCoupons.howItWorksItems.rewards')}</li>
+                  <li>{t('admin.newMemberCoupons.howItWorksItems.options')}</li>
+                  <li>{t('admin.newMemberCoupons.howItWorksItems.once')}</li>
                 </ul>
               </div>
             </div>
@@ -187,8 +189,8 @@ export default function NewMemberCouponSettings() {
             {/* Enable/Disable Toggle */}
             <div className="flex items-center justify-between py-4 border-b border-gray-200">
               <div>
-                <h3 className="text-lg font-medium text-gray-900">Enable New Member Coupons</h3>
-                <p className="text-sm text-gray-500">Turn on/off the new member coupon system</p>
+                <h3 className="text-lg font-medium text-gray-900">{t('admin.newMemberCoupons.enableCoupons')}</h3>
+                <p className="text-sm text-gray-500">{t('admin.newMemberCoupons.enableCouponsDescription')}</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
@@ -204,7 +206,7 @@ export default function NewMemberCouponSettings() {
             {/* Coupon Selection */}
             <div>
               <label htmlFor="couponSelect" className="block text-sm font-medium text-gray-700 mb-2">
-                Select Coupon *
+                {t('admin.newMemberCoupons.selectCoupon')} *
               </label>
               <select
                 id="couponSelect"
@@ -213,19 +215,19 @@ export default function NewMemberCouponSettings() {
                 className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                 disabled={!isEnabled}
               >
-                <option value="">Select a coupon...</option>
+                <option value="">{t('admin.newMemberCoupons.selectCouponPlaceholder')}</option>
                 {availableCoupons.map((coupon) => (
                   <option key={coupon.id} value={coupon.id}>
-                    {coupon.code} - {coupon.name} ({coupon.type === 'percentage' ? `${coupon.value}%` : `$${coupon.value}`} off)
-                    {coupon.validUntil && ` - Expires ${new Date(coupon.validUntil).toLocaleDateString()}`}
+                    {coupon.code} - {coupon.name} ({coupon.type === 'percentage' ? `${coupon.value}%` : `$${coupon.value}`} {t('admin.newMemberCoupons.off')})
+                    {coupon.validUntil && ` - ${t('coupons.expiresOn')} ${new Date(coupon.validUntil).toLocaleDateString()}`}
                   </option>
                 ))}
               </select>
               {isEnabled && !selectedCouponId && (
-                <p className="mt-1 text-sm text-red-600">Please select a coupon to assign to new members</p>
+                <p className="mt-1 text-sm text-red-600">{t('admin.newMemberCoupons.selectCouponRequired')}</p>
               )}
               {availableCoupons.length === 0 && !isLoading && (
-                <p className="mt-1 text-sm text-gray-500">No active coupons available. Create coupons first in the Coupon Management section.</p>
+                <p className="mt-1 text-sm text-gray-500">{t('admin.newMemberCoupons.noCouponsAvailable')}</p>
               )}
 
               {/* Coupon Status Warnings */}
@@ -247,15 +249,15 @@ export default function NewMemberCouponSettings() {
                         couponStatus.warningLevel === 'danger' ? 'text-red-800' : 'text-yellow-800'
                       }`}
                       >
-                        {couponStatus.isExpired ? 'Coupon Expired' : 'Coupon Expiring Soon'}
+                        {couponStatus.isExpired ? t('admin.newMemberCoupons.couponExpired') : t('admin.newMemberCoupons.couponExpiringSoon')}
                       </p>
                       <p className={`text-sm mt-1 ${
                         couponStatus.warningLevel === 'danger' ? 'text-red-700' : 'text-yellow-700'
                       }`}
                       >
-                        {couponStatus.isExpired 
-                          ? `This coupon expired ${couponStatus.validUntil ? new Date(couponStatus.validUntil).toLocaleDateString() : 'recently'}. New members will not receive this coupon.`
-                          : `This coupon expires in ${couponStatus.daysUntilExpiry} day${couponStatus.daysUntilExpiry === 1 ? '' : 's'} (${couponStatus.validUntil ? new Date(couponStatus.validUntil).toLocaleDateString() : 'soon'}). Consider selecting a different coupon or extending the validity period.`
+                        {couponStatus.isExpired
+                          ? t('admin.newMemberCoupons.expiredMessage', { date: couponStatus.validUntil ? new Date(couponStatus.validUntil).toLocaleDateString() : '' })
+                          : t('admin.newMemberCoupons.expiringSoonMessage', { days: couponStatus.daysUntilExpiry, date: couponStatus.validUntil ? new Date(couponStatus.validUntil).toLocaleDateString() : '' })
                         }
                       </p>
                     </div>
@@ -267,30 +269,30 @@ export default function NewMemberCouponSettings() {
             {/* Selected Coupon Details */}
             {selectedCouponId && (
               <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="font-medium text-gray-900 mb-2">Selected Coupon Details</h4>
+                <h4 className="font-medium text-gray-900 mb-2">{t('admin.newMemberCoupons.selectedCouponDetails')}</h4>
                 {(() => {
                   const selectedCoupon = availableCoupons.find(c => c.id === selectedCouponId);
                   if (!selectedCoupon) {return null;}
                   return (
                     <div className="space-y-1 text-sm text-gray-600">
-                      <p><span className="font-medium">Code:</span> {selectedCoupon.code}</p>
-                      <p><span className="font-medium">Name:</span> {selectedCoupon.name}</p>
-                      <p><span className="font-medium">Type:</span> {selectedCoupon.type === 'percentage' ? 'Percentage' : 'Fixed Amount'}</p>
-                      <p><span className="font-medium">Value:</span> {selectedCoupon.type === 'percentage' ? `${selectedCoupon.value}%` : `$${selectedCoupon.value}`}</p>
+                      <p><span className="font-medium">{t('admin.newMemberCoupons.code')}:</span> {selectedCoupon.code}</p>
+                      <p><span className="font-medium">{t('admin.newMemberCoupons.name')}:</span> {selectedCoupon.name}</p>
+                      <p><span className="font-medium">{t('admin.newMemberCoupons.type')}:</span> {selectedCoupon.type === 'percentage' ? t('admin.newMemberCoupons.typePercentage') : t('admin.newMemberCoupons.typeFixed')}</p>
+                      <p><span className="font-medium">{t('admin.newMemberCoupons.value')}:</span> {selectedCoupon.type === 'percentage' ? `${selectedCoupon.value}%` : `$${selectedCoupon.value}`}</p>
                       {selectedCoupon.description && (
-                        <p><span className="font-medium">Description:</span> {selectedCoupon.description}</p>
+                        <p><span className="font-medium">{t('admin.newMemberCoupons.description_field')}:</span> {selectedCoupon.description}</p>
                       )}
-                      <p><span className="font-medium">Status:</span> <span className="capitalize">{selectedCoupon.status}</span></p>
+                      <p><span className="font-medium">{t('admin.newMemberCoupons.status')}:</span> <span className="capitalize">{selectedCoupon.status}</span></p>
                       
                       {/* Enhanced Expiry Information */}
                       {couponStatus && (
                         <>
                           {couponStatus.validFrom && (
-                            <p><span className="font-medium">Valid From:</span> {new Date(couponStatus.validFrom).toLocaleDateString()}</p>
+                            <p><span className="font-medium">{t('admin.newMemberCoupons.validFrom')}:</span> {new Date(couponStatus.validFrom).toLocaleDateString()}</p>
                           )}
                           {couponStatus.validUntil && (
                             <p>
-                              <span className="font-medium">Valid Until:</span>{' '}
+                              <span className="font-medium">{t('admin.newMemberCoupons.validUntil')}:</span>{' '}
                               <span className={
                                 couponStatus.warningLevel === 'danger' ? 'text-red-600 font-medium' :
                                 couponStatus.warningLevel === 'warning' ? 'text-yellow-600 font-medium' :
@@ -298,15 +300,15 @@ export default function NewMemberCouponSettings() {
                               }
                               >
                                 {new Date(couponStatus.validUntil).toLocaleDateString()}
-                                {couponStatus.isExpired && ' (EXPIRED)'}
-                                {!couponStatus.isExpired && couponStatus.daysUntilExpiry !== null && couponStatus.daysUntilExpiry <= 7 && 
-                                  ` (${couponStatus.daysUntilExpiry} day${couponStatus.daysUntilExpiry === 1 ? '' : 's'} remaining)`
+                                {couponStatus.isExpired && ` (${t('admin.newMemberCoupons.expired')})`}
+                                {!couponStatus.isExpired && couponStatus.daysUntilExpiry !== null && couponStatus.daysUntilExpiry <= 7 &&
+                                  ` (${t('admin.newMemberCoupons.daysRemaining', { count: couponStatus.daysUntilExpiry })})`
                                 }
                               </span>
                             </p>
                           )}
                           {!couponStatus.validUntil && (
-                            <p><span className="font-medium">Valid Until:</span> <span className="text-green-600">No expiry date</span></p>
+                            <p><span className="font-medium">{t('admin.newMemberCoupons.validUntil')}:</span> <span className="text-green-600">{t('admin.newMemberCoupons.noExpiry')}</span></p>
                           )}
                         </>
                       )}
@@ -320,8 +322,8 @@ export default function NewMemberCouponSettings() {
             <div className="border-t border-gray-200 pt-6">
               <div className="flex items-center justify-between py-4 border-b border-gray-200">
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900">Enable Points Reward</h3>
-                  <p className="text-sm text-gray-500">Award loyalty points to new members</p>
+                  <h3 className="text-lg font-medium text-gray-900">{t('admin.newMemberCoupons.enablePoints')}</h3>
+                  <p className="text-sm text-gray-500">{t('admin.newMemberCoupons.enablePointsDescription')}</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -337,7 +339,7 @@ export default function NewMemberCouponSettings() {
               {/* Points Amount Input */}
               <div className="mt-4">
                 <label htmlFor="pointsAmount" className="block text-sm font-medium text-gray-700 mb-2">
-                  Points to Award *
+                  {t('admin.newMemberCoupons.pointsToAward')} *
                 </label>
                 <div className="relative">
                   <input
@@ -346,24 +348,24 @@ export default function NewMemberCouponSettings() {
                     value={pointsAmount}
                     onChange={(e) => setPointsAmount(e.target.value)}
                     className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                    placeholder="Enter points amount (e.g., 100)"
+                    placeholder={t('admin.newMemberCoupons.pointsPlaceholder')}
                     min="1"
                     max="10000"
                     disabled={!pointsEnabled}
                   />
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                    <span className="text-gray-500 text-sm">points</span>
+                    <span className="text-gray-500 text-sm">{t('admin.newMemberCoupons.points')}</span>
                   </div>
                 </div>
                 {pointsEnabled && !pointsAmount && (
-                  <p className="mt-1 text-sm text-red-600">Please enter the number of points to award</p>
+                  <p className="mt-1 text-sm text-red-600">{t('admin.newMemberCoupons.pointsRequired')}</p>
                 )}
                 {pointsEnabled && pointsAmount && (parseInt(pointsAmount) < 1 || parseInt(pointsAmount) > 10000) && (
-                  <p className="mt-1 text-sm text-red-600">Points must be between 1 and 10,000</p>
+                  <p className="mt-1 text-sm text-red-600">{t('admin.newMemberCoupons.pointsRange')}</p>
                 )}
                 {pointsEnabled && pointsAmount && parseInt(pointsAmount) >= 1 && parseInt(pointsAmount) <= 10000 && (
                   <p className="mt-1 text-sm text-green-600">
-                    New members will receive {parseInt(pointsAmount).toLocaleString()} loyalty points
+                    {t('admin.newMemberCoupons.pointsSuccess', { count: parseInt(pointsAmount) })}
                   </p>
                 )}
               </div>
@@ -378,15 +380,15 @@ export default function NewMemberCouponSettings() {
                 className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FiX className="mr-2 h-4 w-4" />
-                Reset
+                {t('admin.newMemberCoupons.reset')}
               </button>
-              
+
               <button
                 type="button"
                 onClick={handleSave}
                 disabled={
-                  !hasChanged || 
-                  isSaving || 
+                  !hasChanged ||
+                  isSaving ||
                   (isEnabled && !selectedCouponId) ||
                   // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
                   (isEnabled && couponStatus?.isExpired) ||
@@ -397,12 +399,12 @@ export default function NewMemberCouponSettings() {
                 {isSaving ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                    Saving...
+                    {t('admin.newMemberCoupons.saving')}
                   </>
                 ) : (
                   <>
                     <FiCheck className="mr-2 h-4 w-4" />
-                    Save Settings
+                    {t('admin.newMemberCoupons.saveSettings')}
                   </>
                 )}
               </button>
@@ -411,12 +413,12 @@ export default function NewMemberCouponSettings() {
             {/* Save Button Help Text */}
             {isEnabled && couponStatus?.isExpired && (
               <p className="mt-2 text-sm text-red-600">
-                Cannot save settings with an expired coupon. Please select a different coupon or extend the current coupon&apos;s validity period.
+                {t('admin.newMemberCoupons.expiredCouponError')}
               </p>
             )}
             {pointsEnabled && (!pointsAmount || parseInt(pointsAmount) < 1 || parseInt(pointsAmount) > 10000) && (
               <p className="mt-2 text-sm text-red-600">
-                Cannot save settings with invalid points amount. Please enter a value between 1 and 10,000 points.
+                {t('admin.newMemberCoupons.invalidPointsError')}
               </p>
             )}
           </div>
