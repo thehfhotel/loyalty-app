@@ -12,6 +12,7 @@ import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
 import { membershipIdService } from './membershipIdService';
+import { notificationService } from './notificationService';
 
 const authService = new AuthService();
 
@@ -216,6 +217,8 @@ export class OAuthService {
           [newOAuthUser.id, firstName, lastName, avatarUrl, membershipId]
         );
 
+        // Create default notification preferences (idempotent with trigger)
+        await notificationService.createDefaultPreferences(newOAuthUser.id);
 
         user = newOAuthUser;
       } else {
@@ -248,6 +251,9 @@ export class OAuthService {
            VALUES ($1, $2, $3, $4, $5)`,
           [newUser.id, firstName, lastName, avatarUrl, membershipId]
         );
+
+        // Create default notification preferences (idempotent with trigger)
+        await notificationService.createDefaultPreferences(newUser.id);
 
         user = newUser;
       }
@@ -451,10 +457,13 @@ export class OAuthService {
 
       // Create user profile with reception ID
       await query(
-        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id) 
+        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id)
          VALUES ($1, $2, $3, $4, $5)`,
         [user.id, firstName, lastName, avatarUrl, membershipId]
       );
+
+      // Create default notification preferences (idempotent with trigger)
+      await notificationService.createDefaultPreferences(user.id);
     }
 
     // Check if user should have elevated role (only if email exists)

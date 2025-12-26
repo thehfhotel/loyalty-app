@@ -9,11 +9,13 @@ process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-key-that-is-at-least-s
 
 import { describe, expect, jest, beforeEach } from '@jest/globals';
 jest.mock('../../../services/loyaltyService');
+jest.mock('../../../services/notificationService');
 import { oauthService } from '../../../services/oauthService';
 import { User } from '../../../types/auth';
 import * as database from '../../../config/database';
 import { adminConfigService } from '../../../services/adminConfigService';
 import { LoyaltyService } from '../../../services/loyaltyService';
+import { notificationService } from '../../../services/notificationService';
 
 // Type helper for accessing private OAuth methods in tests
 type OAuthServiceWithPrivates = {
@@ -62,6 +64,11 @@ describe('OAuthService', () => {
     (mockLoyaltyService.prototype.ensureUserLoyaltyEnrollment as jest.Mock) = jest
       .fn()
       .mockImplementation(async () => {});
+
+    // Mock notification service
+    (notificationService.createDefaultPreferences as jest.Mock) = jest
+      .fn()
+      .mockResolvedValue(11 as never);
 
     // Mock test user
     testUser = {

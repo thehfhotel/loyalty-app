@@ -16,12 +16,14 @@ jest.mock('../../../config/database');
 jest.mock('../../../services/adminConfigService');
 jest.mock('../../../services/loyaltyService');
 jest.mock('../../../services/membershipIdService');
+jest.mock('../../../services/notificationService');
 jest.mock('../../../utils/emojiUtils');
 
 import * as database from '../../../config/database';
 import { adminConfigService } from '../../../services/adminConfigService';
 import { loyaltyService } from '../../../services/loyaltyService';
 import { membershipIdService } from '../../../services/membershipIdService';
+import { notificationService } from '../../../services/notificationService';
 import * as emojiUtils from '../../../utils/emojiUtils';
 
 // Environment variables are already set in setup.ts
@@ -81,6 +83,7 @@ describe('AuthService', () => {
     (emojiUtils.generateEmojiAvatarUrl as jest.Mock) = jest.fn().mockReturnValue('https://api.dicebear.com/7.x/fun-emoji/svg?seed=🎉');
     (loyaltyService.ensureUserLoyaltyEnrollment as jest.Mock) = jest.fn().mockResolvedValue(undefined);
     (adminConfigService.getRequiredRole as jest.Mock) = jest.fn().mockReturnValue(null);
+    (notificationService.createDefaultPreferences as jest.Mock) = jest.fn().mockResolvedValue(11);
 
     testUser = await createTestUser({
       email: 'auth-test@example.com',

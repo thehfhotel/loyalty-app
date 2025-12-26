@@ -262,6 +262,39 @@ export class NotificationService {
   }
 
   /**
+   * Create default notification preferences for a new user
+   * Uses ON CONFLICT DO NOTHING to be idempotent (safe if trigger already ran)
+   */
+  async createDefaultPreferences(userId: string): Promise<number> {
+    const result = await queryWithMeta(
+      `INSERT INTO notification_preferences (user_id, type, enabled)
+      VALUES
+        ($1, 'info', TRUE),
+        ($1, 'success', TRUE),
+        ($1, 'warning', TRUE),
+        ($1, 'error', TRUE),
+        ($1, 'system', TRUE),
+        ($1, 'reward', TRUE),
+        ($1, 'coupon', TRUE),
+        ($1, 'survey', TRUE),
+        ($1, 'profile', TRUE),
+        ($1, 'tier_change', TRUE),
+        ($1, 'points', TRUE)
+      ON CONFLICT (user_id, type) DO NOTHING`,
+      [userId]
+    );
+
+    const createdCount = result.rowCount || 0;
+
+    logger.info('Default notification preferences created', {
+      userId,
+      createdCount
+    });
+
+    return createdCount;
+  }
+
+  /**
    * Create system notification for profile completion rewards
    */
   async createProfileCompletionNotification(

@@ -11,6 +11,7 @@ import { sanitizeEmail, sanitizeLogValue } from '../utils/logSanitizer';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
 import { membershipIdService } from './membershipIdService';
+import { notificationService } from './notificationService';
 import { getRandomEmojiAvatar, generateEmojiAvatarUrl } from '../utils/emojiUtils';
 import { userService } from './userService';
 
@@ -86,6 +87,9 @@ export class AuthService {
 
       // codeql[js/log-injection] - Values sanitized via sanitizeLogValue/sanitizeEmail (removes newlines/control chars)
       logger.info(`User registered with membership ID: ${sanitizeLogValue(membershipId)}, emoji: ${sanitizeLogValue(randomEmoji)} (email: ${sanitizeEmail(data.email)})`);
+
+      // Create default notification preferences (idempotent with trigger)
+      await notificationService.createDefaultPreferences(user.id);
 
       // Generate tokens (pass client for transaction)
       const tokens = await this.generateTokens(user, client);

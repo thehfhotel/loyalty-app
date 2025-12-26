@@ -2,7 +2,6 @@
  * Mock NotificationService for testing
  */
 
- 
 export class NotificationService {
   async getUserNotifications(_userId: string, _page: number, _limit: number, _includeRead: boolean) {
     return {
@@ -55,5 +54,11 @@ export class NotificationService {
   async cleanupExpiredNotifications() {
     return 0;
   }
+
+  async createDefaultPreferences(_userId: string) {
+    return 11; // 11 default preference types
+  }
 }
- 
+
+export const notificationService = new NotificationService();
+
