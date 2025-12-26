@@ -57,8 +57,19 @@ export default defineConfig({
   projects: [
     {
       name: 'api',
-      use: { baseURL: BACKEND_URL },
+      use: {
+        baseURL: BACKEND_URL,
+        // API requests need longer timeout than browser actions
+        // This prevents POST requests from timing out during authentication
+        extraHTTPHeaders: {
+          'Accept': 'application/json',
+        },
+      },
       testMatch: /.*\.api\.spec\.ts/,
+      // API tests run sequentially to prevent race conditions with auth
+      fullyParallel: false,
+      // Longer timeout for API tests (includes beforeAll hooks)
+      timeout: 30000,
     },
     {
       name: 'browser',
