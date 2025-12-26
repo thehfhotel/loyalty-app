@@ -1982,6 +1982,23 @@ jobs:
             echo "⚠️ Frontend may still be starting..."
           fi
 
+          # Check email service configuration
+          echo ""
+          echo "🔍 Checking email service configuration..."
+          HEALTH_RESPONSE=$(curl -sf --max-time 10 http://localhost:5001/api/health 2>/dev/null || echo '{}')
+          EMAIL_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.services.email // "unknown"')
+          case "$EMAIL_STATUS" in
+            "configured")
+              echo "✅ Email service: Configured"
+              ;;
+            "not_configured")
+              echo "⚠️ Email service: Not configured"
+              ;;
+            *)
+              echo "❓ Email service: $EMAIL_STATUS"
+              ;;
+          esac
+
           # Show running containers (run from deploy dir to find .env.development)
           echo ""
           echo "📊 Running development containers:"
@@ -2688,6 +2705,27 @@ jobs:
           fi
           
           echo "✅ Health checks completed successfully"
+
+      - name: "📧 Verify email service configuration"
+        run: |
+          echo "🔍 Checking email service configuration..."
+
+          HEALTH_RESPONSE=$(curl -sf --max-time 10 http://localhost:4001/api/health 2>/dev/null || echo '{}')
+          EMAIL_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.services.email // "unknown"')
+
+          case "$EMAIL_STATUS" in
+            "configured")
+              echo "✅ Email service: Configured"
+              echo "   SMTP credentials are set"
+              ;;
+            "not_configured")
+              echo "⚠️ Email service: Not configured"
+              echo "   Missing SMTP_HOST, SMTP_USER, SMTP_PASS, or SMTP_FROM"
+              ;;
+            *)
+              echo "❓ Email service: $EMAIL_STATUS"
+              ;;
+          esac
 
   # =============================================================================
   # PHASE 4: POST-DEPLOYMENT MONITORING & CLEANUP
