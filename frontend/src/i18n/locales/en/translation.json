@@ -25,6 +25,7 @@
     "no": "No",
     "confirm": "Confirm",
     "processing": "Processing...",
+    "verifying": "Verifying...",
     "tryAgain": "Try Again",
     "loadMore": "Load More",
     "optional": "Optional",
@@ -214,6 +215,19 @@
     "selectOccupation": "Select your occupation",
     "selectInterestsHelp": "Select all interests that match your preferences",
     "selectedInterests": "Selected",
+    "verifyNow": "Verify",
+    "notVerified": "not verified",
+    "emailNotVerified": "Email not verified",
+    "verifyEmailDescription": "Please verify your email to receive notifications and account recovery",
+    "emailVerified": "Email verified successfully",
+    "verifyEmail": "Verify Email",
+    "verificationCodeSent": "A verification code has been sent to:",
+    "enterCode": "Enter verification code",
+    "invalidCodeFormat": "Please enter a valid code (XXXX-XXXX)",
+    "verifyCode": "Verify Code",
+    "resendCode": "Resend code",
+    "codeResent": "New code sent!",
+    "codeExpiry": "Code expires in 1 hour. Check your spam folder if you don't see it.",
     "occupations": {
       "student": "Student",
       "business_owner": "Business Owner",
@@ -334,7 +348,9 @@
     "unknownErrorDescription": "Something unexpected happened. Please try again or contact support if the problem persists.",
     "tryAgain": "Try Again",
     "goHome": "Return to Dashboard",
-    "contactSupport": "Contact Support"
+    "contactSupport": "Contact Support",
+    "emailAlreadyRegistered": "This email is already registered",
+    "emailAlreadyInUse": "This email is already in use by another account"
   },
   "languages": {
     "en": "English",

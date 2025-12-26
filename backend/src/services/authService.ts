@@ -11,7 +11,9 @@ import { sanitizeEmail, sanitizeLogValue } from '../utils/logSanitizer';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
 import { membershipIdService } from './membershipIdService';
+import { notificationService } from './notificationService';
 import { getRandomEmojiAvatar, generateEmojiAvatarUrl } from '../utils/emojiUtils';
+import { userService } from './userService';
 
 // Cryptographic secrets - NO fallback defaults for security
 // Environment validation is enforced by config/environment.ts
@@ -51,7 +53,7 @@ export class AuthService {
       );
 
       if (existingUser.length > 0) {
-        throw new AppError(409, 'Email already registered');
+        throw new AppError(409, 'Email already registered', { code: 'EMAIL_ALREADY_REGISTERED' });
       }
 
       // Hash password
@@ -94,12 +96,29 @@ export class AuthService {
 
       await client.query('COMMIT');
 
-      // Auto-enroll in loyalty program (after transaction commit)
+      // After transaction commit - these use separate connections and require the user to exist
+      // Create default notification preferences (non-blocking, trigger is fallback)
+      try {
+        await notificationService.createDefaultPreferences(user.id);
+      } catch (notifError) {
+        // Log error but don't fail registration - trigger will create preferences
+        logger.error('Failed to create notification preferences:', notifError);
+      }
+
+      // Auto-enroll in loyalty program
       await loyaltyService.ensureUserLoyaltyEnrollment(user.id);
+
+      // Send registration verification email (non-blocking, don't fail registration if email fails)
+      try {
+        await userService.initiateRegistrationVerification(user.id, data.email);
+      } catch (emailError) {
+        // Log error but don't fail registration
+        logger.error('Failed to send registration verification email:', emailError);
+      }
 
       // Get complete user profile including avatar (even though avatar will be null for new users)
       const userProfile = await this.getUserProfile(user.id);
-      
+
       return { user: userProfile, tokens };
     } catch (error) {
       await client.query('ROLLBACK');

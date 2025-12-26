@@ -48,23 +48,33 @@ export default defineConfig({
 
     /* Video on failure */
     video: 'retain-on-failure',
-
-    /* Timeout for each action */
-    actionTimeout: 10000,  // 10s for browser actions
   },
 
   /* Configure projects for major browsers */
   projects: [
     {
       name: 'api',
-      use: { baseURL: BACKEND_URL },
+      use: {
+        baseURL: BACKEND_URL,
+        // API requests need longer timeout than browser actions
+        // This prevents POST requests from timing out during authentication
+        extraHTTPHeaders: {
+          'Accept': 'application/json',
+        },
+      },
       testMatch: /.*\.api\.spec\.ts/,
+      // API tests run sequentially to prevent race conditions with auth
+      fullyParallel: false,
+      // Longer timeout for API tests (includes beforeAll hooks)
+      timeout: 30000,
     },
     {
       name: 'browser',
       use: {
         baseURL: FRONTEND_URL,
         ...devices['Desktop Chrome'],
+        // Browser actions timeout (clicks, fills, etc.)
+        actionTimeout: 10000,
       },
       testMatch: /.*\.browser\.spec\.ts/,
       timeout: 30000, // 30s for browser tests (login can take time)

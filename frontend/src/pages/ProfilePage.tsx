@@ -15,6 +15,7 @@ import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
 import SettingsModal from '../components/profile/SettingsModal';
 import EmojiAvatar from '../components/profile/EmojiAvatar';
 import { ConfirmDialog } from '../components/common/ConfirmDialog';
+import EmailVerificationModal from '../components/profile/EmailVerificationModal';
 import { trpc, getTRPCErrorMessage } from '../hooks/useTRPC';
 
 const profileSchema = z.object({
@@ -40,6 +41,9 @@ export default function ProfilePage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [emailError, setEmailError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // tRPC hooks
@@ -83,6 +87,34 @@ export default function ProfilePage() {
       });
     }
   }, [profile, reset]);
+
+  const handleEmailVerificationNeeded = async (email: string) => {
+    // Clear any previous email error
+    setEmailError(null);
+
+    try {
+      // Call the tRPC mutation to initiate email change
+      await updateEmailMutation.mutateAsync({ email });
+
+      // Store the pending email and show verification modal
+      setPendingEmail(email);
+      setShowVerificationModal(true);
+      setShowSettingsModal(false);
+    } catch (error: unknown) {
+      const errorMessage = getTRPCErrorMessage(error);
+      // Set email error for red highlight in the modal
+      setEmailError(errorMessage);
+      notify.error(errorMessage ?? t('profile.emailChangeError', 'Failed to send verification code'));
+      logger.error('Email verification initiation error:', error);
+    }
+  };
+
+  const handleEmailVerified = (email: string) => {
+    // Update the auth store with the verified email
+    updateUser({ email, emailVerified: true });
+    setShowVerificationModal(false);
+    notify.success(t('profile.emailVerified'));
+  };
 
   const onSubmit = async (data: ProfileFormData) => {
     try {
@@ -132,13 +164,6 @@ export default function ProfilePage() {
         // Refetch profile to get updated data
         await refetch();
         notify.success(t('profile.profileUpdated'));
-      }
-
-      // Update email if changed
-      if (data.email && data.email !== user?.email) {
-        await updateEmailMutation.mutateAsync({ email: data.email });
-        updateUser({ email: data.email });
-        notify.success(t('profile.emailUpdated'));
       }
 
       setShowSettingsModal(false);
@@ -250,14 +275,14 @@ export default function ProfilePage() {
             {/* Profile Display */}
             <div className="flex items-start space-x-6">
               <div className="flex-shrink-0">
-                <EmojiAvatar 
-                  avatarUrl={profile?.avatarUrl} 
+                <EmojiAvatar
+                  avatarUrl={profile?.avatarUrl}
                   size="xl"
                   onClick={() => setShowSettingsModal(true)}
                   className="cursor-pointer"
                 />
               </div>
-              
+
               <div className="flex-1 min-w-0">
                 <div className="flex items-center space-x-3 mb-4">
                   <h3 className="text-lg font-medium text-gray-900" data-testid="profile-name">
@@ -265,15 +290,15 @@ export default function ProfilePage() {
                   </h3>
                   {user?.role && user.role !== 'customer' && (
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      user.role === 'super_admin' 
-                        ? 'bg-purple-100 text-purple-800' 
+                      user.role === 'super_admin'
+                        ? 'bg-purple-100 text-purple-800'
                         : user.role === 'admin'
                         ? 'bg-blue-100 text-blue-800'
                         : 'bg-gray-100 text-gray-800'
                     }`}
                     >
-                      {user.role === 'super_admin' ? t('profile.superAdmin') : 
-                       user.role === 'admin' ? t('profile.admin') : 
+                      {user.role === 'super_admin' ? t('profile.superAdmin') :
+                       user.role === 'admin' ? t('profile.admin') :
                        t('profile.staff')}
                     </span>
                   )}
@@ -281,23 +306,42 @@ export default function ProfilePage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                   <div>
-                    <dt className="font-medium text-gray-500">{t('profile.email')}</dt>
-                    <dd className="mt-1" data-testid="profile-email">
-                      <EmailDisplay 
-                        email={user?.email} 
+                    <dt className="font-medium text-gray-500 flex items-center gap-2">
+                      {t('profile.email')}
+                      {user?.emailVerified === false && (
+                        <button
+                          onClick={() => {
+                            setPendingEmail(user?.email || '');
+                            setShowVerificationModal(true);
+                          }}
+                          className="text-sm px-2 py-0.5 rounded bg-amber-100 text-amber-700 hover:bg-amber-200"
+                          data-testid="verify-email-button"
+                        >
+                          {t('profile.verifyNow', 'ยืนยัน')}
+                        </button>
+                      )}
+                    </dt>
+                    <dd className="mt-1 flex items-center gap-2" data-testid="profile-email">
+                      <EmailDisplay
+                        email={user?.email}
                         linkToProfile={true}
                         showIcon={false}
                       />
+                      {user?.emailVerified === false && (
+                        <span className="text-xs text-amber-600">
+                          ({t('profile.notVerified', 'ยังไม่ยืนยัน')})
+                        </span>
+                      )}
                     </dd>
                   </div>
-                  
+
                   {profile?.phone && (
                     <div>
                       <dt className="font-medium text-gray-500">{t('auth.phone')}</dt>
                       <dd className="mt-1 text-gray-900">{profile.phone}</dd>
                     </div>
                   )}
-                  
+
                   {profile?.dateOfBirth && (
                     <div>
                       <dt className="font-medium text-gray-500">{t('profile.dateOfBirth')}</dt>
@@ -365,7 +409,10 @@ export default function ProfilePage() {
         {/* Settings Modal */}
         <SettingsModal
           isOpen={showSettingsModal}
-          onClose={() => setShowSettingsModal(false)}
+          onClose={() => {
+            setShowSettingsModal(false);
+            setEmailError(null); // Clear email error when closing modal
+          }}
           profile={profile ?? null}
           onSubmit={onSubmit}
           isSaving={updateProfileMutation.isPending || completeProfileMutation.isPending || updateEmailMutation.isPending}
@@ -375,6 +422,17 @@ export default function ProfilePage() {
           onProfileUpdate={async () => {
             await refetch();
           }}
+          onEmailVerificationNeeded={handleEmailVerificationNeeded}
+          emailError={emailError}
+        />
+
+        {/* Email Verification Modal */}
+        <EmailVerificationModal
+          isOpen={showVerificationModal}
+          onClose={() => setShowVerificationModal(false)}
+          newEmail={pendingEmail}
+          onVerified={handleEmailVerified}
+          isRegistration={user?.emailVerified === false}
         />
 
         {/* Confirm Delete Avatar Dialog */}

@@ -6,6 +6,7 @@ export class AppError extends Error {
   constructor(
     public statusCode: number,
     public override message: string,
+    public data?: Record<string, unknown>,
     public isOperational = true
   ) {
     super(message);
@@ -51,6 +52,7 @@ export function errorHandler(
   if (err instanceof AppError) {
     res.status(err.statusCode).json({
       error: err.message,
+      ...(err.data && { ...err.data }),
     });
     return;
   }

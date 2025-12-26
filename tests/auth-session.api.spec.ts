@@ -204,6 +204,62 @@ test.describe('Authentication and Session Tests', () => {
       }
     });
   });
+
+  test.describe('Registration creates notification preferences', () => {
+    test('New user registration should create notification preferences', async ({ request }) => {
+      // Get CSRF token and cookies first
+      const csrfResponse = await request.get(`${backendUrl}/api/csrf-token`);
+      const csrfCookies = csrfResponse.headers()['set-cookie'];
+      const cookies = csrfCookies
+        ? (Array.isArray(csrfCookies) ? csrfCookies : [csrfCookies])
+        : [];
+
+      let csrfToken = '';
+      if (csrfResponse.ok()) {
+        const csrfData = await csrfResponse.json();
+        csrfToken = csrfData.csrfToken || '';
+      }
+
+      // Register a new user with unique email
+      const uniqueEmail = `test-notif-${Date.now()}@example.com`;
+      const requestData = {
+        email: uniqueEmail,
+        password: 'TestPass123!',
+        firstName: 'Notif',
+        lastName: 'Test',
+      };
+
+      const registerResponse = await request.post(`${backendUrl}/api/auth/register`, {
+        data: JSON.stringify(requestData),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(cookies.length > 0 && { 'Cookie': cookies.join('; ') }),
+          ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
+        },
+      });
+
+      // Registration should succeed
+      expect(registerResponse.ok()).toBeTruthy();
+      const registerData = await registerResponse.json();
+      const authToken = registerData.tokens?.accessToken || registerData.accessToken;
+      expect(authToken).toBeTruthy();
+
+      // Fetch notification preferences using the token
+      const prefsResponse = await request.get(`${backendUrl}/api/notifications/preferences`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      expect(prefsResponse.ok()).toBeTruthy();
+      const prefsData = await prefsResponse.json();
+
+      // Should have 11 notification preferences created
+      // The trigger migration ensures explicit creation in authService
+      expect(Array.isArray(prefsData.preferences)).toBeTruthy();
+      expect(prefsData.preferences.length).toBeGreaterThanOrEqual(11);
+    });
+  });
 });
 
 test.describe('Session Persistence Checks', () => {

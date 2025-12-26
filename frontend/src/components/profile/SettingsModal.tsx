@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -39,6 +39,8 @@ interface SettingsModalProps {
   onDeleteAvatar: () => Promise<void>;
   uploadingAvatar: boolean;
   onProfileUpdate?: () => Promise<void>;
+  onEmailVerificationNeeded?: (email: string) => void;
+  emailError?: string | null;
 }
 
 export default function SettingsModal({
@@ -50,12 +52,14 @@ export default function SettingsModal({
   onAvatarUpload,
   onDeleteAvatar,
   uploadingAvatar,
-  onProfileUpdate
+  onProfileUpdate,
+  onEmailVerificationNeeded,
+  emailError
 }: SettingsModalProps) {
   const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showEmojiSelector, setShowEmojiSelector] = React.useState(false);
+  const [showEmojiSelector, setShowEmojiSelector] = useState(false);
 
   // tRPC hooks
   const updateEmojiAvatarMutation = trpc.user.updateEmojiAvatar.useMutation();
@@ -79,6 +83,18 @@ export default function SettingsModal({
       occupation: profile?.occupation ?? '',
     }
   });
+
+  const handleFormSubmit = async (data: ProfileFormData) => {
+    // Check if email has changed
+    if (data.email && data.email !== user?.email && onEmailVerificationNeeded) {
+      // Trigger email verification flow
+      onEmailVerificationNeeded(data.email);
+      return;
+    }
+
+    // Normal form submission
+    await onSubmit(data);
+  };
 
   // Reset form when profile or user changes
   React.useEffect(() => {
@@ -115,7 +131,7 @@ export default function SettingsModal({
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
         {/* Backdrop */}
-        <div 
+        <div
           className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
           onClick={onClose}
         />
@@ -139,7 +155,7 @@ export default function SettingsModal({
             {/* Profile Picture Section */}
             <div className="mb-6">
               <h4 className="text-md font-medium text-gray-900 mb-4">Profile Picture</h4>
-              
+
               <div className="flex items-center space-x-4 mb-4">
                 <div className="relative">
                   <EmojiAvatar
@@ -184,7 +200,7 @@ export default function SettingsModal({
                       </button>
                     )}
                   </div>
-                  
+
                   <p className="text-xs text-gray-500">
                     Choose an emoji or upload your own image for your profile picture
                   </p>
@@ -220,30 +236,39 @@ export default function SettingsModal({
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
               {/* Email Field */}
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                   {t('profile.email')}
                 </label>
                 <div className="mt-1 relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <FiMail className="h-5 w-5 text-gray-400" />
+                  <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${emailError ? 'text-red-400' : ''}`}>
+                    <FiMail className={`h-5 w-5 ${emailError ? 'text-red-400' : 'text-gray-400'}`} />
                   </div>
                   <input
                     {...register('email')}
                     id="email"
                     type="email"
-                    className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    className={`appearance-none block w-full px-3 py-2 pl-10 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none sm:text-sm ${
+                      emailError
+                        ? 'border-red-500 ring-1 ring-red-500 focus:ring-red-500 focus:border-red-500'
+                        : 'border-gray-300 focus:ring-primary-500 focus:border-primary-500'
+                    }`}
                     placeholder={t('profile.emailPlaceholder')}
                   />
                 </div>
-                {errors.email && (
+                {emailError && (
+                  <p className="mt-1 text-sm text-red-600">{emailError}</p>
+                )}
+                {errors.email && !emailError && (
                   <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
                 )}
-                <p className="mt-1 text-xs text-gray-500">
-                  {t('profile.emailHelpText')}
-                </p>
+                {!emailError && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    {t('profile.emailHelpText')}
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -311,13 +336,13 @@ export default function SettingsModal({
                 )}
               </div>
 
-              <DateOfBirthField 
+              <DateOfBirthField
                 register={register}
                 errors={errors}
                 isModal={false}
               />
 
-              <GenderField 
+              <GenderField
                 register={register}
                 errors={errors}
                 isModal={false}

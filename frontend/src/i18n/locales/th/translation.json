@@ -211,6 +211,19 @@
     "selectOccupation": "เลือกอาชีพของคุณ",
     "selectInterestsHelp": "เลือกความสนใจทั้งหมดที่ตรงกับความชอบของคุณ",
     "selectedInterests": "เลือกแล้ว",
+    "verifyNow": "ยืนยัน",
+    "notVerified": "ยังไม่ยืนยัน",
+    "emailNotVerified": "อีเมลยังไม่ได้รับการยืนยัน",
+    "verifyEmailDescription": "กรุณายืนยันอีเมลของคุณเพื่อรับการแจ้งเตือนและกู้คืนบัญชี",
+    "emailVerified": "ยืนยันอีเมลสำเร็จ",
+    "verifyEmail": "ยืนยันอีเมล",
+    "verificationCodeSent": "รหัสยืนยันถูกส่งไปที่:",
+    "enterCode": "กรอกรหัสยืนยัน",
+    "invalidCodeFormat": "กรุณากรอกรหัสให้ถูกต้อง (XXXX-XXXX)",
+    "verifyCode": "ยืนยันรหัส",
+    "resendCode": "ส่งรหัสอีกครั้ง",
+    "codeResent": "ส่งรหัสใหม่แล้ว!",
+    "codeExpiry": "รหัสจะหมดอายุใน 1 ชั่วโมง หากไม่พบอีเมล กรุณาตรวจสอบโฟลเดอร์สแปม",
     "occupations": {
       "student": "นักเรียน/นักศึกษา",
       "business_owner": "เจ้าของธุรกิจ",
@@ -328,7 +341,9 @@
     "goHome": "ไปยังหน้าหลัก",
     "failedToLoadCoupons": "ไม่สามารถโหลดคูปองได้",
     "validationFailed": "การตรวจสอบคูปองล้มเหลว",
-    "redemptionFailed": "การใช้คูปองล้มเหลว"
+    "redemptionFailed": "การใช้คูปองล้มเหลว",
+    "emailAlreadyRegistered": "อีเมลนี้ถูกลงทะเบียนแล้ว",
+    "emailAlreadyInUse": "อีเมลนี้ถูกใช้งานโดยบัญชีอื่นแล้ว"
   },
   "languages": {
     "en": "English",

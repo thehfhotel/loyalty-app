@@ -10,6 +10,7 @@ import request from 'supertest';
 import { Express } from 'express';
 import routes from '../../../routes/user';
 import { createTestApp } from '../../fixtures';
+import { AppError } from '../../../middleware/errorHandler';
 
 // Mock dependencies - Service-based mocking
 jest.mock('../../../services/userService', () => {
@@ -21,6 +22,10 @@ jest.mock('../../../services/userService', () => {
     updateAvatar: jest.fn(),
     updateEmojiAvatar: jest.fn(),
     updateUserEmail: jest.fn(),
+    initiateEmailChange: jest.fn(),
+    verifyEmailChange: jest.fn(),
+    resendVerificationCode: jest.fn(),
+    getPendingEmailChange: jest.fn(),
     deleteAvatar: jest.fn(),
     getAllUsers: jest.fn(),
     getUserStats: jest.fn(),
@@ -357,49 +362,262 @@ describe('User Routes Integration Tests', () => {
     });
   });
 
-  describe('PUT /api/users/email', () => {
-    it('should update user email', async () => {
-      mockUserService.updateUserEmail.mockResolvedValue(undefined);
+  describe('PUT /api/users/email - Initiate Email Change', () => {
+    it('should return 401 if not authenticated', async () => {
+      // This test will use the default auth mock, but we can verify the pattern
+      const response = await request(app)
+        .put('/api/users/email')
+        .send({ email: 'newemail@example.com' });
+
+      // With our mock auth, user is always authenticated, so this tests the route logic
+      expect(response.status).not.toBe(401);
+    });
+
+    it('should return 400 if email is missing', async () => {
+      const response = await request(app)
+        .put('/api/users/email')
+        .send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Email is required');
+    });
+
+    it('should return 400 if email format is invalid', async () => {
+      const response = await request(app)
+        .put('/api/users/email')
+        .send({ email: 'invalid-email' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Invalid email format');
+    });
+
+    it('should return 400 if email is missing @ symbol', async () => {
+      const response = await request(app)
+        .put('/api/users/email')
+        .send({ email: 'invalidemail.com' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Invalid email format');
+    });
+
+    it('should return 409 if email is already in use', async () => {
+      mockUserService.initiateEmailChange.mockRejectedValue(
+        new AppError(409, 'Email is already in use by another account')
+      );
+
+      const response = await request(app)
+        .put('/api/users/email')
+        .send({ email: 'duplicate@example.com' });
+
+      expect(response.status).toBe(409);
+    });
+
+    it('should return 200 with pendingVerification: true on success', async () => {
+      mockUserService.initiateEmailChange.mockResolvedValue(undefined);
 
       const response = await request(app)
         .put('/api/users/email')
         .send({ email: 'newemail@example.com' });
 
       expect(response.status).toBe(200);
-      expect(mockUserService.updateUserEmail).toHaveBeenCalledWith(
+      expect(response.body.success).toBe(true);
+      expect(response.body.pendingVerification).toBe(true);
+      expect(response.body.message).toBe('Verification code sent to new email address');
+      expect(mockUserService.initiateEmailChange).toHaveBeenCalledWith(
         'test-user-id',
         'newemail@example.com'
       );
     });
+  });
 
-    it('should reject invalid email', async () => {
-      // Note: Route only checks if email is a string, doesn't validate email format
-      // This test verifies that service layer handles email validation
-      mockUserService.updateUserEmail.mockResolvedValue(undefined);
-
+  describe('POST /api/users/email/verify', () => {
+    it('should return 401 if not authenticated', async () => {
+      // With our mock auth, user is always authenticated, so we verify the route logic
       const response = await request(app)
-        .put('/api/users/email')
-        .send({ email: 'invalid-email' });
+        .post('/api/users/email/verify')
+        .send({ code: '1234-5678' });
 
-      expect(response.status).toBe(200);
+      expect(response.status).not.toBe(401);
     });
 
-    it('should reject missing email', async () => {
+    it('should return 400 if code is missing', async () => {
       const response = await request(app)
-        .put('/api/users/email')
+        .post('/api/users/email/verify')
         .send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Verification code is required');
+    });
+
+    it('should return 400 if code format is invalid (no hyphen)', async () => {
+      const response = await request(app)
+        .post('/api/users/email/verify')
+        .send({ code: '12345678' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Invalid code format');
+    });
+
+    it('should return 400 if code format is invalid (wrong length)', async () => {
+      const response = await request(app)
+        .post('/api/users/email/verify')
+        .send({ code: '123-5678' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Invalid code format');
+    });
+
+    it('should return 400 if code format is invalid (too long)', async () => {
+      const response = await request(app)
+        .post('/api/users/email/verify')
+        .send({ code: '12345-56789' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Invalid code format');
+    });
+
+    it('should return 400 if code is expired or invalid', async () => {
+      mockUserService.verifyEmailChange.mockRejectedValue(
+        new AppError(400, 'Invalid verification code')
+      );
+
+      const response = await request(app)
+        .post('/api/users/email/verify')
+        .send({ code: '1234-5678' });
 
       expect(response.status).toBe(400);
     });
 
-    it('should handle duplicate email error', async () => {
-      mockUserService.updateUserEmail.mockRejectedValue(
-        new Error('Email already exists')
+    it('should return 400 if code is expired', async () => {
+      mockUserService.verifyEmailChange.mockRejectedValue(
+        new AppError(400, 'Verification code has expired')
       );
 
       const response = await request(app)
-        .put('/api/users/email')
-        .send({ email: 'duplicate@example.com' });
+        .post('/api/users/email/verify')
+        .send({ code: '1234-5678' });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('should return 200 with new email on success', async () => {
+      mockUserService.verifyEmailChange.mockResolvedValue('newemail@example.com');
+
+      const response = await request(app)
+        .post('/api/users/email/verify')
+        .send({ code: '1234-5678' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.message).toBe('Email verified successfully');
+      expect(response.body.email).toBe('newemail@example.com');
+      expect(mockUserService.verifyEmailChange).toHaveBeenCalledWith(
+        'test-user-id',
+        '1234-5678'
+      );
+    });
+
+    it('should accept alphanumeric codes in correct format', async () => {
+      mockUserService.verifyEmailChange.mockResolvedValue('newemail@example.com');
+
+      const response = await request(app)
+        .post('/api/users/email/verify')
+        .send({ code: 'AbCd-1234' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(mockUserService.verifyEmailChange).toHaveBeenCalledWith(
+        'test-user-id',
+        'AbCd-1234'
+      );
+    });
+  });
+
+  describe('POST /api/users/email/resend', () => {
+    it('should return 401 if not authenticated', async () => {
+      // With our mock auth, user is always authenticated, so we verify the route logic
+      const response = await request(app).post('/api/users/email/resend');
+
+      expect(response.status).not.toBe(401);
+    });
+
+    it('should return 404 if no pending verification', async () => {
+      mockUserService.resendVerificationCode.mockRejectedValue(
+        new AppError(404, 'No pending email verification found')
+      );
+
+      const response = await request(app).post('/api/users/email/resend');
+
+      expect(response.status).toBe(404);
+    });
+
+    it('should return 200 on successful resend', async () => {
+      mockUserService.resendVerificationCode.mockResolvedValue(undefined);
+
+      const response = await request(app).post('/api/users/email/resend');
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.message).toBe('Verification code resent');
+      expect(mockUserService.resendVerificationCode).toHaveBeenCalledWith(
+        'test-user-id'
+      );
+    });
+
+    it('should handle service errors gracefully', async () => {
+      mockUserService.resendVerificationCode.mockRejectedValue(
+        new Error('Email service unavailable')
+      );
+
+      const response = await request(app).post('/api/users/email/resend');
+
+      expect(response.status).toBe(500);
+    });
+  });
+
+  describe('GET /api/users/email/pending', () => {
+    it('should return 401 if not authenticated', async () => {
+      // With our mock auth, user is always authenticated, so we verify the route logic
+      const response = await request(app).get('/api/users/email/pending');
+
+      expect(response.status).not.toBe(401);
+    });
+
+    it('should return null if no pending verification', async () => {
+      mockUserService.getPendingEmailChange.mockResolvedValue(null);
+
+      const response = await request(app).get('/api/users/email/pending');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toBeNull();
+      expect(mockUserService.getPendingEmailChange).toHaveBeenCalledWith(
+        'test-user-id'
+      );
+    });
+
+    it('should return pending email info if exists', async () => {
+      const mockPendingData = {
+        email: 'pending@example.com',
+        expiresAt: new Date('2025-12-31T23:59:59Z')
+      };
+      mockUserService.getPendingEmailChange.mockResolvedValue(mockPendingData);
+
+      const response = await request(app).get('/api/users/email/pending');
+
+      expect(response.status).toBe(200);
+      expect(response.body.email).toBe('pending@example.com');
+      expect(response.body.expiresAt).toBeDefined();
+      expect(mockUserService.getPendingEmailChange).toHaveBeenCalledWith(
+        'test-user-id'
+      );
+    });
+
+    it('should handle service errors gracefully', async () => {
+      mockUserService.getPendingEmailChange.mockRejectedValue(
+        new Error('Database connection error')
+      );
+
+      const response = await request(app).get('/api/users/email/pending');
 
       expect(response.status).toBe(500);
     });

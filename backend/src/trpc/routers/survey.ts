@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { router, protectedProcedure, adminProcedure } from '../trpc';
 import { surveyService } from '../../services/surveyService';
+import { AppError } from '../../middleware/errorHandler';
 
 export const surveyRouter = router({
   /**
@@ -42,7 +43,7 @@ export const surveyRouter = router({
       const hasAccess = await surveyService.canUserAccessSurvey(ctx.user.id, input.surveyId);
 
       if (!hasAccess && ctx.user.role !== 'admin') {
-        throw new Error('Access denied: You do not have permission to view this survey');
+        throw new AppError(403, 'Access denied: You do not have permission to view this survey', { code: 'FORBIDDEN' });
       }
 
       // Get survey with optional language translation
@@ -51,7 +52,7 @@ export const surveyRouter = router({
         : await surveyService.getSurveyById(input.surveyId);
 
       if (!survey) {
-        throw new Error('Survey not found');
+        throw new AppError(404, 'Survey not found', { code: 'SURVEY_NOT_FOUND' });
       }
 
       return survey;
@@ -71,7 +72,7 @@ export const surveyRouter = router({
       const hasAccess = await surveyService.canUserAccessSurvey(ctx.user.id, input.survey_id);
 
       if (!hasAccess) {
-        throw new Error('Access denied: You do not have permission to submit responses to this survey');
+        throw new AppError(403, 'Access denied: You do not have permission to submit responses to this survey', { code: 'FORBIDDEN' });
       }
 
       return await surveyService.submitResponse(ctx.user.id, input);
@@ -133,7 +134,7 @@ export const surveyRouter = router({
       const analytics = await surveyService.getSurveyAnalytics(input.surveyId);
 
       if (!analytics) {
-        throw new Error('Survey not found or analytics unavailable');
+        throw new AppError(404, 'Survey not found or analytics unavailable', { code: 'SURVEY_NOT_FOUND' });
       }
 
       return analytics;

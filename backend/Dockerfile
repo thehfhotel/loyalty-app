@@ -108,7 +108,7 @@ RUN chown -R nodejs:nodejs /app
 USER nodejs
 EXPOSE 4000
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=6 \
   CMD curl -f http://localhost:4000/api/health || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]
@@ -146,7 +146,7 @@ RUN chown -R nodejs:nodejs /app
 USER nodejs
 EXPOSE 4000
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=6 \
   CMD curl -f http://localhost:4000/api/health || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]

@@ -12,6 +12,7 @@ import { logger } from '../utils/logger';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
 import { membershipIdService } from './membershipIdService';
+import { notificationService } from './notificationService';
 
 const authService = new AuthService();
 
@@ -126,7 +127,7 @@ export class OAuthService {
     
     if (!email) {
       logger.error('[OAuth Service] No email provided by Google');
-      throw new Error('No email provided by Google');
+      throw new AppError(400, 'No email provided by Google', { code: 'MISSING_EMAIL' });
     }
 
     // Check if user exists
@@ -216,6 +217,12 @@ export class OAuthService {
           [newOAuthUser.id, firstName, lastName, avatarUrl, membershipId]
         );
 
+        // Create default notification preferences (non-blocking, trigger is fallback)
+        try {
+          await notificationService.createDefaultPreferences(newOAuthUser.id);
+        } catch (notifError) {
+          logger.error('Failed to create notification preferences:', notifError);
+        }
 
         user = newOAuthUser;
       } else {
@@ -248,6 +255,13 @@ export class OAuthService {
            VALUES ($1, $2, $3, $4, $5)`,
           [newUser.id, firstName, lastName, avatarUrl, membershipId]
         );
+
+        // Create default notification preferences (non-blocking, trigger is fallback)
+        try {
+          await notificationService.createDefaultPreferences(newUser.id);
+        } catch (notifError) {
+          logger.error('Failed to create notification preferences:', notifError);
+        }
 
         user = newUser;
       }
@@ -316,7 +330,7 @@ export class OAuthService {
     
     if (!lineId) {
       logger.error('[OAuth Service] No LINE ID provided');
-      throw new Error('No LINE ID provided');
+      throw new AppError(400, 'No LINE ID provided', { code: 'MISSING_LINE_ID' });
     }
 
     // Use LINE provided email if available, otherwise leave as NULL
@@ -451,10 +465,17 @@ export class OAuthService {
 
       // Create user profile with reception ID
       await query(
-        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id) 
+        `INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id)
          VALUES ($1, $2, $3, $4, $5)`,
         [user.id, firstName, lastName, avatarUrl, membershipId]
       );
+
+      // Create default notification preferences (non-blocking, trigger is fallback)
+      try {
+        await notificationService.createDefaultPreferences(user.id);
+      } catch (notifError) {
+        logger.error('Failed to create notification preferences:', notifError);
+      }
     }
 
     // Check if user should have elevated role (only if email exists)

@@ -1669,6 +1669,219 @@ describe('SurveyService', () => {
 
       expect(mockClient.release).toHaveBeenCalled();
     });
+
+    describe('coupon award logic', () => {
+      const mockSurveyResponses = db.survey_responses as unknown as {
+        findUnique: jest.Mock;
+        update: jest.Mock;
+        create: jest.Mock;
+      };
+
+      const mockSurvey = {
+        id: 'survey-coupon-test',
+        title: 'Coupon Test Survey',
+        description: 'Test',
+        status: 'active',
+        access_type: 'public',
+        questions: [
+          { id: 'q1', text: 'Question 1', type: 'text', required: true },
+          { id: 'q2', text: 'Question 2', type: 'text', required: true }
+        ],
+        target_segment: {},
+        created_by: 'admin',
+        created_at: new Date(),
+        updated_at: new Date()
+      };
+
+      test('should call awardSurveyCompletionCoupons when survey newly completed', async () => {
+        const userId = 'user-coupon-test';
+        const surveyId = 'survey-coupon-test';
+        const responseId = 'response-new-completed';
+
+        const completedResponse = {
+          id: responseId,
+          survey_id: surveyId,
+          user_id: userId,
+          answers: { 'q1': 'answer1', 'q2': 'answer2' },
+          is_completed: true,
+          progress: 100,
+          completed_at: new Date(),
+          created_at: new Date(),
+          updated_at: new Date()
+        };
+
+        mockQuery.mockResolvedValueOnce({ rows: [mockSurvey] } as never);
+        mockSurveyResponses.findUnique.mockResolvedValueOnce(null as never);
+        mockSurveyResponses.create.mockResolvedValueOnce(completedResponse as never);
+        // Mock the coupon award call
+        mockQuery.mockResolvedValueOnce({ rows: [{ coupons_awarded: 1 }] } as never);
+
+        await surveyService.submitResponse(userId, {
+          survey_id: surveyId,
+          answers: { 'q1': 'answer1', 'q2': 'answer2' },
+          is_completed: true
+        });
+
+        // Verify coupon award was attempted
+        expect(mockQuery).toHaveBeenCalledWith(
+          expect.stringContaining('award_survey_completion_coupons'),
+          [responseId]
+        );
+      });
+
+      test('should NOT call awardSurveyCompletionCoupons for partial responses', async () => {
+        const userId = 'user-partial-test';
+        const surveyId = 'survey-coupon-test';
+
+        const partialResponse = {
+          id: 'response-partial',
+          survey_id: surveyId,
+          user_id: userId,
+          answers: { 'q1': 'answer1' },
+          is_completed: false,
+          progress: 50,
+          completed_at: null,
+          created_at: new Date(),
+          updated_at: new Date()
+        };
+
+        mockQuery.mockResolvedValueOnce({ rows: [mockSurvey] } as never);
+        mockSurveyResponses.findUnique.mockResolvedValueOnce(null as never);
+        mockSurveyResponses.create.mockResolvedValueOnce(partialResponse as never);
+
+        await surveyService.submitResponse(userId, {
+          survey_id: surveyId,
+          answers: { 'q1': 'answer1' },
+          is_completed: false
+        });
+
+        // Verify coupon award was NOT called
+        const couponAwardCalls = mockQuery.mock.calls.filter(
+          (call: unknown[]) => call[0] && typeof call[0] === 'string' && (call[0] as string).includes('award_survey_completion_coupons')
+        );
+        expect(couponAwardCalls).toHaveLength(0);
+      });
+
+      test('should NOT call awardSurveyCompletionCoupons when survey already completed', async () => {
+        const userId = 'user-already-completed';
+        const surveyId = 'survey-coupon-test';
+
+        const existingCompletedResponse = {
+          id: 'response-already-completed',
+          survey_id: surveyId,
+          user_id: userId,
+          answers: { 'q1': 'answer1', 'q2': 'answer2' },
+          is_completed: true, // Already completed
+          progress: 100,
+          completed_at: new Date(),
+          created_at: new Date(),
+          updated_at: new Date()
+        };
+
+        const updatedResponse = {
+          ...existingCompletedResponse,
+          answers: { 'q1': 'updated answer', 'q2': 'answer2' }
+        };
+
+        mockQuery.mockResolvedValueOnce({ rows: [mockSurvey] } as never);
+        mockSurveyResponses.findUnique.mockResolvedValueOnce(existingCompletedResponse as never);
+        mockSurveyResponses.update.mockResolvedValueOnce(updatedResponse as never);
+
+        await surveyService.submitResponse(userId, {
+          survey_id: surveyId,
+          answers: { 'q1': 'updated answer', 'q2': 'answer2' },
+          is_completed: true
+        });
+
+        // Verify coupon award was NOT called (since already completed)
+        const couponAwardCalls = mockQuery.mock.calls.filter(
+          (call: unknown[]) => call[0] && typeof call[0] === 'string' && (call[0] as string).includes('award_survey_completion_coupons')
+        );
+        expect(couponAwardCalls).toHaveLength(0);
+      });
+
+      test('should return survey response even if coupon award fails', async () => {
+        const userId = 'user-coupon-fail';
+        const surveyId = 'survey-coupon-test';
+        const responseId = 'response-coupon-fail';
+
+        const completedResponse = {
+          id: responseId,
+          survey_id: surveyId,
+          user_id: userId,
+          answers: { 'q1': 'answer1', 'q2': 'answer2' },
+          is_completed: true,
+          progress: 100,
+          completed_at: new Date(),
+          created_at: new Date(),
+          updated_at: new Date()
+        };
+
+        mockQuery.mockResolvedValueOnce({ rows: [mockSurvey] } as never);
+        mockSurveyResponses.findUnique.mockResolvedValueOnce(null as never);
+        mockSurveyResponses.create.mockResolvedValueOnce(completedResponse as never);
+        // Mock the coupon award to fail
+        mockQuery.mockRejectedValueOnce(new Error('Coupon service unavailable') as never);
+
+        // Should still return successfully
+        const result = await surveyService.submitResponse(userId, {
+          survey_id: surveyId,
+          answers: { 'q1': 'answer1', 'q2': 'answer2' },
+          is_completed: true
+        });
+
+        expect(result).toEqual(completedResponse);
+        expect(result.is_completed).toBe(true);
+      });
+
+      test('should call awardSurveyCompletionCoupons when updating from incomplete to complete', async () => {
+        const userId = 'user-update-complete';
+        const surveyId = 'survey-coupon-test';
+        const responseId = 'response-update-complete';
+
+        const existingIncompleteResponse = {
+          id: responseId,
+          survey_id: surveyId,
+          user_id: userId,
+          answers: { 'q1': 'answer1' },
+          is_completed: false, // Was incomplete
+          progress: 50,
+          completed_at: null,
+          created_at: new Date(),
+          updated_at: new Date()
+        };
+
+        const updatedCompletedResponse = {
+          id: responseId,
+          survey_id: surveyId,
+          user_id: userId,
+          answers: { 'q1': 'answer1', 'q2': 'answer2' },
+          is_completed: true,
+          progress: 100,
+          completed_at: new Date(),
+          created_at: new Date(),
+          updated_at: new Date()
+        };
+
+        mockQuery.mockResolvedValueOnce({ rows: [mockSurvey] } as never);
+        mockSurveyResponses.findUnique.mockResolvedValueOnce(existingIncompleteResponse as never);
+        mockSurveyResponses.update.mockResolvedValueOnce(updatedCompletedResponse as never);
+        // Mock the coupon award call
+        mockQuery.mockResolvedValueOnce({ rows: [{ coupons_awarded: 2 }] } as never);
+
+        await surveyService.submitResponse(userId, {
+          survey_id: surveyId,
+          answers: { 'q1': 'answer1', 'q2': 'answer2' },
+          is_completed: true
+        });
+
+        // Verify coupon award was called with response ID
+        expect(mockQuery).toHaveBeenCalledWith(
+          expect.stringContaining('award_survey_completion_coupons'),
+          [responseId]
+        );
+      });
+    });
   });
 
   describe('getUserResponse - Detailed', () => {

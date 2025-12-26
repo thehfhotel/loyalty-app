@@ -10,9 +10,10 @@ on:
 # Workflow-level concurrency: prevent parallel runs on same branch
 # This prevents race conditions when multiple commits push in quick succession
 # Dependabot PRs share a single concurrency group to prevent parallel runs
+# Main and develop branches don't cancel in-progress runs (queue instead)
 concurrency:
   group: ${{ github.actor == 'dependabot[bot]' && 'dependabot-ci' || format('ci-{0}', github.ref) }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.actor != 'dependabot[bot]' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' && github.actor != 'dependabot[bot]' }}
 
 # SECURITY: Top-level permissions set to minimal read-only
 # Write permissions are granted at job-level only where needed (principle of least privilege)
@@ -1683,6 +1684,11 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           LINE_CHANNEL_ID: ${{ secrets.LINE_CHANNEL_ID }}
           LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
         run: |
           echo "🔧 Configuring development environment..."
 
@@ -1720,6 +1726,13 @@ jobs:
           LINE_CHANNEL_ID=${LINE_CHANNEL_ID}
           LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET}
           LINE_CALLBACK_URL=https://loyalty-dev.saichon.com/api/oauth/line/callback
+
+          # Email Service (SMTP)
+          SMTP_HOST=${SMTP_HOST}
+          SMTP_PORT=${SMTP_PORT}
+          SMTP_USER=${SMTP_USER}
+          SMTP_PASS=${SMTP_PASS}
+          SMTP_FROM=${SMTP_FROM}
 
           # Azure Translation
           TRANSLATION_FEATURE_ENABLED=false
@@ -1803,58 +1816,36 @@ jobs:
 
       - name: "🗄️ Database migration"
         run: |
-          echo "🗄️ Running database migrations on development..."
+          echo "🗄️ Waiting for backend migrations to complete..."
 
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
           cd "$DEPLOY_DIR"
 
-          # Wait for database to be ready
-          echo "⏳ Waiting for database..."
-          for i in {1..30}; do
-            if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres pg_isready -U loyalty_dev -d loyalty_dev_db >/dev/null 2>&1; then
-              echo "✅ Database is ready"
+          # Wait for backend to be healthy (entrypoint.sh runs migrations)
+          # Backend health check means migrations have completed successfully
+          echo "⏳ Waiting for backend health check..."
+          for i in {1..60}; do
+            if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+               curl -sf http://localhost:4000/api/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy (migrations complete)"
               break
             fi
-            echo "Waiting for database... ($i/30)"
+
+            if [ $i -eq 60 ]; then
+              echo "❌ Backend failed to become healthy after 2 minutes"
+              echo "📄 Backend logs:"
+              docker compose -f docker-compose.yml -f docker-compose.dev.yml logs --tail=50 backend
+              exit 1
+            fi
+
+            echo "Waiting for backend... ($i/60)"
             sleep 2
           done
 
-          # Check migration status before running
-          echo "🔍 Checking current migration status..."
-          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npx prisma migrate status || echo "⚠️ Could not check migration status"
-
-          # Run migrations with retry
-          echo "🔄 Running Prisma migrations..."
-          for attempt in 1 2 3; do
-            echo "🔄 Migration attempt $attempt/3..."
-
-            if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npm run db:migrate:deploy; then
-              echo "✅ Database migrations completed successfully"
-              break
-            else
-              echo "❌ Migration attempt $attempt failed"
-
-              if [ $attempt -eq 3 ]; then
-                echo "🔧 Attempting baseline resolution for 0_init..."
-                docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npx prisma migrate resolve --applied 0_init 2>/dev/null || true
-
-                echo "🔄 Final migration attempt after baseline..."
-                if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npm run db:migrate:deploy; then
-                  echo "✅ Database migrations completed after baseline resolution"
-                else
-                  echo "❌ All migration attempts failed"
-                  docker compose -f docker-compose.yml -f docker-compose.dev.yml logs --tail=20 backend
-                  exit 1
-                fi
-              else
-                sleep 3
-              fi
-            fi
-          done
-
-          # Verify final migration status
-          echo "🔍 Post-migration status:"
-          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npx prisma migrate status || true
+          # Verify migration status (read-only, no execution)
+          echo "🔍 Verifying migration status..."
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+            npx prisma migrate status
 
           echo "✅ Database migration phase completed"
 
@@ -1864,14 +1855,43 @@ jobs:
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
           cd "$DEPLOY_DIR"
 
+          # Wait for database to be ready and responsive
+          # Note: Dev environment uses loyalty_dev user, not loyalty
+          echo "⏳ Waiting for database to be fully ready..."
+          DB_READY=false
+          for i in {1..10}; do
+            if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty_dev -d loyalty_dev_db -c "SELECT 1" >/dev/null 2>&1; then
+              echo "✅ Database connection verified"
+              DB_READY=true
+              break
+            fi
+            echo "  Attempt $i/10: Database not ready, waiting..."
+            sleep 2
+          done
+
+          if [ "$DB_READY" != "true" ]; then
+            echo "❌ Database failed to become ready after 10 attempts"
+            echo "  Check postgres container logs for errors"
+            exit 1
+          fi
+
           # Verify critical tables exist
           echo "📋 Checking critical tables..."
-          TABLES_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty -d loyalty_dev_db -t -c "
+          TABLES_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty_dev -d loyalty_dev_db -t -c "
             SELECT string_agg(tablename, ',')
             FROM pg_tables
             WHERE schemaname = 'public'
             AND tablename IN ('users', 'coupons', 'user_coupons', 'tiers', 'user_loyalty', 'user_audit_log', 'surveys');
-          " 2>/dev/null | tr -d ' \n')
+          " 2>&1 | tr -d ' \n')
+
+          echo "  Raw tables check result: '$TABLES_CHECK'"
+
+          # Check if the query failed entirely - this is a FATAL error
+          if echo "$TABLES_CHECK" | grep -qiE "error|fatal|connection refused"; then
+            echo "❌ Database query failed - deployment cannot continue"
+            echo "  Error: $TABLES_CHECK"
+            exit 1
+          fi
 
           REQUIRED_TABLES="users,coupons,user_coupons,tiers,user_loyalty,user_audit_log,surveys"
           MISSING_TABLES=""
@@ -1883,6 +1903,7 @@ jobs:
 
           if [ -n "$MISSING_TABLES" ]; then
             echo "❌ Missing tables:$MISSING_TABLES"
+            echo "  Note: Tables may still be initializing. Check migration logs above."
             exit 1
           else
             echo "✅ All critical tables exist"
@@ -1890,7 +1911,7 @@ jobs:
 
           # Verify critical stored procedures exist
           echo "📋 Checking critical stored procedures..."
-          FUNCTIONS_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty -d loyalty_dev_db -t -c "
+          FUNCTIONS_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty_dev -d loyalty_dev_db -t -c "
             SELECT string_agg(proname, ',')
             FROM pg_proc p
             JOIN pg_namespace n ON p.pronamespace = n.oid
@@ -1901,46 +1922,31 @@ jobs:
               'award_points',
               'recalculate_user_tier_by_nights'
             );
-          " 2>/dev/null | tr -d ' \n')
+          " 2>&1 | tr -d ' \n')
 
-          REQUIRED_FUNCTIONS="assign_coupon_to_user,redeem_coupon,award_points,recalculate_user_tier_by_nights"
-          MISSING_FUNCTIONS=""
-          for func in $(echo "$REQUIRED_FUNCTIONS" | tr ',' ' '); do
-            if ! echo "$FUNCTIONS_CHECK" | grep -q "$func"; then
-              MISSING_FUNCTIONS="$MISSING_FUNCTIONS $func"
-            fi
-          done
+          echo "  Raw functions check result: '$FUNCTIONS_CHECK'"
 
-          if [ -n "$MISSING_FUNCTIONS" ]; then
-            echo "❌ Missing stored procedures:$MISSING_FUNCTIONS"
-            echo "⚠️ Run migration to create missing stored procedures"
+          # Check if the query failed entirely - this is a FATAL error
+          if echo "$FUNCTIONS_CHECK" | grep -qiE "error|fatal|connection refused"; then
+            echo "❌ Stored procedures query failed - deployment cannot continue"
+            echo "  Error: $FUNCTIONS_CHECK"
             exit 1
           else
-            echo "✅ All critical stored procedures exist"
-          fi
+            REQUIRED_FUNCTIONS="assign_coupon_to_user,redeem_coupon,award_points,recalculate_user_tier_by_nights"
+            MISSING_FUNCTIONS=""
+            for func in $(echo "$REQUIRED_FUNCTIONS" | tr ',' ' '); do
+              if ! echo "$FUNCTIONS_CHECK" | grep -q "$func"; then
+                MISSING_FUNCTIONS="$MISSING_FUNCTIONS $func"
+              fi
+            done
 
-          # Verify critical triggers exist
-          echo "📋 Checking critical triggers..."
-          TRIGGERS_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty -d loyalty_dev_db -t -c "
-            SELECT string_agg(tgname, ',')
-            FROM pg_trigger t
-            JOIN pg_class c ON t.tgrelid = c.oid
-            WHERE NOT t.tgisinternal
-            AND tgname IN ('trigger_update_user_tier_on_nights', 'set_membership_id_trigger', 'audit_user_changes');
-          " 2>/dev/null | tr -d ' \n')
-
-          REQUIRED_TRIGGERS="trigger_update_user_tier_on_nights,set_membership_id_trigger,audit_user_changes"
-          MISSING_TRIGGERS=""
-          for trigger in $(echo "$REQUIRED_TRIGGERS" | tr ',' ' '); do
-            if ! echo "$TRIGGERS_CHECK" | grep -q "$trigger"; then
-              MISSING_TRIGGERS="$MISSING_TRIGGERS $trigger"
+            if [ -n "$MISSING_FUNCTIONS" ]; then
+              echo "❌ Missing stored procedures:$MISSING_FUNCTIONS"
+              echo "⚠️ Run migration to create missing stored procedures"
+              exit 1
+            else
+              echo "✅ All critical stored procedures exist"
             fi
-          done
-
-          if [ -n "$MISSING_TRIGGERS" ]; then
-            echo "⚠️ Missing triggers:$MISSING_TRIGGERS (may be optional)"
-          else
-            echo "✅ All critical triggers exist"
           fi
 
           echo "✅ Database schema verification completed"
@@ -2254,6 +2260,12 @@ jobs:
           LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
           LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
 
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USER=${{ secrets.SMTP_USER }}
+          SMTP_PASS=${{ secrets.SMTP_PASS }}
+          SMTP_FROM=${{ secrets.SMTP_FROM }}
+
           LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
           LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
           EOF
@@ -2428,109 +2440,40 @@ jobs:
       
       - name: "🗃️ Database migration (container context)"
         run: |
-          echo "🗃️ Running database migrations with enhanced logging..."
-          
+          echo "🗃️ Waiting for backend migrations to complete..."
+
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
-          
+
           # Pre-migration container status
-          echo "📦 Pre-migration container status:"
+          echo "📦 Container status:"
           docker compose ps
-          
-          # Wait for database to be ready with enhanced logging
-          echo "💾 Waiting for database to be ready..."
-          if timeout 60s bash -c 'until docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db; do echo "Database not ready, waiting..."; sleep 2; done'; then
-            echo "✅ Database is ready"
-          else
-            echo "❌ Database readiness timeout"
-            echo "📄 Database logs:"
-            docker compose logs --tail=20 postgres
-            exit 1
-          fi
-          
-          # Wait for backend container to be fully ready
-          echo "📦 Waiting for backend container to be ready..."
-          if timeout 60s bash -c 'until docker compose exec -T backend echo "ready" >/dev/null 2>&1; do echo "Backend not ready, waiting..."; sleep 2; done'; then
-            echo "✅ Backend container is ready"
-          else
-            echo "❌ Backend container timeout"
-            echo "📄 Backend logs:"
-            docker compose logs --tail=20 backend
-            exit 1
-          fi
-          
-          # Give containers additional time to stabilize
-          echo "⏳ Allowing containers to stabilize (10 seconds)..."
-          sleep 10
-          
-          # Show database connection info before migration
-          echo "🔗 Database connection check:"
-          docker compose exec -T backend node -e "console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'configured' : 'missing')" || echo "Cannot check DB config"
-          
-          # Run migration from within backend container (correct network context)
-          echo "🗃️ Running database migration from container..."
-          for attempt in 1 2 3; do
-            echo "\n🔄 Migration attempt $attempt/3..."
-            
-            # First check migration status
-            echo "🔍 Checking current migration status:"
-            docker compose exec -T backend npm run db:migrate:status || echo "Cannot check migration status"
-            
-            if docker compose exec -T backend npm run db:migrate:deploy; then
-              echo "✅ Database migrations completed successfully"
-              
-              # Verify migration success
-              echo "🔍 Post-migration verification:"
-              docker compose exec -T backend npm run db:migrate:status || echo "Cannot verify final status"
+
+          # Wait for backend to be healthy (entrypoint.sh runs migrations)
+          # Backend health check means migrations have completed successfully
+          echo "⏳ Waiting for backend health check..."
+          for i in {1..60}; do
+            if docker compose exec -T backend \
+               curl -sf http://localhost:4000/api/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy (migrations complete)"
               break
-            else
-              echo "❌ Migration attempt $attempt failed"
-              
-              # Show backend logs for debugging
-              echo "📄 Backend logs during migration failure:"
-              docker compose logs --tail=10 backend
-              
-              if [ $attempt -eq 3 ]; then
-                echo "❌ Migration failed after 3 attempts"
-                
-                # Enhanced baseline scenario handling
-                echo "🔍 Checking for baseline scenario..."
-                migration_status=$(docker compose exec -T backend npm run db:migrate:status 2>&1 || echo "status_check_failed")
-                echo "Migration status output: $migration_status"
-                
-                if echo "$migration_status" | grep -q "migrations have not yet been applied"; then
-                  echo "🔧 Attempting baseline resolution..."
-                  docker compose exec -T backend npx prisma migrate resolve --applied 0_init 2>/dev/null || echo "Baseline resolution failed"
-                  
-                  echo "🔄 Retrying migration after baseline..."
-                  if docker compose exec -T backend npm run db:migrate:deploy; then
-                    echo "✅ Database migrations completed after baseline resolution"
-                    break
-                  else
-                    echo "❌ Migration still failed after baseline"
-                  fi
-                fi
-                
-                # Final failure diagnostics
-                echo "🔴 MIGRATION FAILURE DIAGNOSTICS:"
-                echo "=== Container Status ==="
-                docker compose ps
-                echo "\n=== Database Connection Test ==="
-                docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db || echo "Database connection failed"
-                echo "\n=== Backend Environment ==="
-                docker compose exec -T backend env | grep -E "DATABASE_URL|NODE_ENV" || echo "Cannot check environment"
-                echo "\n=== Backend Logs (last 30 lines) ==="
-                docker compose logs --tail=30 backend
-                
-                echo "❌ All migration attempts failed"
-                exit 1
-              else
-                echo "⏳ Retrying in 5 seconds..."
-                sleep 5
-              fi
             fi
+
+            if [ $i -eq 60 ]; then
+              echo "❌ Backend failed to become healthy after 2 minutes"
+              echo "📄 Backend logs:"
+              docker compose logs --tail=50 backend
+              exit 1
+            fi
+
+            echo "Waiting for backend... ($i/60)"
+            sleep 2
           done
-          
+
+          # Verify migration status (read-only, no execution)
+          echo "🔍 Verifying migration status..."
+          docker compose exec -T backend npx prisma migrate status
+
           echo "✅ Database migration phase completed"
       
       - name: "🔐🗄️ Post-deployment OAuth & database validation"
@@ -2615,31 +2558,6 @@ jobs:
             exit 1
           else
             echo "✅ All critical stored procedures exist"
-          fi
-
-          # Verify critical triggers exist
-          echo ""
-          echo "📋 Verifying critical triggers..."
-          TRIGGERS_CHECK=$(docker compose exec -T postgres psql -U loyalty -d loyalty_db -t -c "
-            SELECT string_agg(tgname, ',')
-            FROM pg_trigger t
-            JOIN pg_class c ON t.tgrelid = c.oid
-            WHERE NOT t.tgisinternal
-            AND tgname IN ('trigger_update_user_tier_on_nights', 'set_membership_id_trigger', 'audit_user_changes');
-          " 2>/dev/null | tr -d ' \n')
-
-          REQUIRED_TRIGGERS="trigger_update_user_tier_on_nights,set_membership_id_trigger,audit_user_changes"
-          MISSING_TRIGGERS=""
-          for trigger in $(echo "$REQUIRED_TRIGGERS" | tr ',' ' '); do
-            if ! echo "$TRIGGERS_CHECK" | grep -q "$trigger"; then
-              MISSING_TRIGGERS="$MISSING_TRIGGERS $trigger"
-            fi
-          done
-
-          if [ -n "$MISSING_TRIGGERS" ]; then
-            echo "⚠️ Missing triggers:$MISSING_TRIGGERS (may be optional)"
-          else
-            echo "✅ All critical triggers exist"
           fi
 
           echo "✅ Database schema verification completed"

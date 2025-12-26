@@ -376,7 +376,7 @@ export class SurveyService {
       // Calculate progress based on answered questions
       const survey = await this.getSurveyById(data.survey_id);
       if (!survey) {
-        throw new Error('Survey not found');
+        throw new AppError(404, 'Survey not found', { code: 'SURVEY_NOT_FOUND' });
       }
 
       const totalQuestions = survey.questions.length;
@@ -393,9 +393,17 @@ export class SurveyService {
         }
       });
 
+      let response: typeof existingResponse;
+      let isNewlyCompleted = false;
+
       if (existingResponse) {
+        // Check if this update will mark the survey as newly completed
+        const wasCompleted = existingResponse.is_completed;
+        const willBeCompleted = data.is_completed ?? false;
+        isNewlyCompleted = !wasCompleted && willBeCompleted;
+
         // Update existing response
-        const updatedResponse = await db.survey_responses.update({
+        response = await db.survey_responses.update({
           where: {
             id: existingResponse.id
           },
@@ -407,32 +415,67 @@ export class SurveyService {
             updated_at: new Date()
           }
         });
+      } else {
+        // Create new response if none exists
+        isNewlyCompleted = data.is_completed ?? false;
 
-        return {
-          ...updatedResponse,
-          answers: updatedResponse.answers as Record<string, string | number | boolean | string[] | null>
-        };
+        response = await db.survey_responses.create({
+          data: {
+            survey_id: data.survey_id,
+            user_id: userId,
+            answers: data.answers,
+            is_completed: data.is_completed ?? false,
+            progress: progress,
+            completed_at: data.is_completed ? new Date() : null
+          }
+        });
       }
 
-      // Create new response if none exists
-      const newResponse = await db.survey_responses.create({
-        data: {
-          survey_id: data.survey_id,
-          user_id: userId,
-          answers: data.answers,
-          is_completed: data.is_completed ?? false,
-          progress: progress,
-          completed_at: data.is_completed ? new Date() : null
+      // Award survey completion coupons explicitly (replaces trigger)
+      // This is done after the main transaction so coupon errors don't affect survey completion
+      if (isNewlyCompleted) {
+        try {
+          const couponsAwarded = await this.awardSurveyCompletionCoupons(response.id);
+          if (couponsAwarded > 0) {
+            logger.info('Survey completion coupons awarded', {
+              userId,
+              surveyId: data.survey_id,
+              responseId: response.id,
+              couponsAwarded
+            });
+          }
+        } catch (couponError) {
+          // Log error but don't fail the survey submission
+          logger.error('Failed to award survey completion coupons', {
+            userId,
+            surveyId: data.survey_id,
+            responseId: response.id,
+            error: couponError instanceof Error ? couponError.message : String(couponError)
+          });
         }
-      });
+      }
 
       return {
-        ...newResponse,
-        answers: newResponse.answers as Record<string, string | number | boolean | string[] | null>
+        ...response,
+        answers: response.answers as Record<string, string | number | boolean | string[] | null>
       };
     } catch (error) {
       logger.error('Error submitting survey response:', error);
       throw error;
+    }
+  }
+
+  // Award coupons for survey completion (explicit call replacing trigger)
+  private async awardSurveyCompletionCoupons(surveyResponseId: string): Promise<number> {
+    const client = await getPool().connect();
+    try {
+      const result = await client.query(
+        'SELECT award_survey_completion_coupons($1) as coupons_awarded',
+        [surveyResponseId]
+      );
+      return result.rows[0]?.coupons_awarded ?? 0;
+    } finally {
+      client.release();
     }
   }
 
@@ -888,7 +931,7 @@ export class SurveyService {
       // Get survey details and target segment
       const survey = await this.getSurveyById(surveyId);
       if (!survey) {
-        throw new Error('Survey not found');
+        throw new AppError(404, 'Survey not found', { code: 'SURVEY_NOT_FOUND' });
       }
 
       // Get all eligible users based on target segment
@@ -933,7 +976,7 @@ export class SurveyService {
       // Get survey details
       const survey = await this.getSurveyById(surveyId);
       if (!survey) {
-        throw new Error('Survey not found');
+        throw new AppError(404, 'Survey not found', { code: 'SURVEY_NOT_FOUND' });
       }
 
       let sent = 0;
