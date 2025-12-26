@@ -50,6 +50,7 @@ import analyticsRoutes from './routes/analyticsRoutes';
 // Import and initialize OAuth service to register strategies
 import './services/oauthService';
 import { oauthCleanupService } from './services/oauthCleanupService';
+import { emailService } from './services/emailService';
 
 // tRPC imports
 import { createExpressMiddleware } from '@trpc/server/adapters/express';
@@ -309,7 +310,8 @@ function configureApp(app: express.Express) {
         services: {
           database: 'unknown',
           redis: 'unknown',
-          storage: 'unknown'
+          storage: 'unknown',
+          email: 'unknown'
         },
         uptime: process.uptime(),
         memory: {
@@ -352,6 +354,19 @@ function configureApp(app: express.Express) {
       } catch (error) {
         healthStatus.services.storage = 'unavailable';
         logger.warn('Storage health check failed:', error);
+      }
+
+      // Check email service configuration
+      try {
+        const { emailService } = await import('./services/emailService');
+        if (emailService.isEmailConfigured()) {
+          healthStatus.services.email = 'configured';
+        } else {
+          healthStatus.services.email = 'not_configured';
+        }
+      } catch (error) {
+        healthStatus.services.email = 'error';
+        logger.warn('Email health check failed:', error);
       }
 
       // Determine overall status code
@@ -460,6 +475,11 @@ async function startServer() {
     httpServer.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
       logger.info(`Session store: ${redisAvailable ? 'Redis' : 'MemoryStore'}`);
+
+      // Log email configuration status
+      const emailConfigured = emailService.isEmailConfigured();
+      logger.info(`Email service: ${emailConfigured ? 'configured' : 'not configured'}`);
+
       logger.info('Backend server initialized with storage, survey data, and OAuth state cleanup');
     });
   } catch (error) {

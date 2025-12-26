@@ -1684,11 +1684,13 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           LINE_CHANNEL_ID: ${{ secrets.LINE_CHANNEL_ID }}
           LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          IMAP_HOST: ${{ vars.IMAP_HOST }}
+          IMAP_PORT: ${{ vars.IMAP_PORT }}
         run: |
           echo "🔧 Configuring development environment..."
 
@@ -1733,6 +1735,12 @@ jobs:
           SMTP_USER=${SMTP_USER}
           SMTP_PASS=${SMTP_PASS}
           SMTP_FROM=${SMTP_FROM}
+
+          # Email Service (IMAP - for delivery verification)
+          IMAP_HOST=${IMAP_HOST}
+          IMAP_PORT=${IMAP_PORT}
+          IMAP_USER=${SMTP_USER}
+          IMAP_PASS=${SMTP_PASS}
 
           # Azure Translation
           TRANSLATION_FEATURE_ENABLED=false
@@ -1973,6 +1981,23 @@ jobs:
           else
             echo "⚠️ Frontend may still be starting..."
           fi
+
+          # Check email service configuration
+          echo ""
+          echo "🔍 Checking email service configuration..."
+          HEALTH_RESPONSE=$(curl -sf --max-time 10 http://localhost:5001/api/health 2>/dev/null || echo '{}')
+          EMAIL_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.services.email // "unknown"')
+          case "$EMAIL_STATUS" in
+            "configured")
+              echo "✅ Email service: Configured"
+              ;;
+            "not_configured")
+              echo "⚠️ Email service: Not configured"
+              ;;
+            *)
+              echo "❓ Email service: $EMAIL_STATUS"
+              ;;
+          esac
 
           # Show running containers (run from deploy dir to find .env.development)
           echo ""
@@ -2260,11 +2285,16 @@ jobs:
           LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
           LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
 
-          SMTP_HOST=${{ secrets.SMTP_HOST }}
-          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_HOST=${{ vars.SMTP_HOST }}
+          SMTP_PORT=${{ vars.SMTP_PORT }}
           SMTP_USER=${{ secrets.SMTP_USER }}
           SMTP_PASS=${{ secrets.SMTP_PASS }}
           SMTP_FROM=${{ secrets.SMTP_FROM }}
+
+          IMAP_HOST=${{ vars.IMAP_HOST }}
+          IMAP_PORT=${{ vars.IMAP_PORT }}
+          IMAP_USER=${{ secrets.SMTP_USER }}
+          IMAP_PASS=${{ secrets.SMTP_PASS }}
 
           LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
           LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
@@ -2675,6 +2705,27 @@ jobs:
           fi
           
           echo "✅ Health checks completed successfully"
+
+      - name: "📧 Verify email service configuration"
+        run: |
+          echo "🔍 Checking email service configuration..."
+
+          HEALTH_RESPONSE=$(curl -sf --max-time 10 http://localhost:4001/api/health 2>/dev/null || echo '{}')
+          EMAIL_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.services.email // "unknown"')
+
+          case "$EMAIL_STATUS" in
+            "configured")
+              echo "✅ Email service: Configured"
+              echo "   SMTP credentials are set"
+              ;;
+            "not_configured")
+              echo "⚠️ Email service: Not configured"
+              echo "   Missing SMTP_HOST, SMTP_USER, SMTP_PASS, or SMTP_FROM"
+              ;;
+            *)
+              echo "❓ Email service: $EMAIL_STATUS"
+              ;;
+          esac
 
   # =============================================================================
   # PHASE 4: POST-DEPLOYMENT MONITORING & CLEANUP
