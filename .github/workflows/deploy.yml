@@ -10,9 +10,10 @@ on:
 # Workflow-level concurrency: prevent parallel runs on same branch
 # This prevents race conditions when multiple commits push in quick succession
 # Dependabot PRs share a single concurrency group to prevent parallel runs
+# Main and develop branches don't cancel in-progress runs (queue instead)
 concurrency:
   group: ${{ github.actor == 'dependabot[bot]' && 'dependabot-ci' || format('ci-{0}', github.ref) }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.actor != 'dependabot[bot]' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' && github.actor != 'dependabot[bot]' }}
 
 # SECURITY: Top-level permissions set to minimal read-only
 # Write permissions are granted at job-level only where needed (principle of least privilege)
