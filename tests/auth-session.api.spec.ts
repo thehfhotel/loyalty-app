@@ -222,16 +222,18 @@ test.describe('Authentication and Session Tests', () => {
 
       // Register a new user with unique email
       const uniqueEmail = `test-notif-${Date.now()}@example.com`;
+      const requestData = {
+        email: uniqueEmail,
+        password: 'TestPass123!',
+        firstName: 'Notif',
+        lastName: 'Test',
+      };
+
       const registerResponse = await request.post(`${backendUrl}/api/auth/register`, {
-        data: {
-          email: uniqueEmail,
-          password: 'TestPass123!',
-          firstName: 'Notif',
-          lastName: 'Test',
-        },
+        data: JSON.stringify(requestData),
         headers: {
           'Content-Type': 'application/json',
-          'Cookie': cookies.join('; '),
+          ...(cookies.length > 0 && { 'Cookie': cookies.join('; ') }),
           ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
         },
       });
