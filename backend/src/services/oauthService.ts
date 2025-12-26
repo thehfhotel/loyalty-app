@@ -217,8 +217,12 @@ export class OAuthService {
           [newOAuthUser.id, firstName, lastName, avatarUrl, membershipId]
         );
 
-        // Create default notification preferences (idempotent with trigger)
-        await notificationService.createDefaultPreferences(newOAuthUser.id);
+        // Create default notification preferences (non-blocking, trigger is fallback)
+        try {
+          await notificationService.createDefaultPreferences(newOAuthUser.id);
+        } catch (notifError) {
+          logger.error('Failed to create notification preferences:', notifError);
+        }
 
         user = newOAuthUser;
       } else {
@@ -252,8 +256,12 @@ export class OAuthService {
           [newUser.id, firstName, lastName, avatarUrl, membershipId]
         );
 
-        // Create default notification preferences (idempotent with trigger)
-        await notificationService.createDefaultPreferences(newUser.id);
+        // Create default notification preferences (non-blocking, trigger is fallback)
+        try {
+          await notificationService.createDefaultPreferences(newUser.id);
+        } catch (notifError) {
+          logger.error('Failed to create notification preferences:', notifError);
+        }
 
         user = newUser;
       }
@@ -462,8 +470,12 @@ export class OAuthService {
         [user.id, firstName, lastName, avatarUrl, membershipId]
       );
 
-      // Create default notification preferences (idempotent with trigger)
-      await notificationService.createDefaultPreferences(user.id);
+      // Create default notification preferences (non-blocking, trigger is fallback)
+      try {
+        await notificationService.createDefaultPreferences(user.id);
+      } catch (notifError) {
+        logger.error('Failed to create notification preferences:', notifError);
+      }
     }
 
     // Check if user should have elevated role (only if email exists)

@@ -811,4 +811,167 @@ describe('OAuthService', () => {
       expect(result.user.email).toBe('minimal@example.com');
     });
   });
+
+  describe('Explicit Service Calls for OAuth Users', () => {
+    const mockGoogleProfile = {
+      id: 'google-notification-test',
+      displayName: 'Notification Test User',
+      name: {
+        givenName: 'Notification',
+        familyName: 'Test'
+      },
+      emails: [
+        {
+          value: 'notification-test@example.com',
+          verified: true
+        }
+      ],
+      photos: [
+        {
+          value: 'https://example.com/photo.jpg'
+        }
+      ]
+    };
+
+    const mockLineProfile = {
+      id: 'line-notification-test',
+      displayName: 'LINE Notification Test',
+      pictureUrl: 'https://profile.line-scdn.net/photo.jpg',
+      email: 'line-notification-test@example.com'
+    };
+
+    test('should call notificationService.createDefaultPreferences for new Google user', async () => {
+      const newUserId = 'google-new-user-id';
+
+      // Mock existing user lookup (empty - new user)
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock email-based account lookup (empty - no existing email account)
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock user creation
+      mockQuery.mockResolvedValueOnce([{
+        id: newUserId,
+        email: 'notification-test@example.com',
+        emailVerified: true,
+        role: 'customer',
+        isActive: true
+      }] as never);
+
+      // Mock profile creation
+      mockQuery.mockResolvedValueOnce([{
+        user_id: newUserId,
+        first_name: 'Notification',
+        last_name: 'Test',
+        avatar_url: 'https://example.com/photo.jpg',
+        membership_id: 'MEMB-NOTIF'
+      }] as never);
+
+      // Mock refresh token INSERT
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock audit log
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      await (oauthService as unknown as OAuthServiceWithPrivates).handleGoogleAuth(mockGoogleProfile);
+
+      expect(notificationService.createDefaultPreferences).toHaveBeenCalledWith(newUserId);
+    });
+
+    test('should NOT call createDefaultPreferences for existing Google user', async () => {
+      // Clear the mock to track fresh calls
+      (notificationService.createDefaultPreferences as jest.Mock).mockClear();
+
+      // Mock existing user lookup (user exists)
+      mockQuery.mockResolvedValueOnce([{
+        id: 'existing-google-user-id',
+        email: 'notification-test@example.com',
+        emailVerified: true,
+        role: 'customer',
+        isActive: true,
+        oauth_provider: 'google',
+        oauth_provider_id: 'google-notification-test'
+      }] as never);
+
+      // Mock profile update
+      mockQuery.mockResolvedValueOnce([{
+        user_id: 'existing-google-user-id',
+        first_name: 'Notification',
+        last_name: 'Test'
+      }] as never);
+
+      // Mock refresh token INSERT
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock audit log
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      await (oauthService as unknown as OAuthServiceWithPrivates).handleGoogleAuth(mockGoogleProfile);
+
+      expect(notificationService.createDefaultPreferences).not.toHaveBeenCalled();
+    });
+
+    test('should call notificationService.createDefaultPreferences for new LINE user', async () => {
+      const newUserId = 'line-new-user-id';
+
+      // Mock existing user lookup (empty - new user)
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock user creation
+      mockQuery.mockResolvedValueOnce([{
+        id: newUserId,
+        email: 'line-notification-test@example.com',
+        emailVerified: true,
+        role: 'customer',
+        is_active: true,
+        oauth_provider: 'line',
+        oauth_provider_id: 'line-notification-test'
+      }] as never);
+
+      // Mock profile creation
+      mockQuery.mockResolvedValueOnce([{
+        user_id: newUserId,
+        first_name: 'LINE',
+        last_name: 'Notification Test',
+        avatar_url: 'https://profile.line-scdn.net/photo.jpg',
+        membership_id: 'MEMB-LINE-NOTIF'
+      }] as never);
+
+      // Mock refresh token INSERT
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock audit log
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      await (oauthService as unknown as OAuthServiceWithPrivates).handleLineAuth(mockLineProfile);
+
+      expect(notificationService.createDefaultPreferences).toHaveBeenCalledWith(newUserId);
+    });
+
+    test('should NOT call createDefaultPreferences for existing LINE user', async () => {
+      // Clear the mock to track fresh calls
+      (notificationService.createDefaultPreferences as jest.Mock).mockClear();
+
+      // Mock existing user lookup (user exists)
+      mockQuery.mockResolvedValueOnce([{
+        id: 'existing-line-user-id',
+        email: 'line-notification-test@example.com',
+        emailVerified: true,
+        role: 'customer',
+        is_active: true,
+        oauth_provider: 'line',
+        oauth_provider_id: 'line-notification-test'
+      }] as never);
+
+      // Mock refresh token INSERT
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      // Mock audit log
+      mockQuery.mockResolvedValueOnce([] as never);
+
+      await (oauthService as unknown as OAuthServiceWithPrivates).handleLineAuth(mockLineProfile);
+
+      expect(notificationService.createDefaultPreferences).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -580,6 +580,84 @@ describe('AuthService', () => {
       await expect(authService.register(userData)).rejects.toThrow('Database error');
       expect(mockClient.release).toHaveBeenCalled();
     });
+
+    it('should call notificationService.createDefaultPreferences after registration', async () => {
+      const userData = {
+        email: 'notification-test@example.com',
+        password: 'SecurePass123!',
+        firstName: 'Notify',
+        lastName: 'Test',
+      };
+
+      const userId = uuidv4();
+      const mockUser = {
+        id: userId,
+        email: userData.email,
+        role: 'customer',
+        isActive: true,
+        emailVerified: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      // Mock database calls
+      mockQuery.mockResolvedValueOnce([]); // No existing user
+      (mockClient.query as jest.Mock)
+        .mockResolvedValueOnce({ command: 'BEGIN', rowCount: 0, rows: [] })
+        .mockResolvedValueOnce({ rows: [mockUser] }) // INSERT user
+        .mockResolvedValueOnce({ command: 'INSERT', rowCount: 1, rows: [] }) // INSERT profile
+        .mockResolvedValueOnce({ command: 'INSERT', rowCount: 1, rows: [] }) // INSERT refresh token
+        .mockResolvedValueOnce({ command: 'INSERT', rowCount: 1, rows: [] }) // INSERT audit log
+        .mockResolvedValueOnce({ command: 'COMMIT', rowCount: 0, rows: [] });
+
+      mockQuery.mockResolvedValueOnce([{ ...mockUser, firstName: userData.firstName, lastName: userData.lastName, membershipId: 'MEM-12345678' }]);
+
+      await authService.register(userData);
+
+      expect(notificationService.createDefaultPreferences).toHaveBeenCalledWith(userId);
+    });
+
+    it('should complete registration even if notification preferences creation fails', async () => {
+      const userData = {
+        email: 'notification-fail@example.com',
+        password: 'SecurePass123!',
+        firstName: 'Notify',
+        lastName: 'Fail',
+      };
+
+      const userId = uuidv4();
+      const mockUser = {
+        id: userId,
+        email: userData.email,
+        role: 'customer',
+        isActive: true,
+        emailVerified: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      // Mock notification service to fail
+      (notificationService.createDefaultPreferences as jest.Mock).mockRejectedValueOnce(new Error('Notification service unavailable'));
+
+      // Mock database calls
+      mockQuery.mockResolvedValueOnce([]); // No existing user
+      (mockClient.query as jest.Mock)
+        .mockResolvedValueOnce({ command: 'BEGIN', rowCount: 0, rows: [] })
+        .mockResolvedValueOnce({ rows: [mockUser] }) // INSERT user
+        .mockResolvedValueOnce({ command: 'INSERT', rowCount: 1, rows: [] }) // INSERT profile
+        .mockResolvedValueOnce({ command: 'INSERT', rowCount: 1, rows: [] }) // INSERT refresh token
+        .mockResolvedValueOnce({ command: 'INSERT', rowCount: 1, rows: [] }) // INSERT audit log
+        .mockResolvedValueOnce({ command: 'COMMIT', rowCount: 0, rows: [] });
+
+      mockQuery.mockResolvedValueOnce([{ ...mockUser, firstName: userData.firstName, lastName: userData.lastName, membershipId: 'MEM-12345678' }]);
+
+      // Registration should still succeed despite notification failure
+      const result = await authService.register(userData);
+
+      expect(result.user).toBeDefined();
+      expect(result.user.email).toBe(userData.email);
+      expect(notificationService.createDefaultPreferences).toHaveBeenCalledWith(userId);
+    });
   });
 
   describe('login()', () => {

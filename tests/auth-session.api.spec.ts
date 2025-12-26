@@ -204,6 +204,43 @@ test.describe('Authentication and Session Tests', () => {
       }
     });
   });
+
+  test.describe('Registration creates notification preferences', () => {
+    test('New user registration should create notification preferences', async ({ request }) => {
+      // Register a new user with unique email
+      const uniqueEmail = `test-notif-${Date.now()}@example.com`;
+      const registerResponse = await request.post(`${backendUrl}/api/auth/register`, {
+        data: {
+          email: uniqueEmail,
+          password: 'TestPass123!',
+          firstName: 'Notif',
+          lastName: 'Test',
+        },
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      // Registration should succeed
+      expect(registerResponse.ok()).toBeTruthy();
+      const registerData = await registerResponse.json();
+      const authToken = registerData.tokens?.accessToken || registerData.accessToken;
+      expect(authToken).toBeTruthy();
+
+      // Fetch notification preferences using the token
+      const prefsResponse = await request.get(`${backendUrl}/api/notifications/preferences`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      expect(prefsResponse.ok()).toBeTruthy();
+      const prefsData = await prefsResponse.json();
+
+      // Should have 11 notification preferences created
+      // The trigger migration ensures explicit creation in authService
+      expect(Array.isArray(prefsData.preferences)).toBeTruthy();
+      expect(prefsData.preferences.length).toBeGreaterThanOrEqual(11);
+    });
+  });
 });
 
 test.describe('Session Persistence Checks', () => {

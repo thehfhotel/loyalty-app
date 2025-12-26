@@ -559,4 +559,116 @@ describe('NotificationService', () => {
       }
     });
   });
+
+  describe('createDefaultPreferences', () => {
+    it('should create 11 default notification preferences for new user', async () => {
+      mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 11 });
+
+      const result = await notificationService.createDefaultPreferences('user-123');
+
+      expect(result).toBe(11);
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO notification_preferences'),
+        ['user-123']
+      );
+      // Verify all 11 notification types are included
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining("'info'"),
+        expect.any(Array)
+      );
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining("'success'"),
+        expect.any(Array)
+      );
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining("'warning'"),
+        expect.any(Array)
+      );
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining("'error'"),
+        expect.any(Array)
+      );
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining("'system'"),
+        expect.any(Array)
+      );
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining("'reward'"),
+        expect.any(Array)
+      );
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining("'coupon'"),
+        expect.any(Array)
+      );
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining("'survey'"),
+        expect.any(Array)
+      );
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining("'profile'"),
+        expect.any(Array)
+      );
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining("'tier_change'"),
+        expect.any(Array)
+      );
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining("'points'"),
+        expect.any(Array)
+      );
+    });
+
+    it('should return count of created preferences', async () => {
+      mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 11 });
+
+      const result = await notificationService.createDefaultPreferences('user-456');
+
+      expect(result).toBe(11);
+    });
+
+    it('should handle duplicate user gracefully with ON CONFLICT DO NOTHING', async () => {
+      // When user already has preferences (trigger already ran), rowCount is 0
+      mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const result = await notificationService.createDefaultPreferences('existing-user');
+
+      expect(result).toBe(0);
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining('ON CONFLICT'),
+        ['existing-user']
+      );
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.stringContaining('DO NOTHING'),
+        expect.any(Array)
+      );
+    });
+
+    it('should return 0 when rowCount is 0', async () => {
+      // When ON CONFLICT triggers and no rows are inserted, rowCount is 0
+      mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const result = await notificationService.createDefaultPreferences('user-789');
+
+      expect(result).toBe(0);
+    });
+
+    it('should handle database errors', async () => {
+      mockQueryWithMeta.mockRejectedValueOnce(new Error('Database connection failed') as never);
+
+      await expect(notificationService.createDefaultPreferences('user-123'))
+        .rejects.toThrow('Database connection failed');
+    });
+
+    it('should use correct userId parameter', async () => {
+      const userId = 'specific-user-id-12345';
+      mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 11 });
+
+      await notificationService.createDefaultPreferences(userId);
+
+      expect(mockQueryWithMeta).toHaveBeenCalledWith(
+        expect.any(String),
+        [userId]
+      );
+    });
+  });
 });

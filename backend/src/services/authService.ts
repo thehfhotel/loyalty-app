@@ -88,8 +88,13 @@ export class AuthService {
       // codeql[js/log-injection] - Values sanitized via sanitizeLogValue/sanitizeEmail (removes newlines/control chars)
       logger.info(`User registered with membership ID: ${sanitizeLogValue(membershipId)}, emoji: ${sanitizeLogValue(randomEmoji)} (email: ${sanitizeEmail(data.email)})`);
 
-      // Create default notification preferences (idempotent with trigger)
-      await notificationService.createDefaultPreferences(user.id);
+      // Create default notification preferences (non-blocking, trigger is fallback)
+      try {
+        await notificationService.createDefaultPreferences(user.id);
+      } catch (notifError) {
+        // Log error but don't fail registration - trigger will create preferences
+        logger.error('Failed to create notification preferences:', notifError);
+      }
 
       // Generate tokens (pass client for transaction)
       const tokens = await this.generateTokens(user, client);
