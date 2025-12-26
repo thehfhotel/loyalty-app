@@ -48,9 +48,6 @@ export default defineConfig({
 
     /* Video on failure */
     video: 'retain-on-failure',
-
-    /* Timeout for each action */
-    actionTimeout: 10000,  // 10s for browser actions
   },
 
   /* Configure projects for major browsers */
@@ -76,6 +73,8 @@ export default defineConfig({
       use: {
         baseURL: FRONTEND_URL,
         ...devices['Desktop Chrome'],
+        // Browser actions timeout (clicks, fills, etc.)
+        actionTimeout: 10000,
       },
       testMatch: /.*\.browser\.spec\.ts/,
       timeout: 30000, // 30s for browser tests (login can take time)
