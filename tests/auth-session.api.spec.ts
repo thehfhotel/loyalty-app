@@ -207,6 +207,19 @@ test.describe('Authentication and Session Tests', () => {
 
   test.describe('Registration creates notification preferences', () => {
     test('New user registration should create notification preferences', async ({ request }) => {
+      // Get CSRF token and cookies first
+      const csrfResponse = await request.get(`${backendUrl}/api/csrf-token`);
+      const csrfCookies = csrfResponse.headers()['set-cookie'];
+      const cookies = csrfCookies
+        ? (Array.isArray(csrfCookies) ? csrfCookies : [csrfCookies])
+        : [];
+
+      let csrfToken = '';
+      if (csrfResponse.ok()) {
+        const csrfData = await csrfResponse.json();
+        csrfToken = csrfData.csrfToken || '';
+      }
+
       // Register a new user with unique email
       const uniqueEmail = `test-notif-${Date.now()}@example.com`;
       const registerResponse = await request.post(`${backendUrl}/api/auth/register`, {
@@ -216,7 +229,11 @@ test.describe('Authentication and Session Tests', () => {
           firstName: 'Notif',
           lastName: 'Test',
         },
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': cookies.join('; '),
+          ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
+        },
       });
 
       // Registration should succeed
