@@ -78,12 +78,6 @@ export class ApiError extends Error {
   }
 }
 
-// Helper to extract error message from axios error response
-function extractErrorMessage(error: AxiosError): string {
-  const data = error.response?.data as ApiErrorResponse | undefined;
-  return data?.error ?? data?.message ?? error.message;
-}
-
 // Helper to create error with code preserved
 function createApiError(error: AxiosError): Error {
   const data = error.response?.data as ApiErrorResponse | undefined;
