@@ -287,7 +287,6 @@ test.describe('Email Duplicate Prevention', () => {
 
   test.describe('Race Condition - Email Claimed During Verification', () => {
     test('shows error if email is taken between initiation and verification', async ({ browser }) => {
-      const desiredEmail = `race-condition-${Date.now()}@example.com`;
       const password = 'RaceTest123!';
 
       // User A initiates email change to desiredEmail
