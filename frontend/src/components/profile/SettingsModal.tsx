@@ -40,6 +40,7 @@ interface SettingsModalProps {
   uploadingAvatar: boolean;
   onProfileUpdate?: () => Promise<void>;
   onEmailVerificationNeeded?: (email: string) => void;
+  emailError?: string | null;
 }
 
 export default function SettingsModal({
@@ -52,7 +53,8 @@ export default function SettingsModal({
   onDeleteAvatar,
   uploadingAvatar,
   onProfileUpdate,
-  onEmailVerificationNeeded
+  onEmailVerificationNeeded,
+  emailError
 }: SettingsModalProps) {
   const { t } = useTranslation();
   const user = useAuthStore((state) => state.user);
@@ -241,23 +243,32 @@ export default function SettingsModal({
                   {t('profile.email')}
                 </label>
                 <div className="mt-1 relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <FiMail className="h-5 w-5 text-gray-400" />
+                  <div className={`absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none ${emailError ? 'text-red-400' : ''}`}>
+                    <FiMail className={`h-5 w-5 ${emailError ? 'text-red-400' : 'text-gray-400'}`} />
                   </div>
                   <input
                     {...register('email')}
                     id="email"
                     type="email"
-                    className="appearance-none block w-full px-3 py-2 pl-10 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    className={`appearance-none block w-full px-3 py-2 pl-10 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none sm:text-sm ${
+                      emailError
+                        ? 'border-red-500 ring-1 ring-red-500 focus:ring-red-500 focus:border-red-500'
+                        : 'border-gray-300 focus:ring-primary-500 focus:border-primary-500'
+                    }`}
                     placeholder={t('profile.emailPlaceholder')}
                   />
                 </div>
-                {errors.email && (
+                {emailError && (
+                  <p className="mt-1 text-sm text-red-600">{emailError}</p>
+                )}
+                {errors.email && !emailError && (
                   <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
                 )}
-                <p className="mt-1 text-xs text-gray-500">
-                  {t('profile.emailHelpText')}
-                </p>
+                {!emailError && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    {t('profile.emailHelpText')}
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

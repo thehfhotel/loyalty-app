@@ -6,9 +6,29 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { Context } from './context';
 import { logger } from '../utils/logger';
+import { AppError } from '../middleware/errorHandler';
 
-// Initialize tRPC with context
-const t = initTRPC.context<Context>().create();
+// Initialize tRPC with context and error formatter
+const t = initTRPC.context<Context>().create({
+  errorFormatter({ shape, error }) {
+    // Preserve custom error code from AppError
+    const cause = error.cause;
+    let customCode: string | undefined;
+
+    if (cause instanceof AppError && cause.data?.code) {
+      customCode = cause.data.code as string;
+    }
+
+    return {
+      ...shape,
+      data: {
+        ...shape.data,
+        // Add custom error code to response
+        code: customCode,
+      },
+    };
+  },
+});
 
 /**
  * Timing middleware - logs duration of each procedure (only for slow calls)

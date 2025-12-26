@@ -43,6 +43,7 @@ export default function ProfilePage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [pendingEmail, setPendingEmail] = useState('');
+  const [emailError, setEmailError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // tRPC hooks
@@ -88,6 +89,9 @@ export default function ProfilePage() {
   }, [profile, reset]);
 
   const handleEmailVerificationNeeded = async (email: string) => {
+    // Clear any previous email error
+    setEmailError(null);
+
     try {
       // Call the tRPC mutation to initiate email change
       await updateEmailMutation.mutateAsync({ email });
@@ -97,7 +101,10 @@ export default function ProfilePage() {
       setShowVerificationModal(true);
       setShowSettingsModal(false);
     } catch (error: unknown) {
-      notify.error(getTRPCErrorMessage(error) ?? 'Failed to send verification code');
+      const errorMessage = getTRPCErrorMessage(error);
+      // Set email error for red highlight in the modal
+      setEmailError(errorMessage);
+      notify.error(errorMessage ?? t('profile.emailChangeError', 'Failed to send verification code'));
       logger.error('Email verification initiation error:', error);
     }
   };
@@ -402,7 +409,10 @@ export default function ProfilePage() {
         {/* Settings Modal */}
         <SettingsModal
           isOpen={showSettingsModal}
-          onClose={() => setShowSettingsModal(false)}
+          onClose={() => {
+            setShowSettingsModal(false);
+            setEmailError(null); // Clear email error when closing modal
+          }}
           profile={profile ?? null}
           onSubmit={onSubmit}
           isSaving={updateProfileMutation.isPending || completeProfileMutation.isPending || updateEmailMutation.isPending}
@@ -413,6 +423,7 @@ export default function ProfilePage() {
             await refetch();
           }}
           onEmailVerificationNeeded={handleEmailVerificationNeeded}
+          emailError={emailError}
         />
 
         {/* Email Verification Modal */}
