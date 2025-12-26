@@ -12,22 +12,21 @@ import { AppError } from '../middleware/errorHandler';
  * Map HTTP status codes to tRPC error codes
  */
 function httpStatusToTRPCCode(statusCode: number): TRPCError['code'] {
-  const statusMap: Record<number, TRPCError['code']> = {
-    400: 'BAD_REQUEST',
-    401: 'UNAUTHORIZED',
-    403: 'FORBIDDEN',
-    404: 'NOT_FOUND',
-    405: 'METHOD_NOT_SUPPORTED',
-    408: 'TIMEOUT',
-    409: 'CONFLICT',
-    412: 'PRECONDITION_FAILED',
-    413: 'PAYLOAD_TOO_LARGE',
-    422: 'UNPROCESSABLE_CONTENT',
-    429: 'TOO_MANY_REQUESTS',
-    499: 'CLIENT_CLOSED_REQUEST',
-    500: 'INTERNAL_SERVER_ERROR',
-  };
-  return statusMap[statusCode] ?? 'INTERNAL_SERVER_ERROR';
+  switch (statusCode) {
+    case 400: return 'BAD_REQUEST';
+    case 401: return 'UNAUTHORIZED';
+    case 403: return 'FORBIDDEN';
+    case 404: return 'NOT_FOUND';
+    case 405: return 'METHOD_NOT_SUPPORTED';
+    case 408: return 'TIMEOUT';
+    case 409: return 'CONFLICT';
+    case 412: return 'PRECONDITION_FAILED';
+    case 413: return 'PAYLOAD_TOO_LARGE';
+    case 422: return 'UNPROCESSABLE_CONTENT';
+    case 429: return 'TOO_MANY_REQUESTS';
+    case 499: return 'CLIENT_CLOSED_REQUEST';
+    default: return 'INTERNAL_SERVER_ERROR';
+  }
 }
 
 // Initialize tRPC with context and error formatter
