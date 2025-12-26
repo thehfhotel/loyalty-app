@@ -1815,58 +1815,36 @@ jobs:
 
       - name: "🗄️ Database migration"
         run: |
-          echo "🗄️ Running database migrations on development..."
+          echo "🗄️ Waiting for backend migrations to complete..."
 
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
           cd "$DEPLOY_DIR"
 
-          # Wait for database to be ready
-          echo "⏳ Waiting for database..."
-          for i in {1..30}; do
-            if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres pg_isready -U loyalty_dev -d loyalty_dev_db >/dev/null 2>&1; then
-              echo "✅ Database is ready"
+          # Wait for backend to be healthy (entrypoint.sh runs migrations)
+          # Backend health check means migrations have completed successfully
+          echo "⏳ Waiting for backend health check..."
+          for i in {1..60}; do
+            if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+               curl -sf http://localhost:4000/api/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy (migrations complete)"
               break
             fi
-            echo "Waiting for database... ($i/30)"
+
+            if [ $i -eq 60 ]; then
+              echo "❌ Backend failed to become healthy after 2 minutes"
+              echo "📄 Backend logs:"
+              docker compose -f docker-compose.yml -f docker-compose.dev.yml logs --tail=50 backend
+              exit 1
+            fi
+
+            echo "Waiting for backend... ($i/60)"
             sleep 2
           done
 
-          # Check migration status before running
-          echo "🔍 Checking current migration status..."
-          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npx prisma migrate status || echo "⚠️ Could not check migration status"
-
-          # Run migrations with retry
-          echo "🔄 Running Prisma migrations..."
-          for attempt in 1 2 3; do
-            echo "🔄 Migration attempt $attempt/3..."
-
-            if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npm run db:migrate:deploy; then
-              echo "✅ Database migrations completed successfully"
-              break
-            else
-              echo "❌ Migration attempt $attempt failed"
-
-              if [ $attempt -eq 3 ]; then
-                echo "🔧 Attempting baseline resolution for 0_init..."
-                docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npx prisma migrate resolve --applied 0_init 2>/dev/null || true
-
-                echo "🔄 Final migration attempt after baseline..."
-                if docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npm run db:migrate:deploy; then
-                  echo "✅ Database migrations completed after baseline resolution"
-                else
-                  echo "❌ All migration attempts failed"
-                  docker compose -f docker-compose.yml -f docker-compose.dev.yml logs --tail=20 backend
-                  exit 1
-                fi
-              else
-                sleep 3
-              fi
-            fi
-          done
-
-          # Verify final migration status
-          echo "🔍 Post-migration status:"
-          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend npx prisma migrate status || true
+          # Verify migration status (read-only, no execution)
+          echo "🔍 Verifying migration status..."
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+            npx prisma migrate status
 
           echo "✅ Database migration phase completed"
 
@@ -2461,109 +2439,40 @@ jobs:
       
       - name: "🗃️ Database migration (container context)"
         run: |
-          echo "🗃️ Running database migrations with enhanced logging..."
-          
+          echo "🗃️ Waiting for backend migrations to complete..."
+
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
           cd "$DEPLOY_DIR"
-          
+
           # Pre-migration container status
-          echo "📦 Pre-migration container status:"
+          echo "📦 Container status:"
           docker compose ps
-          
-          # Wait for database to be ready with enhanced logging
-          echo "💾 Waiting for database to be ready..."
-          if timeout 60s bash -c 'until docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db; do echo "Database not ready, waiting..."; sleep 2; done'; then
-            echo "✅ Database is ready"
-          else
-            echo "❌ Database readiness timeout"
-            echo "📄 Database logs:"
-            docker compose logs --tail=20 postgres
-            exit 1
-          fi
-          
-          # Wait for backend container to be fully ready
-          echo "📦 Waiting for backend container to be ready..."
-          if timeout 60s bash -c 'until docker compose exec -T backend echo "ready" >/dev/null 2>&1; do echo "Backend not ready, waiting..."; sleep 2; done'; then
-            echo "✅ Backend container is ready"
-          else
-            echo "❌ Backend container timeout"
-            echo "📄 Backend logs:"
-            docker compose logs --tail=20 backend
-            exit 1
-          fi
-          
-          # Give containers additional time to stabilize
-          echo "⏳ Allowing containers to stabilize (10 seconds)..."
-          sleep 10
-          
-          # Show database connection info before migration
-          echo "🔗 Database connection check:"
-          docker compose exec -T backend node -e "console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'configured' : 'missing')" || echo "Cannot check DB config"
-          
-          # Run migration from within backend container (correct network context)
-          echo "🗃️ Running database migration from container..."
-          for attempt in 1 2 3; do
-            echo "\n🔄 Migration attempt $attempt/3..."
-            
-            # First check migration status
-            echo "🔍 Checking current migration status:"
-            docker compose exec -T backend npm run db:migrate:status || echo "Cannot check migration status"
-            
-            if docker compose exec -T backend npm run db:migrate:deploy; then
-              echo "✅ Database migrations completed successfully"
-              
-              # Verify migration success
-              echo "🔍 Post-migration verification:"
-              docker compose exec -T backend npm run db:migrate:status || echo "Cannot verify final status"
+
+          # Wait for backend to be healthy (entrypoint.sh runs migrations)
+          # Backend health check means migrations have completed successfully
+          echo "⏳ Waiting for backend health check..."
+          for i in {1..60}; do
+            if docker compose exec -T backend \
+               curl -sf http://localhost:4000/api/health > /dev/null 2>&1; then
+              echo "✅ Backend is healthy (migrations complete)"
               break
-            else
-              echo "❌ Migration attempt $attempt failed"
-              
-              # Show backend logs for debugging
-              echo "📄 Backend logs during migration failure:"
-              docker compose logs --tail=10 backend
-              
-              if [ $attempt -eq 3 ]; then
-                echo "❌ Migration failed after 3 attempts"
-                
-                # Enhanced baseline scenario handling
-                echo "🔍 Checking for baseline scenario..."
-                migration_status=$(docker compose exec -T backend npm run db:migrate:status 2>&1 || echo "status_check_failed")
-                echo "Migration status output: $migration_status"
-                
-                if echo "$migration_status" | grep -q "migrations have not yet been applied"; then
-                  echo "🔧 Attempting baseline resolution..."
-                  docker compose exec -T backend npx prisma migrate resolve --applied 0_init 2>/dev/null || echo "Baseline resolution failed"
-                  
-                  echo "🔄 Retrying migration after baseline..."
-                  if docker compose exec -T backend npm run db:migrate:deploy; then
-                    echo "✅ Database migrations completed after baseline resolution"
-                    break
-                  else
-                    echo "❌ Migration still failed after baseline"
-                  fi
-                fi
-                
-                # Final failure diagnostics
-                echo "🔴 MIGRATION FAILURE DIAGNOSTICS:"
-                echo "=== Container Status ==="
-                docker compose ps
-                echo "\n=== Database Connection Test ==="
-                docker compose exec -T postgres pg_isready -U loyalty -d loyalty_db || echo "Database connection failed"
-                echo "\n=== Backend Environment ==="
-                docker compose exec -T backend env | grep -E "DATABASE_URL|NODE_ENV" || echo "Cannot check environment"
-                echo "\n=== Backend Logs (last 30 lines) ==="
-                docker compose logs --tail=30 backend
-                
-                echo "❌ All migration attempts failed"
-                exit 1
-              else
-                echo "⏳ Retrying in 5 seconds..."
-                sleep 5
-              fi
             fi
+
+            if [ $i -eq 60 ]; then
+              echo "❌ Backend failed to become healthy after 2 minutes"
+              echo "📄 Backend logs:"
+              docker compose logs --tail=50 backend
+              exit 1
+            fi
+
+            echo "Waiting for backend... ($i/60)"
+            sleep 2
           done
-          
+
+          # Verify migration status (read-only, no execution)
+          echo "🔍 Verifying migration status..."
+          docker compose exec -T backend npx prisma migrate status
+
           echo "✅ Database migration phase completed"
       
       - name: "🔐🗄️ Post-deployment OAuth & database validation"

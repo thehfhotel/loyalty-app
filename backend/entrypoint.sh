@@ -85,7 +85,7 @@ wait_for_database() {
   exit 1
 }
 
-# Function to run database migrations
+# Function to run database migrations with retry logic
 run_migrations() {
   echo "🔄 Running database migrations..."
 
@@ -94,13 +94,36 @@ run_migrations() {
   # - Applies pending migrations without prompting
   # - Is idempotent (safe to run multiple times)
   # - Does not create new migrations or modify migration files
-  if npx prisma migrate deploy; then
-    echo "✅ Database migrations completed successfully"
-    return 0
-  else
-    echo "❌ ERROR: Database migration failed"
-    exit 1
-  fi
+
+  MAX_ATTEMPTS=3
+  ATTEMPT=1
+
+  while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+    echo "📦 Migration attempt $ATTEMPT/$MAX_ATTEMPTS..."
+
+    if npx prisma migrate deploy 2>&1; then
+      echo "✅ Database migrations completed successfully"
+
+      # Verify migration status
+      echo "🔍 Verifying migration status..."
+      npx prisma migrate status || true
+      return 0
+    fi
+
+    echo "⚠️ Migration attempt $ATTEMPT failed"
+
+    if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+      echo "⏳ Waiting 3 seconds before retry..."
+      sleep 3
+    fi
+
+    ATTEMPT=$((ATTEMPT + 1))
+  done
+
+  echo "❌ ERROR: All migration attempts failed"
+  echo "📋 Final migration status:"
+  npx prisma migrate status || true
+  exit 1
 }
 
 # Function to verify Prisma client is generated
