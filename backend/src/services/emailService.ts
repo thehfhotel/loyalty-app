@@ -9,7 +9,7 @@ export function generateVerificationCode(): string {
   const maxUnbiased = 256 - (256 % chars.length);
   let code = '';
   while (code.length < codeLength) {
-    const byte = crypto.randomBytes(1)[0];
+    const byte = crypto.randomBytes(1)[0] as number;
     if (byte >= maxUnbiased) {
       continue;
     }
