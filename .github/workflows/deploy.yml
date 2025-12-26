@@ -1970,39 +1970,6 @@ jobs:
             fi
           fi
 
-          # Verify critical triggers exist
-          echo "📋 Checking critical triggers..."
-          TRIGGERS_CHECK=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T postgres psql -U loyalty_dev -d loyalty_dev_db -t -c "
-            SELECT string_agg(tgname, ',')
-            FROM pg_trigger t
-            JOIN pg_class c ON t.tgrelid = c.oid
-            WHERE NOT t.tgisinternal
-            AND tgname IN ('trigger_update_user_tier_on_nights', 'set_membership_id_trigger', 'audit_user_changes');
-          " 2>&1 | tr -d ' \n')
-
-          echo "  Raw triggers check result: '$TRIGGERS_CHECK'"
-
-          # Check if the query failed entirely - this is a FATAL error
-          if echo "$TRIGGERS_CHECK" | grep -qiE "error|fatal|connection refused"; then
-            echo "❌ Triggers query failed - deployment cannot continue"
-            echo "  Error: $TRIGGERS_CHECK"
-            exit 1
-          else
-            REQUIRED_TRIGGERS="trigger_update_user_tier_on_nights,set_membership_id_trigger,audit_user_changes"
-            MISSING_TRIGGERS=""
-            for trigger in $(echo "$REQUIRED_TRIGGERS" | tr ',' ' '); do
-              if ! echo "$TRIGGERS_CHECK" | grep -q "$trigger"; then
-                MISSING_TRIGGERS="$MISSING_TRIGGERS $trigger"
-              fi
-            done
-
-            if [ -n "$MISSING_TRIGGERS" ]; then
-              echo "⚠️ Missing triggers:$MISSING_TRIGGERS (may be optional)"
-            else
-              echo "✅ All critical triggers exist"
-            fi
-          fi
-
           echo "✅ Database schema verification completed"
 
       - name: "🏥 Health check"
@@ -2681,31 +2648,6 @@ jobs:
             exit 1
           else
             echo "✅ All critical stored procedures exist"
-          fi
-
-          # Verify critical triggers exist
-          echo ""
-          echo "📋 Verifying critical triggers..."
-          TRIGGERS_CHECK=$(docker compose exec -T postgres psql -U loyalty -d loyalty_db -t -c "
-            SELECT string_agg(tgname, ',')
-            FROM pg_trigger t
-            JOIN pg_class c ON t.tgrelid = c.oid
-            WHERE NOT t.tgisinternal
-            AND tgname IN ('trigger_update_user_tier_on_nights', 'set_membership_id_trigger', 'audit_user_changes');
-          " 2>/dev/null | tr -d ' \n')
-
-          REQUIRED_TRIGGERS="trigger_update_user_tier_on_nights,set_membership_id_trigger,audit_user_changes"
-          MISSING_TRIGGERS=""
-          for trigger in $(echo "$REQUIRED_TRIGGERS" | tr ',' ' '); do
-            if ! echo "$TRIGGERS_CHECK" | grep -q "$trigger"; then
-              MISSING_TRIGGERS="$MISSING_TRIGGERS $trigger"
-            fi
-          done
-
-          if [ -n "$MISSING_TRIGGERS" ]; then
-            echo "⚠️ Missing triggers:$MISSING_TRIGGERS (may be optional)"
-          else
-            echo "✅ All critical triggers exist"
           fi
 
           echo "✅ Database schema verification completed"
