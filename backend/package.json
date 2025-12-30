@@ -65,7 +65,7 @@
     "express-rate-limit": "^8.2.1",
     "express-session": "^1.17.3",
     "helmet": "^8.1.0",
-    "imapflow": "^1.2.3",
+    "imapflow": "^1.2.4",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.12",
