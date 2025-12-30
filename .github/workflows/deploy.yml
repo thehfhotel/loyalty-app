@@ -2710,9 +2710,8 @@ jobs:
         run: |
           echo "🔍 Checking email service configuration..."
 
-          # Use -L to follow redirects (production redirects HTTP to HTTPS)
-          # Use -k to skip SSL verification for localhost redirect
-          HEALTH_RESPONSE=$(curl -sfLk --max-time 10 http://localhost:4001/api/health 2>/dev/null || echo '{}')
+          # Query backend container directly to bypass nginx HTTPS redirect
+          HEALTH_RESPONSE=$(docker compose exec -T backend curl -sf --max-time 10 http://localhost:4000/api/health 2>/dev/null || echo '{}')
           EMAIL_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.services.email // "unknown"')
 
           case "$EMAIL_STATUS" in
@@ -2726,6 +2725,7 @@ jobs:
               ;;
             *)
               echo "❓ Email service: $EMAIL_STATUS"
+              echo "   (Could not determine status - this is non-blocking)"
               ;;
           esac
 
