@@ -156,7 +156,7 @@ describe('PointsBalance', () => {
     it('should apply tier color to points display', () => {
       render(<PointsBalance loyaltyStatus={mockLoyaltyStatus} />);
 
-      const pointsElement = screen.getByTestId('points-display');
+      const pointsElement = screen.getByTestId('loyalty-points');
       expect(pointsElement).toHaveStyle({ color: '#FFD700' });
     });
 

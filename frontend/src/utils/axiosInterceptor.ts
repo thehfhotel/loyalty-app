@@ -95,6 +95,15 @@ export function setupAxiosInterceptors() {
         const authStore = useAuthStore.getState();
         const currentPath = window.location.pathname;
 
+        // Skip retry logic for refresh endpoint - it shouldn't retry itself
+        // This prevents infinite loop when refresh token is invalid/expired
+        if (error.config?.url?.includes('/auth/refresh')) {
+          authStore.clearAuth();
+          const returnUrl = currentPath + window.location.search;
+          window.location.href = `/login?returnUrl=${encodeURIComponent(returnUrl)}`;
+          return Promise.reject(createApiError(error));
+        }
+
         // Skip if we're already on auth pages
         const authPages = ['/login', '/register', '/reset-password', '/oauth/success'];
         if (authPages.some(page => currentPath.startsWith(page))) {
@@ -244,6 +253,15 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
 
         const authStore = useAuthStore.getState();
         const currentPath = window.location.pathname;
+
+        // Skip retry logic for refresh endpoint - it shouldn't retry itself
+        // This prevents infinite loop when refresh token is invalid/expired
+        if (originalRequest.url?.includes('/auth/refresh')) {
+          authStore.clearAuth();
+          const returnUrl = currentPath + window.location.search;
+          window.location.href = `/login?returnUrl=${encodeURIComponent(returnUrl)}`;
+          return Promise.reject(createApiError(error));
+        }
 
         // Skip if we're already on auth pages
         const authPages = ['/login', '/register', '/reset-password', '/oauth/success'];
