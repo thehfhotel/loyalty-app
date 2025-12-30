@@ -184,7 +184,7 @@ export interface SurveyRewardHistory {
   user_id: string;
   awarded_at: string;
   award_condition_met: string;
-  metadata: Record<string, unknown>;
+  metadata: Record<string, unknown> | null;
   created_at: string;
   // Additional display fields
   user_email?: string;
