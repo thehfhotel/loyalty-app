@@ -2710,7 +2710,9 @@ jobs:
         run: |
           echo "🔍 Checking email service configuration..."
 
-          HEALTH_RESPONSE=$(curl -sf --max-time 10 http://localhost:4001/api/health 2>/dev/null || echo '{}')
+          # Use -L to follow redirects (production redirects HTTP to HTTPS)
+          # Use -k to skip SSL verification for localhost redirect
+          HEALTH_RESPONSE=$(curl -sfLk --max-time 10 http://localhost:4001/api/health 2>/dev/null || echo '{}')
           EMAIL_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.services.email // "unknown"')
 
           case "$EMAIL_STATUS" in
