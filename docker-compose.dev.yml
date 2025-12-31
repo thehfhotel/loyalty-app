@@ -61,6 +61,16 @@ services:
       AZURE_TRANSLATION_REGION: ${AZURE_TRANSLATION_REGION:-global}
       LOG_LEVEL: ${LOG_LEVEL:-debug}
       CORS_ORIGINS: ${CORS_ORIGINS}
+      # Email Service (SMTP/IMAP) - optional for dev
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      IMAP_HOST: ${IMAP_HOST:-}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_USER: ${IMAP_USER:-}
+      IMAP_PASS: ${IMAP_PASS:-}
     volumes:
       - ./backend:/app
       - /app/node_modules
