@@ -428,7 +428,7 @@ export class AuthService {
 
   async getUserProfile(userId: string): Promise<User> {
     const [user] = await query<User>(
-      `SELECT 
+      `SELECT
         u.id,
         u.email,
         u.role,
@@ -436,6 +436,7 @@ export class AuthService {
         u.email_verified AS "emailVerified",
         u.created_at AS "createdAt",
         u.updated_at AS "updatedAt",
+        u.oauth_provider AS "oauthProvider",
         up.first_name AS "firstName",
         up.last_name AS "lastName",
         up.phone,

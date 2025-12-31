@@ -936,6 +936,8 @@ describe('UserService', () => {
           const user2Id = 'user-222';
           const user2Email = 'user2@example.com';
 
+          // Mock user is not a Google OAuth user
+          mockQuery.mockResolvedValueOnce([{ oauth_provider: null }] as never);
           // Mock that user2 already has this email
           mockQuery.mockResolvedValueOnce([{ id: user2Id }] as never);
 
@@ -952,6 +954,8 @@ describe('UserService', () => {
           const userId = 'user-123';
           const ownEmail = 'own@example.com';
 
+          // Mock user is not a Google OAuth user
+          mockQuery.mockResolvedValueOnce([{ oauth_provider: null }] as never);
           // Mock no other user with this email (excluding self)
           mockQuery.mockResolvedValueOnce([] as never);
           mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
@@ -1017,10 +1021,60 @@ describe('UserService', () => {
     });
 
     describe('initiateEmailChange', () => {
+      it('should reject email change for Google OAuth users', async () => {
+        const userId = 'user-123';
+        const newEmail = 'newemail@example.com';
+
+        // Mock user is a Google OAuth user
+        mockQuery.mockResolvedValueOnce([{ oauth_provider: 'google' }] as never);
+
+        await expect(userService.initiateEmailChange(userId, newEmail))
+          .rejects.toMatchObject({
+            statusCode: 403,
+            message: 'Google OAuth users cannot change their email address',
+          });
+      });
+
+      it('should allow email change for LINE OAuth users', async () => {
+        const userId = 'user-123';
+        const newEmail = 'newemail@example.com';
+
+        // Mock user is a LINE OAuth user
+        mockQuery.mockResolvedValueOnce([{ oauth_provider: 'line' }] as never);
+        // Mock no existing user with that email
+        mockQuery.mockResolvedValueOnce([] as never);
+        // Mock invalidating existing tokens
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+        // Mock creating new token
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        // Should not throw
+        await expect(userService.initiateEmailChange(userId, newEmail)).resolves.not.toThrow();
+      });
+
+      it('should allow email change for email/password users', async () => {
+        const userId = 'user-123';
+        const newEmail = 'newemail@example.com';
+
+        // Mock user has no OAuth provider (email/password user)
+        mockQuery.mockResolvedValueOnce([{ oauth_provider: null }] as never);
+        // Mock no existing user with that email
+        mockQuery.mockResolvedValueOnce([] as never);
+        // Mock invalidating existing tokens
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+        // Mock creating new token
+        mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+        // Should not throw
+        await expect(userService.initiateEmailChange(userId, newEmail)).resolves.not.toThrow();
+      });
+
       it('should reject if new email already in use', async () => {
         const userId = 'user-123';
         const newEmail = 'existing@example.com';
 
+        // Mock user is not a Google OAuth user
+        mockQuery.mockResolvedValueOnce([{ oauth_provider: null }] as never);
         // Mock email already exists for another user
         mockQuery.mockResolvedValueOnce([{ id: 'other-user' }] as never);
 
@@ -1035,6 +1089,8 @@ describe('UserService', () => {
         const userId = 'user-123';
         const newEmail = 'newemail@example.com';
 
+        // Mock user is not a Google OAuth user
+        mockQuery.mockResolvedValueOnce([{ oauth_provider: null }] as never);
         // Mock no existing user with that email
         mockQuery.mockResolvedValueOnce([] as never);
         // Mock invalidating existing tokens
@@ -1055,6 +1111,8 @@ describe('UserService', () => {
         const userId = 'user-123';
         const newEmail = 'newemail@example.com';
 
+        // Mock user is not a Google OAuth user
+        mockQuery.mockResolvedValueOnce([{ oauth_provider: null }] as never);
         mockQuery.mockResolvedValueOnce([] as never);
         mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 }); // Invalidate
         mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 }); // Insert
@@ -1072,6 +1130,8 @@ describe('UserService', () => {
         const userId = 'user-123';
         const newEmail = 'newemail@example.com';
 
+        // Mock user is not a Google OAuth user
+        mockQuery.mockResolvedValueOnce([{ oauth_provider: null }] as never);
         mockQuery.mockResolvedValueOnce([] as never);
         mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
         mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });
@@ -1089,6 +1149,8 @@ describe('UserService', () => {
         const userId = 'user-123';
         const newEmail = 'newemail@example.com';
 
+        // Mock user is not a Google OAuth user
+        mockQuery.mockResolvedValueOnce([{ oauth_provider: null }] as never);
         mockQuery.mockResolvedValueOnce([] as never);
         mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 0 });
         mockQueryWithMeta.mockResolvedValueOnce({ rows: [], rowCount: 1 });

@@ -196,6 +196,7 @@
     "noEmailProvided": "No email provided",
     "emailPlaceholder": "Enter your email address",
     "emailHelpText": "Used for notifications and account recovery",
+    "googleOAuthEmailLocked": "Email address cannot be changed for Google accounts",
     "emailUpdated": "Email address updated successfully",
     "newMemberOffer": "NEW MEMBER OFFER",
     "completeProfileForCoupon": "Complete your profile to get your welcome coupon!",

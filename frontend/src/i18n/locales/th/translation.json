@@ -192,6 +192,7 @@
     "noEmailProvided": "ไม่ได้ระบุอีเมล",
     "emailPlaceholder": "กรอกที่อยู่อีเมลของคุณ",
     "emailHelpText": "ใช้สำหรับการแจ้งเตือนและการกู้คืนบัญชี",
+    "googleOAuthEmailLocked": "ไม่สามารถเปลี่ยนอีเมลสำหรับบัญชี Google ได้",
     "emailUpdated": "อัปเดตที่อยู่อีเมลสำเร็จ",
     "newMemberOffer": "ข้อเสนอสมาชิกใหม่",
     "completeProfileForCoupon": "กรอกข้อมูลโปรไฟล์ให้ครบถ้วนเพื่อรับคูปองต้อนรับ!",

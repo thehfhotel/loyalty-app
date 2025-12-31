@@ -275,6 +275,18 @@ describe('tRPC User Router - Integration Tests', () => {
         code: 'UNAUTHORIZED',
       });
     });
+
+    it('should reject email change for Google OAuth users', async () => {
+      const caller = createCallerWithUser(userRouter, mockUsers.customer);
+      const error = new Error('Google OAuth users cannot change their email address');
+      (error as Error & { code?: string; statusCode?: number }).code = 'OAUTH_EMAIL_CHANGE_FORBIDDEN';
+      (error as Error & { code?: string; statusCode?: number }).statusCode = 403;
+      mockUserService.initiateEmailChange.mockRejectedValue(error);
+
+      await expect(
+        caller.updateEmail({ email: 'newemail@test.com' })
+      ).rejects.toThrow('Google OAuth users cannot change their email address');
+    });
   });
 
   // ========== 6. verifyEmail Tests ==========

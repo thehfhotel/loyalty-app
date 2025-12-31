@@ -383,6 +383,18 @@ export class UserService {
   // }
 
   async initiateEmailChange(userId: string, newEmail: string): Promise<void> {
+    // Check if user is a Google OAuth user - they cannot change their email
+    const [user] = await query<{ oauth_provider: string | null }>(
+      'SELECT oauth_provider FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (user?.oauth_provider === 'google') {
+      throw new AppError(403, 'Google OAuth users cannot change their email address', {
+        code: 'OAUTH_EMAIL_CHANGE_FORBIDDEN'
+      });
+    }
+
     // Check if email is already in use by another user
     const [existingUser] = await query<{id: string}>(
       'SELECT id FROM users WHERE email = $1 AND id != $2',
