@@ -219,8 +219,8 @@ class EmailService {
         // Lock inbox for reading
         const lock = await client.getMailboxLock('INBOX');
         try {
-          // Search for our test email
-          const searchResult = await client.search({ subject: testId });
+          // Search for our test email (using UIDs for stable message identification)
+          const searchResult = await client.search({ subject: testId }, { uid: true });
           const messages = Array.isArray(searchResult) ? searchResult : [];
 
           if (messages.length > 0) {
