@@ -35,7 +35,7 @@ const SurveyList: React.FC = () => {
   });
 
   const loading = loadingPublic || loadingInvited;
-  const error = publicError || invitedError;
+  const error = publicError ?? invitedError;
   const errorMessage = error ? getTRPCErrorMessage(error) : null;
 
   const loadSurveys = async () => {

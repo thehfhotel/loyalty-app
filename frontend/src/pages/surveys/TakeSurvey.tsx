@@ -25,7 +25,7 @@ const TakeSurvey: React.FC = () => {
     isLoading: loadingSurvey,
     error: surveyError
   } = trpc.survey.getSurveyById.useQuery(
-    { surveyId: id! },
+    { surveyId: id ?? '' },
     { enabled: !!id }
   );
 
@@ -33,7 +33,7 @@ const TakeSurvey: React.FC = () => {
   const {
     data: previousResponse
   } = trpc.survey.getUserResponse.useQuery(
-    { surveyId: id! },
+    { surveyId: id ?? '' },
     { enabled: !!id }
   );
 

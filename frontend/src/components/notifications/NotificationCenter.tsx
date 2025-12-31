@@ -41,9 +41,9 @@ export default function NotificationCenter() {
     }
   });
 
-  const notifications: Notification[] = notificationsData?.notifications || [];
-  const unreadCount = notificationsData?.unread || 0;
-  const totalCount = notificationsData?.total || 0;
+  const notifications: Notification[] = notificationsData?.notifications ?? [];
+  const unreadCount = notificationsData?.unread ?? 0;
+  const totalCount = notificationsData?.total ?? 0;
 
   // Close dropdown when clicking outside
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { FiGift, FiCheck, FiX, FiInfo, FiAlertTriangle, FiAlertCircle } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
@@ -31,9 +31,39 @@ export default function NewMemberCouponSettings() {
   const [pointsEnabled, setPointsEnabled] = useState(false);
   const [pointsAmount, setPointsAmount] = useState<string>('');
 
+  const loadData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+
+      // Load current settings and available coupons in parallel
+      const [settingsData, couponsData] = await Promise.all([
+        adminService.getNewMemberCouponSettings(),
+        couponService.getCoupons(1, 100, { status: 'active' }) // Get all active coupons
+      ]);
+
+      setSettings(settingsData);
+      setAvailableCoupons(couponsData.coupons);
+
+      // Set form state from loaded settings
+      setIsEnabled(settingsData.isEnabled);
+      setSelectedCouponId(settingsData.selectedCouponId ?? '');
+      setPointsEnabled(settingsData.pointsEnabled);
+      setPointsAmount(settingsData.pointsAmount?.toString() ?? '');
+
+    } catch (error: unknown) {
+      logger.error('Failed to load data:', error);
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
+        : undefined;
+      toast.error(errorMessage ?? t('admin.newMemberCoupons.loadError'));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [t]);
+
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   useEffect(() => {
     if (settings) {
@@ -71,36 +101,6 @@ export default function NewMemberCouponSettings() {
 
     loadCouponStatus();
   }, [selectedCouponId, availableCoupons]);
-
-  const loadData = async () => {
-    try {
-      setIsLoading(true);
-      
-      // Load current settings and available coupons in parallel
-      const [settingsData, couponsData] = await Promise.all([
-        adminService.getNewMemberCouponSettings(),
-        couponService.getCoupons(1, 100, { status: 'active' }) // Get all active coupons
-      ]);
-      
-      setSettings(settingsData);
-      setAvailableCoupons(couponsData.coupons);
-      
-      // Set form state from loaded settings
-      setIsEnabled(settingsData.isEnabled);
-      setSelectedCouponId(settingsData.selectedCouponId ?? '');
-      setPointsEnabled(settingsData.pointsEnabled);
-      setPointsAmount(settingsData.pointsAmount?.toString() ?? '');
-      
-    } catch (error: unknown) {
-      logger.error('Failed to load data:', error);
-      const errorMessage = error instanceof Error && 'response' in error
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
-        : undefined;
-      toast.error(errorMessage ?? t('admin.newMemberCoupons.loadError'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleSave = async () => {
     if (!hasChanged) {return;}

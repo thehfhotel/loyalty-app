@@ -20,7 +20,7 @@ const SurveyDetailsPage: React.FC = () => {
     isLoading: loading,
     error: surveyError
   } = trpc.survey.getSurveyById.useQuery(
-    { surveyId: id! },
+    { surveyId: id ?? '' },
     {
       enabled: !!id
     }

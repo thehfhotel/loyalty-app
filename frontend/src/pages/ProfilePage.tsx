@@ -311,7 +311,7 @@ export default function ProfilePage() {
                       {user?.emailVerified === false && (
                         <button
                           onClick={() => {
-                            setPendingEmail(user?.email || '');
+                            setPendingEmail(user?.email ?? '');
                             setShowVerificationModal(true);
                           }}
                           className="text-sm px-2 py-0.5 rounded bg-amber-100 text-amber-700 hover:bg-amber-200"
