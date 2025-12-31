@@ -988,7 +988,7 @@ describe('SurveyRewardHistory', () => {
     it('should handle rewards without metadata', async () => {
       const rewardsWithoutMetadata: SurveyRewardHistory[] = [{
         ...mockRewards[0]!,
-        metadata: {},
+        metadata: null,
       }];
 
       vi.mocked(surveyService.getSurveyRewardHistory).mockResolvedValueOnce({

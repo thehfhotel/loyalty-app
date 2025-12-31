@@ -117,6 +117,62 @@ test.describe('Authentication and Session Tests', () => {
       // Should return 400 or 401 for missing token
       expect([400, 401]).toContain(response.status());
     });
+
+    test('Refresh endpoint should reject expired refresh token with 401', async ({ request }) => {
+      // Simulate an expired refresh token (malformed JWT that looks like it could be valid)
+      const expiredToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InRlc3QtdXNlciIsImlhdCI6MTYwMDAwMDAwMCwiZXhwIjoxNjAwMDAwMDAxfQ.invalid';
+
+      const response = await request.post(`${backendUrl}/api/auth/refresh`, {
+        data: {
+          refreshToken: expiredToken,
+        },
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      // Should return 401 for expired/invalid token - not 500 or other errors
+      expect([401, 403]).toContain(response.status());
+
+      // Response should have error details
+      const body = await response.json();
+      expect(body.error || body.message).toBeTruthy();
+    });
+
+    test('Refresh endpoint should return proper error structure on failure', async ({ request }) => {
+      const response = await request.post(`${backendUrl}/api/auth/refresh`, {
+        data: {
+          refreshToken: 'completely-invalid-token',
+        },
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      expect([401, 403]).toContain(response.status());
+
+      // Error response should be properly formatted JSON
+      const body = await response.json();
+      expect(typeof body).toBe('object');
+      // Should have error message
+      expect(body.error || body.message).toBeTruthy();
+    });
+
+    test('Multiple rapid refresh requests with invalid token should all return 401', async ({ request }) => {
+      // This test ensures the backend handles rapid requests properly
+      // (simulates what happens when frontend accidentally makes multiple refresh calls)
+      const invalidToken = 'invalid-refresh-token';
+
+      const requests = Array(3).fill(null).map(() =>
+        request.post(`${backendUrl}/api/auth/refresh`, {
+          data: { refreshToken: invalidToken },
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+      const responses = await Promise.all(requests);
+
+      // All requests should return 401, not cause server errors
+      for (const response of responses) {
+        expect([401, 403]).toContain(response.status());
+      }
+    });
   });
 
   test.describe('Role-Based Access', () => {
