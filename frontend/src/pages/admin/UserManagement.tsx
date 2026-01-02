@@ -51,7 +51,9 @@ const UserManagement: React.FC = () => {
     };
 
     loadData();
-  }, [currentPage, searchTerm, fetchUsers, fetchStats]);
+    // Note: searchTerm intentionally excluded - search only triggers on form submit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, fetchUsers, fetchStats]);
 
   const handleSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
