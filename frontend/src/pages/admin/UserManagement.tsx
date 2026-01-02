@@ -10,8 +10,10 @@ const UserManagement: React.FC = () => {
   const { t } = useTranslation();
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -40,45 +42,67 @@ const UserManagement: React.FC = () => {
     }
   }, [t]);
 
+  // Debounce search term - wait 300ms after user stops typing
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      await Promise.all([
-        fetchUsers(currentPage, searchTerm),
-        fetchStats()
-      ]);
-      setLoading(false);
-    };
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
-    loadData();
-    // Note: searchTerm intentionally excluded - search only triggers on form submit
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, fetchUsers, fetchStats]);
+  // Initial load - fetch stats and users
+  useEffect(() => {
+    const loadInitialData = async () => {
+      setInitialLoading(true);
+      await Promise.all([fetchUsers(1, ''), fetchStats()]);
+      setInitialLoading(false);
+    };
+    loadInitialData();
+  }, [fetchUsers, fetchStats]);
+
+  // Auto-search on debounced term change or page change
+  useEffect(() => {
+    // Skip if still in initial loading
+    if (initialLoading) return;
+
+    const searchUsers = async () => {
+      setIsSearching(true);
+      await fetchUsers(currentPage, debouncedSearchTerm);
+      setIsSearching(false);
+    };
+    searchUsers();
+  }, [currentPage, debouncedSearchTerm, fetchUsers, initialLoading]);
+
+  // Reset to page 1 when search term changes
+  useEffect(() => {
+    if (!initialLoading && debouncedSearchTerm !== '') {
+      setCurrentPage(1);
+    }
+  }, [debouncedSearchTerm, initialLoading]);
 
   const handleSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    setCurrentPage(1);
-    fetchUsers(1, searchTerm);
-  }, [searchTerm, fetchUsers]);
+    // Search is now automatic via debounce, but keep form submit for accessibility
+  }, []);
 
   const handleStatusToggle = useCallback(async (user: User) => {
     try {
       await userManagementService.updateUserStatus(user.userId, !user.isActive);
-      toast.success(user.isActive 
-        ? t('userManagement.messages.userDeactivated') 
+      toast.success(user.isActive
+        ? t('userManagement.messages.userDeactivated')
         : t('userManagement.messages.userActivated')
       );
-      fetchUsers(currentPage, searchTerm);
+      fetchUsers(currentPage, debouncedSearchTerm);
     } catch (_error) {
       toast.error(t('userManagement.messages.updateStatusFailed'));
     }
-  }, [currentPage, searchTerm, fetchUsers, t]);
+  }, [currentPage, debouncedSearchTerm, fetchUsers, t]);
 
   const handleRoleChange = async (user: User, newRole: string) => {
     try {
       await userManagementService.updateUserRole(user.userId, newRole);
       toast.success(t('userManagement.messages.roleUpdated'));
-      fetchUsers(currentPage, searchTerm);
+      fetchUsers(currentPage, debouncedSearchTerm);
     } catch (_error) {
       toast.error(t('userManagement.messages.updateRoleFailed'));
     }
@@ -92,7 +116,7 @@ const UserManagement: React.FC = () => {
       toast.success(t('userManagement.messages.userDeleted'));
       setShowDeleteConfirm(false);
       setUserToDelete(null);
-      fetchUsers(currentPage, searchTerm);
+      fetchUsers(currentPage, debouncedSearchTerm);
       fetchStats();
     } catch (_error) {
       toast.error(t('userManagement.messages.deleteFailed'));
@@ -135,7 +159,7 @@ const UserManagement: React.FC = () => {
       : 'bg-gray-100 text-gray-800';
   };
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <div className="min-h-screen bg-gray-50 p-4">
         <div className="max-w-6xl mx-auto">
@@ -227,20 +251,25 @@ const UserManagement: React.FC = () => {
                 placeholder={t('userManagement.searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
+              {isSearching && (
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
+                </div>
+              )}
             </div>
-            <button
-              type="submit"
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              {t('userManagement.search')}
-            </button>
           </form>
+          <p className="text-xs text-gray-500 mt-2">{t('userManagement.searchHint', 'Search by name, email, phone, or membership ID')}</p>
         </div>
 
         {/* Users Table */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="bg-white rounded-lg shadow overflow-hidden relative">
+          {isSearching && (
+            <div className="absolute inset-0 bg-white/50 z-10 flex items-center justify-center">
+              <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
