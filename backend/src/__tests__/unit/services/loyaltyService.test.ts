@@ -1241,6 +1241,32 @@ describeActual('LoyaltyService - Database Operations', () => {
       expectActual((result.users[0] as any)?.email).toContain('john');
     });
 
+    test('should filter users by phone number search term', async () => {
+      const searchTerm = '+6681234';
+      const mockUsers = [
+        {
+          user_id: 'user-phone',
+          email: 'user@test.com',
+          first_name: 'Phone',
+          last_name: 'User',
+          phone: '+66812345678',
+          total_nights: 5
+        }
+      ];
+
+      mockPoolQuery
+        .mockResolvedValueOnce({ rows: mockUsers } as never)
+        .mockResolvedValueOnce({ rows: [{ total: '1' }] } as never);
+
+      const result = await loyaltyService.getAllUsersLoyaltyStatus(50, 0, searchTerm);
+
+      expectActual(result.users).toHaveLength(1);
+      expectActual(mockPoolQuery).toHaveBeenCalledWith(
+        expectActual.stringContaining('up.phone ILIKE'),
+        expectActual.arrayContaining([`%${searchTerm}%`])
+      );
+    });
+
     test('should handle errors in getAllUsersLoyaltyStatus', async () => {
       mockPoolQuery.mockRejectedValueOnce(new Error('Query failed') as never);
 

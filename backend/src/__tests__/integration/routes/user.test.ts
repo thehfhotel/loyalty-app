@@ -703,6 +703,39 @@ describe('User Routes Integration Tests', () => {
       );
     });
 
+    it('should search users by phone number', async () => {
+      const mockResult = {
+        users: [
+          {
+            id: 'user-phone',
+            email: 'phone@example.com',
+            firstName: 'Phone',
+            lastName: 'User',
+            phone: '0812345678',
+            role: 'customer' as const,
+            isActive: true,
+          },
+        ],
+        total: 1,
+        page: 1,
+        limit: 10,
+      };
+
+      mockUserService.getAllUsers.mockResolvedValue(mockResult as any);
+
+      const response = await request(app).get(
+        '/api/users/admin/users?search=0812345'
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveLength(1);
+      expect(mockUserService.getAllUsers).toHaveBeenCalledWith(
+        1,
+        10,
+        '0812345'
+      );
+    });
+
     it('should use default pagination if not provided', async () => {
       const mockResult = {
         users: [],

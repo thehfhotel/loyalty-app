@@ -165,6 +165,30 @@ describe('UserService', () => {
 
       expect(mockQuery).toHaveBeenCalled();
     });
+
+    it('should search users by phone number', async () => {
+      const mockUsers = [
+        {
+          userId: 'user-1',
+          email: 'user1@example.com',
+          role: 'customer',
+          firstName: 'User',
+          lastName: 'One',
+          phone: '+66812345678',
+        },
+      ];
+
+      mockQuery.mockResolvedValueOnce([{ count: '1' }] as never).mockResolvedValueOnce(mockUsers as never);
+
+      const result = await userService.getAllUsers(1, 10, '+668');
+
+      expect(result.users).toHaveLength(1);
+      expect(result.total).toBe(1);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('up.phone ILIKE'),
+        expect.arrayContaining(['%+668%'])
+      );
+    });
   });
 
   describe('deleteUser', () => {

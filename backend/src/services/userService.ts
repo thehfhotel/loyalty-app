@@ -529,7 +529,7 @@ export class UserService {
   // Admin-only methods
   async getAllUsers(page = 1, limit = 10, search = ''): Promise<{ users: UserWithProfile[], total: number }> {
     const offset = (page - 1) * limit;
-    const searchCondition = search ? `WHERE u.email ILIKE $3 OR up.first_name ILIKE $3 OR up.last_name ILIKE $3 OR up.membership_id ILIKE $3` : '';
+    const searchCondition = search ? `WHERE u.email ILIKE $3 OR up.first_name ILIKE $3 OR up.last_name ILIKE $3 OR up.membership_id ILIKE $3 OR up.phone ILIKE $3` : '';
     const searchParam = search ? [`%${search}%`] : [];
 
     const [totalResult] = await query<{ count: string }>(

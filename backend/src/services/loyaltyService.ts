@@ -402,7 +402,7 @@ export class LoyaltyService {
       let paramIndex = 1;
 
       if (searchTerm) {
-        query += ` WHERE (u.email ILIKE $${paramIndex} OR up.first_name ILIKE $${paramIndex} OR up.last_name ILIKE $${paramIndex} OR u.id::text ILIKE $${paramIndex} OR up.membership_id ILIKE $${paramIndex})`;
+        query += ` WHERE (u.email ILIKE $${paramIndex} OR up.first_name ILIKE $${paramIndex} OR up.last_name ILIKE $${paramIndex} OR u.id::text ILIKE $${paramIndex} OR up.membership_id ILIKE $${paramIndex} OR up.phone ILIKE $${paramIndex})`;
         params.push(`%${searchTerm}%`);
         paramIndex++;
       }
@@ -422,7 +422,7 @@ export class LoyaltyService {
 
       const countParams: string[] = [];
       if (searchTerm) {
-        countQuery += ` WHERE (u.email ILIKE $1 OR up.first_name ILIKE $1 OR up.last_name ILIKE $1 OR u.id::text ILIKE $1 OR up.membership_id ILIKE $1)`;
+        countQuery += ` WHERE (u.email ILIKE $1 OR up.first_name ILIKE $1 OR up.last_name ILIKE $1 OR u.id::text ILIKE $1 OR up.membership_id ILIKE $1 OR up.phone ILIKE $1)`;
         countParams.push(`%${searchTerm}%`);
       }
 

@@ -332,6 +332,36 @@ describe('Loyalty Routes Integration Tests', () => {
       // Route may parse pagination parameters differently
       expect(mockLoyaltyService.getAllUsersLoyaltyStatus).toHaveBeenCalled();
     });
+
+    it('should filter users by phone number', async () => {
+      const mockResult = {
+        users: [
+          {
+            userId: 'user-phone',
+            email: 'phone@example.com',
+            phone: '0812345678',
+            currentPoints: 2000,
+            totalNights: 8,
+            tierName: 'Silver',
+          },
+        ],
+        total: 1,
+        page: 1,
+        limit: 10,
+      };
+
+      mockLoyaltyService.getAllUsersLoyaltyStatus.mockResolvedValue(mockResult as any);
+
+      const response = await request(app).get('/api/loyalty/admin/users?search=0812345');
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.users).toHaveLength(1);
+      expect(mockLoyaltyService.getAllUsersLoyaltyStatus).toHaveBeenCalledWith(
+        expect.any(Number),
+        expect.any(Number),
+        '0812345'
+      );
+    });
   });
 
   describe('Admin Routes - POST /api/loyalty/admin/award-points', () => {
