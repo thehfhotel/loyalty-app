@@ -816,7 +816,7 @@ export default function LoyaltyAdminPage() {
                     type="text"
                     value={spendingForm.userSearchTerm}
                     onChange={(e) => handleUserSearchChange(e.target.value)}
-                    placeholder="ค้นหาด้วยชื่อหรืออีเมล..."
+                    placeholder="ค้นหาด้วยชื่อ, อีเมล หรือเบอร์โทร..."
                     className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     required
                   />
