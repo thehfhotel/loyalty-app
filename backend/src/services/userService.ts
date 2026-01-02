@@ -529,18 +529,20 @@ export class UserService {
   // Admin-only methods
   async getAllUsers(page = 1, limit = 10, search = ''): Promise<{ users: UserWithProfile[], total: number }> {
     const offset = (page - 1) * limit;
-    const searchCondition = search ? `WHERE u.email ILIKE $3 OR up.first_name ILIKE $3 OR up.last_name ILIKE $3 OR up.membership_id ILIKE $3 OR up.phone ILIKE $3` : '';
+    // Use $1 for count query (no limit/offset), $3 for main query (limit=$1, offset=$2)
+    const countSearchCondition = search ? `WHERE u.email ILIKE $1 OR up.first_name ILIKE $1 OR up.last_name ILIKE $1 OR up.membership_id ILIKE $1 OR up.phone ILIKE $1` : '';
+    const mainSearchCondition = search ? `WHERE u.email ILIKE $3 OR up.first_name ILIKE $3 OR up.last_name ILIKE $3 OR up.membership_id ILIKE $3 OR up.phone ILIKE $3` : '';
     const searchParam = search ? [`%${search}%`] : [];
 
     const [totalResult] = await query<{ count: string }>(
-      `SELECT COUNT(*) FROM users u 
-       LEFT JOIN user_profiles up ON u.id = up.user_id 
-       ${searchCondition}`,
+      `SELECT COUNT(*) FROM users u
+       LEFT JOIN user_profiles up ON u.id = up.user_id
+       ${countSearchCondition}`,
       searchParam
     );
 
     const users = await query<UserWithProfile>(
-      `SELECT 
+      `SELECT
         u.id AS "userId",
         u.email,
         u.role,
@@ -553,7 +555,7 @@ export class UserService {
         up.membership_id AS "membershipId"
       FROM users u
       LEFT JOIN user_profiles up ON u.id = up.user_id
-      ${searchCondition}
+      ${mainSearchCondition}
       ORDER BY u.created_at DESC
       LIMIT $1 OFFSET $2`,
       [limit, offset, ...searchParam]
