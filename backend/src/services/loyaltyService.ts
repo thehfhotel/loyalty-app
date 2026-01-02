@@ -386,6 +386,7 @@ export class LoyaltyService {
           END as nights_to_next_tier,
           up.first_name,
           up.last_name,
+          up.phone,
           up.membership_id,
           u.email,
           u.oauth_provider,

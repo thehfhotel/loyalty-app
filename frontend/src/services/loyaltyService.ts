@@ -85,6 +85,7 @@ export interface PointsHistoryResponse {
 export interface AdminUserLoyalty extends UserLoyaltyStatus {
   first_name: string | null;
   last_name: string | null;
+  phone: string | null;
   email: string;
   oauth_provider: string | null;
   oauth_provider_id: string | null;

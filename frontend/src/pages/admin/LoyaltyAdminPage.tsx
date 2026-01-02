@@ -412,6 +412,7 @@ export default function LoyaltyAdminPage() {
                         <FiSearch className="w-4 h-4" />
                       </button>
                     </div>
+                    <p className="text-xs text-gray-500 mt-2">{t('admin.loyalty.searchHint', 'Search by name, email, phone, or membership ID')}</p>
                   </form>
                 </div>
               </div>
@@ -422,6 +423,9 @@ export default function LoyaltyAdminPage() {
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         {t('admin.loyalty.table.user')}
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {t('userManagement.phone')}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         {t('admin.loyalty.table.tier')}
@@ -440,13 +444,13 @@ export default function LoyaltyAdminPage() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {isLoading ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                        <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
                           {t('common.loading')}
                         </td>
                       </tr>
                     ) : users.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                        <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
                           {t('admin.loyalty.noUsers')}
                         </td>
                       </tr>
@@ -487,10 +491,13 @@ export default function LoyaltyAdminPage() {
                               )}
                             </div>
                           </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {user.phone ?? '-'}
+                          </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span 
+                            <span
                               className="inline-flex px-2 py-1 text-xs font-semibold rounded-full"
-                              style={{ 
+                              style={{
                                 backgroundColor: `${user.tier_color}20`,
                                 color: user.tier_color
                               }}

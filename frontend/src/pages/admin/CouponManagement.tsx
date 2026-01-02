@@ -99,7 +99,7 @@ const CouponManagement: React.FC = () => {
       const usersData = response.users || [];
       
       // Transform the loyalty service response to our User interface
-      const transformedUsers = usersData.map((user: { user_id: string; email: string; first_name: string | null; last_name?: string | null; phone?: string; membership_id?: string | null }) => ({
+      const transformedUsers = usersData.map((user: { user_id: string; email: string; first_name: string | null; last_name: string | null; phone: string | null; membership_id?: string | null }) => ({
         id: user.user_id,
         email: user.email,
         firstName: user.first_name ?? '',
