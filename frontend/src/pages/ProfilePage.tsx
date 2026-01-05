@@ -8,7 +8,7 @@ import { userService } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
 import { logger } from '../utils/logger';
-import { FiCopy, FiSettings } from 'react-icons/fi';
+import { FiCopy, FiSettings, FiLogOut } from 'react-icons/fi';
 import EmailDisplay from '../components/common/EmailDisplay';
 import MainLayout from '../components/layout/MainLayout';
 import { formatDateToDDMMYYYY } from '../utils/dateFormatter';
@@ -38,6 +38,7 @@ export default function ProfilePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((state) => state.user);
   const updateUser = useAuthStore((state) => state.updateUser);
+  const logout = useAuthStore((state) => state.logout);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -254,7 +255,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <MainLayout title={t('profile.title')} showProfileBanner={false} showDashboardButton={true}>
+    <MainLayout title={t('profile.title')} showProfileBanner={false}>
         {/* Profile Information Section */}
         <div className="mb-6 bg-white shadow rounded-lg">
           <div className="px-4 py-5 sm:p-6">
@@ -402,6 +403,18 @@ export default function ProfilePage() {
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Logout Section */}
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <button
+                onClick={logout}
+                data-testid="logout-button"
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                <FiLogOut className="mr-2 h-4 w-4" />
+                {t('common.logout')}
+              </button>
             </div>
           </div>
         </div>
