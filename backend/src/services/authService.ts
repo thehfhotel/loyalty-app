@@ -8,6 +8,8 @@ import { AppError } from '../middleware/errorHandler';
 import { User, JWTPayload, AuthTokens } from '../types/auth';
 import { logger } from '../utils/logger';
 import { sanitizeEmail, sanitizeLogValue } from '../utils/logSanitizer';
+import { securityLogger } from '../utils/securityLogger';
+import * as accountLockoutService from './accountLockoutService';
 import { adminConfigService } from './adminConfigService';
 import { loyaltyService } from './loyaltyService';
 import { membershipIdService } from './membershipIdService';
@@ -93,6 +95,7 @@ export class AuthService {
 
       // Log registration
       await this.logUserAction(user.id, 'register', { email: data.email }, client);
+      securityLogger.registration(user.id, data.email);
 
       await client.query('COMMIT');
 
@@ -129,15 +132,35 @@ export class AuthService {
   }
 
   async login(email: string, password: string, rememberMe = false): Promise<{ user: User; tokens: AuthTokens }> {
+    // Check if account is locked due to too many failed attempts
+    try {
+      const lockoutStatus = await accountLockoutService.isLocked(email);
+      if (lockoutStatus.isLocked) {
+        const remainingTime = accountLockoutService.formatLockoutTime(lockoutStatus.remainingSeconds);
+        securityLogger.loginFailure(email, 'Account locked', undefined, undefined);
+        throw new AppError(429, `Account is temporarily locked due to too many failed login attempts. Please try again in ${remainingTime}.`);
+      }
+    } catch (error) {
+      // If lockout check fails (e.g., Redis unavailable), proceed with login
+      // This is a fail-open approach to prevent lockouts during Redis outages
+      if (!(error instanceof AppError)) {
+        logger.warn('Lockout check failed, proceeding with login:', error);
+      } else {
+        throw error;
+      }
+    }
+
     // Find user
     const [user] = await query<User & { passwordHash: string | null }>(
-      `SELECT id, email, password_hash AS "passwordHash", role, is_active AS "isActive", 
+      `SELECT id, email, password_hash AS "passwordHash", role, is_active AS "isActive",
               email_verified AS "emailVerified", created_at AS "createdAt", updated_at AS "updatedAt"
        FROM users WHERE email = $1`,
       [email]
     );
 
     if (!user) {
+      // Record failed attempt for non-existent email (brute force protection)
+      await this.handleFailedLogin(email);
       // In development, provide helpful error messages
       // In production, use generic message to prevent account enumeration
       const isDevelopment = process.env.NODE_ENV !== 'production';
@@ -149,6 +172,7 @@ export class AuthService {
 
     // Check if user is active
     if (!user.isActive) {
+      securityLogger.loginFailure(email, 'Account disabled', undefined, undefined);
       throw new AppError(403, 'Account is disabled. Please contact support.');
     }
 
@@ -163,11 +187,19 @@ export class AuthService {
     // Verify password
     const isValidPassword = await bcrypt.compare(password, user.passwordHash);
     if (!isValidPassword) {
+      await this.handleFailedLogin(email);
       const isDevelopment = process.env.NODE_ENV !== 'production';
       const errorMessage = isDevelopment
         ? 'Incorrect password. Please try again or use "Forgot Password" to reset.'
         : 'Invalid email or password';
       throw new AppError(401, errorMessage);
+    }
+
+    // Reset failed attempts on successful login
+    try {
+      await accountLockoutService.resetAttempts(email);
+    } catch (error) {
+      logger.warn('Failed to reset lockout attempts:', error);
     }
 
     // Check if email should have elevated role and update if necessary
@@ -231,14 +263,33 @@ export class AuthService {
 
     // Log login
     await this.logUserAction(updatedUser.id, 'login', { email });
+    securityLogger.loginSuccess(updatedUser.id, email);
 
     // Auto-enroll in loyalty program (ensure enrollment on every login)
     await loyaltyService.ensureUserLoyaltyEnrollment(updatedUser.id);
 
     // Get complete user profile including avatar
     const userProfile = await this.getUserProfile(updatedUser.id);
-    
+
     return { user: userProfile, tokens };
+  }
+
+  /**
+   * Handle failed login attempt - record attempt and check for lockout
+   */
+  private async handleFailedLogin(email: string): Promise<void> {
+    try {
+      const lockoutStatus = await accountLockoutService.recordFailedAttempt(email);
+      securityLogger.loginFailure(email, 'Invalid credentials');
+
+      if (lockoutStatus.isLocked) {
+        securityLogger.accountLocked(email, `${lockoutStatus.failedAttempts} failed attempts`);
+        securityLogger.bruteForceAttempt(email, lockoutStatus.failedAttempts);
+      }
+    } catch (error) {
+      // Don't fail login due to lockout service errors
+      logger.warn('Failed to record failed login attempt:', error);
+    }
   }
 
   async refreshToken(refreshToken: string): Promise<AuthTokens> {
@@ -291,6 +342,7 @@ export class AuthService {
 
     // Log logout
     await this.logUserAction(userId, 'logout');
+    securityLogger.logout(userId);
   }
 
   async resetPasswordRequest(email: string): Promise<void> {

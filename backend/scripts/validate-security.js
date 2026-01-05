@@ -84,10 +84,9 @@ function validateSecurityMiddleware() {
       { pattern: /rateLimit\(/g, name: 'Rate limiting configuration' },
       { pattern: /sanitizeValue/g, name: 'Input sanitization' },
       { pattern: /suspicious.*patterns/i, name: 'Security monitoring patterns' },
-      { pattern: /hsts.*maxAge/g, name: 'HSTS configuration' },
       { pattern: /contentSecurityPolicy/g, name: 'CSP configuration' }
     ];
-    
+
     securityPatterns.forEach(({ pattern, name }) => {
       if (pattern.test(securityContent)) {
         log('info', `${name} implemented`);
@@ -95,6 +94,13 @@ function validateSecurityMiddleware() {
         log('warn', `${name} may be missing`);
       }
     });
+
+    // HSTS check - multi-line safe: check for hsts object with maxAge property
+    if (securityContent.includes('hsts:') && securityContent.includes('maxAge:')) {
+      log('info', 'HSTS configuration implemented');
+    } else {
+      log('warn', 'HSTS configuration may be missing');
+    }
   }
 }
 
@@ -117,10 +123,9 @@ function validateEnvironmentConfig() {
     const securityChecks = [
       { pattern: /JWT_SECRET.*min\(32/g, name: 'JWT secret minimum length validation' },
       { pattern: /performSecurityChecks/g, name: 'Security checks function' },
-      { pattern: /defaultSecrets/g, name: 'Default secret detection' },
-      { pattern: /production.*64/g, name: 'Production security requirements' }
+      { pattern: /defaultSecrets/g, name: 'Default secret detection' }
     ];
-    
+
     securityChecks.forEach(({ pattern, name }) => {
       if (pattern.test(envContent)) {
         log('info', `${name} implemented`);
@@ -128,6 +133,13 @@ function validateEnvironmentConfig() {
         log('warn', `${name} may be missing`);
       }
     });
+
+    // Production security requirements check - multi-line safe: check for production env and 64-char requirement
+    if (envContent.includes("NODE_ENV === 'production'") && envContent.includes('.length < 64')) {
+      log('info', 'Production security requirements implemented');
+    } else {
+      log('warn', 'Production security requirements may be missing');
+    }
   }
 }
 
@@ -249,10 +261,9 @@ function validateMainApplication() {
     const middlewareUsage = [
       { pattern: /app\.use.*securityMonitoring/g, name: 'Security monitoring middleware' },
       { pattern: /app\.use.*inputSanitization/g, name: 'Input sanitization middleware' },
-      { pattern: /createRateLimiter/g, name: 'Rate limiting middleware' },
-      { pattern: /isProduction.*productionSecurity/g, name: 'Production security middleware' }
+      { pattern: /createRateLimiter/g, name: 'Rate limiting middleware' }
     ];
-    
+
     middlewareUsage.forEach(({ pattern, name }) => {
       if (pattern.test(indexContent)) {
         log('info', `${name} applied`);
@@ -260,6 +271,90 @@ function validateMainApplication() {
         log('warn', `${name} may not be applied`);
       }
     });
+
+    // Production security check - multi-line safe: check for isProduction() and productionSecurity usage
+    if (indexContent.includes('isProduction()') && indexContent.includes('productionSecurity')) {
+      log('info', 'Production security middleware applied');
+    } else {
+      log('warn', 'Production security middleware may not be applied');
+    }
+  }
+}
+
+function validateEnhancedSecurityServices() {
+  console.log('\n🔍 Validating Enhanced Security Services...\n');
+
+  // Check for AccountLockoutService
+  const lockoutPath = path.join(__dirname, '../src/services/accountLockoutService.ts');
+  const lockoutContent = validateFile(lockoutPath, 'AccountLockoutService file');
+
+  if (lockoutContent) {
+    const lockoutFeatures = [
+      { check: 'recordFailedAttempt', name: 'Failed attempt tracking' },
+      { check: 'isLocked', name: 'Account lock check' },
+      { check: 'resetAttempts', name: 'Attempt reset function' }
+    ];
+
+    lockoutFeatures.forEach(({ check, name }) => {
+      if (lockoutContent.includes(check)) {
+        log('info', `AccountLockoutService: ${name} implemented`);
+      } else {
+        log('warn', `AccountLockoutService: ${name} may be missing`);
+      }
+    });
+  } else {
+    log('warn', 'AccountLockoutService not found (recommended for brute force protection)');
+  }
+
+  // Check for SecurityLogger
+  const loggerPath = path.join(__dirname, '../src/utils/securityLogger.ts');
+  const loggerContent = validateFile(loggerPath, 'SecurityLogger file');
+
+  if (loggerContent) {
+    const loggerFeatures = [
+      { check: 'logAuthEvent', name: 'Auth event logging' },
+      { check: 'logSecurityIncident', name: 'Security incident logging' }
+    ];
+
+    loggerFeatures.forEach(({ check, name }) => {
+      if (loggerContent.includes(check)) {
+        log('info', `SecurityLogger: ${name} implemented`);
+      } else {
+        log('warn', `SecurityLogger: ${name} may be missing`);
+      }
+    });
+  } else {
+    log('warn', 'SecurityLogger not found (recommended for security event tracking)');
+  }
+
+  // Check for integration in authService
+  const authServicePath = path.join(__dirname, '../src/services/authService.ts');
+  const authContent = validateFile(authServicePath, 'AuthService file');
+
+  if (authContent) {
+    if (authContent.includes('accountLockoutService') || authContent.includes('AccountLockoutService')) {
+      log('info', 'Account lockout integrated with authentication');
+    } else {
+      log('warn', 'Account lockout may not be integrated with authentication');
+    }
+
+    if (authContent.includes('securityLogger') || authContent.includes('SecurityLogger')) {
+      log('info', 'Security logging integrated with authentication');
+    } else {
+      log('warn', 'Authentication events may not be logged');
+    }
+  }
+
+  // Check for SecurityLogger middleware integration
+  const securityMwPath = path.join(__dirname, '../src/middleware/security.ts');
+  const securityMwContent = fs.existsSync(securityMwPath) ? fs.readFileSync(securityMwPath, 'utf8') : null;
+
+  if (securityMwContent) {
+    if (securityMwContent.includes('securityLogger') || securityMwContent.includes('SecurityLogger')) {
+      log('info', 'Security logging integrated with security middleware');
+    } else {
+      log('warn', 'Security event logging middleware not found');
+    }
   }
 }
 
@@ -304,10 +399,11 @@ console.log('🔒 Phase 3 Security Implementation Validation');
 console.log('='.repeat(50));
 
 validateSecurityMiddleware();
-validateEnvironmentConfig(); 
+validateEnvironmentConfig();
 validateESLintSecurity();
 validatePackageScripts();
 validateMainApplication();
+validateEnhancedSecurityServices();
 
 const exitCode = generateReport();
 process.exit(exitCode);

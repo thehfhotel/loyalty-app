@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import { Request, Response, NextFunction } from 'express';
 import { securityConfig, isProduction } from '../config/environment';
 import { logger } from '../utils/logger';
+import { securityLogger } from '../utils/securityLogger';
 
 // Rate limiting configuration
 export const createRateLimiter = () => {
@@ -31,6 +32,8 @@ export const createRateLimiter = () => {
         userAgent: req.get('User-Agent'),
         path: req.path,
       });
+      // Log to security audit trail
+      securityLogger.rateLimitExceeded(req.ip ?? 'unknown', req.path);
       res.status(429).json({
         error: 'Too many requests',
         message: 'Too many requests from this IP, please try again later.',
@@ -439,8 +442,14 @@ export const securityMonitoring = (req: Request, _res: Response, next: NextFunct
       body: req.body,
       headers: req.headers,
     });
+    // Log to security audit trail
+    securityLogger.suspiciousRequest(
+      `Suspicious pattern in ${req.method} ${req.path}`,
+      req.ip,
+      userAgent
+    );
   }
-  
+
   next();
 };
 

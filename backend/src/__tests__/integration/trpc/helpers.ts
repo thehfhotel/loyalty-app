@@ -63,6 +63,7 @@ export const createAuthenticatedCaller = <T>(
   router: { createCaller: (ctx: Context) => T },
   role: 'customer' | 'admin' | 'superAdmin' = 'customer'
 ): T => {
+  // eslint-disable-next-line security/detect-object-injection -- Safe: role is TypeScript union type constrained to known keys
   return createCallerWithUser(router, mockUsers[role]);
 };
 
