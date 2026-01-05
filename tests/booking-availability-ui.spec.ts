@@ -300,6 +300,299 @@ test.describe('Room Availability Calendar UI', () => {
     });
   });
 
+  test.describe('Block/Unblock Persistence', () => {
+    // These tests verify the critical bug fix: blocked dates must persist after save
+    // Previously, toast showed success but dates remained green (available)
+
+    test('blocking a date should persist after page refresh', async ({ page }) => {
+      const adminUser = getAdminUser();
+      await loginViaUI(page, adminUser.email, adminUser.password);
+
+      await page.goto('/admin/room-availability');
+      await page.waitForLoadState('networkidle');
+
+      const roomTypeSelect = page.locator('select').first();
+      const options = await roomTypeSelect.locator('option').all();
+
+      // Skip if no room types available
+      if (options.length <= 1) {
+        test.skip();
+        return;
+      }
+
+      // Select a specific room type (not "all") to work with individual rooms
+      await roomTypeSelect.selectOption({ index: 1 });
+      await page.waitForLoadState('networkidle');
+
+      // Find an available date cell (green background)
+      const availableCells = page.locator('.bg-green-100');
+      const cellCount = await availableCells.count();
+
+      if (cellCount === 0) {
+        test.skip();
+        return;
+      }
+
+      // Get the first available cell's room-date identifier
+      // We'll use a date in the future to avoid conflicts with existing data
+      const today = new Date();
+      const futureDate = new Date(today.getFullYear(), today.getMonth() + 1, 15);
+      const futureDateStr = futureDate.toISOString().split('T')[0];
+
+      // Navigate to the month containing our target date
+      const nextMonthButton = page.getByRole('button', { name: /next/i });
+      await nextMonthButton.click();
+      await page.waitForLoadState('networkidle');
+
+      // Find available cell for day 15
+      const targetCell = page.locator('.bg-green-100').first();
+
+      if (!(await targetCell.isVisible({ timeout: 3000 }).catch(() => false))) {
+        test.skip();
+        return;
+      }
+
+      // Click to select the cell
+      await targetCell.click();
+      await page.waitForTimeout(100);
+
+      // Verify cell is selected
+      await expect(targetCell).toHaveClass(/ring-2/);
+
+      // Click "Block Selected" button
+      const blockButton = page.getByRole('button', { name: /block selected/i });
+      await expect(blockButton).toBeVisible();
+      await blockButton.click();
+
+      // Wait for modal to appear
+      await page.waitForTimeout(200);
+
+      // Fill in block reason
+      const reasonInput = page.locator('input[type="text"], textarea').first();
+      if (await reasonInput.isVisible()) {
+        await reasonInput.fill('E2E Test Block');
+      }
+
+      // Confirm block
+      const confirmButton = page.getByRole('button', { name: /confirm/i });
+      if (await confirmButton.isVisible()) {
+        await confirmButton.click();
+      } else {
+        // Try alternative button names
+        const blockConfirm = page.getByRole('button', { name: /block$/i });
+        if (await blockConfirm.isVisible()) {
+          await blockConfirm.click();
+        }
+      }
+
+      // Wait for success toast
+      await expect(page.getByText(/success|สำเร็จ/i)).toBeVisible({ timeout: 5000 });
+
+      // Wait for UI to update
+      await page.waitForLoadState('networkidle');
+
+      // After blocking, the cell should be red (blocked)
+      const blockedCells = page.locator('.bg-red-500');
+      const blockedCount = await blockedCells.count();
+      expect(blockedCount).toBeGreaterThan(0);
+
+      // Refresh the page
+      await page.reload();
+      await page.waitForLoadState('networkidle');
+
+      // Re-select the same room type
+      const roomTypeSelect2 = page.locator('select').first();
+      await roomTypeSelect2.selectOption({ index: 1 });
+      await page.waitForLoadState('networkidle');
+
+      // Navigate to the same month
+      const nextMonthButton2 = page.getByRole('button', { name: /next/i });
+      await nextMonthButton2.click();
+      await page.waitForLoadState('networkidle');
+
+      // Verify blocked cell is still red (persisted)
+      const blockedCellsAfterRefresh = page.locator('.bg-red-500');
+      const blockedCountAfterRefresh = await blockedCellsAfterRefresh.count();
+      expect(blockedCountAfterRefresh).toBeGreaterThan(0);
+    });
+
+    test('unblocking a date should persist after page refresh', async ({ page }) => {
+      const adminUser = getAdminUser();
+      await loginViaUI(page, adminUser.email, adminUser.password);
+
+      await page.goto('/admin/room-availability');
+      await page.waitForLoadState('networkidle');
+
+      const roomTypeSelect = page.locator('select').first();
+      const options = await roomTypeSelect.locator('option').all();
+
+      if (options.length <= 1) {
+        test.skip();
+        return;
+      }
+
+      await roomTypeSelect.selectOption({ index: 1 });
+      await page.waitForLoadState('networkidle');
+
+      // Navigate to next month (where we blocked in previous test)
+      const nextMonthButton = page.getByRole('button', { name: /next/i });
+      await nextMonthButton.click();
+      await page.waitForLoadState('networkidle');
+
+      // Find a blocked date cell (red background)
+      const blockedCells = page.locator('.bg-red-500');
+
+      if (!(await blockedCells.first().isVisible({ timeout: 3000 }).catch(() => false))) {
+        // No blocked cells - skip test
+        test.skip();
+        return;
+      }
+
+      // Click on blocked cell to open unblock modal
+      await blockedCells.first().click();
+      await page.waitForTimeout(200);
+
+      // Click unblock button
+      const unblockButton = page.getByRole('button', { name: /unblock/i });
+
+      if (await unblockButton.isVisible()) {
+        await unblockButton.click();
+
+        // Wait for success toast
+        await expect(page.getByText(/success|สำเร็จ/i)).toBeVisible({ timeout: 5000 });
+
+        // Wait for UI to update
+        await page.waitForLoadState('networkidle');
+
+        // Verify the cell is now green (available)
+        const availableCells = page.locator('.bg-green-100');
+        const availableCount = await availableCells.count();
+        expect(availableCount).toBeGreaterThan(0);
+
+        // Refresh the page
+        await page.reload();
+        await page.waitForLoadState('networkidle');
+
+        // Re-select the same room type
+        const roomTypeSelect2 = page.locator('select').first();
+        await roomTypeSelect2.selectOption({ index: 1 });
+        await page.waitForLoadState('networkidle');
+
+        // Navigate to the same month
+        const nextMonthButton2 = page.getByRole('button', { name: /next/i });
+        await nextMonthButton2.click();
+        await page.waitForLoadState('networkidle');
+
+        // Verify the cell is still green after refresh (unblock persisted)
+        const availableCellsAfterRefresh = page.locator('.bg-green-100');
+        const availableCountAfterRefresh = await availableCellsAfterRefresh.count();
+        expect(availableCountAfterRefresh).toBeGreaterThan(0);
+      } else {
+        test.skip();
+      }
+    });
+
+    test('blocking multiple dates should all persist', async ({ page }) => {
+      const adminUser = getAdminUser();
+      await loginViaUI(page, adminUser.email, adminUser.password);
+
+      await page.goto('/admin/room-availability');
+      await page.waitForLoadState('networkidle');
+
+      const roomTypeSelect = page.locator('select').first();
+      const options = await roomTypeSelect.locator('option').all();
+
+      if (options.length <= 1) {
+        test.skip();
+        return;
+      }
+
+      await roomTypeSelect.selectOption({ index: 1 });
+      await page.waitForLoadState('networkidle');
+
+      // Find available date cells
+      const availableCells = page.locator('.bg-green-100');
+      const cellCount = await availableCells.count();
+
+      if (cellCount < 3) {
+        test.skip();
+        return;
+      }
+
+      // Drag to select multiple cells
+      const firstCell = availableCells.nth(0);
+      const thirdCell = availableCells.nth(2);
+
+      const firstBox = await firstCell.boundingBox();
+      const thirdBox = await thirdCell.boundingBox();
+
+      if (!firstBox || !thirdBox) {
+        test.skip();
+        return;
+      }
+
+      // Perform drag selection
+      await page.mouse.move(firstBox.x + firstBox.width / 2, firstBox.y + firstBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(thirdBox.x + thirdBox.width / 2, thirdBox.y + thirdBox.height / 2);
+      await page.mouse.up();
+
+      await page.waitForTimeout(100);
+
+      // Count selected cells
+      const selectedCells = page.locator('.ring-2');
+      const selectedCount = await selectedCells.count();
+
+      if (selectedCount === 0) {
+        test.skip();
+        return;
+      }
+
+      // Click "Block Selected" button
+      const blockButton = page.getByRole('button', { name: /block selected/i });
+      if (!(await blockButton.isVisible())) {
+        test.skip();
+        return;
+      }
+
+      await blockButton.click();
+      await page.waitForTimeout(200);
+
+      // Fill in block reason
+      const reasonInput = page.locator('input[type="text"], textarea').first();
+      if (await reasonInput.isVisible()) {
+        await reasonInput.fill('E2E Multi-Block Test');
+      }
+
+      // Confirm block
+      const confirmButton = page.getByRole('button', { name: /confirm|block$/i }).first();
+      if (await confirmButton.isVisible()) {
+        await confirmButton.click();
+      }
+
+      // Wait for success toast
+      await expect(page.getByText(/success|สำเร็จ/i)).toBeVisible({ timeout: 5000 });
+      await page.waitForLoadState('networkidle');
+
+      // Count blocked cells after operation
+      const blockedAfterBlock = await page.locator('.bg-red-500').count();
+
+      // Refresh and verify persistence
+      await page.reload();
+      await page.waitForLoadState('networkidle');
+
+      const roomTypeSelect2 = page.locator('select').first();
+      await roomTypeSelect2.selectOption({ index: 1 });
+      await page.waitForLoadState('networkidle');
+
+      // Count blocked cells after refresh
+      const blockedAfterRefresh = await page.locator('.bg-red-500').count();
+
+      // The number of blocked cells should be maintained after refresh
+      expect(blockedAfterRefresh).toBeGreaterThanOrEqual(blockedAfterBlock);
+    });
+  });
+
   test.describe('Accessibility', () => {
     test('calendar should have proper legend', async ({ page }) => {
       const adminUser = getAdminUser();

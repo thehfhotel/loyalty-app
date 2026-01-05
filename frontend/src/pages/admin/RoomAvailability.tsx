@@ -139,7 +139,9 @@ const RoomAvailability: React.FC = () => {
     if (blockedDates) {
       blockedDates.forEach((roomData: RoomBlockedDates) => {
         roomData.dates.forEach((bd: BlockedDateItem) => {
-          const key = `${bd.roomId}-${bd.blockedDate}`;
+          // Normalize date format - strip time portion if present (e.g., "2025-01-15T00:00:00.000Z" -> "2025-01-15")
+          const normalizedDate = bd.blockedDate.split('T')[0];
+          const key = `${bd.roomId}-${normalizedDate}`;
           map.set(key, { status: 'blocked', reason: bd.reason ?? '' });
         });
       });
@@ -264,7 +266,8 @@ const RoomAvailability: React.FC = () => {
 
     const dates = Array.from(selectedCells).map(key => {
       const dateStr = key.split('-').slice(1).join('-');
-      return new Date(dateStr);
+      // Use noon UTC to avoid timezone date shift
+      return new Date(dateStr + 'T12:00:00Z');
     });
 
     blockMutation.mutate({
@@ -279,7 +282,8 @@ const RoomAvailability: React.FC = () => {
 
     const dates = Array.from(selectedCells).map(key => {
       const dateStr = key.split('-').slice(1).join('-');
-      return new Date(dateStr);
+      // Use noon UTC to avoid timezone date shift
+      return new Date(dateStr + 'T12:00:00Z');
     });
 
     unblockMutation.mutate({
