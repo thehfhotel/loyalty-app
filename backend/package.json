@@ -83,7 +83,7 @@
   "devDependencies": {
     "@babel/core": "^7.28.5",
     "@babel/preset-env": "^7.28.5",
-    "@faker-js/faker": "^10.1.0",
+    "@faker-js/faker": "^10.2.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.5",
@@ -97,8 +97,8 @@
     "@types/passport-google-oauth20": "^2.0.17",
     "@types/pg": "^8.16.0",
     "@types/supertest": "^6.0.3",
-    "@typescript-eslint/eslint-plugin": "^8.50.0",
-    "@typescript-eslint/parser": "^8.50.0",
+    "@typescript-eslint/eslint-plugin": "^8.51.0",
+    "@typescript-eslint/parser": "^8.51.0",
     "allure-commandline": "^2.36.0",
     "allure-jest": "^3.4.2",
     "eslint": "^9.39.2",
@@ -110,7 +110,7 @@
     "ts-jest": "^29.1.1",
     "tsx": "^4.6.2",
     "typescript": "^5.3.2",
-    "typescript-eslint": "^8.50.0"
+    "typescript-eslint": "^8.51.0"
   },
   "overrides": {
     "glob": "^11.0.3",
