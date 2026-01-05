@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { FiCalendar, FiMapPin, FiUsers, FiStar, FiAlertCircle, FiPlus } from 'react-icons/fi';
+import { FiCalendar, FiUsers, FiStar, FiAlertCircle, FiPlus } from 'react-icons/fi';
 import MainLayout from '../components/layout/MainLayout';
 import { trpc } from '../hooks/useTRPC';
 import toast from 'react-hot-toast';
@@ -135,13 +135,6 @@ export default function MyBookingsPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center">
-                        <FiMapPin className="mr-2 text-gray-400" />
-                        <div>
-                          <div className="font-medium">{t('booking.room')}</div>
-                          <div>{booking.roomNumber}</div>
-                        </div>
-                      </div>
                     </div>
 
                     <div className="flex items-center gap-6 mt-4 text-sm">

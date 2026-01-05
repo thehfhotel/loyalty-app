@@ -766,7 +766,7 @@ export class BookingService {
       logger.info(`Booking created: ${sanitizeLogValue(booking.id)} by user ${sanitizeUserId(userId)}`);
       return {
         ...booking,
-        roomNumber: room.roomNumber,
+        // Note: roomNumber intentionally not included - internal hotel data
         roomTypeName: roomType.name
       };
     } catch (error) {
@@ -780,6 +780,7 @@ export class BookingService {
 
   async getUserBookings(userId: string): Promise<Booking[]> {
     try {
+      // Note: roomNumber intentionally not included - internal hotel data
       const result = await query<Booking>(
         `SELECT
           b.id, b.user_id as "userId", b.room_id as "roomId", b.room_type_id as "roomTypeId",
@@ -788,7 +789,6 @@ export class BookingService {
           b.points_earned as "pointsEarned", b.status,
           b.cancelled_at as "cancelledAt", b.cancellation_reason as "cancellationReason",
           b.notes, b.created_at as "createdAt", b.updated_at as "updatedAt",
-          r.room_number as "roomNumber",
           rt.name as "roomTypeName"
         FROM bookings b
         JOIN rooms r ON b.room_id = r.id
@@ -806,6 +806,7 @@ export class BookingService {
 
   async getBooking(id: string): Promise<Booking | null> {
     try {
+      // Note: roomNumber intentionally not included - internal hotel data
       const [booking] = await query<Booking>(
         `SELECT
           b.id, b.user_id as "userId", b.room_id as "roomId", b.room_type_id as "roomTypeId",
@@ -814,7 +815,6 @@ export class BookingService {
           b.points_earned as "pointsEarned", b.status,
           b.cancelled_at as "cancelledAt", b.cancellation_reason as "cancellationReason",
           b.notes, b.created_at as "createdAt", b.updated_at as "updatedAt",
-          r.room_number as "roomNumber",
           rt.name as "roomTypeName"
         FROM bookings b
         JOIN rooms r ON b.room_id = r.id
@@ -896,7 +896,7 @@ export class BookingService {
       logger.info(`Booking cancelled: ${sanitizeLogValue(bookingId)} by user ${sanitizeUserId(userId)}`);
       return {
         ...updated,
-        roomNumber: booking.roomNumber,
+        // Note: roomNumber intentionally not included - internal hotel data
         roomTypeName: booking.roomTypeName
       };
     } catch (error) {

@@ -989,12 +989,15 @@ describe('BookingService', () => {
         );
       });
 
-      it('should include room and room type names', async () => {
-        mockQuery.mockResolvedValueOnce([mockBooking] as never);
+      it('should include room type name but not room number (internal data)', async () => {
+        // Note: roomNumber is intentionally NOT returned to users
+        const bookingWithoutRoomNumber = { ...mockBooking };
+        delete (bookingWithoutRoomNumber as Record<string, unknown>).roomNumber;
+        mockQuery.mockResolvedValueOnce([bookingWithoutRoomNumber] as never);
 
         const result = await bookingService.getUserBookings('user-1');
 
-        expect(result[0]?.roomNumber).toBe('101');
+        expect(result[0]?.roomNumber).toBeUndefined();
         expect(result[0]?.roomTypeName).toBe('Deluxe Room');
       });
     });
@@ -1304,9 +1307,10 @@ describe('BookingService', () => {
         );
 
         expect(result).toHaveLength(1);
+        // Query uses: $1=status, $2=startDate, $3=endDate, $4=roomTypeId (optional)
         expect(mockQuery).toHaveBeenCalledWith(
-          expect.stringContaining('b.room_type_id = $1'),
-          ['room-type-1', expect.any(Date), expect.any(Date)],
+          expect.stringContaining('b.room_type_id = $4'),
+          ['confirmed', expect.any(Date), expect.any(Date), 'room-type-1'],
         );
       });
 
@@ -1319,9 +1323,10 @@ describe('BookingService', () => {
           new Date('2025-02-28'),
         );
 
+        // Uses parameterized query with 'confirmed' as first parameter
         expect(mockQuery).toHaveBeenCalledWith(
-          expect.stringContaining("b.status = 'confirmed'"),
-          expect.anything(),
+          expect.stringContaining('b.status = $1'),
+          expect.arrayContaining(['confirmed']),
         );
       });
 
