@@ -724,7 +724,8 @@
         "noRoomsDescription": "ไม่พบห้องสำหรับประเภทนี้",
         "room": "ห้อง",
         "selectRoomTypeFirst": "กรุณาเลือกประเภทห้องก่อน",
-        "unblock": "เปิดให้บริการ"
+        "unblock": "เปิดให้บริการ",
+        "allRoomTypes": "ห้องทุกประเภท"
       }
     }
   },

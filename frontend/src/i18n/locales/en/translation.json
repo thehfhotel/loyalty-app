@@ -734,7 +734,8 @@
         "noRoomsDescription": "No rooms found for this room type",
         "room": "Room",
         "selectRoomTypeFirst": "Select a room type first",
-        "unblock": "Unblock"
+        "unblock": "Unblock",
+        "allRoomTypes": "All Room Types"
       }
     }
   },

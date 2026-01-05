@@ -24,6 +24,19 @@ export function getTestUserForWorker(workerIndex: number) {
   return TEST_USERS[workerIndex % TEST_USERS.length];
 }
 
+// Admin user for testing admin pages (configured in admins.e2e.json mounted in CI)
+export const ADMIN_USER = {
+  email: process.env.E2E_ADMIN_EMAIL || 'e2e-admin@test.local',
+  password: process.env.E2E_ADMIN_PASSWORD || 'AdminPassword123!',
+  firstName: 'E2E',
+  lastName: 'Admin',
+};
+
+// Get admin user
+export function getAdminUser() {
+  return ADMIN_USER;
+}
+
 const AUTH_STORAGE_KEY = 'auth-storage';
 
 export async function loginViaUI(page: Page, email: string, password: string): Promise<void> {

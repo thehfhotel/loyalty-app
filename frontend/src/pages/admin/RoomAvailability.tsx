@@ -46,7 +46,8 @@ type CellStatus = 'available' | 'blocked' | 'booked';
 
 const RoomAvailability: React.FC = () => {
   const { t } = useTranslation();
-  const [selectedRoomTypeId, setSelectedRoomTypeId] = useState<string>('');
+  // 'all' means show all room types, otherwise show specific room type
+  const [selectedRoomTypeId, setSelectedRoomTypeId] = useState<string>('all');
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
@@ -66,9 +67,12 @@ const RoomAvailability: React.FC = () => {
     { refetchOnWindowFocus: false }
   );
 
+  // When 'all' is selected, don't filter by room type (pass undefined)
+  const roomTypeFilter = selectedRoomTypeId === 'all' ? undefined : selectedRoomTypeId;
+
   const { data: rooms } = trpc.booking.admin.getRooms.useQuery(
-    { roomTypeId: selectedRoomTypeId || undefined, includeInactive: false },
-    { enabled: !!selectedRoomTypeId, refetchOnWindowFocus: false }
+    { roomTypeId: roomTypeFilter, includeInactive: false },
+    { refetchOnWindowFocus: false }
   );
 
   // Calculate date range for current month view
@@ -86,20 +90,20 @@ const RoomAvailability: React.FC = () => {
 
   const { data: blockedDates, isLoading: blockedLoading } = trpc.booking.admin.getAllBlockedDates.useQuery(
     {
-      roomTypeId: selectedRoomTypeId,
+      roomTypeId: roomTypeFilter,
       startDate: startDate,
       endDate: endDate,
     },
-    { enabled: !!selectedRoomTypeId, refetchOnWindowFocus: false }
+    { refetchOnWindowFocus: false }
   );
 
   const { data: bookings, isLoading: bookingsLoading } = trpc.booking.admin.getRoomBookings.useQuery(
     {
-      roomTypeId: selectedRoomTypeId,
+      roomTypeId: roomTypeFilter,
       startDate: startDate,
       endDate: endDate,
     },
-    { enabled: !!selectedRoomTypeId, refetchOnWindowFocus: false }
+    { refetchOnWindowFocus: false }
   );
 
   const blockMutation = trpc.booking.admin.blockDates.useMutation({
@@ -372,7 +376,7 @@ const RoomAvailability: React.FC = () => {
                 }}
                 className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">{t('admin.booking.availability.chooseRoomType')}</option>
+                <option value="all">{t('admin.booking.availability.allRoomTypes')}</option>
                 {roomTypes?.map((rt: RoomType) => (
                   <option key={rt.id} value={rt.id}>
                     {rt.name}
@@ -448,15 +452,8 @@ const RoomAvailability: React.FC = () => {
           </div>
         )}
 
-        {/* No Room Type Selected */}
-        {!selectedRoomTypeId && (
-          <div className="bg-white rounded-lg shadow p-12 text-center">
-            <p className="text-gray-500 text-lg">{t('admin.booking.availability.selectRoomTypeFirst')}</p>
-          </div>
-        )}
-
         {/* Loading */}
-        {selectedRoomTypeId && isLoading && (
+        {isLoading && (
           <div className="bg-white rounded-lg shadow p-6">
             <div className="animate-pulse space-y-4">
               <div className="h-6 bg-gray-200 rounded w-1/4" />
@@ -470,7 +467,7 @@ const RoomAvailability: React.FC = () => {
         )}
 
         {/* Calendar Grid */}
-        {selectedRoomTypeId && !isLoading && rooms && (
+        {!isLoading && rooms && (
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full">
