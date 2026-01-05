@@ -3,7 +3,7 @@
  * Tests the Loyalty router with actual service integration
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- Mock objects in tests */
+ 
 
 import { TRPCError } from '@trpc/server';
 
