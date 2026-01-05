@@ -50,7 +50,8 @@ const RoomAvailability: React.FC = () => {
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
-  const [, setDragStart] = useState<string | null>(null);
+  const [dragStart, setDragStart] = useState<string | null>(null);
+  const [dragMoved, setDragMoved] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [blockReason, setBlockReason] = useState('');
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
@@ -172,6 +173,11 @@ const RoomAvailability: React.FC = () => {
   }, []);
 
   const handleCellClick = useCallback((roomId: string, date: Date) => {
+    // If we just finished a drag (moved to other cells), don't toggle
+    if (dragMoved) {
+      return;
+    }
+
     const { status, reason } = getCellStatus(roomId, date);
     const key = getCellKey(roomId, date);
 
@@ -190,7 +196,15 @@ const RoomAvailability: React.FC = () => {
       return;
     }
 
-    // Toggle selection for available dates
+    // For single clicks on available dates, toggle selection
+    // But if the cell was just selected by mouseDown (same key as dragStart),
+    // keep it selected instead of toggling it off
+    if (dragStart === key) {
+      // This was a single click - keep the selection from mouseDown
+      return;
+    }
+
+    // Toggle selection for available dates (Ctrl+click or adding to existing selection)
     setSelectedCells(prev => {
       const newSet = new Set(prev);
       if (newSet.has(key)) {
@@ -201,13 +215,14 @@ const RoomAvailability: React.FC = () => {
       return newSet;
     });
     setSelectedRoomId(roomId);
-  }, [getCellStatus, getCellKey, t]);
+  }, [getCellStatus, getCellKey, t, dragMoved, dragStart]);
 
   const handleMouseDown = useCallback((roomId: string, date: Date) => {
     const { status } = getCellStatus(roomId, date);
     if (status !== 'available') return;
 
     setIsDragging(true);
+    setDragMoved(false);
     const key = getCellKey(roomId, date);
     setDragStart(key);
     setSelectedRoomId(roomId);
@@ -221,12 +236,18 @@ const RoomAvailability: React.FC = () => {
     if (status !== 'available') return;
 
     const key = getCellKey(roomId, date);
+    setDragMoved(true); // Mark that we've moved during drag
     setSelectedCells(prev => new Set([...prev, key]));
   }, [isDragging, selectedRoomId, getCellStatus, getCellKey]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
-    setDragStart(null);
+    // Don't clear dragStart here - it's used by onClick to detect single clicks
+    // Clear it after a short delay to allow onClick to check it
+    setTimeout(() => {
+      setDragStart(null);
+      setDragMoved(false);
+    }, 0);
   }, []);
 
   const handleBlockSelected = useCallback(() => {
