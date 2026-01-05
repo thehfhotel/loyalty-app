@@ -22,6 +22,7 @@ interface BookingStep {
 export default function BookingPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const utils = trpc.useUtils();
 
   // Form state
   const [checkIn, setCheckIn] = useState('');
@@ -52,7 +53,9 @@ export default function BookingPage() {
 
   // Mutations
   const createBookingMutation = trpc.booking.createBooking.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Invalidate cache so MyBookingsPage shows fresh data
+      await utils.booking.getMyBookings.invalidate();
       toast.success(t('booking.bookingSuccess'));
       navigate('/my-bookings');
     },
