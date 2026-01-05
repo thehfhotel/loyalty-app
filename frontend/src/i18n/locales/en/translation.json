@@ -1232,7 +1232,9 @@
   "booking": {
     "title": "Book a Room",
     "myBookings": "My Bookings",
+    "viewMyBookings": "View your room reservations",
     "bookRoom": "Book Room",
+    "bookRoomDescription": "Reserve your stay",
     "bookYourFirstRoom": "Book Your First Room",
     "selectDates": "Select Dates",
     "selectRoom": "Select Room",

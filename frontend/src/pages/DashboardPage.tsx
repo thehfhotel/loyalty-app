@@ -1,5 +1,5 @@
 import { useAuthStore } from '../store/authStore';
-import { FiUser, FiAward, FiUsers, FiGift, FiMail } from 'react-icons/fi';
+import { FiUser, FiAward, FiUsers, FiGift, FiMail, FiCalendar } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import MainLayout from '../components/layout/MainLayout';
@@ -223,6 +223,58 @@ export default function DashboardPage() {
                         </dt>
                         <dd className="mt-1 text-sm font-medium text-gray-500">
                           {t('dashboard.takeSurveys')}
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+
+              {/* Book Room Card */}
+              <Link
+                to="/booking"
+                className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                data-testid="nav-booking"
+              >
+                <div className="p-5">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <FiCalendar className="h-6 w-6 text-primary-600" />
+                    </div>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-lg font-semibold text-gray-900 truncate">
+                          {t('booking.bookRoom')}
+                        </dt>
+                        <dd className="mt-1 text-sm font-medium text-gray-500">
+                          {t('booking.bookRoomDescription')}
+                        </dd>
+                      </dl>
+                    </div>
+                  </div>
+                </div>
+              </Link>
+
+              {/* My Bookings Card */}
+              <Link
+                to="/my-bookings"
+                className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                data-testid="nav-my-bookings"
+              >
+                <div className="p-5">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <div className="h-6 w-6 bg-blue-500 rounded flex items-center justify-center">
+                        <span className="text-xs text-white font-bold">🏨</span>
+                      </div>
+                    </div>
+                    <div className="ml-5 w-0 flex-1">
+                      <dl>
+                        <dt className="text-lg font-semibold text-gray-900 truncate">
+                          {t('booking.myBookings')}
+                        </dt>
+                        <dd className="mt-1 text-sm font-medium text-gray-500">
+                          {t('booking.viewMyBookings')}
                         </dd>
                       </dl>
                     </div>

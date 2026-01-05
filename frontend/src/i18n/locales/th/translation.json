@@ -1295,7 +1295,9 @@
   "booking": {
     "title": "จองห้องพัก",
     "myBookings": "การจองของฉัน",
+    "viewMyBookings": "ดูการจองห้องพักของคุณ",
     "bookRoom": "จองห้อง",
+    "bookRoomDescription": "จองที่พักของคุณ",
     "bookYourFirstRoom": "จองห้องพักแรกของคุณ",
     "selectDates": "เลือกวันที่",
     "selectRoom": "เลือกห้อง",
