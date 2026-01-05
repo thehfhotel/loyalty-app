@@ -711,7 +711,20 @@
           "blocked": "ปิดให้บริการ",
           "booked": "จองแล้ว",
           "selected": "เลือกแล้ว"
-        }
+        },
+        "blockReasonPlaceholder": "ระบุเหตุผลในการปิดห้อง",
+        "blockSelected": "ปิดห้องที่เลือก",
+        "blockedDate": "วันที่ปิดให้บริการ",
+        "cannotModifyBooked": "ไม่สามารถแก้ไขวันที่มีการจองแล้ว",
+        "chooseRoomType": "เลือกประเภทห้อง",
+        "confirmBlock": "ยืนยันการปิดห้อง",
+        "dragHint": "คลิกหรือลากเพื่อเลือกวันที่",
+        "floor": "ชั้น",
+        "noRooms": "ไม่มีห้อง",
+        "noRoomsDescription": "ไม่พบห้องสำหรับประเภทนี้",
+        "room": "ห้อง",
+        "selectRoomTypeFirst": "กรุณาเลือกประเภทห้องก่อน",
+        "unblock": "เปิดให้บริการ"
       }
     }
   },
@@ -1487,6 +1500,22 @@
       "guests": "จำนวนผู้เข้าพัก",
       "price": "ราคา",
       "points": "คะแนน"
-    }
+    },
+    "bookingSummary": "สรุปการจอง",
+    "changeDates": "เปลี่ยนวันที่",
+    "changeRoom": "เปลี่ยนห้อง",
+    "confirm": "ยืนยัน",
+    "confirmAndBook": "ยืนยันและจอง",
+    "guestDetails": "รายละเอียดผู้เข้าพัก",
+    "noImage": "ไม่มีรูปภาพ",
+    "numberOfGuests": "จำนวนผู้เข้าพัก",
+    "pointsDescription": "คุณจะได้รับคะแนนสำหรับการจองนี้",
+    "priceDetails": "รายละเอียดราคา",
+    "processing": "กำลังดำเนินการ...",
+    "roomType": "ประเภทห้อง",
+    "soldOut": "เต็ม",
+    "specialRequests": "ความต้องการพิเศษ",
+    "specialRequestsPlaceholder": "ความต้องการพิเศษหรือข้อมูลเพิ่มเติม",
+    "total": "รวม"
   }
 }

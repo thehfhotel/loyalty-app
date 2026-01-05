@@ -721,7 +721,20 @@
           "blocked": "Blocked",
           "booked": "Booked",
           "selected": "Selected"
-        }
+        },
+        "blockReasonPlaceholder": "Enter reason for blocking",
+        "blockSelected": "Block Selected",
+        "blockedDate": "Blocked Date",
+        "cannotModifyBooked": "Cannot modify booked dates",
+        "chooseRoomType": "Choose a room type",
+        "confirmBlock": "Confirm Block",
+        "dragHint": "Click or drag to select dates",
+        "floor": "Floor",
+        "noRooms": "No Rooms",
+        "noRoomsDescription": "No rooms found for this room type",
+        "room": "Room",
+        "selectRoomTypeFirst": "Select a room type first",
+        "unblock": "Unblock"
       }
     }
   },
@@ -1424,6 +1437,22 @@
       "guests": "Guests",
       "price": "Price",
       "points": "Points"
-    }
+    },
+    "bookingSummary": "Booking Summary",
+    "changeDates": "Change Dates",
+    "changeRoom": "Change Room",
+    "confirm": "Confirm",
+    "confirmAndBook": "Confirm & Book",
+    "guestDetails": "Guest Details",
+    "noImage": "No image available",
+    "numberOfGuests": "Number of Guests",
+    "pointsDescription": "You will earn points for this booking",
+    "priceDetails": "Price Details",
+    "processing": "Processing...",
+    "roomType": "Room Type",
+    "soldOut": "Sold Out",
+    "specialRequests": "Special Requests",
+    "specialRequestsPlaceholder": "Any special requests or preferences",
+    "total": "Total"
   }
 }
