@@ -152,7 +152,7 @@ jobs:
       # =========================================================================
       - name: "📥 Checkout trusted base"
         if: steps.validate-author.outputs.trusted == 'true' && steps.check-branch.outputs.exists == 'true'
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
         with:
           ref: main
           fetch-depth: 0
