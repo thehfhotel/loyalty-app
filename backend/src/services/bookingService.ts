@@ -982,7 +982,8 @@ export class BookingService {
   }
 
   // Get all blocked dates for multiple rooms (for calendar view)
-  async getAllBlockedDates(roomTypeId: string, startDate: Date, endDate: Date): Promise<{ roomId: string; roomNumber: string; dates: BlockedDate[] }[]> {
+  // When roomTypeId is undefined, returns blocked dates for all rooms
+  async getAllBlockedDates(roomTypeId: string | undefined, startDate: Date, endDate: Date): Promise<{ roomId: string; roomNumber: string; dates: BlockedDate[] }[]> {
     try {
       const rooms = await this.getRooms(roomTypeId);
       const result = await Promise.all(
@@ -1003,8 +1004,17 @@ export class BookingService {
   }
 
   // Get all bookings for rooms (for calendar view)
-  async getRoomBookings(roomTypeId: string, startDate: Date, endDate: Date): Promise<Booking[]> {
+  // When roomTypeId is undefined, returns bookings for all room types
+  async getRoomBookings(roomTypeId: string | undefined, startDate: Date, endDate: Date): Promise<Booking[]> {
     try {
+      const conditions = ['b.status = $1', 'b.check_in_date < $3', 'b.check_out_date > $2'];
+      const values: unknown[] = ['confirmed', startDate, endDate];
+
+      if (roomTypeId) {
+        conditions.push(`b.room_type_id = $${values.length + 1}`);
+        values.push(roomTypeId);
+      }
+
       const result = await query<Booking>(
         `SELECT
           b.id, b.user_id as "userId", b.room_id as "roomId", b.room_type_id as "roomTypeId",
@@ -1018,12 +1028,9 @@ export class BookingService {
         FROM bookings b
         JOIN rooms r ON b.room_id = r.id
         JOIN room_types rt ON b.room_type_id = rt.id
-        WHERE b.room_type_id = $1
-          AND b.status = 'confirmed'
-          AND b.check_in_date < $3
-          AND b.check_out_date > $2
+        WHERE ${conditions.join(' AND ')}
         ORDER BY b.check_in_date ASC`,
-        [roomTypeId, startDate, endDate]
+        values
       );
       return result;
     } catch (error) {

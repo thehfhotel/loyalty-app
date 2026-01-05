@@ -142,7 +142,7 @@ const adminBookingRouter = router({
 
   getAllBlockedDates: adminProcedure
     .input(z.object({
-      roomTypeId: z.string().uuid(),
+      roomTypeId: z.string().uuid().optional(),
       startDate: z.coerce.date(),
       endDate: z.coerce.date(),
     }))
@@ -195,7 +195,7 @@ const adminBookingRouter = router({
 
   getRoomBookings: adminProcedure
     .input(z.object({
-      roomTypeId: z.string().uuid(),
+      roomTypeId: z.string().uuid().optional(),
       startDate: z.coerce.date(),
       endDate: z.coerce.date(),
     }))
