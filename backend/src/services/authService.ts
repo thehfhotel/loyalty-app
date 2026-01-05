@@ -252,7 +252,7 @@ export class AuthService {
         [refreshToken]
       );
 
-      if (!storedToken || storedToken.userId !== payload.id) {
+      if (storedToken?.userId !== payload.id) {
         throw new AppError(401, 'Invalid refresh token');
       }
 
