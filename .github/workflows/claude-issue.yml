@@ -1,0 +1,369 @@
+name: Claude Issue Assistant
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+# SECURITY: Top-level permissions set to minimal read-only
+# Write permissions granted at job-level (principle of least privilege)
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  claude-issue:
+    name: "Claude Issue Assistant"
+    runs-on: self-hosted
+    permissions:
+      contents: write       # For branch creation and pushing
+      issues: write         # For issue comments and reactions
+      pull-requests: write  # For PR creation
+    # Only run on Issue comments/creation (not PR comments) that mention @claude
+    if: |
+      !github.event.issue.pull_request &&
+      (
+        (github.event_name == 'issues' && contains(github.event.issue.body, '@claude')) ||
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude'))
+      )
+
+    steps:
+      - name: "Check permissions"
+        id: check-permission
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRIGGER_USER: ${{ github.event_name == 'issues' && github.event.issue.user.login || github.event.comment.user.login }}
+        run: |
+          # Get user's permission level
+          PERMISSION=$(gh api "repos/${{ github.repository }}/collaborators/$TRIGGER_USER/permission" --jq '.permission' 2>/dev/null || echo "none")
+
+          echo "User: $TRIGGER_USER"
+          echo "Permission: $PERMISSION"
+
+          if [[ "$PERMISSION" == "admin" || "$PERMISSION" == "write" || "$PERMISSION" == "maintain" ]]; then
+            echo "allowed=true" >> $GITHUB_OUTPUT
+          else
+            echo "allowed=false" >> $GITHUB_OUTPUT
+            echo "User does not have write permission"
+          fi
+
+      - name: "React to trigger"
+        if: steps.check-permission.outputs.allowed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          # Add eyes reaction to show we're processing
+          if [ "$EVENT_NAME" == "issue_comment" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/$COMMENT_ID/reactions" \
+              -f content='eyes' || true
+          else
+            gh api "repos/${{ github.repository }}/issues/$ISSUE_NUMBER/reactions" \
+              -f content='eyes' || true
+          fi
+
+      - name: "Gather issue context"
+        if: steps.check-permission.outputs.allowed == 'true'
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          # Get issue details
+          gh issue view "$ISSUE_NUMBER" --json title,body,labels,comments \
+            --jq '{title: .title, body: .body, labels: [.labels[].name], comments: [.comments[-5:][]?.body]}' \
+            > /tmp/issue-context.json
+
+          # Extract title for outputs
+          ISSUE_TITLE=$(jq -r '.title' /tmp/issue-context.json)
+          echo "issue-title=$ISSUE_TITLE" >> $GITHUB_OUTPUT
+
+          # Create short description for branch name (max 30 chars, kebab-case)
+          SHORT_DESC=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | \
+            sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | \
+            cut -c1-30)
+          echo "short-desc=$SHORT_DESC" >> $GITHUB_OUTPUT
+
+          echo "Issue #$ISSUE_NUMBER: $ISSUE_TITLE"
+
+      - name: "Detect mode and extract instruction"
+        if: steps.check-permission.outputs.allowed == 'true'
+        id: detect-mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          # Extract instruction after @claude
+          if [ "$EVENT_NAME" == "issues" ]; then
+            INSTRUCTION=$(echo "$ISSUE_BODY" | sed 's/.*@claude//' | head -c 2000)
+          else
+            INSTRUCTION=$(echo "$COMMENT_BODY" | sed 's/.*@claude//' | head -c 2000)
+          fi
+
+          echo "$INSTRUCTION" > /tmp/instruction.txt
+
+          # Detect mode based on keywords
+          if echo "$INSTRUCTION" | grep -qiE "review|explain|analyze|describe|what|why|how|check|look|investigate|understand|tell me|show me"; then
+            echo "mode=analysis" >> $GITHUB_OUTPUT
+            echo "Mode: Analysis (read-only)"
+          else
+            echo "mode=action" >> $GITHUB_OUTPUT
+            echo "Mode: Action (will create PR)"
+          fi
+
+      - name: "Checkout main branch"
+        if: steps.check-permission.outputs.allowed == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: main
+          fetch-depth: 50
+
+      - name: "Create working branch"
+        if: steps.check-permission.outputs.allowed == 'true' && steps.detect-mode.outputs.mode == 'action'
+        id: create-branch
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          SHORT_DESC: ${{ steps.context.outputs.short-desc }}
+        run: |
+          BRANCH_NAME="claude/issue-${ISSUE_NUMBER}-${SHORT_DESC}"
+          echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+
+          # Check if branch already exists
+          if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+            echo "branch-exists=true" >> $GITHUB_OUTPUT
+            echo "Branch $BRANCH_NAME already exists - will use existing branch"
+            git fetch origin "$BRANCH_NAME"
+            git checkout -B "$BRANCH_NAME" "origin/$BRANCH_NAME"
+          else
+            echo "branch-exists=false" >> $GITHUB_OUTPUT
+            git checkout -b "$BRANCH_NAME"
+            echo "Created new branch: $BRANCH_NAME"
+          fi
+
+      - name: "Run Claude"
+        if: steps.check-permission.outputs.allowed == 'true'
+        id: claude
+        env:
+          MODE: ${{ steps.detect-mode.outputs.mode }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ steps.context.outputs.issue-title }}
+        run: |
+          INSTRUCTION=$(cat /tmp/instruction.txt)
+          ISSUE_CONTEXT=$(cat /tmp/issue-context.json)
+
+          # Build prompt
+          cat > /tmp/claude-prompt.txt << 'PROMPT_END'
+          You are assisting with a GitHub Issue. A collaborator has asked you to help.
+
+          INSTRUCTION FROM USER:
+          INSTRUCTION_PLACEHOLDER
+
+          ISSUE DETAILS:
+          - Issue Number: #ISSUE_NUMBER_PLACEHOLDER
+          - Title: ISSUE_TITLE_PLACEHOLDER
+
+          IMPORTANT RULES:
+          - Follow the user's instruction precisely
+          - Only modify files relevant to the request
+          - NEVER modify .github/workflows/*.yml files (no permission)
+          - Do not skip tests or add test.skip()
+          - Make minimal, focused changes
+          - If asked to analyze/review, provide constructive feedback
+          - If asked to fix/implement something, make the changes and explain what you did
+
+          ISSUE CONTEXT (title, body, labels, recent comments):
+          PROMPT_END
+
+          # Replace placeholders safely using sed
+          sed -i "s|INSTRUCTION_PLACEHOLDER|$INSTRUCTION|g" /tmp/claude-prompt.txt
+          sed -i "s|ISSUE_NUMBER_PLACEHOLDER|$ISSUE_NUMBER|g" /tmp/claude-prompt.txt
+          sed -i "s|ISSUE_TITLE_PLACEHOLDER|$ISSUE_TITLE|g" /tmp/claude-prompt.txt
+
+          # Append issue context to avoid sed issues with special characters
+          echo "" >> /tmp/claude-prompt.txt
+          echo "$ISSUE_CONTEXT" >> /tmp/claude-prompt.txt
+
+          if [ "$MODE" == "analysis" ]; then
+            # Read-only tools for analysis
+            echo "Running Claude in analysis mode (read-only)"
+            CLAUDE_OUTPUT=$(claude -p "$(cat /tmp/claude-prompt.txt)" \
+              --allowedTools "Read,Glob,Grep" \
+              --output-format text 2>&1) || true
+            echo "changes-made=false" >> $GITHUB_OUTPUT
+          else
+            # Edit tools for action mode
+            echo "Running Claude in action mode (can modify files)"
+            CLAUDE_OUTPUT=$(claude -p "$(cat /tmp/claude-prompt.txt)" \
+              --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm run lint:*),Bash(npm run typecheck:*)" \
+              2>&1) || true
+
+            # Check if files were modified
+            if git diff --quiet && git diff --cached --quiet; then
+              echo "changes-made=false" >> $GITHUB_OUTPUT
+            else
+              echo "changes-made=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+          # Save output for comment (truncate if too long)
+          echo "$CLAUDE_OUTPUT" | tail -200 > /tmp/claude-output.txt
+
+          echo "Claude completed"
+
+      - name: "Commit and push changes"
+        if: |
+          steps.check-permission.outputs.allowed == 'true' &&
+          steps.detect-mode.outputs.mode == 'action' &&
+          steps.claude.outputs.changes-made == 'true'
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          BRANCH_NAME: ${{ steps.create-branch.outputs.branch-name }}
+          TRIGGER_USER: ${{ github.event_name == 'issues' && github.event.issue.user.login || github.event.comment.user.login }}
+        run: |
+          git config user.name "Claude Issue Assistant"
+          git config user.email "claude-issue@github-actions"
+
+          git add -A
+          git commit -m "[claude-issue] Address issue #$ISSUE_NUMBER
+
+          Requested by: @$TRIGGER_USER
+          Issue: https://github.com/${{ github.repository }}/issues/$ISSUE_NUMBER
+
+          Generated with Claude Code" || echo "Nothing to commit"
+
+          git push -u origin "$BRANCH_NAME"
+
+          echo "Changes pushed to $BRANCH_NAME"
+
+      - name: "Create pull request"
+        if: |
+          steps.check-permission.outputs.allowed == 'true' &&
+          steps.detect-mode.outputs.mode == 'action' &&
+          steps.claude.outputs.changes-made == 'true'
+        id: create-pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ steps.context.outputs.issue-title }}
+          BRANCH_NAME: ${{ steps.create-branch.outputs.branch-name }}
+        run: |
+          # Check if PR already exists for this branch
+          EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING_PR" ]; then
+            echo "pr-number=$EXISTING_PR" >> $GITHUB_OUTPUT
+            echo "pr-created=false" >> $GITHUB_OUTPUT
+            echo "PR #$EXISTING_PR already exists for branch $BRANCH_NAME"
+          else
+            # Get Claude's summary from output (first 50 lines for PR body)
+            CLAUDE_SUMMARY=$(head -50 /tmp/claude-output.txt 2>/dev/null || echo "See workflow logs for details")
+
+            PR_URL=$(gh pr create \
+              --title "fix: Address issue #$ISSUE_NUMBER - $ISSUE_TITLE" \
+              --body "$(cat <<EOF
+          ## Summary
+
+          This PR addresses issue #$ISSUE_NUMBER.
+
+          ### Changes Made
+
+          \`\`\`
+          $CLAUDE_SUMMARY
+          \`\`\`
+
+          ---
+
+          Closes #$ISSUE_NUMBER
+
+          Generated with Claude Code
+          EOF
+          )" \
+              --base main \
+              --head "$BRANCH_NAME")
+
+            PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
+            echo "pr-number=$PR_NUMBER" >> $GITHUB_OUTPUT
+            echo "pr-created=true" >> $GITHUB_OUTPUT
+            echo "Created PR #$PR_NUMBER"
+          fi
+
+      - name: "Post response comment"
+        if: steps.check-permission.outputs.allowed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          MODE: ${{ steps.detect-mode.outputs.mode }}
+          CHANGES_MADE: ${{ steps.claude.outputs.changes-made }}
+          PR_NUMBER: ${{ steps.create-pr.outputs.pr-number }}
+          TRIGGER_USER: ${{ github.event_name == 'issues' && github.event.issue.user.login || github.event.comment.user.login }}
+        run: |
+          CLAUDE_RESPONSE=$(cat /tmp/claude-output.txt 2>/dev/null || echo "No output captured")
+
+          if [ "$MODE" == "analysis" ]; then
+            STATUS="Analysis complete (read-only mode)"
+          elif [ "$CHANGES_MADE" == "true" ]; then
+            STATUS="Changes committed - see PR #$PR_NUMBER"
+          else
+            STATUS="No code changes were needed"
+          fi
+
+          # Create response using heredoc
+          cat > /tmp/response.md << 'RESPONSE_EOF'
+          ## Claude Response
+
+          **Status:** STATUS_PLACEHOLDER
+
+          <details>
+          <summary>Claude's output</summary>
+
+          ```
+          CLAUDE_RESPONSE_PLACEHOLDER
+          ```
+
+          </details>
+
+          ---
+          *Triggered by @TRIGGER_USER_PLACEHOLDER*
+          RESPONSE_EOF
+
+          # Replace placeholders
+          sed -i "s|STATUS_PLACEHOLDER|$STATUS|g" /tmp/response.md
+          sed -i "s|TRIGGER_USER_PLACEHOLDER|$TRIGGER_USER|g" /tmp/response.md
+          # Use perl for multiline replacement of Claude response
+          perl -i -pe "s|CLAUDE_RESPONSE_PLACEHOLDER|$CLAUDE_RESPONSE|g" /tmp/response.md 2>/dev/null || \
+            sed -i "s|CLAUDE_RESPONSE_PLACEHOLDER|See workflow logs for full output|g" /tmp/response.md
+
+          # Post comment to issue
+          gh issue comment "$ISSUE_NUMBER" --body-file /tmp/response.md
+
+      - name: "Add completion reaction"
+        if: steps.check-permission.outputs.allowed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          # Add rocket reaction to show completion
+          if [ "$EVENT_NAME" == "issue_comment" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/$COMMENT_ID/reactions" \
+              -f content='rocket' || true
+          else
+            gh api "repos/${{ github.repository }}/issues/$ISSUE_NUMBER/reactions" \
+              -f content='rocket' || true
+          fi
+
+      - name: "Permission denied response"
+        if: steps.check-permission.outputs.allowed == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          TRIGGER_USER: ${{ github.event_name == 'issues' && github.event.issue.user.login || github.event.comment.user.login }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" \
+            --body "Sorry @$TRIGGER_USER, you need write permission to use Claude on this repository."
