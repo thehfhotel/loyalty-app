@@ -11,6 +11,7 @@
     "lint:fix": "eslint . --fix",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "check:translations": "node scripts/check-translations.cjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",

@@ -31,6 +31,7 @@
     "dismiss": "ปิด",
     "noEndDate": "ไม่มีวันสิ้นสุด",
     "close": "ปิด",
+    "continue": "ดำเนินการต่อ",
     "important": "สำคัญ",
     "saving": "กำลังบันทึก...",
     "active": "เปิดใช้งาน",
@@ -40,7 +41,8 @@
     "pageOf": "หน้า {{current}} จาก {{total}}",
     "showing": "แสดง",
     "of": "จาก",
-    "unknown": "ไม่ทราบ"
+    "unknown": "ไม่ทราบ",
+    "verifying": "กำลังตรวจสอบ..."
   },
   "notifications": {
     "title": "การแจ้งเตือน",
@@ -50,7 +52,53 @@
     "loading": "กำลังโหลด...",
     "empty": "ยังไม่มีการแจ้งเตือน",
     "unreadCount": "ยังไม่ได้อ่าน {{count}} รายการ",
-    "viewAll": "ดูการแจ้งเตือนทั้งหมด"
+    "viewAll": "ดูการแจ้งเตือนทั้งหมด",
+    "success": {
+      "profileUpdated": "อัปเดตโปรไฟล์สำเร็จ",
+      "photoUploaded": "อัปโหลดรูปภาพสำเร็จ",
+      "couponUsed": "ใช้คูปองสำเร็จ",
+      "pointsEarned": "ได้รับคะแนน {{points}} คะแนน",
+      "couponCreated": "สร้างคูปองสำเร็จ",
+      "couponAssigned": "มอบคูปองสำเร็จ",
+      "settingsSaved": "บันทึกการตั้งค่าสำเร็จ",
+      "featureToggled": "เปลี่ยนสถานะฟีเจอร์สำเร็จ",
+      "accountLinked": "เชื่อมโยงบัญชีสำเร็จ",
+      "requestAccepted": "ยอมรับคำขอสำเร็จ"
+    },
+    "error": {
+      "profileUpdateFailed": "อัปเดตโปรไฟล์ล้มเหลว",
+      "photoUploadFailed": "อัปโหลดรูปภาพล้มเหลว",
+      "couponUsageFailed": "ใช้คูปองล้มเหลว",
+      "invalidCoupon": "คูปองไม่ถูกต้องหรือหมดอายุ",
+      "couponExpired": "คูปองนี้หมดอายุแล้ว",
+      "minimumSpendNotMet": "ยอดซื้อไม่ถึงขั้นต่ำที่กำหนด",
+      "couponAlreadyUsed": "คูปองนี้ถูกใช้ไปแล้ว",
+      "networkError": "เกิดข้อผิดพลาดของเครือข่าย กรุณาลองอีกครั้ง",
+      "serverError": "เซิร์ฟเวอร์มีปัญหา กรุณาลองอีกครั้งในภายหลัง",
+      "sessionExpired": "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่",
+      "accessDenied": "ไม่มีสิทธิ์เข้าถึง",
+      "validationError": "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบและลองอีกครั้ง",
+      "duplicateCouponCode": "รหัสคูปองนี้ถูกใช้แล้ว กรุณาใช้รหัสอื่น",
+      "insufficientPoints": "คะแนนไม่เพียงพอ",
+      "featureDisabled": "ฟีเจอร์นี้ถูกปิดใช้งาน"
+    },
+    "warning": {
+      "sessionExpiring": "เซสชันจะหมดอายุใน {{minutes}} นาที",
+      "couponExpiringSoon": "คูปอง '{{name}}' จะหมดอายุใน {{days}} วัน",
+      "unsavedChanges": "มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก",
+      "confirmDelete": "คุณแน่ใจหรือไม่ที่จะลบรายการนี้?",
+      "irreversibleAction": "การดำเนินการนี้ไม่สามารถยกเลิกได้",
+      "minimumSpendRequired": "ต้องมียอดซื้อขั้นต่ำ {{amount}} บาท"
+    },
+    "info": {
+      "welcome": "ยินดีต้อนรับสู่โปรแกรมสะสมคะแนนโรงแรม!",
+      "newFeatureAvailable": "ฟีเจอร์ใหม่พร้อมใช้งาน: {{feature}}",
+      "maintenanceScheduled": "การบำรุงรักษาระบบกำหนดเวลา {{date}}",
+      "pointsExpiringSoon": "คะแนน {{points}} คะแนนจะหมดอายุในวันที่ {{date}}",
+      "tierUpgraded": "ยินดีด้วย! คุณได้เลื่อนระดับเป็น {{tier}}",
+      "newCouponReceived": "คุณได้รับคูปองใหม่: {{name}}",
+      "dataBackupCompleted": "การสำรองข้อมูลเสร็จสิ้น"
+    }
   },
   "translation": {
     "languages": "ภาษา",
@@ -227,6 +275,8 @@
     "resendCode": "ส่งรหัสอีกครั้ง",
     "codeResent": "ส่งรหัสใหม่แล้ว!",
     "codeExpiry": "รหัสจะหมดอายุใน 1 ชั่วโมง หากไม่พบอีเมล กรุณาตรวจสอบโฟลเดอร์สแปม",
+    "emailChangeError": "ไม่สามารถอัปเดตอีเมลได้",
+    "confirmRemovePhotoMessage": "จะลบรูปโปรไฟล์ปัจจุบันของคุณ คุณแน่ใจหรือไม่?",
     "occupations": {
       "student": "นักเรียน/นักศึกษา",
       "business_owner": "เจ้าของธุรกิจ",
@@ -333,21 +383,6 @@
     "contactSupport": "กรุณาติดต่อฝ่ายสนับสนุนหากคุณต้องการเปิดใช้งานฟีเจอร์นี้",
     "backToDashboard": "กลับสู่แดชบอร์ด"
   },
-  "errors": {
-    "notFound": "ไม่พบหน้าที่ต้องการ",
-    "unauthorized": "ไม่มีสิทธิ์เข้าถึง",
-    "forbidden": "ไม่อนุญาต",
-    "serverError": "ข้อผิดพลาดของเซิร์ฟเวอร์",
-    "networkError": "ข้อผิดพลาดของเครือข่าย",
-    "unknownError": "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ",
-    "tryAgain": "กรุณาลองอีกครั้ง",
-    "goHome": "ไปยังหน้าหลัก",
-    "failedToLoadCoupons": "ไม่สามารถโหลดคูปองได้",
-    "validationFailed": "การตรวจสอบคูปองล้มเหลว",
-    "redemptionFailed": "การใช้คูปองล้มเหลว",
-    "emailAlreadyRegistered": "อีเมลนี้ถูกลงทะเบียนแล้ว",
-    "emailAlreadyInUse": "อีเมลนี้ถูกใช้งานโดยบัญชีอื่นแล้ว"
-  },
   "languages": {
     "en": "English",
     "th": "ไทย"
@@ -380,6 +415,7 @@
     "unlockBenefitsNights": "เข้าพักอีก {{nights}} คืนเพื่อปลดล็อก",
     "topTierMessage": "ยินดีด้วย! คุณได้เข้าถึงระดับสูงสุดแล้ว!",
     "topTierDescription": "เพลิดเพลินกับสิทธิประโยชน์พรีเมียมทั้งหมดของโปรแกรมสะสมคะแนน",
+    "maxTierReached": "คุณถึงระดับสูงสุดแล้ว!",
     "earned": "ได้รับ",
     "used": "ใช้",
     "expired": "หมดอายุ",
@@ -415,6 +451,7 @@
       "subtitle": "จัดการคะแนนและระดับสมาชิกของผู้ใช้",
       "usersList": "รายชื่อผู้ใช้",
       "searchPlaceholder": "ค้นหาด้วยชื่อ, อีเมล หรือเบอร์โทร...",
+      "searchHint": "ค้นหาด้วยชื่อ อีเมล หรือเบอร์โทร",
       "selectUser": "เลือกผู้ใช้เพื่อดูรายละเอียด",
       "userDetails": "รายละเอียดผู้ใช้",
       "currentPoints": "คะแนนปัจจุบัน",
@@ -725,7 +762,8 @@
         "room": "ห้อง",
         "selectRoomTypeFirst": "กรุณาเลือกประเภทห้องก่อน",
         "unblock": "เปิดให้บริการ",
-        "allRoomTypes": "ห้องทุกประเภท"
+        "allRoomTypes": "ห้องทุกประเภท",
+        "blockingInfo": "กำลังปิด {{count}} วัน"
       }
     }
   },
@@ -827,7 +865,11 @@
     "tryAgain": "ลองอีกครั้ง",
     "goHome": "กลับไปที่แดชบอร์ด",
     "contactSupport": "ติดต่อฝ่ายสนับสนุน",
-    "error": "เกิดข้อผิดพลาด"
+    "error": "เกิดข้อผิดพลาด",
+    "emailAlreadyRegistered": "อีเมลนี้ถูกลงทะเบียนแล้ว",
+    "emailAlreadyInUse": "อีเมลนี้ถูกใช้งานโดยบัญชีอื่นแล้ว",
+    "failedToLoadAssignments": "ไม่สามารถโหลดการมอบหมายคูปองได้",
+    "failedToRemoveCoupons": "ไม่สามารถลบคูปองได้"
   },
   "navigation": {
     "dashboard": "แดชบอร์ด",
@@ -837,54 +879,6 @@
     "takeSurveys": "ทำแบบสำรวจ",
     "manageSurveys": "จัดการแบบสำรวจ",
     "createSurvey": "สร้างแบบสำรวจ"
-  },
-  "notifications": {
-    "success": {
-      "profileUpdated": "อัปเดตโปรไฟล์สำเร็จ",
-      "photoUploaded": "อัปโหลดรูปภาพสำเร็จ",
-      "couponUsed": "ใช้คูปองสำเร็จ",
-      "pointsEarned": "ได้รับคะแนน {{points}} คะแนน",
-      "couponCreated": "สร้างคูปองสำเร็จ",
-      "couponAssigned": "มอบคูปองสำเร็จ",
-      "settingsSaved": "บันทึกการตั้งค่าสำเร็จ",
-      "featureToggled": "เปลี่ยนสถานะฟีเจอร์สำเร็จ",
-      "accountLinked": "เชื่อมโยงบัญชีสำเร็จ",
-      "requestAccepted": "ยอมรับคำขอสำเร็จ"
-    },
-    "error": {
-      "profileUpdateFailed": "อัปเดตโปรไฟล์ล้มเหลว",
-      "photoUploadFailed": "อัปโหลดรูปภาพล้มเหลว",
-      "couponUsageFailed": "ใช้คูปองล้มเหลว",
-      "invalidCoupon": "คูปองไม่ถูกต้องหรือหมดอายุ",
-      "couponExpired": "คูปองนี้หมดอายุแล้ว",
-      "minimumSpendNotMet": "ยอดซื้อไม่ถึงขั้นต่ำที่กำหนด",
-      "couponAlreadyUsed": "คูปองนี้ถูกใช้ไปแล้ว",
-      "networkError": "เกิดข้อผิดพลาดของเครือข่าย กรุณาลองอีกครั้ง",
-      "serverError": "เซิร์ฟเวอร์มีปัญหา กรุณาลองอีกครั้งในภายหลัง",
-      "sessionExpired": "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่",
-      "accessDenied": "ไม่มีสิทธิ์เข้าถึง",
-      "validationError": "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบและลองอีกครั้ง",
-      "duplicateCouponCode": "รหัสคูปองนี้ถูกใช้แล้ว กรุณาใช้รหัสอื่น",
-      "insufficientPoints": "คะแนนไม่เพียงพอ",
-      "featureDisabled": "ฟีเจอร์นี้ถูกปิดใช้งาน"
-    },
-    "warning": {
-      "sessionExpiring": "เซสชันจะหมดอายุใน {{minutes}} นาที",
-      "couponExpiringSoon": "คูปอง '{{name}}' จะหมดอายุใน {{days}} วัน",
-      "unsavedChanges": "มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก",
-      "confirmDelete": "คุณแน่ใจหรือไม่ที่จะลบรายการนี้?",
-      "irreversibleAction": "การดำเนินการนี้ไม่สามารถยกเลิกได้",
-      "minimumSpendRequired": "ต้องมียอดซื้อขั้นต่ำ {{amount}} บาท"
-    },
-    "info": {
-      "welcome": "ยินดีต้อนรับสู่โปรแกรมสะสมคะแนนโรงแรม!",
-      "newFeatureAvailable": "ฟีเจอร์ใหม่พร้อมใช้งาน: {{feature}}",
-      "maintenanceScheduled": "การบำรุงรักษาระบบกำหนดเวลา {{date}}",
-      "pointsExpiringSoon": "คะแนน {{points}} คะแนนจะหมดอายุในวันที่ {{date}}",
-      "tierUpgraded": "ยินดีด้วย! คุณได้เลื่อนระดับเป็น {{tier}}",
-      "newCouponReceived": "คุณได้รับคูปองใหม่: {{name}}",
-      "dataBackupCompleted": "การสำรองข้อมูลเสร็จสิ้น"
-    }
   },
   "surveys": {
     "title": "แบบสำรวจ",
@@ -957,6 +951,11 @@
       "of": "จาก",
       "previous": "ก่อนหน้า",
       "next": "ถัดไป"
+    },
+    "couponAssignment": {
+      "editAssignment": "แก้ไขการมอบหมาย",
+      "loadError": "ไม่สามารถโหลดการมอบหมายคูปองได้",
+      "completed": "เสร็จสิ้น"
     },
     "tabs": {
       "public": "สาธารณะ",
@@ -1202,6 +1201,7 @@
         "noAssignments": "ไม่มีการกำหนดรางวัลคูปอง",
         "noAssignmentsHelp": "กำหนดคูปองเพื่อให้รางวัลผู้ใช้ที่ทำแบบสำรวจเสร็จสิ้นโดยอัตโนมัติ",
         "confirmRemove": "คุณแน่ใจหรือไม่ว่าต้องการลบการกำหนดคูปองนี้? ผู้ใช้จะไม่ได้รับรางวัลนี้อีกสำหรับการทำแบบสำรวจเสร็จสิ้น",
+        "confirmRemoveMessage": "คุณแน่ใจหรือไม่ที่จะลบการมอบหมายคูปองนี้?",
         "loadError": "ไม่สามารถโหลดการกำหนดคูปองได้",
         "assignSuccess": "กำหนดคูปองให้กับแบบสำรวจเรียบร้อยแล้ว",
         "assignError": "ไม่สามารถกำหนดคูปองให้กับแบบสำรวจได้",
@@ -1232,6 +1232,7 @@
         "created": "สร้างเมื่อ {{date}}",
         "edit": "แก้ไข",
         "deleteConfirm": "คุณแน่ใจหรือไม่ว่าต้องการลบเทมเพลตนี้?",
+        "deleteConfirmMessage": "การดำเนินการนี้ไม่สามารถย้อนกลับได้ คุณแน่ใจหรือไม่ที่จะลบเทมเพลตนี้?",
         "templateDeleted": "ลบเทมเพลตสำเร็จแล้ว",
         "deleteFailed": "ไม่สามารถลบเทมเพลตได้",
         "predefinedTemplates": {
@@ -1367,6 +1368,7 @@
     "administrators": "ผู้ดูแลระบบ",
     "recentJoins": "สมาชิกใหม่",
     "searchPlaceholder": "ค้นหาผู้ใช้ด้วยชื่อ, อีเมล หรือเบอร์โทร...",
+    "searchHint": "ค้นหาด้วยชื่อ อีเมล เบอร์โทร หรือรหัสสมาชิก",
     "user": "ผู้ใช้",
     "email": "อีเมล",
     "role": "บทบาท",
@@ -1517,6 +1519,12 @@
     "soldOut": "เต็ม",
     "specialRequests": "ความต้องการพิเศษ",
     "specialRequestsPlaceholder": "ความต้องการพิเศษหรือข้อมูลเพิ่มเติม",
-    "total": "รวม"
+    "total": "รวม",
+    "nightsSelected": "เลือกแล้ว {{count}} คืน",
+    "stayDates": "เข้าพัก: {{checkIn}} - {{checkOut}} ({{nights}} คืน)",
+    "totalForNights": "รวม {{nights}} คืน",
+    "roomsLeft": "เหลือ {{count}} ห้อง",
+    "pointsYouWillEarn": "คุณจะได้รับ {{points}} คะแนน!",
+    "maxGuests": "สูงสุด {{count}} ท่าน"
   }
 }

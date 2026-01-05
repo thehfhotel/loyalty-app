@@ -30,6 +30,7 @@
     "loadMore": "Load More",
     "optional": "Optional",
     "close": "Close",
+    "continue": "Continue",
     "important": "Important",
     "viewAll": "View All",
     "showMore": "Show More",
@@ -267,7 +268,9 @@
       "volunteering": "Volunteering",
       "shopping": "Shopping",
       "home_garden": "Home & Garden"
-    }
+    },
+    "emailChangeError": "Failed to update email address",
+    "confirmRemovePhotoMessage": "This will remove your current profile photo. Are you sure?"
   },
   "accountLinking": {
     "title": "Account Linking",
@@ -387,6 +390,7 @@
     "unlockBenefitsNights": "Stay {{nights}} more nights to unlock",
     "topTierMessage": "Congratulations! You've achieved our highest membership tier!",
     "topTierDescription": "You now have access to all our exclusive premium benefits and VIP experiences",
+    "maxTierReached": "You've reached the highest tier!",
     "earned": "earned",
     "used": "used",
     "expired": "expired",
@@ -422,6 +426,7 @@
       "subtitle": "Monitor and manage customer points, tiers, and rewards",
       "usersList": "Customer Directory",
       "searchPlaceholder": "Search by name, email, or phone...",
+      "searchHint": "Search by name, email, or phone",
       "selectUser": "Choose a customer to view their loyalty details",
       "userDetails": "User Details",
       "currentPoints": "Current Points",
@@ -735,7 +740,8 @@
         "room": "Room",
         "selectRoomTypeFirst": "Select a room type first",
         "unblock": "Unblock",
-        "allRoomTypes": "All Room Types"
+        "allRoomTypes": "All Room Types",
+        "blockingInfo": "Blocking {{count}} date(s)"
       }
     }
   },
@@ -850,7 +856,9 @@
     "tryAgain": "Try Again",
     "goHome": "Return to Dashboard",
     "contactSupport": "Contact Support",
-    "error": "Error occurred"
+    "error": "Error occurred",
+    "failedToLoadAssignments": "Failed to load coupon assignments",
+    "failedToRemoveCoupons": "Failed to remove coupons"
   },
   "surveys": {
     "title": "Customer Surveys",
@@ -925,6 +933,11 @@
       "of": "of",
       "previous": "Previous",
       "next": "Next"
+    },
+    "couponAssignment": {
+      "editAssignment": "Edit Assignment",
+      "loadError": "Failed to load coupon assignments",
+      "completed": "Completed"
     },
     "tabs": {
       "public": "Public",
@@ -1139,6 +1152,7 @@
         "noAssignments": "No coupon rewards assigned",
         "noAssignmentsHelp": "Assign coupons to automatically reward users who complete this survey",
         "confirmRemove": "Are you sure you want to remove this coupon assignment? Users will no longer receive this reward for completing the survey.",
+        "confirmRemoveMessage": "Are you sure you want to remove this coupon assignment?",
         "loadError": "Failed to load coupon assignments",
         "assignSuccess": "Coupon assigned to survey successfully",
         "assignError": "Failed to assign coupon to survey",
@@ -1169,6 +1183,7 @@
         "created": "Created {{date}}",
         "edit": "Edit",
         "deleteConfirm": "Are you sure you want to delete this template?",
+        "deleteConfirmMessage": "This action cannot be undone. Are you sure you want to delete this template?",
         "templateDeleted": "Template deleted successfully",
         "deleteFailed": "Failed to delete template",
         "predefinedTemplates": {
@@ -1304,6 +1319,7 @@
     "administrators": "Administrators",
     "recentJoins": "Recent Joins",
     "searchPlaceholder": "Search by name, email, or phone...",
+    "searchHint": "Search by name, email, phone, or membership ID",
     "user": "User",
     "email": "Email",
     "role": "Role",
@@ -1454,6 +1470,12 @@
     "soldOut": "Sold Out",
     "specialRequests": "Special Requests",
     "specialRequestsPlaceholder": "Any special requests or preferences",
-    "total": "Total"
+    "total": "Total",
+    "nightsSelected": "{{count}} night(s) selected",
+    "stayDates": "Stay: {{checkIn}} - {{checkOut}} ({{nights}} nights)",
+    "totalForNights": "Total for {{nights}} nights",
+    "roomsLeft": "{{count}} room(s) left",
+    "pointsYouWillEarn": "You'll earn {{points}} points!",
+    "maxGuests": "Max {{count}} guests"
   }
 }
