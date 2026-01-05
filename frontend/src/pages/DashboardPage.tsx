@@ -469,6 +469,85 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 </Link>
+
+                {/* Room Types Management Card */}
+                <Link
+                  to="/admin/room-types"
+                  className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                  data-testid="nav-admin-room-types"
+                >
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <div className="h-6 w-6 bg-teal-500 rounded flex items-center justify-center">
+                          <span className="text-xs text-white font-bold">🏨</span>
+                        </div>
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-lg font-semibold text-gray-900 truncate">
+                            {t('admin.booking.roomTypes.title')}
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium text-gray-500">
+                            {t('admin.booking.roomTypes.subtitle')}
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+
+                {/* Rooms Management Card */}
+                <Link
+                  to="/admin/rooms"
+                  className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                  data-testid="nav-admin-rooms"
+                >
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <div className="h-6 w-6 bg-cyan-500 rounded flex items-center justify-center">
+                          <span className="text-xs text-white font-bold">🚪</span>
+                        </div>
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-lg font-semibold text-gray-900 truncate">
+                            {t('admin.booking.rooms.title')}
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium text-gray-500">
+                            {t('admin.booking.rooms.subtitle')}
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+
+                {/* Room Availability Card */}
+                <Link
+                  to="/admin/room-availability"
+                  className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                  data-testid="nav-admin-availability"
+                >
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <FiCalendar className="h-6 w-6 text-orange-600" />
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-lg font-semibold text-gray-900 truncate">
+                            {t('admin.booking.availability.title')}
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium text-gray-500">
+                            {t('admin.booking.availability.subtitle')}
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
               </div>
             </div>
           )}
