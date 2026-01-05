@@ -10,8 +10,6 @@ test.describe('Booking Flow (browser)', () => {
   // Run tests serially to avoid session conflicts during parallel login
   test.describe.configure({ mode: 'serial' });
 
-  const backendUrl = process.env.BACKEND_URL || 'http://localhost:4202';
-
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.context().clearCookies();

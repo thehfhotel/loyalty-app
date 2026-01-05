@@ -337,7 +337,8 @@ test.describe('Room Availability Calendar UI', () => {
       // We'll use a date in the future to avoid conflicts with existing data
       const today = new Date();
       const futureDate = new Date(today.getFullYear(), today.getMonth() + 1, 15);
-      const futureDateStr = futureDate.toISOString().split('T')[0];
+      // futureDate is used for navigation purposes
+      void futureDate;
 
       // Navigate to the month containing our target date
       const nextMonthButton = page.getByRole('button', { name: /next/i });
@@ -565,7 +566,7 @@ test.describe('Room Availability Calendar UI', () => {
       }
 
       // Confirm block
-      const confirmButton = page.getByRole('button', { name: /confirm|block$/i }).first();
+      const confirmButton = page.getByRole('button', { name: /(confirm|block)$/i }).first();
       if (await confirmButton.isVisible()) {
         await confirmButton.click();
       }

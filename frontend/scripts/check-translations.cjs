@@ -25,11 +25,7 @@ const TRANSLATION_PATTERNS = [
   /\bt\(\s*`([^`$]+)`/g,                 // t(`key`) - simple template literals
 ];
 
-// Keys to ignore (dynamic keys, etc.)
-const IGNORE_PATTERNS = [
-  /^\$\{/,                               // Template literal variables
-  /\./g,                                 // We'll handle nested keys
-];
+// Note: Dynamic keys with ${} and nested keys with . are handled inline in extractKeys()
 
 /**
  * Recursively get all .tsx files in a directory
