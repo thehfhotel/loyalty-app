@@ -265,7 +265,8 @@ const RoomAvailability: React.FC = () => {
     if (!selectedRoomId || !blockReason.trim()) return;
 
     const dates = Array.from(selectedCells).map(key => {
-      const dateStr = key.split('-').slice(1).join('-');
+      // Key format: {roomId}-{YYYY-MM-DD}, date is always last 10 chars
+      const dateStr = key.slice(-10);
       // Use noon UTC to avoid timezone date shift
       return new Date(dateStr + 'T12:00:00Z');
     });
@@ -281,7 +282,8 @@ const RoomAvailability: React.FC = () => {
     if (!selectedRoomId || selectedCells.size === 0) return;
 
     const dates = Array.from(selectedCells).map(key => {
-      const dateStr = key.split('-').slice(1).join('-');
+      // Key format: {roomId}-{YYYY-MM-DD}, date is always last 10 chars
+      const dateStr = key.slice(-10);
       // Use noon UTC to avoid timezone date shift
       return new Date(dateStr + 'T12:00:00Z');
     });
