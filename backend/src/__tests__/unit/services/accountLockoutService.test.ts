@@ -35,8 +35,8 @@ describe('AccountLockoutService', () => {
 
   describe('recordFailedAttempt', () => {
     it('should record a failed attempt and return not locked when under threshold', async () => {
-      mockRedis.incr.mockResolvedValue(1);
-      mockRedis.expire.mockResolvedValue(1);
+      mockRedis.incr.mockResolvedValue(1 as never);
+      mockRedis.expire.mockResolvedValue(1 as never);
 
       const result = await accountLockoutService.recordFailedAttempt('test@example.com');
 
@@ -47,8 +47,8 @@ describe('AccountLockoutService', () => {
     });
 
     it('should lock account after 5 failed attempts', async () => {
-      mockRedis.incr.mockResolvedValue(5);
-      mockRedis.setEx.mockResolvedValue('OK');
+      mockRedis.incr.mockResolvedValue(5 as never);
+      mockRedis.setEx.mockResolvedValue('OK' as never);
 
       const result = await accountLockoutService.recordFailedAttempt('test@example.com');
 
@@ -62,7 +62,7 @@ describe('AccountLockoutService', () => {
     });
 
     it('should fail open on Redis error', async () => {
-      mockRedis.incr.mockRejectedValue(new Error('Redis connection failed'));
+      mockRedis.incr.mockRejectedValue(new Error('Redis connection failed') as never);
 
       const result = await accountLockoutService.recordFailedAttempt('test@example.com');
 
@@ -73,8 +73,8 @@ describe('AccountLockoutService', () => {
 
   describe('isLocked', () => {
     it('should return locked status when account is locked', async () => {
-      mockRedis.ttl.mockResolvedValue(600); // 10 minutes remaining
-      mockRedis.get.mockResolvedValue('3');
+      mockRedis.ttl.mockResolvedValue(600 as never); // 10 minutes remaining
+      mockRedis.get.mockResolvedValue('3' as never);
 
       const result = await accountLockoutService.isLocked('test@example.com');
 
@@ -84,8 +84,8 @@ describe('AccountLockoutService', () => {
     });
 
     it('should return not locked when TTL is negative', async () => {
-      mockRedis.ttl.mockResolvedValue(-2); // Key doesn't exist
-      mockRedis.get.mockResolvedValue(null);
+      mockRedis.ttl.mockResolvedValue(-2 as never); // Key doesn't exist
+      mockRedis.get.mockResolvedValue(null as never);
 
       const result = await accountLockoutService.isLocked('test@example.com');
 
@@ -94,7 +94,7 @@ describe('AccountLockoutService', () => {
     });
 
     it('should fail open on Redis error', async () => {
-      mockRedis.ttl.mockRejectedValue(new Error('Redis unavailable'));
+      mockRedis.ttl.mockRejectedValue(new Error('Redis unavailable') as never);
 
       const result = await accountLockoutService.isLocked('test@example.com');
 
@@ -104,7 +104,7 @@ describe('AccountLockoutService', () => {
 
   describe('resetAttempts', () => {
     it('should delete lockout and failed attempts keys', async () => {
-      mockRedis.del.mockResolvedValue(1);
+      mockRedis.del.mockResolvedValue(1 as never);
 
       await accountLockoutService.resetAttempts('test@example.com');
 
@@ -113,7 +113,7 @@ describe('AccountLockoutService', () => {
     });
 
     it('should not throw on Redis error', async () => {
-      mockRedis.del.mockRejectedValue(new Error('Redis error'));
+      mockRedis.del.mockRejectedValue(new Error('Redis error') as never);
 
       // Should not throw
       await expect(accountLockoutService.resetAttempts('test@example.com')).resolves.not.toThrow();
