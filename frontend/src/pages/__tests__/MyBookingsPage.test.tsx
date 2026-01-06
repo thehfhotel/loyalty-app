@@ -43,6 +43,19 @@ const mockBookings = [
     cancellationReason: 'Change of plans',
     createdAt: '2025-11-15',
   },
+  {
+    id: 'booking-4',
+    roomTypeName: 'Executive Room',
+    checkInDate: '2025-12-01',
+    checkOutDate: '2025-12-03',
+    numGuests: 1,
+    totalPrice: 3500,
+    pointsEarned: 350,
+    status: 'confirmed',
+    notes: null,
+    cancellationReason: null,
+    createdAt: '2025-11-20',
+  },
 ];
 
 // Mock tRPC hooks
@@ -112,6 +125,12 @@ vi.mock('react-i18next', () => ({
         'booking.status.confirmed': 'Confirmed',
         'booking.status.cancelled': 'Cancelled',
         'booking.status.completed': 'Completed',
+        'booking.currentBookings': 'Current Bookings',
+        'booking.bookingHistory': 'Booking History',
+        'booking.noCurrentBookings': 'No upcoming bookings',
+        'booking.noCurrentBookingsDescription': "You don't have any upcoming room reservations",
+        'booking.noBookingHistory': 'No past bookings',
+        'booking.noBookingHistoryDescription': "You don't have any booking history yet",
         'loyalty.points': 'points',
         'common.close': 'Close',
         'common.optional': 'optional',
@@ -166,7 +185,8 @@ describe('MyBookingsPage', () => {
       mockBookingsData = [];
       render(<MyBookingsPage />);
 
-      expect(screen.getByText('No Bookings Yet')).toBeInTheDocument();
+      // With tabs, empty current tab shows "No upcoming bookings"
+      expect(screen.getByText('No upcoming bookings')).toBeInTheDocument();
       expect(screen.getByText('Book Your First Room')).toBeInTheDocument();
     });
 
@@ -174,18 +194,22 @@ describe('MyBookingsPage', () => {
       mockBookingsData = undefined;
       render(<MyBookingsPage />);
 
-      expect(screen.getByText('No Bookings Yet')).toBeInTheDocument();
+      expect(screen.getByText('No upcoming bookings')).toBeInTheDocument();
     });
   });
 
   describe('Booking Cards Rendering', () => {
-    it('should render booking cards with correct info', () => {
+    it('should render booking cards with correct info', async () => {
+      const user = userEvent.setup();
       render(<MyBookingsPage />);
 
-      // Check first booking (confirmed)
+      // Check first booking (confirmed) in current tab
       expect(screen.getByTestId('booking-card-booking-1')).toBeInTheDocument();
       expect(screen.getByText('Deluxe Room')).toBeInTheDocument();
       expect(screen.getByText('Confirmed')).toBeInTheDocument();
+
+      // Switch to history tab for completed and cancelled bookings
+      await user.click(screen.getByTestId('tab-history'));
 
       // Check second booking (completed)
       expect(screen.getByTestId('booking-card-booking-2')).toBeInTheDocument();
@@ -196,19 +220,29 @@ describe('MyBookingsPage', () => {
       expect(screen.getByText('Suite')).toBeInTheDocument();
     });
 
-    it('should display prices correctly', () => {
+    it('should display prices correctly', async () => {
+      const user = userEvent.setup();
       render(<MyBookingsPage />);
 
+      // Current tab shows booking-1
       expect(screen.getByText('฿4,500')).toBeInTheDocument();
+
+      // History tab shows booking-2 and booking-3
+      await user.click(screen.getByTestId('tab-history'));
       expect(screen.getByText('฿2,000')).toBeInTheDocument();
       expect(screen.getByText('฿6,000')).toBeInTheDocument();
     });
 
-    it('should display click for details hint', () => {
+    it('should display click for details hint', async () => {
+      const user = userEvent.setup();
       render(<MyBookingsPage />);
 
-      const detailsHints = screen.getAllByText('Click for details');
-      expect(detailsHints.length).toBe(3);
+      // Current tab has 1 booking
+      expect(screen.getAllByText('Click for details').length).toBe(1);
+
+      // History tab has 3 bookings
+      await user.click(screen.getByTestId('tab-history'));
+      expect(screen.getAllByText('Click for details').length).toBe(3);
     });
   });
 
@@ -302,6 +336,8 @@ describe('MyBookingsPage', () => {
       const user = userEvent.setup();
       render(<MyBookingsPage />);
 
+      // booking-3 is cancelled and in history tab
+      await user.click(screen.getByTestId('tab-history'));
       await user.click(screen.getByTestId('booking-card-booking-3'));
 
       const modal = screen.getByTestId('booking-details-modal');
@@ -319,6 +355,9 @@ describe('MyBookingsPage', () => {
       await user.click(screen.getByTestId('booking-card-booking-1'));
       expect(screen.getByTestId('booking-details-cancel')).toBeInTheDocument();
       await user.click(screen.getByTestId('booking-details-close'));
+
+      // Switch to history tab for completed and cancelled bookings
+      await user.click(screen.getByTestId('tab-history'));
 
       // Open completed booking modal - should NOT have cancel button
       await user.click(screen.getByTestId('booking-card-booking-2'));
@@ -394,7 +433,7 @@ describe('MyBookingsPage', () => {
   });
 
   describe('Status Display', () => {
-    it('should display confirmed status with green badge', async () => {
+    it('should display confirmed status with green badge', () => {
       render(<MyBookingsPage />);
 
       const card = screen.getByTestId('booking-card-booking-1');
@@ -403,7 +442,11 @@ describe('MyBookingsPage', () => {
     });
 
     it('should display cancelled status with red badge', async () => {
+      const user = userEvent.setup();
       render(<MyBookingsPage />);
+
+      // booking-3 is cancelled and in history tab
+      await user.click(screen.getByTestId('tab-history'));
 
       const card = screen.getByTestId('booking-card-booking-3');
       const badge = within(card).getByText('Cancelled');
@@ -411,7 +454,11 @@ describe('MyBookingsPage', () => {
     });
 
     it('should display completed status with blue badge', async () => {
+      const user = userEvent.setup();
       render(<MyBookingsPage />);
+
+      // booking-2 is completed and in history tab
+      await user.click(screen.getByTestId('tab-history'));
 
       const card = screen.getByTestId('booking-card-booking-2');
       const badge = within(card).getByText('Completed');
@@ -432,6 +479,235 @@ describe('MyBookingsPage', () => {
 
       const link = screen.getByTestId('new-booking-button');
       expect(link).toHaveAttribute('href', '/booking');
+    });
+  });
+
+  describe('Tab Rendering', () => {
+    it('should render both tab buttons', () => {
+      render(<MyBookingsPage />);
+
+      expect(screen.getByTestId('tab-current')).toBeInTheDocument();
+      expect(screen.getByTestId('tab-history')).toBeInTheDocument();
+    });
+
+    it('should show Current Bookings tab as active by default', () => {
+      render(<MyBookingsPage />);
+
+      const currentTab = screen.getByTestId('tab-current');
+      const historyTab = screen.getByTestId('tab-history');
+
+      expect(currentTab).toHaveClass('border-primary-500', 'text-primary-600');
+      expect(historyTab).toHaveClass('border-transparent', 'text-gray-500');
+    });
+
+    it('should display booking counts in tab labels', () => {
+      render(<MyBookingsPage />);
+
+      // booking-1 is confirmed + future = current (1)
+      // booking-2 is completed = history
+      // booking-3 is cancelled = history
+      // booking-4 is confirmed + past = history
+      // So: current = 1, history = 3
+      expect(screen.getByTestId('tab-current')).toHaveTextContent('Current Bookings (1)');
+      expect(screen.getByTestId('tab-history')).toHaveTextContent('Booking History (3)');
+    });
+  });
+
+  describe('Tab Switching', () => {
+    it('should switch to history tab when clicked', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      const historyTab = screen.getByTestId('tab-history');
+      await user.click(historyTab);
+
+      expect(historyTab).toHaveClass('border-primary-500', 'text-primary-600');
+    });
+
+    it('should update active tab styling on switch', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      const currentTab = screen.getByTestId('tab-current');
+      const historyTab = screen.getByTestId('tab-history');
+
+      // Initially current is active
+      expect(currentTab).toHaveClass('border-primary-500');
+      expect(historyTab).toHaveClass('border-transparent');
+
+      // Switch to history
+      await user.click(historyTab);
+      expect(historyTab).toHaveClass('border-primary-500');
+      expect(currentTab).toHaveClass('border-transparent');
+
+      // Switch back to current
+      await user.click(currentTab);
+      expect(currentTab).toHaveClass('border-primary-500');
+      expect(historyTab).toHaveClass('border-transparent');
+    });
+  });
+
+  describe('Current Bookings Filter', () => {
+    it('should show only confirmed future bookings in current tab', () => {
+      render(<MyBookingsPage />);
+
+      // Only booking-1 (confirmed + future check-in 2026-02-15) should be visible
+      expect(screen.getByTestId('booking-card-booking-1')).toBeInTheDocument();
+
+      // These should NOT be visible in current tab
+      expect(screen.queryByTestId('booking-card-booking-2')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('booking-card-booking-3')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('booking-card-booking-4')).not.toBeInTheDocument();
+    });
+
+    it('should NOT show cancelled bookings in current tab', () => {
+      render(<MyBookingsPage />);
+
+      // booking-3 is cancelled
+      expect(screen.queryByTestId('booking-card-booking-3')).not.toBeInTheDocument();
+    });
+
+    it('should NOT show completed bookings in current tab', () => {
+      render(<MyBookingsPage />);
+
+      // booking-2 is completed
+      expect(screen.queryByTestId('booking-card-booking-2')).not.toBeInTheDocument();
+    });
+
+    it('should NOT show past confirmed bookings in current tab', () => {
+      render(<MyBookingsPage />);
+
+      // booking-4 is confirmed but past (2025-12-01)
+      expect(screen.queryByTestId('booking-card-booking-4')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('History Bookings Filter', () => {
+    it('should show completed bookings in history tab', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      await user.click(screen.getByTestId('tab-history'));
+
+      // booking-2 is completed
+      expect(screen.getByTestId('booking-card-booking-2')).toBeInTheDocument();
+    });
+
+    it('should show cancelled bookings in history tab', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      await user.click(screen.getByTestId('tab-history'));
+
+      // booking-3 is cancelled
+      expect(screen.getByTestId('booking-card-booking-3')).toBeInTheDocument();
+    });
+
+    it('should show past confirmed bookings in history tab', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      await user.click(screen.getByTestId('tab-history'));
+
+      // booking-4 is confirmed but past (2025-12-01)
+      expect(screen.getByTestId('booking-card-booking-4')).toBeInTheDocument();
+    });
+
+    it('should NOT show future confirmed bookings in history tab', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      await user.click(screen.getByTestId('tab-history'));
+
+      // booking-1 is confirmed + future
+      expect(screen.queryByTestId('booking-card-booking-1')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Tab-specific Empty States', () => {
+    it('should show "No upcoming bookings" when current tab is empty', () => {
+      // Set mock to only have history bookings
+      mockBookingsData = [
+        {
+          id: 'booking-completed',
+          roomTypeName: 'Standard Room',
+          checkInDate: '2025-12-10',
+          checkOutDate: '2025-12-12',
+          numGuests: 1,
+          totalPrice: 2000,
+          pointsEarned: 200,
+          status: 'completed',
+          notes: null,
+          cancellationReason: null,
+          createdAt: '2025-12-01',
+        },
+      ];
+
+      render(<MyBookingsPage />);
+
+      expect(screen.getByText('No upcoming bookings')).toBeInTheDocument();
+    });
+
+    it('should show "No past bookings" when history tab is empty', async () => {
+      const user = userEvent.setup();
+      // Set mock to only have current bookings
+      mockBookingsData = [
+        {
+          id: 'booking-future',
+          roomTypeName: 'Deluxe Room',
+          checkInDate: '2026-02-15',
+          checkOutDate: '2026-02-18',
+          numGuests: 2,
+          totalPrice: 4500,
+          pointsEarned: 450,
+          status: 'confirmed',
+          notes: null,
+          cancellationReason: null,
+          createdAt: '2026-01-05',
+        },
+      ];
+
+      render(<MyBookingsPage />);
+
+      await user.click(screen.getByTestId('tab-history'));
+
+      expect(screen.getByText('No past bookings')).toBeInTheDocument();
+    });
+  });
+
+  describe('Tab Integration with Existing Features', () => {
+    it('should open details modal when clicking card in current tab', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      await user.click(screen.getByTestId('booking-card-booking-1'));
+
+      expect(screen.getByTestId('booking-details-modal')).toBeInTheDocument();
+    });
+
+    it('should open details modal when clicking card in history tab', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      await user.click(screen.getByTestId('tab-history'));
+      await user.click(screen.getByTestId('booking-card-booking-2'));
+
+      expect(screen.getByTestId('booking-details-modal')).toBeInTheDocument();
+    });
+
+    it('should show cancel button only for current bookings in modal', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      // Open current booking - should have cancel button
+      await user.click(screen.getByTestId('booking-card-booking-1'));
+      expect(screen.getByTestId('booking-details-cancel')).toBeInTheDocument();
+      await user.click(screen.getByTestId('booking-details-close'));
+
+      // Open history booking - should NOT have cancel button
+      await user.click(screen.getByTestId('tab-history'));
+      await user.click(screen.getByTestId('booking-card-booking-2'));
+      expect(screen.queryByTestId('booking-details-cancel')).not.toBeInTheDocument();
     });
   });
 });

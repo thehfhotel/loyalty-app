@@ -7,6 +7,7 @@ import { trpc } from '../hooks/useTRPC';
 import toast from 'react-hot-toast';
 
 type BookingStatus = 'confirmed' | 'cancelled' | 'completed';
+type BookingTab = 'current' | 'history';
 
 interface Booking {
   id: string;
@@ -34,6 +35,7 @@ export default function MyBookingsPage() {
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [activeTab, setActiveTab] = useState<BookingTab>('current');
 
   // Queries
   const { data: bookings, isLoading, refetch } = trpc.booking.getMyBookings.useQuery();
@@ -82,6 +84,20 @@ export default function MyBookingsPage() {
     return booking.status === 'confirmed' && new Date(booking.checkInDate) > new Date();
   };
 
+  // Filter functions for tabs
+  const isCurrentBooking = (booking: Booking) =>
+    booking.status === 'confirmed' && new Date(booking.checkInDate) > new Date();
+
+  const isHistoryBooking = (booking: Booking) =>
+    booking.status === 'completed' ||
+    booking.status === 'cancelled' ||
+    (booking.status === 'confirmed' && new Date(booking.checkInDate) <= new Date());
+
+  // Filtered bookings
+  const currentBookings = bookings?.filter((b) => isCurrentBooking(b as Booking)) ?? [];
+  const historyBookings = bookings?.filter((b) => isHistoryBooking(b as Booking)) ?? [];
+  const displayedBookings = activeTab === 'current' ? currentBookings : historyBookings;
+
   if (isLoading) {
     return (
       <MainLayout title={t('booking.myBookings')}>
@@ -107,27 +123,59 @@ export default function MyBookingsPage() {
         </Link>
       </div>
 
+      {/* Tabs */}
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('current')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'current'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+            data-testid="tab-current"
+          >
+            {t('booking.currentBookings')} ({currentBookings.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'history'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+            data-testid="tab-history"
+          >
+            {t('booking.bookingHistory')} ({historyBookings.length})
+          </button>
+        </nav>
+      </div>
+
       {/* Empty State */}
-      {!bookings || bookings.length === 0 ? (
+      {displayedBookings.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-8 text-center">
           <FiCalendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {t('booking.noBookings')}
+            {activeTab === 'current' ? t('booking.noCurrentBookings') : t('booking.noBookingHistory')}
           </h3>
           <p className="text-gray-500 mb-6">
-            {t('booking.noBookingsDescription')}
+            {activeTab === 'current'
+              ? t('booking.noCurrentBookingsDescription')
+              : t('booking.noBookingHistoryDescription')}
           </p>
-          <Link
-            to="/booking"
-            className="inline-flex items-center px-6 py-3 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-          >
-            <FiPlus className="mr-2" />
-            {t('booking.bookYourFirstRoom')}
-          </Link>
+          {activeTab === 'current' && (
+            <Link
+              to="/booking"
+              className="inline-flex items-center px-6 py-3 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+            >
+              <FiPlus className="mr-2" />
+              {t('booking.bookYourFirstRoom')}
+            </Link>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
-          {bookings.map((booking) => (
+          {displayedBookings.map((booking) => (
             <div
               key={booking.id}
               className="bg-white rounded-lg shadow overflow-hidden cursor-pointer hover:shadow-md transition-shadow"

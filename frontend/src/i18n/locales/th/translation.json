@@ -1485,6 +1485,12 @@
     "bookedOn": "จองเมื่อ",
     "clickForDetails": "คลิกเพื่อดูรายละเอียด",
     "bookingDetails": "รายละเอียดการจอง",
+    "currentBookings": "การจองปัจจุบัน",
+    "bookingHistory": "ประวัติการจอง",
+    "noCurrentBookings": "ไม่มีการจองที่กำลังจะมาถึง",
+    "noCurrentBookingsDescription": "คุณยังไม่มีการจองห้องพักที่กำลังจะมาถึง",
+    "noBookingHistory": "ไม่มีประวัติการจอง",
+    "noBookingHistoryDescription": "คุณยังไม่มีประวัติการจองห้องพัก",
     "pointsDeducted": "ถูกหัก",
     "cancellationReason": "เหตุผลในการยกเลิก",
     "status": {

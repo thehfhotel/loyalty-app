@@ -1436,6 +1436,12 @@
     "bookedOn": "Booked on",
     "clickForDetails": "Click for details",
     "bookingDetails": "Booking Details",
+    "currentBookings": "Current Bookings",
+    "bookingHistory": "Booking History",
+    "noCurrentBookings": "No upcoming bookings",
+    "noCurrentBookingsDescription": "You don't have any upcoming room reservations",
+    "noBookingHistory": "No past bookings",
+    "noBookingHistoryDescription": "You don't have any booking history yet",
     "pointsDeducted": "deducted",
     "cancellationReason": "Cancellation reason",
     "status": {
