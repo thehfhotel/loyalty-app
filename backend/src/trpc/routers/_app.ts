@@ -10,6 +10,7 @@ import { couponRouter } from './coupon';
 import { surveyRouter } from './survey';
 import { notificationRouter } from './notification';
 import { adminRouter } from './admin';
+import { bookingRouter } from './booking';
 
 /**
  * Main application router
@@ -22,6 +23,7 @@ export const appRouter = router({
   survey: surveyRouter,
   notification: notificationRouter,
   admin: adminRouter,
+  booking: bookingRouter,
 });
 
 // Export type definition for use in frontend

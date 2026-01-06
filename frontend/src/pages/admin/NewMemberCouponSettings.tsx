@@ -153,7 +153,7 @@ export default function NewMemberCouponSettings() {
   }
 
   return (
-    <MainLayout title={t('admin.newMemberCoupons.title')} showProfileBanner={false} showDashboardButton={true}>
+    <MainLayout title={t('admin.newMemberCoupons.title')} showProfileBanner={false}>
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="mb-8">

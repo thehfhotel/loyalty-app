@@ -816,66 +816,77 @@ describe('tRPC Loyalty Router - Edge Cases', () => {
 
   // ========== Authorization Edge Cases ==========
   describe('Authorization Edge Cases', () => {
-    it('should reject super_admin when trying to award points (admin-only)', async () => {
+    it('should allow super_admin to award points (has admin privileges)', async () => {
       const caller = createCaller({ user: superAdminUser });
-
-      await expect(
-        caller.awardPoints({
-          userId: 'customer-1',
-          points: 500,
-          reason: 'Super admin award',
-        })
-      ).rejects.toThrow(TRPCError);
-      await expect(
-        caller.awardPoints({
-          userId: 'customer-1',
-          points: 500,
-          reason: 'Super admin award',
-        })
-      ).rejects.toMatchObject({
-        code: 'FORBIDDEN',
-        message: 'Admin access required',
+      mockLoyaltyService.awardPoints.mockResolvedValue({
+        transactionId: 'txn-super-admin',
+        pointsAwarded: 500,
       });
+
+      const result = await caller.awardPoints({
+        userId: 'customer-1',
+        points: 500,
+        reason: 'Super admin award',
+      });
+
+      expect(mockLoyaltyService.awardPoints).toHaveBeenCalledWith(
+        'customer-1',
+        500,
+        'Super admin award',
+        undefined,
+        undefined,
+        'super-admin-1',
+        undefined
+      );
+      expect(result).toMatchObject({ transactionId: 'txn-super-admin' });
     });
 
-    it('should reject super_admin when trying to deduct points (admin-only)', async () => {
+    it('should allow super_admin to deduct points (has admin privileges)', async () => {
       const caller = createCaller({ user: superAdminUser });
-
-      await expect(
-        caller.deductPoints({
-          userId: 'customer-1',
-          points: 200,
-          reason: 'Super admin deduction',
-        })
-      ).rejects.toThrow(TRPCError);
-      await expect(
-        caller.deductPoints({
-          userId: 'customer-1',
-          points: 200,
-          reason: 'Super admin deduction',
-        })
-      ).rejects.toMatchObject({
-        code: 'FORBIDDEN',
+      mockLoyaltyService.deductPoints.mockResolvedValue({
+        transactionId: 'txn-super-admin-deduct',
+        pointsDeducted: 200,
       });
+
+      const result = await caller.deductPoints({
+        userId: 'customer-1',
+        points: 200,
+        reason: 'Super admin deduction',
+      });
+
+      expect(mockLoyaltyService.deductPoints).toHaveBeenCalledWith(
+        'customer-1',
+        200,
+        'Super admin deduction',
+        undefined,
+        undefined,
+        'super-admin-1',
+        undefined
+      );
+      expect(result).toMatchObject({ transactionId: 'txn-super-admin-deduct' });
     });
 
-    it('should reject super_admin when trying to update tier config (admin-only)', async () => {
+    it('should allow super_admin to update tier config (has admin privileges)', async () => {
       const caller = createCaller({ user: superAdminUser });
-
-      await expect(
-        caller.updateTierConfig({
-          tierId: '11111111-1111-1111-1111-111111111111',
-          name: 'Updated by Super Admin',
-        })
-      ).rejects.toThrow(TRPCError);
-      await expect(
-        caller.updateTierConfig({
-          tierId: '11111111-1111-1111-1111-111111111111',
-          name: 'Updated by Super Admin',
-        })
-      ).rejects.toMatchObject({
-        code: 'FORBIDDEN',
+      mockLoyaltyService.updateTierConfiguration.mockResolvedValue({
+        id: '11111111-1111-1111-1111-111111111111',
+        name: 'Updated by Super Admin',
+        minNights: 0,
+        benefits: {},
+        color: '#000000',
+        icon: 'star',
       });
+
+      const result = await caller.updateTierConfig({
+        tierId: '11111111-1111-1111-1111-111111111111',
+        name: 'Updated by Super Admin',
+      });
+
+      expect(mockLoyaltyService.updateTierConfiguration).toHaveBeenCalledWith(
+        '11111111-1111-1111-1111-111111111111',
+        { name: 'Updated by Super Admin' }
+      );
+      expect(result).toMatchObject({ name: 'Updated by Super Admin' });
     });
 
     it('should reject super_admin when trying to view other user status (admin-only)', async () => {

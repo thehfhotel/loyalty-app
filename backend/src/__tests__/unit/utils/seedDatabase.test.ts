@@ -447,7 +447,7 @@ describe('SeedDatabase Utils', () => {
         if (query.includes('SELECT EXISTS')) {
           return Promise.resolve({ rows: [{ exists: true }] });
         }
-        if (query.includes('INSERT') && params && params[1] === SAMPLE_SURVEYS[0]!.title) {
+        if (query.includes('INSERT') && params?.[1] === SAMPLE_SURVEYS[0]!.title) {
           return Promise.reject(new Error('Insert failed'));
         }
         return Promise.resolve({ rows: [] });

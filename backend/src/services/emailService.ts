@@ -133,7 +133,7 @@ class EmailService {
    * 3. Delete the test email
    * 4. Return result
    */
-  async testEmailDelivery(timeoutMs: number = 30000): Promise<EmailTestResult> {
+  async testEmailDelivery(timeoutMs = 30000): Promise<EmailTestResult> {
     const testId = `email-test-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
     const startTime = Date.now();
 

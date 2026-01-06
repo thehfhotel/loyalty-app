@@ -281,7 +281,9 @@ describe('EmailService', () => {
       const codes = ['Code-0001', 'Code-0002', 'Code-0003'];
 
       for (let i = 0; i < recipients.length; i++) {
+        // eslint-disable-next-line security/detect-object-injection -- Safe: bounded loop index within array length
         const recipient = recipients[i];
+        // eslint-disable-next-line security/detect-object-injection -- Safe: bounded loop index within array length
         const code = codes[i];
         if (recipient && code) {
           await emailService.sendVerificationEmail(recipient, code);

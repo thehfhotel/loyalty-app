@@ -24,6 +24,19 @@ export function getTestUserForWorker(workerIndex: number) {
   return TEST_USERS[workerIndex % TEST_USERS.length];
 }
 
+// Admin user for testing admin pages (configured in admins.e2e.json mounted in CI)
+export const ADMIN_USER = {
+  email: process.env.E2E_ADMIN_EMAIL || 'e2e-admin@test.local',
+  password: process.env.E2E_ADMIN_PASSWORD || 'AdminPassword123!',
+  firstName: 'E2E',
+  lastName: 'Admin',
+};
+
+// Get admin user
+export function getAdminUser() {
+  return ADMIN_USER;
+}
+
 const AUTH_STORAGE_KEY = 'auth-storage';
 
 export async function loginViaUI(page: Page, email: string, password: string): Promise<void> {
@@ -99,6 +112,9 @@ export async function getAuthState<T = unknown>(page: Page): Promise<T | null> {
 }
 
 export async function logout(page: Page): Promise<void> {
+  // Logout button is now on the Profile page (moved from header)
+  await page.goto('/profile');
+  await page.waitForLoadState('networkidle');
   await page.click('[data-testid="logout-button"]');
   // Wait for navigation to login page (may include query params like ?returnUrl=...)
   await page.waitForURL(/\/login/, { timeout: 15000 });

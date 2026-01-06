@@ -30,6 +30,11 @@ import UserManagement from './pages/admin/UserManagement';
 import NewMemberCouponSettings from './pages/admin/NewMemberCouponSettings';
 import AdminTransactionHistoryPage from './pages/admin/AdminTransactionHistoryPage';
 import EmailServicePage from './pages/admin/EmailServicePage';
+import BookingPage from './pages/BookingPage';
+import MyBookingsPage from './pages/MyBookingsPage';
+import RoomTypeManagement from './pages/admin/RoomTypeManagement';
+import RoomManagement from './pages/admin/RoomManagement';
+import RoomAvailability from './pages/admin/RoomAvailability';
 import { useEffect, useState, useRef } from 'react';
 import { checkPWAInstallPrompt } from './utils/pwaUtils';
 import { notificationService } from './services/notificationService';
@@ -397,6 +402,48 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin">
               <EmailServicePage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Hotel Booking Routes */}
+        <Route
+          path="/booking"
+          element={
+            <ProtectedRoute>
+              <BookingPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/my-bookings"
+          element={
+            <ProtectedRoute>
+              <MyBookingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/room-types"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <RoomTypeManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/rooms"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <RoomManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/room-availability"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <RoomAvailability />
             </ProtectedRoute>
           }
         />

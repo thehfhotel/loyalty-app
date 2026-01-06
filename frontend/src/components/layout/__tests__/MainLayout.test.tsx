@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
-import userEvent from '@testing-library/user-event';
 import MainLayout from '../MainLayout';
 import { useAuthStore } from '../../../store/authStore';
 
@@ -27,7 +26,6 @@ vi.mock('react-i18next', () => ({
     t: (key: string, params?: any) => {
       const translations: Record<string, string> = {
         'dashboard.welcome': `Welcome, ${params?.name || 'User'}`,
-        'common.logout': 'Logout',
       };
       return translations[key] || key;
     },
@@ -39,7 +37,6 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('react-icons/fi', () => ({
-  FiLogOut: () => <span data-testid="logout-icon">🚪</span>,
   FiBell: () => <span data-testid="bell-icon">🔔</span>,
   FiGlobe: () => <span data-testid="globe-icon">🌐</span>,
   FiCheck: () => <span data-testid="check-icon">✓</span>,
@@ -71,7 +68,6 @@ vi.mock('../../notifications/NotificationCenter', () => ({
 }));
 
 describe('MainLayout', () => {
-  const mockLogout = vi.fn();
   const mockUser = {
     id: '123',
     email: 'test@example.com',
@@ -85,7 +81,6 @@ describe('MainLayout', () => {
     (useAuthStore as any).mockImplementation((selector: any) => {
       const state = {
         user: mockUser,
-        logout: mockLogout,
       };
       return selector(state);
     });
@@ -146,15 +141,9 @@ describe('MainLayout', () => {
       expect(screen.getByTestId('notification-center')).toBeInTheDocument();
     });
 
-    it('should render logout button', () => {
+    it('should render dashboard button', () => {
       renderWithRouter(<MainLayout title="Test">Content</MainLayout>);
-      const logoutButton = screen.getByRole('button', { name: /logout/i });
-      expect(logoutButton).toBeInTheDocument();
-    });
-
-    it('should render logout icon in button', () => {
-      renderWithRouter(<MainLayout title="Test">Content</MainLayout>);
-      expect(screen.getByTestId('logout-icon')).toBeInTheDocument();
+      expect(screen.getByTestId('dashboard-button')).toBeInTheDocument();
     });
 
     it('should have proper header spacing and layout', () => {
@@ -192,64 +181,16 @@ describe('MainLayout', () => {
   });
 
   describe('Dashboard Button', () => {
-    it('should not show dashboard button by default', () => {
+    it('should always show dashboard button', () => {
       renderWithRouter(<MainLayout title="Test">Content</MainLayout>);
-      expect(screen.queryByTestId('dashboard-button')).not.toBeInTheDocument();
-    });
-
-    it('should show dashboard button when showDashboardButton is true', () => {
-      renderWithRouter(
-        <MainLayout title="Test" showDashboardButton={true}>
-          Content
-        </MainLayout>
-      );
       expect(screen.getByTestId('dashboard-button')).toBeInTheDocument();
     });
 
     it('should render dashboard button with correct variant and size', () => {
-      renderWithRouter(
-        <MainLayout title="Test" showDashboardButton={true}>
-          Content
-        </MainLayout>
-      );
+      renderWithRouter(<MainLayout title="Test">Content</MainLayout>);
       const button = screen.getByTestId('dashboard-button');
       expect(button.getAttribute('data-variant')).toBe('outline');
       expect(button.getAttribute('data-size')).toBe('md');
-    });
-
-    it('should not show dashboard button when showDashboardButton is false', () => {
-      renderWithRouter(
-        <MainLayout title="Test" showDashboardButton={false}>
-          Content
-        </MainLayout>
-      );
-      expect(screen.queryByTestId('dashboard-button')).not.toBeInTheDocument();
-    });
-  });
-
-  describe('Logout Functionality', () => {
-    it('should call logout when logout button is clicked', async () => {
-      const user = userEvent.setup();
-      renderWithRouter(<MainLayout title="Test">Content</MainLayout>);
-
-      const logoutButton = screen.getByRole('button', { name: /logout/i });
-      await user.click(logoutButton);
-
-      expect(mockLogout).toHaveBeenCalledTimes(1);
-    });
-
-    it('should have primary button styling on logout button', () => {
-      renderWithRouter(<MainLayout title="Test">Content</MainLayout>);
-      const logoutButton = screen.getByRole('button', { name: /logout/i });
-      expect(logoutButton.className).toContain('bg-primary-600');
-      expect(logoutButton.className).toContain('hover:bg-primary-700');
-    });
-
-    it('should have focus ring on logout button for accessibility', () => {
-      renderWithRouter(<MainLayout title="Test">Content</MainLayout>);
-      const logoutButton = screen.getByRole('button', { name: /logout/i });
-      expect(logoutButton.className).toContain('focus:outline-none');
-      expect(logoutButton.className).toContain('focus:ring-2');
     });
   });
 
@@ -303,7 +244,6 @@ describe('MainLayout', () => {
       (useAuthStore as any).mockImplementation((selector: any) => {
         const state = {
           user: { id: '123', email: 'test@example.com' },
-          logout: mockLogout,
         };
         return selector(state);
       });
@@ -345,9 +285,9 @@ describe('MainLayout', () => {
   });
 
   describe('Prop Combinations', () => {
-    it('should handle all props set to true', () => {
+    it('should handle showProfileBanner=true', () => {
       renderWithRouter(
-        <MainLayout title="Full Page" showProfileBanner={true} showDashboardButton={true}>
+        <MainLayout title="Full Page" showProfileBanner={true}>
           Content
         </MainLayout>
       );
@@ -356,15 +296,15 @@ describe('MainLayout', () => {
       expect(screen.getByTestId('dashboard-button')).toBeInTheDocument();
     });
 
-    it('should handle all optional props set to false', () => {
+    it('should handle showProfileBanner=false', () => {
       renderWithRouter(
-        <MainLayout title="Minimal Page" showProfileBanner={false} showDashboardButton={false}>
+        <MainLayout title="Minimal Page" showProfileBanner={false}>
           Content
         </MainLayout>
       );
       expect(screen.getByText('Minimal Page')).toBeInTheDocument();
       expect(screen.queryByTestId('profile-completion-banner')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('dashboard-button')).not.toBeInTheDocument();
+      expect(screen.getByTestId('dashboard-button')).toBeInTheDocument();
     });
 
     it('should handle long titles without breaking layout', () => {
@@ -396,17 +336,10 @@ describe('MainLayout', () => {
       expect(h1.textContent).toBe('Page Title');
     });
 
-    it('should have accessible logout button', () => {
+    it('should have accessible dashboard button', () => {
       renderWithRouter(<MainLayout title="Test">Content</MainLayout>);
-      const logoutButton = screen.getByRole('button', { name: /logout/i });
-      expect(logoutButton).toBeInTheDocument();
-    });
-
-    it('should be keyboard navigable', () => {
-      renderWithRouter(<MainLayout title="Test">Content</MainLayout>);
-      const logoutButton = screen.getByRole('button', { name: /logout/i });
-      logoutButton.focus();
-      expect(document.activeElement).toBe(logoutButton);
+      const dashboardButton = screen.getByTestId('dashboard-button');
+      expect(dashboardButton).toBeInTheDocument();
     });
   });
 });
