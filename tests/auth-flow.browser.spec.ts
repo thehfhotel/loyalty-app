@@ -58,7 +58,7 @@ test.describe('Auth flow (browser)', () => {
     }
 
     await expect(page.getByTestId('loyalty-points')).toBeVisible();
-    await expect(page.getByTestId('logout-button')).toBeVisible();
+    // Logout button is now on Profile page, not dashboard (moved in refactor)
   });
 
   test('Login with invalid credentials shows error', async ({ page }, testInfo) => {

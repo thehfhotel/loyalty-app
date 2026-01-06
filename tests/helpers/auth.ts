@@ -112,6 +112,9 @@ export async function getAuthState<T = unknown>(page: Page): Promise<T | null> {
 }
 
 export async function logout(page: Page): Promise<void> {
+  // Logout button is now on the Profile page (moved from header)
+  await page.goto('/profile');
+  await page.waitForLoadState('networkidle');
   await page.click('[data-testid="logout-button"]');
   // Wait for navigation to login page (may include query params like ?returnUrl=...)
   await page.waitForURL(/\/login/, { timeout: 15000 });
