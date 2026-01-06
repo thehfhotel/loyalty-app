@@ -1434,6 +1434,8 @@
     "notes": "Special Requests",
     "notesPlaceholder": "Any special requests? (e.g., early check-in, high floor)",
     "bookedOn": "Booked on",
+    "clickForDetails": "Click for details",
+    "bookingDetails": "Booking Details",
     "pointsDeducted": "deducted",
     "cancellationReason": "Cancellation reason",
     "status": {

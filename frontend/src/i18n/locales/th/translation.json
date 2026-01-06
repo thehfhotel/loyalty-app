@@ -1483,6 +1483,8 @@
     "notes": "ความต้องการพิเศษ",
     "notesPlaceholder": "มีความต้องการพิเศษหรือไม่? (เช่น เช็คอินก่อนเวลา, ห้องชั้นสูง)",
     "bookedOn": "จองเมื่อ",
+    "clickForDetails": "คลิกเพื่อดูรายละเอียด",
+    "bookingDetails": "รายละเอียดการจอง",
     "pointsDeducted": "ถูกหัก",
     "cancellationReason": "เหตุผลในการยกเลิก",
     "status": {
