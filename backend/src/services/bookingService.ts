@@ -1628,7 +1628,7 @@ export class BookingService {
           u.email as "userEmail",
           up.first_name as "userFirstName",
           up.last_name as "userLastName",
-          u.membership_id as "userMembershipId",
+          up.membership_id as "userMembershipId",
           up.phone as "userPhone"
         FROM bookings b
         JOIN rooms r ON b.room_id = r.id

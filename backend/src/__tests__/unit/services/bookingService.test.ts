@@ -1495,4 +1495,118 @@ describe('BookingService', () => {
       });
     });
   });
+
+  // ==================== getAllBookingsForAdmin Tests ====================
+  describe('getAllBookingsForAdmin', () => {
+    const mockAdminBooking = {
+      ...mockBooking,
+      paymentType: 'full' as const,
+      paymentAmount: 7000,
+      slipImageUrl: null,
+      slipUploadedAt: null,
+      slipokStatus: null,
+      slipokVerifiedAt: null,
+      adminStatus: 'pending' as const,
+      adminVerifiedAt: null,
+      adminVerifiedBy: null,
+      adminNotes: null,
+      discountAmount: null,
+      discountReason: null,
+      originalTotal: null,
+      userEmail: 'test@example.com',
+      userFirstName: 'John',
+      userLastName: 'Doe',
+      userMembershipId: 'MEM-12345',
+      userPhone: '0812345678',
+    };
+
+    it('should query with correct SQL including user profile fields', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: '1' }] as never) // COUNT query
+        .mockResolvedValueOnce([mockAdminBooking] as never); // Main query
+
+      await bookingService.getAllBookingsForAdmin({});
+
+      // Verify the SQL query uses correct table aliases for user profile fields
+      const mainQueryCall = mockQuery.mock.calls[1];
+      const sqlQuery = mainQueryCall![0] as string;
+
+      // Verify membership_id comes from user_profiles (up), NOT users (u)
+      expect(sqlQuery).toContain('up.membership_id as "userMembershipId"');
+      expect(sqlQuery).not.toMatch(/u\.membership_id/);
+
+      // Verify other user profile fields also use correct alias
+      expect(sqlQuery).toContain('up.first_name as "userFirstName"');
+      expect(sqlQuery).toContain('up.last_name as "userLastName"');
+      expect(sqlQuery).toContain('up.phone as "userPhone"');
+
+      // Verify email comes from users table
+      expect(sqlQuery).toContain('u.email as "userEmail"');
+    });
+
+    it('should return bookings with user profile data', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: '1' }] as never)
+        .mockResolvedValueOnce([mockAdminBooking] as never);
+
+      const result = await bookingService.getAllBookingsForAdmin({});
+
+      expect(result.bookings).toHaveLength(1);
+      expect(result.total).toBe(1);
+      // eslint-disable-next-line security/detect-object-injection
+      expect(result.bookings[0]).toMatchObject({
+        userEmail: 'test@example.com',
+        userFirstName: 'John',
+        userLastName: 'Doe',
+        userMembershipId: 'MEM-12345',
+        userPhone: '0812345678',
+      });
+    });
+
+    it('should handle pagination correctly', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: '50' }] as never)
+        .mockResolvedValueOnce([mockAdminBooking] as never);
+
+      await bookingService.getAllBookingsForAdmin({
+        limit: 10,
+        offset: 20,
+      });
+
+      const mainQueryCall = mockQuery.mock.calls[1];
+      const sqlParams = mainQueryCall![1] as unknown[];
+
+      // Verify limit and offset are passed
+      expect(sqlParams).toContain(10);
+      expect(sqlParams).toContain(20);
+    });
+
+    it('should apply search filter to email, name, and booking ID', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: '1' }] as never)
+        .mockResolvedValueOnce([mockAdminBooking] as never);
+
+      await bookingService.getAllBookingsForAdmin({
+        search: 'john@test.com',
+      });
+
+      // Verify search is applied to both COUNT and main queries
+      const countQueryCall = mockQuery.mock.calls[0];
+      const countQuery = countQueryCall![0] as string;
+      expect(countQuery).toContain('ILIKE');
+      expect(countQuery).toContain('u.email');
+      expect(countQuery).toContain('up.first_name');
+    });
+
+    it('should return empty array when no bookings found', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: '0' }] as never)
+        .mockResolvedValueOnce([] as never);
+
+      const result = await bookingService.getAllBookingsForAdmin({});
+
+      expect(result.bookings).toHaveLength(0);
+      expect(result.total).toBe(0);
+    });
+  });
 });
