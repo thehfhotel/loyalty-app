@@ -669,4 +669,152 @@ describe('tRPC Loyalty Router Integration Tests', () => {
       ).rejects.toThrow('Tier not found');
     });
   });
+
+  // ========== Nullable Fields Tests ==========
+  describe('nullable fields handling', () => {
+    describe('getStatus with null fields', () => {
+      it('should handle null next_tier_name for top-tier users', async () => {
+        const caller = createCallerWithUser(loyaltyRouter, customerUser);
+        const topTierStatus = {
+          ...mockLoyaltyStatus,
+          tier_name: 'Platinum',
+          tier_level: 3,
+          next_tier_name: null,
+          next_tier_nights: null,
+          nights_to_next_tier: null,
+          progress_percentage: 100,
+        };
+        mockLoyaltyService.getUserLoyaltyStatus.mockResolvedValue(topTierStatus);
+
+        const result = await caller.getStatus({});
+
+        expect(result).not.toBeNull();
+        expect(result!.next_tier_name).toBeNull();
+        expect(result!.nights_to_next_tier).toBeNull();
+        expect(result!.next_tier_nights).toBeNull();
+      });
+
+      it('should handle null tier_benefits', async () => {
+        const caller = createCallerWithUser(loyaltyRouter, customerUser);
+        const statusWithNullBenefits = {
+          ...mockLoyaltyStatus,
+          tier_benefits: null,
+        };
+        mockLoyaltyService.getUserLoyaltyStatus.mockResolvedValue(statusWithNullBenefits);
+
+        const result = await caller.getStatus({});
+
+        expect(result).not.toBeNull();
+        expect(result!.tier_benefits).toBeNull();
+      });
+
+      it('should handle user with no loyalty record (null response)', async () => {
+        const caller = createCallerWithUser(loyaltyRouter, customerUser);
+        mockLoyaltyService.getUserLoyaltyStatus.mockResolvedValue(null);
+
+        const result = await caller.getStatus({});
+
+        expect(result).toBeNull();
+      });
+
+      it('should handle loyalty status with minimal fields', async () => {
+        const caller = createCallerWithUser(loyaltyRouter, customerUser);
+        const minimalStatus = {
+          user_id: 'customer-test-id',
+          current_points: 0,
+          total_nights: 0,
+          tier_name: 'Bronze',
+          tier_color: null,
+          tier_benefits: null,
+          tier_level: 0,
+          progress_percentage: null,
+          next_tier_nights: null,
+          next_tier_name: null,
+          nights_to_next_tier: null,
+        };
+        mockLoyaltyService.getUserLoyaltyStatus.mockResolvedValue(minimalStatus);
+
+        const result = await caller.getStatus({});
+
+        expect(result).not.toBeNull();
+        expect(result!.tier_color).toBeNull();
+        expect(result!.tier_benefits).toBeNull();
+        expect(result!.progress_percentage).toBeNull();
+      });
+    });
+
+    describe('getTransactions with null fields', () => {
+      it('should handle null admin fields in transactions', async () => {
+        const caller = createCallerWithUser(loyaltyRouter, customerUser);
+        const transactionsWithNullAdmin = {
+          ...mockTransactionHistory,
+          transactions: [
+            {
+              id: 'txn-1',
+              user_id: 'customer-test-id',
+              points: 500,
+              type: 'earn',
+              description: 'Hotel stay points',
+              reference_id: 'stay-123',
+              admin_user_id: null,
+              admin_reason: null,
+              expires_at: null,
+              created_at: new Date('2025-01-01'),
+            },
+          ],
+        };
+        mockLoyaltyService.getTransactionHistory.mockResolvedValue(transactionsWithNullAdmin);
+
+        const result = await caller.getTransactions({});
+
+        expect(result.transactions[0]?.admin_user_id).toBeNull();
+        expect(result.transactions[0]?.admin_reason).toBeNull();
+        expect(result.transactions[0]?.expires_at).toBeNull();
+      });
+
+      it('should handle null transaction description', async () => {
+        const caller = createCallerWithUser(loyaltyRouter, customerUser);
+        const transactionsWithNullDescription = {
+          ...mockTransactionHistory,
+          transactions: [
+            {
+              id: 'txn-1',
+              user_id: 'customer-test-id',
+              points: 500,
+              type: 'earn',
+              description: null,
+              reference_id: null,
+              admin_user_id: null,
+              admin_reason: null,
+              expires_at: null,
+              created_at: new Date('2025-01-01'),
+            },
+          ],
+        };
+        mockLoyaltyService.getTransactionHistory.mockResolvedValue(transactionsWithNullDescription);
+
+        const result = await caller.getTransactions({});
+
+        expect(result.transactions[0]?.description).toBeNull();
+        expect(result.transactions[0]?.reference_id).toBeNull();
+      });
+
+      it('should handle empty transaction list', async () => {
+        const caller = createCallerWithUser(loyaltyRouter, customerUser);
+        const emptyTransactions = {
+          transactions: [],
+          total: 0,
+          page: 1,
+          pageSize: 20,
+          totalPages: 0,
+        };
+        mockLoyaltyService.getTransactionHistory.mockResolvedValue(emptyTransactions);
+
+        const result = await caller.getTransactions({});
+
+        expect(result.transactions).toHaveLength(0);
+        expect(result.total).toBe(0);
+      });
+    });
+  });
 });

@@ -669,4 +669,167 @@ describe('tRPC Survey Router - Integration Tests', () => {
       ).rejects.toThrow('Analytics generation failed');
     });
   });
+
+  // ========== Nullable Fields Handling Tests ==========
+  describe('nullable fields handling', () => {
+    describe('getActiveSurveys with null fields', () => {
+      it('should handle survey with null description', async () => {
+        const caller = createAuthenticatedCaller(surveyRouter, 'customer');
+        const surveyWithNullDesc = {
+          ...mockSurvey,
+          description: null,
+        };
+        jest.spyOn(surveyService, 'getAvailableSurveys').mockResolvedValue([surveyWithNullDesc]);
+
+        const result = await caller.getActiveSurveys();
+
+        expect(result).not.toBeNull();
+        expect(result).toHaveLength(1);
+        expect(result[0]!.description).toBeNull();
+      });
+
+      it('should handle survey with null target_segment', async () => {
+        const caller = createAuthenticatedCaller(surveyRouter, 'customer');
+        const surveyWithNullSegment = {
+          ...mockSurvey,
+          target_segment: null,
+        };
+        jest.spyOn(surveyService, 'getAvailableSurveys').mockResolvedValue([surveyWithNullSegment]);
+
+        const result = await caller.getActiveSurveys();
+
+        expect(result).not.toBeNull();
+        expect(result).toHaveLength(1);
+        expect(result[0]!.target_segment).toBeNull();
+      });
+
+      it('should handle survey with empty target_segment', async () => {
+        const caller = createAuthenticatedCaller(surveyRouter, 'customer');
+        const surveyWithEmptySegment = {
+          ...mockSurvey,
+          target_segment: {},
+        };
+        jest.spyOn(surveyService, 'getAvailableSurveys').mockResolvedValue([surveyWithEmptySegment]);
+
+        const result = await caller.getActiveSurveys();
+
+        expect(result).not.toBeNull();
+        expect(result).toHaveLength(1);
+        expect(result[0]!.target_segment).toEqual({});
+      });
+
+      it('should handle survey with all optional fields null', async () => {
+        const caller = createAuthenticatedCaller(surveyRouter, 'customer');
+        const surveyWithAllNulls = {
+          id: SURVEY_ID,
+          title: 'Minimal Survey',
+          description: null,
+          status: 'active',
+          access_type: 'public',
+          questions: [],
+          target_segment: null,
+          created_at: '2025-01-01T00:00:00.000Z',
+          updated_at: '2025-01-01T00:00:00.000Z',
+          created_by: 'admin-test-id',
+        };
+        jest.spyOn(surveyService, 'getAvailableSurveys').mockResolvedValue([surveyWithAllNulls] as any);
+
+        const result = await caller.getActiveSurveys();
+
+        expect(result).not.toBeNull();
+        expect(result).toHaveLength(1);
+        expect(result[0]!.description).toBeNull();
+        expect(result[0]!.target_segment).toBeNull();
+      });
+    });
+
+    describe('getSurveyById with null fields', () => {
+      it('should handle survey with null description', async () => {
+        const caller = createAuthenticatedCaller(surveyRouter, 'customer');
+        const surveyWithNullDesc = {
+          ...mockSurvey,
+          description: null,
+        };
+        jest.spyOn(surveyService, 'canUserAccessSurvey').mockResolvedValue(true);
+        jest.spyOn(surveyService, 'getSurveyById').mockResolvedValue(surveyWithNullDesc);
+
+        const result = await caller.getSurveyById({ surveyId: SURVEY_ID });
+
+        expect(result).not.toBeNull();
+        expect(result.description).toBeNull();
+        expect(result.id).toBe(SURVEY_ID);
+      });
+
+      it('should handle survey with null target_segment', async () => {
+        const caller = createAuthenticatedCaller(surveyRouter, 'customer');
+        const surveyWithNullSegment = {
+          ...mockSurvey,
+          target_segment: null,
+        };
+        jest.spyOn(surveyService, 'canUserAccessSurvey').mockResolvedValue(true);
+        jest.spyOn(surveyService, 'getSurveyById').mockResolvedValue(surveyWithNullSegment);
+
+        const result = await caller.getSurveyById({ surveyId: SURVEY_ID });
+
+        expect(result).not.toBeNull();
+        expect(result.target_segment).toBeNull();
+      });
+    });
+
+    describe('getMyResponses with null fields', () => {
+      it('should handle response with partial answers', async () => {
+        const caller = createAuthenticatedCaller(surveyRouter, 'customer');
+        const responseWithPartialAnswers = {
+          ...mockSurveyResponse,
+          answers: { q1: '5' }, // Missing answers for other questions
+          is_completed: false,
+          progress: 50,
+          completed_at: null,
+        };
+        jest.spyOn(surveyService, 'getUserResponse').mockResolvedValue(responseWithPartialAnswers);
+
+        const result = await caller.getMyResponses({ surveyId: SURVEY_ID, page: 1, pageSize: 10 });
+
+        expect(result).not.toBeNull();
+        expect(result.responses).toHaveLength(1);
+        expect(result.responses[0]!.is_completed).toBe(false);
+        expect(result.responses[0]!.completed_at).toBeNull();
+        expect(result.responses[0]!.progress).toBe(50);
+      });
+
+      it('should handle response with null completed_at (in progress)', async () => {
+        const caller = createAuthenticatedCaller(surveyRouter, 'customer');
+        const inProgressResponse = {
+          ...mockSurveyResponse,
+          is_completed: false,
+          completed_at: null,
+        };
+        jest.spyOn(surveyService, 'getUserResponse').mockResolvedValue(inProgressResponse);
+
+        const result = await caller.getMyResponses({ surveyId: SURVEY_ID, page: 1, pageSize: 10 });
+
+        expect(result).not.toBeNull();
+        expect(result.responses).toHaveLength(1);
+        expect(result.responses[0]!.completed_at).toBeNull();
+      });
+
+      it('should handle response with empty answers object', async () => {
+        const caller = createAuthenticatedCaller(surveyRouter, 'customer');
+        const responseWithEmptyAnswers = {
+          ...mockSurveyResponse,
+          answers: {},
+          is_completed: false,
+          progress: 0,
+        };
+        jest.spyOn(surveyService, 'getUserResponse').mockResolvedValue(responseWithEmptyAnswers);
+
+        const result = await caller.getMyResponses({ surveyId: SURVEY_ID, page: 1, pageSize: 10 });
+
+        expect(result).not.toBeNull();
+        expect(result.responses).toHaveLength(1);
+        expect(result.responses[0]!.answers).toEqual({});
+        expect(result.responses[0]!.progress).toBe(0);
+      });
+    });
+  });
 });

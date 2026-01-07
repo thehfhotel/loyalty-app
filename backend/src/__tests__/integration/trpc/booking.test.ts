@@ -1404,6 +1404,121 @@ describe('tRPC Booking Router - Integration Tests', () => {
       expect(booking.user.email).toBe('customer@test.com');
     });
 
+    it('should handle null payment and slip fields gracefully', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const bookingWithoutPayment = {
+        ...mockRawBooking,
+        paymentAmount: null,
+        slipImageUrl: null,
+        slipUploadedAt: null,
+        slipokStatus: null,
+        slipokVerifiedAt: null,
+        slipokResponse: null,
+        adminStatus: null,
+        adminVerifiedAt: null,
+        adminVerifiedBy: null,
+      };
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [bookingWithoutPayment],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      const booking = response.bookings[0]!;
+
+      // Payment fields should be null
+      expect(booking.paymentAmount).toBeNull();
+      // Slip object should be null when slipImageUrl is null
+      expect(booking.slip).toBeNull();
+    });
+
+    it('should handle null admin verification fields gracefully', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const bookingWithoutAdminVerification = {
+        ...mockRawBooking,
+        adminStatus: 'pending' as const,
+        adminVerifiedAt: null,
+        adminVerifiedBy: null,
+        adminNotes: null,
+      };
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [bookingWithoutAdminVerification],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      const booking = response.bookings[0]!;
+
+      // Admin verification fields should be preserved as null
+      expect(booking.adminNotes).toBeNull();
+      // Slip should still exist with pending admin status
+      expect(booking.slip).toBeDefined();
+      expect(booking.slip?.adminStatus).toBe('pending');
+      expect(booking.slip?.adminVerifiedAt).toBeNull();
+      expect(booking.slip?.adminVerifiedBy).toBeNull();
+    });
+
+    it('should handle null discount fields gracefully', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const bookingWithoutDiscount = {
+        ...mockRawBooking,
+        discountAmount: 0,
+        discountReason: null,
+      };
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [bookingWithoutDiscount],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      const booking = response.bookings[0]!;
+
+      // Discount fields should handle zero and null
+      expect(booking.discountAmount).toBe(0);
+      expect(booking.discountReason).toBeNull();
+    });
+
+    it('should handle both firstName and lastName being null', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const bookingWithBothNamesNull = {
+        ...mockRawBooking,
+        userFirstName: null,
+        userLastName: null,
+      };
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [bookingWithBothNamesNull],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      const booking = response.bookings[0]!;
+
+      // Both names null - email should be the fallback for display
+      expect(booking.user.firstName).toBeNull();
+      expect(booking.user.lastName).toBeNull();
+      expect(booking.user.email).toBe('customer@test.com');
+    });
+
     it('should calculate totalPages correctly', async () => {
       const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
       mockBookingService.getAllBookingsForAdmin.mockResolvedValue({

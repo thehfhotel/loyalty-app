@@ -693,4 +693,165 @@ describe('tRPC User Router - Integration Tests', () => {
       await expect(caller.getEmailVerificationStatus()).rejects.toThrow('User not found');
     });
   });
+
+  // ========== Nullable Fields Handling Tests ==========
+  describe('nullable fields handling', () => {
+    describe('getProfile with null fields', () => {
+      it('should handle profile with null avatarUrl', async () => {
+        const caller = createCallerWithUser(userRouter, mockUsers.customer);
+        const profileWithNullAvatar = {
+          ...mockProfile,
+          avatarUrl: null,
+        };
+        mockUserService.getProfile.mockResolvedValue(profileWithNullAvatar);
+
+        const result = await caller.getProfile();
+
+        expect(result).not.toBeNull();
+        expect(result.avatarUrl).toBeNull();
+      });
+
+      it('should handle profile with null phone', async () => {
+        const caller = createCallerWithUser(userRouter, mockUsers.customer);
+        const profileWithNullPhone = {
+          ...mockProfile,
+          phone: null,
+        };
+        mockUserService.getProfile.mockResolvedValue(profileWithNullPhone);
+
+        const result = await caller.getProfile();
+
+        expect(result).not.toBeNull();
+        expect(result.phone).toBeNull();
+      });
+
+      it('should handle profile with null dateOfBirth', async () => {
+        const caller = createCallerWithUser(userRouter, mockUsers.customer);
+        const profileWithNullDob = {
+          ...mockProfile,
+          dateOfBirth: null,
+        };
+        mockUserService.getProfile.mockResolvedValue(profileWithNullDob);
+
+        const result = await caller.getProfile();
+
+        expect(result).not.toBeNull();
+        expect(result.dateOfBirth).toBeNull();
+      });
+
+      it('should handle profile with null gender', async () => {
+        const caller = createCallerWithUser(userRouter, mockUsers.customer);
+        const profileWithNullGender = {
+          ...mockProfile,
+          gender: null,
+        };
+        mockUserService.getProfile.mockResolvedValue(profileWithNullGender);
+
+        const result = await caller.getProfile();
+
+        expect(result).not.toBeNull();
+        expect(result.gender).toBeNull();
+      });
+
+      it('should handle profile with null occupation', async () => {
+        const caller = createCallerWithUser(userRouter, mockUsers.customer);
+        const profileWithNullOccupation = {
+          ...mockProfile,
+          occupation: null,
+        };
+        mockUserService.getProfile.mockResolvedValue(profileWithNullOccupation);
+
+        const result = await caller.getProfile();
+
+        expect(result).not.toBeNull();
+        expect(result.occupation).toBeNull();
+      });
+
+      it('should handle profile with all optional fields null', async () => {
+        const caller = createCallerWithUser(userRouter, mockUsers.customer);
+        const profileWithAllNulls = {
+          userId: 'customer-test-id',
+          firstName: 'John',
+          lastName: 'Doe',
+          phone: null,
+          dateOfBirth: null,
+          preferences: null,
+          avatarUrl: null,
+          membershipId: 'MEM123456',
+          gender: null,
+          occupation: null,
+          createdAt: new Date('2024-01-01'),
+          updatedAt: new Date('2024-01-15'),
+        };
+        mockUserService.getProfile.mockResolvedValue(profileWithAllNulls);
+
+        const result = await caller.getProfile();
+
+        expect(result).not.toBeNull();
+        expect(result.userId).toBe('customer-test-id');
+        expect(result.firstName).toBe('John');
+        expect(result.phone).toBeNull();
+        expect(result.dateOfBirth).toBeNull();
+        expect(result.preferences).toBeNull();
+        expect(result.avatarUrl).toBeNull();
+        expect(result.gender).toBeNull();
+        expect(result.occupation).toBeNull();
+      });
+    });
+
+    describe('getPendingEmailChange with null fields', () => {
+      it('should handle no pending email change (returns null)', async () => {
+        const caller = createCallerWithUser(userRouter, mockUsers.customer);
+        mockUserService.getPendingEmailChange.mockResolvedValue(null);
+
+        const result = await caller.getPendingEmailChange();
+
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('updateProfile with null field values', () => {
+      it('should allow setting phone to null', async () => {
+        const caller = createCallerWithUser(userRouter, mockUsers.customer);
+        const updateData = {
+          phone: undefined, // Clearing phone
+        };
+        const updatedProfile = { ...mockProfile, phone: null };
+        mockUserService.updateProfile.mockResolvedValue(updatedProfile);
+
+        const result = await caller.updateProfile(updateData);
+
+        expect(result.phone).toBeNull();
+      });
+
+      it('should allow updating only firstName when other fields are null', async () => {
+        const caller = createCallerWithUser(userRouter, mockUsers.customer);
+        const updateData = {
+          firstName: 'NewName',
+        };
+        const profileWithNulls = {
+          userId: 'customer-test-id',
+          firstName: 'NewName',
+          lastName: 'Doe',
+          phone: null,
+          dateOfBirth: null,
+          preferences: null,
+          avatarUrl: null,
+          membershipId: 'MEM123456',
+          gender: null,
+          occupation: null,
+          createdAt: new Date('2024-01-01'),
+          updatedAt: new Date('2024-01-15'),
+        };
+        mockUserService.updateProfile.mockResolvedValue(profileWithNulls);
+
+        const result = await caller.updateProfile(updateData);
+
+        expect(result).not.toBeNull();
+        expect(result.firstName).toBe('NewName');
+        expect(result.phone).toBeNull();
+        expect(result.avatarUrl).toBeNull();
+      });
+    });
+  });
 });

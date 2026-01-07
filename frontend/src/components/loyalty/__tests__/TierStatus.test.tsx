@@ -517,4 +517,136 @@ describe('TierStatus', () => {
       expect(awardIcons.length).toBeGreaterThan(0);
     });
   });
+
+  describe('Null Field Handling', () => {
+    it('should handle null tier_color gracefully with fallback style', () => {
+      const statusWithNullColor = {
+        ...mockLoyaltyStatus,
+        tier_color: null as any,
+      };
+
+      const { container } = render(<TierStatus loyaltyStatus={statusWithNullColor} allTiers={mockTiers} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      // Required fields should still render
+      expect(screen.getByText('Tier Status')).toBeInTheDocument();
+      expect(screen.getAllByText('Silver').length).toBeGreaterThan(0);
+    });
+
+    it('should handle undefined tier_color gracefully', () => {
+      const statusWithUndefinedColor = {
+        ...mockLoyaltyStatus,
+        tier_color: undefined as any,
+      };
+
+      const { container } = render(<TierStatus loyaltyStatus={statusWithUndefinedColor} allTiers={mockTiers} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      expect(screen.getByText('Tier Status')).toBeInTheDocument();
+    });
+
+    it('should handle null tier_name gracefully', () => {
+      const statusWithNullTierName = {
+        ...mockLoyaltyStatus,
+        tier_name: null as any,
+      };
+
+      const { container } = render(<TierStatus loyaltyStatus={statusWithNullTierName} allTiers={mockTiers} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      expect(screen.getByText('Tier Status')).toBeInTheDocument();
+    });
+
+    it('should handle missing tier lookup gracefully when tier_name is not in allTiers', () => {
+      const statusWithUnknownTier = {
+        ...mockLoyaltyStatus,
+        tier_name: 'NonExistentTier',
+      };
+
+      const { container } = render(<TierStatus loyaltyStatus={statusWithUnknownTier} allTiers={mockTiers} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      expect(screen.getByText('Tier Status')).toBeInTheDocument();
+      // The unknown tier name should still be displayed
+      expect(screen.getByText('NonExistentTier')).toBeInTheDocument();
+    });
+
+    it('should not crash with minimal required props', () => {
+      const minimalStatus: UserLoyaltyStatus = {
+        user_id: 'user-123',
+        current_points: 0,
+        total_nights: 0,
+        tier_name: 'Bronze',
+        tier_color: '#CD7F32',
+        tier_benefits: {},
+        tier_level: 1,
+        progress_percentage: 0,
+        next_tier_nights: null,
+        next_tier_name: null,
+        nights_to_next_tier: null,
+      };
+
+      const { container } = render(<TierStatus loyaltyStatus={minimalStatus} allTiers={mockTiers} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      expect(screen.getByText('Tier Status')).toBeInTheDocument();
+      // Bronze appears multiple times (header and tier list), so use getAllByText
+      const bronzeElements = screen.getAllByText('Bronze');
+      expect(bronzeElements.length).toBeGreaterThan(0);
+    });
+
+    it('should handle null next_tier_name (top tier user) without showing progress section', () => {
+      const topTierStatus = {
+        ...mockLoyaltyStatus,
+        tier_name: 'Platinum',
+        tier_color: '#E5E4E2',
+        next_tier_name: null,
+        next_tier_nights: null,
+        nights_to_next_tier: null,
+        progress_percentage: 100,
+      };
+
+      const { container } = render(<TierStatus loyaltyStatus={topTierStatus} allTiers={mockTiers} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      // Should not display "Next tier:" section
+      expect(screen.queryByText(/Next tier:/)).not.toBeInTheDocument();
+      // Should display top tier message instead
+      expect(screen.getByText(/You've reached the highest tier!/)).toBeInTheDocument();
+    });
+
+    it('should handle null nights_to_next_tier in progress display', () => {
+      const statusWithNullNights = {
+        ...mockLoyaltyStatus,
+        nights_to_next_tier: null,
+      };
+
+      const { container } = render(<TierStatus loyaltyStatus={statusWithNullNights} allTiers={mockTiers} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      // Should display "Max tier reached" when nights_to_next_tier is null
+      const maxTierTexts = screen.getAllByText('Max tier reached');
+      expect(maxTierTexts.length).toBeGreaterThan(0);
+    });
+
+    it('should handle empty string tier_color', () => {
+      const statusWithEmptyColor = {
+        ...mockLoyaltyStatus,
+        tier_color: '',
+      };
+
+      const { container } = render(<TierStatus loyaltyStatus={statusWithEmptyColor} allTiers={mockTiers} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      expect(screen.getByText('Tier Status')).toBeInTheDocument();
+    });
+  });
 });
