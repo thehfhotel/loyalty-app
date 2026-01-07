@@ -85,9 +85,76 @@ wait_for_database() {
   exit 1
 }
 
+# Function to verify migration files exist and are readable
+# This prevents "Could not find migration file" errors
+verify_migration_files() {
+  echo "🔍 Verifying migration files..."
+
+  # Check migrations directory exists
+  if [ ! -d "prisma/migrations" ]; then
+    echo "❌ ERROR: prisma/migrations directory not found"
+    ls -la prisma/ 2>/dev/null || echo "prisma/ directory does not exist"
+    return 1
+  fi
+
+  # Count migration directories (exclude migration_lock.toml)
+  MIGRATION_COUNT=$(find prisma/migrations -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+  echo "📁 Found $MIGRATION_COUNT migration directories"
+
+  if [ "$MIGRATION_COUNT" -eq 0 ]; then
+    echo "⚠️ No migrations found (fresh database)"
+    return 0
+  fi
+
+  # Verify each migration has a migration.sql file
+  MISSING_FILES=0
+  for dir in prisma/migrations/*/; do
+    if [ -d "$dir" ]; then
+      DIR_NAME=$(basename "$dir")
+      # Skip non-migration entries
+      if [ "$DIR_NAME" = "migration_lock.toml" ]; then
+        continue
+      fi
+
+      MIGRATION_FILE="${dir}migration.sql"
+      if [ ! -f "$MIGRATION_FILE" ]; then
+        echo "❌ Missing: $MIGRATION_FILE"
+        MISSING_FILES=$((MISSING_FILES + 1))
+      elif [ ! -r "$MIGRATION_FILE" ]; then
+        echo "❌ Not readable: $MIGRATION_FILE"
+        ls -la "$MIGRATION_FILE" 2>/dev/null || true
+        MISSING_FILES=$((MISSING_FILES + 1))
+      else
+        # Verify file has content
+        if [ ! -s "$MIGRATION_FILE" ]; then
+          echo "❌ Empty file: $MIGRATION_FILE"
+          MISSING_FILES=$((MISSING_FILES + 1))
+        fi
+      fi
+    fi
+  done
+
+  if [ "$MISSING_FILES" -gt 0 ]; then
+    echo "❌ ERROR: $MISSING_FILES migration files missing, unreadable, or empty"
+    echo "📁 Migration directory contents:"
+    ls -laR prisma/migrations/ 2>/dev/null || true
+    return 1
+  fi
+
+  echo "✅ All $MIGRATION_COUNT migration files verified"
+  return 0
+}
+
 # Function to run database migrations with retry logic
 run_migrations() {
   echo "🔄 Running database migrations..."
+
+  # CRITICAL: Verify migration files before attempting migration
+  # This prevents "Could not find migration file" errors
+  if ! verify_migration_files; then
+    echo "❌ Migration file verification failed - aborting migration"
+    exit 1
+  fi
 
   # Use prisma migrate deploy for production-safe migrations
   # This command:
@@ -126,23 +193,40 @@ run_migrations() {
   exit 1
 }
 
-# Function to verify Prisma client is generated
+# Function to verify Prisma client is generated and functional
 verify_prisma_client() {
   echo "🔍 Verifying Prisma client..."
 
-  if [ -d "src/generated/prisma" ]; then
-    echo "✅ Prisma client verified at src/generated/prisma"
-    return 0
+  NEEDS_GENERATION=0
+
+  # Check if generated client directory exists
+  if [ ! -d "src/generated/prisma" ]; then
+    echo "⚠️ Prisma client directory not found"
+    NEEDS_GENERATION=1
   else
-    echo "⚠️  Prisma client not found, generating..."
+    # Verify client has actual content (not empty directory)
+    CLIENT_FILES=$(find src/generated/prisma -type f -name "*.js" 2>/dev/null | wc -l)
+    if [ "$CLIENT_FILES" -eq 0 ]; then
+      echo "⚠️ Prisma client directory empty (no .js files)"
+      NEEDS_GENERATION=1
+    else
+      echo "✅ Found $CLIENT_FILES Prisma client files"
+    fi
+  fi
+
+  # Generate if needed
+  if [ "$NEEDS_GENERATION" -eq 1 ]; then
+    echo "⚠️ Generating Prisma client..."
     if npm run db:generate; then
       echo "✅ Prisma client generated successfully"
-      return 0
     else
       echo "❌ ERROR: Prisma client generation failed"
       exit 1
     fi
   fi
+
+  echo "✅ Prisma client verified at src/generated/prisma"
+  return 0
 }
 
 # Main initialization sequence

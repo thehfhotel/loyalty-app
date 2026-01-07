@@ -1699,6 +1699,68 @@ jobs:
           echo "✅ Code deployment completed"
           echo "   Deployed SHA: $AFTER_COMMIT"
 
+      - name: "🔍 Verify migration files integrity"
+        run: |
+          echo "🔍 Verifying migration files after checkout..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
+          cd "$DEPLOY_DIR"
+
+          # Check migrations directory exists
+          if [ ! -d "backend/prisma/migrations" ]; then
+            echo "❌ ERROR: backend/prisma/migrations directory not found"
+            ls -la backend/prisma/ 2>/dev/null || echo "backend/prisma/ directory does not exist"
+            exit 1
+          fi
+
+          # List migration directories
+          echo "📁 Migration directories:"
+          ls -la backend/prisma/migrations/
+
+          # Count migration directories (exclude migration_lock.toml)
+          MIGRATION_COUNT=$(find backend/prisma/migrations -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+          echo "📊 Found $MIGRATION_COUNT migration directories"
+
+          if [ "$MIGRATION_COUNT" -eq 0 ]; then
+            echo "⚠️ No migrations found (fresh database expected)"
+          else
+            # Verify each migration has a migration.sql file
+            echo "🔍 Verifying each migration has migration.sql file..."
+            MISSING_FILES=0
+            for dir in backend/prisma/migrations/*/; do
+              if [ -d "$dir" ]; then
+                DIR_NAME=$(basename "$dir")
+                MIGRATION_FILE="${dir}migration.sql"
+
+                if [ ! -f "$MIGRATION_FILE" ]; then
+                  echo "❌ Missing: $MIGRATION_FILE"
+                  MISSING_FILES=$((MISSING_FILES + 1))
+                elif [ ! -r "$MIGRATION_FILE" ]; then
+                  echo "❌ Not readable: $MIGRATION_FILE"
+                  MISSING_FILES=$((MISSING_FILES + 1))
+                elif [ ! -s "$MIGRATION_FILE" ]; then
+                  echo "❌ Empty file: $MIGRATION_FILE"
+                  MISSING_FILES=$((MISSING_FILES + 1))
+                else
+                  FILE_SIZE=$(stat -c%s "$MIGRATION_FILE" 2>/dev/null || stat -f%z "$MIGRATION_FILE" 2>/dev/null)
+                  echo "✅ $DIR_NAME/migration.sql (${FILE_SIZE} bytes)"
+                fi
+              fi
+            done
+
+            if [ "$MISSING_FILES" -gt 0 ]; then
+              echo "❌ ERROR: $MISSING_FILES migration files missing, unreadable, or empty"
+              echo "📁 Full directory tree:"
+              find backend/prisma/migrations -type f -name "*.sql" -exec ls -la {} \;
+              exit 1
+            fi
+
+            echo "✅ All $MIGRATION_COUNT migration files verified and readable"
+          fi
+
+          # Force filesystem sync to ensure files are flushed to disk
+          sync
+          echo "✅ Filesystem synced"
+
       - name: "🔧 Environment configuration"
         env:
           # Secrets from 'development' environment (no DEV_ prefix needed)
@@ -1852,6 +1914,61 @@ jobs:
           sleep 15
 
           echo "✅ Development services deployed"
+
+      - name: "🔍 Verify files inside container"
+        run: |
+          echo "🔍 Verifying migration files are visible inside backend container..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
+          cd "$DEPLOY_DIR"
+
+          # Check if backend container is running
+          if ! docker compose -f docker-compose.yml -f docker-compose.dev.yml ps backend --format '{{.State}}' | grep -q "running"; then
+            echo "❌ ERROR: Backend container is not running"
+            docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
+            docker compose -f docker-compose.yml -f docker-compose.dev.yml logs --tail=30 backend
+            exit 1
+          fi
+
+          # Verify migration files are visible inside container
+          echo "📁 Checking migration files inside container..."
+          CONTAINER_MIGRATIONS=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+            find prisma/migrations -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l || echo "0")
+
+          if [ "$CONTAINER_MIGRATIONS" -eq 0 ]; then
+            echo "❌ ERROR: No migration directories visible inside container"
+            echo "📁 Container prisma directory contents:"
+            docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend ls -la prisma/ || true
+            echo "📁 Host prisma directory contents:"
+            ls -la backend/prisma/migrations/
+            exit 1
+          fi
+
+          echo "✅ Found $CONTAINER_MIGRATIONS migration directories inside container"
+
+          # Verify specific migration files are readable inside container
+          echo "🔍 Verifying migration.sql files are readable inside container..."
+          MISSING_IN_CONTAINER=0
+          for dir in backend/prisma/migrations/*/; do
+            if [ -d "$dir" ]; then
+              DIR_NAME=$(basename "$dir")
+              MIGRATION_FILE="prisma/migrations/${DIR_NAME}/migration.sql"
+
+              if ! docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+                   test -f "$MIGRATION_FILE" -a -r "$MIGRATION_FILE" 2>/dev/null; then
+                echo "❌ Not accessible in container: $MIGRATION_FILE"
+                MISSING_IN_CONTAINER=$((MISSING_IN_CONTAINER + 1))
+              fi
+            fi
+          done
+
+          if [ "$MISSING_IN_CONTAINER" -gt 0 ]; then
+            echo "❌ ERROR: $MISSING_IN_CONTAINER migration files not accessible inside container"
+            echo "📁 Container migration directory:"
+            docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend ls -laR prisma/migrations/ || true
+            exit 1
+          fi
+
+          echo "✅ All migration files verified accessible inside container"
 
       - name: "🗄️ Database migration"
         run: |
@@ -2040,6 +2157,49 @@ jobs:
           echo "✅ Development deployment completed successfully!"
           echo "🌐 Development URL: http://localhost:5001"
 
+      - name: "🔒 Verify deployment integrity"
+        run: |
+          echo "🔒 Verifying deployment integrity..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
+          cd "$DEPLOY_DIR"
+
+          # 1. Verify no pending migrations
+          echo "1️⃣ Checking migration status..."
+          MIGRATION_STATUS=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+            npx prisma migrate status 2>&1 || true)
+
+          if echo "$MIGRATION_STATUS" | grep -q "not yet been applied"; then
+            echo "❌ ERROR: Pending migrations detected after deployment"
+            echo "$MIGRATION_STATUS"
+            exit 1
+          fi
+          echo "✅ No pending migrations"
+
+          # 2. Verify Prisma schema is in sync
+          echo "2️⃣ Validating Prisma schema..."
+          if ! docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+               npx prisma validate 2>/dev/null; then
+            echo "❌ ERROR: Prisma schema validation failed"
+            exit 1
+          fi
+          echo "✅ Prisma schema valid"
+
+          # 3. Verify backend can query database
+          echo "3️⃣ Testing database connectivity from backend..."
+          HEALTH_RESPONSE=$(curl -sf --max-time 10 http://localhost:5001/api/health 2>/dev/null || echo '{"status":"error"}')
+          DB_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.services.database // "unknown"')
+          if [ "$DB_STATUS" != "connected" ]; then
+            echo "❌ ERROR: Database not connected. Status: $DB_STATUS"
+            echo "Full health response: $HEALTH_RESPONSE"
+            exit 1
+          fi
+          echo "✅ Database connectivity verified"
+
+          echo ""
+          echo "=============================="
+          echo "✅ Deployment integrity verified"
+          echo "=============================="
+
       - name: "🧹 Cleanup development env files"
         if: always()
         run: |
@@ -2219,6 +2379,68 @@ jobs:
           echo "✅ Code deployment completed"
           echo "   Before: $BEFORE_COMMIT"
           echo "   Deployed SHA: $AFTER_COMMIT"
+
+      - name: "🔍 Verify migration files integrity (production)"
+        run: |
+          echo "🔍 Verifying migration files after checkout..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
+          cd "$DEPLOY_DIR"
+
+          # Check migrations directory exists
+          if [ ! -d "backend/prisma/migrations" ]; then
+            echo "❌ ERROR: backend/prisma/migrations directory not found"
+            ls -la backend/prisma/ 2>/dev/null || echo "backend/prisma/ directory does not exist"
+            exit 1
+          fi
+
+          # List migration directories
+          echo "📁 Migration directories:"
+          ls -la backend/prisma/migrations/
+
+          # Count migration directories (exclude migration_lock.toml)
+          MIGRATION_COUNT=$(find backend/prisma/migrations -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+          echo "📊 Found $MIGRATION_COUNT migration directories"
+
+          if [ "$MIGRATION_COUNT" -eq 0 ]; then
+            echo "⚠️ No migrations found (fresh database expected)"
+          else
+            # Verify each migration has a migration.sql file
+            echo "🔍 Verifying each migration has migration.sql file..."
+            MISSING_FILES=0
+            for dir in backend/prisma/migrations/*/; do
+              if [ -d "$dir" ]; then
+                DIR_NAME=$(basename "$dir")
+                MIGRATION_FILE="${dir}migration.sql"
+
+                if [ ! -f "$MIGRATION_FILE" ]; then
+                  echo "❌ Missing: $MIGRATION_FILE"
+                  MISSING_FILES=$((MISSING_FILES + 1))
+                elif [ ! -r "$MIGRATION_FILE" ]; then
+                  echo "❌ Not readable: $MIGRATION_FILE"
+                  MISSING_FILES=$((MISSING_FILES + 1))
+                elif [ ! -s "$MIGRATION_FILE" ]; then
+                  echo "❌ Empty file: $MIGRATION_FILE"
+                  MISSING_FILES=$((MISSING_FILES + 1))
+                else
+                  FILE_SIZE=$(stat -c%s "$MIGRATION_FILE" 2>/dev/null || stat -f%z "$MIGRATION_FILE" 2>/dev/null)
+                  echo "✅ $DIR_NAME/migration.sql (${FILE_SIZE} bytes)"
+                fi
+              fi
+            done
+
+            if [ "$MISSING_FILES" -gt 0 ]; then
+              echo "❌ ERROR: $MISSING_FILES migration files missing, unreadable, or empty"
+              echo "📁 Full directory tree:"
+              find backend/prisma/migrations -type f -name "*.sql" -exec ls -la {} \;
+              exit 1
+            fi
+
+            echo "✅ All $MIGRATION_COUNT migration files verified and readable"
+          fi
+
+          # Force filesystem sync to ensure files are flushed to disk
+          sync
+          echo "✅ Filesystem synced"
 
       - name: "⚡ Setup Node.js"
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
@@ -2501,7 +2723,62 @@ jobs:
           docker compose ps
           echo "📝 Backend startup logs (last 10 lines):"
           docker compose logs --tail=10 backend 2>/dev/null || echo "No backend logs yet"
-      
+
+      - name: "🔍 Verify files inside container (production)"
+        run: |
+          echo "🔍 Verifying migration files are visible inside backend container..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
+          cd "$DEPLOY_DIR"
+
+          # Check if backend container is running
+          if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml ps backend --format '{{.State}}' | grep -q "running"; then
+            echo "❌ ERROR: Backend container is not running"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=30 backend
+            exit 1
+          fi
+
+          # Verify migration files are visible inside container
+          echo "📁 Checking migration files inside container..."
+          CONTAINER_MIGRATIONS=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend \
+            find prisma/migrations -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l || echo "0")
+
+          if [ "$CONTAINER_MIGRATIONS" -eq 0 ]; then
+            echo "❌ ERROR: No migration directories visible inside container"
+            echo "📁 Container prisma directory contents:"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend ls -la prisma/ || true
+            echo "📁 Host prisma directory contents:"
+            ls -la backend/prisma/migrations/
+            exit 1
+          fi
+
+          echo "✅ Found $CONTAINER_MIGRATIONS migration directories inside container"
+
+          # Verify specific migration files are readable inside container
+          echo "🔍 Verifying migration.sql files are readable inside container..."
+          MISSING_IN_CONTAINER=0
+          for dir in backend/prisma/migrations/*/; do
+            if [ -d "$dir" ]; then
+              DIR_NAME=$(basename "$dir")
+              MIGRATION_FILE="prisma/migrations/${DIR_NAME}/migration.sql"
+
+              if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend \
+                   test -f "$MIGRATION_FILE" -a -r "$MIGRATION_FILE" 2>/dev/null; then
+                echo "❌ Not accessible in container: $MIGRATION_FILE"
+                MISSING_IN_CONTAINER=$((MISSING_IN_CONTAINER + 1))
+              fi
+            fi
+          done
+
+          if [ "$MISSING_IN_CONTAINER" -gt 0 ]; then
+            echo "❌ ERROR: $MISSING_IN_CONTAINER migration files not accessible inside container"
+            echo "📁 Container migration directory:"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend ls -laR prisma/migrations/ || true
+            exit 1
+          fi
+
+          echo "✅ All migration files verified accessible inside container"
+
       - name: "🗃️ Database migration (container context)"
         run: |
           echo "🗃️ Waiting for backend migrations to complete..."
@@ -2762,6 +3039,49 @@ jobs:
               echo "   (Could not determine status - this is non-blocking)"
               ;;
           esac
+
+      - name: "🔒 Verify deployment integrity (production)"
+        run: |
+          echo "🔒 Verifying deployment integrity..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
+          cd "$DEPLOY_DIR"
+
+          # 1. Verify no pending migrations
+          echo "1️⃣ Checking migration status..."
+          MIGRATION_STATUS=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend \
+            npx prisma migrate status 2>&1 || true)
+
+          if echo "$MIGRATION_STATUS" | grep -q "not yet been applied"; then
+            echo "❌ ERROR: Pending migrations detected after deployment"
+            echo "$MIGRATION_STATUS"
+            exit 1
+          fi
+          echo "✅ No pending migrations"
+
+          # 2. Verify Prisma schema is in sync
+          echo "2️⃣ Validating Prisma schema..."
+          if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend \
+               npx prisma validate 2>/dev/null; then
+            echo "❌ ERROR: Prisma schema validation failed"
+            exit 1
+          fi
+          echo "✅ Prisma schema valid"
+
+          # 3. Verify backend can query database
+          echo "3️⃣ Testing database connectivity from backend..."
+          HEALTH_RESPONSE=$(docker compose exec -T backend curl -sf --max-time 10 http://localhost:4000/api/health 2>/dev/null || echo '{"status":"error"}')
+          DB_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.services.database // "unknown"')
+          if [ "$DB_STATUS" != "connected" ]; then
+            echo "❌ ERROR: Database not connected. Status: $DB_STATUS"
+            echo "Full health response: $HEALTH_RESPONSE"
+            exit 1
+          fi
+          echo "✅ Database connectivity verified"
+
+          echo ""
+          echo "=============================="
+          echo "✅ Production deployment integrity verified"
+          echo "=============================="
 
   # =============================================================================
   # PHASE 4: POST-DEPLOYMENT MONITORING & CLEANUP
