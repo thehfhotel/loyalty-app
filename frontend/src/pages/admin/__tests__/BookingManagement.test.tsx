@@ -185,7 +185,7 @@ describe('BookingManagement', () => {
       const bookingWithNullPayment = {
         ...mockBookingWithAllData,
         paymentAmount: null,
-      };
+      } as unknown as typeof mockBookingWithAllData;
       mockBookingsData = [bookingWithNullPayment];
 
       render(<BookingManagement />);
@@ -203,7 +203,7 @@ describe('BookingManagement', () => {
       const bookingWithoutSlip = {
         ...mockBookingWithAllData,
         slip: null,
-      };
+      } as unknown as typeof mockBookingWithAllData;
       mockBookingsData = [bookingWithoutSlip];
 
       render(<BookingManagement />);
@@ -220,7 +220,7 @@ describe('BookingManagement', () => {
           firstName: null,
           lastName: null,
         },
-      };
+      } as unknown as typeof mockBookingWithAllData;
       mockBookingsData = [bookingWithNullNames];
 
       render(<BookingManagement />);
@@ -237,7 +237,7 @@ describe('BookingManagement', () => {
           firstName: null,
           lastName: 'Doe',
         },
-      };
+      } as unknown as typeof mockBookingWithAllData;
       mockBookingsData = [bookingWithNullFirstName];
 
       render(<BookingManagement />);
@@ -254,7 +254,7 @@ describe('BookingManagement', () => {
           firstName: 'John',
           lastName: null,
         },
-      };
+      } as unknown as typeof mockBookingWithAllData;
       mockBookingsData = [bookingWithNullLastName];
 
       render(<BookingManagement />);
@@ -270,7 +270,7 @@ describe('BookingManagement', () => {
           ...mockBookingWithAllData.user,
           membershipId: null,
         },
-      };
+      } as unknown as typeof mockBookingWithAllData;
       mockBookingsData = [bookingWithNullMembership];
 
       render(<BookingManagement />);
@@ -286,7 +286,7 @@ describe('BookingManagement', () => {
         ...mockBookingWithAllData,
         discountAmount: null,
         discountReason: null,
-      };
+      } as unknown as typeof mockBookingWithAllData;
       mockBookingsData = [bookingWithNullDiscount];
 
       // Should not crash
@@ -310,7 +310,7 @@ describe('BookingManagement', () => {
           membershipId: null,
           phone: null,
         },
-      };
+      } as unknown as typeof mockBookingWithAllData;
       mockBookingsData = [bookingWithManyNulls];
 
       // Should not crash and render properly

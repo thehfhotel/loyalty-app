@@ -1,14 +1,17 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 import * as accountLockoutService from '../../../services/accountLockoutService';
 
+// Define mock type for Redis client methods
+type MockRedisMethod = jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
+
 // Mock Redis client
 const mockRedis = {
-  incr: jest.fn(),
-  expire: jest.fn(),
-  setEx: jest.fn(),
-  ttl: jest.fn(),
-  get: jest.fn(),
-  del: jest.fn(),
+  incr: jest.fn() as MockRedisMethod,
+  expire: jest.fn() as MockRedisMethod,
+  setEx: jest.fn() as MockRedisMethod,
+  ttl: jest.fn() as MockRedisMethod,
+  get: jest.fn() as MockRedisMethod,
+  del: jest.fn() as MockRedisMethod,
 };
 
 jest.mock('../../../config/redis', () => ({
@@ -35,8 +38,8 @@ describe('AccountLockoutService', () => {
 
   describe('recordFailedAttempt', () => {
     it('should record a failed attempt and return not locked when under threshold', async () => {
-      mockRedis.incr.mockResolvedValue(1 as never);
-      mockRedis.expire.mockResolvedValue(1 as never);
+      mockRedis.incr.mockResolvedValue(1);
+      mockRedis.expire.mockResolvedValue(1);
 
       const result = await accountLockoutService.recordFailedAttempt('test@example.com');
 
@@ -47,8 +50,8 @@ describe('AccountLockoutService', () => {
     });
 
     it('should lock account after 5 failed attempts', async () => {
-      mockRedis.incr.mockResolvedValue(5 as never);
-      mockRedis.setEx.mockResolvedValue('OK' as never);
+      mockRedis.incr.mockResolvedValue(5);
+      mockRedis.setEx.mockResolvedValue('OK');
 
       const result = await accountLockoutService.recordFailedAttempt('test@example.com');
 
@@ -62,7 +65,7 @@ describe('AccountLockoutService', () => {
     });
 
     it('should fail open on Redis error', async () => {
-      mockRedis.incr.mockRejectedValue(new Error('Redis connection failed') as never);
+      mockRedis.incr.mockRejectedValue(new Error('Redis connection failed'));
 
       const result = await accountLockoutService.recordFailedAttempt('test@example.com');
 
@@ -73,8 +76,8 @@ describe('AccountLockoutService', () => {
 
   describe('isLocked', () => {
     it('should return locked status when account is locked', async () => {
-      mockRedis.ttl.mockResolvedValue(600 as never); // 10 minutes remaining
-      mockRedis.get.mockResolvedValue('3' as never);
+      mockRedis.ttl.mockResolvedValue(600); // 10 minutes remaining
+      mockRedis.get.mockResolvedValue('3');
 
       const result = await accountLockoutService.isLocked('test@example.com');
 
@@ -84,8 +87,8 @@ describe('AccountLockoutService', () => {
     });
 
     it('should return not locked when TTL is negative', async () => {
-      mockRedis.ttl.mockResolvedValue(-2 as never); // Key doesn't exist
-      mockRedis.get.mockResolvedValue(null as never);
+      mockRedis.ttl.mockResolvedValue(-2); // Key doesn't exist
+      mockRedis.get.mockResolvedValue(null);
 
       const result = await accountLockoutService.isLocked('test@example.com');
 
@@ -94,7 +97,7 @@ describe('AccountLockoutService', () => {
     });
 
     it('should fail open on Redis error', async () => {
-      mockRedis.ttl.mockRejectedValue(new Error('Redis unavailable') as never);
+      mockRedis.ttl.mockRejectedValue(new Error('Redis unavailable'));
 
       const result = await accountLockoutService.isLocked('test@example.com');
 
@@ -104,7 +107,7 @@ describe('AccountLockoutService', () => {
 
   describe('resetAttempts', () => {
     it('should delete lockout and failed attempts keys', async () => {
-      mockRedis.del.mockResolvedValue(1 as never);
+      mockRedis.del.mockResolvedValue(1);
 
       await accountLockoutService.resetAttempts('test@example.com');
 
@@ -113,7 +116,7 @@ describe('AccountLockoutService', () => {
     });
 
     it('should not throw on Redis error', async () => {
-      mockRedis.del.mockRejectedValue(new Error('Redis error') as never);
+      mockRedis.del.mockRejectedValue(new Error('Redis error'));
 
       // Should not throw
       await expect(accountLockoutService.resetAttempts('test@example.com')).resolves.not.toThrow();

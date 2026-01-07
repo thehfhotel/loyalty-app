@@ -157,7 +157,7 @@ describe('RoomManagement', () => {
       const roomWithNullFloor = {
         ...mockRoomWithAllData,
         floor: null,
-      };
+      } as unknown as typeof mockRoomWithAllData;
       mockRoomsData = [roomWithNullFloor];
 
       render(<RoomManagement />);
@@ -172,7 +172,7 @@ describe('RoomManagement', () => {
       const roomWithNullNotes = {
         ...mockRoomWithAllData,
         notes: null,
-      };
+      } as unknown as typeof mockRoomWithAllData;
       mockRoomsData = [roomWithNullNotes];
 
       render(<RoomManagement />);
@@ -189,7 +189,7 @@ describe('RoomManagement', () => {
         ...mockRoomWithAllData,
         floor: null,
         notes: null,
-      };
+      } as unknown as typeof mockRoomWithAllData;
       mockRoomsData = [roomWithManyNulls];
 
       // Should not crash and render properly
@@ -207,7 +207,7 @@ describe('RoomManagement', () => {
         ...mockRoomWithAllData,
         floor: null,
         notes: null,
-      };
+      } as unknown as typeof mockRoomWithAllData;
       mockRoomsData = [roomWithNulls];
 
       render(<RoomManagement />);

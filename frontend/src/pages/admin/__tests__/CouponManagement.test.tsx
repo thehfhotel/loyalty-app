@@ -196,7 +196,7 @@ describe('CouponManagement', () => {
       const couponWithNullDescription = {
         ...mockCouponWithAllData,
         description: undefined,
-      };
+      } as unknown as typeof mockCouponWithAllData;
       mockGetAdminCoupons.mockImplementation((_page: number, _limit: number, filters?: { status?: string }) => {
         if (filters?.status === 'active') {
           return Promise.resolve(createCouponResponse([couponWithNullDescription]));
@@ -214,7 +214,7 @@ describe('CouponManagement', () => {
       const couponWithNullMinSpend = {
         ...mockCouponWithAllData,
         minimumSpend: undefined,
-      };
+      } as unknown as typeof mockCouponWithAllData;
       mockGetAdminCoupons.mockImplementation((_page: number, _limit: number, filters?: { status?: string }) => {
         if (filters?.status === 'active') {
           return Promise.resolve(createCouponResponse([couponWithNullMinSpend]));
@@ -233,7 +233,7 @@ describe('CouponManagement', () => {
       const couponWithNullMaxDiscount = {
         ...mockCouponWithAllData,
         maximumDiscount: undefined,
-      };
+      } as unknown as typeof mockCouponWithAllData;
       mockGetAdminCoupons.mockImplementation((_page: number, _limit: number, filters?: { status?: string }) => {
         if (filters?.status === 'active') {
           return Promise.resolve(createCouponResponse([couponWithNullMaxDiscount]));
@@ -251,7 +251,7 @@ describe('CouponManagement', () => {
       const couponWithNullValidUntil = {
         ...mockCouponWithAllData,
         validUntil: undefined,
-      };
+      } as unknown as typeof mockCouponWithAllData;
       mockGetAdminCoupons.mockImplementation((_page: number, _limit: number, filters?: { status?: string }) => {
         if (filters?.status === 'active') {
           return Promise.resolve(createCouponResponse([couponWithNullValidUntil]));
@@ -269,7 +269,7 @@ describe('CouponManagement', () => {
         ...mockCouponWithAllData,
         type: 'free_upgrade' as const,
         value: undefined,
-      };
+      } as unknown as typeof mockCouponWithAllData;
       mockGetAdminCoupons.mockImplementation((_page: number, _limit: number, filters?: { status?: string }) => {
         if (filters?.status === 'active') {
           return Promise.resolve(createCouponResponse([couponWithNullValue]));
@@ -293,7 +293,7 @@ describe('CouponManagement', () => {
         maximumDiscount: undefined,
         validUntil: undefined,
         createdBy: undefined,
-      };
+      } as unknown as typeof mockCouponWithAllData;
       mockGetAdminCoupons.mockImplementation((_page: number, _limit: number, filters?: { status?: string }) => {
         if (filters?.status === 'active') {
           return Promise.resolve(createCouponResponse([couponWithManyNulls]));
@@ -333,7 +333,7 @@ describe('CouponManagement', () => {
         ...mockCouponWithAllData,
         type: 'fixed_amount' as const,
         value: undefined,
-      };
+      } as unknown as typeof mockCouponWithAllData;
       mockGetAdminCoupons.mockResolvedValue({
         coupons: [couponFixedWithNullValue],
         total: 1,

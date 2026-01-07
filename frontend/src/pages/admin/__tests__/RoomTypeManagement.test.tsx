@@ -144,7 +144,7 @@ describe('RoomTypeManagement', () => {
       const roomTypeWithNullDescription = {
         ...mockRoomTypeWithAllData,
         description: null,
-      };
+      } as unknown as typeof mockRoomTypeWithAllData;
       mockRoomTypesData = [roomTypeWithNullDescription];
 
       // Should not crash
@@ -159,7 +159,7 @@ describe('RoomTypeManagement', () => {
       const roomTypeWithNullBedType = {
         ...mockRoomTypeWithAllData,
         bedType: null,
-      };
+      } as unknown as typeof mockRoomTypeWithAllData;
       mockRoomTypesData = [roomTypeWithNullBedType];
 
       render(<RoomTypeManagement />);
@@ -175,7 +175,7 @@ describe('RoomTypeManagement', () => {
         ...mockRoomTypeWithAllData,
         description: null,
         bedType: null,
-      };
+      } as unknown as typeof mockRoomTypeWithAllData;
       mockRoomTypesData = [roomTypeWithManyNulls];
 
       // Should not crash and render properly
