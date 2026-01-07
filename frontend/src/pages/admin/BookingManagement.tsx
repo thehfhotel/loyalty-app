@@ -97,6 +97,7 @@ const BookingManagement: React.FC = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'confirmed' | 'cancelled' | 'completed' | ''>('');
 
   const pageSize = 10;
   const totalPages = Math.ceil(totalBookings / pageSize);
@@ -107,6 +108,7 @@ const BookingManagement: React.FC = () => {
       page: currentPage,
       limit: pageSize,
       search: debouncedSearchTerm || undefined,
+      status: statusFilter || undefined,
       sortBy: sortField,
       sortOrder: sortDirection
     }
@@ -175,6 +177,13 @@ const BookingManagement: React.FC = () => {
       setCurrentPage(1);
     }
   }, [debouncedSearchTerm, initialLoading]);
+
+  // Reset to page 1 when status filter changes
+  useEffect(() => {
+    if (!initialLoading) {
+      setCurrentPage(1);
+    }
+  }, [statusFilter, initialLoading]);
 
   const handleSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -391,6 +400,19 @@ const BookingManagement: React.FC = () => {
                       <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
                     </div>
                   )}
+                </div>
+                <div className="w-48">
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as 'confirmed' | 'cancelled' | 'completed' | '')}
+                    className="w-full py-2 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    aria-label={t('admin.booking.bookingManagement.statusFilter')}
+                  >
+                    <option value="">{t('admin.booking.bookingManagement.allStatuses')}</option>
+                    <option value="confirmed">{t('booking.status.confirmed')}</option>
+                    <option value="cancelled">{t('booking.status.cancelled')}</option>
+                    <option value="completed">{t('booking.status.completed')}</option>
+                  </select>
                 </div>
               </form>
               <p className="text-xs text-gray-500 mt-2">

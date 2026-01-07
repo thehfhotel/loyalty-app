@@ -712,6 +712,8 @@
         "menuDescription": "Review bookings and verify payments",
         "searchPlaceholder": "Search by name, phone, email, or membership ID...",
         "searchHint": "Search by name, phone, email, or membership ID",
+        "statusFilter": "Filter by status",
+        "allStatuses": "All statuses",
         "noBookings": "No bookings found",
         "noSlip": "No slip",
         "pagination": "Page {{current}} of {{total}}",

@@ -66,6 +66,7 @@ const uploadSlipInputSchema = z.object({
 
 const adminBookingSearchSchema = z.object({
   search: z.string().optional(),
+  status: z.enum(['confirmed', 'cancelled', 'completed']).optional(),
   sortBy: z.enum(['created_at', 'check_in_date', 'room_type']).default('created_at'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   page: z.number().int().positive().default(1),
@@ -280,11 +281,12 @@ const adminBookingRouter = router({
   getAllBookingsAdvanced: adminProcedure
     .input(adminBookingSearchSchema)
     .query(async ({ input }) => {
-      const { search, sortBy, sortOrder, page, limit } = input;
+      const { search, status, sortBy, sortOrder, page, limit } = input;
       const offset = (page - 1) * limit;
 
       const result = await bookingService.getAllBookingsForAdmin({
         search,
+        status,
         sortBy,
         sortOrder,
         limit,

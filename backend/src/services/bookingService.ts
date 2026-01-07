@@ -1681,12 +1681,14 @@ export class BookingService {
         values.push(filters.adminStatus);
       }
 
-      // Search filter (email, name, booking ID)
+      // Search filter (email, name, phone, membership ID, booking ID)
       if (filters?.search) {
         const searchPattern = `%${filters.search}%`;
         conditions.push(`(
           u.email ILIKE $${paramIndex} OR
           CONCAT(up.first_name, ' ', up.last_name) ILIKE $${paramIndex} OR
+          up.phone ILIKE $${paramIndex} OR
+          up.membership_id ILIKE $${paramIndex} OR
           b.id::text ILIKE $${paramIndex}
         )`);
         values.push(searchPattern);
