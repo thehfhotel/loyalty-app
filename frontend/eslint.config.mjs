@@ -197,6 +197,7 @@ export default tseslint.config(
       'tailwind.config.js',
       'postcss.config.js',
       'eslint.config.mjs',
+      'scripts/**/*.cjs',
     ],
   },
 

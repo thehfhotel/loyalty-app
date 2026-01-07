@@ -22,7 +22,7 @@ if [ ! -f "package.json" ] || [ ! -d "backend" ] || [ ! -d "frontend" ]; then
 fi
 
 # 1. Backend TypeScript Check
-echo -e "${BLUE}[1/4]${NC} Backend TypeScript check..."
+echo -e "${BLUE}[1/5]${NC} Backend TypeScript check..."
 if cd backend && npm run typecheck; then
     echo -e "${GREEN}✅ Backend TypeScript passed${NC}"
 else
@@ -32,7 +32,7 @@ fi
 cd ..
 
 # 2. Frontend TypeScript Check
-echo -e "${BLUE}[2/4]${NC} Frontend TypeScript check..."
+echo -e "${BLUE}[2/5]${NC} Frontend TypeScript check..."
 if cd frontend && npm run typecheck; then
     echo -e "${GREEN}✅ Frontend TypeScript passed${NC}"
 else
@@ -42,7 +42,7 @@ fi
 cd ..
 
 # 3. Backend ESLint
-echo -e "${BLUE}[3/4]${NC} Backend ESLint..."
+echo -e "${BLUE}[3/5]${NC} Backend ESLint..."
 if cd backend && npm run lint; then
     echo -e "${GREEN}✅ Backend ESLint passed${NC}"
 else
@@ -52,11 +52,21 @@ fi
 cd ..
 
 # 4. Frontend ESLint
-echo -e "${BLUE}[4/4]${NC} Frontend ESLint..."
+echo -e "${BLUE}[4/5]${NC} Frontend ESLint..."
 if cd frontend && npm run lint; then
     echo -e "${GREEN}✅ Frontend ESLint passed${NC}"
 else
     echo -e "${RED}❌ Frontend ESLint failed${NC}"
+    exit 1
+fi
+cd ..
+
+# 5. Translation Key Check
+echo -e "${BLUE}[5/5]${NC} Translation key check..."
+if cd frontend && npm run check:translations; then
+    echo -e "${GREEN}✅ Translation keys validated${NC}"
+else
+    echo -e "${RED}❌ Translation check failed${NC}"
     exit 1
 fi
 cd ..
@@ -67,6 +77,7 @@ echo "================================================"
 echo -e "${GREEN}🎉 All pre-push checks passed!${NC}"
 echo -e "${GREEN}✅ TypeScript compilation successful${NC}"
 echo -e "${GREEN}✅ ESLint checks passed${NC}"
+echo -e "${GREEN}✅ Translation keys validated${NC}"
 echo ""
 echo -e "${BLUE}🚀 Push to remote is approved!${NC}"
 echo "================================================"
