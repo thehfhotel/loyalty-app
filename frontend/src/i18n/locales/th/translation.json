@@ -742,6 +742,7 @@
           "user": "ผู้ใช้",
           "roomType": "ประเภทห้อง",
           "dates": "เช็คอิน/เช็คเอาท์",
+          "status": "สถานะ",
           "payment": "ชำระเงิน",
           "slipStatus": "SlipOK",
           "adminStatus": "สถานะแอดมิน",

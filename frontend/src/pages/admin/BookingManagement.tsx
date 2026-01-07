@@ -5,6 +5,7 @@ import {
   FiCalendar,
   FiSearch,
   FiCheck,
+  FiX,
   FiAlertTriangle,
   FiClock,
   FiRefreshCw,
@@ -279,6 +280,35 @@ const BookingManagement: React.FC = () => {
     );
   };
 
+  const BookingStatusBadge: React.FC<{ status: string }> = ({ status }) => {
+    const badges: Record<string, { icon: React.ReactNode; text: string; className: string }> = {
+      confirmed: {
+        icon: <FiCheck className="w-3 h-3" />,
+        text: t('booking.status.confirmed'),
+        className: 'bg-green-100 text-green-800'
+      },
+      cancelled: {
+        icon: <FiX className="w-3 h-3" />,
+        text: t('booking.status.cancelled'),
+        className: 'bg-red-100 text-red-800'
+      },
+      completed: {
+        icon: <FiCheck className="w-3 h-3" />,
+        text: t('booking.status.completed'),
+        className: 'bg-blue-100 text-blue-800'
+      }
+    };
+
+    const badge = badges[status] ?? badges.confirmed;
+
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ${badge?.className ?? ''}`}>
+        {badge?.icon}
+        {badge?.text}
+      </span>
+    );
+  };
+
   const SortIcon: React.FC<{ field: SortField }> = ({ field }) => {
     if (sortField !== field) return null;
     return sortDirection === 'asc' ? (
@@ -410,6 +440,9 @@ const BookingManagement: React.FC = () => {
                         </div>
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {t('admin.booking.bookingManagement.table.status')}
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         {t('admin.booking.bookingManagement.table.payment')}
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -426,7 +459,7 @@ const BookingManagement: React.FC = () => {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {bookings.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
                           {t('admin.booking.bookingManagement.noBookings')}
                         </td>
                       </tr>
@@ -435,6 +468,7 @@ const BookingManagement: React.FC = () => {
                         <tr
                           key={booking.id}
                           onClick={() => handleRowClick(booking)}
+                          onDoubleClick={() => handleEditBooking(booking)}
                           className={`hover:bg-gray-50 cursor-pointer ${
                             selectedBooking?.id === booking.id ? 'bg-blue-50' : ''
                           }`}
@@ -460,6 +494,9 @@ const BookingManagement: React.FC = () => {
                             <div className="text-gray-500">
                               - {formatDateToDDMMYYYY(booking.checkOutDate)}
                             </div>
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <BookingStatusBadge status={booking.status} />
                           </td>
                           <td className="px-4 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-900">

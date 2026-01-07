@@ -720,6 +720,7 @@
           "user": "User",
           "roomType": "Room Type",
           "dates": "Check-in/out",
+          "status": "Status",
           "payment": "Payment",
           "slipStatus": "SlipOK",
           "adminStatus": "Admin Status",
