@@ -61,7 +61,7 @@ interface Booking {
   numberOfGuests: number;
   totalPrice: number;
   paymentType: 'full' | 'deposit';
-  paymentAmount: number;
+  paymentAmount: number | null;
   discountAmount: number | null;
   discountReason: string | null;
   status: 'confirmed' | 'cancelled' | 'completed';
@@ -408,7 +408,9 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
                       {t('admin.booking.bookingManagement.editModal.paymentAmount')}:
                     </span>
                     <span className="ml-2 text-gray-900 font-medium">
-                      {booking.paymentAmount.toLocaleString()} THB
+                      {booking.paymentAmount != null
+                        ? `${booking.paymentAmount.toLocaleString()} THB`
+                        : '-'}
                     </span>
                   </div>
                 </div>

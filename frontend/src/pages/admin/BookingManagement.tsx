@@ -66,7 +66,7 @@ interface Booking {
   numberOfGuests: number;
   totalPrice: number;
   paymentType: 'full' | 'deposit';
-  paymentAmount: number;
+  paymentAmount: number | null;
   discountAmount: number | null;
   discountReason: string | null;
   status: 'confirmed' | 'cancelled' | 'completed';
@@ -468,7 +468,9 @@ const BookingManagement: React.FC = () => {
                                 : t('admin.booking.bookingManagement.paymentType.deposit')}
                             </div>
                             <div className="text-sm font-medium text-gray-900">
-                              {booking.paymentAmount.toLocaleString()} THB
+                              {booking.paymentAmount != null
+                                ? `${booking.paymentAmount.toLocaleString()} THB`
+                                : '-'}
                             </div>
                           </td>
                           <td className="px-4 py-4 whitespace-nowrap">

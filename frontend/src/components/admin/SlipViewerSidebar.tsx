@@ -65,7 +65,7 @@ interface Booking {
   numberOfGuests: number;
   totalPrice: number;
   paymentType: 'full' | 'deposit';
-  paymentAmount: number;
+  paymentAmount: number | null;
   discountAmount: number | null;
   discountReason: string | null;
   status: 'confirmed' | 'cancelled' | 'completed';
