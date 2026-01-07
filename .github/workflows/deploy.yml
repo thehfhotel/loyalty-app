@@ -578,6 +578,11 @@ jobs:
           npm run test:db -- --passWithNoTests
 
           echo ""
+          echo "🔍 Running SQL query validation (validates all raw SQL against real database)..."
+          npm run test:sql
+          echo "✅ SQL validation passed - all queries are syntactically correct"
+
+          echo ""
           echo "🗄️ Running database migration validation..."
           cd ..
           if [ -f "./scripts/validate-db-migration.sh" ]; then
