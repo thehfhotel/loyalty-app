@@ -286,8 +286,64 @@ const adminBookingRouter = router({
         offset,
       });
 
+      // Transform flat response to nested structure expected by frontend
+      const transformedBookings = result.bookings.map((b) => {
+        // Type assertion for raw database fields
+        const rawBooking = b as typeof b & {
+          userEmail?: string;
+          userFirstName?: string | null;
+          userLastName?: string | null;
+          userMembershipId?: string | null;
+          userPhone?: string | null;
+          roomTypeName?: string;
+        };
+
+        return {
+          id: b.id,
+          userId: b.userId,
+          roomTypeId: b.roomTypeId,
+          checkInDate: b.checkInDate,
+          checkOutDate: b.checkOutDate,
+          numberOfGuests: b.numGuests,
+          totalPrice: b.totalPrice,
+          paymentType: b.paymentType,
+          paymentAmount: b.paymentAmount,
+          discountAmount: b.discountAmount,
+          discountReason: b.discountReason,
+          status: b.status,
+          notes: b.notes,
+          adminNotes: b.adminNotes,
+          createdAt: b.createdAt,
+          updatedAt: b.updatedAt,
+          user: {
+            id: b.userId,
+            firstName: rawBooking.userFirstName ?? null,
+            lastName: rawBooking.userLastName ?? null,
+            email: rawBooking.userEmail ?? '',
+            membershipId: rawBooking.userMembershipId ?? null,
+            phone: rawBooking.userPhone ?? null,
+          },
+          roomType: {
+            id: b.roomTypeId,
+            name: rawBooking.roomTypeName ?? '',
+          },
+          slip: b.slipImageUrl ? {
+            id: b.id,
+            imageUrl: b.slipImageUrl,
+            uploadedAt: b.slipUploadedAt,
+            slipokStatus: b.slipokStatus ?? 'pending',
+            slipokVerifiedAt: b.slipokVerifiedAt,
+            adminStatus: b.adminStatus ?? 'pending',
+            adminVerifiedAt: b.adminVerifiedAt,
+            adminVerifiedBy: b.adminVerifiedBy,
+            adminVerifiedByName: null,
+          } : null,
+          auditHistory: [],
+        };
+      });
+
       return {
-        bookings: result.bookings,
+        bookings: transformedBookings,
         total: result.total,
         page,
         limit,

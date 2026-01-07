@@ -1626,7 +1626,10 @@ export class BookingService {
           r.room_number as "roomNumber",
           rt.name as "roomTypeName",
           u.email as "userEmail",
-          CONCAT(up.first_name, ' ', up.last_name) as "userName"
+          up.first_name as "userFirstName",
+          up.last_name as "userLastName",
+          u.membership_id as "userMembershipId",
+          up.phone as "userPhone"
         FROM bookings b
         JOIN rooms r ON b.room_id = r.id
         JOIN room_types rt ON b.room_type_id = rt.id
