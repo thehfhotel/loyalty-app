@@ -67,7 +67,7 @@ const uploadSlipInputSchema = z.object({
 const adminBookingSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(['confirmed', 'cancelled', 'completed']).optional(),
-  sortBy: z.enum(['created_at', 'check_in_date', 'room_type']).default('created_at'),
+  sortBy: z.enum(['created_at', 'check_in_date', 'room_type', 'status', 'total_price', 'user_name']).default('created_at'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   page: z.number().int().positive().default(1),
   limit: z.number().int().positive().max(100).default(20),
@@ -355,6 +355,7 @@ const adminBookingRouter = router({
         page,
         limit,
         totalPages: Math.ceil(result.total / limit),
+        statusCounts: result.statusCounts,
       };
     }),
 

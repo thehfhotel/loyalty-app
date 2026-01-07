@@ -1643,7 +1643,7 @@ export class BookingService {
    * @param filters - Filter and pagination options
    * @returns Paginated list of bookings
    */
-  async getAllBookingsForAdmin(filters?: AdminBookingFilters): Promise<{ bookings: Booking[]; total: number }> {
+  async getAllBookingsForAdmin(filters?: AdminBookingFilters): Promise<{ bookings: Booking[]; total: number; statusCounts: { all: number; confirmed: number; cancelled: number; completed: number } }> {
     try {
       const conditions: string[] = [];
       const values: unknown[] = [];
@@ -1707,11 +1707,20 @@ export class BookingService {
         values
       );
 
-      // Sorting
-      const sortColumn = filters?.sortBy ?? 'created_at';
+      // Sorting - use a map for column aliases
+      const sortColumnMap: Record<string, string> = {
+        'created_at': 'b.created_at',
+        'check_in_date': 'b.check_in_date',
+        'check_out_date': 'b.check_out_date',
+        'total_price': 'b.total_price',
+        'slipok_status': 'b.slipok_status',
+        'admin_status': 'b.admin_status',
+        'room_type': 'rt.name',
+        'status': 'b.status',
+        'user_name': "CONCAT(up.first_name, ' ', up.last_name)",
+      };
+      const sortColumn = sortColumnMap[filters?.sortBy ?? 'created_at'] ?? 'b.created_at';
       const sortOrder = filters?.sortOrder ?? 'desc';
-      const validSortColumns = ['created_at', 'check_in_date', 'check_out_date', 'total_price', 'slipok_status', 'admin_status'];
-      const safeSortColumn = validSortColumns.includes(sortColumn) ? sortColumn : 'created_at';
       const safeSortOrder = sortOrder === 'asc' ? 'ASC' : 'DESC';
 
       // Pagination
@@ -1749,14 +1758,53 @@ export class BookingService {
         JOIN users u ON b.user_id = u.id
         LEFT JOIN user_profiles up ON b.user_id = up.user_id
         ${whereClause}
-        ORDER BY b.${safeSortColumn} ${safeSortOrder}
+        ORDER BY ${sortColumn} ${safeSortOrder}
         LIMIT $${paramIndex++} OFFSET $${paramIndex}`,
         values
       );
 
+      // Get status counts (respecting search filter only, not status filter)
+      const baseConditions: string[] = [];
+      const baseValues: string[] = [];
+      let baseParamIndex = 1;
+
+      if (filters?.search) {
+        const searchPattern = `%${filters.search}%`;
+        baseConditions.push(`(
+          u.email ILIKE $${baseParamIndex} OR
+          CONCAT(up.first_name, ' ', up.last_name) ILIKE $${baseParamIndex} OR
+          up.phone ILIKE $${baseParamIndex} OR
+          up.membership_id ILIKE $${baseParamIndex} OR
+          b.id::text ILIKE $${baseParamIndex}
+        )`);
+        baseValues.push(searchPattern);
+        baseParamIndex++;
+      }
+
+      const baseWhereClause = baseConditions.length > 0 ? `WHERE ${baseConditions.join(' AND ')}` : '';
+
+      const statusCountsResult = await query<{status: string, count: string}[]>(`
+        SELECT b.status, COUNT(*) as count
+        FROM bookings b
+        JOIN users u ON b.user_id = u.id
+        LEFT JOIN user_profiles up ON b.user_id = up.user_id
+        ${baseWhereClause}
+        GROUP BY b.status
+      `, baseValues);
+
+      // Type assertion: query returns an array directly
+      const statusCountsRows = statusCountsResult as unknown as {status: string, count: string}[];
+      const statusCounts = {
+        all: statusCountsRows.reduce((sum, r) => sum + parseInt(r.count), 0),
+        confirmed: parseInt(statusCountsRows.find(r => r.status === 'confirmed')?.count ?? '0'),
+        cancelled: parseInt(statusCountsRows.find(r => r.status === 'cancelled')?.count ?? '0'),
+        completed: parseInt(statusCountsRows.find(r => r.status === 'completed')?.count ?? '0'),
+      };
+
       return {
         bookings: result,
         total: parseInt(countResult?.count ?? '0'),
+        statusCounts,
       };
     } catch (error) {
       logger.error('Error fetching admin bookings:', error);

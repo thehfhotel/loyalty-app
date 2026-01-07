@@ -79,8 +79,16 @@ interface Booking {
   updatedAt: string;
 }
 
-type SortField = 'created_at' | 'check_in_date' | 'room_type';
+type SortField = 'created_at' | 'check_in_date' | 'room_type' | 'status' | 'total_price' | 'user_name';
 type SortDirection = 'asc' | 'desc';
+
+// Type for status counts from the API response
+interface StatusCounts {
+  all: number;
+  confirmed: number;
+  cancelled: number;
+  completed: number;
+}
 
 const BookingManagement: React.FC = () => {
   const { t } = useTranslation();
@@ -88,6 +96,7 @@ const BookingManagement: React.FC = () => {
   // State management
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [totalBookings, setTotalBookings] = useState(0);
+  const [statusCounts, setStatusCounts] = useState<StatusCounts>({ all: 0, confirmed: 0, cancelled: 0, completed: 0 });
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
@@ -119,6 +128,11 @@ const BookingManagement: React.FC = () => {
     if (bookingsQuery.data) {
       setBookings(bookingsQuery.data.bookings as unknown as Booking[]);
       setTotalBookings(bookingsQuery.data.total);
+      // Set statusCounts from API response, with fallback to default values
+      const apiStatusCounts = bookingsQuery.data.statusCounts as StatusCounts | undefined;
+      if (apiStatusCounts) {
+        setStatusCounts(apiStatusCounts);
+      }
       setInitialLoading(false);
       setIsSearching(false);
     }
@@ -383,10 +397,58 @@ const BookingManagement: React.FC = () => {
         <div className="flex gap-6">
           {/* Left: Table Section (70%) */}
           <div className="w-[70%]">
+            {/* Status Tabs */}
+            <div className="bg-white rounded-lg shadow mb-6">
+              <div className="border-b border-gray-200">
+                <nav className="-mb-px flex">
+                  <button
+                    onClick={() => setStatusFilter('')}
+                    className={`py-4 px-6 border-b-2 font-medium text-sm ${
+                      statusFilter === ''
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    {t('admin.booking.bookingManagement.allStatuses')} ({statusCounts.all})
+                  </button>
+                  <button
+                    onClick={() => setStatusFilter('confirmed')}
+                    className={`py-4 px-6 border-b-2 font-medium text-sm ${
+                      statusFilter === 'confirmed'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    {t('booking.status.confirmed')} ({statusCounts.confirmed})
+                  </button>
+                  <button
+                    onClick={() => setStatusFilter('cancelled')}
+                    className={`py-4 px-6 border-b-2 font-medium text-sm ${
+                      statusFilter === 'cancelled'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    {t('booking.status.cancelled')} ({statusCounts.cancelled})
+                  </button>
+                  <button
+                    onClick={() => setStatusFilter('completed')}
+                    className={`py-4 px-6 border-b-2 font-medium text-sm ${
+                      statusFilter === 'completed'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    {t('booking.status.completed')} ({statusCounts.completed})
+                  </button>
+                </nav>
+              </div>
+            </div>
+
             {/* Search Bar */}
             <div className="bg-white p-6 rounded-lg shadow mb-6">
-              <form onSubmit={handleSearch} className="flex gap-4">
-                <div className="flex-1 relative">
+              <form onSubmit={handleSearch}>
+                <div className="relative">
                   <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                   <input
                     type="text"
@@ -400,19 +462,6 @@ const BookingManagement: React.FC = () => {
                       <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
                     </div>
                   )}
-                </div>
-                <div className="w-48">
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as 'confirmed' | 'cancelled' | 'completed' | '')}
-                    className="w-full py-2 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    aria-label={t('admin.booking.bookingManagement.statusFilter')}
-                  >
-                    <option value="">{t('admin.booking.bookingManagement.allStatuses')}</option>
-                    <option value="confirmed">{t('booking.status.confirmed')}</option>
-                    <option value="cancelled">{t('booking.status.cancelled')}</option>
-                    <option value="completed">{t('booking.status.completed')}</option>
-                  </select>
                 </div>
               </form>
               <p className="text-xs text-gray-500 mt-2">
@@ -440,8 +489,14 @@ const BookingManagement: React.FC = () => {
                           <SortIcon field="created_at" />
                         </div>
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        {t('admin.booking.bookingManagement.table.user')}
+                      <th
+                        onClick={() => handleSort('user_name')}
+                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      >
+                        <div className="flex items-center gap-1">
+                          {t('admin.booking.bookingManagement.table.user')}
+                          <SortIcon field="user_name" />
+                        </div>
                       </th>
                       <th
                         onClick={() => handleSort('room_type')}
@@ -461,11 +516,23 @@ const BookingManagement: React.FC = () => {
                           <SortIcon field="check_in_date" />
                         </div>
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        {t('admin.booking.bookingManagement.table.status')}
+                      <th
+                        onClick={() => handleSort('status')}
+                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      >
+                        <div className="flex items-center gap-1">
+                          {t('admin.booking.bookingManagement.table.status')}
+                          <SortIcon field="status" />
+                        </div>
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        {t('admin.booking.bookingManagement.table.payment')}
+                      <th
+                        onClick={() => handleSort('total_price')}
+                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      >
+                        <div className="flex items-center gap-1">
+                          {t('admin.booking.bookingManagement.table.payment')}
+                          <SortIcon field="total_price" />
+                        </div>
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         {t('admin.booking.bookingManagement.table.slipStatus')}
