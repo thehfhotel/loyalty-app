@@ -108,6 +108,11 @@ const adminApplyDiscountSchema = z.object({
   reason: z.string().min(1, 'Reason is required for discount'),
 });
 
+const adminCancelBookingSchema = z.object({
+  bookingId: z.string().uuid(),
+  reason: z.string().min(1).max(500),
+});
+
 // ==================== ADMIN SUB-ROUTER ====================
 
 const adminBookingRouter = router({
@@ -487,6 +492,21 @@ const adminBookingRouter = router({
       const updatedBooking = await bookingService.applyDiscount(bookingId, discountAmount, reason, ctx.user.id);
 
       return updatedBooking;
+    }),
+
+  /**
+   * Admin: Cancel any booking without date restrictions
+   * Unlike user cancellation, admin can cancel bookings regardless of check-in date
+   * Sets cancelled_by_admin = true to distinguish from user cancellations
+   */
+  cancelBooking: adminProcedure
+    .input(adminCancelBookingSchema)
+    .mutation(async ({ ctx, input }) => {
+      return bookingService.adminCancelBooking(
+        input.bookingId,
+        ctx.user.id,
+        input.reason
+      );
     }),
 });
 

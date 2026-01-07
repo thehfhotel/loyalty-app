@@ -57,6 +57,8 @@ export interface Booking {
   status: 'confirmed' | 'cancelled' | 'completed';
   cancelledAt: Date | null;
   cancellationReason: string | null;
+  cancelledBy: string | null;
+  cancelledByAdmin: boolean;
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -828,6 +830,7 @@ export class BookingService {
           b.num_guests as "numGuests", b.total_price as "totalPrice",
           b.points_earned as "pointsEarned", b.status,
           b.cancelled_at as "cancelledAt", b.cancellation_reason as "cancellationReason",
+          b.cancelled_by as "cancelledBy", COALESCE(b.cancelled_by_admin, false) as "cancelledByAdmin",
           b.notes, b.created_at as "createdAt", b.updated_at as "updatedAt",
           rt.name as "roomTypeName"
         FROM bookings b
@@ -854,6 +857,7 @@ export class BookingService {
           b.num_guests as "numGuests", b.total_price as "totalPrice",
           b.points_earned as "pointsEarned", b.status,
           b.cancelled_at as "cancelledAt", b.cancellation_reason as "cancellationReason",
+          b.cancelled_by as "cancelledBy", COALESCE(b.cancelled_by_admin, false) as "cancelledByAdmin",
           b.notes, b.created_at as "createdAt", b.updated_at as "updatedAt",
           rt.name as "roomTypeName"
         FROM bookings b
@@ -948,6 +952,110 @@ export class BookingService {
     }
   }
 
+  /**
+   * Admin: Cancel any booking without date restrictions
+   *
+   * @param bookingId - The booking ID
+   * @param adminId - Admin user ID performing the cancellation
+   * @param reason - Reason for cancellation
+   * @returns Updated booking
+   */
+  async adminCancelBooking(bookingId: string, adminId: string, reason: string): Promise<Booking> {
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+
+      // Get booking
+      const booking = await this.getBooking(bookingId);
+      if (!booking) {
+        throw new AppError(404, 'Booking not found');
+      }
+
+      // Check if already cancelled
+      if (booking.status === 'cancelled') {
+        throw new AppError(400, 'Booking is already cancelled');
+      }
+
+      // Store old values for audit
+      const oldValues = {
+        status: booking.status,
+        cancelledAt: booking.cancelledAt,
+        cancellationReason: booking.cancellationReason,
+        cancelledBy: booking.cancelledBy,
+        cancelledByAdmin: booking.cancelledByAdmin,
+      };
+
+      // Update booking status - admin can cancel any booking regardless of date
+      const [updated] = await client.query<Booking>(
+        `UPDATE bookings
+        SET status = 'cancelled',
+            cancelled_at = CURRENT_TIMESTAMP,
+            cancellation_reason = $2,
+            cancelled_by = $3,
+            cancelled_by_admin = true,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+        RETURNING
+          id, user_id as "userId", room_id as "roomId", room_type_id as "roomTypeId",
+          check_in_date as "checkInDate", check_out_date as "checkOutDate",
+          num_guests as "numGuests", total_price as "totalPrice",
+          points_earned as "pointsEarned", status,
+          cancelled_at as "cancelledAt", cancellation_reason as "cancellationReason",
+          cancelled_by as "cancelledBy", cancelled_by_admin as "cancelledByAdmin",
+          notes, created_at as "createdAt", updated_at as "updatedAt"`,
+        [bookingId, reason, adminId]
+      ).then(res => res.rows);
+
+      if (!updated) {
+        throw new AppError(500, 'Failed to cancel booking');
+      }
+
+      // Deduct loyalty points if any were awarded
+      if (booking.pointsEarned > 0) {
+        try {
+          await loyaltyService.deductPoints(
+            booking.userId,
+            booking.pointsEarned,
+            `Booking cancelled by admin: ${booking.roomTypeName}`
+          );
+        } catch (error) {
+          logger.error('Failed to deduct points for admin-cancelled booking:', error);
+          // Don't fail the cancellation if points deduction fails
+        }
+      }
+
+      // Create audit entry
+      await bookingAuditService.logAction(
+        bookingId,
+        'booking_cancelled_by_admin',
+        adminId,
+        oldValues,
+        {
+          status: 'cancelled',
+          cancelledAt: updated.cancelledAt,
+          cancellationReason: reason,
+          cancelledBy: adminId,
+          cancelledByAdmin: true,
+        },
+        reason
+      );
+
+      await client.query('COMMIT');
+
+      logger.info(`Booking ${sanitizeLogValue(bookingId)} cancelled by admin ${sanitizeUserId(adminId)}`);
+      return {
+        ...updated,
+        roomTypeName: booking.roomTypeName
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Error cancelling booking by admin:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async getAdminBookings(filters?: BookingFilters): Promise<{ bookings: Booking[]; total: number }> {
     try {
       const conditions: string[] = [];
@@ -995,6 +1103,7 @@ export class BookingService {
           b.num_guests as "numGuests", b.total_price as "totalPrice",
           b.points_earned as "pointsEarned", b.status,
           b.cancelled_at as "cancelledAt", b.cancellation_reason as "cancellationReason",
+          b.cancelled_by as "cancelledBy", COALESCE(b.cancelled_by_admin, false) as "cancelledByAdmin",
           b.notes, b.created_at as "createdAt", b.updated_at as "updatedAt",
           r.room_number as "roomNumber",
           rt.name as "roomTypeName",
@@ -1062,6 +1171,7 @@ export class BookingService {
           b.num_guests as "numGuests", b.total_price as "totalPrice",
           b.points_earned as "pointsEarned", b.status,
           b.cancelled_at as "cancelledAt", b.cancellation_reason as "cancellationReason",
+          b.cancelled_by as "cancelledBy", COALESCE(b.cancelled_by_admin, false) as "cancelledByAdmin",
           b.notes, b.created_at as "createdAt", b.updated_at as "updatedAt",
           r.room_number as "roomNumber",
           rt.name as "roomTypeName"
@@ -1614,6 +1724,7 @@ export class BookingService {
           b.num_guests as "numGuests", b.total_price as "totalPrice",
           b.points_earned as "pointsEarned", b.status,
           b.cancelled_at as "cancelledAt", b.cancellation_reason as "cancellationReason",
+          b.cancelled_by as "cancelledBy", COALESCE(b.cancelled_by_admin, false) as "cancelledByAdmin",
           b.notes, b.created_at as "createdAt", b.updated_at as "updatedAt",
           b.payment_type as "paymentType", b.payment_amount as "paymentAmount",
           b.slip_image_url as "slipImageUrl", b.slip_uploaded_at as "slipUploadedAt",
@@ -1667,6 +1778,7 @@ export class BookingService {
           b.num_guests as "numGuests", b.total_price as "totalPrice",
           b.points_earned as "pointsEarned", b.status,
           b.cancelled_at as "cancelledAt", b.cancellation_reason as "cancellationReason",
+          b.cancelled_by as "cancelledBy", COALESCE(b.cancelled_by_admin, false) as "cancelledByAdmin",
           b.notes, b.created_at as "createdAt", b.updated_at as "updatedAt",
           b.payment_type as "paymentType", b.payment_amount as "paymentAmount",
           b.slip_image_url as "slipImageUrl", b.slip_uploaded_at as "slipUploadedAt",
@@ -1726,6 +1838,8 @@ export class BookingService {
       status: ((r.status as Booking['status']) ?? 'confirmed'),
       cancelledAt: (r.cancelledAt ?? r.cancelled_at ?? null) as Date | null,
       cancellationReason: (r.cancellationReason ?? r.cancellation_reason ?? null) as string | null,
+      cancelledBy: (r.cancelledBy ?? r.cancelled_by ?? null) as string | null,
+      cancelledByAdmin: Boolean(r.cancelledByAdmin ?? r.cancelled_by_admin ?? false),
       notes: (r.notes ?? null) as string | null,
       createdAt: (r.createdAt ?? r.created_at) as Date,
       updatedAt: (r.updatedAt ?? r.updated_at) as Date,

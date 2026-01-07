@@ -100,6 +100,7 @@ const mockBookingService = {
   getUserBookings: jest.fn(),
   getBooking: jest.fn(),
   cancelBooking: jest.fn(),
+  adminCancelBooking: jest.fn(),
   getAdminBookings: jest.fn(),
   getRoomBookings: jest.fn(),
   getAllBookingsForAdmin: jest.fn(),
@@ -1903,6 +1904,138 @@ describe('tRPC Booking Router - Integration Tests', () => {
     });
   });
 
+  // ========== admin.cancelBooking Tests ==========
+  describe('admin.cancelBooking', () => {
+    const mockAdminCancelledBooking = {
+      ...mockBooking,
+      status: 'cancelled' as const,
+      cancelledAt: new Date(),
+      cancelledBy: 'admin-test-id',
+      cancelledByAdmin: true,
+      cancellationReason: 'Guest no-show',
+    };
+
+    it('should allow admin to cancel any user booking', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      mockBookingService.adminCancelBooking.mockResolvedValue(mockAdminCancelledBooking);
+
+      const result = await caller.admin.cancelBooking({
+        bookingId: mockBooking.id,
+        reason: 'Guest no-show',
+      });
+
+      expect(mockBookingService.adminCancelBooking).toHaveBeenCalledWith(
+        mockBooking.id,
+        'admin-test-id',
+        'Guest no-show'
+      );
+      expect(result.status).toBe('cancelled');
+      expect(result.cancelledByAdmin).toBe(true);
+    });
+
+    it('should throw FORBIDDEN for non-admin user', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.customer);
+
+      await expect(
+        caller.admin.cancelBooking({
+          bookingId: mockBooking.id,
+          reason: 'Test reason',
+        })
+      ).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+    });
+
+    it('should throw UNAUTHORIZED for unauthenticated request', async () => {
+      const caller = createUnauthenticatedCaller(bookingRouter);
+
+      await expect(
+        caller.admin.cancelBooking({
+          bookingId: mockBooking.id,
+          reason: 'Test reason',
+        })
+      ).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+      });
+    });
+
+    it('should return 404 for invalid booking ID', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const error = new Error('Booking not found');
+      (error as any).statusCode = 404;
+      mockBookingService.adminCancelBooking.mockRejectedValue(error);
+
+      await expect(
+        caller.admin.cancelBooking({
+          bookingId: '99999999-9999-9999-9999-999999999999',
+          reason: 'Test reason',
+        })
+      ).rejects.toThrow('Booking not found');
+    });
+
+    it('should return validation error for empty reason', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+
+      await expect(
+        caller.admin.cancelBooking({
+          bookingId: mockBooking.id,
+          reason: '',
+        })
+      ).rejects.toThrow();
+    });
+
+    it('should include cancelled_by_admin flag in response', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      mockBookingService.adminCancelBooking.mockResolvedValue(mockAdminCancelledBooking);
+
+      const result = await caller.admin.cancelBooking({
+        bookingId: mockBooking.id,
+        reason: 'Policy violation',
+      });
+
+      expect(result.cancelledByAdmin).toBe(true);
+      expect(result.cancellationReason).toBe('Guest no-show');
+    });
+
+    it('should allow super_admin to cancel booking', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.superAdmin);
+      mockBookingService.adminCancelBooking.mockResolvedValue(mockAdminCancelledBooking);
+
+      const result = await caller.admin.cancelBooking({
+        bookingId: mockBooking.id,
+        reason: 'Super admin cancellation',
+      });
+
+      expect(result.status).toBe('cancelled');
+      expect(mockBookingService.adminCancelBooking).toHaveBeenCalled();
+    });
+
+    it('should handle service error when booking is already cancelled', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const error = new Error('Booking is already cancelled');
+      (error as any).statusCode = 400;
+      mockBookingService.adminCancelBooking.mockRejectedValue(error);
+
+      await expect(
+        caller.admin.cancelBooking({
+          bookingId: mockBooking.id,
+          reason: 'Test reason',
+        })
+      ).rejects.toThrow('Booking is already cancelled');
+    });
+
+    it('should reject invalid UUID format', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+
+      await expect(
+        caller.admin.cancelBooking({
+          bookingId: 'not-a-valid-uuid',
+          reason: 'Test reason',
+        })
+      ).rejects.toThrow();
+    });
+  });
+
   // ========== admin.getRoomBookings Tests ==========
   describe('admin.getRoomBookings', () => {
     it('should return room bookings for admin', async () => {
@@ -2081,6 +2214,7 @@ describe('tRPC Booking Router - Integration Tests', () => {
       { name: 'admin.getAllBookings', call: (caller: any) => caller.admin.getAllBookings({}) },
       { name: 'admin.getBooking', call: (caller: any) => caller.admin.getBooking({ id: mockBooking.id }) },
       { name: 'admin.getRoomBookings', call: (caller: any) => caller.admin.getRoomBookings({ roomTypeId: mockRoomType.id, startDate: new Date('2025-02-01'), endDate: new Date('2025-02-28') }) },
+      { name: 'admin.cancelBooking', call: (caller: any) => caller.admin.cancelBooking({ bookingId: mockBooking.id, reason: 'Test reason' }) },
     ];
 
     describe('Public endpoints should be accessible without authentication', () => {

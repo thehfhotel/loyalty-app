@@ -7,7 +7,8 @@ import {
   FiDollarSign,
   FiClock,
   FiUser,
-  FiPercent
+  FiPercent,
+  FiAlertTriangle
 } from 'react-icons/fi';
 import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { trpc } from '../../hooks/useTRPC';
@@ -80,7 +81,7 @@ interface BookingEditModalProps {
   onSave: () => void;
 }
 
-type TabType = 'details' | 'payment' | 'audit';
+type TabType = 'details' | 'payment' | 'audit' | 'cancel';
 
 const BookingEditModal: React.FC<BookingEditModalProps> = ({
   booking,
@@ -104,6 +105,11 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   const [discountAmount, setDiscountAmount] = useState(booking.discountAmount ?? 0);
   const [discountReason, setDiscountReason] = useState(booking.discountReason ?? '');
   const [showDiscountForm, setShowDiscountForm] = useState(false);
+
+  // Form state - Cancel tab
+  const [cancelReason, setCancelReason] = useState('');
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // Fetch room types for dropdown
   const roomTypesQuery = trpc.booking.getRoomTypes.useQuery();
@@ -133,6 +139,20 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
     }
   });
 
+  // Cancel booking mutation
+  const cancelBookingMutation = trpc.booking.admin.cancelBooking.useMutation({
+    onSuccess: () => {
+      toast.success(t('admin.booking.cancel.success'));
+      setIsCancelling(false);
+      onSave();
+      onClose();
+    },
+    onError: () => {
+      toast.error(t('admin.booking.cancel.error'));
+      setIsCancelling(false);
+    }
+  });
+
   useEffect(() => {
     if (isOpen) {
       // Reset form state when modal opens
@@ -145,6 +165,10 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
       setDiscountAmount(booking.discountAmount ?? 0);
       setDiscountReason(booking.discountReason ?? '');
       setActiveTab('details');
+      // Reset cancel form state
+      setCancelReason('');
+      setConfirmCancel(false);
+      setIsCancelling(false);
     }
   }, [isOpen, booking]);
 
@@ -177,6 +201,20 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
     });
   };
 
+  const handleCancelBooking = async () => {
+    if (!cancelReason.trim() || !confirmCancel) {
+      return;
+    }
+    setIsCancelling(true);
+    await cancelBookingMutation.mutateAsync({
+      bookingId: booking.id,
+      reason: cancelReason.trim()
+    });
+  };
+
+  // Check if booking is already cancelled
+  const isBookingCancelled = booking.status === 'cancelled';
+
   // Calculate payment amount based on payment type
   const calculatePaymentAmount = (price: number): number => {
     if (booking.paymentType === 'full') {
@@ -193,7 +231,8 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
       booking_created: t('admin.booking.bookingManagement.auditActions.bookingCreated'),
       booking_updated: t('admin.booking.bookingManagement.auditActions.bookingUpdated'),
       discount_applied: t('admin.booking.bookingManagement.auditActions.discountApplied'),
-      payment_updated: t('admin.booking.bookingManagement.auditActions.paymentUpdated')
+      payment_updated: t('admin.booking.bookingManagement.auditActions.paymentUpdated'),
+      booking_cancelled: t('admin.booking.bookingManagement.auditActions.bookingCancelled')
     };
     return actionMap[action] ?? action;
   };
@@ -256,6 +295,20 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
             >
               <FiClock className="w-4 h-4 inline-block mr-2" />
               {t('admin.booking.bookingManagement.editModal.tabs.audit')}
+            </button>
+            <button
+              onClick={() => setActiveTab('cancel')}
+              disabled={isBookingCancelled}
+              className={`px-6 py-3 text-sm font-medium border-b-2 ${
+                activeTab === 'cancel'
+                  ? 'border-red-500 text-red-600'
+                  : isBookingCancelled
+                    ? 'border-transparent text-gray-300 cursor-not-allowed'
+                    : 'border-transparent text-gray-500 hover:text-red-600 hover:border-red-300'
+              }`}
+            >
+              <FiAlertTriangle className="w-4 h-4 inline-block mr-2" />
+              {t('admin.booking.bookingManagement.editModal.tabs.cancel')}
             </button>
           </nav>
         </div>
@@ -408,7 +461,7 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
                       {t('admin.booking.bookingManagement.editModal.paymentAmount')}:
                     </span>
                     <span className="ml-2 text-gray-900 font-medium">
-                      {booking.paymentAmount != null
+                      {booking.paymentAmount !== null
                         ? `${booking.paymentAmount.toLocaleString()} THB`
                         : '-'}
                     </span>
@@ -589,6 +642,111 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
               )}
             </div>
           )}
+
+          {/* Cancel Tab */}
+          {activeTab === 'cancel' && (
+            <div className="space-y-6">
+              {isBookingCancelled ? (
+                /* Already Cancelled State */
+                <div className="bg-gray-50 rounded-lg p-6 text-center">
+                  <FiAlertTriangle className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                  <p className="text-gray-600">{t('admin.booking.cancel.alreadyCancelled')}</p>
+                </div>
+              ) : (
+                <>
+                  {/* Warning Alert */}
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <FiAlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-sm font-medium text-red-800">
+                          {t('admin.booking.cancel.title')}
+                        </h4>
+                        <p className="text-sm text-red-700 mt-1">
+                          {t('admin.booking.cancel.warning')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Booking Summary */}
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                      <FiUser className="w-4 h-4" />
+                      {t('admin.booking.bookingManagement.editModal.userInfo')}
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-500">{t('admin.booking.bookingManagement.editModal.name')}:</span>
+                        <span className="ml-2 text-gray-900">
+                          {booking.user.firstName && booking.user.lastName
+                            ? `${booking.user.firstName} ${booking.user.lastName}`
+                            : booking.user.email}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">{t('admin.booking.bookingManagement.editModal.checkInDate')}:</span>
+                        <span className="ml-2 text-gray-900">
+                          {new Date(booking.checkInDate).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">{t('admin.booking.bookingManagement.editModal.checkOutDate')}:</span>
+                        <span className="ml-2 text-gray-900">
+                          {new Date(booking.checkOutDate).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">{t('admin.booking.bookingManagement.editModal.totalPrice')}:</span>
+                        <span className="ml-2 text-gray-900 font-medium">
+                          {booking.totalPrice.toLocaleString()} THB
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cancellation Reason */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {t('admin.booking.cancel.reasonLabel')}
+                    </label>
+                    <textarea
+                      value={cancelReason}
+                      onChange={(e) => setCancelReason(e.target.value)}
+                      placeholder={t('admin.booking.cancel.reasonPlaceholder')}
+                      rows={3}
+                      className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    />
+                  </div>
+
+                  {/* Confirmation Checkbox */}
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="confirmCancel"
+                      checked={confirmCancel}
+                      onChange={(e) => setConfirmCancel(e.target.checked)}
+                      className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                    />
+                    <label htmlFor="confirmCancel" className="text-sm text-gray-700">
+                      {t('admin.booking.cancel.confirmCheckbox')}
+                    </label>
+                  </div>
+
+                  {/* Cancel Button */}
+                  <button
+                    onClick={handleCancelBooking}
+                    disabled={!cancelReason.trim() || !confirmCancel || isCancelling}
+                    className="w-full px-4 py-3 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                  >
+                    {isCancelling
+                      ? t('admin.booking.cancel.cancelling')
+                      : t('admin.booking.cancel.button')}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -599,7 +757,7 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
           >
             {t('common.cancel')}
           </button>
-          {activeTab !== 'audit' && (
+          {activeTab !== 'audit' && activeTab !== 'cancel' && (
             <button
               onClick={handleSave}
               disabled={isSaving}

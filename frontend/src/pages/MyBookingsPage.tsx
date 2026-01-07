@@ -23,6 +23,7 @@ interface Booking {
   status: string;
   notes?: string;
   cancellationReason?: string;
+  cancelledByAdmin?: boolean;
   createdAt: string | Date;
   // Payment fields
   paymentType?: PaymentType;
@@ -35,10 +36,11 @@ interface Booking {
   verifiedBy?: string;
 }
 
-const statusColors: Record<BookingStatus, { bg: string; text: string }> = {
+const statusColors: Record<BookingStatus | 'cancelledByAdmin', { bg: string; text: string }> = {
   confirmed: { bg: 'bg-green-100', text: 'text-green-800' },
   cancelled: { bg: 'bg-red-100', text: 'text-red-800' },
   completed: { bg: 'bg-blue-100', text: 'text-blue-800' },
+  cancelledByAdmin: { bg: 'bg-amber-100', text: 'text-amber-800' },
 };
 
 const paymentStatusColors: Record<string, { bg: string; text: string }> = {
@@ -221,6 +223,14 @@ export default function MyBookingsPage() {
     return booking.status === 'confirmed' && !booking.slipUrl;
   };
 
+  // Helper to get display status (distinguishes admin-cancelled from user-cancelled)
+  const getDisplayStatus = (booking: Booking): { key: BookingStatus | 'cancelledByAdmin'; translationKey: string } => {
+    if (booking.status === 'cancelled' && booking.cancelledByAdmin) {
+      return { key: 'cancelledByAdmin', translationKey: 'booking.status.cancelledByAdmin' };
+    }
+    return { key: booking.status as BookingStatus, translationKey: `booking.status.${booking.status}` };
+  };
+
   // Get the booking for slip upload modal
   const slipUploadBooking = slipUploadBookingId
     ? (bookings?.find((b) => b.id === slipUploadBookingId) as Booking | undefined)
@@ -337,9 +347,14 @@ export default function MyBookingsPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-3 flex-wrap">
                       <h3 className="text-lg font-semibold">{booking.roomTypeName}</h3>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[booking.status as BookingStatus]?.bg} ${statusColors[booking.status as BookingStatus]?.text}`}>
-                        {t(`booking.status.${booking.status}`)}
-                      </span>
+                      {(() => {
+                        const displayStatus = getDisplayStatus(booking as Booking);
+                        return (
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[displayStatus.key]?.bg} ${statusColors[displayStatus.key]?.text}`}>
+                            {t(displayStatus.translationKey)}
+                          </span>
+                        );
+                      })()}
                       {/* Payment Type Badge */}
                       {(booking as Booking).paymentType && (
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${paymentStatusColors[(booking as Booking).paymentType as string]?.bg} ${paymentStatusColors[(booking as Booking).paymentType as string]?.text}`}>
@@ -444,9 +459,14 @@ export default function MyBookingsPage() {
             <div className="flex items-center justify-between p-6 border-b">
               <div className="flex items-center gap-3">
                 <h3 className="text-xl font-semibold">{selectedBooking.roomTypeName}</h3>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[selectedBooking.status as BookingStatus]?.bg} ${statusColors[selectedBooking.status as BookingStatus]?.text}`}>
-                  {t(`booking.status.${selectedBooking.status}`)}
-                </span>
+                {(() => {
+                  const displayStatus = getDisplayStatus(selectedBooking);
+                  return (
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[displayStatus.key]?.bg} ${statusColors[displayStatus.key]?.text}`}>
+                      {t(displayStatus.translationKey)}
+                    </span>
+                  );
+                })()}
               </div>
               <button
                 onClick={() => setSelectedBooking(null)}
@@ -633,13 +653,26 @@ export default function MyBookingsPage() {
               )}
 
               {/* Cancellation Info */}
-              {selectedBooking.cancellationReason && (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+              {selectedBooking.status === 'cancelled' && (
+                <div className={`p-4 border rounded-lg ${selectedBooking.cancelledByAdmin ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
                   <div className="flex items-start">
-                    <FiAlertCircle className="text-red-500 mr-2 mt-0.5 flex-shrink-0" />
+                    <FiAlertCircle className={`mr-2 mt-0.5 flex-shrink-0 ${selectedBooking.cancelledByAdmin ? 'text-amber-500' : 'text-red-500'}`} />
                     <div>
-                      <div className="text-sm font-medium text-red-800">{t('booking.cancellationReason')}</div>
-                      <div className="text-red-600">{selectedBooking.cancellationReason}</div>
+                      {selectedBooking.cancelledByAdmin && (
+                        <div className="text-sm font-medium text-amber-800 mb-2">
+                          {t('booking.cancelledByAdmin')}
+                        </div>
+                      )}
+                      {selectedBooking.cancellationReason && (
+                        <>
+                          <div className={`text-sm font-medium ${selectedBooking.cancelledByAdmin ? 'text-amber-800' : 'text-red-800'}`}>
+                            {t('booking.cancellationReason')}
+                          </div>
+                          <div className={selectedBooking.cancelledByAdmin ? 'text-amber-600' : 'text-red-600'}>
+                            {selectedBooking.cancellationReason}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -24,7 +24,8 @@ export type BookingAuditAction =
   | 'slip_replaced'
   | 'discount_applied'
   | 'booking_updated'
-  | 'payment_type_changed';
+  | 'payment_type_changed'
+  | 'booking_cancelled_by_admin';
 
 /**
  * Audit record structure

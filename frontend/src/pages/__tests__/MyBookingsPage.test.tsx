@@ -41,7 +41,22 @@ const mockBookings = [
     status: 'cancelled',
     notes: 'High floor preferred',
     cancellationReason: 'Change of plans',
+    cancelledByAdmin: false,
     createdAt: '2025-11-15',
+  },
+  {
+    id: 'booking-5',
+    roomTypeName: 'Presidential Suite',
+    checkInDate: '2025-10-15',
+    checkOutDate: '2025-10-18',
+    numGuests: 2,
+    totalPrice: 15000,
+    pointsEarned: 1500,
+    status: 'cancelled',
+    notes: 'VIP guest',
+    cancellationReason: 'Policy violation - no show',
+    cancelledByAdmin: true,
+    createdAt: '2025-10-10',
   },
   {
     id: 'booking-4',
@@ -124,6 +139,7 @@ vi.mock('react-i18next', () => ({
         'booking.pointsDeducted': 'deducted',
         'booking.status.confirmed': 'Confirmed',
         'booking.status.cancelled': 'Cancelled',
+        'booking.status.cancelledByAdmin': 'Cancelled by Admin',
         'booking.status.completed': 'Completed',
         'booking.currentBookings': 'Current Bookings',
         'booking.bookingHistory': 'Booking History',
@@ -507,9 +523,10 @@ describe('MyBookingsPage', () => {
       // booking-2 is completed = history
       // booking-3 is cancelled = history
       // booking-4 is confirmed + past = history
-      // So: current = 1, history = 3
+      // booking-5 is cancelled by admin = history
+      // So: current = 1, history = 4
       expect(screen.getByTestId('tab-current')).toHaveTextContent('Current Bookings (1)');
-      expect(screen.getByTestId('tab-history')).toHaveTextContent('Booking History (3)');
+      expect(screen.getByTestId('tab-history')).toHaveTextContent('Booking History (4)');
     });
   });
 
@@ -708,6 +725,94 @@ describe('MyBookingsPage', () => {
       await user.click(screen.getByTestId('tab-history'));
       await user.click(screen.getByTestId('booking-card-booking-2'));
       expect(screen.queryByTestId('booking-details-cancel')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Admin Cancelled Booking Display', () => {
+    it('should show "Cancelled by Admin" badge for bookings with cancelledByAdmin=true', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      // Switch to history tab to see the admin-cancelled booking
+      await user.click(screen.getByTestId('tab-history'));
+
+      // booking-5 is cancelled by admin
+      const adminCancelledCard = screen.getByTestId('booking-card-booking-5');
+      expect(adminCancelledCard).toBeInTheDocument();
+
+      // Should show "Cancelled by Admin" badge
+      const badge = within(adminCancelledCard).getByText('Cancelled by Admin');
+      expect(badge).toBeInTheDocument();
+    });
+
+    it('should show regular "Cancelled" badge for bookings with cancelledByAdmin=false', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      // Switch to history tab
+      await user.click(screen.getByTestId('tab-history'));
+
+      // booking-3 is cancelled by user (cancelledByAdmin=false)
+      const userCancelledCard = screen.getByTestId('booking-card-booking-3');
+      expect(userCancelledCard).toBeInTheDocument();
+
+      // Should show regular "Cancelled" badge
+      const badge = within(userCancelledCard).getByText('Cancelled');
+      expect(badge).toBeInTheDocument();
+    });
+
+    it('should display admin cancellation reason in details modal', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      // Switch to history tab
+      await user.click(screen.getByTestId('tab-history'));
+
+      // Click on the admin-cancelled booking
+      await user.click(screen.getByTestId('booking-card-booking-5'));
+
+      const modal = screen.getByTestId('booking-details-modal');
+
+      // Should show the cancellation reason
+      expect(within(modal).getByText('Policy violation - no show')).toBeInTheDocument();
+      expect(within(modal).getByText('Cancellation reason')).toBeInTheDocument();
+    });
+
+    it('should use amber/orange color for admin cancellation badge vs red for user cancellation', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      // Switch to history tab
+      await user.click(screen.getByTestId('tab-history'));
+
+      // booking-3 (user cancelled) should have red badge
+      const userCancelledCard = screen.getByTestId('booking-card-booking-3');
+      const userBadge = within(userCancelledCard).getByText('Cancelled');
+      expect(userBadge).toHaveClass('bg-red-100', 'text-red-800');
+
+      // booking-5 (admin cancelled) should have amber/orange badge
+      const adminCancelledCard = screen.getByTestId('booking-card-booking-5');
+      const adminBadge = within(adminCancelledCard).getByText('Cancelled by Admin');
+      expect(adminBadge).toHaveClass('bg-amber-100', 'text-amber-800');
+    });
+
+    it('should differentiate admin and user cancelled bookings in the modal', async () => {
+      const user = userEvent.setup();
+      render(<MyBookingsPage />);
+
+      // Switch to history tab
+      await user.click(screen.getByTestId('tab-history'));
+
+      // Open user-cancelled booking modal
+      await user.click(screen.getByTestId('booking-card-booking-3'));
+      let modal = screen.getByTestId('booking-details-modal');
+      expect(within(modal).getByText('Cancelled')).toBeInTheDocument();
+      await user.click(screen.getByTestId('booking-details-close'));
+
+      // Open admin-cancelled booking modal
+      await user.click(screen.getByTestId('booking-card-booking-5'));
+      modal = screen.getByTestId('booking-details-modal');
+      expect(within(modal).getByText('Cancelled by Admin')).toBeInTheDocument();
     });
   });
 });

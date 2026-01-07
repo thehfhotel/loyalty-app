@@ -692,6 +692,19 @@
         "deleteKeyword": "DELETE",
         "deletePlaceholder": "Type DELETE to confirm"
       },
+      "cancel": {
+        "tabTitle": "Cancel",
+        "title": "Cancel Booking",
+        "warning": "This action cannot be undone. The booking will be permanently cancelled.",
+        "reasonLabel": "Cancellation Reason (required)",
+        "reasonPlaceholder": "Enter reason for cancellation...",
+        "confirmCheckbox": "I understand this action cannot be undone",
+        "button": "Cancel Booking",
+        "cancelling": "Cancelling...",
+        "success": "Booking cancelled successfully",
+        "error": "Failed to cancel booking",
+        "alreadyCancelled": "This booking has already been cancelled"
+      },
       "bookingManagement": {
         "title": "Booking Management",
         "subtitle": "Review and manage booking payments",
@@ -765,7 +778,8 @@
           "tabs": {
             "details": "Details",
             "payment": "Payment",
-            "audit": "Audit History"
+            "audit": "Audit History",
+            "cancel": "Cancel"
           },
           "userInfo": "User Information",
           "name": "Name",
@@ -802,7 +816,8 @@
           "bookingCreated": "Booking Created",
           "bookingUpdated": "Booking Updated",
           "discountApplied": "Discount Applied",
-          "paymentUpdated": "Payment Updated"
+          "paymentUpdated": "Payment Updated",
+          "bookingCancelled": "Booking Cancelled"
         },
         "by": "By",
         "messages": {
@@ -1579,8 +1594,10 @@
     "status": {
       "confirmed": "Confirmed",
       "cancelled": "Cancelled",
-      "completed": "Completed"
+      "completed": "Completed",
+      "cancelledByAdmin": "Cancelled by Admin"
     },
+    "cancelledByAdmin": "This booking was cancelled by an administrator",
     "steps": {
       "selectDates": "Select Dates",
       "selectRoom": "Select Room",

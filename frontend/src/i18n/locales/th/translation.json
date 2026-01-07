@@ -714,6 +714,19 @@
         "deleteKeyword": "DELETE",
         "deletePlaceholder": "พิมพ์ DELETE เพื่อยืนยัน"
       },
+      "cancel": {
+        "tabTitle": "ยกเลิก",
+        "title": "ยกเลิกการจอง",
+        "warning": "การดำเนินการนี้ไม่สามารถยกเลิกได้ การจองจะถูกยกเลิกอย่างถาวร",
+        "reasonLabel": "เหตุผลในการยกเลิก (จำเป็น)",
+        "reasonPlaceholder": "ระบุเหตุผลในการยกเลิก...",
+        "confirmCheckbox": "ฉันเข้าใจว่าการดำเนินการนี้ไม่สามารถยกเลิกได้",
+        "button": "ยกเลิกการจอง",
+        "cancelling": "กำลังยกเลิก...",
+        "success": "ยกเลิกการจองเรียบร้อยแล้ว",
+        "error": "ไม่สามารถยกเลิกการจองได้",
+        "alreadyCancelled": "การจองนี้ถูกยกเลิกไปแล้ว"
+      },
       "bookingManagement": {
         "title": "จัดการการจอง",
         "subtitle": "ตรวจสอบและจัดการการชำระเงิน",
@@ -787,7 +800,8 @@
           "tabs": {
             "details": "รายละเอียด",
             "payment": "การชำระเงิน",
-            "audit": "ประวัติการตรวจสอบ"
+            "audit": "ประวัติการตรวจสอบ",
+            "cancel": "ยกเลิก"
           },
           "userInfo": "ข้อมูลผู้ใช้",
           "name": "ชื่อ",
@@ -824,7 +838,8 @@
           "bookingCreated": "สร้างการจอง",
           "bookingUpdated": "อัปเดตการจอง",
           "discountApplied": "ใช้ส่วนลด",
-          "paymentUpdated": "อัปเดตการชำระเงิน"
+          "paymentUpdated": "อัปเดตการชำระเงิน",
+          "bookingCancelled": "ยกเลิกการจอง"
         },
         "by": "โดย",
         "messages": {
@@ -1628,8 +1643,10 @@
     "status": {
       "confirmed": "ยืนยันแล้ว",
       "cancelled": "ยกเลิกแล้ว",
-      "completed": "เสร็จสิ้น"
+      "completed": "เสร็จสิ้น",
+      "cancelledByAdmin": "ยกเลิกโดยผู้ดูแล"
     },
+    "cancelledByAdmin": "การจองนี้ถูกยกเลิกโดยผู้ดูแลระบบ",
     "steps": {
       "selectDates": "เลือกวันที่",
       "selectRoom": "เลือกห้อง",

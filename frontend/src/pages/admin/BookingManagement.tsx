@@ -468,7 +468,7 @@ const BookingManagement: React.FC = () => {
                                 : t('admin.booking.bookingManagement.paymentType.deposit')}
                             </div>
                             <div className="text-sm font-medium text-gray-900">
-                              {booking.paymentAmount != null
+                              {booking.paymentAmount !== null
                                 ? `${booking.paymentAmount.toLocaleString()} THB`
                                 : '-'}
                             </div>
