@@ -2207,12 +2207,13 @@ jobs:
           echo "3️⃣ Testing database connectivity from backend..."
           HEALTH_RESPONSE=$(curl -sf --max-time 10 http://localhost:5001/api/health 2>/dev/null || echo '{"status":"error"}')
           DB_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.services.database // "unknown"')
-          if [ "$DB_STATUS" != "connected" ]; then
+          # Accept both "connected" and "healthy" as valid states
+          if [ "$DB_STATUS" != "connected" ] && [ "$DB_STATUS" != "healthy" ]; then
             echo "❌ ERROR: Database not connected. Status: $DB_STATUS"
             echo "Full health response: $HEALTH_RESPONSE"
             exit 1
           fi
-          echo "✅ Database connectivity verified"
+          echo "✅ Database connectivity verified (status: $DB_STATUS)"
 
           echo ""
           echo "=============================="
@@ -3090,12 +3091,13 @@ jobs:
           echo "3️⃣ Testing database connectivity from backend..."
           HEALTH_RESPONSE=$(docker compose exec -T backend curl -sf --max-time 10 http://localhost:4000/api/health 2>/dev/null || echo '{"status":"error"}')
           DB_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.services.database // "unknown"')
-          if [ "$DB_STATUS" != "connected" ]; then
+          # Accept both "connected" and "healthy" as valid states
+          if [ "$DB_STATUS" != "connected" ] && [ "$DB_STATUS" != "healthy" ]; then
             echo "❌ ERROR: Database not connected. Status: $DB_STATUS"
             echo "Full health response: $HEALTH_RESPONSE"
             exit 1
           fi
-          echo "✅ Database connectivity verified"
+          echo "✅ Database connectivity verified (status: $DB_STATUS)"
 
           echo ""
           echo "=============================="
