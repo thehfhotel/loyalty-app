@@ -692,6 +692,138 @@
         "deleteKeyword": "DELETE",
         "deletePlaceholder": "Type DELETE to confirm"
       },
+      "bookingManagement": {
+        "title": "Booking Management",
+        "subtitle": "Review and manage booking payments",
+        "menuTitle": "Booking Management",
+        "menuDescription": "Review bookings and verify payments",
+        "searchPlaceholder": "Search by name, phone, email, or membership ID...",
+        "searchHint": "Search by name, phone, email, or membership ID",
+        "noBookings": "No bookings found",
+        "noSlip": "No slip",
+        "pagination": "Page {{current}} of {{total}}",
+        "table": {
+          "created": "Created",
+          "user": "User",
+          "roomType": "Room Type",
+          "dates": "Check-in/out",
+          "payment": "Payment",
+          "slipStatus": "SlipOK",
+          "adminStatus": "Admin Status",
+          "actions": "Actions"
+        },
+        "slipStatus": {
+          "verified": "Verified",
+          "failed": "Failed",
+          "pending": "Pending",
+          "quotaExceeded": "Quota Exceeded"
+        },
+        "adminStatus": {
+          "verified": "Verified",
+          "needsAction": "Needs Action",
+          "pending": "Pending"
+        },
+        "paymentType": {
+          "full": "Full Payment",
+          "deposit": "50% Deposit"
+        },
+        "actions": {
+          "verify": "Verify",
+          "needsAction": "Needs Action",
+          "edit": "Edit Booking",
+          "replaceSlip": "Replace Slip",
+          "enterNotes": "Enter notes for this action:"
+        },
+        "slipViewer": {
+          "title": "Slip Viewer",
+          "selectBooking": "Select a booking to view slip",
+          "uploaded": "Uploaded",
+          "slipokStatus": "SlipOK Status",
+          "adminStatus": "Admin Status",
+          "slipImage": "Payment slip image",
+          "fullscreen": "View fullscreen",
+          "noSlip": "No slip uploaded",
+          "auditSummary": "Recent Activity",
+          "viewFullHistory": "View Full History",
+          "noAuditHistory": "No activity history"
+        },
+        "modals": {
+          "needsAction": {
+            "title": "Mark as Needs Action",
+            "placeholder": "Enter reason or notes...",
+            "submit": "Submit"
+          },
+          "auditHistory": {
+            "title": "Audit History",
+            "oldValue": "Old",
+            "newValue": "New"
+          }
+        },
+        "editModal": {
+          "title": "Edit Booking",
+          "bookingId": "Booking ID",
+          "tabs": {
+            "details": "Details",
+            "payment": "Payment",
+            "audit": "Audit History"
+          },
+          "userInfo": "User Information",
+          "name": "Name",
+          "email": "Email",
+          "membershipId": "Membership ID",
+          "phone": "Phone",
+          "checkInDate": "Check-in Date",
+          "checkOutDate": "Check-out Date",
+          "numberOfGuests": "Number of Guests",
+          "roomType": "Room Type",
+          "originalNotes": "Original Booking Notes",
+          "adminNotes": "Admin Notes",
+          "adminNotesPlaceholder": "Add notes for internal use...",
+          "currentPayment": "Current Payment",
+          "paymentType": "Payment Type",
+          "paymentAmount": "Payment Amount",
+          "totalPrice": "Total Price",
+          "calculatedPayment": "Calculated payment amount",
+          "currentDiscount": "Current Discount Applied",
+          "reason": "Reason",
+          "applyDiscount": "Apply Discount",
+          "discountAmount": "Discount Amount",
+          "discountReason": "Discount Reason",
+          "discountReasonPlaceholder": "Why is this discount being applied?",
+          "applyDiscountBtn": "Apply Discount",
+          "noAuditHistory": "No audit history available",
+          "auditOld": "Old",
+          "auditNew": "New"
+        },
+        "auditActions": {
+          "adminVerified": "Admin Verified",
+          "needsActionMarked": "Marked as Needs Action",
+          "slipReplaced": "Slip Replaced",
+          "bookingCreated": "Booking Created",
+          "bookingUpdated": "Booking Updated",
+          "discountApplied": "Discount Applied",
+          "paymentUpdated": "Payment Updated"
+        },
+        "by": "By",
+        "messages": {
+          "slipVerified": "Slip verified successfully",
+          "markedNeedsAction": "Marked as needs action",
+          "slipReplaced": "Slip replaced successfully",
+          "bookingUpdated": "Booking updated successfully",
+          "discountApplied": "Discount applied successfully"
+        },
+        "errors": {
+          "loadFailed": "Failed to load bookings",
+          "verifyFailed": "Failed to verify slip",
+          "markFailed": "Failed to mark as needs action",
+          "replaceFailed": "Failed to replace slip",
+          "updateFailed": "Failed to update booking",
+          "discountFailed": "Failed to apply discount",
+          "discountReasonRequired": "Discount reason is required",
+          "invalidFileType": "Please select a valid image file",
+          "fileTooLarge": "File size must be less than 5MB"
+        }
+      },
       "availability": {
         "title": "Room Availability",
         "subtitle": "Manage room availability and blocked dates",
@@ -1485,5 +1617,50 @@
     "roomsLeft": "{{count}} room(s) left",
     "pointsYouWillEarn": "You'll earn {{points}} points!",
     "maxGuests": "Max {{count}} guests"
+  },
+  "payment": {
+    "title": "Payment",
+    "selectPaymentType": "Select Payment Option",
+    "deposit": "50% Deposit",
+    "depositDescription": "Pay half now, rest at check-in",
+    "payInFull": "Pay in Full",
+    "payInFullDescription": "Pay the full amount now",
+    "amountToPay": "Amount to Pay",
+    "amountPaid": "Amount Paid",
+    "paymentType": "Payment Type",
+    "paid": "Paid",
+    "scanQRCode": "Scan QR Code",
+    "scanInstructions": "Scan this QR code with your banking app and enter the amount shown",
+    "uploadSlip": "Upload Transfer Slip",
+    "uploadSlipDescription": "After payment, upload your transfer slip for verification",
+    "dragDropSlip": "Drag and drop your slip here, or click to browse",
+    "slipUploaded": "Slip Uploaded",
+    "slipPreview": "Transfer Slip",
+    "awaitingVerification": "Awaiting Verification",
+    "verified": "Verified",
+    "verificationFailed": "Verification Failed",
+    "needsAction": "Needs Attention",
+    "quotaExceeded": "Manual Verification Required",
+    "slipokStatus": "Auto-Verification",
+    "adminStatus": "Admin Verification",
+    "uploadedAt": "Uploaded",
+    "verifiedAt": "Verified",
+    "verifiedBy": "Verified by",
+    "payLater": "Pay Later",
+    "submitSlip": "Submit Slip",
+    "invalidFileType": "Please upload a valid image file (JPG or PNG)",
+    "fileTooLarge": "File size must be less than 10MB",
+    "uploadError": "Failed to upload slip. Please try again.",
+    "slipok": {
+      "pending": "Pending",
+      "verified": "Verified",
+      "failed": "Failed",
+      "quota_exceeded": "Manual Check"
+    },
+    "admin": {
+      "pending": "Pending",
+      "verified": "Admin Verified",
+      "needs_action": "Needs Action"
+    }
   }
 }

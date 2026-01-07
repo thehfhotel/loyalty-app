@@ -1,13 +1,16 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { FiCalendar, FiUsers, FiStar, FiAlertCircle, FiPlus, FiChevronRight, FiX } from 'react-icons/fi';
+import { FiCalendar, FiUsers, FiStar, FiAlertCircle, FiPlus, FiChevronRight, FiX, FiUpload, FiCheckCircle, FiClock, FiDollarSign } from 'react-icons/fi';
 import MainLayout from '../components/layout/MainLayout';
 import { trpc } from '../hooks/useTRPC';
 import toast from 'react-hot-toast';
 
 type BookingStatus = 'confirmed' | 'cancelled' | 'completed';
 type BookingTab = 'current' | 'history';
+type PaymentType = 'deposit' | 'full' | null;
+type SlipOkStatus = 'pending' | 'verified' | 'failed' | 'quota_exceeded' | null;
+type AdminVerificationStatus = 'pending' | 'verified' | 'needs_action' | null;
 
 interface Booking {
   id: string;
@@ -21,12 +24,39 @@ interface Booking {
   notes?: string;
   cancellationReason?: string;
   createdAt: string | Date;
+  // Payment fields
+  paymentType?: PaymentType;
+  paymentAmount?: number;
+  slipUrl?: string;
+  slipUploadedAt?: string | Date;
+  slipOkStatus?: SlipOkStatus;
+  adminVerificationStatus?: AdminVerificationStatus;
+  verifiedAt?: string | Date;
+  verifiedBy?: string;
 }
 
 const statusColors: Record<BookingStatus, { bg: string; text: string }> = {
   confirmed: { bg: 'bg-green-100', text: 'text-green-800' },
   cancelled: { bg: 'bg-red-100', text: 'text-red-800' },
   completed: { bg: 'bg-blue-100', text: 'text-blue-800' },
+};
+
+const paymentStatusColors: Record<string, { bg: string; text: string }> = {
+  deposit: { bg: 'bg-orange-100', text: 'text-orange-800' },
+  full: { bg: 'bg-green-100', text: 'text-green-800' },
+};
+
+const slipOkStatusColors: Record<string, { bg: string; text: string; icon: 'clock' | 'check' | 'alert' }> = {
+  pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: 'clock' },
+  verified: { bg: 'bg-green-100', text: 'text-green-800', icon: 'check' },
+  failed: { bg: 'bg-red-100', text: 'text-red-800', icon: 'alert' },
+  quota_exceeded: { bg: 'bg-orange-100', text: 'text-orange-800', icon: 'alert' },
+};
+
+const adminStatusColors: Record<string, { bg: string; text: string; icon: 'clock' | 'check' | 'alert' }> = {
+  pending: { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: 'clock' },
+  verified: { bg: 'bg-green-100', text: 'text-green-800', icon: 'check' },
+  needs_action: { bg: 'bg-red-100', text: 'text-red-800', icon: 'alert' },
 };
 
 export default function MyBookingsPage() {
@@ -36,6 +66,18 @@ export default function MyBookingsPage() {
   const [cancelReason, setCancelReason] = useState('');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [activeTab, setActiveTab] = useState<BookingTab>('current');
+
+  // Slip upload modal state
+  const [showSlipUploadModal, setShowSlipUploadModal] = useState(false);
+  const [slipUploadBookingId, setSlipUploadBookingId] = useState<string | null>(null);
+  const [slipFile, setSlipFile] = useState<File | null>(null);
+  const [slipPreview, setSlipPreview] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // QR code URL - use env variable or fallback to static image
+  const promptPayQRUrl = import.meta.env.VITE_PROMPTPAY_QR_IMAGE_URL ?? '/images/company-promptpay-qr.png';
 
   // Queries
   const { data: bookings, isLoading, refetch } = trpc.booking.getMyBookings.useQuery();
@@ -83,6 +125,106 @@ export default function MyBookingsPage() {
   const canCancel = (booking: { status: string; checkInDate: string | Date }) => {
     return booking.status === 'confirmed' && new Date(booking.checkInDate) > new Date();
   };
+
+  // Slip upload handlers
+  const handleUploadSlipClick = useCallback((bookingId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    setSlipUploadBookingId(bookingId);
+    setSlipFile(null);
+    setSlipPreview(null);
+    setShowSlipUploadModal(true);
+  }, []);
+
+  const handleFileSelect = useCallback((file: File) => {
+    if (!file.type.match(/^image\/(jpeg|jpg|png)$/)) {
+      toast.error(t('payment.invalidFileType'));
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      toast.error(t('payment.fileTooLarge'));
+      return;
+    }
+    setSlipFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setSlipPreview(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  }, [t]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      handleFileSelect(file);
+    }
+  }, [handleFileSelect]);
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileSelect(file);
+    }
+  }, [handleFileSelect]);
+
+  const removeSlip = useCallback(() => {
+    setSlipFile(null);
+    setSlipPreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, []);
+
+  const handleSlipUpload = useCallback(async () => {
+    if (!slipFile || !slipUploadBookingId) return;
+
+    setIsUploading(true);
+    try {
+      // TODO: Implement actual upload when backend endpoint is ready
+      // For now, simulate upload success
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      toast.success(t('payment.slipUploaded'));
+      setShowSlipUploadModal(false);
+      setSlipUploadBookingId(null);
+      setSlipFile(null);
+      setSlipPreview(null);
+      refetch();
+    } catch (_error) {
+      toast.error(t('payment.uploadError'));
+    } finally {
+      setIsUploading(false);
+    }
+  }, [slipFile, slipUploadBookingId, t, refetch]);
+
+  const closeSlipUploadModal = useCallback(() => {
+    setShowSlipUploadModal(false);
+    setSlipUploadBookingId(null);
+    setSlipFile(null);
+    setSlipPreview(null);
+  }, []);
+
+  // Helper to check if slip can be uploaded
+  const canUploadSlip = (booking: Booking) => {
+    return booking.status === 'confirmed' && !booking.slipUrl;
+  };
+
+  // Get the booking for slip upload modal
+  const slipUploadBooking = slipUploadBookingId
+    ? (bookings?.find((b) => b.id === slipUploadBookingId) as Booking | undefined)
+    : null;
 
   // Filter functions for tabs
   const isCurrentBooking = (booking: Booking) =>
@@ -193,11 +335,36 @@ export default function MyBookingsPage() {
                 <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                   {/* Booking Details */}
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center gap-3 mb-3 flex-wrap">
                       <h3 className="text-lg font-semibold">{booking.roomTypeName}</h3>
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[booking.status as BookingStatus]?.bg} ${statusColors[booking.status as BookingStatus]?.text}`}>
                         {t(`booking.status.${booking.status}`)}
                       </span>
+                      {/* Payment Type Badge */}
+                      {(booking as Booking).paymentType && (
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${paymentStatusColors[(booking as Booking).paymentType as string]?.bg} ${paymentStatusColors[(booking as Booking).paymentType as string]?.text}`}>
+                          <FiDollarSign className="inline w-3 h-3 mr-1" />
+                          {(booking as Booking).paymentType === 'deposit' ? t('payment.deposit') : t('payment.payInFull')}
+                        </span>
+                      )}
+                      {/* SlipOK Status Badge */}
+                      {(booking as Booking).slipOkStatus && (
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${slipOkStatusColors[(booking as Booking).slipOkStatus as string]?.bg} ${slipOkStatusColors[(booking as Booking).slipOkStatus as string]?.text}`}>
+                          {slipOkStatusColors[(booking as Booking).slipOkStatus as string]?.icon === 'check' && <FiCheckCircle className="inline w-3 h-3 mr-1" />}
+                          {slipOkStatusColors[(booking as Booking).slipOkStatus as string]?.icon === 'clock' && <FiClock className="inline w-3 h-3 mr-1" />}
+                          {slipOkStatusColors[(booking as Booking).slipOkStatus as string]?.icon === 'alert' && <FiAlertCircle className="inline w-3 h-3 mr-1" />}
+                          {t(`payment.slipok.${(booking as Booking).slipOkStatus}`)}
+                        </span>
+                      )}
+                      {/* Admin Status Badge */}
+                      {(booking as Booking).adminVerificationStatus && (
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${adminStatusColors[(booking as Booking).adminVerificationStatus as string]?.bg} ${adminStatusColors[(booking as Booking).adminVerificationStatus as string]?.text}`}>
+                          {adminStatusColors[(booking as Booking).adminVerificationStatus as string]?.icon === 'check' && <FiCheckCircle className="inline w-3 h-3 mr-1" />}
+                          {adminStatusColors[(booking as Booking).adminVerificationStatus as string]?.icon === 'clock' && <FiClock className="inline w-3 h-3 mr-1" />}
+                          {adminStatusColors[(booking as Booking).adminVerificationStatus as string]?.icon === 'alert' && <FiAlertCircle className="inline w-3 h-3 mr-1" />}
+                          {t(`payment.admin.${(booking as Booking).adminVerificationStatus}`)}
+                        </span>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
@@ -219,7 +386,7 @@ export default function MyBookingsPage() {
                     </div>
                   </div>
 
-                  {/* Price and Chevron */}
+                  {/* Price, Upload Button and Chevron */}
                   <div className="flex items-center gap-3">
                     <div className="text-right">
                       <div className="text-2xl font-bold text-primary-600">
@@ -228,7 +395,24 @@ export default function MyBookingsPage() {
                       <div className="text-sm text-gray-500">
                         {calculateNights(booking.checkInDate, booking.checkOutDate)} {t('booking.nights')}
                       </div>
+                      {/* Payment amount if exists */}
+                      {(booking as Booking).paymentAmount && (
+                        <div className="text-sm text-green-600 font-medium">
+                          {t('payment.paid')}: ฿{((booking as Booking).paymentAmount ?? 0).toLocaleString('th-TH')}
+                        </div>
+                      )}
                     </div>
+                    {/* Upload Slip Button */}
+                    {canUploadSlip(booking as Booking) && (
+                      <button
+                        onClick={(e) => handleUploadSlipClick(booking.id, e)}
+                        className="px-3 py-2 text-sm bg-primary-100 text-primary-700 rounded-md hover:bg-primary-200 flex items-center"
+                        data-testid={`upload-slip-${booking.id}`}
+                      >
+                        <FiUpload className="mr-1 w-4 h-4" />
+                        {t('payment.uploadSlip')}
+                      </button>
+                    )}
                     <FiChevronRight className="text-gray-400 text-xl" />
                   </div>
                 </div>
@@ -338,6 +522,108 @@ export default function MyBookingsPage() {
                 </div>
               </div>
 
+              {/* Payment Section */}
+              {/* eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- logical OR for truthy check */}
+              {Boolean(selectedBooking.paymentType || selectedBooking.slipUrl || selectedBooking.slipOkStatus || selectedBooking.adminVerificationStatus) && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+                  <div className="flex items-center text-blue-800 font-medium">
+                    <FiDollarSign className="mr-2" />
+                    {t('payment.title')}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    {/* Payment Type */}
+                    {selectedBooking.paymentType && (
+                      <div>
+                        <div className="text-gray-500">{t('payment.paymentType')}</div>
+                        <div className="font-medium">
+                          {selectedBooking.paymentType === 'deposit' ? t('payment.deposit') : t('payment.payInFull')}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Payment Amount */}
+                    {selectedBooking.paymentAmount && (
+                      <div>
+                        <div className="text-gray-500">{t('payment.amountPaid')}</div>
+                        <div className="font-medium text-green-600">
+                          ฿{selectedBooking.paymentAmount.toLocaleString('th-TH')}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SlipOK Status */}
+                    {selectedBooking.slipOkStatus && (
+                      <div>
+                        <div className="text-gray-500">{t('payment.slipokStatus')}</div>
+                        <div className={`font-medium ${slipOkStatusColors[selectedBooking.slipOkStatus]?.text}`}>
+                          {slipOkStatusColors[selectedBooking.slipOkStatus]?.icon === 'check' && <FiCheckCircle className="inline w-4 h-4 mr-1" />}
+                          {slipOkStatusColors[selectedBooking.slipOkStatus]?.icon === 'clock' && <FiClock className="inline w-4 h-4 mr-1" />}
+                          {slipOkStatusColors[selectedBooking.slipOkStatus]?.icon === 'alert' && <FiAlertCircle className="inline w-4 h-4 mr-1" />}
+                          {t(`payment.slipok.${selectedBooking.slipOkStatus}`)}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Admin Verification Status */}
+                    {selectedBooking.adminVerificationStatus && (
+                      <div>
+                        <div className="text-gray-500">{t('payment.adminStatus')}</div>
+                        <div className={`font-medium ${adminStatusColors[selectedBooking.adminVerificationStatus]?.text}`}>
+                          {adminStatusColors[selectedBooking.adminVerificationStatus]?.icon === 'check' && <FiCheckCircle className="inline w-4 h-4 mr-1" />}
+                          {adminStatusColors[selectedBooking.adminVerificationStatus]?.icon === 'clock' && <FiClock className="inline w-4 h-4 mr-1" />}
+                          {adminStatusColors[selectedBooking.adminVerificationStatus]?.icon === 'alert' && <FiAlertCircle className="inline w-4 h-4 mr-1" />}
+                          {t(`payment.admin.${selectedBooking.adminVerificationStatus}`)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Slip Preview */}
+                  {selectedBooking.slipUrl && (
+                    <div className="mt-3">
+                      <div className="text-gray-500 text-sm mb-2">{t('payment.slipPreview')}</div>
+                      <div className="relative border rounded-lg overflow-hidden max-h-48">
+                        <img
+                          src={selectedBooking.slipUrl}
+                          alt="Transfer slip"
+                          className="w-full h-full object-contain bg-gray-100"
+                        />
+                      </div>
+                      {selectedBooking.slipUploadedAt && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          {t('payment.uploadedAt')}: {new Date(selectedBooking.slipUploadedAt).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Verification Info */}
+                  {selectedBooking.verifiedAt && (
+                    <div className="text-xs text-gray-500 border-t pt-2 mt-2">
+                      <div>{t('payment.verifiedAt')}: {new Date(selectedBooking.verifiedAt).toLocaleString()}</div>
+                      {selectedBooking.verifiedBy && (
+                        <div>{t('payment.verifiedBy')}: {selectedBooking.verifiedBy}</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Upload Slip Button (if not uploaded yet) */}
+                  {canUploadSlip(selectedBooking) && (
+                    <button
+                      onClick={() => {
+                        setSelectedBooking(null);
+                        handleUploadSlipClick(selectedBooking.id);
+                      }}
+                      className="w-full py-2 px-4 bg-primary-600 text-white rounded-md hover:bg-primary-700 flex items-center justify-center mt-2"
+                    >
+                      <FiUpload className="mr-2" />
+                      {t('payment.uploadSlip')}
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Notes */}
               {selectedBooking.notes && (
                 <div className="p-4 bg-gray-50 rounded-lg">
@@ -440,6 +726,139 @@ export default function MyBookingsPage() {
                   </span>
                 ) : (
                   t('booking.confirmCancel')
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Slip Upload Modal */}
+      {showSlipUploadModal && slipUploadBooking && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={closeSlipUploadModal}
+          data-testid="slip-upload-modal-backdrop"
+        >
+          <div
+            className="bg-white rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="slip-upload-modal"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b">
+              <h3 className="text-xl font-semibold">{t('payment.uploadSlip')}</h3>
+              <button
+                onClick={closeSlipUploadModal}
+                className="text-gray-400 hover:text-gray-600"
+                data-testid="slip-upload-modal-close"
+              >
+                <FiX className="text-2xl" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6">
+              {/* Booking Summary */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h4 className="font-medium mb-2">{slipUploadBooking.roomTypeName}</h4>
+                <div className="text-sm text-gray-600 grid grid-cols-2 gap-2">
+                  <div>{t('booking.checkIn')}: {new Date(slipUploadBooking.checkInDate).toLocaleDateString()}</div>
+                  <div>{t('booking.checkOut')}: {new Date(slipUploadBooking.checkOutDate).toLocaleDateString()}</div>
+                </div>
+                <div className="mt-2 text-lg font-bold text-primary-600">
+                  ฿{Number(slipUploadBooking.totalPrice).toLocaleString('th-TH')}
+                </div>
+              </div>
+
+              {/* QR Code Display */}
+              <div className="text-center">
+                <h4 className="font-medium mb-3">{t('payment.scanQRCode')}</h4>
+                <div className="inline-block p-4 bg-white border-2 border-gray-200 rounded-lg shadow-sm">
+                  <img
+                    src={promptPayQRUrl}
+                    alt="PromptPay QR Code"
+                    className="w-40 h-40 object-contain mx-auto"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"%3E%3Crect fill="%23f3f4f6" width="160" height="160"/%3E%3Ctext x="80" y="80" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="12"%3EQR Code%3C/text%3E%3C/svg%3E';
+                    }}
+                  />
+                </div>
+                <p className="text-sm text-gray-600 mt-3">
+                  {t('payment.scanInstructions')}
+                </p>
+              </div>
+
+              {/* Slip Upload Section */}
+              <div>
+                <h4 className="font-medium mb-3">{t('payment.uploadSlipDescription')}</h4>
+
+                {!slipPreview ? (
+                  <div
+                    className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                      isDragging ? 'border-primary-500 bg-primary-50' : 'border-gray-300 hover:border-primary-400'
+                    }`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    data-testid="slip-upload-dropzone"
+                  >
+                    <FiUpload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600 mb-2">{t('payment.dragDropSlip')}</p>
+                    <p className="text-xs text-gray-400">JPG, PNG (max 10MB)</p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png"
+                      onChange={handleFileInputChange}
+                      className="hidden"
+                      data-testid="slip-upload-input"
+                    />
+                  </div>
+                ) : (
+                  <div className="relative border rounded-lg overflow-hidden">
+                    <img
+                      src={slipPreview}
+                      alt="Transfer slip preview"
+                      className="w-full max-h-48 object-contain bg-gray-100"
+                    />
+                    <button
+                      onClick={removeSlip}
+                      className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600"
+                      data-testid="slip-upload-remove"
+                    >
+                      <FiX className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-end gap-3 p-6 border-t bg-gray-50">
+              <button
+                onClick={closeSlipUploadModal}
+                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-100"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={handleSlipUpload}
+                disabled={!slipFile || isUploading}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center"
+                data-testid="slip-upload-submit"
+              >
+                {isUploading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                    {t('common.processing')}
+                  </>
+                ) : (
+                  <>
+                    <FiUpload className="mr-2" />
+                    {t('payment.submitSlip')}
+                  </>
                 )}
               </button>
             </div>

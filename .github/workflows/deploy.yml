@@ -909,6 +909,8 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET || 'test-google-secret-not-configured' }}
           LINE_CHANNEL_ID: ${{ secrets.LINE_CHANNEL_ID || 'test-line-not-configured' }}
           LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET || 'test-line-secret-not-configured' }}
+          SLIPOK_API_KEY: ${{ secrets.SLIPOK_API_KEY || 'test-slipok-not-configured' }}
+          SLIPOK_BRANCH_ID: ${{ secrets.SLIPOK_BRANCH_ID || 'test-branch-not-configured' }}
         run: |
           echo "🚀 Starting isolated application stack for E2E tests..."
 
@@ -1709,6 +1711,8 @@ jobs:
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           IMAP_HOST: ${{ vars.IMAP_HOST }}
           IMAP_PORT: ${{ vars.IMAP_PORT }}
+          SLIPOK_API_KEY: ${{ secrets.SLIPOK_API_KEY }}
+          SLIPOK_BRANCH_ID: ${{ secrets.SLIPOK_BRANCH_ID }}
         run: |
           echo "🔧 Configuring development environment..."
 
@@ -1759,6 +1763,10 @@ jobs:
           IMAP_PORT=${IMAP_PORT}
           IMAP_USER=${SMTP_USER}
           IMAP_PASS=${SMTP_PASS}
+
+          # SlipOK API (Slip Verification)
+          SLIPOK_API_KEY=${SLIPOK_API_KEY}
+          SLIPOK_BRANCH_ID=${SLIPOK_BRANCH_ID}
 
           # Azure Translation
           TRANSLATION_FEATURE_ENABLED=false
@@ -2313,6 +2321,9 @@ jobs:
           IMAP_PORT=${{ vars.IMAP_PORT }}
           IMAP_USER=${{ secrets.SMTP_USER }}
           IMAP_PASS=${{ secrets.SMTP_PASS }}
+
+          SLIPOK_API_KEY=${{ secrets.SLIPOK_API_KEY }}
+          SLIPOK_BRANCH_ID=${{ secrets.SLIPOK_BRANCH_ID }}
 
           LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
           LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}

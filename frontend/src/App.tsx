@@ -35,6 +35,7 @@ import MyBookingsPage from './pages/MyBookingsPage';
 import RoomTypeManagement from './pages/admin/RoomTypeManagement';
 import RoomManagement from './pages/admin/RoomManagement';
 import RoomAvailability from './pages/admin/RoomAvailability';
+import BookingManagement from './pages/admin/BookingManagement';
 import { useEffect, useState, useRef } from 'react';
 import { checkPWAInstallPrompt } from './utils/pwaUtils';
 import { notificationService } from './services/notificationService';
@@ -444,6 +445,14 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin">
               <RoomAvailability />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/booking-management"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <BookingManagement />
             </ProtectedRoute>
           }
         />
