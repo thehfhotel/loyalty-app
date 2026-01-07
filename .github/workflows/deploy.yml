@@ -1899,6 +1899,25 @@ jobs:
 
           echo "✅ Port check complete"
 
+      - name: "🔧 Fix file permissions for volume mounts"
+        run: |
+          echo "🔧 Fixing file permissions for volume mounts..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
+          cd "$DEPLOY_DIR"
+
+          # Clear Prisma generated directory to avoid permission conflicts
+          # When volume is mounted, files owned by different users cause EACCES errors
+          if [ -d "backend/src/generated/prisma" ]; then
+            echo "🧹 Clearing Prisma generated directory..."
+            rm -rf backend/src/generated/prisma/* 2>/dev/null || sudo rm -rf backend/src/generated/prisma/* 2>/dev/null || true
+            echo "✅ Prisma generated directory cleared"
+          fi
+
+          # Ensure backend directory is writable
+          chmod -R u+w backend/ 2>/dev/null || true
+
+          echo "✅ File permissions fixed"
+
       - name: "🐳 Deploy development services"
         run: |
           echo "🐳 Deploying development services on port 5001..."

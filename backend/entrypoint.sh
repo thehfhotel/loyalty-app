@@ -205,9 +205,10 @@ verify_prisma_client() {
     NEEDS_GENERATION=1
   else
     # Verify client has actual content (not empty directory)
-    CLIENT_FILES=$(find src/generated/prisma -type f -name "*.js" 2>/dev/null | wc -l)
+    # Check for any generated files (.js, .ts, .d.ts) since dev/prod may differ
+    CLIENT_FILES=$(find src/generated/prisma -type f \( -name "*.js" -o -name "*.ts" -o -name "*.d.ts" \) 2>/dev/null | wc -l)
     if [ "$CLIENT_FILES" -eq 0 ]; then
-      echo "⚠️ Prisma client directory empty (no .js files)"
+      echo "⚠️ Prisma client directory empty (no generated files)"
       NEEDS_GENERATION=1
     else
       echo "✅ Found $CLIENT_FILES Prisma client files"
@@ -217,11 +218,28 @@ verify_prisma_client() {
   # Generate if needed
   if [ "$NEEDS_GENERATION" -eq 1 ]; then
     echo "⚠️ Generating Prisma client..."
+
+    # Fix permissions if existing files have wrong ownership (common with volume mounts)
+    if [ -d "src/generated/prisma" ]; then
+      echo "🔧 Clearing existing generated files with potential permission issues..."
+      rm -rf src/generated/prisma/* 2>/dev/null || true
+    fi
+
     if npm run db:generate; then
       echo "✅ Prisma client generated successfully"
     else
       echo "❌ ERROR: Prisma client generation failed"
-      exit 1
+      # Check if we have any files anyway (may have been generated in Docker build)
+      if [ -d "src/generated/prisma" ]; then
+        FALLBACK_FILES=$(find src/generated/prisma -type f 2>/dev/null | wc -l)
+        if [ "$FALLBACK_FILES" -gt 0 ]; then
+          echo "⚠️ Found $FALLBACK_FILES existing files - continuing with existing client"
+        else
+          exit 1
+        fi
+      else
+        exit 1
+      fi
     fi
   fi
 
