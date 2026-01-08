@@ -16,6 +16,9 @@ import { AppError } from '../middleware/errorHandler';
  */
 export type BookingAuditAction =
   | 'slip_uploaded'
+  | 'slip_added'
+  | 'slip_verified'
+  | 'slip_needs_action'
   | 'slipok_verified'
   | 'slipok_failed'
   | 'slipok_quota_exceeded'

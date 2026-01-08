@@ -767,6 +767,7 @@
         },
         "actions": {
           "verify": "ยืนยัน",
+          "verifySlip": "ยืนยันสลิป #{{number}}",
           "needsAction": "ต้องดำเนินการ",
           "edit": "แก้ไขการจอง",
           "replaceSlip": "เปลี่ยนสลิป",
@@ -776,6 +777,7 @@
           "title": "ดูสลิป",
           "selectBooking": "เลือกการจองเพื่อดูสลิป",
           "uploaded": "อัปโหลดเมื่อ",
+          "slipCount": "อัปโหลดแล้ว {{count}} สลิป",
           "slipokStatus": "สถานะ SlipOK",
           "adminStatus": "สถานะแอดมิน",
           "slipImage": "รูปสลิปการชำระเงิน",
@@ -838,6 +840,8 @@
           "adminVerified": "แอดมินยืนยันแล้ว",
           "needsActionMarked": "ทำเครื่องหมายว่าต้องดำเนินการ",
           "slipReplaced": "เปลี่ยนสลิปแล้ว",
+          "slipVerified": "ยืนยันสลิปแล้ว",
+          "slipNeedsAction": "ทำเครื่องหมายสลิปว่าต้องดำเนินการ",
           "bookingCreated": "สร้างการจอง",
           "bookingUpdated": "อัปเดตการจอง",
           "discountApplied": "ใช้ส่วนลด",
@@ -848,6 +852,7 @@
         "messages": {
           "slipVerified": "ยืนยันสลิปสำเร็จ",
           "markedNeedsAction": "ทำเครื่องหมายว่าต้องดำเนินการแล้ว",
+          "needsActionMarked": "ทำเครื่องหมายว่าต้องดำเนินการแล้ว",
           "slipReplaced": "เปลี่ยนสลิปสำเร็จ",
           "bookingUpdated": "อัปเดตการจองสำเร็จ",
           "discountApplied": "ใช้ส่วนลดสำเร็จ"
@@ -856,6 +861,7 @@
           "loadFailed": "ไม่สามารถโหลดการจองได้",
           "verifyFailed": "ไม่สามารถยืนยันสลิปได้",
           "markFailed": "ไม่สามารถทำเครื่องหมายว่าต้องดำเนินการได้",
+          "needsActionFailed": "ไม่สามารถทำเครื่องหมายว่าต้องดำเนินการได้",
           "replaceFailed": "ไม่สามารถเปลี่ยนสลิปได้",
           "updateFailed": "ไม่สามารถอัปเดตการจองได้",
           "discountFailed": "ไม่สามารถใช้ส่วนลดได้",
@@ -1717,6 +1723,14 @@
     "verifiedBy": "ตรวจสอบโดย",
     "payLater": "ชำระภายหลัง",
     "submitSlip": "ส่งสลิป",
+    "bankTransfer": "โอนเข้าบัญชี",
+    "bankName": "ธนาคาร",
+    "accountName": "ชื่อบัญชี",
+    "accountNumber": "เลขที่บัญชี",
+    "clickToCopy": "คลิกเพื่อคัดลอก",
+    "copied": "คัดลอกแล้ว",
+    "downloadQR": "บันทึก QR Code",
+    "clickToView": "คลิกเพื่อดูภาพเต็ม",
     "invalidFileType": "กรุณาอัปโหลดไฟล์รูปภาพที่ถูกต้อง (JPG หรือ PNG)",
     "fileTooLarge": "ขนาดไฟล์ต้องไม่เกิน 10MB",
     "uploadError": "อัปโหลดสลิปไม่สำเร็จ กรุณาลองอีกครั้ง",
@@ -1730,6 +1744,8 @@
       "pending": "รอดำเนินการ",
       "verified": "ผู้ดูแลตรวจสอบแล้ว",
       "needs_action": "ต้องดำเนินการ"
-    }
+    },
+    "uploadedSlips": "สลิปที่อัปโหลดแล้ว",
+    "uploadMore": "อัพโหลดเพิ่มเติม"
   }
 }

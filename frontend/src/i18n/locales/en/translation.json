@@ -745,6 +745,7 @@
         },
         "actions": {
           "verify": "Verify",
+          "verifySlip": "Verify Slip #{{number}}",
           "needsAction": "Needs Action",
           "edit": "Edit Booking",
           "replaceSlip": "Replace Slip",
@@ -754,6 +755,7 @@
           "title": "Slip Viewer",
           "selectBooking": "Select a booking to view slip",
           "uploaded": "Uploaded",
+          "slipCount": "{{count}} slips uploaded",
           "slipokStatus": "SlipOK Status",
           "adminStatus": "Admin Status",
           "slipImage": "Payment slip image",
@@ -816,6 +818,8 @@
           "adminVerified": "Admin Verified",
           "needsActionMarked": "Marked as Needs Action",
           "slipReplaced": "Slip Replaced",
+          "slipVerified": "Slip Verified",
+          "slipNeedsAction": "Slip Marked as Needs Action",
           "bookingCreated": "Booking Created",
           "bookingUpdated": "Booking Updated",
           "discountApplied": "Discount Applied",
@@ -826,6 +830,7 @@
         "messages": {
           "slipVerified": "Slip verified successfully",
           "markedNeedsAction": "Marked as needs action",
+          "needsActionMarked": "Marked as needs action",
           "slipReplaced": "Slip replaced successfully",
           "bookingUpdated": "Booking updated successfully",
           "discountApplied": "Discount applied successfully"
@@ -834,6 +839,7 @@
           "loadFailed": "Failed to load bookings",
           "verifyFailed": "Failed to verify slip",
           "markFailed": "Failed to mark as needs action",
+          "needsActionFailed": "Failed to mark as needs action",
           "replaceFailed": "Failed to replace slip",
           "updateFailed": "Failed to update booking",
           "discountFailed": "Failed to apply discount",
@@ -1668,6 +1674,14 @@
     "verifiedBy": "Verified by",
     "payLater": "Pay Later",
     "submitSlip": "Submit Slip",
+    "bankTransfer": "Bank Transfer",
+    "bankName": "Bank",
+    "accountName": "Account Name",
+    "accountNumber": "Account Number",
+    "clickToCopy": "Click to copy",
+    "copied": "Copied!",
+    "downloadQR": "Save QR Code",
+    "clickToView": "Click to view full image",
     "invalidFileType": "Please upload a valid image file (JPG or PNG)",
     "fileTooLarge": "File size must be less than 10MB",
     "uploadError": "Failed to upload slip. Please try again.",
@@ -1681,6 +1695,8 @@
       "pending": "Pending",
       "verified": "Admin Verified",
       "needs_action": "Needs Action"
-    }
+    },
+    "uploadedSlips": "Uploaded Slips",
+    "uploadMore": "Upload More"
   }
 }

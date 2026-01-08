@@ -823,6 +823,7 @@ export class BookingService {
   async getUserBookings(userId: string): Promise<Booking[]> {
     try {
       // Note: roomNumber intentionally not included - internal hotel data
+      // Includes slips from booking_slips table as JSON array
       const result = await query<Booking>(
         `SELECT
           b.id, b.user_id as "userId", b.room_id as "roomId", b.room_type_id as "roomTypeId",
@@ -832,7 +833,19 @@ export class BookingService {
           b.cancelled_at as "cancelledAt", b.cancellation_reason as "cancellationReason",
           b.cancelled_by as "cancelledBy", COALESCE(b.cancelled_by_admin, false) as "cancelledByAdmin",
           b.notes, b.created_at as "createdAt", b.updated_at as "updatedAt",
-          rt.name as "roomTypeName"
+          b.payment_type as "paymentType", b.payment_amount as "paymentAmount",
+          rt.name as "roomTypeName",
+          COALESCE(
+            (SELECT json_agg(json_build_object(
+              'id', bs.id,
+              'slipUrl', bs.slip_url,
+              'uploadedAt', bs.uploaded_at,
+              'slipokStatus', bs.slipok_status,
+              'adminStatus', bs.admin_status
+            ) ORDER BY bs.uploaded_at DESC)
+            FROM booking_slips bs WHERE bs.booking_id = b.id),
+            '[]'::json
+          ) as slips
         FROM bookings b
         JOIN rooms r ON b.room_id = r.id
         JOIN room_types rt ON b.room_type_id = rt.id
@@ -1281,6 +1294,160 @@ export class BookingService {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  /**
+   * Add a slip to a booking (multi-slip support)
+   * Inserts into booking_slips table
+   *
+   * @param bookingId - The booking ID
+   * @param slipUrl - URL to the uploaded slip image
+   * @param userId - User ID who uploaded the slip
+   * @returns The created slip record
+   */
+  async addSlipToBooking(bookingId: string, slipUrl: string, userId: string): Promise<{
+    id: string;
+    slipUrl: string;
+    uploadedAt: Date;
+    slipokStatus: string;
+    adminStatus: string;
+  }> {
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+
+      // Verify booking exists and user owns it
+      const [booking] = await client.query<{ id: string; userId: string; status: string }>(
+        `SELECT id, user_id as "userId", status FROM bookings WHERE id = $1`,
+        [bookingId]
+      ).then(res => res.rows);
+
+      if (!booking) {
+        throw new AppError(404, 'Booking not found');
+      }
+
+      if (booking.userId !== userId) {
+        throw new AppError(403, 'Not authorized to upload slip for this booking');
+      }
+
+      if (booking.status !== 'confirmed') {
+        throw new AppError(400, 'Cannot upload slip for non-confirmed booking');
+      }
+
+      // Check if this is the first slip (make it primary)
+      const [existingSlipCount] = await client.query<{ count: string }>(
+        `SELECT COUNT(*) as count FROM booking_slips WHERE booking_id = $1`,
+        [bookingId]
+      ).then(res => res.rows);
+
+      const isPrimary = parseInt(existingSlipCount?.count ?? '0', 10) === 0;
+
+      // Insert into booking_slips table
+      const [slip] = await client.query<{
+        id: string;
+        slip_url: string;
+        uploaded_at: Date;
+        slipok_status: string;
+        admin_status: string;
+      }>(
+        `INSERT INTO booking_slips (booking_id, slip_url, uploaded_by, is_primary)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, slip_url, uploaded_at, slipok_status, admin_status`,
+        [bookingId, slipUrl, userId, isPrimary]
+      ).then(res => res.rows);
+
+      await client.query('COMMIT');
+
+      if (!slip) {
+        throw new AppError(500, 'Failed to insert slip record');
+      }
+
+      // Log audit
+      await bookingAuditService.logAction(
+        bookingId,
+        'slip_added',
+        userId,
+        null,
+        { slipId: slip.id, slipUrl, isPrimary },
+        isPrimary ? 'First slip uploaded' : 'Additional slip uploaded'
+      );
+
+      // Trigger SlipOK verification asynchronously
+      this.triggerSlipVerificationForSlip(slip.id, slipUrl).catch(err => {
+        logger.error(`SlipOK verification failed for slip ${sanitizeLogValue(slip.id)}:`, err);
+      });
+
+      logger.info(`Slip added to booking ${sanitizeLogValue(bookingId)} by user ${sanitizeUserId(userId)}`);
+
+      return {
+        id: slip.id,
+        slipUrl: slip.slip_url,
+        uploadedAt: slip.uploaded_at,
+        slipokStatus: slip.slipok_status,
+        adminStatus: slip.admin_status,
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Error adding slip to booking:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Trigger SlipOK verification for a specific slip (multi-slip support)
+   */
+  private async triggerSlipVerificationForSlip(slipId: string, slipUrl: string): Promise<void> {
+    try {
+      // Check quota first
+      const quotaCheck = await slipokService.checkQuota();
+      if (quotaCheck.exceeded) {
+        await query(
+          `UPDATE booking_slips SET slipok_status = 'quota_exceeded', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          [slipId]
+        );
+        return;
+      }
+
+      // Verify slip
+      const result = await slipokService.verifySlip(slipUrl);
+
+      // Update slip based on result
+      if (result.success) {
+        await query(
+          `UPDATE booking_slips SET
+            slipok_status = 'verified',
+            slipok_verified_at = CURRENT_TIMESTAMP,
+            slipok_response = $2,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1`,
+          [slipId, JSON.stringify({
+            transactionId: result.transactionId,
+            amount: result.amount,
+            sender: result.sender,
+          })]
+        );
+      } else {
+        await query(
+          `UPDATE booking_slips SET
+            slipok_status = 'failed',
+            slipok_response = $2,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1`,
+          [slipId, JSON.stringify({
+            errorCode: result.errorCode,
+            errorMessage: result.errorMessage,
+          })]
+        );
+      }
+    } catch (error) {
+      logger.error(`SlipOK verification error for slip ${sanitizeLogValue(slipId)}:`, error);
+      await query(
+        `UPDATE booking_slips SET slipok_status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+        [slipId]
+      );
     }
   }
 
@@ -1820,7 +1987,7 @@ export class BookingService {
    */
   async getBookingWithAudit(bookingId: string): Promise<BookingWithAudit | null> {
     try {
-      // Get booking
+      // Get booking with slips from booking_slips table
       const [booking] = await query<Booking>(
         `SELECT
           b.id, b.user_id as "userId", b.room_id as "roomId", b.room_type_id as "roomTypeId",
@@ -1841,7 +2008,24 @@ export class BookingService {
           r.room_number as "roomNumber",
           rt.name as "roomTypeName",
           u.email as "userEmail",
-          CONCAT(up.first_name, ' ', up.last_name) as "userName"
+          CONCAT(up.first_name, ' ', up.last_name) as "userName",
+          COALESCE(
+            (SELECT json_agg(json_build_object(
+              'id', bs.id,
+              'slipUrl', bs.slip_url,
+              'uploadedAt', bs.uploaded_at,
+              'uploadedBy', bs.uploaded_by,
+              'slipokStatus', bs.slipok_status,
+              'slipokVerifiedAt', bs.slipok_verified_at,
+              'adminStatus', bs.admin_status,
+              'adminVerifiedAt', bs.admin_verified_at,
+              'adminVerifiedBy', bs.admin_verified_by,
+              'adminNotes', bs.admin_notes,
+              'isPrimary', bs.is_primary
+            ) ORDER BY bs.uploaded_at DESC)
+            FROM booking_slips bs WHERE bs.booking_id = b.id),
+            '[]'::json
+          ) as slips
         FROM bookings b
         JOIN rooms r ON b.room_id = r.id
         JOIN room_types rt ON b.room_type_id = rt.id
@@ -1865,6 +2049,97 @@ export class BookingService {
     } catch (error) {
       logger.error('Error fetching booking with audit:', error);
       throw new AppError(500, 'Failed to fetch booking');
+    }
+  }
+
+  /**
+   * Verify a specific slip by ID (multi-slip support)
+   * Sets admin_status to 'verified' on the booking_slips record
+   */
+  async verifySlipById(slipId: string, adminId: string, notes?: string): Promise<{ slipId: string; adminStatus: string }> {
+    try {
+      // Get the slip and booking info
+      const [slip] = await query<{ id: string; booking_id: string }>(
+        `SELECT id, booking_id FROM booking_slips WHERE id = $1`,
+        [slipId]
+      );
+
+      if (!slip) {
+        throw new AppError(404, 'Slip not found');
+      }
+
+      // Update the slip's admin status
+      await query(
+        `UPDATE booking_slips
+         SET admin_status = 'verified',
+             admin_verified_at = CURRENT_TIMESTAMP,
+             admin_verified_by = $1,
+             admin_notes = COALESCE($2, admin_notes),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3`,
+        [adminId, notes, slipId]
+      );
+
+      // Log to audit trail
+      await bookingAuditService.logAction(
+        slip.booking_id,
+        'slip_verified',
+        adminId,
+        null,
+        { slipId, status: 'verified' },
+        notes
+      );
+
+      return { slipId, adminStatus: 'verified' };
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logger.error('Error verifying slip:', error);
+      throw new AppError(500, 'Failed to verify slip');
+    }
+  }
+
+  /**
+   * Mark a specific slip as needs action (multi-slip support)
+   */
+  async markSlipNeedsAction(slipId: string, adminId: string, notes: string): Promise<{ slipId: string; adminStatus: string }> {
+    try {
+      // Get the slip and booking info
+      const [slip] = await query<{ id: string; booking_id: string }>(
+        `SELECT id, booking_id FROM booking_slips WHERE id = $1`,
+        [slipId]
+      );
+
+      if (!slip) {
+        throw new AppError(404, 'Slip not found');
+      }
+
+      // Update the slip's admin status
+      await query(
+        `UPDATE booking_slips
+         SET admin_status = 'needs_action',
+             admin_verified_at = CURRENT_TIMESTAMP,
+             admin_verified_by = $1,
+             admin_notes = $2,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3`,
+        [adminId, notes, slipId]
+      );
+
+      // Log to audit trail
+      await bookingAuditService.logAction(
+        slip.booking_id,
+        'slip_needs_action',
+        adminId,
+        null,
+        { slipId, status: 'needs_action' },
+        notes
+      );
+
+      return { slipId, adminStatus: 'needs_action' };
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logger.error('Error marking slip needs action:', error);
+      throw new AppError(500, 'Failed to mark slip as needs action');
     }
   }
 

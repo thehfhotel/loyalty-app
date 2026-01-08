@@ -59,7 +59,13 @@ const paymentInfoInputSchema = z.object({
 
 const uploadSlipInputSchema = z.object({
   bookingId: z.string().uuid(),
-  slipImageUrl: z.string().url(),
+  slipImageUrl: z.string().startsWith('/storage/slips/'),
+});
+
+// Schema for adding slip to booking_slips table (multi-slip support)
+const addSlipInputSchema = z.object({
+  bookingId: z.string().uuid(),
+  slipUrl: z.string().startsWith('/storage/slips/'),
 });
 
 // ==================== ADMIN BOOKING SCHEMAS ====================
@@ -94,6 +100,17 @@ const adminVerifySlipSchema = z.object({
 
 const adminMarkNeedsActionSchema = z.object({
   bookingId: z.string().uuid(),
+  notes: z.string().min(1, 'Notes are required when marking as needs action'),
+});
+
+// Multi-slip schemas (operate on booking_slips table by slip ID)
+const verifySlipByIdSchema = z.object({
+  slipId: z.string().uuid(),
+  notes: z.string().optional(),
+});
+
+const markSlipNeedsActionByIdSchema = z.object({
+  slipId: z.string().uuid(),
   notes: z.string().min(1, 'Notes are required when marking as needs action'),
 });
 
@@ -468,6 +485,28 @@ const adminBookingRouter = router({
     }),
 
   /**
+   * Verify a specific slip by ID (multi-slip support)
+   * Operates on booking_slips table
+   */
+  verifySlipById: adminProcedure
+    .input(verifySlipByIdSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { slipId, notes } = input;
+      return bookingService.verifySlipById(slipId, ctx.user.id, notes);
+    }),
+
+  /**
+   * Mark a specific slip as needs action (multi-slip support)
+   * Operates on booking_slips table
+   */
+  markSlipNeedsActionById: adminProcedure
+    .input(markSlipNeedsActionByIdSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { slipId, notes } = input;
+      return bookingService.markSlipNeedsAction(slipId, ctx.user.id, notes);
+    }),
+
+  /**
    * Replace slip image
    * Resets slipok_status to pending and optionally triggers re-verification
    */
@@ -668,6 +707,24 @@ export const bookingRouter = router({
       return {
         booking: updatedBooking,
         message: 'Slip uploaded successfully. Verification in progress.',
+      };
+    }),
+
+  /**
+   * Add slip to booking (multi-slip support)
+   * Inserts into booking_slips table
+   */
+  addSlip: protectedProcedure
+    .input(addSlipInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { bookingId, slipUrl } = input;
+
+      // addSlipToBooking handles all validation internally
+      const slip = await bookingService.addSlipToBooking(bookingId, slipUrl, ctx.user.id);
+
+      return {
+        slip,
+        message: 'Slip added successfully. Verification in progress.',
       };
     }),
 
