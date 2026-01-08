@@ -96,8 +96,12 @@ export default function MyBookingsPage() {
   // QR code URL - use env variable or fallback to bundled image
   const promptPayQRUrl = import.meta.env.VITE_PROMPTPAY_QR_IMAGE_URL ?? companyQRCode;
 
-  // Queries
-  const { data: bookings, isLoading, refetch } = trpc.booking.getMyBookings.useQuery();
+  // Queries - disable caching to always show fresh data
+  const { data: bookings, isLoading, refetch } = trpc.booking.getMyBookings.useQuery(undefined, {
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+  });
 
   // Mutations
   const cancelBookingMutation = trpc.booking.cancelBooking.useMutation({

@@ -376,9 +376,10 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
       )}
 
       {/* Image Section - Gallery View for Multiple Slips */}
-      <div className="p-4 border-b border-gray-200 flex-1 overflow-hidden">
+      <div className="p-4 border-b border-gray-200 flex-1 flex flex-col min-h-0">
         {slips.length > 0 ? (
-          <div className="relative h-full">
+          <>
+          <div className="relative flex-1 min-h-[300px]">
             {/* Main Image */}
             <img
               src={currentSlip?.slipUrl}
@@ -441,6 +442,47 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
               </>
             )}
           </div>
+
+          {/* Pagination Dots - Always visible below image */}
+          {hasMultipleSlips && (
+            <div className="flex justify-center items-center gap-2 mt-3">
+              <button
+                onClick={() => setCurrentSlipIndex(prev => Math.max(0, prev - 1))}
+                disabled={currentSlipIndex === 0}
+                className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <FiChevronLeft className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-1.5">
+                {slips.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setCurrentSlipIndex(index)}
+                    className={`transition-all duration-200 rounded-full ${
+                      currentSlipIndex === index
+                        ? 'w-6 h-2 bg-primary-600'
+                        : 'w-2 h-2 bg-gray-300 hover:bg-gray-400'
+                    }`}
+                    aria-label={`Go to slip ${index + 1}`}
+                  />
+                ))}
+              </div>
+
+              <button
+                onClick={() => setCurrentSlipIndex(prev => Math.min(slips.length - 1, prev + 1))}
+                disabled={currentSlipIndex === slips.length - 1}
+                className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <FiChevronRight className="w-5 h-5" />
+              </button>
+
+              <span className="text-sm text-gray-500 ml-2">
+                {currentSlipIndex + 1} / {slips.length}
+              </span>
+            </div>
+          )}
+          </>
         ) : (
           <div className="h-48 bg-gray-100 rounded-lg flex flex-col items-center justify-center text-gray-400">
             <FiImage className="w-12 h-12 mb-2" />
