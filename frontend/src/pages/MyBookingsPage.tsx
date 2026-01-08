@@ -421,7 +421,7 @@ export default function MyBookingsPage() {
                     {canUploadSlip(booking as Booking) && (
                       <button
                         onClick={(e) => handleUploadSlipClick(booking.id, e)}
-                        className="px-3 py-2 text-sm bg-primary-100 text-primary-700 rounded-md hover:bg-primary-200 flex items-center"
+                        className="text-sm text-gray-500 hover:text-primary-600 flex items-center"
                         data-testid={`upload-slip-${booking.id}`}
                       >
                         <FiUpload className="mr-1 w-4 h-4" />
