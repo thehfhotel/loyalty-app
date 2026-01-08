@@ -100,8 +100,15 @@ const mockBookingService = {
   getUserBookings: jest.fn(),
   getBooking: jest.fn(),
   cancelBooking: jest.fn(),
+  adminCancelBooking: jest.fn(),
   getAdminBookings: jest.fn(),
   getRoomBookings: jest.fn(),
+  getAllBookingsForAdmin: jest.fn(),
+  getBookingWithAudit: jest.fn(),
+  updateBooking: jest.fn(),
+  uploadSlip: jest.fn(),
+  verifySlip: jest.fn(),
+  adminVerifySlip: jest.fn(),
 };
 
 // Mock the bookingService before importing the router
@@ -1221,6 +1228,343 @@ describe('tRPC Booking Router - Integration Tests', () => {
     });
   });
 
+  // ========== admin.getAllBookingsAdvanced Tests ==========
+  describe('admin.getAllBookingsAdvanced', () => {
+    // Mock raw booking data as returned by the database (flat structure)
+    const mockRawBooking = {
+      id: '44444444-4444-4444-4444-444444444444',
+      userId: 'customer-test-id',
+      roomId: mockRoom.id,
+      roomTypeId: mockRoomType.id,
+      checkInDate: new Date('2025-02-01'),
+      checkOutDate: new Date('2025-02-03'),
+      numGuests: 2,
+      totalPrice: 7000,
+      pointsEarned: 70000,
+      status: 'confirmed' as const,
+      cancelledAt: null,
+      cancellationReason: null,
+      notes: 'Early check-in requested',
+      adminNotes: null,
+      createdAt: new Date('2025-01-15'),
+      updatedAt: new Date('2025-01-15'),
+      paymentType: 'full' as const,
+      paymentAmount: 7000,
+      discountAmount: null,
+      discountReason: null,
+      slipImageUrl: 'https://storage.example.com/slips/test-slip.jpg',
+      slipUploadedAt: new Date('2025-01-15'),
+      slipokStatus: 'verified' as const,
+      slipokVerifiedAt: new Date('2025-01-15'),
+      adminStatus: 'pending' as const,
+      adminVerifiedAt: null,
+      adminVerifiedBy: null,
+      // Flat user/room fields from database JOIN
+      userEmail: 'customer@test.com',
+      userFirstName: 'John',
+      userLastName: 'Doe',
+      userMembershipId: 'MEM-12345',
+      userPhone: '0812345678',
+      roomTypeName: 'Deluxe Room',
+    };
+
+    const mockRawBookingWithoutSlip = {
+      ...mockRawBooking,
+      id: '55555555-5555-5555-5555-555555555555',
+      slipImageUrl: null,
+      slipUploadedAt: null,
+      slipokStatus: null,
+      slipokVerifiedAt: null,
+    };
+
+    it('should return bookings with correct nested structure for admin', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [mockRawBooking],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      const booking = response.bookings[0]!;
+
+      // Verify the response has nested user object
+      expect(booking.user).toBeDefined();
+      expect(booking.user.firstName).toBe('John');
+      expect(booking.user.lastName).toBe('Doe');
+      expect(booking.user.email).toBe('customer@test.com');
+      expect(booking.user.membershipId).toBe('MEM-12345');
+      expect(booking.user.phone).toBe('0812345678');
+
+      // Verify the response has nested roomType object
+      expect(booking.roomType).toBeDefined();
+      expect(booking.roomType.name).toBe('Deluxe Room');
+      expect(booking.roomType.id).toBe(mockRoomType.id);
+
+      // Verify pagination
+      expect(response.total).toBe(1);
+      expect(response.page).toBe(1);
+      expect(response.limit).toBe(10);
+      expect(response.totalPages).toBe(1);
+    });
+
+    it('should return bookings with nested slip object when slip exists', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [mockRawBooking],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      const booking = response.bookings[0]!;
+
+      // Verify slip object exists and has correct fields
+      expect(booking.slip).toBeDefined();
+      expect(booking.slip).not.toBeNull();
+      expect(booking.slip!.imageUrl).toBe('https://storage.example.com/slips/test-slip.jpg');
+      expect(booking.slip!.slipokStatus).toBe('verified');
+      expect(booking.slip!.adminStatus).toBe('pending');
+    });
+
+    it('should return null slip when no slip uploaded', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [mockRawBookingWithoutSlip],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      expect(response.bookings[0]!.slip).toBeNull();
+    });
+
+    it('should pass search, sort, and pagination params to service', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [],
+        total: 0,
+      });
+
+      await caller.admin.getAllBookingsAdvanced({
+        search: 'john@test.com',
+        sortBy: 'check_in_date',
+        sortOrder: 'asc',
+        page: 2,
+        limit: 5,
+      });
+
+      expect(mockBookingService.getAllBookingsForAdmin).toHaveBeenCalledWith({
+        search: 'john@test.com',
+        sortBy: 'check_in_date',
+        sortOrder: 'asc',
+        limit: 5,
+        offset: 5, // (page 2 - 1) * limit 5
+      });
+    });
+
+    it('should handle null user fields gracefully', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const bookingWithNullFields = {
+        ...mockRawBooking,
+        userFirstName: null,
+        userLastName: null,
+        userMembershipId: null,
+        userPhone: null,
+      };
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [bookingWithNullFields],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      const booking = response.bookings[0]!;
+
+      expect(booking.user.firstName).toBeNull();
+      expect(booking.user.lastName).toBeNull();
+      expect(booking.user.membershipId).toBeNull();
+      expect(booking.user.phone).toBeNull();
+      // Email should still be present
+      expect(booking.user.email).toBe('customer@test.com');
+    });
+
+    it('should handle null payment and slip fields gracefully', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const bookingWithoutPayment = {
+        ...mockRawBooking,
+        paymentAmount: null,
+        slipImageUrl: null,
+        slipUploadedAt: null,
+        slipokStatus: null,
+        slipokVerifiedAt: null,
+        slipokResponse: null,
+        adminStatus: null,
+        adminVerifiedAt: null,
+        adminVerifiedBy: null,
+      };
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [bookingWithoutPayment],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      const booking = response.bookings[0]!;
+
+      // Payment fields should be null
+      expect(booking.paymentAmount).toBeNull();
+      // Slip object should be null when slipImageUrl is null
+      expect(booking.slip).toBeNull();
+    });
+
+    it('should handle null admin verification fields gracefully', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const bookingWithoutAdminVerification = {
+        ...mockRawBooking,
+        adminStatus: 'pending' as const,
+        adminVerifiedAt: null,
+        adminVerifiedBy: null,
+        adminNotes: null,
+      };
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [bookingWithoutAdminVerification],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      const booking = response.bookings[0]!;
+
+      // Admin verification fields should be preserved as null
+      expect(booking.adminNotes).toBeNull();
+      // Slip should still exist with pending admin status
+      expect(booking.slip).toBeDefined();
+      expect(booking.slip?.adminStatus).toBe('pending');
+      expect(booking.slip?.adminVerifiedAt).toBeNull();
+      expect(booking.slip?.adminVerifiedBy).toBeNull();
+    });
+
+    it('should handle null discount fields gracefully', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const bookingWithoutDiscount = {
+        ...mockRawBooking,
+        discountAmount: 0,
+        discountReason: null,
+      };
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [bookingWithoutDiscount],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      const booking = response.bookings[0]!;
+
+      // Discount fields should handle zero and null
+      expect(booking.discountAmount).toBe(0);
+      expect(booking.discountReason).toBeNull();
+    });
+
+    it('should handle both firstName and lastName being null', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const bookingWithBothNamesNull = {
+        ...mockRawBooking,
+        userFirstName: null,
+        userLastName: null,
+      };
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [bookingWithBothNamesNull],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      const booking = response.bookings[0]!;
+
+      // Both names null - email should be the fallback for display
+      expect(booking.user.firstName).toBeNull();
+      expect(booking.user.lastName).toBeNull();
+      expect(booking.user.email).toBe('customer@test.com');
+    });
+
+    it('should calculate totalPages correctly', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [mockRawBooking],
+        total: 25, // 25 total bookings
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.totalPages).toBe(3); // ceil(25/10) = 3
+    });
+
+    it('should throw FORBIDDEN when customer tries to access', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.customer);
+
+      await expect(
+        caller.admin.getAllBookingsAdvanced({
+          page: 1,
+          limit: 10,
+        })
+      ).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+    });
+
+    it('should allow super_admin access', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.superAdmin);
+      mockBookingService.getAllBookingsForAdmin.mockResolvedValue({
+        bookings: [mockRawBooking],
+        total: 1,
+      });
+
+      const response = await caller.admin.getAllBookingsAdvanced({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(response.bookings).toHaveLength(1);
+      expect(mockBookingService.getAllBookingsForAdmin).toHaveBeenCalled();
+    });
+  });
+
   // ========== admin.getAllBlockedDates Tests ==========
   describe('admin.getAllBlockedDates', () => {
     it('should return all blocked dates for room type', async () => {
@@ -1560,6 +1904,138 @@ describe('tRPC Booking Router - Integration Tests', () => {
     });
   });
 
+  // ========== admin.cancelBooking Tests ==========
+  describe('admin.cancelBooking', () => {
+    const mockAdminCancelledBooking = {
+      ...mockBooking,
+      status: 'cancelled' as const,
+      cancelledAt: new Date(),
+      cancelledBy: 'admin-test-id',
+      cancelledByAdmin: true,
+      cancellationReason: 'Guest no-show',
+    };
+
+    it('should allow admin to cancel any user booking', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      mockBookingService.adminCancelBooking.mockResolvedValue(mockAdminCancelledBooking);
+
+      const result = await caller.admin.cancelBooking({
+        bookingId: mockBooking.id,
+        reason: 'Guest no-show',
+      });
+
+      expect(mockBookingService.adminCancelBooking).toHaveBeenCalledWith(
+        mockBooking.id,
+        'admin-test-id',
+        'Guest no-show'
+      );
+      expect(result.status).toBe('cancelled');
+      expect(result.cancelledByAdmin).toBe(true);
+    });
+
+    it('should throw FORBIDDEN for non-admin user', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.customer);
+
+      await expect(
+        caller.admin.cancelBooking({
+          bookingId: mockBooking.id,
+          reason: 'Test reason',
+        })
+      ).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+    });
+
+    it('should throw UNAUTHORIZED for unauthenticated request', async () => {
+      const caller = createUnauthenticatedCaller(bookingRouter);
+
+      await expect(
+        caller.admin.cancelBooking({
+          bookingId: mockBooking.id,
+          reason: 'Test reason',
+        })
+      ).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+      });
+    });
+
+    it('should return 404 for invalid booking ID', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const error = new Error('Booking not found');
+      (error as any).statusCode = 404;
+      mockBookingService.adminCancelBooking.mockRejectedValue(error);
+
+      await expect(
+        caller.admin.cancelBooking({
+          bookingId: '99999999-9999-9999-9999-999999999999',
+          reason: 'Test reason',
+        })
+      ).rejects.toThrow('Booking not found');
+    });
+
+    it('should return validation error for empty reason', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+
+      await expect(
+        caller.admin.cancelBooking({
+          bookingId: mockBooking.id,
+          reason: '',
+        })
+      ).rejects.toThrow();
+    });
+
+    it('should include cancelled_by_admin flag in response', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      mockBookingService.adminCancelBooking.mockResolvedValue(mockAdminCancelledBooking);
+
+      const result = await caller.admin.cancelBooking({
+        bookingId: mockBooking.id,
+        reason: 'Policy violation',
+      });
+
+      expect(result.cancelledByAdmin).toBe(true);
+      expect(result.cancellationReason).toBe('Guest no-show');
+    });
+
+    it('should allow super_admin to cancel booking', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.superAdmin);
+      mockBookingService.adminCancelBooking.mockResolvedValue(mockAdminCancelledBooking);
+
+      const result = await caller.admin.cancelBooking({
+        bookingId: mockBooking.id,
+        reason: 'Super admin cancellation',
+      });
+
+      expect(result.status).toBe('cancelled');
+      expect(mockBookingService.adminCancelBooking).toHaveBeenCalled();
+    });
+
+    it('should handle service error when booking is already cancelled', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+      const error = new Error('Booking is already cancelled');
+      (error as any).statusCode = 400;
+      mockBookingService.adminCancelBooking.mockRejectedValue(error);
+
+      await expect(
+        caller.admin.cancelBooking({
+          bookingId: mockBooking.id,
+          reason: 'Test reason',
+        })
+      ).rejects.toThrow('Booking is already cancelled');
+    });
+
+    it('should reject invalid UUID format', async () => {
+      const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+
+      await expect(
+        caller.admin.cancelBooking({
+          bookingId: 'not-a-valid-uuid',
+          reason: 'Test reason',
+        })
+      ).rejects.toThrow();
+    });
+  });
+
   // ========== admin.getRoomBookings Tests ==========
   describe('admin.getRoomBookings', () => {
     it('should return room bookings for admin', async () => {
@@ -1738,6 +2214,7 @@ describe('tRPC Booking Router - Integration Tests', () => {
       { name: 'admin.getAllBookings', call: (caller: any) => caller.admin.getAllBookings({}) },
       { name: 'admin.getBooking', call: (caller: any) => caller.admin.getBooking({ id: mockBooking.id }) },
       { name: 'admin.getRoomBookings', call: (caller: any) => caller.admin.getRoomBookings({ roomTypeId: mockRoomType.id, startDate: new Date('2025-02-01'), endDate: new Date('2025-02-28') }) },
+      { name: 'admin.cancelBooking', call: (caller: any) => caller.admin.cancelBooking({ bookingId: mockBooking.id, reason: 'Test reason' }) },
     ];
 
     describe('Public endpoints should be accessible without authentication', () => {

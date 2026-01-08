@@ -75,7 +75,7 @@ const RoomManagement: React.FC = () => {
       setShowCreateModal(false);
       resetForm();
     },
-    onError: (error: { message: string }) => {
+    onError: (error) => {
       toast.error(error.message || t('admin.booking.rooms.createError'));
     },
   });
@@ -88,7 +88,7 @@ const RoomManagement: React.FC = () => {
       setSelectedRoom(null);
       resetForm();
     },
-    onError: (error: { message: string }) => {
+    onError: (error) => {
       toast.error(error.message || t('admin.booking.rooms.updateError'));
     },
   });
@@ -101,7 +101,7 @@ const RoomManagement: React.FC = () => {
       setSelectedRoom(null);
       setDeleteConfirmText('');
     },
-    onError: (error: { message: string }) => {
+    onError: (error) => {
       toast.error(error.message || t('admin.booking.rooms.deleteError'));
     },
   });
@@ -308,7 +308,7 @@ const RoomManagement: React.FC = () => {
                     </td>
                   </tr>
                 ) : (
-                  rooms.map((room: Room) => (
+                  rooms.map((room) => (
                     <tr key={room.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">

@@ -602,4 +602,203 @@ describe('tRPC Notification Router - Integration Tests', () => {
       );
     });
   });
+
+  // ========== Nullable Fields Handling Tests ==========
+  describe('nullable fields handling', () => {
+    describe('getNotifications with null fields', () => {
+      it('should handle notification with empty data object', async () => {
+        const caller = createAuthenticatedCaller(notificationRouter, 'customer');
+        const notificationWithEmptyData = {
+          id: NOTIFICATION_ID,
+          userId: 'customer-test-id',
+          title: 'System Notice',
+          message: 'Important system update',
+          type: 'system',
+          data: {}, // Empty data object
+          readAt: undefined,
+          createdAt: '2025-01-10T00:00:00.000Z',
+          updatedAt: '2025-01-10T00:00:00.000Z',
+          expiresAt: undefined,
+        } as any;
+        jest.spyOn(notificationService, 'getUserNotifications').mockResolvedValue({
+          notifications: [notificationWithEmptyData],
+          total: 1,
+          unread: 1,
+        } as any);
+
+        const result = await caller.getNotifications({});
+
+        expect(result).not.toBeNull();
+        expect(result.notifications).toHaveLength(1);
+        expect(result.notifications[0]!.data).toEqual({});
+      });
+
+      it('should handle notification with null data', async () => {
+        const caller = createAuthenticatedCaller(notificationRouter, 'customer');
+        const notificationWithNullData = {
+          id: NOTIFICATION_ID,
+          userId: 'customer-test-id',
+          title: 'System Notice',
+          message: 'Important system update',
+          type: 'system',
+          data: null, // Null data
+          readAt: undefined,
+          createdAt: '2025-01-10T00:00:00.000Z',
+          updatedAt: '2025-01-10T00:00:00.000Z',
+          expiresAt: undefined,
+        } as any;
+        jest.spyOn(notificationService, 'getUserNotifications').mockResolvedValue({
+          notifications: [notificationWithNullData],
+          total: 1,
+          unread: 1,
+        } as any);
+
+        const result = await caller.getNotifications({});
+
+        expect(result).not.toBeNull();
+        expect(result.notifications).toHaveLength(1);
+        expect(result.notifications[0]!.data).toBeNull();
+      });
+
+      it('should handle notification with expiresAt set', async () => {
+        const caller = createAuthenticatedCaller(notificationRouter, 'customer');
+        const expiringNotification = {
+          id: NOTIFICATION_ID,
+          userId: 'customer-test-id',
+          title: 'Limited Time Offer',
+          message: 'This offer expires soon!',
+          type: 'promotion',
+          data: { promoCode: 'SAVE50' },
+          readAt: undefined,
+          createdAt: '2025-01-10T00:00:00.000Z',
+          updatedAt: '2025-01-10T00:00:00.000Z',
+          expiresAt: '2025-01-15T23:59:59.000Z', // Has expiry
+        } as any;
+        jest.spyOn(notificationService, 'getUserNotifications').mockResolvedValue({
+          notifications: [expiringNotification],
+          total: 1,
+          unread: 1,
+        } as any);
+
+        const result = await caller.getNotifications({});
+
+        expect(result).not.toBeNull();
+        expect(result.notifications).toHaveLength(1);
+        expect(result.notifications[0]!.expiresAt).toBe('2025-01-15T23:59:59.000Z');
+      });
+
+      it('should handle notification with minimal fields (only required)', async () => {
+        const caller = createAuthenticatedCaller(notificationRouter, 'customer');
+        const minimalNotification = {
+          id: NOTIFICATION_ID,
+          userId: 'customer-test-id',
+          title: 'Minimal',
+          message: 'Minimal notification',
+          type: 'info',
+          data: null,
+          readAt: null,
+          createdAt: '2025-01-10T00:00:00.000Z',
+          updatedAt: '2025-01-10T00:00:00.000Z',
+          expiresAt: null,
+        } as any;
+        jest.spyOn(notificationService, 'getUserNotifications').mockResolvedValue({
+          notifications: [minimalNotification],
+          total: 1,
+          unread: 1,
+        } as any);
+
+        const result = await caller.getNotifications({});
+
+        expect(result).not.toBeNull();
+        expect(result.notifications).toHaveLength(1);
+        expect(result.notifications[0]!.id).toBe(NOTIFICATION_ID);
+        expect(result.notifications[0]!.readAt).toBeNull();
+        expect(result.notifications[0]!.expiresAt).toBeNull();
+      });
+
+      it('should handle notification data with missing expected properties', async () => {
+        const caller = createAuthenticatedCaller(notificationRouter, 'customer');
+        // Points notification usually has pointsAwarded, but testing when it's missing
+        const notificationWithPartialData = {
+          id: NOTIFICATION_ID,
+          userId: 'customer-test-id',
+          title: 'Points Earned!',
+          message: 'You have earned points',
+          type: 'points',
+          data: { unexpectedField: 'value' }, // Missing expected pointsAwarded
+          readAt: undefined,
+          createdAt: '2025-01-10T00:00:00.000Z',
+          updatedAt: '2025-01-10T00:00:00.000Z',
+          expiresAt: undefined,
+        } as any;
+        jest.spyOn(notificationService, 'getUserNotifications').mockResolvedValue({
+          notifications: [notificationWithPartialData],
+          total: 1,
+          unread: 1,
+        } as any);
+
+        const result = await caller.getNotifications({});
+
+        expect(result).not.toBeNull();
+        expect(result.notifications).toHaveLength(1);
+        // Should pass through the data as-is without crashing
+        expect(result.notifications[0]!.data).toEqual({ unexpectedField: 'value' });
+      });
+
+      it('should handle mix of notifications with different data states', async () => {
+        const caller = createAuthenticatedCaller(notificationRouter, 'customer');
+        const mixedNotifications = [
+          {
+            id: NOTIFICATION_ID,
+            userId: 'customer-test-id',
+            title: 'With Data',
+            message: 'Has data',
+            type: 'points',
+            data: { pointsAwarded: 100 },
+            readAt: null,
+            createdAt: '2025-01-10T00:00:00.000Z',
+            updatedAt: '2025-01-10T00:00:00.000Z',
+            expiresAt: null,
+          },
+          {
+            id: NOTIFICATION_ID_2,
+            userId: 'customer-test-id',
+            title: 'Without Data',
+            message: 'No data',
+            type: 'system',
+            data: null,
+            readAt: '2025-01-11T00:00:00.000Z',
+            createdAt: '2025-01-09T00:00:00.000Z',
+            updatedAt: '2025-01-11T00:00:00.000Z',
+            expiresAt: '2025-01-20T00:00:00.000Z',
+          },
+          {
+            id: NOTIFICATION_ID_3,
+            userId: 'customer-test-id',
+            title: 'Empty Data',
+            message: 'Empty data object',
+            type: 'info',
+            data: {},
+            readAt: null,
+            createdAt: '2025-01-08T00:00:00.000Z',
+            updatedAt: '2025-01-08T00:00:00.000Z',
+            expiresAt: null,
+          },
+        ] as any[];
+        jest.spyOn(notificationService, 'getUserNotifications').mockResolvedValue({
+          notifications: mixedNotifications,
+          total: 3,
+          unread: 2,
+        } as any);
+
+        const result = await caller.getNotifications({});
+
+        expect(result).not.toBeNull();
+        expect(result.notifications).toHaveLength(3);
+        expect(result.notifications[0]!.data).toEqual({ pointsAwarded: 100 });
+        expect(result.notifications[1]!.data).toBeNull();
+        expect(result.notifications[2]!.data).toEqual({});
+      });
+    });
+  });
 });

@@ -1,14 +1,17 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 import * as accountLockoutService from '../../../services/accountLockoutService';
 
+// Define mock type for Redis client methods
+type MockRedisMethod = jest.MockedFunction<(...args: unknown[]) => Promise<unknown>>;
+
 // Mock Redis client
 const mockRedis = {
-  incr: jest.fn(),
-  expire: jest.fn(),
-  setEx: jest.fn(),
-  ttl: jest.fn(),
-  get: jest.fn(),
-  del: jest.fn(),
+  incr: jest.fn() as MockRedisMethod,
+  expire: jest.fn() as MockRedisMethod,
+  setEx: jest.fn() as MockRedisMethod,
+  ttl: jest.fn() as MockRedisMethod,
+  get: jest.fn() as MockRedisMethod,
+  del: jest.fn() as MockRedisMethod,
 };
 
 jest.mock('../../../config/redis', () => ({

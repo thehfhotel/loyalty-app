@@ -11,9 +11,17 @@ const mockLoyaltyService = {
   deductPoints: jest.fn(),
 } as { awardPoints: jest.Mock; deductPoints: jest.Mock };
 
+// Create mock bookingAuditService instance before any imports
+const mockBookingAuditService = {
+  logAction: jest.fn().mockResolvedValue({ id: 'audit-1' } as never),
+} as { logAction: jest.Mock };
+
 // Mock dependencies BEFORE importing the service
 jest.mock('../../../services/loyaltyService', () => ({
   loyaltyService: mockLoyaltyService,
+}));
+jest.mock('../../../services/bookingAuditService', () => ({
+  bookingAuditService: mockBookingAuditService,
 }));
 jest.mock('../../../config/database');
 jest.mock('../../../utils/logger');
@@ -1493,6 +1501,365 @@ describe('BookingService', () => {
 
         expect(mockClient.release).toHaveBeenCalled();
       });
+    });
+  });
+
+  // ==================== adminCancelBooking Tests ====================
+  describe('adminCancelBooking', () => {
+    const mockBookingWithAdminFields = {
+      ...mockBooking,
+      cancelledBy: null,
+      cancelledByAdmin: false,
+    };
+
+    it('should cancel confirmed booking successfully', async () => {
+      // getBooking returns confirmed booking
+      mockQuery.mockResolvedValueOnce([mockBookingWithAdminFields] as never);
+
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] } as never) // BEGIN
+        .mockResolvedValueOnce({
+          rows: [{
+            ...mockBookingWithAdminFields,
+            status: 'cancelled',
+            cancelledAt: new Date(),
+            cancelledBy: 'admin-1',
+            cancelledByAdmin: true,
+            cancellationReason: 'Guest no-show',
+          }],
+        } as never); // UPDATE
+
+      const result = await bookingService.adminCancelBooking(
+        'booking-1',
+        'admin-1',
+        'Guest no-show'
+      );
+
+      expect(result.status).toBe('cancelled');
+      expect(result.cancelledByAdmin).toBe(true);
+      expect(result.cancellationReason).toBe('Guest no-show');
+      expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('should cancel booking even after check-in date (admin override)', async () => {
+      // Create a past booking that a user cannot cancel
+      const pastBooking = {
+        ...mockBookingWithAdminFields,
+        checkInDate: new Date('2020-01-01'), // Past date
+      };
+      mockQuery.mockResolvedValueOnce([pastBooking] as never);
+
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] } as never) // BEGIN
+        .mockResolvedValueOnce({
+          rows: [{
+            ...pastBooking,
+            status: 'cancelled',
+            cancelledAt: new Date(),
+            cancelledBy: 'admin-1',
+            cancelledByAdmin: true,
+            cancellationReason: 'Admin override cancellation',
+          }],
+        } as never); // UPDATE
+
+      // Admin should be able to cancel past bookings (no date restriction)
+      const result = await bookingService.adminCancelBooking(
+        'booking-1',
+        'admin-1',
+        'Admin override cancellation'
+      );
+
+      expect(result.status).toBe('cancelled');
+      expect(result.cancelledByAdmin).toBe(true);
+      expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('should return error for non-existent booking (404)', async () => {
+      mockQuery.mockResolvedValueOnce([] as never); // getBooking returns nothing
+
+      await expect(
+        bookingService.adminCancelBooking('non-existent', 'admin-1', 'Test reason')
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        message: 'Booking not found',
+      });
+    });
+
+    it('should return error for already cancelled booking (400)', async () => {
+      mockQuery.mockResolvedValueOnce([{
+        ...mockBookingWithAdminFields,
+        status: 'cancelled',
+      }] as never);
+
+      await expect(
+        bookingService.adminCancelBooking('booking-1', 'admin-1', 'Test reason')
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Booking is already cancelled',
+      });
+    });
+
+    it('should deduct loyalty points when applicable', async () => {
+      mockQuery.mockResolvedValueOnce([mockBookingWithAdminFields] as never);
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] } as never)
+        .mockResolvedValueOnce({
+          rows: [{
+            ...mockBookingWithAdminFields,
+            status: 'cancelled',
+            cancelledByAdmin: true,
+          }],
+        } as never);
+
+      await bookingService.adminCancelBooking('booking-1', 'admin-1', 'Cancellation reason');
+
+      expect(mockLoyaltyService.deductPoints).toHaveBeenCalledWith(
+        'user-1', // userId from mockBooking
+        70000, // pointsEarned from mockBooking
+        expect.stringContaining('Booking cancelled by admin'),
+      );
+    });
+
+    it('should set cancelled_by_admin flag to true', async () => {
+      mockQuery.mockResolvedValueOnce([mockBookingWithAdminFields] as never);
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] } as never)
+        .mockResolvedValueOnce({
+          rows: [{
+            ...mockBookingWithAdminFields,
+            status: 'cancelled',
+            cancelledByAdmin: true,
+            cancelledBy: 'admin-1',
+          }],
+        } as never);
+
+      await bookingService.adminCancelBooking('booking-1', 'admin-1', 'Test reason');
+
+      // Verify the UPDATE query includes cancelled_by_admin = true
+      expect(mockClient.query).toHaveBeenCalledWith(
+        expect.stringContaining('cancelled_by_admin'),
+        expect.anything()
+      );
+    });
+
+    it('should record cancellation reason', async () => {
+      mockQuery.mockResolvedValueOnce([mockBookingWithAdminFields] as never);
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] } as never)
+        .mockResolvedValueOnce({
+          rows: [{
+            ...mockBookingWithAdminFields,
+            status: 'cancelled',
+            cancellationReason: 'Policy violation',
+          }],
+        } as never);
+
+      const result = await bookingService.adminCancelBooking(
+        'booking-1',
+        'admin-1',
+        'Policy violation'
+      );
+
+      expect(result.cancellationReason).toBe('Policy violation');
+    });
+
+    it('should create audit entry with action booking_cancelled_by_admin', async () => {
+      mockQuery.mockResolvedValueOnce([mockBookingWithAdminFields] as never);
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] } as never)
+        .mockResolvedValueOnce({
+          rows: [{
+            ...mockBookingWithAdminFields,
+            status: 'cancelled',
+            cancelledByAdmin: true,
+          }],
+        } as never);
+
+      await bookingService.adminCancelBooking('booking-1', 'admin-1', 'Audit test');
+
+      expect(mockBookingAuditService.logAction).toHaveBeenCalledWith(
+        'booking-1',
+        'booking_cancelled_by_admin',
+        'admin-1',
+        expect.anything(),
+        expect.anything(),
+        'Audit test'
+      );
+    });
+
+    it('should not fail cancellation if points deduction fails', async () => {
+      mockQuery.mockResolvedValueOnce([mockBookingWithAdminFields] as never);
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] } as never)
+        .mockResolvedValueOnce({
+          rows: [{
+            ...mockBookingWithAdminFields,
+            status: 'cancelled',
+            cancelledByAdmin: true,
+          }],
+        } as never);
+
+      mockLoyaltyService.deductPoints.mockRejectedValueOnce(
+        new Error('Points deduction failed') as never,
+      );
+
+      // Should not throw - points deduction failure should not fail the cancellation
+      const result = await bookingService.adminCancelBooking(
+        'booking-1',
+        'admin-1',
+        'Test reason'
+      );
+
+      expect(result.status).toBe('cancelled');
+    });
+
+    it('should not deduct points if booking had zero points', async () => {
+      const bookingWithZeroPoints = {
+        ...mockBookingWithAdminFields,
+        pointsEarned: 0,
+      };
+      mockQuery.mockResolvedValueOnce([bookingWithZeroPoints] as never);
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] } as never)
+        .mockResolvedValueOnce({
+          rows: [{
+            ...bookingWithZeroPoints,
+            status: 'cancelled',
+            cancelledByAdmin: true,
+          }],
+        } as never);
+
+      await bookingService.adminCancelBooking('booking-1', 'admin-1', 'Test reason');
+
+      expect(mockLoyaltyService.deductPoints).not.toHaveBeenCalled();
+    });
+
+    it('should rollback transaction on error', async () => {
+      mockQuery.mockResolvedValueOnce([mockBookingWithAdminFields] as never);
+      mockClient.query
+        .mockResolvedValueOnce({ rows: [] } as never) // BEGIN
+        .mockRejectedValueOnce(new Error('Update failed') as never);
+
+      await expect(
+        bookingService.adminCancelBooking('booking-1', 'admin-1', 'Test reason')
+      ).rejects.toThrow();
+
+      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+  });
+
+  // ==================== getAllBookingsForAdmin Tests ====================
+  describe('getAllBookingsForAdmin', () => {
+    const mockAdminBooking = {
+      ...mockBooking,
+      paymentType: 'full' as const,
+      paymentAmount: 7000,
+      slipImageUrl: null,
+      slipUploadedAt: null,
+      slipokStatus: null,
+      slipokVerifiedAt: null,
+      adminStatus: 'pending' as const,
+      adminVerifiedAt: null,
+      adminVerifiedBy: null,
+      adminNotes: null,
+      discountAmount: null,
+      discountReason: null,
+      originalTotal: null,
+      userEmail: 'test@example.com',
+      userFirstName: 'John',
+      userLastName: 'Doe',
+      userMembershipId: 'MEM-12345',
+      userPhone: '0812345678',
+    };
+
+    it('should query with correct SQL including user profile fields', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: '1' }] as never) // COUNT query
+        .mockResolvedValueOnce([mockAdminBooking] as never); // Main query
+
+      await bookingService.getAllBookingsForAdmin({});
+
+      // Verify the SQL query uses correct table aliases for user profile fields
+      const mainQueryCall = mockQuery.mock.calls[1];
+      const sqlQuery = mainQueryCall![0] as string;
+
+      // Verify membership_id comes from user_profiles (up), NOT users (u)
+      expect(sqlQuery).toContain('up.membership_id as "userMembershipId"');
+      expect(sqlQuery).not.toMatch(/u\.membership_id/);
+
+      // Verify other user profile fields also use correct alias
+      expect(sqlQuery).toContain('up.first_name as "userFirstName"');
+      expect(sqlQuery).toContain('up.last_name as "userLastName"');
+      expect(sqlQuery).toContain('up.phone as "userPhone"');
+
+      // Verify email comes from users table
+      expect(sqlQuery).toContain('u.email as "userEmail"');
+    });
+
+    it('should return bookings with user profile data', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: '1' }] as never)
+        .mockResolvedValueOnce([mockAdminBooking] as never);
+
+      const result = await bookingService.getAllBookingsForAdmin({});
+
+      expect(result.bookings).toHaveLength(1);
+      expect(result.total).toBe(1);
+      // eslint-disable-next-line security/detect-object-injection
+      expect(result.bookings[0]).toMatchObject({
+        userEmail: 'test@example.com',
+        userFirstName: 'John',
+        userLastName: 'Doe',
+        userMembershipId: 'MEM-12345',
+        userPhone: '0812345678',
+      });
+    });
+
+    it('should handle pagination correctly', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: '50' }] as never)
+        .mockResolvedValueOnce([mockAdminBooking] as never);
+
+      await bookingService.getAllBookingsForAdmin({
+        limit: 10,
+        offset: 20,
+      });
+
+      const mainQueryCall = mockQuery.mock.calls[1];
+      const sqlParams = mainQueryCall![1] as unknown[];
+
+      // Verify limit and offset are passed
+      expect(sqlParams).toContain(10);
+      expect(sqlParams).toContain(20);
+    });
+
+    it('should apply search filter to email, name, and booking ID', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: '1' }] as never)
+        .mockResolvedValueOnce([mockAdminBooking] as never);
+
+      await bookingService.getAllBookingsForAdmin({
+        search: 'john@test.com',
+      });
+
+      // Verify search is applied to both COUNT and main queries
+      const countQueryCall = mockQuery.mock.calls[0];
+      const countQuery = countQueryCall![0] as string;
+      expect(countQuery).toContain('ILIKE');
+      expect(countQuery).toContain('u.email');
+      expect(countQuery).toContain('up.first_name');
+    });
+
+    it('should return empty array when no bookings found', async () => {
+      mockQuery
+        .mockResolvedValueOnce([{ count: '0' }] as never)
+        .mockResolvedValueOnce([] as never);
+
+      const result = await bookingService.getAllBookingsForAdmin({});
+
+      expect(result.bookings).toHaveLength(0);
+      expect(result.total).toBe(0);
     });
   });
 });

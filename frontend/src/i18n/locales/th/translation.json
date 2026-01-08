@@ -714,6 +714,156 @@
         "deleteKeyword": "DELETE",
         "deletePlaceholder": "พิมพ์ DELETE เพื่อยืนยัน"
       },
+      "cancel": {
+        "tabTitle": "ยกเลิก",
+        "title": "ยกเลิกการจอง",
+        "warning": "การดำเนินการนี้ไม่สามารถยกเลิกได้ การจองจะถูกยกเลิกอย่างถาวร",
+        "reasonLabel": "เหตุผลในการยกเลิก (จำเป็น)",
+        "reasonPlaceholder": "ระบุเหตุผลในการยกเลิก...",
+        "confirmCheckbox": "ฉันเข้าใจว่าการดำเนินการนี้ไม่สามารถยกเลิกได้",
+        "button": "ยกเลิกการจอง",
+        "cancelling": "กำลังยกเลิก...",
+        "success": "ยกเลิกการจองเรียบร้อยแล้ว",
+        "error": "ไม่สามารถยกเลิกการจองได้",
+        "alreadyCancelled": "การจองนี้ถูกยกเลิกไปแล้ว"
+      },
+      "bookingManagement": {
+        "title": "จัดการการจอง",
+        "subtitle": "ตรวจสอบและจัดการการชำระเงิน",
+        "menuTitle": "จัดการการจอง",
+        "menuDescription": "ตรวจสอบการจองและยืนยันการชำระเงิน",
+        "searchPlaceholder": "ค้นหาด้วยชื่อ, เบอร์โทร, อีเมล หรือรหัสสมาชิก...",
+        "searchHint": "ค้นหาด้วยชื่อ, เบอร์โทร, อีเมล หรือรหัสสมาชิก",
+        "statusFilter": "กรองตามสถานะ",
+        "allStatuses": "ทุกสถานะ",
+        "noBookings": "ไม่พบการจอง",
+        "noSlip": "ไม่มีสลิป",
+        "pagination": "หน้า {{current}} จาก {{total}}",
+        "table": {
+          "created": "สร้างเมื่อ",
+          "user": "ผู้ใช้",
+          "roomType": "ประเภทห้อง",
+          "dates": "เช็คอิน/เช็คเอาท์",
+          "status": "สถานะ",
+          "payment": "ชำระเงิน",
+          "slipStatus": "SlipOK",
+          "adminStatus": "สถานะแอดมิน",
+          "actions": "การดำเนินการ"
+        },
+        "slipStatus": {
+          "verified": "ยืนยันแล้ว",
+          "failed": "ล้มเหลว",
+          "pending": "รอดำเนินการ",
+          "quotaExceeded": "เกินโควต้า"
+        },
+        "adminStatus": {
+          "verified": "ยืนยันแล้ว",
+          "needsAction": "ต้องดำเนินการ",
+          "pending": "รอดำเนินการ"
+        },
+        "paymentType": {
+          "full": "ชำระเต็มจำนวน",
+          "deposit": "มัดจำ 50%"
+        },
+        "actions": {
+          "verify": "ยืนยัน",
+          "needsAction": "ต้องดำเนินการ",
+          "edit": "แก้ไขการจอง",
+          "replaceSlip": "เปลี่ยนสลิป",
+          "enterNotes": "กรอกหมายเหตุสำหรับการดำเนินการนี้:"
+        },
+        "slipViewer": {
+          "title": "ดูสลิป",
+          "selectBooking": "เลือกการจองเพื่อดูสลิป",
+          "uploaded": "อัปโหลดเมื่อ",
+          "slipokStatus": "สถานะ SlipOK",
+          "adminStatus": "สถานะแอดมิน",
+          "slipImage": "รูปสลิปการชำระเงิน",
+          "fullscreen": "ดูเต็มจอ",
+          "noSlip": "ไม่มีสลิปที่อัปโหลด",
+          "auditSummary": "กิจกรรมล่าสุด",
+          "viewFullHistory": "ดูประวัติทั้งหมด",
+          "noAuditHistory": "ไม่มีประวัติกิจกรรม"
+        },
+        "modals": {
+          "needsAction": {
+            "title": "ทำเครื่องหมายว่าต้องดำเนินการ",
+            "placeholder": "กรอกเหตุผลหรือหมายเหตุ...",
+            "submit": "ส่ง"
+          },
+          "auditHistory": {
+            "title": "ประวัติการตรวจสอบ",
+            "oldValue": "ค่าเดิม",
+            "newValue": "ค่าใหม่"
+          }
+        },
+        "editModal": {
+          "title": "แก้ไขการจอง",
+          "bookingId": "รหัสการจอง",
+          "tabs": {
+            "details": "รายละเอียด",
+            "payment": "การชำระเงิน",
+            "audit": "ประวัติการตรวจสอบ",
+            "cancel": "ยกเลิก"
+          },
+          "userInfo": "ข้อมูลผู้ใช้",
+          "name": "ชื่อ",
+          "email": "อีเมล",
+          "membershipId": "รหัสสมาชิก",
+          "phone": "โทรศัพท์",
+          "checkInDate": "วันเช็คอิน",
+          "checkOutDate": "วันเช็คเอาท์",
+          "numberOfGuests": "จำนวนผู้เข้าพัก",
+          "roomType": "ประเภทห้อง",
+          "originalNotes": "หมายเหตุการจองเดิม",
+          "adminNotes": "หมายเหตุแอดมิน",
+          "adminNotesPlaceholder": "เพิ่มหมายเหตุสำหรับใช้ภายใน...",
+          "currentPayment": "การชำระเงินปัจจุบัน",
+          "paymentType": "ประเภทการชำระ",
+          "paymentAmount": "จำนวนเงินที่ชำระ",
+          "totalPrice": "ราคารวม",
+          "calculatedPayment": "จำนวนเงินที่ต้องชำระ",
+          "currentDiscount": "ส่วนลดที่ใช้อยู่",
+          "reason": "เหตุผล",
+          "applyDiscount": "ใช้ส่วนลด",
+          "discountAmount": "จำนวนส่วนลด",
+          "discountReason": "เหตุผลส่วนลด",
+          "discountReasonPlaceholder": "ทำไมถึงให้ส่วนลดนี้?",
+          "applyDiscountBtn": "ใช้ส่วนลด",
+          "noAuditHistory": "ไม่มีประวัติการตรวจสอบ",
+          "auditOld": "เดิม",
+          "auditNew": "ใหม่"
+        },
+        "auditActions": {
+          "adminVerified": "แอดมินยืนยันแล้ว",
+          "needsActionMarked": "ทำเครื่องหมายว่าต้องดำเนินการ",
+          "slipReplaced": "เปลี่ยนสลิปแล้ว",
+          "bookingCreated": "สร้างการจอง",
+          "bookingUpdated": "อัปเดตการจอง",
+          "discountApplied": "ใช้ส่วนลด",
+          "paymentUpdated": "อัปเดตการชำระเงิน",
+          "bookingCancelled": "ยกเลิกการจอง"
+        },
+        "by": "โดย",
+        "messages": {
+          "slipVerified": "ยืนยันสลิปสำเร็จ",
+          "markedNeedsAction": "ทำเครื่องหมายว่าต้องดำเนินการแล้ว",
+          "slipReplaced": "เปลี่ยนสลิปสำเร็จ",
+          "bookingUpdated": "อัปเดตการจองสำเร็จ",
+          "discountApplied": "ใช้ส่วนลดสำเร็จ"
+        },
+        "errors": {
+          "loadFailed": "ไม่สามารถโหลดการจองได้",
+          "verifyFailed": "ไม่สามารถยืนยันสลิปได้",
+          "markFailed": "ไม่สามารถทำเครื่องหมายว่าต้องดำเนินการได้",
+          "replaceFailed": "ไม่สามารถเปลี่ยนสลิปได้",
+          "updateFailed": "ไม่สามารถอัปเดตการจองได้",
+          "discountFailed": "ไม่สามารถใช้ส่วนลดได้",
+          "discountReasonRequired": "กรุณาระบุเหตุผลส่วนลด",
+          "invalidFileType": "กรุณาเลือกไฟล์รูปภาพที่ถูกต้อง",
+          "fileTooLarge": "ขนาดไฟล์ต้องไม่เกิน 5MB"
+        }
+      },
       "availability": {
         "title": "ความพร้อมของห้องพัก",
         "subtitle": "จัดการความพร้อมของห้องและวันที่ปิดให้บริการ",
@@ -1483,13 +1633,23 @@
     "notes": "ความต้องการพิเศษ",
     "notesPlaceholder": "มีความต้องการพิเศษหรือไม่? (เช่น เช็คอินก่อนเวลา, ห้องชั้นสูง)",
     "bookedOn": "จองเมื่อ",
+    "clickForDetails": "คลิกเพื่อดูรายละเอียด",
+    "bookingDetails": "รายละเอียดการจอง",
+    "currentBookings": "การจองปัจจุบัน",
+    "bookingHistory": "ประวัติการจอง",
+    "noCurrentBookings": "ไม่มีการจองที่กำลังจะมาถึง",
+    "noCurrentBookingsDescription": "คุณยังไม่มีการจองห้องพักที่กำลังจะมาถึง",
+    "noBookingHistory": "ไม่มีประวัติการจอง",
+    "noBookingHistoryDescription": "คุณยังไม่มีประวัติการจองห้องพัก",
     "pointsDeducted": "ถูกหัก",
     "cancellationReason": "เหตุผลในการยกเลิก",
     "status": {
       "confirmed": "ยืนยันแล้ว",
       "cancelled": "ยกเลิกแล้ว",
-      "completed": "เสร็จสิ้น"
+      "completed": "เสร็จสิ้น",
+      "cancelledByAdmin": "ยกเลิกโดยผู้ดูแล"
     },
+    "cancelledByAdmin": "การจองนี้ถูกยกเลิกโดยผู้ดูแลระบบ",
     "steps": {
       "selectDates": "เลือกวันที่",
       "selectRoom": "เลือกห้อง",
@@ -1526,5 +1686,50 @@
     "roomsLeft": "เหลือ {{count}} ห้อง",
     "pointsYouWillEarn": "คุณจะได้รับ {{points}} คะแนน!",
     "maxGuests": "สูงสุด {{count}} ท่าน"
+  },
+  "payment": {
+    "title": "การชำระเงิน",
+    "selectPaymentType": "เลือกวิธีการชำระเงิน",
+    "deposit": "มัดจำ 50%",
+    "depositDescription": "ชำระครึ่งหนึ่งตอนนี้ ส่วนที่เหลือชำระตอนเช็คอิน",
+    "payInFull": "ชำระเต็มจำนวน",
+    "payInFullDescription": "ชำระเต็มจำนวนตอนนี้",
+    "amountToPay": "จำนวนเงินที่ต้องชำระ",
+    "amountPaid": "จำนวนเงินที่ชำระแล้ว",
+    "paymentType": "ประเภทการชำระ",
+    "paid": "ชำระแล้ว",
+    "scanQRCode": "สแกน QR Code",
+    "scanInstructions": "สแกน QR code นี้ด้วยแอปธนาคารของคุณและกรอกจำนวนเงินที่แสดง",
+    "uploadSlip": "อัปโหลดสลิปโอนเงิน",
+    "uploadSlipDescription": "หลังจากชำระเงินแล้ว อัปโหลดสลิปโอนเงินเพื่อยืนยัน",
+    "dragDropSlip": "ลากและวางสลิปที่นี่ หรือคลิกเพื่อเลือกไฟล์",
+    "slipUploaded": "อัปโหลดสลิปแล้ว",
+    "slipPreview": "สลิปโอนเงิน",
+    "awaitingVerification": "รอการตรวจสอบ",
+    "verified": "ตรวจสอบแล้ว",
+    "verificationFailed": "การตรวจสอบล้มเหลว",
+    "needsAction": "ต้องการดำเนินการ",
+    "quotaExceeded": "ต้องตรวจสอบด้วยตนเอง",
+    "slipokStatus": "การตรวจสอบอัตโนมัติ",
+    "adminStatus": "การตรวจสอบโดยผู้ดูแล",
+    "uploadedAt": "อัปโหลดเมื่อ",
+    "verifiedAt": "ตรวจสอบเมื่อ",
+    "verifiedBy": "ตรวจสอบโดย",
+    "payLater": "ชำระภายหลัง",
+    "submitSlip": "ส่งสลิป",
+    "invalidFileType": "กรุณาอัปโหลดไฟล์รูปภาพที่ถูกต้อง (JPG หรือ PNG)",
+    "fileTooLarge": "ขนาดไฟล์ต้องไม่เกิน 10MB",
+    "uploadError": "อัปโหลดสลิปไม่สำเร็จ กรุณาลองอีกครั้ง",
+    "slipok": {
+      "pending": "รอดำเนินการ",
+      "verified": "ตรวจสอบแล้ว",
+      "failed": "ล้มเหลว",
+      "quota_exceeded": "ตรวจสอบด้วยตนเอง"
+    },
+    "admin": {
+      "pending": "รอดำเนินการ",
+      "verified": "ผู้ดูแลตรวจสอบแล้ว",
+      "needs_action": "ต้องดำเนินการ"
+    }
   }
 }

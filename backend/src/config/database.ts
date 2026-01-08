@@ -86,3 +86,10 @@ export async function queryWithMeta<T>(text: string, params?: unknown[]): Promis
 export async function getClient() {
   return pool.connect();
 }
+
+export async function closePool(): Promise<void> {
+  if (pool) {
+    await pool.end();
+    logger.info('Database pool closed');
+  }
+}

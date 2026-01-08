@@ -788,4 +788,294 @@ describe('tRPC Coupon Router Integration Tests', () => {
       ).rejects.toThrow('Database error');
     });
   });
+
+  // ========== Nullable Fields Tests ==========
+  describe('nullable fields handling', () => {
+    describe('getAvailableCoupons with null fields', () => {
+      it('should handle coupons with null maximumDiscount', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        const couponWithNullMaxDiscount = {
+          ...mockCoupon,
+          maximumDiscount: null,
+        };
+        mockCouponService.listCoupons.mockResolvedValue({
+          coupons: [couponWithNullMaxDiscount],
+          total: 1,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+        });
+
+        const result = await caller.getAvailableCoupons({});
+
+        expect(result.coupons[0]?.maximumDiscount).toBeNull();
+      });
+
+      it('should handle coupons with null minimumSpend', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        const couponWithNullMinSpend = {
+          ...mockCoupon,
+          minimumSpend: null,
+        };
+        mockCouponService.listCoupons.mockResolvedValue({
+          coupons: [couponWithNullMinSpend],
+          total: 1,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+        });
+
+        const result = await caller.getAvailableCoupons({});
+
+        expect(result.coupons[0]?.minimumSpend).toBeNull();
+      });
+
+      it('should handle coupons with null tierRestrictions', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        const couponWithNullTierRestrictions = {
+          ...mockCoupon,
+          tierRestrictions: null,
+        };
+        mockCouponService.listCoupons.mockResolvedValue({
+          coupons: [couponWithNullTierRestrictions],
+          total: 1,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+        });
+
+        const result = await caller.getAvailableCoupons({});
+
+        expect(result.coupons[0]?.tierRestrictions).toBeNull();
+      });
+
+      it('should handle coupons with empty tierRestrictions array', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        const couponWithEmptyTierRestrictions = {
+          ...mockCoupon,
+          tierRestrictions: [],
+        };
+        mockCouponService.listCoupons.mockResolvedValue({
+          coupons: [couponWithEmptyTierRestrictions],
+          total: 1,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+        });
+
+        const result = await caller.getAvailableCoupons({});
+
+        expect(result.coupons[0]?.tierRestrictions).toEqual([]);
+      });
+
+      it('should handle coupons with null customerSegment', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        const couponWithNullSegment = {
+          ...mockCoupon,
+          customerSegment: null,
+        };
+        mockCouponService.listCoupons.mockResolvedValue({
+          coupons: [couponWithNullSegment],
+          total: 1,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+        });
+
+        const result = await caller.getAvailableCoupons({});
+
+        expect(result.coupons[0]?.customerSegment).toBeNull();
+      });
+
+      it('should handle coupons with null description', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        const couponWithNullDescription = {
+          ...mockCoupon,
+          description: null,
+        };
+        mockCouponService.listCoupons.mockResolvedValue({
+          coupons: [couponWithNullDescription],
+          total: 1,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+        });
+
+        const result = await caller.getAvailableCoupons({});
+
+        expect(result.coupons[0]?.description).toBeNull();
+      });
+
+      it('should handle coupons with null termsAndConditions', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        const couponWithNullTerms = {
+          ...mockCoupon,
+          termsAndConditions: null,
+        };
+        mockCouponService.listCoupons.mockResolvedValue({
+          coupons: [couponWithNullTerms],
+          total: 1,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+        });
+
+        const result = await caller.getAvailableCoupons({});
+
+        expect(result.coupons[0]?.termsAndConditions).toBeNull();
+      });
+
+      it('should handle coupons with null validUntil (no expiry)', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        const couponWithNoExpiry = {
+          ...mockCoupon,
+          validUntil: null,
+        };
+        mockCouponService.listCoupons.mockResolvedValue({
+          coupons: [couponWithNoExpiry],
+          total: 1,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+        });
+
+        const result = await caller.getAvailableCoupons({});
+
+        expect(result.coupons[0]?.validUntil).toBeNull();
+      });
+
+      it('should handle coupon with all optional fields null', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        const couponWithAllNulls = {
+          id: '11111111-1111-1111-1111-111111111111',
+          code: 'BASIC',
+          name: 'Basic Coupon',
+          description: null,
+          termsAndConditions: null,
+          type: 'percentage' as const,
+          value: 10,
+          currency: 'THB',
+          minimumSpend: null,
+          maximumDiscount: null,
+          validFrom: new Date('2025-01-01'),
+          validUntil: null,
+          usageLimit: null,
+          usageLimitPerUser: null,
+          usedCount: 0,
+          tierRestrictions: null,
+          customerSegment: null,
+          status: 'active' as const,
+          createdBy: 'admin-test-id',
+          createdAt: new Date('2025-01-01'),
+          updatedAt: new Date('2025-01-01'),
+        };
+        mockCouponService.listCoupons.mockResolvedValue({
+          coupons: [couponWithAllNulls],
+          total: 1,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+        });
+
+        const result = await caller.getAvailableCoupons({});
+
+        expect(result.coupons).toHaveLength(1);
+        const coupon = result.coupons[0]!;
+        expect(coupon.description).toBeNull();
+        expect(coupon.termsAndConditions).toBeNull();
+        expect(coupon.minimumSpend).toBeNull();
+        expect(coupon.maximumDiscount).toBeNull();
+        expect(coupon.validUntil).toBeNull();
+        expect(coupon.tierRestrictions).toBeNull();
+        expect(coupon.customerSegment).toBeNull();
+      });
+    });
+
+    describe('getMyCoupons with null fields', () => {
+      it('should handle user coupons with null expiry dates', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        const userCouponWithNullExpiry = {
+          ...mockUserActiveCoupon,
+          expiresAt: null,
+          couponExpiresAt: null,
+          effectiveExpiry: null,
+        };
+        mockCouponService.getUserActiveCoupons.mockResolvedValue({
+          coupons: [userCouponWithNullExpiry],
+          total: 1,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+        });
+
+        const result = await caller.getMyCoupons({});
+
+        expect(result.coupons[0]?.expiresAt).toBeNull();
+        expect(result.coupons[0]?.couponExpiresAt).toBeNull();
+        expect(result.coupons[0]?.effectiveExpiry).toBeNull();
+      });
+
+      it('should handle user coupons with null description and terms', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        const userCouponWithNullText = {
+          ...mockUserActiveCoupon,
+          description: null,
+          termsAndConditions: null,
+        };
+        mockCouponService.getUserActiveCoupons.mockResolvedValue({
+          coupons: [userCouponWithNullText],
+          total: 1,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+        });
+
+        const result = await caller.getMyCoupons({});
+
+        expect(result.coupons[0]?.description).toBeNull();
+        expect(result.coupons[0]?.termsAndConditions).toBeNull();
+      });
+
+      it('should handle empty user coupon list', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        mockCouponService.getUserActiveCoupons.mockResolvedValue({
+          coupons: [],
+          total: 0,
+          page: 1,
+          limit: 20,
+          totalPages: 0,
+        });
+
+        const result = await caller.getMyCoupons({});
+
+        expect(result.coupons).toHaveLength(0);
+        expect(result.total).toBe(0);
+      });
+    });
+
+    describe('getCouponDetails with null fields', () => {
+      it('should return coupon with null optional fields', async () => {
+        const caller = createCallerWithUser(couponRouter, customerUser);
+        const couponWithNulls = {
+          ...mockCoupon,
+          description: null,
+          termsAndConditions: null,
+          minimumSpend: null,
+          maximumDiscount: null,
+          tierRestrictions: null,
+          customerSegment: null,
+        };
+        mockCouponService.getCouponById.mockResolvedValue(couponWithNulls);
+
+        const result = await caller.getCouponDetails({
+          couponId: '11111111-1111-1111-1111-111111111111',
+        });
+
+        expect(result.description).toBeNull();
+        expect(result.termsAndConditions).toBeNull();
+        expect(result.minimumSpend).toBeNull();
+        expect(result.maximumDiscount).toBeNull();
+      });
+    });
+  });
 });

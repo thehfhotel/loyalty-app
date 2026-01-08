@@ -11,7 +11,7 @@ interface RoomType {
   description: string | null;
   pricePerNight: number;
   maxGuests: number;
-  bedType: string | null;
+  bedType: 'single' | 'double' | 'twin' | 'king' | null;
   amenities: string[];
   images: string[];
   isActive: boolean;
@@ -25,7 +25,7 @@ interface RoomTypeFormData {
   description: string;
   pricePerNight: number;
   maxGuests: number;
-  bedType: string;
+  bedType: 'single' | 'double' | 'twin' | 'king' | '';
   amenities: string[];
   images: string[];
   isActive: boolean;
@@ -88,7 +88,7 @@ const RoomTypeManagement: React.FC = () => {
       setShowCreateModal(false);
       resetForm();
     },
-    onError: (error: { message: string }) => {
+    onError: (error) => {
       toast.error(error.message || t('admin.booking.roomTypes.createError'));
     },
   });
@@ -101,7 +101,7 @@ const RoomTypeManagement: React.FC = () => {
       setSelectedRoomType(null);
       resetForm();
     },
-    onError: (error: { message: string }) => {
+    onError: (error) => {
       toast.error(error.message || t('admin.booking.roomTypes.updateError'));
     },
   });
@@ -114,7 +114,7 @@ const RoomTypeManagement: React.FC = () => {
       setSelectedRoomType(null);
       setDeleteConfirmText('');
     },
-    onError: (error: { message: string }) => {
+    onError: (error) => {
       toast.error(error.message || t('admin.booking.roomTypes.deleteError'));
     },
   });
@@ -324,7 +324,7 @@ const RoomTypeManagement: React.FC = () => {
                     </td>
                   </tr>
                 ) : (
-                  roomTypes.map((roomType: RoomType) => (
+                  roomTypes.map((roomType) => (
                     <tr key={roomType.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
