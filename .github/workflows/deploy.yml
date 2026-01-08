@@ -1661,6 +1661,9 @@ jobs:
             echo "📥 Updating existing repository..."
             cd "$DEPLOY_DIR"
 
+            # Add safe directory to avoid ownership issues
+            git config --global --add safe.directory "$DEPLOY_DIR" 2>/dev/null || true
+
             # Show current state
             BEFORE_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
             echo "📍 Current commit: $BEFORE_COMMIT"
