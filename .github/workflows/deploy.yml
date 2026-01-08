@@ -1935,8 +1935,19 @@ jobs:
           echo "🏗️ Building and starting development services..."
           docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
-          echo "⏳ Waiting for services to start..."
-          sleep 15
+          echo "⏳ Waiting for backend container to be running..."
+          for i in {1..60}; do
+            BACKEND_STATE=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml ps backend --format '{{.State}}' 2>/dev/null || echo "not_found")
+            if [ "$BACKEND_STATE" = "running" ]; then
+              echo "✅ Backend container is running"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "⚠️ Backend container state after 60s: $BACKEND_STATE"
+              docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
+            fi
+            sleep 1
+          done
 
           echo "✅ Development services deployed"
 
