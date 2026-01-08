@@ -1911,13 +1911,23 @@ jobs:
           DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
           cd "$DEPLOY_DIR"
 
-          # Clear Prisma generated directory to avoid permission conflicts
+          # Clear and recreate Prisma generated directory to avoid permission conflicts
           # When volume is mounted, files owned by different users cause EACCES errors
+          echo "🧹 Clearing Prisma generated directory..."
+
+          # First try to remove with docker (same user context as will create new files)
+          docker run --rm -v "$DEPLOY_DIR/backend:/backend" alpine:latest \
+            sh -c "rm -rf /backend/src/generated/prisma && mkdir -p /backend/src/generated/prisma && chmod 777 /backend/src/generated/prisma" \
+            2>/dev/null || true
+
+          # Fallback: try with sudo if docker approach didn't work
           if [ -d "backend/src/generated/prisma" ]; then
-            echo "🧹 Clearing Prisma generated directory..."
             rm -rf backend/src/generated/prisma/* 2>/dev/null || sudo rm -rf backend/src/generated/prisma/* 2>/dev/null || true
-            echo "✅ Prisma generated directory cleared"
           fi
+
+          # Ensure the directory exists and is writable by all (container runs as different user)
+          mkdir -p backend/src/generated/prisma
+          chmod 777 backend/src/generated/prisma 2>/dev/null || true
 
           # Ensure backend directory is writable
           chmod -R u+w backend/ 2>/dev/null || true
