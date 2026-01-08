@@ -109,6 +109,9 @@ const mockBookingService = {
   uploadSlip: jest.fn(),
   verifySlip: jest.fn(),
   adminVerifySlip: jest.fn(),
+  addSlipToBooking: jest.fn(),
+  verifySlipById: jest.fn(),
+  markSlipNeedsAction: jest.fn(),
 };
 
 // Mock the bookingService before importing the router
@@ -2252,6 +2255,237 @@ describe('tRPC Booking Router - Integration Tests', () => {
           const caller = createCallerWithUser(bookingRouter, mockUsers.customer);
           await expect(call(caller)).rejects.toMatchObject({ code: 'FORBIDDEN' });
         });
+      });
+    });
+  });
+
+  describe('Multi-Slip Procedures', () => {
+    const mockSlipResult = {
+      id: '11111111-1111-1111-1111-111111111111',
+      slipUrl: '/storage/slips/booking-1-slip.jpg',
+      uploadedAt: new Date(),
+      slipokStatus: 'pending',
+      adminStatus: 'pending',
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    describe('addSlip', () => {
+      it('should add slip for authenticated user', async () => {
+        mockBookingService.addSlipToBooking.mockResolvedValue(mockSlipResult);
+
+        const caller = createCallerWithUser(bookingRouter, mockUsers.customer);
+        const result = await caller.addSlip({
+          bookingId: mockBooking.id,
+          slipUrl: '/storage/slips/test-slip.jpg',
+        });
+
+        expect(result.slip.id).toBe('11111111-1111-1111-1111-111111111111');
+        expect(result.slip.slipUrl).toBe('/storage/slips/booking-1-slip.jpg');
+        expect(result.message).toBe('Slip added successfully. Verification in progress.');
+        expect(mockBookingService.addSlipToBooking).toHaveBeenCalledWith(
+          mockBooking.id,
+          '/storage/slips/test-slip.jpg',
+          mockUsers.customer.id
+        );
+      });
+
+      it('should throw UNAUTHORIZED when not authenticated', async () => {
+        const caller = createUnauthenticatedCaller(bookingRouter);
+
+        await expect(
+          caller.addSlip({
+            bookingId: mockBooking.id,
+            slipUrl: '/storage/slips/test-slip.jpg',
+          })
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+      });
+
+      it('should validate bookingId is UUID', async () => {
+        const caller = createCallerWithUser(bookingRouter, mockUsers.customer);
+
+        await expect(
+          caller.addSlip({
+            bookingId: 'invalid-uuid',
+            slipUrl: '/storage/slips/test-slip.jpg',
+          })
+        ).rejects.toThrow();
+      });
+
+      it('should validate slipUrl starts with /storage/slips/', async () => {
+        const caller = createCallerWithUser(bookingRouter, mockUsers.customer);
+
+        await expect(
+          caller.addSlip({
+            bookingId: mockBooking.id,
+            slipUrl: 'https://example.com/slip.jpg',
+          })
+        ).rejects.toThrow();
+      });
+
+      it('should propagate service errors', async () => {
+        mockBookingService.addSlipToBooking.mockRejectedValue(
+          new TRPCError({ code: 'NOT_FOUND', message: 'Booking not found' })
+        );
+
+        const caller = createCallerWithUser(bookingRouter, mockUsers.customer);
+
+        await expect(
+          caller.addSlip({
+            bookingId: mockBooking.id,
+            slipUrl: '/storage/slips/test-slip.jpg',
+          })
+        ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      });
+    });
+
+    describe('verifySlipById', () => {
+      it('should verify slip for admin', async () => {
+        mockBookingService.verifySlipById.mockResolvedValue({
+          slipId: '11111111-1111-1111-1111-111111111111',
+          adminStatus: 'verified',
+        });
+
+        const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+        const result = await caller.admin.verifySlipById({
+          slipId: '11111111-1111-1111-1111-111111111111',
+          notes: 'Verified successfully',
+        });
+
+        expect(result.slipId).toBe('11111111-1111-1111-1111-111111111111');
+        expect(result.adminStatus).toBe('verified');
+        expect(mockBookingService.verifySlipById).toHaveBeenCalledWith(
+          '11111111-1111-1111-1111-111111111111',
+          mockUsers.admin.id,
+          'Verified successfully'
+        );
+      });
+
+      it('should verify slip without notes', async () => {
+        mockBookingService.verifySlipById.mockResolvedValue({
+          slipId: '11111111-1111-1111-1111-111111111111',
+          adminStatus: 'verified',
+        });
+
+        const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+        const result = await caller.admin.verifySlipById({
+          slipId: '11111111-1111-1111-1111-111111111111',
+        });
+
+        expect(result.adminStatus).toBe('verified');
+        expect(mockBookingService.verifySlipById).toHaveBeenCalledWith(
+          '11111111-1111-1111-1111-111111111111',
+          mockUsers.admin.id,
+          undefined
+        );
+      });
+
+      it('should throw UNAUTHORIZED when not authenticated', async () => {
+        const caller = createUnauthenticatedCaller(bookingRouter);
+
+        await expect(
+          caller.admin.verifySlipById({ slipId: '11111111-1111-1111-1111-111111111111' })
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+      });
+
+      it('should throw FORBIDDEN for customer', async () => {
+        const caller = createCallerWithUser(bookingRouter, mockUsers.customer);
+
+        await expect(
+          caller.admin.verifySlipById({ slipId: '11111111-1111-1111-1111-111111111111' })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      });
+
+      it('should validate slipId is UUID', async () => {
+        const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+
+        await expect(
+          caller.admin.verifySlipById({ slipId: 'invalid-uuid' })
+        ).rejects.toThrow();
+      });
+    });
+
+    describe('markSlipNeedsActionById', () => {
+      it('should mark slip as needs action for admin', async () => {
+        mockBookingService.markSlipNeedsAction.mockResolvedValue({
+          slipId: '11111111-1111-1111-1111-111111111111',
+          adminStatus: 'needs_action',
+        });
+
+        const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+        const result = await caller.admin.markSlipNeedsActionById({
+          slipId: '11111111-1111-1111-1111-111111111111',
+          notes: 'Amount does not match',
+        });
+
+        expect(result.slipId).toBe('11111111-1111-1111-1111-111111111111');
+        expect(result.adminStatus).toBe('needs_action');
+        expect(mockBookingService.markSlipNeedsAction).toHaveBeenCalledWith(
+          '11111111-1111-1111-1111-111111111111',
+          mockUsers.admin.id,
+          'Amount does not match'
+        );
+      });
+
+      it('should throw UNAUTHORIZED when not authenticated', async () => {
+        const caller = createUnauthenticatedCaller(bookingRouter);
+
+        await expect(
+          caller.admin.markSlipNeedsActionById({
+            slipId: '11111111-1111-1111-1111-111111111111',
+            notes: 'Test note',
+          })
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+      });
+
+      it('should throw FORBIDDEN for customer', async () => {
+        const caller = createCallerWithUser(bookingRouter, mockUsers.customer);
+
+        await expect(
+          caller.admin.markSlipNeedsActionById({
+            slipId: '11111111-1111-1111-1111-111111111111',
+            notes: 'Test note',
+          })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      });
+
+      it('should require notes field', async () => {
+        const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+
+        await expect(
+          caller.admin.markSlipNeedsActionById({
+            slipId: '11111111-1111-1111-1111-111111111111',
+            // notes is missing
+          } as any)
+        ).rejects.toThrow();
+      });
+
+      it('should validate slipId is UUID', async () => {
+        const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+
+        await expect(
+          caller.admin.markSlipNeedsActionById({
+            slipId: 'invalid-uuid',
+            notes: 'Test note',
+          })
+        ).rejects.toThrow();
+      });
+
+      it('should propagate service errors', async () => {
+        mockBookingService.markSlipNeedsAction.mockRejectedValue(
+          new TRPCError({ code: 'NOT_FOUND', message: 'Slip not found' })
+        );
+
+        const caller = createCallerWithUser(bookingRouter, mockUsers.admin);
+
+        await expect(
+          caller.admin.markSlipNeedsActionById({
+            slipId: mockBooking.id,
+            notes: 'Test note',
+          })
+        ).rejects.toMatchObject({ code: 'NOT_FOUND' });
       });
     });
   });
