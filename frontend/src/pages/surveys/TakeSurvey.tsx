@@ -278,7 +278,7 @@ const TakeSurvey: React.FC = () => {
 
             {/* Question navigation dots */}
             <div className="flex justify-center mt-6 space-x-2">
-              {survey.questions?.map((question, index: number) => {
+              {survey.questions?.map((question: SurveyQuestion, index: number) => {
                 const q = question as { id: string };
                 return (
                   <button

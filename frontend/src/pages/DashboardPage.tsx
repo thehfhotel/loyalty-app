@@ -39,7 +39,7 @@ export default function DashboardPage() {
       <MainLayout title={t('dashboard.title', { name: user?.firstName ?? '' })}>
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-6" data-testid="loyalty-error">
           <h2 className="text-lg font-semibold text-red-800 mb-2">{t('common.error')}</h2>
-          <p className="text-red-600">{loyaltyError.message || 'Failed to load loyalty status'}</p>
+          <p className="text-red-600">{loyaltyError.message ?? 'Failed to load loyalty status'}</p>
         </div>
       </MainLayout>
     );

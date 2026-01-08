@@ -8,6 +8,20 @@ import toast from 'react-hot-toast';
 
 type BookingStatus = 'confirmed' | 'cancelled' | 'completed';
 
+interface Booking {
+  id: string;
+  roomTypeName?: string;
+  status: string;
+  checkInDate: string | Date;
+  checkOutDate: string | Date;
+  numGuests: number;
+  pointsEarned: number;
+  notes?: string | null;
+  cancellationReason?: string | null;
+  totalPrice: number | string;
+  createdAt: string | Date;
+}
+
 const statusColors: Record<BookingStatus, { bg: string; text: string }> = {
   confirmed: { bg: 'bg-green-100', text: 'text-green-800' },
   cancelled: { bg: 'bg-red-100', text: 'text-red-800' },
@@ -32,7 +46,7 @@ export default function MyBookingsPage() {
       setCancelReason('');
       refetch();
     },
-    onError: (error) => {
+    onError: (error: { message: string }) => {
       toast.error(error.message || t('booking.cancelError'));
     },
   });
@@ -101,7 +115,7 @@ export default function MyBookingsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {bookings.map((booking) => (
+          {bookings.map((booking: Booking) => (
             <div
               key={booking.id}
               className="bg-white rounded-lg shadow overflow-hidden"
@@ -142,11 +156,12 @@ export default function MyBookingsPage() {
                         <FiUsers className="mr-1" />
                         {booking.numGuests} {booking.numGuests === 1 ? t('booking.guest') : t('booking.guests')}
                       </div>
-                      <div className="flex items-center text-yellow-600">
+                      <div className={`flex items-center ${booking.status === 'cancelled' ? 'text-gray-400' : 'text-yellow-600'}`}>
                         <FiStar className="mr-1" />
-                        {booking.pointsEarned.toLocaleString()} {t('loyalty.points')}
-                        {booking.status === 'cancelled' && (
-                          <span className="text-red-500 ml-1">({t('booking.pointsDeducted')})</span>
+                        {booking.status === 'cancelled' ? (
+                          '-'
+                        ) : (
+                          <>{booking.pointsEarned.toLocaleString()} {t('loyalty.points')}</>
                         )}
                       </div>
                     </div>

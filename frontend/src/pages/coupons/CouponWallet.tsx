@@ -77,11 +77,11 @@ const CouponWallet: React.FC = () => {
   };
 
   // Separate coupons by expiry status (only for active filter)
-  const activeCoupons = activeFilter === 'active' 
-    ? coupons.filter(coupon => !couponService.isExpiringSoon(coupon))
+  const activeCoupons = activeFilter === 'active'
+    ? coupons.filter((coupon: UserActiveCoupon) => !couponService.isExpiringSoon(coupon))
     : [];
   const expiringSoonCoupons = activeFilter === 'active'
-    ? coupons.filter(coupon => couponService.isExpiringSoon(coupon))
+    ? coupons.filter((coupon: UserActiveCoupon) => couponService.isExpiringSoon(coupon))
     : [];
 
   const errorMessage = error ? getTRPCErrorMessage(error) : null;
@@ -242,7 +242,7 @@ const CouponWallet: React.FC = () => {
                   </h2>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {expiringSoonCoupons.map((coupon) => (
+                  {expiringSoonCoupons.map((coupon: UserActiveCoupon) => (
                     <CouponCard
                       key={coupon.userCouponId}
                       coupon={coupon}
@@ -266,7 +266,7 @@ const CouponWallet: React.FC = () => {
                   </h2>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {activeCoupons.map((coupon) => (
+                  {activeCoupons.map((coupon: UserActiveCoupon) => (
                     <CouponCard
                       key={coupon.userCouponId}
                       coupon={coupon}
@@ -312,7 +312,7 @@ const CouponWallet: React.FC = () => {
               </h2>
             </div>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {coupons.map((coupon) => (
+              {coupons.map((coupon: UserActiveCoupon) => (
                 <CouponCard
                   key={coupon.userCouponId}
                   coupon={coupon}

@@ -43,7 +43,7 @@ export function AwardPointsExample({ userId }: { userId: string }) {
     onSuccess: () => {
       notify.success('Points awarded successfully!');
     },
-    onError: (error) => {
+    onError: (error: { message: string }) => {
       notify.error(`Error: ${error.message}`);
     },
   });
@@ -90,7 +90,7 @@ export function TransactionHistoryExample() {
     <div>
       <h3>Transaction History</h3>
       <ul>
-        {data.transactions?.map((tx) => (
+        {data.transactions?.map((tx: { id: string; points: number; description: string | null; created_at: string }) => (
           <li key={tx.id}>
             {tx.points} points - {tx.description ?? 'Transaction'} ({new Date(tx.created_at).toLocaleDateString()})
           </li>

@@ -115,7 +115,7 @@ const RoomAvailability: React.FC = () => {
       setSelectedCells(new Set());
       setSelectedRoomId(null);
     },
-    onError: (error) => {
+    onError: (error: { message: string }) => {
       toast.error(error.message || t('admin.booking.availability.blockError'));
     },
   });
@@ -126,7 +126,7 @@ const RoomAvailability: React.FC = () => {
       utils.booking.admin.getAllBlockedDates.invalidate();
       setSelectedCells(new Set());
     },
-    onError: (error) => {
+    onError: (error: { message: string }) => {
       toast.error(error.message || t('admin.booking.availability.unblockError'));
     },
   });

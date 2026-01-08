@@ -235,7 +235,7 @@ const SurveyList: React.FC = () => {
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {currentSurveys.map((survey) => renderSurveyCard(survey))}
+            {currentSurveys.map((survey: Survey) => renderSurveyCard(survey))}
           </div>
         )}
 

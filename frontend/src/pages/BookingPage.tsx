@@ -19,6 +19,23 @@ interface BookingStep {
   completed: boolean;
 }
 
+interface RoomTypeWithAvailability {
+  id: string;
+  name: string;
+  description: string | null;
+  pricePerNight: number;
+  maxGuests: number;
+  availableRooms: number;
+  images: string[];
+  amenities: string[];
+  bedType: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  sortOrder: number;
+  totalRooms: number;
+}
+
 export default function BookingPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -47,7 +64,7 @@ export default function BookingPage() {
     { enabled: !!checkIn && !!checkOut && nights > 0 }
   );
 
-  const selectedRoomType = roomTypesWithAvailability?.find(rt => rt.id === selectedRoomTypeId);
+  const selectedRoomType = roomTypesWithAvailability?.find((rt: RoomTypeWithAvailability) => rt.id === selectedRoomTypeId);
   const totalPrice = selectedRoomType ? selectedRoomType.pricePerNight * nights : 0;
   const pointsEarned = Math.floor(totalPrice * 10);
 
@@ -59,7 +76,7 @@ export default function BookingPage() {
       toast.success(t('booking.bookingSuccess'));
       navigate('/my-bookings');
     },
-    onError: (error) => {
+    onError: (error: { message: string }) => {
       toast.error(error.message || t('booking.bookingError'));
     },
   });
@@ -71,7 +88,7 @@ export default function BookingPage() {
   };
 
   const handleRoomTypeSelect = (roomTypeId: string) => {
-    const roomType = roomTypesWithAvailability?.find(rt => rt.id === roomTypeId);
+    const roomType = roomTypesWithAvailability?.find((rt: RoomTypeWithAvailability) => rt.id === roomTypeId);
     if (roomType && roomType.availableRooms > 0) {
       setSelectedRoomTypeId(roomTypeId);
       setNumGuests(Math.min(numGuests, roomType.maxGuests));
@@ -220,7 +237,7 @@ export default function BookingPage() {
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {roomTypesWithAvailability?.map((roomType) => (
+              {roomTypesWithAvailability?.map((roomType: RoomTypeWithAvailability) => (
                 <div
                   key={roomType.id}
                   className={`bg-white rounded-lg shadow overflow-hidden ${
@@ -251,7 +268,7 @@ export default function BookingPage() {
                     {/* Amenities */}
                     {roomType.amenities && roomType.amenities.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-3">
-                        {roomType.amenities.slice(0, 4).map((amenity) => (
+                        {roomType.amenities.slice(0, 4).map((amenity: string) => (
                           <span
                             key={amenity}
                             className="inline-flex items-center px-2 py-1 bg-gray-100 rounded text-xs text-gray-600"
