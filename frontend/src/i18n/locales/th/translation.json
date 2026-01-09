@@ -1730,6 +1730,8 @@
     "clickToCopy": "คลิกเพื่อคัดลอก",
     "copied": "คัดลอกแล้ว",
     "or": "หรือ",
+    "confirmPaymentType": "ยืนยันประเภทการชำระเงิน",
+    "changePaymentType": "เปลี่ยนประเภทการชำระเงิน",
     "downloadQR": "บันทึก QR Code",
     "clickToView": "คลิกเพื่อดูภาพเต็ม",
     "invalidFileType": "กรุณาอัปโหลดไฟล์รูปภาพที่ถูกต้อง (JPG หรือ PNG)",
