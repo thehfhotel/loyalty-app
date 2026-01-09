@@ -1729,6 +1729,7 @@
     "accountNumber": "เลขที่บัญชี",
     "clickToCopy": "คลิกเพื่อคัดลอก",
     "copied": "คัดลอกแล้ว",
+    "or": "หรือ",
     "downloadQR": "บันทึก QR Code",
     "clickToView": "คลิกเพื่อดูภาพเต็ม",
     "invalidFileType": "กรุณาอัปโหลดไฟล์รูปภาพที่ถูกต้อง (JPG หรือ PNG)",
