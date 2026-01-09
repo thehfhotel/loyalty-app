@@ -5,6 +5,7 @@ import { AppError } from '../middleware/errorHandler';
 import { loyaltyService } from './loyaltyService';
 import { slipokService, SlipVerificationResult } from './slipokService';
 import { bookingAuditService, BookingAuditRecord } from './bookingAuditService';
+import { sseService } from './sseService';
 
 // Types
 export interface RoomType {
@@ -1287,6 +1288,9 @@ export class BookingService {
 
       logger.info(`Slip uploaded for booking ${sanitizeLogValue(bookingId)} by user ${sanitizeUserId(userId)}`);
 
+      // Notify connected admin clients about the new slip
+      sseService.emitSlipUploaded(bookingId, bookingId);
+
       return this.mapBookingRow(updated as unknown as Record<string, unknown>);
     } catch (error) {
       await client.query('ROLLBACK');
@@ -1379,6 +1383,9 @@ export class BookingService {
       });
 
       logger.info(`Slip added to booking ${sanitizeLogValue(bookingId)} by user ${sanitizeUserId(userId)}`);
+
+      // Notify connected admin clients about the new slip
+      sseService.emitSlipUploaded(bookingId, slip.id);
 
       return {
         id: slip.id,

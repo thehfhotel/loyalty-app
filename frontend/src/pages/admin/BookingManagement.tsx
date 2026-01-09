@@ -17,6 +17,7 @@ import SlipViewerSidebar from '../../components/admin/SlipViewerSidebar';
 import BookingEditModal from './BookingEditModal';
 import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { trpc } from '../../hooks/useTRPC';
+import { useAdminBookingSSE } from '../../hooks/useAdminBookingSSE';
 
 // Types for booking management
 interface BookingUser {
@@ -122,6 +123,11 @@ const BookingManagement: React.FC = () => {
       sortOrder: sortDirection
     }
   );
+
+  // Real-time updates via SSE - refetch when slip is uploaded
+  useAdminBookingSSE(() => {
+    bookingsQuery.refetch();
+  });
 
   // Update state when query data changes
   useEffect(() => {

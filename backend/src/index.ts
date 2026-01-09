@@ -49,6 +49,7 @@ import translationRoutes from './routes/translation';
 import notificationRoutes from './routes/notifications';
 import analyticsRoutes from './routes/analyticsRoutes';
 import slipRoutes from './routes/slip';
+import sseRoutes from './routes/sse';
 // Import and initialize OAuth service to register strategies
 import './services/oauthService';
 import { oauthCleanupService } from './services/oauthCleanupService';
@@ -413,6 +414,7 @@ function configureApp(app: express.Express) {
   app.use('/api/notifications', apiRateLimit, userRateLimit, notificationRoutes);
   app.use('/api/analytics', apiRateLimit, userRateLimit, analyticsRoutes);
   app.use('/api/slips', apiRateLimit, userRateLimit, slipRoutes);
+  app.use('/api/sse', sseRoutes); // SSE endpoints - no rate limiting (long-lived connections)
 
   // tRPC endpoint - Type-safe API with end-to-end type safety
   // optionalAuth parses JWT token if present, setting req.user for authenticated requests
