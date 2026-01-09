@@ -647,36 +647,37 @@ export default function BookingPage() {
             <div className="border-b pb-6">
               <h3 className="font-semibold text-lg mb-4">{t('payment.scanQRCode')}</h3>
 
-              <div className="text-center">
-                <div className="inline-block p-4 bg-white border-2 border-gray-200 rounded-lg shadow-sm">
+              <div className="p-4 bg-white border-2 border-gray-200 rounded-lg shadow-sm space-y-4">
+                <div className="flex justify-center">
                   <img
                     src={promptPayQRUrl}
                     alt="PromptPay QR Code"
-                    className="w-48 h-48 object-contain mx-auto"
+                    className="w-48 h-48 object-contain"
                     onError={(e) => {
                       (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192"%3E%3Crect fill="%23f3f4f6" width="192" height="192"/%3E%3Ctext x="96" y="96" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="14"%3EQR Code%3C/text%3E%3C/svg%3E';
                     }}
                   />
-                  <a
-                    href={promptPayQRUrl}
-                    download="promptpay-qr.png"
-                    className="inline-flex items-center justify-center gap-2 mt-3 w-full py-2 text-sm text-gray-500 hover:text-primary-600 transition-colors"
-                  >
-                    <FiDownload className="w-4 h-4" />
-                    {t('payment.downloadQR')}
-                  </a>
                 </div>
 
-                <div className="mt-4">
+                <div className="text-center">
                   <p className="text-3xl font-bold text-primary-600">
                     ฿{amountToPay.toLocaleString('th-TH')}
                   </p>
-                  <p className="text-sm text-gray-500 mt-2">{t('payment.amountToPay')}</p>
+                  <p className="text-sm text-gray-500 mt-1">{t('payment.amountToPay')}</p>
                 </div>
 
-                <p className="text-sm text-gray-600 mt-4 px-4">
+                <p className="text-sm text-gray-600 text-center">
                   {t('payment.scanInstructions')}
                 </p>
+
+                <a
+                  href={promptPayQRUrl}
+                  download="promptpay-qr.png"
+                  className="inline-flex items-center justify-center gap-2 w-full py-2 text-sm text-gray-500 hover:text-primary-600 transition-colors border-t pt-3"
+                >
+                  <FiDownload className="w-4 h-4" />
+                  {t('payment.downloadQR')}
+                </a>
               </div>
             </div>
 
