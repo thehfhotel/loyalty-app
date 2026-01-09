@@ -1,10 +1,12 @@
 import { useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { FiCalendar, FiUsers, FiCheck, FiStar, FiWifi, FiTv, FiCoffee, FiUpload, FiX, FiCheckCircle, FiClock, FiAlertCircle } from 'react-icons/fi';
+import { FiCalendar, FiUsers, FiCheck, FiStar, FiWifi, FiTv, FiCoffee, FiUpload, FiX, FiCheckCircle, FiClock, FiAlertCircle, FiDownload } from 'react-icons/fi';
 import MainLayout from '../components/layout/MainLayout';
 import { trpc } from '../hooks/useTRPC';
 import toast from 'react-hot-toast';
+import companyQRCode from '../assets/company-promptpay-qr.png';
+import kbankLogo from '../assets/kbank-logo.png';
 
 // Amenity icons mapping
 const amenityIcons: Record<string, React.ReactNode> = {
@@ -50,8 +52,8 @@ export default function BookingPage() {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // QR code URL - use env variable or fallback to static image
-  const promptPayQRUrl = import.meta.env.VITE_PROMPTPAY_QR_IMAGE_URL ?? '/images/company-promptpay-qr.png';
+  // QR code URL - use env variable or fallback to bundled image
+  const promptPayQRUrl = import.meta.env.VITE_PROMPTPAY_QR_IMAGE_URL ?? companyQRCode;
 
   // Date validation
   const today = new Date().toISOString().split('T')[0];
@@ -605,6 +607,42 @@ export default function BookingPage() {
               </div>
             </div>
 
+            {/* Bank Transfer Option */}
+            <div className="border-b pb-6">
+              <h3 className="font-semibold text-lg mb-4">{t('payment.bankTransfer')}</h3>
+              <div
+                className="p-4 bg-white border-2 border-gray-200 rounded-lg shadow-sm space-y-2 cursor-pointer hover:border-primary-300 transition-colors"
+                onClick={() => {
+                  navigator.clipboard.writeText('0461430473');
+                  toast.success(t('payment.copied'));
+                }}
+              >
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500">{t('payment.bankName')}</span>
+                  <div className="flex items-center gap-2">
+                    <img src={kbankLogo} alt="KBank" className="h-6" />
+                    <span className="font-medium">กสิกรไทย</span>
+                  </div>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">{t('payment.accountName')}</span>
+                  <span className="font-medium">บจก. สายชล เฮอริเทจ</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500">{t('payment.accountNumber')}</span>
+                  <span className="font-medium font-mono">046-1-43047-3</span>
+                </div>
+                <p className="text-xs text-gray-400 text-center">{t('payment.clickToCopy')}</p>
+              </div>
+            </div>
+
+            {/* Divider with "หรือ" */}
+            <div className="flex items-center gap-4 py-4">
+              <div className="flex-1 border-t border-gray-200"></div>
+              <span className="text-gray-400 text-sm">{t('payment.or')}</span>
+              <div className="flex-1 border-t border-gray-200"></div>
+            </div>
+
             {/* QR Code Display */}
             <div className="border-b pb-6">
               <h3 className="font-semibold text-lg mb-4">{t('payment.scanQRCode')}</h3>
@@ -619,6 +657,14 @@ export default function BookingPage() {
                       (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192"%3E%3Crect fill="%23f3f4f6" width="192" height="192"/%3E%3Ctext x="96" y="96" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="14"%3EQR Code%3C/text%3E%3C/svg%3E';
                     }}
                   />
+                  <a
+                    href={promptPayQRUrl}
+                    download="promptpay-qr.png"
+                    className="inline-flex items-center justify-center gap-2 mt-3 w-full py-2 text-sm text-gray-500 hover:text-primary-600 transition-colors"
+                  >
+                    <FiDownload className="w-4 h-4" />
+                    {t('payment.downloadQR')}
+                  </a>
                 </div>
 
                 <div className="mt-4">
