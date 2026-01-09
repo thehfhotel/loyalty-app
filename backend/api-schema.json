@@ -1,0 +1,1667 @@
+{
+  "procedures": {
+    "admin.email.getStatus": {
+      "type": "query"
+    },
+    "admin.email.runTest": {
+      "input": {
+        "anyOf": [
+          {
+            "not": {}
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "timeout": {
+                "maximum": 60000,
+                "minimum": 5000,
+                "type": "number"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "type": "mutation"
+    },
+    "booking.addSlip": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "bookingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "slipUrl": {
+            "pattern": "^\\/storage\\/slips\\/",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingId",
+          "slipUrl"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.applyDiscount": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "bookingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "discountAmount": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "reason": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingId",
+          "discountAmount",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.blockDates": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "dates": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "roomId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "roomId",
+          "dates",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.cancelBooking": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "bookingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingId",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.createRoom": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "floor": {
+            "type": "integer"
+          },
+          "isActive": {
+            "default": true,
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "roomNumber": {
+            "maxLength": 20,
+            "minLength": 1,
+            "type": "string"
+          },
+          "roomTypeId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "roomTypeId",
+          "roomNumber"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.createRoomType": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "amenities": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "bedType": {
+            "enum": [
+              "single",
+              "double",
+              "twin",
+              "king"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "images": {
+            "default": [],
+            "items": {
+              "format": "uri",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "isActive": {
+            "default": true,
+            "type": "boolean"
+          },
+          "maxGuests": {
+            "default": 2,
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "pricePerNight": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "sortOrder": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "pricePerNight"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.deleteRoom": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.deleteRoomType": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.getAllBlockedDates": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "endDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "roomTypeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "startDate": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startDate",
+          "endDate"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.admin.getAllBookings": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "fromDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "pageSize": {
+            "default": 20,
+            "exclusiveMinimum": 0,
+            "maximum": 100,
+            "type": "integer"
+          },
+          "roomTypeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "confirmed",
+              "cancelled",
+              "completed"
+            ],
+            "type": "string"
+          },
+          "toDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.admin.getAllBookingsAdvanced": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 20,
+            "exclusiveMinimum": 0,
+            "maximum": 100,
+            "type": "integer"
+          },
+          "page": {
+            "default": 1,
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "search": {
+            "type": "string"
+          },
+          "sortBy": {
+            "default": "created_at",
+            "enum": [
+              "created_at",
+              "check_in_date",
+              "room_type",
+              "status",
+              "total_price",
+              "user_name"
+            ],
+            "type": "string"
+          },
+          "sortOrder": {
+            "default": "desc",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "confirmed",
+              "cancelled",
+              "completed"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.admin.getBlockedDates": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "endDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "roomId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "startDate": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "roomId",
+          "startDate",
+          "endDate"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.admin.getBooking": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.admin.getBookingWithAudit": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "bookingId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingId"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.admin.getRoom": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.admin.getRoomBookings": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "endDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "roomTypeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "startDate": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startDate",
+          "endDate"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.admin.getRoomType": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.admin.getRoomTypes": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "includeInactive": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.admin.getRooms": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "includeInactive": {
+            "default": true,
+            "type": "boolean"
+          },
+          "roomTypeId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.admin.markNeedsAction": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "bookingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "notes": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingId",
+          "notes"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.markSlipNeedsActionById": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "slipId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slipId",
+          "notes"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.replaceSlip": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "bookingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "newSlipUrl": {
+            "format": "uri",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingId",
+          "newSlipUrl"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.unblockDates": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "dates": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "roomId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "roomId",
+          "dates"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.updateBooking": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "bookingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "checkInDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "checkOutDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "numGuests": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "roomTypeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "totalPrice": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "bookingId"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.updateRoom": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "floor": {
+                "type": "integer"
+              },
+              "isActive": {
+                "default": true,
+                "type": "boolean"
+              },
+              "notes": {
+                "type": "string"
+              },
+              "roomNumber": {
+                "maxLength": 20,
+                "minLength": 1,
+                "type": "string"
+              },
+              "roomTypeId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "data"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.updateRoomType": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "amenities": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "bedType": {
+                "enum": [
+                  "single",
+                  "double",
+                  "twin",
+                  "king"
+                ],
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "images": {
+                "default": [],
+                "items": {
+                  "format": "uri",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "isActive": {
+                "default": true,
+                "type": "boolean"
+              },
+              "maxGuests": {
+                "default": 2,
+                "exclusiveMinimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "pricePerNight": {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              "sortOrder": {
+                "default": 0,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "data"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.verifySlip": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "bookingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingId"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.admin.verifySlipById": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "slipId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slipId"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.cancelBooking": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.checkAvailability": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "checkIn": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "checkOut": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkIn",
+          "checkOut"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.createBooking": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "checkIn": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "checkOut": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "numGuests": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "roomTypeId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "roomTypeId",
+          "checkIn",
+          "checkOut",
+          "numGuests"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "booking.getAvailableRooms": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "checkIn": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "checkOut": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "roomTypeId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "roomTypeId",
+          "checkIn",
+          "checkOut"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.getBooking": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.getMyBookings": {
+      "type": "query"
+    },
+    "booking.getPaymentInfo": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "bookingId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingId"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.getRoomType": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "booking.getRoomTypes": {
+      "type": "query"
+    },
+    "booking.uploadSlip": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "bookingId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "slipImageUrl": {
+            "pattern": "^\\/storage\\/slips\\/",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingId",
+          "slipImageUrl"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "coupon.claimCoupon": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "couponId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "couponId"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "coupon.getAvailableCoupons": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 20,
+            "exclusiveMinimum": 0,
+            "maximum": 100,
+            "type": "integer"
+          },
+          "page": {
+            "default": 1,
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "search": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "percentage",
+              "fixed_amount",
+              "bogo",
+              "free_upgrade",
+              "free_service"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "coupon.getCouponDetails": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "couponId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "couponId"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "coupon.getMyCoupons": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 20,
+            "exclusiveMinimum": 0,
+            "maximum": 100,
+            "type": "integer"
+          },
+          "page": {
+            "default": 1,
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "used",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "coupon.getUserCouponByQR": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "qrCode": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "qrCode"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "coupon.redeemCoupon": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "originalAmount": {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "qrCode": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "transactionReference": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "qrCode",
+          "originalAmount"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "coupon.revokeCoupon": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "userCouponId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userCouponId"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "loyalty.awardPoints": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "points": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "referenceId": {
+            "type": "string"
+          },
+          "referenceType": {
+            "enum": [
+              "booking",
+              "purchase",
+              "referral",
+              "bonus",
+              "admin_adjustment"
+            ],
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "points",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "loyalty.deductPoints": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "type": "string"
+          },
+          "points": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "referenceId": {
+            "type": "string"
+          },
+          "referenceType": {
+            "enum": [
+              "redemption",
+              "correction",
+              "admin_adjustment"
+            ],
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "points",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "loyalty.getAllTiers": {
+      "type": "query"
+    },
+    "loyalty.getStatus": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "userId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "loyalty.getTierConfig": {
+      "type": "query"
+    },
+    "loyalty.getTransactions": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "page": {
+            "default": 1,
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "pageSize": {
+            "default": 20,
+            "exclusiveMinimum": 0,
+            "maximum": 100,
+            "type": "integer"
+          },
+          "userId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "loyalty.updateTierConfig": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "benefits": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "color": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "required_points": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tierId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tierId"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "notification.deleteNotification": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "notificationId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notificationId"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "notification.getNotifications": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "includeRead": {
+            "default": true,
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 20,
+            "exclusiveMinimum": 0,
+            "maximum": 50,
+            "type": "integer"
+          },
+          "page": {
+            "default": 1,
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "notification.getUnreadCount": {
+      "type": "query"
+    },
+    "notification.markAllAsRead": {
+      "type": "mutation"
+    },
+    "notification.markAsRead": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "notificationId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notificationId"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "notification.markMultipleAsRead": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "notificationIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "notificationIds"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "survey.getActiveSurveys": {
+      "type": "query"
+    },
+    "survey.getInvitedSurveys": {
+      "type": "query"
+    },
+    "survey.getMyResponses": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "page": {
+            "default": 1,
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "pageSize": {
+            "default": 20,
+            "exclusiveMinimum": 0,
+            "maximum": 100,
+            "type": "integer"
+          },
+          "surveyId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "survey.getPublicSurveys": {
+      "type": "query"
+    },
+    "survey.getSurveyAnalytics": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "surveyId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "surveyId"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "survey.getSurveyById": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "language": {
+            "type": "string"
+          },
+          "surveyId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "surveyId"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "survey.getUserResponse": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "surveyId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "surveyId"
+        ],
+        "type": "object"
+      },
+      "type": "query"
+    },
+    "survey.submitResponse": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "is_completed": {
+            "type": "boolean"
+          },
+          "survey_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "survey_id",
+          "answers"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "user.completeProfile": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "dateOfBirth": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "gender": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "occupation": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "user.deleteAvatar": {
+      "type": "mutation"
+    },
+    "user.getEmailVerificationStatus": {
+      "type": "query"
+    },
+    "user.getPendingEmailChange": {
+      "type": "query"
+    },
+    "user.getProfile": {
+      "type": "query"
+    },
+    "user.getProfileCompletionStatus": {
+      "type": "query"
+    },
+    "user.getSettings": {
+      "type": "query"
+    },
+    "user.resendRegistrationVerification": {
+      "type": "mutation"
+    },
+    "user.resendVerificationCode": {
+      "type": "mutation"
+    },
+    "user.updateAvatar": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "user.updateEmail": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "user.updateEmojiAvatar": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "emoji": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "emoji"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "user.updateProfile": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "dateOfBirth": {
+            "type": "string"
+          },
+          "firstName": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "gender": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "occupation": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "preferences": {
+            "additionalProperties": {},
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "user.updateSettings": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "gender": {
+            "type": "string"
+          },
+          "occupation": {
+            "type": "string"
+          },
+          "preferences": {
+            "additionalProperties": {},
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "user.verifyEmail": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    },
+    "user.verifyRegistrationEmail": {
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[A-Z0-9]{4}-[A-Z0-9]{4}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "type": "mutation"
+    }
+  },
+  "version": "1.0.0"
+}

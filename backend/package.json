@@ -26,6 +26,8 @@
     "security:audit": "npm audit --audit-level=moderate",
     "security:scan": "npm run lint:security && npm run security:audit",
     "typecheck": "tsc --noEmit",
+    "api:schema": "DATABASE_URL=${DATABASE_URL:-postgresql://dummy:dummy@localhost:5432/dummy} npx tsx scripts/generate-api-schema.ts",
+    "api:check": "npm run api:schema && git diff --exit-code api-schema.json || (echo 'API schema changed! Review changes above.' && exit 1)",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
@@ -111,7 +113,8 @@
     "ts-jest": "^29.1.1",
     "tsx": "^4.6.2",
     "typescript": "^5.3.2",
-    "typescript-eslint": "^8.51.0"
+    "typescript-eslint": "^8.51.0",
+    "zod-to-json-schema": "^3.25.1"
   },
   "overrides": {
     "glob": "^11.0.3",

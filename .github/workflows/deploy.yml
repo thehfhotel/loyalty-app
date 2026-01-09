@@ -309,6 +309,31 @@ jobs:
 
           echo ""
           echo "=========================================="
+          echo "📋 API Schema Check"
+          echo "=========================================="
+          T_API=$(date +%s)
+          cd backend
+          set +e
+          npm run api:schema 2>&1 | grep -v "Prisma client initialized"
+          API_EXIT=${PIPESTATUS[0]}
+          set -e
+          if [ $API_EXIT -ne 0 ]; then
+            echo "❌ API schema generation failed"
+            exit 1
+          fi
+          # Check if schema changed (uncommitted changes indicate potential mismatch)
+          if [ -n "$(git diff --name-only api-schema.json 2>/dev/null)" ]; then
+            echo "⚠️ API schema has changed. Review the diff below:"
+            git diff api-schema.json
+            echo ""
+            echo "If this change is intentional, commit the updated api-schema.json"
+          fi
+          echo "✅ API schema check passed"
+          cd ..
+          show_time "API Schema" $T_API
+
+          echo ""
+          echo "=========================================="
           echo "🌐 Translation key validation"
           echo "=========================================="
           T_TRANS=$(date +%s)
