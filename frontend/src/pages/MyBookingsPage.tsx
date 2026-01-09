@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { FiCalendar, FiUsers, FiStar, FiAlertCircle, FiPlus, FiChevronRight, FiX, FiUpload, FiCheckCircle, FiClock, FiDollarSign, FiDownload } from 'react-icons/fi';
 import MainLayout from '../components/layout/MainLayout';
 import { trpc } from '../hooks/useTRPC';
@@ -78,6 +78,8 @@ const adminStatusColors: Record<string, { bg: string; text: string; icon: 'clock
 
 export default function MyBookingsPage() {
   const { t } = useTranslation();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -91,6 +93,7 @@ export default function MyBookingsPage() {
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [showBankDetails, setShowBankDetails] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // QR code URL - use env variable or fallback to bundled image
@@ -102,6 +105,31 @@ export default function MyBookingsPage() {
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
   });
+
+  // Handle URL params for auto-opening booking
+  useEffect(() => {
+    if (!bookings || isLoading) return;
+
+    const params = new URLSearchParams(location.search);
+    const openBookingId = params.get('openBooking');
+    const tab = params.get('tab');
+
+    if (openBookingId) {
+      const booking = bookings.find((b) => b.id === openBookingId);
+      if (booking) {
+        // If tab is 'payment', open the slip upload modal directly
+        if (tab === 'payment') {
+          setSlipUploadBookingId(openBookingId);
+          setShowSlipUploadModal(true);
+        } else {
+          // Otherwise open the details modal
+          setSelectedBooking(booking as Booking);
+        }
+        // Clear URL params after handling
+        navigate('/my-bookings', { replace: true });
+      }
+    }
+  }, [bookings, isLoading, location.search, navigate]);
 
   // Mutations
   const cancelBookingMutation = trpc.booking.cancelBooking.useMutation({
@@ -119,6 +147,24 @@ export default function MyBookingsPage() {
 
   // Use new addSlip mutation (multi-slip support)
   const addSlipMutation = trpc.booking.addSlip.useMutation();
+
+  // Remove slip mutation
+  const removeSlipMutation = trpc.booking.removeSlip.useMutation({
+    onSuccess: () => {
+      toast.success(t('payment.removeSlip'));
+      refetch();
+    },
+    onError: (error: { message: string }) => {
+      toast.error(error.message || t('errors.error'));
+    },
+  });
+
+  // Handle remove slip
+  const handleRemoveSlip = useCallback((slipId: string) => {
+    if (confirm(t('common.confirm'))) {
+      removeSlipMutation.mutate({ slipId });
+    }
+  }, [removeSlipMutation, t]);
 
   const handleCancelClick = (bookingId: string) => {
     setSelectedBookingId(bookingId);
@@ -253,6 +299,7 @@ export default function MyBookingsPage() {
     setSlipUploadBookingId(null);
     setSlipFile(null);
     setSlipPreview(null);
+    setShowBankDetails(false);
   }, []);
 
   // Helper to check if slip can be uploaded (multi-slip: always allow for confirmed bookings)
@@ -796,64 +843,185 @@ export default function MyBookingsPage() {
                 </div>
               </div>
 
-              {/* Bank Transfer Option */}
-              <div className="text-center">
-                <h4 className="font-medium mb-3">{t('payment.bankTransfer')}</h4>
-                <div
-                  className="p-4 bg-white border-2 border-gray-200 rounded-lg shadow-sm text-left space-y-2 cursor-pointer hover:border-primary-300 transition-colors"
-                  onClick={() => {
-                    navigator.clipboard.writeText('0461430473');
-                    toast.success(t('payment.copied'));
-                  }}
-                >
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-500">{t('payment.bankName')}</span>
-                    <div className="flex items-center gap-2">
-                      <img src={kbankLogo} alt="KBank" className="h-6" />
-                      <span className="font-medium">กสิกรไทย</span>
+              {/* Existing Slips Section - Only show if booking has slips */}
+              {hasSlips(slipUploadBooking) && (
+                <div>
+                  <h4 className="font-medium mb-3">{t('payment.yourSlips')}</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    {slipUploadBooking.slips?.map((slip, index) => (
+                      <div key={slip.id} className="relative group">
+                        <img
+                          src={slip.slipUrl}
+                          alt={`${t('payment.slipPreview')} ${index + 1}`}
+                          className="w-full h-32 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => window.open(slip.slipUrl, '_blank')}
+                        />
+                        {/* Status badge overlay */}
+                        <div className="absolute bottom-1 right-1">
+                          {slip.slipokStatus && (
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs ${slipOkStatusColors[slip.slipokStatus]?.bg} ${slipOkStatusColors[slip.slipokStatus]?.text}`}>
+                              {slipOkStatusColors[slip.slipokStatus]?.icon === 'check' && <FiCheckCircle className="w-3 h-3" />}
+                              {slipOkStatusColors[slip.slipokStatus]?.icon === 'clock' && <FiClock className="w-3 h-3" />}
+                              {slipOkStatusColors[slip.slipokStatus]?.icon === 'alert' && <FiAlertCircle className="w-3 h-3" />}
+                            </span>
+                          )}
+                        </div>
+                        {/* Remove button - only show for non-verified slips */}
+                        {slip.adminStatus !== 'verified' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveSlip(slip.id);
+                            }}
+                            className="absolute top-1 right-1 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                            title={t('payment.removeSlip')}
+                          >
+                            <FiX className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Bank/QR Section - Show directly if no slips, or toggle if slips exist */}
+              {hasSlips(slipUploadBooking) ? (
+                <>
+                  {/* Toggle button for bank details */}
+                  <button
+                    onClick={() => setShowBankDetails(!showBankDetails)}
+                    className="w-full py-2 text-sm text-primary-600 hover:text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-50 transition-colors"
+                  >
+                    {showBankDetails ? t('payment.hideBankDetails') : t('payment.showBankDetails')}
+                  </button>
+
+                  {/* Collapsible bank/QR section */}
+                  {showBankDetails && (
+                    <>
+                      {/* Bank Transfer Option */}
+                      <div className="text-center">
+                        <h4 className="font-medium mb-3">{t('payment.bankTransfer')}</h4>
+                        <div
+                          className="p-4 bg-white border-2 border-gray-200 rounded-lg shadow-sm text-left space-y-2 cursor-pointer hover:border-primary-300 transition-colors"
+                          onClick={() => {
+                            navigator.clipboard.writeText('0461430473');
+                            toast.success(t('payment.copied'));
+                          }}
+                        >
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-500">{t('payment.bankName')}</span>
+                            <div className="flex items-center gap-2">
+                              <img src={kbankLogo} alt="KBank" className="h-6" />
+                              <span className="font-medium">กสิกรไทย</span>
+                            </div>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">{t('payment.accountName')}</span>
+                            <span className="font-medium">บจก. สายชล เฮอริเทจ</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-500">{t('payment.accountNumber')}</span>
+                            <span className="font-medium font-mono">046-1-43047-3</span>
+                          </div>
+                          <p className="text-xs text-gray-400 text-center">{t('payment.clickToCopy')}</p>
+                        </div>
+                      </div>
+
+                      {/* Divider with "or" */}
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 border-t border-gray-200"></div>
+                        <span className="text-sm text-gray-400">{t('payment.or')}</span>
+                        <div className="flex-1 border-t border-gray-200"></div>
+                      </div>
+
+                      {/* QR Code Display */}
+                      <div className="text-center">
+                        <h4 className="font-medium mb-3">{t('payment.scanQRCode')}</h4>
+                        <div className="p-4 bg-white border-2 border-gray-200 rounded-lg shadow-sm">
+                          <img
+                            src={promptPayQRUrl}
+                            alt="PromptPay QR Code"
+                            className="w-full object-contain"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"%3E%3Crect fill="%23f3f4f6" width="160" height="160"/%3E%3Ctext x="80" y="80" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="12"%3EQR Code%3C/text%3E%3C/svg%3E';
+                            }}
+                          />
+                          <a
+                            href={promptPayQRUrl}
+                            download="promptpay-qr.png"
+                            className="inline-flex items-center justify-center gap-2 mt-3 w-full py-2 text-sm text-gray-500 hover:text-primary-600 transition-colors"
+                          >
+                            <FiDownload className="w-4 h-4" />
+                            {t('payment.downloadQR')}
+                          </a>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* Bank Transfer Option */}
+                  <div className="text-center">
+                    <h4 className="font-medium mb-3">{t('payment.bankTransfer')}</h4>
+                    <div
+                      className="p-4 bg-white border-2 border-gray-200 rounded-lg shadow-sm text-left space-y-2 cursor-pointer hover:border-primary-300 transition-colors"
+                      onClick={() => {
+                        navigator.clipboard.writeText('0461430473');
+                        toast.success(t('payment.copied'));
+                      }}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-500">{t('payment.bankName')}</span>
+                        <div className="flex items-center gap-2">
+                          <img src={kbankLogo} alt="KBank" className="h-6" />
+                          <span className="font-medium">กสิกรไทย</span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">{t('payment.accountName')}</span>
+                        <span className="font-medium">บจก. สายชล เฮอริเทจ</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-500">{t('payment.accountNumber')}</span>
+                        <span className="font-medium font-mono">046-1-43047-3</span>
+                      </div>
+                      <p className="text-xs text-gray-400 text-center">{t('payment.clickToCopy')}</p>
                     </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">{t('payment.accountName')}</span>
-                    <span className="font-medium">บจก. สายชล เฮอริเทจ</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-500">{t('payment.accountNumber')}</span>
-                    <span className="font-medium font-mono">046-1-43047-3</span>
-                  </div>
-                  <p className="text-xs text-gray-400 text-center">{t('payment.clickToCopy')}</p>
-                </div>
-              </div>
 
-              {/* Divider with "or" */}
-              <div className="flex items-center gap-3">
-                <div className="flex-1 border-t border-gray-200"></div>
-                <span className="text-sm text-gray-400">หรือ</span>
-                <div className="flex-1 border-t border-gray-200"></div>
-              </div>
+                  {/* Divider with "or" */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 border-t border-gray-200"></div>
+                    <span className="text-sm text-gray-400">{t('payment.or')}</span>
+                    <div className="flex-1 border-t border-gray-200"></div>
+                  </div>
 
-              {/* QR Code Display */}
-              <div className="text-center">
-                <h4 className="font-medium mb-3">{t('payment.scanQRCode')}</h4>
-                <div className="p-4 bg-white border-2 border-gray-200 rounded-lg shadow-sm">
-                  <img
-                    src={promptPayQRUrl}
-                    alt="PromptPay QR Code"
-                    className="w-full object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"%3E%3Crect fill="%23f3f4f6" width="160" height="160"/%3E%3Ctext x="80" y="80" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="12"%3EQR Code%3C/text%3E%3C/svg%3E';
-                    }}
-                  />
-                  <a
-                    href={promptPayQRUrl}
-                    download="promptpay-qr.png"
-                    className="inline-flex items-center justify-center gap-2 mt-3 w-full py-2 text-sm text-gray-500 hover:text-primary-600 transition-colors"
-                  >
-                    <FiDownload className="w-4 h-4" />
-                    {t('payment.downloadQR')}
-                  </a>
-                </div>
-              </div>
+                  {/* QR Code Display */}
+                  <div className="text-center">
+                    <h4 className="font-medium mb-3">{t('payment.scanQRCode')}</h4>
+                    <div className="p-4 bg-white border-2 border-gray-200 rounded-lg shadow-sm">
+                      <img
+                        src={promptPayQRUrl}
+                        alt="PromptPay QR Code"
+                        className="w-full object-contain"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"%3E%3Crect fill="%23f3f4f6" width="160" height="160"/%3E%3Ctext x="80" y="80" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="12"%3EQR Code%3C/text%3E%3C/svg%3E';
+                        }}
+                      />
+                      <a
+                        href={promptPayQRUrl}
+                        download="promptpay-qr.png"
+                        className="inline-flex items-center justify-center gap-2 mt-3 w-full py-2 text-sm text-gray-500 hover:text-primary-600 transition-colors"
+                      >
+                        <FiDownload className="w-4 h-4" />
+                        {t('payment.downloadQR')}
+                      </a>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Slip Upload Section */}
               <div>

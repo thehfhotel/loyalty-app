@@ -737,6 +737,17 @@ export const bookingRouter = router({
       };
     }),
 
+  /**
+   * Remove slip from booking (multi-slip support)
+   * Only allows removal if slip is not verified by admin
+   */
+  removeSlip: protectedProcedure
+    .input(z.object({ slipId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await bookingService.removeSlip(input.slipId, ctx.user.id);
+      return { success: true, message: 'Slip removed successfully.' };
+    }),
+
   // Admin sub-router
   admin: adminBookingRouter,
 });

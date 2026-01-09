@@ -1700,6 +1700,11 @@
       "needs_action": "Needs Action"
     },
     "uploadedSlips": "Uploaded Slips",
-    "uploadMore": "Upload More"
+    "uploadMore": "Upload More",
+    "changeSlip": "Change slip photo",
+    "showBankDetails": "Show bank transfer details",
+    "hideBankDetails": "Hide bank transfer details",
+    "yourSlips": "Your uploaded slips",
+    "removeSlip": "Remove slip"
   }
 }

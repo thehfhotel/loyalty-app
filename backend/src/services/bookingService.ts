@@ -1404,6 +1404,73 @@ export class BookingService {
   }
 
   /**
+   * Remove a slip from a booking (multi-slip support)
+   * Only allows removal if slip is not verified by admin
+   * @param slipId - Slip ID to remove
+   * @param userId - User ID requesting removal (must own the booking)
+   */
+  async removeSlip(slipId: string, userId: string): Promise<void> {
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+
+      // Get slip and verify ownership via booking
+      const [slip] = await client.query<{
+        id: string;
+        bookingId: string;
+        slipUrl: string;
+        adminStatus: string;
+        userId: string;
+      }>(
+        `SELECT bs.id, bs.booking_id as "bookingId", bs.slip_url as "slipUrl",
+                bs.admin_status as "adminStatus", b.user_id as "userId"
+         FROM booking_slips bs
+         JOIN bookings b ON bs.booking_id = b.id
+         WHERE bs.id = $1`,
+        [slipId]
+      ).then(res => res.rows);
+
+      if (!slip) {
+        throw new AppError(404, 'Slip not found');
+      }
+
+      if (slip.userId !== userId) {
+        throw new AppError(403, 'Not authorized to remove this slip');
+      }
+
+      if (slip.adminStatus === 'verified') {
+        throw new AppError(400, 'Cannot remove a verified slip');
+      }
+
+      // Delete the slip record
+      await client.query(
+        `DELETE FROM booking_slips WHERE id = $1`,
+        [slipId]
+      );
+
+      await client.query('COMMIT');
+
+      // Log audit
+      await bookingAuditService.logAction(
+        slip.bookingId,
+        'slip_removed',
+        userId,
+        null,
+        { slipId, slipUrl: slip.slipUrl },
+        'Slip removed by user'
+      );
+
+      logger.info(`Slip ${sanitizeLogValue(slipId)} removed from booking ${sanitizeLogValue(slip.bookingId)} by user ${sanitizeUserId(userId)}`);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Error removing slip:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * Trigger SlipOK verification for a specific slip (multi-slip support)
    */
   private async triggerSlipVerificationForSlip(slipId: string, slipUrl: string): Promise<void> {

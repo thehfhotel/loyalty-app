@@ -753,12 +753,34 @@ export default function BookingPage() {
                   )}
 
                   {slipStatus === 'uploaded' && (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-center">
-                      <FiClock className="w-6 h-6 text-yellow-500 mr-3" />
-                      <div>
-                        <p className="font-medium text-yellow-800">{t('payment.slipUploaded')}</p>
-                        <p className="text-sm text-yellow-600">{t('payment.awaitingVerification')}</p>
+                    <div className="space-y-4">
+                      {/* Show uploaded slip preview */}
+                      {slipPreview && (
+                        <div className="relative border rounded-lg overflow-hidden">
+                          <img
+                            src={slipPreview}
+                            alt="Uploaded slip"
+                            className="w-full max-h-64 object-contain bg-gray-100"
+                          />
+                        </div>
+                      )}
+
+                      {/* Status message */}
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-center">
+                        <FiClock className="w-6 h-6 text-yellow-500 mr-3" />
+                        <div>
+                          <p className="font-medium text-yellow-800">{t('payment.slipUploaded')}</p>
+                          <p className="text-sm text-yellow-600">{t('payment.awaitingVerification')}</p>
+                        </div>
                       </div>
+
+                      {/* Change slip button */}
+                      <button
+                        onClick={() => navigate(`/my-bookings?openBooking=${createdBooking.id}&tab=payment`)}
+                        className="w-full py-2 text-primary-600 border border-primary-300 rounded-lg hover:bg-primary-50 transition-colors"
+                      >
+                        {t('payment.changeSlip')}
+                      </button>
                     </div>
                   )}
 

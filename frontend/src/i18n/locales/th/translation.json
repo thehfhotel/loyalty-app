@@ -1749,6 +1749,11 @@
       "needs_action": "ต้องดำเนินการ"
     },
     "uploadedSlips": "สลิปที่อัปโหลดแล้ว",
-    "uploadMore": "อัพโหลดเพิ่มเติม"
+    "uploadMore": "อัพโหลดเพิ่มเติม",
+    "changeSlip": "เปลี่ยนรูปสลิป",
+    "showBankDetails": "แสดงข้อมูลการโอน",
+    "hideBankDetails": "ซ่อนข้อมูลการโอน",
+    "yourSlips": "สลิปที่อัปโหลดแล้ว",
+    "removeSlip": "ลบสลิป"
   }
 }
