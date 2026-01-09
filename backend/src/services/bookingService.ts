@@ -1918,7 +1918,19 @@ export class BookingService {
           up.first_name as "userFirstName",
           up.last_name as "userLastName",
           up.membership_id as "userMembershipId",
-          up.phone as "userPhone"
+          up.phone as "userPhone",
+          COALESCE(
+            (SELECT json_agg(json_build_object(
+              'id', bs.id,
+              'slipUrl', bs.slip_url,
+              'uploadedAt', bs.uploaded_at,
+              'slipokStatus', bs.slipok_status,
+              'adminStatus', bs.admin_status,
+              'isPrimary', bs.is_primary
+            ) ORDER BY bs.uploaded_at DESC)
+            FROM booking_slips bs WHERE bs.booking_id = b.id),
+            '[]'::json
+          ) as slips
         FROM bookings b
         JOIN rooms r ON b.room_id = r.id
         JOIN room_types rt ON b.room_type_id = rt.id

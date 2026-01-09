@@ -320,6 +320,14 @@ const adminBookingRouter = router({
           userMembershipId?: string | null;
           userPhone?: string | null;
           roomTypeName?: string;
+          slips?: Array<{
+            id: string;
+            slipUrl: string;
+            uploadedAt: string;
+            slipokStatus: string;
+            adminStatus: string;
+            isPrimary: boolean;
+          }>;
         };
 
         return {
@@ -362,6 +370,7 @@ const adminBookingRouter = router({
             adminVerifiedBy: b.adminVerifiedBy,
             adminVerifiedByName: null,
           } : null,
+          slips: rawBooking.slips ?? [],
           auditHistory: [],
         };
       });
