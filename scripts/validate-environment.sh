@@ -212,6 +212,7 @@ check_port 6379 "Redis"
 log "💻 System Resources:"
 
 # Check host disk space (more useful than docker system df)
+# Skip disk validation in CI/CD environments where runners manage their own resources
 if command -v df &>/dev/null; then
     # Get disk usage for the root filesystem or Docker data directory
     disk_info=$(df -h / 2>/dev/null | tail -1)
@@ -220,7 +221,10 @@ if command -v df &>/dev/null; then
 
     echo "💽 Disk Available: $disk_avail (${disk_used}% used)"
 
-    if [[ "$disk_used" -gt 90 ]]; then
+    # In CI/CD, disk space is managed by the runner - skip validation
+    if [[ -n "$CI" ]] || [[ -n "$GITHUB_ACTIONS" ]] || [[ -n "$GITLAB_CI" ]]; then
+        log "📦 Skipping disk usage validation in CI/CD mode (runner-managed)"
+    elif [[ "$disk_used" -gt 90 ]]; then
         error "Disk usage critical (${disk_used}%) - deployment may fail"
         VALIDATION_ERRORS=$((VALIDATION_ERRORS + 1))
     elif [[ "$disk_used" -gt 80 ]]; then
