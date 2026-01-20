@@ -327,12 +327,12 @@ export default function MyBookingsPage() {
 
   // Filter functions for tabs
   const isCurrentBooking = (booking: Booking) =>
-    booking.status === 'confirmed' && new Date(booking.checkInDate) > new Date();
+    booking.status === 'confirmed' && new Date(booking.checkOutDate) > new Date();
 
   const isHistoryBooking = (booking: Booking) =>
     booking.status === 'completed' ||
     booking.status === 'cancelled' ||
-    (booking.status === 'confirmed' && new Date(booking.checkInDate) <= new Date());
+    (booking.status === 'confirmed' && new Date(booking.checkOutDate) <= new Date());
 
   // Filtered bookings
   const currentBookings = bookings?.filter((b) => isCurrentBooking(b as Booking)) ?? [];
