@@ -348,8 +348,8 @@ router.get('/admin/stats', requireAdmin, async (_req, res, next) => {
 // Get specific user details
 router.get('/admin/users/:userId', requireAdmin, async (req, res, next) => {
   try {
-    const { userId } = req.params;
-    if (!userId) {
+    const userId = String(req.params.userId);
+    if (!userId || userId === 'undefined') {
       return res.status(400).json({ error: 'User ID is required' });
     }
 
@@ -363,10 +363,10 @@ router.get('/admin/users/:userId', requireAdmin, async (req, res, next) => {
 // Update user status (activate/deactivate)
 router.patch('/admin/users/:userId/status', requireAdmin, async (req, res, next) => {
   try {
-    const { userId } = req.params;
+    const userId = String(req.params.userId);
     const { isActive } = req.body;
 
-    if (!userId) {
+    if (!userId || userId === 'undefined') {
       return res.status(400).json({ error: 'User ID is required' });
     }
 
@@ -388,10 +388,10 @@ router.patch('/admin/users/:userId/status', requireAdmin, async (req, res, next)
 // Update user role
 router.patch('/admin/users/:userId/role', requireAdmin, async (req, res, next) => {
   try {
-    const { userId } = req.params;
+    const userId = String(req.params.userId);
     const { role } = req.body;
 
-    if (!userId) {
+    if (!userId || userId === 'undefined') {
       return res.status(400).json({ error: 'User ID is required' });
     }
 
@@ -413,9 +413,9 @@ router.patch('/admin/users/:userId/role', requireAdmin, async (req, res, next) =
 // Delete user (super admin only)
 router.delete('/admin/users/:userId', requireAdmin, async (req, res, next) => {
   try {
-    const { userId } = req.params;
+    const userId = String(req.params.userId);
 
-    if (!userId) {
+    if (!userId || userId === 'undefined') {
       return res.status(400).json({ error: 'User ID is required' });
     }
 
@@ -468,9 +468,9 @@ router.put('/admin/new-member-coupon-settings', requireAdmin, async (req, res, n
 // Get coupon status for admin validation
 router.get('/admin/coupon-status/:couponId', requireAdmin, async (req, res, next) => {
   try {
-    const { couponId } = req.params;
+    const couponId = String(req.params.couponId);
 
-    if (!couponId) {
+    if (!couponId || couponId === 'undefined') {
       return res.status(400).json({ error: 'Coupon ID is required' });
     }
 

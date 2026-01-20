@@ -22,9 +22,9 @@ router.get('/lookup/:membershipId',
   validateRequest({ params: membershipIdSchema }),
   async (req, res, next) => {
     try {
-      const { membershipId } = req.params;
+      const membershipId = String(req.params.membershipId);
 
-      if (!membershipId) {
+      if (!membershipId || membershipId === 'undefined') {
         return res.status(400).json({
           success: false,
           error: 'Membership ID is required'

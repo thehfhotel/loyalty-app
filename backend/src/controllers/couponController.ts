@@ -72,7 +72,7 @@ export class CouponController {
         throw new AppError(401, 'Authentication required');
       }
 
-      const { couponId } = req.params;
+      const couponId = String(req.params.couponId);
       const data: UpdateCouponRequest = req.body;
 
       // Validate coupon type if provided
@@ -96,7 +96,7 @@ export class CouponController {
         throw new AppError(400, 'Percentage value cannot exceed 100');
       }
 
-      const coupon = await couponService.updateCoupon(couponId!, data, req.user!.id);
+      const coupon = await couponService.updateCoupon(couponId, data, req.user!.id);
 
       res.json({
         success: true,
@@ -122,8 +122,8 @@ export class CouponController {
   // Get coupon by ID
   async getCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const { couponId } = req.params;
-      const coupon = await couponService.getCouponById(couponId!);
+      const couponId = String(req.params.couponId);
+      const coupon = await couponService.getCouponById(couponId);
 
       if (!coupon) {
         throw new AppError(404, 'Coupon not found');
@@ -318,11 +318,11 @@ export class CouponController {
   // Get coupon redemption history (Admin only - requireAdmin middleware handles auth)
   async getCouponRedemptions(req: Request, res: Response): Promise<void> {
     try {
-      const { couponId } = req.params;
+      const couponId = String(req.params.couponId);
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
 
-      const result = await couponService.getCouponRedemptions(couponId!, page, limit);
+      const result = await couponService.getCouponRedemptions(couponId, page, limit);
 
       res.json({
         success: true,
@@ -401,8 +401,8 @@ export class CouponController {
         throw new AppError(401, 'Authentication required');
       }
 
-      const { couponId } = req.params;
-      const success = await couponService.deleteCoupon(couponId!, req.user!.id);
+      const couponId = String(req.params.couponId);
+      const success = await couponService.deleteCoupon(couponId, req.user!.id);
 
       if (!success) {
         throw new AppError(404, 'Coupon not found or already deleted');
@@ -435,10 +435,10 @@ export class CouponController {
         throw new AppError(401, 'Authentication required');
       }
 
-      const { userCouponId } = req.params;
+      const userCouponId = String(req.params.userCouponId);
       const { reason } = req.body;
 
-      const success = await couponService.revokeUserCoupon(userCouponId!, req.user!.id, reason);
+      const success = await couponService.revokeUserCoupon(userCouponId, req.user!.id, reason);
 
       if (!success) {
         throw new AppError(404, 'User coupon not found or not available for revocation');
@@ -471,10 +471,11 @@ export class CouponController {
         throw new AppError(401, 'Authentication required');
       }
 
-      const { couponId, targetUserId } = req.params;
+      const couponId = String(req.params.couponId);
+      const targetUserId = String(req.params.targetUserId);
       const { reason } = req.body;
 
-      const revokedCount = await couponService.revokeUserCouponsForCoupon(targetUserId!, couponId!, req.user!.id, reason);
+      const revokedCount = await couponService.revokeUserCouponsForCoupon(targetUserId, couponId, req.user!.id, reason);
 
       if (revokedCount === 0) {
         throw new AppError(404, 'No available coupons found for this user');
@@ -504,11 +505,11 @@ export class CouponController {
   // Get coupon assignments (Admin only - requireAdmin middleware handles auth)
   async getCouponAssignments(req: Request, res: Response): Promise<void> {
     try {
-      const { couponId } = req.params;
+      const couponId = String(req.params.couponId);
       const page = Math.max(1, parseInt(req.query.page as string) || 1);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
 
-      const result = await couponService.getCouponAssignments(couponId!, page, limit);
+      const result = await couponService.getCouponAssignments(couponId, page, limit);
 
       res.json({
         success: true,
@@ -533,9 +534,9 @@ export class CouponController {
   // Validate coupon by QR code (for checking before redemption)
   async validateCoupon(req: Request, res: Response): Promise<void> {
     try {
-      const { qrCode } = req.params;
-      
-      if (!qrCode) {
+      const qrCode = String(req.params.qrCode);
+
+      if (!qrCode || qrCode === 'undefined') {
         throw new AppError(400, 'QR code is required');
       }
 
