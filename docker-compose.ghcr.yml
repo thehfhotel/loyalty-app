@@ -1,0 +1,18 @@
+# GHCR Image Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.prod.yml up -d
+#
+# This file overrides the build: directives with image: directives to use pre-built
+# images from GitHub Container Registry instead of building locally.
+#
+# When both 'build:' and 'image:' are specified, Docker Compose uses 'image:' for pulling
+# and only builds if the image doesn't exist. With pre-built GHCR images, this works correctly.
+#
+# Environment variable IMAGE_TAG specifies the image tag (commit SHA or 'latest')
+# Example: IMAGE_TAG=abc1234 docker compose -f ... up -d
+
+services:
+  backend:
+    image: ghcr.io/jwinut/loyalty-app/backend:${IMAGE_TAG:-latest}
+
+  frontend:
+    image: ghcr.io/jwinut/loyalty-app/frontend:${IMAGE_TAG:-latest}

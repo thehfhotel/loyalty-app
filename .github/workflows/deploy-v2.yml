@@ -1,0 +1,741 @@
+name: CI/CD Pipeline v2 (GHCR + GitHub-hosted)
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_e2e:
+        description: 'Skip E2E tests'
+        required: false
+        default: 'false'
+        type: boolean
+
+# Workflow-level concurrency: prevent parallel runs on same branch
+concurrency:
+  group: ${{ github.actor == 'dependabot[bot]' && 'dependabot-ci' || format('ci-v2-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' && github.actor != 'dependabot[bot]' }}
+
+# Top-level permissions set to minimal read-only
+# Write permissions are granted at job-level only where needed
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+env:
+  NODE_VERSION: '24'
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: jwinut
+  IMAGE_REPO: loyalty-app
+
+jobs:
+  # =============================================================================
+  # PHASE 0: WORKSPACE PREPARATION
+  # =============================================================================
+
+  prepare:
+    name: "Prepare Workspace"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend-cache-key: ${{ steps.cache-keys.outputs.backend }}
+      frontend-cache-key: ${{ steps.cache-keys.outputs.frontend }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Generate cache keys
+        id: cache-keys
+        run: |
+          echo "backend=backend-deps-${{ hashFiles('backend/package-lock.json') }}" >> $GITHUB_OUTPUT
+          echo "frontend=frontend-deps-${{ hashFiles('frontend/package-lock.json') }}" >> $GITHUB_OUTPUT
+
+      - name: Cache backend dependencies
+        uses: actions/cache@v4
+        with:
+          path: backend/node_modules
+          key: ${{ steps.cache-keys.outputs.backend }}
+          restore-keys: |
+            backend-deps-
+
+      - name: Cache frontend dependencies
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ steps.cache-keys.outputs.frontend }}
+          restore-keys: |
+            frontend-deps-
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Generate Prisma client
+        working-directory: ./backend
+        run: npm run db:generate
+
+      - name: Verify Prisma client
+        working-directory: ./backend
+        run: |
+          if [ ! -d "src/generated/prisma" ]; then
+            echo "Prisma client generation failed"
+            exit 1
+          fi
+          echo "Prisma client generated successfully"
+
+  # =============================================================================
+  # PHASE 1: VALIDATION & TESTING
+  # =============================================================================
+
+  validate-and-test:
+    name: "Validate & Test"
+    runs-on: ubuntu-latest
+    needs: prepare
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: loyalty_test
+          POSTGRES_PASSWORD: loyalty_test_pass
+          POSTGRES_DB: loyalty_test_db
+        ports:
+          - 5438:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6383:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    outputs:
+      tests-passed: ${{ steps.test-results.outputs.passed }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore backend dependencies
+        uses: actions/cache@v4
+        with:
+          path: backend/node_modules
+          key: ${{ needs.prepare.outputs.backend-cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Restore frontend dependencies
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ needs.prepare.outputs.frontend-cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Generate Prisma client
+        working-directory: ./backend
+        run: npm run db:generate
+
+      # -------------------------------------------------------------------------
+      # TypeScript & Linting
+      # -------------------------------------------------------------------------
+      - name: TypeScript check - Backend
+        working-directory: ./backend
+        run: npm run typecheck
+
+      - name: TypeScript check - Frontend
+        working-directory: ./frontend
+        run: npm run typecheck
+
+      - name: ESLint - Backend
+        working-directory: ./backend
+        run: npm run lint:security
+
+      - name: ESLint - Frontend
+        working-directory: ./frontend
+        run: npm run lint
+
+      # -------------------------------------------------------------------------
+      # Security Audit
+      # -------------------------------------------------------------------------
+      - name: npm audit - Backend
+        working-directory: ./backend
+        run: npm audit --audit-level=moderate
+        continue-on-error: false
+
+      - name: npm audit - Frontend
+        working-directory: ./frontend
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+      # -------------------------------------------------------------------------
+      # Unit Tests
+      # -------------------------------------------------------------------------
+      - name: Run backend unit tests
+        working-directory: ./backend
+        run: npm run test:unit -- --coverage
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
+          REDIS_URL: redis://localhost:6383
+          JWT_SECRET: test-jwt-secret-for-ci
+          JWT_REFRESH_SECRET: test-jwt-refresh-secret-for-ci
+          SESSION_SECRET: test-session-secret-for-ci
+          GOOGLE_CLIENT_ID: test-google-client-id
+          GOOGLE_CLIENT_SECRET: test-google-client-secret
+          GOOGLE_CALLBACK_URL: http://localhost:4000/api/auth/google/callback
+          LINE_CHANNEL_ID: test-line-channel-id
+          LINE_CHANNEL_SECRET: test-line-channel-secret
+          LINE_CALLBACK_URL: http://localhost:4000/api/auth/line/callback
+          FRONTEND_URL: http://localhost:3000
+          LOYALTY_USERNAME: test-loyalty-user
+          LOYALTY_PASSWORD: test-loyalty-pass
+
+      - name: Run frontend unit tests
+        working-directory: ./frontend
+        run: npm run test -- --coverage --run
+        env:
+          NODE_ENV: test
+
+      # -------------------------------------------------------------------------
+      # Integration Tests
+      # -------------------------------------------------------------------------
+      - name: Run database migrations
+        working-directory: ./backend
+        run: npm run db:migrate
+        env:
+          DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
+
+      - name: Run backend integration tests
+        working-directory: ./backend
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
+          REDIS_URL: redis://localhost:6383
+          JWT_SECRET: test-jwt-secret-for-ci
+          JWT_REFRESH_SECRET: test-jwt-refresh-secret-for-ci
+          SESSION_SECRET: test-session-secret-for-ci
+          GOOGLE_CLIENT_ID: test-google-client-id
+          GOOGLE_CLIENT_SECRET: test-google-client-secret
+          GOOGLE_CALLBACK_URL: http://localhost:4000/api/auth/google/callback
+          LINE_CHANNEL_ID: test-line-channel-id
+          LINE_CHANNEL_SECRET: test-line-channel-secret
+          LINE_CALLBACK_URL: http://localhost:4000/api/auth/line/callback
+          FRONTEND_URL: http://localhost:3000
+          LOYALTY_USERNAME: test-loyalty-user
+          LOYALTY_PASSWORD: test-loyalty-pass
+
+      - name: Set test results
+        id: test-results
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+          fi
+
+  # =============================================================================
+  # PHASE 2: BUILD AND PUSH TO GHCR
+  # =============================================================================
+
+  build-and-push:
+    name: "Build & Push to GHCR"
+    runs-on: ubuntu-latest
+    needs: validate-and-test
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      backend-image: ${{ steps.meta-backend.outputs.tags }}
+      frontend-image: ${{ steps.meta-frontend.outputs.tags }}
+      image-tag: ${{ github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # -------------------------------------------------------------------------
+      # Backend Image
+      # -------------------------------------------------------------------------
+      - name: Extract backend metadata
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/backend
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          target: runner
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      # -------------------------------------------------------------------------
+      # Frontend Image
+      # -------------------------------------------------------------------------
+      - name: Extract frontend metadata
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/frontend
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          target: production
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          build-args: |
+            VITE_API_URL=${{ vars.VITE_API_URL || 'https://loyalty.saichon.com/api' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Summary
+        run: |
+          echo "## Docker Images Built" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Backend" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta-backend.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Frontend" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta-frontend.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # =============================================================================
+  # PHASE 3: E2E TESTS (using GHCR images)
+  # =============================================================================
+
+  e2e-tests:
+    name: "E2E Tests"
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: |
+      (github.ref == 'refs/heads/main' || github.base_ref == 'main') &&
+      github.event.inputs.skip_e2e != 'true'
+    timeout-minutes: 20
+    # E2E tests run sequentially to prevent port conflicts
+    concurrency:
+      group: e2e-tests
+      cancel-in-progress: false
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: loyalty_e2e
+          POSTGRES_PASSWORD: loyalty_e2e_pass
+          POSTGRES_DB: loyalty_e2e_db
+        ports:
+          - 5436:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install root dependencies (Playwright)
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull backend image
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
+
+      - name: Pull frontend image
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
+
+      - name: Run database migrations
+        run: |
+          docker run --rm --network host \
+            -e DATABASE_URL=postgresql://loyalty_e2e:loyalty_e2e_pass@localhost:5436/loyalty_e2e_db \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/backend:${{ github.sha }} \
+            npx prisma migrate deploy
+
+      - name: Start backend container
+        run: |
+          docker run -d --name backend --network host \
+            -e NODE_ENV=test \
+            -e PORT=4202 \
+            -e DATABASE_URL=postgresql://loyalty_e2e:loyalty_e2e_pass@localhost:5436/loyalty_e2e_db \
+            -e REDIS_URL=redis://localhost:6381 \
+            -e JWT_SECRET=e2e-jwt-secret \
+            -e JWT_REFRESH_SECRET=e2e-jwt-refresh-secret \
+            -e SESSION_SECRET=e2e-session-secret \
+            -e GOOGLE_CLIENT_ID=e2e-google-client-id \
+            -e GOOGLE_CLIENT_SECRET=e2e-google-client-secret \
+            -e GOOGLE_CALLBACK_URL=http://localhost:4202/api/auth/google/callback \
+            -e LINE_CHANNEL_ID=e2e-line-channel-id \
+            -e LINE_CHANNEL_SECRET=e2e-line-channel-secret \
+            -e LINE_CALLBACK_URL=http://localhost:4202/api/auth/line/callback \
+            -e FRONTEND_URL=http://localhost:3201 \
+            -e LOYALTY_USERNAME=e2e-loyalty-user \
+            -e LOYALTY_PASSWORD=e2e-loyalty-pass \
+            -v ${{ github.workspace }}/backend/config/admins.e2e.json:/app/config/admins.json:ro \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
+
+      - name: Start frontend container
+        run: |
+          docker run -d --name frontend --network host \
+            -e VITE_API_URL=http://localhost:4202/api \
+            -p 3201:80 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
+
+      - name: Wait for services
+        run: |
+          echo "Waiting for backend..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:4202/api/health > /dev/null 2>&1; then
+              echo "Backend is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Backend failed to start"
+              docker logs backend
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Waiting for frontend..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:3201 > /dev/null 2>&1; then
+              echo "Frontend is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Frontend failed to start"
+              docker logs frontend
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Run Playwright E2E tests
+        run: npx playwright test
+        env:
+          E2E_BASE_URL: http://localhost:3201
+          E2E_API_URL: http://localhost:4202/api
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Cleanup containers
+        if: always()
+        run: |
+          docker stop backend frontend 2>/dev/null || true
+          docker rm backend frontend 2>/dev/null || true
+
+  # =============================================================================
+  # PHASE 4: DEPLOY TO DEVELOPMENT (develop branch)
+  # =============================================================================
+
+  deploy-development:
+    name: "Deploy to Development"
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    if: github.ref == 'refs/heads/develop'
+    timeout-minutes: 10
+    environment:
+      name: development
+      url: http://loyalty-dev.saichon.com
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ github.sha }}
+          COMMIT_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: GHCR_TOKEN,IMAGE_TAG,COMMIT_SHA
+          script: |
+            set -euo pipefail
+
+            DEPLOY_PATH="/home/nut/loyalty-app-develop"
+            REPO="jwinut/loyalty-app"
+            COMPOSE_OVERRIDE="docker-compose.dev.yml"
+
+            cd "$DEPLOY_PATH"
+
+            # Create .env file
+            cat > .env << 'ENVEOF'
+            NODE_ENV=development
+            JWT_SECRET=${{ secrets.DEV_JWT_SECRET }}
+            JWT_REFRESH_SECRET=${{ secrets.DEV_JWT_REFRESH_SECRET }}
+            SESSION_SECRET=${{ secrets.DEV_SESSION_SECRET }}
+            DATABASE_URL=postgresql://loyalty_dev:loyalty_dev_pass@postgres:5432/loyalty_dev_db
+            REDIS_URL=redis://redis:6379
+            FRONTEND_URL=${{ vars.DEV_FRONTEND_URL }}
+            BACKEND_URL=${{ vars.DEV_BACKEND_URL }}
+            VITE_API_URL=${{ vars.DEV_VITE_API_URL }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            GOOGLE_CALLBACK_URL=${{ vars.DEV_GOOGLE_CALLBACK_URL }}
+            LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
+            LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
+            LINE_CALLBACK_URL=${{ vars.DEV_LINE_CALLBACK_URL }}
+            CORS_ORIGINS=${{ vars.DEV_CORS_ORIGINS }}
+            LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
+            LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
+            ENVEOF
+            chmod 600 .env
+
+            # Update config files from GitHub
+            echo "Updating config files..."
+            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/docker-compose.yml" -o docker-compose.yml
+            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/docker-compose.ghcr.yml" -o docker-compose.ghcr.yml
+            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/${COMPOSE_OVERRIDE}" -o "${COMPOSE_OVERRIDE}"
+            mkdir -p nginx backend/prisma
+            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/nginx/nginx.conf" -o nginx/nginx.conf
+            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/backend/prisma/schema.prisma" -o backend/prisma/schema.prisma
+
+            # Login to GHCR
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u jwinut --password-stdin
+
+            # Export IMAGE_TAG for docker compose
+            export IMAGE_TAG
+
+            # Pull images
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" pull backend frontend
+
+            # Start database services
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d postgres redis
+
+            # Wait for postgres
+            sleep 10
+
+            # Run migrations
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" run --rm backend npx prisma migrate deploy || true
+
+            # Deploy all services
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
+
+            # Health check
+            sleep 10
+            for i in {1..30}; do
+              if curl -sf http://localhost:5001/api/health > /dev/null 2>&1; then
+                echo "Deployment successful!"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "Health check failed"
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" logs --tail=50 backend
+            exit 1
+
+  # =============================================================================
+  # PHASE 5: DEPLOY TO PRODUCTION (main branch, requires approval)
+  # =============================================================================
+
+  deploy-production:
+    name: "Deploy to Production"
+    runs-on: ubuntu-latest
+    needs: [build-and-push, e2e-tests]
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://loyalty.saichon.com
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ github.sha }}
+          COMMIT_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: GHCR_TOKEN,IMAGE_TAG,COMMIT_SHA
+          script: |
+            set -euo pipefail
+
+            DEPLOY_PATH="/home/nut/loyalty-app-production"
+            REPO="jwinut/loyalty-app"
+            COMPOSE_OVERRIDE="docker-compose.prod.yml"
+
+            cd "$DEPLOY_PATH"
+
+            # Create .env file
+            cat > .env << 'ENVEOF'
+            NODE_ENV=production
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+            SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            REDIS_URL=redis://redis:6379
+            FRONTEND_URL=${{ vars.FRONTEND_URL }}
+            BACKEND_URL=${{ vars.BACKEND_URL }}
+            VITE_API_URL=${{ vars.VITE_API_URL }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            GOOGLE_CALLBACK_URL=${{ vars.GOOGLE_CALLBACK_URL }}
+            LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
+            LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
+            LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
+            CORS_ORIGINS=${{ vars.CORS_ORIGINS }}
+            LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
+            LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
+            SMTP_HOST=${{ secrets.SMTP_HOST }}
+            SMTP_PORT=${{ secrets.SMTP_PORT }}
+            SMTP_USER=${{ secrets.SMTP_USER }}
+            SMTP_PASS=${{ secrets.SMTP_PASS }}
+            SMTP_FROM=${{ secrets.SMTP_FROM }}
+            IMAP_HOST=${{ secrets.IMAP_HOST }}
+            IMAP_PORT=${{ secrets.IMAP_PORT }}
+            IMAP_USER=${{ secrets.IMAP_USER }}
+            IMAP_PASS=${{ secrets.IMAP_PASS }}
+            ENVEOF
+            chmod 600 .env
+
+            # Update config files from GitHub
+            echo "Updating config files..."
+            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/docker-compose.yml" -o docker-compose.yml
+            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/docker-compose.ghcr.yml" -o docker-compose.ghcr.yml
+            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/${COMPOSE_OVERRIDE}" -o "${COMPOSE_OVERRIDE}"
+            mkdir -p nginx backend/prisma
+            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/nginx/nginx.conf" -o nginx/nginx.conf
+            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/backend/prisma/schema.prisma" -o backend/prisma/schema.prisma
+
+            # Login to GHCR
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u jwinut --password-stdin
+
+            # Export IMAGE_TAG for docker compose
+            export IMAGE_TAG
+
+            # Pull images
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" pull backend frontend
+
+            # Start database services
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d postgres redis
+
+            # Wait for postgres
+            sleep 10
+
+            # Run migrations
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" run --rm backend npx prisma migrate deploy || true
+
+            # Deploy all services
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
+
+            # Health check
+            sleep 10
+            for i in {1..30}; do
+              if curl -sf http://localhost:4001/api/health > /dev/null 2>&1; then
+                echo "Deployment successful!"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "Health check failed"
+            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" logs --tail=50 backend
+            exit 1
+
+      - name: Deployment Summary
+        run: |
+          echo "## Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image Tag**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: https://loyalty.saichon.com" >> $GITHUB_STEP_SUMMARY

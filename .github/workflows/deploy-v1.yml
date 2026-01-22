@@ -1,11 +1,23 @@
-name: Optimized CI/CD Pipeline with Security & Testing
+name: "[DEPRECATED] CI/CD Pipeline v1 (Self-hosted)"
+
+# =============================================================================
+# DEPRECATED: This workflow is kept as a backup/rollback option.
+# The new workflow (deploy-v2.yml) uses GitHub-hosted runners and GHCR.
+# This workflow only triggers manually via workflow_dispatch.
+# =============================================================================
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main]
+  # Disabled automatic triggers - use deploy-v2.yml instead
+  # push:
+  #   branches: [main, develop]
+  # pull_request:
+  #   branches: [main]
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "confirm" to run the legacy pipeline'
+        required: true
+        default: ''
 
 # Workflow-level concurrency: prevent parallel runs on same branch
 # This prevents race conditions when multiple commits push in quick succession
@@ -35,6 +47,8 @@ jobs:
     name: "🚀 Workspace Preparation"
     runs-on: self-hosted
     timeout-minutes: 2
+    # Require manual confirmation to run this deprecated workflow
+    if: github.event.inputs.confirm == 'confirm'
     outputs:
       workspace-ready: ${{ steps.setup-complete.outputs.ready }}
       backend-cache-hit: ${{ steps.backend-cache.outputs.cache-hit }}
