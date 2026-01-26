@@ -532,7 +532,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     timeout-minutes: 10
     environment:
-      name: staging
+      name: development
       url: http://loyalty-dev.saichon.com
 
     steps:
