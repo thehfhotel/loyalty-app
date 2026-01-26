@@ -109,7 +109,7 @@ Feature Branch → PR → main → Tests → Build GHCR → Staging → Producti
 | **Database Name** | `loyalty_db` | `loyalty_dev_db` | `loyalty_db` |
 | **Docker Target** | `development` | `runner` | `runner` |
 | **Deploy Path** | `/home/nut/loyalty-app` | `/home/nut/loyalty-app-develop` | `/home/nut/loyalty-app-production` |
-| **GitHub Environment** | - | `staging` | `production` |
+| **GitHub Environment** | - | `development` | `production` |
 
 **Why 2 deployment environments?**
 - Staging validates changes before production
