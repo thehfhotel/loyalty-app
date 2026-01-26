@@ -83,26 +83,39 @@ loyalty-app/
 └── docker-compose.*  # Environment configs
 ```
 
+### Branching Model: Trunk-Based Development
+
+**Single branch workflow:**
+- `main` is the only long-lived branch
+- Feature branches merge directly to `main` via PR
+- All pushes to `main` trigger: Tests → Build → Staging → Production
+
+**Deployment flow:**
+```
+Feature Branch → PR → main → Tests → Build GHCR → Staging → Production (approval)
+```
+
 ### Environment Configuration
 
-**Three isolated environments run on the same machine:**
+**Two deployment environments (plus local):**
 
-| Component | Local Dev | Development | Production |
-|-----------|-----------|-------------|------------|
+| Component | Local Dev | Staging | Production |
+|-----------|-----------|---------|------------|
 | **Compose File** | `docker-compose.yml` | `+ docker-compose.dev.yml` | `+ docker-compose.prod.yml` |
 | **Container Suffix** | (none) | `_dev` | `_production` |
 | **Nginx Port** | - | 5001 | 4001 |
 | **PostgreSQL Port** | - | 5435 | 5434 |
 | **Redis Port** | - | 6380 | 6379 |
 | **Database Name** | `loyalty_db` | `loyalty_dev_db` | `loyalty_db` |
-| **Docker Target** | `development` | `development` | `runner` |
+| **Docker Target** | `development` | `runner` | `runner` |
 | **Deploy Path** | `/home/nut/loyalty-app` | `/home/nut/loyalty-app-develop` | `/home/nut/loyalty-app-production` |
+| **GitHub Environment** | - | `staging` | `production` |
 
-**Why 3 environments?**
-- All run on ONE machine (resource constraint)
-- Dev can develop while prod serves traffic
+**Why 2 deployment environments?**
+- Staging validates changes before production
+- Production requires manual approval
+- Both use GHCR images (no source code on server)
 - Port isolation prevents conflicts
-- Container naming prevents interference
 
 ### CI/CD Test Port Isolation
 
@@ -123,20 +136,23 @@ loyalty-app/
 # Local development (base only, for IDE/testing)
 docker compose up -d
 
-# Development server (isolated from prod)
+# Staging server (deployed automatically from main)
+# Uses GHCR images, deployed via GitHub Actions
 cd /home/nut/loyalty-app-develop
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.dev.yml up -d
 
-# Production (isolated from dev)
+# Production (deployed from main with approval)
+# Uses GHCR images, deployed via GitHub Actions
 cd /home/nut/loyalty-app-production
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.prod.yml up -d
 ```
 
 **Key Points:**
-- Each environment has its own directory with separate git checkout
-- Source volume mounts (`./backend:/app`) only in dev override, NOT in base
-- Production uses Docker image contents (no source mount)
+- **Trunk-based**: Only `main` branch, no `develop` branch
+- Staging/Production use GHCR images (no source code on server)
+- Deployment directories contain only: compose files, nginx config, .env, prisma schema
 - Environment variables loaded from `.env` file created by GitHub Actions
+- Production deployment requires manual approval in GitHub
 
 ### Database Operations
 
@@ -294,20 +310,22 @@ chore: Maintenance
 # Local development
 docker compose up -d
 
-# Development server
-cd /home/nut/loyalty-app-develop
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Staging (auto-deployed from main)
+# Managed by GitHub Actions - no manual deployment needed
 
-# Production
-cd /home/nut/loyalty-app-production
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Production (deployed from main with approval)
+# Managed by GitHub Actions - approve in GitHub UI
 
 # Database
 npm run db:generate && npm run db:migrate
 
-# Git workflow
+# Git workflow (trunk-based)
+git checkout -b feature/my-feature
+# ... make changes ...
 git commit -m "feat: description"  # Hooks run automatically
-git push
+git push -u origin feature/my-feature
+gh pr create --base main  # Create PR to main
+# After merge: auto-deploy to staging, then approve for production
 
 # Quality checks
 npm run lint && npm run typecheck && npm run test
@@ -328,13 +346,14 @@ npm run lint && npm run typecheck && npm run test
 
 **Critical Facts:**
 - Tiers based on `total_nights` NOT `current_points`
-- Production uses `runner` stage, dev uses `development` stage
-- Container names: Local has no suffix, dev has `_dev`, prod has `_production`
-- Source volume mounts ONLY in docker-compose.dev.yml (not in base)
-- All 3 environments can run simultaneously on one machine
+- **Trunk-based development**: Only `main` branch, no `develop`
+- Both staging and production use `runner` Docker stage (GHCR images)
+- Container names: Local has no suffix, staging has `_dev`, prod has `_production`
+- Deployment directories have NO source code, only config files
+- Staging deploys automatically, production requires approval
 
 ---
 
-**Last Updated**: December 15, 2025
+**Last Updated**: January 26, 2026
 **Enforced By**: Git hooks, CI/CD pipeline, project conventions
 **Compliance**: MANDATORY for all contributors

@@ -2,7 +2,7 @@ name: CI/CD Pipeline v2 (GHCR + GitHub-hosted)
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -16,7 +16,7 @@ on:
 # Workflow-level concurrency: prevent parallel runs on same branch
 concurrency:
   group: ${{ github.actor == 'dependabot[bot]' && 'dependabot-ci' || format('ci-v2-{0}', github.ref) }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' && github.actor != 'dependabot[bot]' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.actor != 'dependabot[bot]' }}
 
 # Top-level permissions set to minimal read-only
 # Write permissions are granted at job-level only where needed
@@ -272,7 +272,7 @@ jobs:
     name: "Build & Push to GHCR"
     runs-on: ubuntu-latest
     needs: validate-and-test
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/main'
     timeout-minutes: 20
     permissions:
       contents: read
@@ -522,17 +522,17 @@ jobs:
           docker rm backend frontend 2>/dev/null || true
 
   # =============================================================================
-  # PHASE 4: DEPLOY TO DEVELOPMENT (develop branch)
+  # PHASE 4: DEPLOY TO STAGING (main branch, no approval needed)
   # =============================================================================
 
-  deploy-development:
-    name: "Deploy to Development"
+  deploy-staging:
+    name: "Deploy to Staging"
     runs-on: ubuntu-latest
-    needs: [build-and-push]
-    if: github.ref == 'refs/heads/develop'
+    needs: [build-and-push, e2e-tests]
+    if: github.ref == 'refs/heads/main'
     timeout-minutes: 10
     environment:
-      name: development
+      name: staging
       url: http://loyalty-dev.saichon.com
 
     steps:
@@ -629,7 +629,7 @@ jobs:
   deploy-production:
     name: "Deploy to Production"
     runs-on: ubuntu-latest
-    needs: [build-and-push, e2e-tests]
+    needs: [deploy-staging]
     if: github.ref == 'refs/heads/main'
     timeout-minutes: 10
     environment:
