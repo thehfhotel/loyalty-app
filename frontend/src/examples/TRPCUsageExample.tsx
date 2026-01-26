@@ -26,10 +26,10 @@ export function TRPCUsageExample() {
 
   // Example 4: Mutation (admin only)
   const awardPointsMutation = trpc.loyalty.awardPoints.useMutation({
-    onSuccess: (transactionId) => {
+    onSuccess: (transactionId: string) => {
       notify.success(`Successfully awarded points. Transaction ID: ${transactionId}`);
     },
-    onError: (error) => {
+    onError: (error: { message: string }) => {
       // Use error helper to get message
       const message = getTRPCErrorMessage(error);
       notify.error(`Failed to award points: ${message}`);

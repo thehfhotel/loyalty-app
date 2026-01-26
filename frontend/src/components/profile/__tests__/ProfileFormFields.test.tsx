@@ -726,3 +726,146 @@ describe('DateOfBirthField', () => {
     });
   });
 });
+
+describe('Null Field Handling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('GenderField Null Handling', () => {
+    it('should render with empty value when gender is null/undefined', () => {
+      renderGenderField({});
+
+      const select = screen.getByRole('combobox', { name: /gender/i }) as HTMLSelectElement;
+      // Default value should be empty string (placeholder option)
+      expect(select.value).toBe('');
+    });
+
+    it('should not crash when errors object has null gender error', () => {
+      renderGenderField({
+        errors: { gender: null as any }
+      });
+
+      // Should render without crashing
+      const select = screen.getByRole('combobox', { name: /gender/i });
+      expect(select).toBeInTheDocument();
+    });
+
+    it('should handle gender field with custom "other" option', async () => {
+      const user = userEvent.setup();
+      renderGenderField({ isModal: true });
+
+      const select = screen.getByRole('combobox', { name: /gender/i });
+
+      // Select "Other" option
+      await user.selectOptions(select, 'other');
+
+      // Custom input should appear
+      const customInput = screen.getByPlaceholderText('Please specify');
+      expect(customInput).toBeInTheDocument();
+      expect(customInput).toHaveValue('');
+    });
+
+    it('should display placeholder option as default', () => {
+      renderGenderField({});
+
+      const placeholderOption = screen.getByText('Select gender');
+      expect(placeholderOption).toBeInTheDocument();
+      expect(placeholderOption).toHaveValue('');
+    });
+  });
+
+  describe('OccupationField Null Handling', () => {
+    it('should render with empty value when occupation is null/undefined', () => {
+      renderOccupationField({});
+
+      const select = screen.getByRole('combobox', { name: /occupation/i }) as HTMLSelectElement;
+      // Default value should be empty string (placeholder option)
+      expect(select.value).toBe('');
+    });
+
+    it('should not crash when errors object has null occupation error', () => {
+      renderOccupationField({
+        errors: { occupation: null as any }
+      });
+
+      // Should render without crashing
+      const select = screen.getByRole('combobox', { name: /occupation/i });
+      expect(select).toBeInTheDocument();
+    });
+
+    it('should display placeholder option as default', () => {
+      renderOccupationField({});
+
+      const placeholderOption = screen.getByText('Select occupation');
+      expect(placeholderOption).toBeInTheDocument();
+      expect(placeholderOption).toHaveValue('');
+    });
+
+    it('should handle selecting "other" occupation option', async () => {
+      const user = userEvent.setup();
+      renderOccupationField({});
+
+      const select = screen.getByRole('combobox', { name: /occupation/i }) as HTMLSelectElement;
+
+      // Select "Other" option
+      await user.selectOptions(select, 'other');
+      expect(select.value).toBe('other');
+    });
+  });
+
+  describe('DateOfBirthField Null Handling', () => {
+    it('should render with empty value when dateOfBirth is null/undefined', () => {
+      renderDateOfBirthField({});
+
+      const input = screen.getByLabelText(/date of birth/i) as HTMLInputElement;
+      // Default value should be empty
+      expect(input.value).toBe('');
+    });
+
+    it('should not crash when errors object has null dateOfBirth error', () => {
+      renderDateOfBirthField({
+        errors: { dateOfBirth: null as any }
+      });
+
+      // Should render without crashing
+      const input = screen.getByLabelText(/date of birth/i);
+      expect(input).toBeInTheDocument();
+    });
+
+    it('should accept empty string as valid initial value', () => {
+      renderDateOfBirthField({});
+
+      const input = screen.getByLabelText(/date of birth/i) as HTMLInputElement;
+      expect(input.value).toBe('');
+      // Input should still be functional
+      expect(input).toBeEnabled();
+    });
+  });
+
+  describe('All Fields - Minimal Props', () => {
+    it('should render GenderField without crashing with minimal props', () => {
+      const { container } = renderGenderField({});
+
+      expect(container).toBeTruthy();
+      expect(screen.getByText('Gender')).toBeInTheDocument();
+      expect(screen.getByRole('combobox', { name: /gender/i })).toBeInTheDocument();
+    });
+
+    it('should render OccupationField without crashing with minimal props', () => {
+      const { container } = renderOccupationField({});
+
+      expect(container).toBeTruthy();
+      expect(screen.getByText('Occupation')).toBeInTheDocument();
+      expect(screen.getByRole('combobox', { name: /occupation/i })).toBeInTheDocument();
+    });
+
+    it('should render DateOfBirthField without crashing with minimal props', () => {
+      const { container } = renderDateOfBirthField({});
+
+      expect(container).toBeTruthy();
+      expect(screen.getByText('Date of Birth')).toBeInTheDocument();
+      expect(screen.getByLabelText(/date of birth/i)).toBeInTheDocument();
+    });
+  });
+});

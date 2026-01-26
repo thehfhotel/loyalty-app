@@ -139,10 +139,10 @@ export class SurveyController {
   // Get survey by ID
   async getSurvey(req: Request, res: Response): Promise<void> {
     try {
-      const { id } = req.params;
+      const id = String(req.params.id);
       const user = req.user;
 
-      const survey = await surveyService.getSurveyById(id!);
+      const survey = await surveyService.getSurveyById(id);
 
       if (!survey) {
         res.status(404).json({ message: 'Survey not found' });
@@ -152,7 +152,7 @@ export class SurveyController {
       // For non-admin users, check access permissions
       if (user?.id && !['admin', 'super_admin'].includes(user.role)) {
         const userId: string = user.id;
-        const hasAccess = await surveyService.canUserAccessSurvey(userId, id!);
+        const hasAccess = await surveyService.canUserAccessSurvey(userId, id);
         if (!hasAccess) {
           res.status(403).json({ 
             message: 'Access denied. You do not have permission to access this survey.' 
@@ -207,8 +207,8 @@ export class SurveyController {
   async updateSurvey(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { id } = req.params;
-      
+      const id = String(req.params.id);
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
@@ -216,10 +216,10 @@ export class SurveyController {
       }
 
       const updateData: UpdateSurveyRequest = req.body;
-      
+
       // Enhanced logging for update operations too
 
-      const survey = await surveyService.updateSurvey(id!, updateData);
+      const survey = await surveyService.updateSurvey(id, updateData);
       
       if (!survey) {
         res.status(404).json({ message: 'Survey not found' });
@@ -238,15 +238,15 @@ export class SurveyController {
   async deleteSurvey(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { id } = req.params;
-      
+      const id = String(req.params.id);
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
         return;
       }
 
-      const deleted = await surveyService.deleteSurvey(id!);
+      const deleted = await surveyService.deleteSurvey(id);
       
       if (!deleted) {
         res.status(404).json({ message: 'Survey not found' });
@@ -301,14 +301,14 @@ export class SurveyController {
   async getUserResponse(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { surveyId } = req.params;
-      
+      const surveyId = String(req.params.surveyId);
+
       if (!user) {
         res.status(401).json({ message: 'Authentication required' });
         return;
       }
 
-      const response = await surveyService.getUserResponse(user.id!, surveyId!);
+      const response = await surveyService.getUserResponse(user.id!, surveyId);
       res.json({ response });
     } catch (error: unknown) {
       logger.error('Error fetching user response:', error);
@@ -321,8 +321,8 @@ export class SurveyController {
   async getSurveyResponses(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { surveyId } = req.params;
-      
+      const surveyId = String(req.params.surveyId);
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
@@ -332,7 +332,7 @@ export class SurveyController {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
 
-      const result = await surveyService.getSurveyResponses(surveyId!, page, limit);
+      const result = await surveyService.getSurveyResponses(surveyId, page, limit);
       
       res.json({
         responses: result.responses,
@@ -411,15 +411,15 @@ export class SurveyController {
   async getSurveyAnalytics(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { surveyId } = req.params;
-      
+      const surveyId = String(req.params.surveyId);
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
         return;
       }
 
-      const analytics = await surveyService.getSurveyAnalytics(surveyId!);
+      const analytics = await surveyService.getSurveyAnalytics(surveyId);
       
       if (!analytics) {
         res.status(404).json({ message: 'Survey not found' });
@@ -438,8 +438,8 @@ export class SurveyController {
   async exportSurveyResponses(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { surveyId } = req.params;
-      
+      const surveyId = String(req.params.surveyId);
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
@@ -447,14 +447,14 @@ export class SurveyController {
       }
 
       // Get survey and all responses
-      const survey = await surveyService.getSurveyById(surveyId!);
+      const survey = await surveyService.getSurveyById(surveyId);
       if (!survey) {
         res.status(404).json({ message: 'Survey not found' });
         return;
       }
 
       // Get all responses (without pagination)
-      const result = await surveyService.getSurveyResponses(surveyId!, 1, 10000);
+      const result = await surveyService.getSurveyResponses(surveyId, 1, 10000);
       const responses = result.responses;
 
       // Generate CSV header
@@ -510,15 +510,15 @@ export class SurveyController {
   async getSurveyInvitations(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { surveyId } = req.params;
-      
+      const surveyId = String(req.params.surveyId);
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
         return;
       }
 
-      const invitations = await surveyService.getSurveyInvitations(surveyId!);
+      const invitations = await surveyService.getSurveyInvitations(surveyId);
       res.json({ invitations });
     } catch (error: unknown) {
       logger.error('Error fetching survey invitations:', error);
@@ -531,15 +531,15 @@ export class SurveyController {
   async sendSurveyInvitations(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { surveyId } = req.params;
-      
+      const surveyId = String(req.params.surveyId);
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
         return;
       }
 
-      const result = await surveyService.sendSurveyInvitations(surveyId!);
+      const result = await surveyService.sendSurveyInvitations(surveyId);
       res.json(result);
     } catch (error: unknown) {
       logger.error('Error sending survey invitations:', error);
@@ -552,9 +552,9 @@ export class SurveyController {
   async sendSurveyInvitationsToUsers(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { surveyId } = req.params;
+      const surveyId = String(req.params.surveyId);
       const { userIds } = req.body;
-      
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
@@ -567,7 +567,7 @@ export class SurveyController {
         return;
       }
 
-      const result = await surveyService.sendSurveyInvitationsToUsers(surveyId!, userIds);
+      const result = await surveyService.sendSurveyInvitationsToUsers(surveyId, userIds);
       res.json(result);
     } catch (error: unknown) {
       logger.error('Error sending survey invitations to users:', error);
@@ -580,15 +580,15 @@ export class SurveyController {
   async resendInvitation(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { invitationId } = req.params;
-      
+      const invitationId = String(req.params.invitationId);
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
         return;
       }
 
-      await surveyService.resendInvitation(invitationId!);
+      await surveyService.resendInvitation(invitationId);
       res.json({ success: true });
     } catch (error: unknown) {
       logger.error('Error resending invitation:', error);
@@ -655,17 +655,17 @@ export class SurveyController {
   async getSurveyCouponAssignments(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { surveyId } = req.params;
+      const surveyId = String(req.params.surveyId);
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
-      
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
         return;
       }
 
-      const result = await surveyService.getSurveyCouponAssignments(surveyId!, page, limit);
+      const result = await surveyService.getSurveyCouponAssignments(surveyId, page, limit);
       res.json(result);
     } catch (error: unknown) {
       logger.error('Error fetching survey coupon assignments:', error);
@@ -678,8 +678,9 @@ export class SurveyController {
   async updateSurveyCouponAssignment(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { surveyId, couponId } = req.params;
-      
+      const surveyId = String(req.params.surveyId);
+      const couponId = String(req.params.couponId);
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
@@ -701,7 +702,7 @@ export class SurveyController {
         return;
       }
 
-      const assignment = await surveyService.updateSurveyCouponAssignment(surveyId!, couponId!, updateData);
+      const assignment = await surveyService.updateSurveyCouponAssignment(surveyId, couponId, updateData);
       
       if (!assignment) {
         res.status(404).json({ message: 'Assignment not found' });
@@ -720,15 +721,16 @@ export class SurveyController {
   async removeCouponFromSurvey(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { surveyId, couponId } = req.params;
-      
+      const surveyId = String(req.params.surveyId);
+      const couponId = String(req.params.couponId);
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
         return;
       }
 
-      const removed = await surveyService.removeCouponFromSurvey(surveyId!, couponId!, user.id!);
+      const removed = await surveyService.removeCouponFromSurvey(surveyId, couponId, user.id!);
       
       if (!removed) {
         res.status(404).json({ message: 'Assignment not found or already inactive' });
@@ -747,17 +749,17 @@ export class SurveyController {
   async getSurveyRewardHistory(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user;
-      const { surveyId } = req.params;
+      const surveyId = String(req.params.surveyId);
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
-      
+
       // Check if user is admin
       if (!user || !['admin', 'super_admin'].includes(user.role)) {
         res.status(403).json({ message: 'Access denied. Admin privileges required.' });
         return;
       }
 
-      const result = await surveyService.getSurveyRewardHistory(surveyId!, page, limit);
+      const result = await surveyService.getSurveyRewardHistory(surveyId, page, limit);
       res.json(result);
     } catch (error: unknown) {
       logger.error('Error fetching survey reward history:', error);

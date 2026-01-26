@@ -254,6 +254,8 @@ export default function ProfilePage() {
     );
   }
 
+  const isSaving = updateProfileMutation.isPending || completeProfileMutation.isPending || updateEmailMutation.isPending;
+
   return (
     <MainLayout title={t('profile.title')} showProfileBanner={false}>
         {/* Profile Information Section */}
@@ -428,7 +430,7 @@ export default function ProfilePage() {
           }}
           profile={profile ?? null}
           onSubmit={onSubmit}
-          isSaving={updateProfileMutation.isPending || completeProfileMutation.isPending || updateEmailMutation.isPending}
+          isSaving={isSaving}
           onAvatarUpload={handleAvatarUpload}
           onDeleteAvatar={async () => setShowDeleteConfirm(true)}
           uploadingAvatar={uploadingAvatar}

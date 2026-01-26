@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import passport from 'passport';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
+import path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const connectRedisModule = require('connect-redis');
 const RedisStore = connectRedisModule.RedisStore ?? connectRedisModule.default?.RedisStore ?? connectRedisModule;
@@ -34,7 +35,7 @@ import { optionalAuth } from './middleware/auth';
 import { connectDatabase } from './config/database';
 import { connectRedis, getRedisClient } from './config/redis';
 import { seedMembershipSequence, seedTiers, seedSurveys, seedE2ETestUser, seedE2ETestUser2 } from './utils/seedDatabase';
-import { initializeStorage } from './config/storage';
+import { initializeStorage, storageConfig } from './config/storage';
 import { StorageService } from './services/storageService';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/user';
@@ -47,6 +48,8 @@ import membershipRoutes from './routes/membership';
 import translationRoutes from './routes/translation';
 import notificationRoutes from './routes/notifications';
 import analyticsRoutes from './routes/analyticsRoutes';
+import slipRoutes from './routes/slip';
+import sseRoutes from './routes/sse';
 // Import and initialize OAuth service to register strategies
 import './services/oauthService';
 import { oauthCleanupService } from './services/oauthCleanupService';
@@ -189,6 +192,9 @@ function createApp(redisAvailable: boolean) {
 
   // Serve static files for avatars
   app.use('/storage', express.static('storage'));
+
+  // Serve static files for payment slips
+  app.use('/storage/slips', express.static(path.join(storageConfig.baseDir, storageConfig.slipsDir)));
 
   // Determine if cookies should be secure (HTTPS only)
   // SECURITY: Defaults to secure=true unless explicitly in development/test
@@ -407,6 +413,8 @@ function configureApp(app: express.Express) {
   app.use('/api/translation', apiRateLimit, translationRoutes); // Public translations use IP-based only
   app.use('/api/notifications', apiRateLimit, userRateLimit, notificationRoutes);
   app.use('/api/analytics', apiRateLimit, userRateLimit, analyticsRoutes);
+  app.use('/api/slips', apiRateLimit, userRateLimit, slipRoutes);
+  app.use('/api/sse', sseRoutes); // SSE endpoints - no rate limiting (long-lived connections)
 
   // tRPC endpoint - Type-safe API with end-to-end type safety
   // optionalAuth parses JWT token if present, setting req.user for authenticated requests

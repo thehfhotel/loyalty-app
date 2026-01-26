@@ -95,6 +95,18 @@ describe('Storage Configuration', () => {
 
       expect(storageConfig.avatarsDir).toBe('avatars');
     });
+
+    it('should have slipsDir subdirectory configured', async () => {
+      const { storageConfig } = await import('../../../config/storage');
+
+      expect(storageConfig.slipsDir).toBe('slips');
+    });
+
+    it('should have correct slip file size limit', async () => {
+      const { storageConfig } = await import('../../../config/storage');
+
+      expect(storageConfig.maxSlipFileSize).toBe(10 * 1024 * 1024); // 10MB
+    });
   });
 
   describe('StoragePaths', () => {
@@ -133,6 +145,56 @@ describe('Storage Configuration', () => {
         expect(jpgPath).toContain('avatar.jpg');
         expect(pngPath).toContain('avatar.png');
         expect(webpPath).toContain('avatar.webp');
+      });
+    });
+
+    describe('getSlipPath', () => {
+      it('should construct correct slip path', async () => {
+        delete process.env.STORAGE_PATH;
+
+        const { StoragePaths } = await import('../../../config/storage');
+
+        const slipPath = StoragePaths.getSlipPath('booking-123-slip.jpg');
+        const expectedPath = path.join(originalCwd, 'storage', 'slips', 'booking-123-slip.jpg');
+
+        expect(slipPath).toBe(expectedPath);
+      });
+
+      it('should construct slip path with custom storage directory', async () => {
+        process.env.STORAGE_PATH = '/custom/storage';
+
+        const { StoragePaths } = await import('../../../config/storage');
+
+        const slipPath = StoragePaths.getSlipPath('booking-456-slip.png');
+        const expectedPath = path.join('/custom/storage', 'slips', 'booking-456-slip.png');
+
+        expect(slipPath).toBe(expectedPath);
+      });
+
+      it('should handle different file extensions', async () => {
+        delete process.env.STORAGE_PATH;
+
+        const { StoragePaths } = await import('../../../config/storage');
+
+        const jpgPath = StoragePaths.getSlipPath('slip.jpg');
+        const pngPath = StoragePaths.getSlipPath('slip.png');
+        const webpPath = StoragePaths.getSlipPath('slip.webp');
+
+        expect(jpgPath).toContain('slip.jpg');
+        expect(pngPath).toContain('slip.png');
+        expect(webpPath).toContain('slip.webp');
+      });
+
+      it('should handle UUID-based filenames', async () => {
+        delete process.env.STORAGE_PATH;
+
+        const { StoragePaths } = await import('../../../config/storage');
+
+        const uuid = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+        const slipPath = StoragePaths.getSlipPath(`${uuid}.jpg`);
+
+        expect(slipPath).toContain(uuid);
+        expect(slipPath).toContain('slips');
       });
     });
 
@@ -191,9 +253,10 @@ describe('Storage Configuration', () => {
 
       await initializeStorage();
 
-      expect(mockAccess).toHaveBeenCalledTimes(3);
+      expect(mockAccess).toHaveBeenCalledTimes(4);
       expect(mockAccess).toHaveBeenCalledWith(path.join(originalCwd, 'storage'));
       expect(mockAccess).toHaveBeenCalledWith(path.join(originalCwd, 'storage', 'avatars'));
+      expect(mockAccess).toHaveBeenCalledWith(path.join(originalCwd, 'storage', 'slips'));
       expect(mockAccess).toHaveBeenCalledWith(path.join(originalCwd, 'storage', 'backup'));
     });
 
@@ -209,8 +272,10 @@ describe('Storage Configuration', () => {
 
       await initializeStorage();
 
-      expect(mockMkdir).toHaveBeenCalledTimes(3);
+      expect(mockMkdir).toHaveBeenCalledTimes(4);
       expect(mockMkdir).toHaveBeenCalledWith(path.join(originalCwd, 'storage'), { recursive: true });
+      expect(mockMkdir).toHaveBeenCalledWith(path.join(originalCwd, 'storage', 'avatars'), { recursive: true });
+      expect(mockMkdir).toHaveBeenCalledWith(path.join(originalCwd, 'storage', 'slips'), { recursive: true });
       expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Created storage directory'));
     });
 
@@ -254,6 +319,7 @@ describe('Storage Configuration', () => {
 
       expect(mockChmod).toHaveBeenCalledWith(path.join(originalCwd, 'storage'), 0o755);
       expect(mockChmod).toHaveBeenCalledWith(path.join(originalCwd, 'storage', 'avatars'), 0o755);
+      expect(mockChmod).toHaveBeenCalledWith(path.join(originalCwd, 'storage', 'slips'), 0o755);
     });
 
     it('should skip permissions on Windows', async () => {
@@ -299,6 +365,7 @@ describe('Storage Configuration', () => {
 
       expect(mockMkdir).toHaveBeenCalledWith('/custom/storage', { recursive: true });
       expect(mockMkdir).toHaveBeenCalledWith(path.join('/custom/storage', 'avatars'), { recursive: true });
+      expect(mockMkdir).toHaveBeenCalledWith(path.join('/custom/storage', 'slips'), { recursive: true });
       expect(mockMkdir).toHaveBeenCalledWith('/custom/backup', { recursive: true });
     });
   });
@@ -309,9 +376,11 @@ describe('Storage Configuration', () => {
 
       expect(storageConfig).toHaveProperty('baseDir');
       expect(storageConfig).toHaveProperty('avatarsDir');
+      expect(storageConfig).toHaveProperty('slipsDir');
       expect(storageConfig).toHaveProperty('backupDir');
       expect(storageConfig).toHaveProperty('maxFileSize');
       expect(storageConfig).toHaveProperty('maxStorageSize');
+      expect(storageConfig).toHaveProperty('maxSlipFileSize');
       expect(storageConfig).toHaveProperty('avatarSize');
       expect(storageConfig).toHaveProperty('avatarQuality');
     });
@@ -321,9 +390,11 @@ describe('Storage Configuration', () => {
 
       expect(typeof storageConfig.baseDir).toBe('string');
       expect(typeof storageConfig.avatarsDir).toBe('string');
+      expect(typeof storageConfig.slipsDir).toBe('string');
       expect(typeof storageConfig.backupDir).toBe('string');
       expect(typeof storageConfig.maxFileSize).toBe('number');
       expect(typeof storageConfig.maxStorageSize).toBe('number');
+      expect(typeof storageConfig.maxSlipFileSize).toBe('number');
       expect(typeof storageConfig.avatarSize).toBe('number');
       expect(typeof storageConfig.avatarQuality).toBe('number');
     });

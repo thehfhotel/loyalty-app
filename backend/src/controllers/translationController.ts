@@ -33,7 +33,7 @@ export const translationController = {
   // Start survey translation job
   async translateSurvey(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
+      const id = String(req.params.id);
       const { sourceLanguage, targetLanguages, provider = 'azure' } = req.body;
 
       if (!sourceLanguage || !targetLanguages || !Array.isArray(targetLanguages)) {
@@ -41,13 +41,13 @@ export const translationController = {
       }
 
       // Get the survey first
-      const survey = await surveyService.getSurveyById(id!);
+      const survey = await surveyService.getSurveyById(id);
       if (!survey) {
         return res.status(404).json({ error: 'Survey not found' });
       }
 
       const translationJob = await translationService.translateSurvey(
-        id!,
+        id,
         sourceLanguage,
         targetLanguages,
         provider,
@@ -63,9 +63,9 @@ export const translationController = {
   // Get survey translations
   async getSurveyTranslations(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
+      const id = String(req.params.id);
 
-      const translations = await surveyService.getAllSurveyTranslations(id!);
+      const translations = await surveyService.getAllSurveyTranslations(id);
       if (!translations) {
         return res.status(404).json({ error: 'Survey not found' });
       }
@@ -79,7 +79,7 @@ export const translationController = {
   // Start coupon translation job
   async translateCoupon(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
+      const id = String(req.params.id);
       const { sourceLanguage, targetLanguages, provider = 'azure' } = req.body;
 
       if (!sourceLanguage || !targetLanguages || !Array.isArray(targetLanguages)) {
@@ -87,13 +87,13 @@ export const translationController = {
       }
 
       // Get the coupon first
-      const coupon = await couponService.getCouponById(id!);
+      const coupon = await couponService.getCouponById(id);
       if (!coupon) {
         return res.status(404).json({ error: 'Coupon not found' });
       }
 
       const translationJob = await translationService.translateCoupon(
-        id!,
+        id,
         sourceLanguage,
         targetLanguages,
         provider,
@@ -109,10 +109,10 @@ export const translationController = {
   // Get coupon translations
   async getCouponTranslations(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
+      const id = String(req.params.id);
       const { language } = req.query;
 
-      const coupon = await couponService.getCouponWithTranslations(id!, language as string);
+      const coupon = await couponService.getCouponWithTranslations(id, language as string);
       if (!coupon) {
         return res.status(404).json({ error: 'Coupon not found' });
       }
@@ -126,9 +126,9 @@ export const translationController = {
   // Get translation job status
   async getTranslationJob(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
+      const id = String(req.params.id);
 
-      const job = await translationService.getTranslationJobById(id!);
+      const job = await translationService.getTranslationJobById(id);
       if (!job) {
         return res.status(404).json({ error: 'Translation job not found' });
       }

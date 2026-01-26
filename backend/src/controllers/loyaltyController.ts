@@ -355,11 +355,11 @@ export class LoyaltyController {
    */
   async getUserPointsHistoryAdmin(req: Request, res: Response) {
     try {
-      const { userId } = req.params;
+      const userId = String(req.params.userId);
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
 
-      const history = await loyaltyService.getUserPointsHistory(userId!, limit, offset);
+      const history = await loyaltyService.getUserPointsHistory(userId, limit, offset);
 
       res.json({
         success: true,

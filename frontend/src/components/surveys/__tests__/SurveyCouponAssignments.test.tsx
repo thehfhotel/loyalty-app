@@ -108,7 +108,7 @@ vi.mock('../../common/ConfirmDialog', () => ({
     onConfirm: () => void;
     onCancel: () => void;
   }) => {
-    if (!isOpen) return null;
+    if (!isOpen) {return null;}
     return (
       <div data-testid="confirm-dialog">
         <h3>{title}</h3>

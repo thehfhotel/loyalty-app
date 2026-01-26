@@ -6,12 +6,14 @@ export interface StorageConfig {
   // Base storage paths
   baseDir: string;
   avatarsDir: string;
+  slipsDir: string;
   backupDir?: string;
-  
+
   // Storage limits
   maxFileSize: number;
   maxStorageSize: number;
-  
+  maxSlipFileSize: number;
+
   // Avatar settings
   avatarSize: number; // Single size used in app
   avatarQuality: number; // JPEG quality
@@ -21,11 +23,13 @@ export const storageConfig: StorageConfig = {
   // Base paths - simple structure
   baseDir: process.env.STORAGE_PATH ?? path.join(process.cwd(), 'storage'),
   avatarsDir: 'avatars',
+  slipsDir: 'slips',
   backupDir: (process.env.BACKUP_PATH ?? path.join(process.cwd(), 'storage', 'backup')) as string,
 
   // Storage limits
   maxFileSize: 15 * 1024 * 1024, // 15MB - allows large images that will be processed and compressed
   maxStorageSize: 10 * 1024 * 1024 * 1024, // 10GB total
+  maxSlipFileSize: 10 * 1024 * 1024, // 10MB for payment slips
 
   // Avatar settings - single version only
   avatarSize: 200, // 200x200 pixels as used in app
@@ -41,7 +45,15 @@ export class StoragePaths {
       filename
     );
   }
-  
+
+  static getSlipPath(filename: string): string {
+    return path.join(
+      storageConfig.baseDir,
+      storageConfig.slipsDir,
+      filename
+    );
+  }
+
   static getBackupPath(relativePath: string): string {
     const date = new Date();
     const dateStr = date.toISOString().split('T')[0]!;
@@ -58,6 +70,7 @@ export async function initializeStorage(): Promise<void> {
   const directories = [
     storageConfig.baseDir,
     path.join(storageConfig.baseDir, storageConfig.avatarsDir),
+    path.join(storageConfig.baseDir, storageConfig.slipsDir),
     storageConfig.backupDir!
   ];
   
@@ -84,6 +97,8 @@ export async function initializeStorage(): Promise<void> {
       await fs.chmod(storageConfig.baseDir, 0o755);
       // eslint-disable-next-line security/detect-non-literal-fs-filename -- Safe: path constructed with path.join from controlled inputs
       await fs.chmod(path.join(storageConfig.baseDir, storageConfig.avatarsDir), 0o755);
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- Safe: path constructed with path.join from controlled inputs
+      await fs.chmod(path.join(storageConfig.baseDir, storageConfig.slipsDir), 0o755);
     } catch (error) {
       logger.warn('Could not set directory permissions:', error);
     }

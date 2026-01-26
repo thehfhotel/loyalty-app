@@ -12,7 +12,7 @@ export default function EmailServicePage() {
 
   // Email test mutation
   const testMutation = trpc.admin.email.runTest.useMutation({
-    onSuccess: (data) => {
+    onSuccess: (data: { success: boolean; testId?: string; smtpSent?: boolean; imapReceived?: boolean; deliveryTimeMs?: number; error?: string }) => {
       if (data.success) {
         toast.success(t('emailService.test.success'));
       } else {

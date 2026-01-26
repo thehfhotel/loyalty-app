@@ -1,11 +1,23 @@
-name: Optimized CI/CD Pipeline with Security & Testing
+name: "[DEPRECATED] CI/CD Pipeline v1 (Self-hosted)"
+
+# =============================================================================
+# DEPRECATED: This workflow is kept as a backup/rollback option.
+# The new workflow (deploy-v2.yml) uses GitHub-hosted runners and GHCR.
+# This workflow only triggers manually via workflow_dispatch.
+# =============================================================================
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main]
+  # Disabled automatic triggers - use deploy-v2.yml instead
+  # push:
+  #   branches: [main, develop]
+  # pull_request:
+  #   branches: [main]
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "confirm" to run the legacy pipeline'
+        required: true
+        default: ''
 
 # Workflow-level concurrency: prevent parallel runs on same branch
 # This prevents race conditions when multiple commits push in quick succession
@@ -35,6 +47,8 @@ jobs:
     name: "🚀 Workspace Preparation"
     runs-on: self-hosted
     timeout-minutes: 2
+    # Require manual confirmation to run this deprecated workflow
+    if: github.event.inputs.confirm == 'confirm'
     outputs:
       workspace-ready: ${{ steps.setup-complete.outputs.ready }}
       backend-cache-hit: ${{ steps.backend-cache.outputs.cache-hit }}
@@ -309,6 +323,31 @@ jobs:
 
           echo ""
           echo "=========================================="
+          echo "📋 API Schema Check"
+          echo "=========================================="
+          T_API=$(date +%s)
+          cd backend
+          set +e
+          npm run api:schema 2>&1 | grep -v "Prisma client initialized"
+          API_EXIT=${PIPESTATUS[0]}
+          set -e
+          if [ $API_EXIT -ne 0 ]; then
+            echo "❌ API schema generation failed"
+            exit 1
+          fi
+          # Check if schema changed (uncommitted changes indicate potential mismatch)
+          if [ -n "$(git diff --name-only api-schema.json 2>/dev/null)" ]; then
+            echo "⚠️ API schema has changed. Review the diff below:"
+            git diff api-schema.json
+            echo ""
+            echo "If this change is intentional, commit the updated api-schema.json"
+          fi
+          echo "✅ API schema check passed"
+          cd ..
+          show_time "API Schema" $T_API
+
+          echo ""
+          echo "=========================================="
           echo "🌐 Translation key validation"
           echo "=========================================="
           T_TRANS=$(date +%s)
@@ -576,6 +615,11 @@ jobs:
         run: |
           echo "🧪 Running database schema tests..."
           npm run test:db -- --passWithNoTests
+
+          echo ""
+          echo "🔍 Running SQL query validation (validates all raw SQL against real database)..."
+          npm run test:sql
+          echo "✅ SQL validation passed - all queries are syntactically correct"
 
           echo ""
           echo "🗄️ Running database migration validation..."
@@ -909,6 +953,8 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET || 'test-google-secret-not-configured' }}
           LINE_CHANNEL_ID: ${{ secrets.LINE_CHANNEL_ID || 'test-line-not-configured' }}
           LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET || 'test-line-secret-not-configured' }}
+          SLIPOK_API_KEY: ${{ secrets.SLIPOK_API_KEY || 'test-slipok-not-configured' }}
+          SLIPOK_BRANCH_ID: ${{ secrets.SLIPOK_BRANCH_ID || 'test-branch-not-configured' }}
         run: |
           echo "🚀 Starting isolated application stack for E2E tests..."
 
@@ -1654,6 +1700,12 @@ jobs:
             echo "📥 Updating existing repository..."
             cd "$DEPLOY_DIR"
 
+            # Add safe directory to avoid ownership issues
+            git config --global --add safe.directory "$DEPLOY_DIR" 2>/dev/null || true
+
+            # Configure HTTPS remote with token (avoids SSH host key issues)
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+
             # Show current state
             BEFORE_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
             echo "📍 Current commit: $BEFORE_COMMIT"
@@ -1692,6 +1744,68 @@ jobs:
           echo "✅ Code deployment completed"
           echo "   Deployed SHA: $AFTER_COMMIT"
 
+      - name: "🔍 Verify migration files integrity"
+        run: |
+          echo "🔍 Verifying migration files after checkout..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
+          cd "$DEPLOY_DIR"
+
+          # Check migrations directory exists
+          if [ ! -d "backend/prisma/migrations" ]; then
+            echo "❌ ERROR: backend/prisma/migrations directory not found"
+            ls -la backend/prisma/ 2>/dev/null || echo "backend/prisma/ directory does not exist"
+            exit 1
+          fi
+
+          # List migration directories
+          echo "📁 Migration directories:"
+          ls -la backend/prisma/migrations/
+
+          # Count migration directories (exclude migration_lock.toml)
+          MIGRATION_COUNT=$(find backend/prisma/migrations -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+          echo "📊 Found $MIGRATION_COUNT migration directories"
+
+          if [ "$MIGRATION_COUNT" -eq 0 ]; then
+            echo "⚠️ No migrations found (fresh database expected)"
+          else
+            # Verify each migration has a migration.sql file
+            echo "🔍 Verifying each migration has migration.sql file..."
+            MISSING_FILES=0
+            for dir in backend/prisma/migrations/*/; do
+              if [ -d "$dir" ]; then
+                DIR_NAME=$(basename "$dir")
+                MIGRATION_FILE="${dir}migration.sql"
+
+                if [ ! -f "$MIGRATION_FILE" ]; then
+                  echo "❌ Missing: $MIGRATION_FILE"
+                  MISSING_FILES=$((MISSING_FILES + 1))
+                elif [ ! -r "$MIGRATION_FILE" ]; then
+                  echo "❌ Not readable: $MIGRATION_FILE"
+                  MISSING_FILES=$((MISSING_FILES + 1))
+                elif [ ! -s "$MIGRATION_FILE" ]; then
+                  echo "❌ Empty file: $MIGRATION_FILE"
+                  MISSING_FILES=$((MISSING_FILES + 1))
+                else
+                  FILE_SIZE=$(stat -c%s "$MIGRATION_FILE" 2>/dev/null || stat -f%z "$MIGRATION_FILE" 2>/dev/null)
+                  echo "✅ $DIR_NAME/migration.sql (${FILE_SIZE} bytes)"
+                fi
+              fi
+            done
+
+            if [ "$MISSING_FILES" -gt 0 ]; then
+              echo "❌ ERROR: $MISSING_FILES migration files missing, unreadable, or empty"
+              echo "📁 Full directory tree:"
+              find backend/prisma/migrations -type f -name "*.sql" -exec ls -la {} \;
+              exit 1
+            fi
+
+            echo "✅ All $MIGRATION_COUNT migration files verified and readable"
+          fi
+
+          # Force filesystem sync to ensure files are flushed to disk
+          sync
+          echo "✅ Filesystem synced"
+
       - name: "🔧 Environment configuration"
         env:
           # Secrets from 'development' environment (no DEV_ prefix needed)
@@ -1709,6 +1823,8 @@ jobs:
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           IMAP_HOST: ${{ vars.IMAP_HOST }}
           IMAP_PORT: ${{ vars.IMAP_PORT }}
+          SLIPOK_API_KEY: ${{ secrets.SLIPOK_API_KEY }}
+          SLIPOK_BRANCH_ID: ${{ secrets.SLIPOK_BRANCH_ID }}
         run: |
           echo "🔧 Configuring development environment..."
 
@@ -1720,10 +1836,10 @@ jobs:
           # Development Environment - Auto-generated by GitHub Actions
           NODE_ENV=development
 
-          # URLs (Development) - use deployed dev domain for CORS consistency
-          FRONTEND_URL=https://loyalty-dev.saichon.com
-          BACKEND_URL=https://loyalty-dev.saichon.com/api
-          VITE_API_URL=/api
+          # URLs (Development) - from GitHub environment variables
+          FRONTEND_URL=${{ vars.FRONTEND_URL }}
+          BACKEND_URL=${{ vars.BACKEND_URL }}
+          VITE_API_URL=${{ vars.VITE_API_URL }}
           VITE_TRANSLATION_ENABLED=false
 
           # Internal ports
@@ -1732,7 +1848,7 @@ jobs:
 
           # Database & Redis
           DATABASE_URL=postgresql://loyalty_dev:loyalty_dev_pass@postgres:5432/loyalty_dev_db
-          REDIS_URL=redis://redis:6379
+          REDIS_URL=${{ vars.REDIS_URL }}
 
           # Security
           JWT_SECRET=${JWT_SECRET}
@@ -1742,10 +1858,10 @@ jobs:
           # OAuth
           GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
           GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-          GOOGLE_CALLBACK_URL=https://loyalty-dev.saichon.com/api/oauth/google/callback
+          GOOGLE_CALLBACK_URL=${{ vars.GOOGLE_CALLBACK_URL }}
           LINE_CHANNEL_ID=${LINE_CHANNEL_ID}
           LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET}
-          LINE_CALLBACK_URL=https://loyalty-dev.saichon.com/api/oauth/line/callback
+          LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
 
           # Email Service (SMTP)
           SMTP_HOST=${SMTP_HOST}
@@ -1760,12 +1876,16 @@ jobs:
           IMAP_USER=${SMTP_USER}
           IMAP_PASS=${SMTP_PASS}
 
+          # SlipOK API (Slip Verification)
+          SLIPOK_API_KEY=${SLIPOK_API_KEY}
+          SLIPOK_BRANCH_ID=${SLIPOK_BRANCH_ID}
+
           # Azure Translation
           TRANSLATION_FEATURE_ENABLED=false
 
           # Development settings
           LOG_LEVEL=debug
-          CORS_ORIGINS=http://localhost:3000,http://localhost:5001,http://127.0.0.1:3000,http://127.0.0.1:5001,https://loyalty-dev.saichon.com
+          CORS_ORIGINS=${{ vars.CORS_ORIGINS }}
 
           # Admin credentials (development only)
           LOYALTY_USERNAME=admin@dev.local
@@ -1824,6 +1944,35 @@ jobs:
 
           echo "✅ Port check complete"
 
+      - name: "🔧 Fix file permissions for volume mounts"
+        run: |
+          echo "🔧 Fixing file permissions for volume mounts..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
+          cd "$DEPLOY_DIR"
+
+          # Clear and recreate Prisma generated directory to avoid permission conflicts
+          # When volume is mounted, files owned by different users cause EACCES errors
+          echo "🧹 Clearing Prisma generated directory..."
+
+          # First try to remove with docker (same user context as will create new files)
+          docker run --rm -v "$DEPLOY_DIR/backend:/backend" alpine:latest \
+            sh -c "rm -rf /backend/src/generated/prisma && mkdir -p /backend/src/generated/prisma && chmod 777 /backend/src/generated/prisma" \
+            2>/dev/null || true
+
+          # Fallback: try with sudo if docker approach didn't work
+          if [ -d "backend/src/generated/prisma" ]; then
+            rm -rf backend/src/generated/prisma/* 2>/dev/null || sudo rm -rf backend/src/generated/prisma/* 2>/dev/null || true
+          fi
+
+          # Ensure the directory exists and is writable by all (container runs as different user)
+          mkdir -p backend/src/generated/prisma
+          chmod 777 backend/src/generated/prisma 2>/dev/null || true
+
+          # Ensure backend directory is writable
+          chmod -R u+w backend/ 2>/dev/null || true
+
+          echo "✅ File permissions fixed"
+
       - name: "🐳 Deploy development services"
         run: |
           echo "🐳 Deploying development services on port 5001..."
@@ -1835,10 +1984,76 @@ jobs:
           echo "🏗️ Building and starting development services..."
           docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
-          echo "⏳ Waiting for services to start..."
-          sleep 15
+          echo "⏳ Waiting for backend container to be running..."
+          for i in {1..60}; do
+            BACKEND_STATE=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml ps backend --format '{{.State}}' 2>/dev/null || echo "not_found")
+            if [ "$BACKEND_STATE" = "running" ]; then
+              echo "✅ Backend container is running"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "⚠️ Backend container state after 60s: $BACKEND_STATE"
+              docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
+            fi
+            sleep 1
+          done
 
           echo "✅ Development services deployed"
+
+      - name: "🔍 Verify files inside container"
+        run: |
+          echo "🔍 Verifying migration files are visible inside backend container..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
+          cd "$DEPLOY_DIR"
+
+          # Check if backend container is running
+          if ! docker compose -f docker-compose.yml -f docker-compose.dev.yml ps backend --format '{{.State}}' | grep -q "running"; then
+            echo "❌ ERROR: Backend container is not running"
+            docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
+            docker compose -f docker-compose.yml -f docker-compose.dev.yml logs --tail=30 backend
+            exit 1
+          fi
+
+          # Verify migration files are visible inside container
+          echo "📁 Checking migration files inside container..."
+          CONTAINER_MIGRATIONS=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+            find prisma/migrations -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l || echo "0")
+
+          if [ "$CONTAINER_MIGRATIONS" -eq 0 ]; then
+            echo "❌ ERROR: No migration directories visible inside container"
+            echo "📁 Container prisma directory contents:"
+            docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend ls -la prisma/ || true
+            echo "📁 Host prisma directory contents:"
+            ls -la backend/prisma/migrations/
+            exit 1
+          fi
+
+          echo "✅ Found $CONTAINER_MIGRATIONS migration directories inside container"
+
+          # Verify specific migration files are readable inside container
+          echo "🔍 Verifying migration.sql files are readable inside container..."
+          MISSING_IN_CONTAINER=0
+          for dir in backend/prisma/migrations/*/; do
+            if [ -d "$dir" ]; then
+              DIR_NAME=$(basename "$dir")
+              MIGRATION_FILE="prisma/migrations/${DIR_NAME}/migration.sql"
+
+              if ! docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+                   test -f "$MIGRATION_FILE" -a -r "$MIGRATION_FILE" 2>/dev/null; then
+                echo "❌ Not accessible in container: $MIGRATION_FILE"
+                MISSING_IN_CONTAINER=$((MISSING_IN_CONTAINER + 1))
+              fi
+            fi
+          done
+
+          if [ "$MISSING_IN_CONTAINER" -gt 0 ]; then
+            echo "❌ ERROR: $MISSING_IN_CONTAINER migration files not accessible inside container"
+            echo "📁 Container migration directory:"
+            docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend ls -laR prisma/migrations/ || true
+            exit 1
+          fi
+
+          echo "✅ All migration files verified accessible inside container"
 
       - name: "🗄️ Database migration"
         run: |
@@ -2027,6 +2242,50 @@ jobs:
           echo "✅ Development deployment completed successfully!"
           echo "🌐 Development URL: http://localhost:5001"
 
+      - name: "🔒 Verify deployment integrity"
+        run: |
+          echo "🔒 Verifying deployment integrity..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-develop}"
+          cd "$DEPLOY_DIR"
+
+          # 1. Verify no pending migrations
+          echo "1️⃣ Checking migration status..."
+          MIGRATION_STATUS=$(docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+            npx prisma migrate status 2>&1 || true)
+
+          if echo "$MIGRATION_STATUS" | grep -q "not yet been applied"; then
+            echo "❌ ERROR: Pending migrations detected after deployment"
+            echo "$MIGRATION_STATUS"
+            exit 1
+          fi
+          echo "✅ No pending migrations"
+
+          # 2. Verify Prisma schema is in sync
+          echo "2️⃣ Validating Prisma schema..."
+          if ! docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend \
+               npx prisma validate 2>/dev/null; then
+            echo "❌ ERROR: Prisma schema validation failed"
+            exit 1
+          fi
+          echo "✅ Prisma schema valid"
+
+          # 3. Verify backend can query database
+          echo "3️⃣ Testing database connectivity from backend..."
+          HEALTH_RESPONSE=$(curl -sf --max-time 10 http://localhost:5001/api/health 2>/dev/null || echo '{"status":"error"}')
+          DB_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.services.database // "unknown"')
+          # Accept both "connected" and "healthy" as valid states
+          if [ "$DB_STATUS" != "connected" ] && [ "$DB_STATUS" != "healthy" ]; then
+            echo "❌ ERROR: Database not connected. Status: $DB_STATUS"
+            echo "Full health response: $HEALTH_RESPONSE"
+            exit 1
+          fi
+          echo "✅ Database connectivity verified (status: $DB_STATUS)"
+
+          echo ""
+          echo "=============================="
+          echo "✅ Deployment integrity verified"
+          echo "=============================="
+
       - name: "🧹 Cleanup development env files"
         if: always()
         run: |
@@ -2207,6 +2466,68 @@ jobs:
           echo "   Before: $BEFORE_COMMIT"
           echo "   Deployed SHA: $AFTER_COMMIT"
 
+      - name: "🔍 Verify migration files integrity (production)"
+        run: |
+          echo "🔍 Verifying migration files after checkout..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
+          cd "$DEPLOY_DIR"
+
+          # Check migrations directory exists
+          if [ ! -d "backend/prisma/migrations" ]; then
+            echo "❌ ERROR: backend/prisma/migrations directory not found"
+            ls -la backend/prisma/ 2>/dev/null || echo "backend/prisma/ directory does not exist"
+            exit 1
+          fi
+
+          # List migration directories
+          echo "📁 Migration directories:"
+          ls -la backend/prisma/migrations/
+
+          # Count migration directories (exclude migration_lock.toml)
+          MIGRATION_COUNT=$(find backend/prisma/migrations -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+          echo "📊 Found $MIGRATION_COUNT migration directories"
+
+          if [ "$MIGRATION_COUNT" -eq 0 ]; then
+            echo "⚠️ No migrations found (fresh database expected)"
+          else
+            # Verify each migration has a migration.sql file
+            echo "🔍 Verifying each migration has migration.sql file..."
+            MISSING_FILES=0
+            for dir in backend/prisma/migrations/*/; do
+              if [ -d "$dir" ]; then
+                DIR_NAME=$(basename "$dir")
+                MIGRATION_FILE="${dir}migration.sql"
+
+                if [ ! -f "$MIGRATION_FILE" ]; then
+                  echo "❌ Missing: $MIGRATION_FILE"
+                  MISSING_FILES=$((MISSING_FILES + 1))
+                elif [ ! -r "$MIGRATION_FILE" ]; then
+                  echo "❌ Not readable: $MIGRATION_FILE"
+                  MISSING_FILES=$((MISSING_FILES + 1))
+                elif [ ! -s "$MIGRATION_FILE" ]; then
+                  echo "❌ Empty file: $MIGRATION_FILE"
+                  MISSING_FILES=$((MISSING_FILES + 1))
+                else
+                  FILE_SIZE=$(stat -c%s "$MIGRATION_FILE" 2>/dev/null || stat -f%z "$MIGRATION_FILE" 2>/dev/null)
+                  echo "✅ $DIR_NAME/migration.sql (${FILE_SIZE} bytes)"
+                fi
+              fi
+            done
+
+            if [ "$MISSING_FILES" -gt 0 ]; then
+              echo "❌ ERROR: $MISSING_FILES migration files missing, unreadable, or empty"
+              echo "📁 Full directory tree:"
+              find backend/prisma/migrations -type f -name "*.sql" -exec ls -la {} \;
+              exit 1
+            fi
+
+            echo "✅ All $MIGRATION_COUNT migration files verified and readable"
+          fi
+
+          # Force filesystem sync to ensure files are flushed to disk
+          sync
+          echo "✅ Filesystem synced"
+
       - name: "⚡ Setup Node.js"
         uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6
         with:
@@ -2313,6 +2634,9 @@ jobs:
           IMAP_PORT=${{ vars.IMAP_PORT }}
           IMAP_USER=${{ secrets.SMTP_USER }}
           IMAP_PASS=${{ secrets.SMTP_PASS }}
+
+          SLIPOK_API_KEY=${{ secrets.SLIPOK_API_KEY }}
+          SLIPOK_BRANCH_ID=${{ secrets.SLIPOK_BRANCH_ID }}
 
           LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
           LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
@@ -2485,7 +2809,62 @@ jobs:
           docker compose ps
           echo "📝 Backend startup logs (last 10 lines):"
           docker compose logs --tail=10 backend 2>/dev/null || echo "No backend logs yet"
-      
+
+      - name: "🔍 Verify files inside container (production)"
+        run: |
+          echo "🔍 Verifying migration files are visible inside backend container..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
+          cd "$DEPLOY_DIR"
+
+          # Check if backend container is running
+          if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml ps backend --format '{{.State}}' | grep -q "running"; then
+            echo "❌ ERROR: Backend container is not running"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=30 backend
+            exit 1
+          fi
+
+          # Verify migration files are visible inside container
+          echo "📁 Checking migration files inside container..."
+          CONTAINER_MIGRATIONS=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend \
+            find prisma/migrations -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l || echo "0")
+
+          if [ "$CONTAINER_MIGRATIONS" -eq 0 ]; then
+            echo "❌ ERROR: No migration directories visible inside container"
+            echo "📁 Container prisma directory contents:"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend ls -la prisma/ || true
+            echo "📁 Host prisma directory contents:"
+            ls -la backend/prisma/migrations/
+            exit 1
+          fi
+
+          echo "✅ Found $CONTAINER_MIGRATIONS migration directories inside container"
+
+          # Verify specific migration files are readable inside container
+          echo "🔍 Verifying migration.sql files are readable inside container..."
+          MISSING_IN_CONTAINER=0
+          for dir in backend/prisma/migrations/*/; do
+            if [ -d "$dir" ]; then
+              DIR_NAME=$(basename "$dir")
+              MIGRATION_FILE="prisma/migrations/${DIR_NAME}/migration.sql"
+
+              if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend \
+                   test -f "$MIGRATION_FILE" -a -r "$MIGRATION_FILE" 2>/dev/null; then
+                echo "❌ Not accessible in container: $MIGRATION_FILE"
+                MISSING_IN_CONTAINER=$((MISSING_IN_CONTAINER + 1))
+              fi
+            fi
+          done
+
+          if [ "$MISSING_IN_CONTAINER" -gt 0 ]; then
+            echo "❌ ERROR: $MISSING_IN_CONTAINER migration files not accessible inside container"
+            echo "📁 Container migration directory:"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend ls -laR prisma/migrations/ || true
+            exit 1
+          fi
+
+          echo "✅ All migration files verified accessible inside container"
+
       - name: "🗃️ Database migration (container context)"
         run: |
           echo "🗃️ Waiting for backend migrations to complete..."
@@ -2746,6 +3125,50 @@ jobs:
               echo "   (Could not determine status - this is non-blocking)"
               ;;
           esac
+
+      - name: "🔒 Verify deployment integrity (production)"
+        run: |
+          echo "🔒 Verifying deployment integrity..."
+          DEPLOY_DIR="${DEPLOY_PATH:-/home/nut/loyalty-app-production}"
+          cd "$DEPLOY_DIR"
+
+          # 1. Verify no pending migrations
+          echo "1️⃣ Checking migration status..."
+          MIGRATION_STATUS=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend \
+            npx prisma migrate status 2>&1 || true)
+
+          if echo "$MIGRATION_STATUS" | grep -q "not yet been applied"; then
+            echo "❌ ERROR: Pending migrations detected after deployment"
+            echo "$MIGRATION_STATUS"
+            exit 1
+          fi
+          echo "✅ No pending migrations"
+
+          # 2. Verify Prisma schema is in sync
+          echo "2️⃣ Validating Prisma schema..."
+          if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T backend \
+               npx prisma validate 2>/dev/null; then
+            echo "❌ ERROR: Prisma schema validation failed"
+            exit 1
+          fi
+          echo "✅ Prisma schema valid"
+
+          # 3. Verify backend can query database
+          echo "3️⃣ Testing database connectivity from backend..."
+          HEALTH_RESPONSE=$(docker compose exec -T backend curl -sf --max-time 10 http://localhost:4000/api/health 2>/dev/null || echo '{"status":"error"}')
+          DB_STATUS=$(echo "$HEALTH_RESPONSE" | jq -r '.services.database // "unknown"')
+          # Accept both "connected" and "healthy" as valid states
+          if [ "$DB_STATUS" != "connected" ] && [ "$DB_STATUS" != "healthy" ]; then
+            echo "❌ ERROR: Database not connected. Status: $DB_STATUS"
+            echo "Full health response: $HEALTH_RESPONSE"
+            exit 1
+          fi
+          echo "✅ Database connectivity verified (status: $DB_STATUS)"
+
+          echo ""
+          echo "=============================="
+          echo "✅ Production deployment integrity verified"
+          echo "=============================="
 
   # =============================================================================
   # PHASE 4: POST-DEPLOYMENT MONITORING & CLEANUP

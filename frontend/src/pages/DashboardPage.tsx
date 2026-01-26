@@ -548,6 +548,33 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 </Link>
+
+                {/* Booking Management Card */}
+                <Link
+                  to="/admin/booking-management"
+                  className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow"
+                  data-testid="nav-admin-booking-management"
+                >
+                  <div className="p-5">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <div className="h-6 w-6 bg-rose-500 rounded flex items-center justify-center">
+                          <span className="text-xs text-white font-bold">📋</span>
+                        </div>
+                      </div>
+                      <div className="ml-5 w-0 flex-1">
+                        <dl>
+                          <dt className="text-lg font-semibold text-gray-900 truncate">
+                            {t('admin.booking.bookingManagement.menuTitle')}
+                          </dt>
+                          <dd className="mt-1 text-sm font-medium text-gray-500">
+                            {t('admin.booking.bookingManagement.menuDescription')}
+                          </dd>
+                        </dl>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
               </div>
             </div>
           )}

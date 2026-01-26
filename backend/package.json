@@ -16,6 +16,7 @@
     "test:coverage": "jest --coverage",
     "test:coverage:html": "jest --coverage && echo '\n🎯 Coverage report generated at backend/coverage/index.html'",
     "test:db": "node scripts/run-jest-with-pattern.cjs database",
+    "test:sql": "jest --testPathPatterns=sql-validation --runInBand --forceExit",
     "test:allure": "jest --coverage && allure generate allure-results --clean -o allure-report && allure open allure-report",
     "allure:generate": "allure generate allure-results --clean -o allure-report",
     "allure:open": "allure open allure-report",
@@ -25,6 +26,8 @@
     "security:audit": "npm audit --audit-level=moderate",
     "security:scan": "npm run lint:security && npm run security:audit",
     "typecheck": "tsc --noEmit",
+    "api:schema": "DATABASE_URL=${DATABASE_URL:-postgresql://dummy:dummy@localhost:5432/dummy} npx tsx scripts/generate-api-schema.ts",
+    "api:check": "npm run api:schema && git diff --exit-code api-schema.json || (echo 'API schema changed! Review changes above.' && exit 1)",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
@@ -81,8 +84,8 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@babel/core": "^7.28.5",
-    "@babel/preset-env": "^7.28.5",
+    "@babel/core": "^7.28.6",
+    "@babel/preset-env": "^7.28.6",
     "@faker-js/faker": "^10.2.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
@@ -92,28 +95,30 @@
     "@types/jsonwebtoken": "^9.0.5",
     "@types/multer": "^2.0.0",
     "@types/node": "^24.10.0",
-    "@types/nodemailer": "^7.0.4",
+    "@types/nodemailer": "^7.0.5",
     "@types/passport": "^1.0.16",
     "@types/passport-google-oauth20": "^2.0.17",
     "@types/pg": "^8.16.0",
     "@types/supertest": "^6.0.3",
-    "@typescript-eslint/eslint-plugin": "^8.51.0",
-    "@typescript-eslint/parser": "^8.51.0",
+    "@typescript-eslint/eslint-plugin": "^8.53.1",
+    "@typescript-eslint/parser": "^8.53.1",
     "allure-commandline": "^2.36.0",
-    "allure-jest": "^3.4.2",
+    "allure-jest": "^3.4.5",
     "eslint": "^9.39.2",
     "eslint-plugin-security": "^3.0.1",
     "jest": "^30.2.0",
     "jest-mock-extended": "^4.0.0",
     "prisma": "^7.2.0",
-    "supertest": "^7.1.4",
+    "supertest": "^7.2.2",
     "ts-jest": "^29.1.1",
     "tsx": "^4.6.2",
     "typescript": "^5.3.2",
-    "typescript-eslint": "^8.51.0"
+    "typescript-eslint": "^8.53.1",
+    "zod-to-json-schema": "^3.25.1"
   },
   "overrides": {
     "glob": "^11.0.3",
-    "js-yaml": "^4.1.1"
+    "js-yaml": "^4.1.1",
+    "hono": "^4.11.4"
   }
 }

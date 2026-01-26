@@ -384,6 +384,119 @@ describe('CouponCard', () => {
     });
   });
 
+  describe('Null Field Handling', () => {
+    it('should handle null description gracefully', () => {
+      const couponWithNullDesc = { ...mockCoupon, description: undefined };
+
+      const { container } = render(<CouponCard coupon={couponWithNullDesc} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      // Required fields should still render
+      expect(screen.getByText('20% Off Your Purchase')).toBeInTheDocument();
+      expect(screen.getByText('SAVE20')).toBeInTheDocument();
+      // Description should not appear
+      expect(screen.queryByText('Get 20% discount on your next purchase')).not.toBeInTheDocument();
+    });
+
+    it('should handle null value gracefully', () => {
+      const couponWithNullValue = { ...mockCoupon, value: undefined };
+
+      const { container } = render(<CouponCard coupon={couponWithNullValue} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      expect(screen.getByText('20% Off Your Purchase')).toBeInTheDocument();
+    });
+
+    it('should handle null minimumSpend gracefully', () => {
+      vi.mocked(couponService.formatMinimumSpend).mockReturnValue(null);
+      const couponWithNullMinSpend = { ...mockCoupon, minimumSpend: undefined };
+
+      const { container } = render(<CouponCard coupon={couponWithNullMinSpend} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      // Min spend text should not appear
+      expect(screen.queryByText(/Min. spend/)).not.toBeInTheDocument();
+    });
+
+    it('should handle null maximumDiscount gracefully', () => {
+      const couponWithNullMaxDiscount = { ...mockCoupon, maximumDiscount: undefined };
+
+      const { container } = render(<CouponCard coupon={couponWithNullMaxDiscount} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      expect(screen.getByText('20% Off Your Purchase')).toBeInTheDocument();
+    });
+
+    it('should handle null termsAndConditions gracefully', () => {
+      const couponWithNullTerms = { ...mockCoupon, termsAndConditions: undefined };
+
+      const { container } = render(<CouponCard coupon={couponWithNullTerms} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      expect(screen.getByText('20% Off Your Purchase')).toBeInTheDocument();
+    });
+
+    it('should handle null expiresAt gracefully', () => {
+      vi.mocked(couponService.getExpiryDate).mockReturnValue(null);
+      vi.mocked(dateFormatter.formatExpiryDateWithRelative).mockReturnValue(null);
+
+      const couponWithNullExpiry = {
+        ...mockCoupon,
+        expiresAt: undefined,
+        couponExpiresAt: undefined,
+        effectiveExpiry: undefined,
+      };
+
+      const { container } = render(<CouponCard coupon={couponWithNullExpiry} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      expect(screen.getByText('SAVE20')).toBeInTheDocument();
+    });
+
+    it('should handle coupon with all optional fields null', () => {
+      vi.mocked(couponService.getExpiryDate).mockReturnValue(null);
+      vi.mocked(dateFormatter.formatExpiryDateWithRelative).mockReturnValue(null);
+      vi.mocked(couponService.formatMinimumSpend).mockReturnValue(null);
+
+      const couponWithAllNulls: UserActiveCoupon = {
+        userCouponId: 'uc-1',
+        userId: 'user-123',
+        status: 'available',
+        qrCode: 'QR123456',
+        assignedAt: '2024-01-01T00:00:00Z',
+        couponId: 'coupon-1',
+        code: 'BASIC',
+        name: 'Basic Coupon',
+        type: 'percentage',
+        currency: 'THB',
+        expiringSoon: false,
+        // All optional fields explicitly undefined
+        description: undefined,
+        termsAndConditions: undefined,
+        value: undefined,
+        minimumSpend: undefined,
+        maximumDiscount: undefined,
+        expiresAt: undefined,
+        couponExpiresAt: undefined,
+        effectiveExpiry: undefined,
+      };
+
+      const { container } = render(<CouponCard coupon={couponWithAllNulls} />);
+
+      // Should not crash
+      expect(container).toBeTruthy();
+      // Required fields should still render
+      expect(screen.getByText('Basic Coupon')).toBeInTheDocument();
+      expect(screen.getByText('BASIC')).toBeInTheDocument();
+    });
+  });
+
   describe('Edge Cases', () => {
     it('should handle coupon without description', () => {
       const couponNoDesc = { ...mockCoupon, description: undefined };

@@ -63,7 +63,7 @@ const UserManagement: React.FC = () => {
   // Auto-search on debounced term change or page change
   useEffect(() => {
     // Skip if still in initial loading
-    if (initialLoading) return;
+    if (initialLoading) {return;}
 
     const searchUsers = async () => {
       setIsSearching(true);
