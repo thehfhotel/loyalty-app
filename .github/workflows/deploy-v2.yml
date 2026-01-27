@@ -255,7 +255,7 @@ jobs:
 
       - name: Run unit tests
         working-directory: ./frontend
-        run: npm run test -- --coverage --run
+        run: npm run test -- --run --coverage --pool=forks --poolOptions.forks.exitOnFinish=true
         env:
           NODE_ENV: test
 
