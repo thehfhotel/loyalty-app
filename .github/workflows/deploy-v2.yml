@@ -255,9 +255,10 @@ jobs:
 
       - name: Run unit tests
         working-directory: ./frontend
-        run: npm run test:coverage
+        run: npm run test
         env:
           NODE_ENV: test
+          CI: true
 
   test-backend-integration:
     name: "Backend Integration Tests"
