@@ -154,12 +154,23 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Restore backend dependencies
+        uses: actions/cache@v4
+        with:
+          path: backend/node_modules
+          key: ${{ needs.prepare.outputs.backend-cache-key }}
+          fail-on-cache-miss: true
+
       - name: Restore frontend dependencies
         uses: actions/cache@v4
         with:
           path: frontend/node_modules
           key: ${{ needs.prepare.outputs.frontend-cache-key }}
           fail-on-cache-miss: true
+
+      - name: Generate Prisma client
+        working-directory: ./backend
+        run: npm run db:generate
 
       - name: TypeScript check
         working-directory: ./frontend
@@ -301,7 +312,7 @@ jobs:
 
       - name: Run database migrations
         working-directory: ./backend
-        run: npm run db:migrate
+        run: npm run db:migrate:deploy
         env:
           DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
 
