@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, coverageConfigDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
@@ -9,6 +9,11 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     css: true,
+    // CI-specific settings
+    testTimeout: 10000,
+    hookTimeout: 10000,
+    teardownTimeout: 1000,
+    pool: 'forks',
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
@@ -18,7 +23,8 @@ export default defineConfig({
         '**/*.spec.{ts,tsx}',
         '**/*.test.{ts,tsx}',
         '**/types.ts',
-        '**/*.d.ts'
+        '**/*.d.ts',
+        ...coverageConfigDefaults.exclude
       ]
     }
   },
