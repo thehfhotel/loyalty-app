@@ -97,17 +97,162 @@ jobs:
           echo "Prisma client generated successfully"
 
   # =============================================================================
-  # PHASE 1: VALIDATION & TESTING
+  # PHASE 1: PARALLEL VALIDATION & TESTING
   # =============================================================================
 
-  validate-and-test:
-    name: "Validate & Test"
+  lint-backend:
+    name: "Lint Backend"
     runs-on: ubuntu-latest
     needs: prepare
-    timeout-minutes: 25
-    permissions:
-      contents: read
-      pull-requests: write
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore backend dependencies
+        uses: actions/cache@v4
+        with:
+          path: backend/node_modules
+          key: ${{ needs.prepare.outputs.backend-cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Generate Prisma client
+        working-directory: ./backend
+        run: npm run db:generate
+
+      - name: TypeScript check
+        working-directory: ./backend
+        run: npm run typecheck
+
+      - name: ESLint
+        working-directory: ./backend
+        run: npm run lint:security
+
+      - name: npm audit
+        working-directory: ./backend
+        run: npm audit --audit-level=moderate
+        continue-on-error: true  # Prisma has transitive lodash vulnerability in dev deps
+
+  lint-frontend:
+    name: "Lint Frontend"
+    runs-on: ubuntu-latest
+    needs: prepare
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore frontend dependencies
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ needs.prepare.outputs.frontend-cache-key }}
+          fail-on-cache-miss: true
+
+      - name: TypeScript check
+        working-directory: ./frontend
+        run: npm run typecheck
+
+      - name: ESLint
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: npm audit
+        working-directory: ./frontend
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+  test-backend-unit:
+    name: "Backend Unit Tests"
+    runs-on: ubuntu-latest
+    needs: prepare
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore backend dependencies
+        uses: actions/cache@v4
+        with:
+          path: backend/node_modules
+          key: ${{ needs.prepare.outputs.backend-cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Generate Prisma client
+        working-directory: ./backend
+        run: npm run db:generate
+
+      - name: Run unit tests
+        working-directory: ./backend
+        run: npm run test:unit -- --coverage
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-jwt-secret-for-ci
+          JWT_REFRESH_SECRET: test-jwt-refresh-secret-for-ci
+          SESSION_SECRET: test-session-secret-for-ci
+          GOOGLE_CLIENT_ID: test-google-client-id
+          GOOGLE_CLIENT_SECRET: test-google-client-secret
+          GOOGLE_CALLBACK_URL: http://localhost:4000/api/auth/google/callback
+          LINE_CHANNEL_ID: test-line-channel-id
+          LINE_CHANNEL_SECRET: test-line-channel-secret
+          LINE_CALLBACK_URL: http://localhost:4000/api/auth/line/callback
+          FRONTEND_URL: http://localhost:3000
+          LOYALTY_USERNAME: test-loyalty-user
+          LOYALTY_PASSWORD: test-loyalty-pass
+
+  test-frontend-unit:
+    name: "Frontend Unit Tests"
+    runs-on: ubuntu-latest
+    needs: prepare
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore frontend dependencies
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ needs.prepare.outputs.frontend-cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Run unit tests
+        working-directory: ./frontend
+        run: npm run test -- --coverage --run
+        env:
+          NODE_ENV: test
+
+  test-backend-integration:
+    name: "Backend Integration Tests"
+    runs-on: ubuntu-latest
+    needs: prepare
+    timeout-minutes: 15
 
     services:
       postgres:
@@ -134,9 +279,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-    outputs:
-      tests-passed: ${{ steps.test-results.outputs.passed }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -153,88 +295,17 @@ jobs:
           key: ${{ needs.prepare.outputs.backend-cache-key }}
           fail-on-cache-miss: true
 
-      - name: Restore frontend dependencies
-        uses: actions/cache@v4
-        with:
-          path: frontend/node_modules
-          key: ${{ needs.prepare.outputs.frontend-cache-key }}
-          fail-on-cache-miss: true
-
       - name: Generate Prisma client
         working-directory: ./backend
         run: npm run db:generate
 
-      # -------------------------------------------------------------------------
-      # TypeScript & Linting
-      # -------------------------------------------------------------------------
-      - name: TypeScript check - Backend
-        working-directory: ./backend
-        run: npm run typecheck
-
-      - name: TypeScript check - Frontend
-        working-directory: ./frontend
-        run: npm run typecheck
-
-      - name: ESLint - Backend
-        working-directory: ./backend
-        run: npm run lint:security
-
-      - name: ESLint - Frontend
-        working-directory: ./frontend
-        run: npm run lint
-
-      # -------------------------------------------------------------------------
-      # Security Audit
-      # -------------------------------------------------------------------------
-      - name: npm audit - Backend
-        working-directory: ./backend
-        run: npm audit --audit-level=moderate
-        continue-on-error: true  # Prisma has transitive lodash vulnerability in dev deps
-
-      - name: npm audit - Frontend
-        working-directory: ./frontend
-        run: npm audit --audit-level=moderate
-        continue-on-error: true
-
-      # -------------------------------------------------------------------------
-      # Unit Tests
-      # -------------------------------------------------------------------------
-      - name: Run backend unit tests
-        working-directory: ./backend
-        run: npm run test:unit -- --coverage
-        env:
-          NODE_ENV: test
-          DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
-          REDIS_URL: redis://localhost:6383
-          JWT_SECRET: test-jwt-secret-for-ci
-          JWT_REFRESH_SECRET: test-jwt-refresh-secret-for-ci
-          SESSION_SECRET: test-session-secret-for-ci
-          GOOGLE_CLIENT_ID: test-google-client-id
-          GOOGLE_CLIENT_SECRET: test-google-client-secret
-          GOOGLE_CALLBACK_URL: http://localhost:4000/api/auth/google/callback
-          LINE_CHANNEL_ID: test-line-channel-id
-          LINE_CHANNEL_SECRET: test-line-channel-secret
-          LINE_CALLBACK_URL: http://localhost:4000/api/auth/line/callback
-          FRONTEND_URL: http://localhost:3000
-          LOYALTY_USERNAME: test-loyalty-user
-          LOYALTY_PASSWORD: test-loyalty-pass
-
-      - name: Run frontend unit tests
-        working-directory: ./frontend
-        run: npm run test -- --coverage --run
-        env:
-          NODE_ENV: test
-
-      # -------------------------------------------------------------------------
-      # Integration Tests
-      # -------------------------------------------------------------------------
       - name: Run database migrations
         working-directory: ./backend
         run: npm run db:migrate
         env:
           DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
 
-      - name: Run backend integration tests
+      - name: Run integration tests
         working-directory: ./backend
         run: npm run test:integration
         env:
@@ -254,16 +325,6 @@ jobs:
           LOYALTY_USERNAME: test-loyalty-user
           LOYALTY_PASSWORD: test-loyalty-pass
 
-      - name: Set test results
-        id: test-results
-        if: always()
-        run: |
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "passed=true" >> $GITHUB_OUTPUT
-          else
-            echo "passed=false" >> $GITHUB_OUTPUT
-          fi
-
   # =============================================================================
   # PHASE 2: BUILD AND PUSH TO GHCR
   # =============================================================================
@@ -271,7 +332,7 @@ jobs:
   build-and-push:
     name: "Build & Push to GHCR"
     runs-on: ubuntu-latest
-    needs: validate-and-test
+    needs: [lint-backend, lint-frontend, test-backend-unit, test-frontend-unit, test-backend-integration]
     if: github.ref == 'refs/heads/main'
     timeout-minutes: 20
     permissions:
