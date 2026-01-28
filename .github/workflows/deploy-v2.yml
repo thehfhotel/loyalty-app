@@ -518,13 +518,13 @@ jobs:
       - name: Start backend container
         run: |
           docker run -d --name backend --network host \
-            -e NODE_ENV=test \
+            -e NODE_ENV=development \
             -e PORT=4202 \
             -e DATABASE_URL=postgresql://loyalty_e2e:loyalty_e2e_pass@localhost:5436/loyalty_e2e_db \
             -e REDIS_URL=redis://localhost:6381 \
-            -e JWT_SECRET=e2e-jwt-secret \
-            -e JWT_REFRESH_SECRET=e2e-jwt-refresh-secret \
-            -e SESSION_SECRET=e2e-session-secret \
+            -e JWT_SECRET=e2e-jwt-secret-for-testing-min-32-chars \
+            -e JWT_REFRESH_SECRET=e2e-jwt-refresh-secret-for-testing-min-32 \
+            -e SESSION_SECRET=e2e-session-secret-for-testing-min-32-chars \
             -e GOOGLE_CLIENT_ID=e2e-google-client-id \
             -e GOOGLE_CLIENT_SECRET=e2e-google-client-secret \
             -e GOOGLE_CALLBACK_URL=http://localhost:4202/api/auth/google/callback \
