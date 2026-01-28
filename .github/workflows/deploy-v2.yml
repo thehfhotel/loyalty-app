@@ -540,7 +540,8 @@ jobs:
       - name: Start frontend container
         run: |
           docker run -d --name frontend \
-            -e VITE_API_URL=http://localhost:4202/api \
+            --add-host=host.docker.internal:host-gateway \
+            -v ${{ github.workspace }}/frontend/nginx.e2e.conf:/etc/nginx/nginx.conf:ro \
             -p 3201:80 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
 
