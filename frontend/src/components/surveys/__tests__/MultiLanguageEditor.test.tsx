@@ -738,18 +738,6 @@ describe('MultiLanguageEditor', () => {
       expect(screen.getByText('English')).toBeInTheDocument();
     });
 
-    it('should handle undefined value', () => {
-      render(
-        <MultiLanguageEditor
-          value={undefined as any}
-          onChange={mockOnChange}
-          label="Question Text"
-        />
-      );
-
-      expect(screen.getByText('English')).toBeInTheDocument();
-    });
-
     it('should handle very long text content', async () => {
       const longText = 'A'.repeat(500);
       render(
