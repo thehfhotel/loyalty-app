@@ -14,7 +14,7 @@ permissions:
 jobs:
   claude-assist:
     name: "🤖 Claude PR Assistant"
-    runs-on: self-hosted
+    runs-on: [self-hosted, deploy]
     permissions:
       contents: write      # For pushing code changes
       pull-requests: write # For PR comments and reactions

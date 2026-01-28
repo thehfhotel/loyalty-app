@@ -16,7 +16,7 @@ permissions:
 jobs:
   claude-issue:
     name: "Claude Issue Assistant"
-    runs-on: self-hosted
+    runs-on: [self-hosted, deploy]
     permissions:
       contents: write       # For branch creation and pushing
       issues: write         # For issue comments and reactions

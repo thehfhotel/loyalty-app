@@ -24,7 +24,7 @@ jobs:
   # =============================================================================
   detect-issues:
     name: "🔍 Detect Issues"
-    runs-on: self-hosted
+    runs-on: [self-hosted, deploy]
     if: "!startsWith(github.event.workflow_run.head_commit.message, '[claude-fix]')"
     outputs:
       has-failures: ${{ steps.check.outputs.has-failures }}
@@ -80,7 +80,7 @@ jobs:
   # =============================================================================
   auto-fix:
     name: "🤖 Claude Auto-Fix"
-    runs-on: self-hosted
+    runs-on: [self-hosted, deploy]
     needs: detect-issues
     if: needs.detect-issues.outputs.should-fix == 'true'
     permissions:
