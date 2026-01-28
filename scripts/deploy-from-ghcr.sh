@@ -22,9 +22,9 @@ set -euo pipefail
 ENVIRONMENT="${1:-production}"
 IMAGE_TAG="${2:-latest}"
 COMMIT_SHA="${3:-main}"
-REPO="jwinut/loyalty-app"
+REPO="thehfhotel/loyalty-app"
 GHCR_REGISTRY="ghcr.io"
-GHCR_USER="jwinut"
+GHCR_USER="thehfhotel"
 
 # Environment-specific settings
 if [ "$ENVIRONMENT" = "development" ]; then

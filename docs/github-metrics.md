@@ -35,7 +35,7 @@ GITHUB_TOKEN=$(gh auth token) node scripts/metrics/actions-metrics.js \
 ### Example output (last 14 days, main, push)
 
 ```
-Repo: jwinut/loyalty-app | Workflow: Optimized CI/CD Pipeline with Security & Testing (#178730198) | Branch: main | Window: last 14 days | Runs analyzed: 192
+Repo: thehfhotel/loyalty-app | Workflow: CI/CD Pipeline v2 (GHCR + GitHub-hosted) | Branch: main | Window: last 14 days | Runs analyzed: 192
 ------------------------------------------------------------
 Change failure rate: 55.7% (73 fail / 58 success, event=push)
 Flaky rate: 0.0% (0 / 190 commits with runs)

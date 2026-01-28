@@ -1224,8 +1224,8 @@ jobs:
           # Link to test reports page (use run_number for direct link)
           echo "## 🔗 View Reports" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📊 [View Allure Report](https://jwinut.github.io/loyalty-app/test-reports/${{ github.run_number }}/)" >> $GITHUB_STEP_SUMMARY
-          echo "📈 [View Coverage Report](https://jwinut.github.io/loyalty-app/test-reports/${{ github.run_number }}/coverage/lcov-report/)" >> $GITHUB_STEP_SUMMARY
+          echo "📊 [View Allure Report](https://thehfhotel.github.io/loyalty-app/test-reports/${{ github.run_number }}/)" >> $GITHUB_STEP_SUMMARY
+          echo "📈 [View Coverage Report](https://thehfhotel.github.io/loyalty-app/test-reports/${{ github.run_number }}/coverage/lcov-report/)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
       - name: "📤 Upload E2E Allure results to GitHub artifacts"

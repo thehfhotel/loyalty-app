@@ -28,7 +28,7 @@ permissions:
 env:
   NODE_VERSION: '24'
   REGISTRY: ghcr.io
-  IMAGE_OWNER: jwinut
+  IMAGE_OWNER: thehfhotel
   IMAGE_REPO: loyalty-app
 
 jobs:
@@ -255,7 +255,7 @@ jobs:
 
       - name: Run unit tests
         working-directory: ./frontend
-        run: npm run test:coverage
+        run: npm run test
         env:
           NODE_ENV: test
           CI: true
@@ -624,7 +624,7 @@ jobs:
             set -euo pipefail
 
             DEPLOY_PATH="/home/nut/loyalty-app-develop"
-            REPO="jwinut/loyalty-app"
+            REPO="thehfhotel/loyalty-app"
             COMPOSE_OVERRIDE="docker-compose.dev.yml"
 
             cd "$DEPLOY_PATH"
@@ -662,7 +662,7 @@ jobs:
             curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/backend/prisma/schema.prisma" -o backend/prisma/schema.prisma
 
             # Login to GHCR
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u jwinut --password-stdin
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u thehfhotel --password-stdin
 
             # Export IMAGE_TAG for docker compose
             export IMAGE_TAG
@@ -725,7 +725,7 @@ jobs:
             set -euo pipefail
 
             DEPLOY_PATH="/home/nut/loyalty-app-production"
-            REPO="jwinut/loyalty-app"
+            REPO="thehfhotel/loyalty-app"
             COMPOSE_OVERRIDE="docker-compose.prod.yml"
 
             cd "$DEPLOY_PATH"
@@ -772,7 +772,7 @@ jobs:
             curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/backend/prisma/schema.prisma" -o backend/prisma/schema.prisma
 
             # Login to GHCR
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u jwinut --password-stdin
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u thehfhotel --password-stdin
 
             # Export IMAGE_TAG for docker compose
             export IMAGE_TAG

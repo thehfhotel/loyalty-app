@@ -255,7 +255,7 @@ If secrets are accidentally committed or leaked:
    brew install bfg  # or download from https://rtyley.github.io/bfg-repo-cleaner/
 
    # Clone fresh repo
-   git clone --mirror https://github.com/jwinut/loyalty-app.git
+   git clone --mirror https://github.com/thehfhotel/loyalty-app.git
 
    # Remove secrets
    cd loyalty-app.git

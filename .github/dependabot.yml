@@ -14,9 +14,9 @@ updates:
       timezone: "Asia/Bangkok"
     open-pull-requests-limit: 1
     reviewers:
-      - "jwinut"
+      - "thehfhotel"
     assignees:
-      - "jwinut"
+      - "thehfhotel"
     commit-message:
       prefix: "chore(backend)"
       include: "scope"
@@ -46,9 +46,9 @@ updates:
       timezone: "Asia/Bangkok"
     open-pull-requests-limit: 1
     reviewers:
-      - "jwinut"
+      - "thehfhotel"
     assignees:
-      - "jwinut"
+      - "thehfhotel"
     commit-message:
       prefix: "chore(frontend)"
       include: "scope"
@@ -76,9 +76,9 @@ updates:
       timezone: "Asia/Bangkok"
     open-pull-requests-limit: 1
     reviewers:
-      - "jwinut"
+      - "thehfhotel"
     assignees:
-      - "jwinut"
+      - "thehfhotel"
     commit-message:
       prefix: "chore(e2e)"
       include: "scope"
@@ -104,9 +104,9 @@ updates:
       timezone: "Asia/Bangkok"
     open-pull-requests-limit: 1
     reviewers:
-      - "jwinut"
+      - "thehfhotel"
     assignees:
-      - "jwinut"
+      - "thehfhotel"
     commit-message:
       prefix: "chore(ci)"
       include: "scope"
@@ -131,9 +131,9 @@ updates:
       timezone: "Asia/Bangkok"
     open-pull-requests-limit: 1
     reviewers:
-      - "jwinut"
+      - "thehfhotel"
     assignees:
-      - "jwinut"
+      - "thehfhotel"
     commit-message:
       prefix: "chore(docker)"
       include: "scope"
@@ -151,9 +151,9 @@ updates:
       timezone: "Asia/Bangkok"
     open-pull-requests-limit: 1
     reviewers:
-      - "jwinut"
+      - "thehfhotel"
     assignees:
-      - "jwinut"
+      - "thehfhotel"
     commit-message:
       prefix: "chore(docker)"
       include: "scope"
