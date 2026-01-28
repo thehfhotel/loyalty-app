@@ -522,8 +522,8 @@ jobs:
             -e PORT=4202 \
             -e DATABASE_URL=postgresql://loyalty_e2e:loyalty_e2e_pass@localhost:5436/loyalty_e2e_db \
             -e REDIS_URL=redis://localhost:6381 \
-            -e JWT_SECRET=e2e-jwt-secret-for-testing-min-32-chars \
-            -e JWT_REFRESH_SECRET=e2e-jwt-refresh-secret-for-testing-min-32 \
+            -e JWT_SECRET=e2e-jwt-secret-for-testing-minimum-64-characters-long-secure-token-string \
+            -e JWT_REFRESH_SECRET=e2e-jwt-refresh-secret-for-testing-minimum-64-characters-long-string \
             -e SESSION_SECRET=e2e-session-secret-for-testing-min-32-chars \
             -e GOOGLE_CLIENT_ID=e2e-google-client-id \
             -e GOOGLE_CLIENT_SECRET=e2e-google-client-secret \
