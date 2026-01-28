@@ -100,38 +100,63 @@ describe('QRCodeModal', () => {
   });
 
   describe('Basic Rendering', () => {
-    it('should render the component', () => {
+    it('should render the component', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for async QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.getByText('Use Coupon')).toBeInTheDocument();
     });
 
-    it('should render without crashing', () => {
+    it('should render without crashing', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for async QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(container).toBeTruthy();
     });
 
-    it('should have proper container structure', () => {
+    it('should have proper container structure', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for async QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const card = container.firstChild as HTMLElement;
       expect(card).toHaveClass('bg-white', 'rounded-lg', 'shadow-lg');
     });
 
-    it('should apply custom className', () => {
+    it('should apply custom className', async () => {
       const { container } = render(
         <QRCodeModal coupon={mockCoupon} className="custom-modal-class" />
       );
+
+      // Wait for async QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const card = container.firstChild as HTMLElement;
       expect(card).toHaveClass('custom-modal-class');
     });
 
-    it('should maintain base classes with custom className', () => {
+    it('should maintain base classes with custom className', async () => {
       const { container } = render(
         <QRCodeModal coupon={mockCoupon} className="custom-modal-class" />
       );
+
+      // Wait for async QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const card = container.firstChild as HTMLElement;
       expect(card).toHaveClass('bg-white', 'rounded-lg', 'shadow-lg', 'custom-modal-class');
@@ -139,28 +164,44 @@ describe('QRCodeModal', () => {
   });
 
   describe('Header Section', () => {
-    it('should display modal title', () => {
+    it('should display modal title', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.getByText('Use Coupon')).toBeInTheDocument();
     });
 
-    it('should have proper heading hierarchy', () => {
+    it('should have proper heading hierarchy', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const heading = screen.getByText('Use Coupon');
       expect(heading.tagName).toBe('H3');
     });
 
-    it('should style heading correctly', () => {
+    it('should style heading correctly', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const heading = screen.getByText('Use Coupon');
       expect(heading).toHaveClass('text-lg', 'font-semibold', 'text-gray-900');
     });
 
-    it('should have border at bottom of header', () => {
+    it('should have border at bottom of header', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const header = container.querySelector('.border-b');
       expect(header).toBeInTheDocument();
@@ -168,16 +209,24 @@ describe('QRCodeModal', () => {
   });
 
   describe('Close Button', () => {
-    it('should not display close button by default', () => {
+    it('should not display close button by default', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.queryByText('×')).not.toBeInTheDocument();
     });
 
-    it('should display close button when onClose provided', () => {
+    it('should display close button when onClose provided', async () => {
       const onClose = vi.fn();
 
       render(<QRCodeModal coupon={mockCoupon} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.getByText('×')).toBeInTheDocument();
     });
@@ -188,16 +237,24 @@ describe('QRCodeModal', () => {
 
       render(<QRCodeModal coupon={mockCoupon} onClose={onClose} />);
 
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
+
       const closeButton = screen.getByText('×');
       await user.click(closeButton);
 
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
-    it('should style close button correctly', () => {
+    it('should style close button correctly', async () => {
       const onClose = vi.fn();
 
       render(<QRCodeModal coupon={mockCoupon} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const closeButton = screen.getByText('×');
       expect(closeButton.tagName).toBe('BUTTON');
@@ -210,6 +267,10 @@ describe('QRCodeModal', () => {
 
       render(<QRCodeModal coupon={mockCoupon} onClose={onClose} />);
 
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
+
       const closeButton = screen.getByText('×');
       await user.click(closeButton);
       await user.click(closeButton);
@@ -220,40 +281,60 @@ describe('QRCodeModal', () => {
   });
 
   describe('Coupon Information Display', () => {
-    it('should display coupon name', () => {
+    it('should display coupon name', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.getByText('20% Off Your Purchase')).toBeInTheDocument();
     });
 
-    it('should style coupon name as heading', () => {
+    it('should style coupon name as heading', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const nameElement = screen.getByText('20% Off Your Purchase');
       expect(nameElement.tagName).toBe('H4');
       expect(nameElement).toHaveClass('text-xl', 'font-bold', 'text-gray-900');
     });
 
-    it('should display coupon code', () => {
+    it('should display coupon code', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.getByText('SAVE20')).toBeInTheDocument();
     });
 
-    it('should display coupon code label', () => {
+    it('should display coupon code label', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.getByText('Coupon Code')).toBeInTheDocument();
     });
 
-    it('should style coupon code with monospace font', () => {
+    it('should style coupon code with monospace font', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const codeElement = screen.getByText('SAVE20');
       expect(codeElement).toHaveClass('text-lg', 'font-mono', 'bg-gray-100');
     });
 
-    it('should handle very long coupon name', () => {
+    it('should handle very long coupon name', async () => {
       const longNameCoupon = {
         ...mockCoupon,
         name: 'This is an extremely long coupon name that should still be displayed properly',
@@ -261,16 +342,24 @@ describe('QRCodeModal', () => {
 
       render(<QRCodeModal coupon={longNameCoupon} />);
 
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
+
       expect(screen.getByText(/This is an extremely long coupon name/)).toBeInTheDocument();
     });
 
-    it('should handle very long coupon code', () => {
+    it('should handle very long coupon code', async () => {
       const longCodeCoupon = {
         ...mockCoupon,
         code: 'VERYLONGCOUPONCODE123456789',
       };
 
       render(<QRCodeModal coupon={longCodeCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for VERYLONGCOUPONCODE123456789')).toBeInTheDocument();
+      });
 
       expect(screen.getByText('VERYLONGCOUPONCODE123456789')).toBeInTheDocument();
     });
@@ -480,45 +569,68 @@ describe('QRCodeModal', () => {
   });
 
   describe('Instructions Section', () => {
-    it('should display how to use title', () => {
+    it('should display how to use title', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.getByText('How to Use')).toBeInTheDocument();
     });
 
-    it('should display all three instructions', () => {
+    it('should display all three instructions', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.getByText(/Show this QR code to staff/)).toBeInTheDocument();
       expect(screen.getByText(/Let staff scan the code/)).toBeInTheDocument();
       expect(screen.getByText(/Enjoy your discount/)).toBeInTheDocument();
     });
 
-    it('should display instructions in ordered list', () => {
+    it('should display instructions in ordered list', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const orderedList = container.querySelector('ol');
       expect(orderedList).toBeInTheDocument();
     });
 
-    it('should display instruction numbers', () => {
-      render(<QRCodeModal coupon={mockCoupon} />);
-
+    it('should display instruction numbers', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
+
       const numbers = container.querySelectorAll('.bg-blue-200.rounded-full');
 
       expect(numbers.length).toBeGreaterThanOrEqual(3);
     });
 
-    it('should style instructions section with blue background', () => {
+    it('should style instructions section with blue background', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const instructionsSection = container.querySelector('.bg-blue-50');
       expect(instructionsSection).toBeInTheDocument();
     });
 
-    it('should display clipboard icon for instructions', () => {
+    it('should display clipboard icon for instructions', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       // There are two clipboard icons: one in instructions header and one in copy button
       const clipboardIcons = screen.getAllByText('📋');
@@ -527,35 +639,55 @@ describe('QRCodeModal', () => {
   });
 
   describe('Important Notice Section', () => {
-    it('should display important notice', () => {
+    it('should display important notice', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.getByText(/Important/)).toBeInTheDocument();
     });
 
-    it('should display one-time use message', () => {
+    it('should display one-time use message', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.getByText(/This coupon can only be used once/)).toBeInTheDocument();
     });
 
-    it('should style notice with amber background', () => {
+    it('should style notice with amber background', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const noticeSection = container.querySelector('.bg-amber-50');
       expect(noticeSection).toBeInTheDocument();
     });
 
-    it('should display warning icon', () => {
+    it('should display warning icon', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.getByText(/⚠️/)).toBeInTheDocument();
     });
   });
 
   describe('Copy to Clipboard', () => {
-    it('should display copy code button', () => {
+    it('should display copy code button', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(screen.getByText('Copy Code')).toBeInTheDocument();
     });
@@ -625,15 +757,23 @@ describe('QRCodeModal', () => {
       });
     });
 
-    it('should style copy button correctly', () => {
+    it('should style copy button correctly', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const copyButton = screen.getByText('Copy Code');
       expect(copyButton).toHaveClass('bg-gray-100', 'text-gray-700');
     });
 
-    it('should have clipboard icon on copy button', () => {
+    it('should have clipboard icon on copy button', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       // The button contains the emoji and text
       const copyButton = screen.getByText('Copy Code');
@@ -664,8 +804,13 @@ describe('QRCodeModal', () => {
   });
 
   describe('Translation Keys', () => {
-    it('should use correct translation keys', () => {
+    it('should use correct translation keys', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       // Check that translation function was called (may be called with default values)
       expect(mockTranslate).toHaveBeenCalled();
@@ -676,16 +821,26 @@ describe('QRCodeModal', () => {
       expect(screen.getByText('Copy Code')).toBeInTheDocument();
     });
 
-    it('should use translation for instructions', () => {
+    it('should use translation for instructions', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(mockTranslate).toHaveBeenCalledWith('coupons.showQRCode');
       expect(mockTranslate).toHaveBeenCalledWith('coupons.letStaffScan');
       expect(mockTranslate).toHaveBeenCalledWith('coupons.enjoyDiscount');
     });
 
-    it('should use translation for important notice', () => {
+    it('should use translation for important notice', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(mockTranslate).toHaveBeenCalledWith('common.important');
       expect(mockTranslate).toHaveBeenCalledWith('coupons.oneTimeUse');
@@ -693,10 +848,15 @@ describe('QRCodeModal', () => {
   });
 
   describe('Accessibility', () => {
-    it('should have accessible button elements', () => {
+    it('should have accessible button elements', async () => {
       const onClose = vi.fn();
 
       render(<QRCodeModal coupon={mockCoupon} onClose={onClose} />);
+
+      // Wait for QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const copyButton = screen.getByText('Copy Code');
       const closeButton = screen.getByText('×');
@@ -705,8 +865,13 @@ describe('QRCodeModal', () => {
       expect(closeButton.tagName).toBe('BUTTON');
     });
 
-    it('should have proper text hierarchy', () => {
+    it('should have proper text hierarchy', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const mainHeading = screen.getByText('Use Coupon');
       const couponHeading = screen.getByText('20% Off Your Purchase');
@@ -715,8 +880,13 @@ describe('QRCodeModal', () => {
       expect(couponHeading.tagName).toBe('H4');
     });
 
-    it('should have proper section headings', () => {
+    it('should have proper section headings', async () => {
       render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const howToUseHeading = screen.getByText('How to Use');
 
@@ -765,11 +935,19 @@ describe('QRCodeModal', () => {
 
       render(<QRCodeModal coupon={specialCharCoupon} />);
 
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE-20%')).toBeInTheDocument();
+      });
+
       expect(screen.getByText('SAVE-20%')).toBeInTheDocument();
     });
 
-    it('should handle undefined onClose prop', () => {
+    it('should handle undefined onClose prop', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       expect(container).toBeTruthy();
       expect(screen.queryByText('×')).not.toBeInTheDocument();
@@ -799,37 +977,62 @@ describe('QRCodeModal', () => {
   });
 
   describe('Layout and Styling', () => {
-    it('should center QR code content', () => {
+    it('should center QR code content', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const contentSection = container.querySelector('.text-center');
       expect(contentSection).toBeInTheDocument();
     });
 
-    it('should have proper spacing between sections', () => {
+    it('should have proper spacing between sections', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       // Check for margin classes
       const sectionsWithMargin = container.querySelectorAll('.mb-6');
       expect(sectionsWithMargin.length).toBeGreaterThan(0);
     });
 
-    it('should have rounded corners on modal', () => {
+    it('should have rounded corners on modal', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const modal = container.firstChild as HTMLElement;
       expect(modal).toHaveClass('rounded-lg');
     });
 
-    it('should have shadow on modal', () => {
+    it('should have shadow on modal', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const modal = container.firstChild as HTMLElement;
       expect(modal).toHaveClass('shadow-lg');
     });
 
-    it('should have proper padding', () => {
+    it('should have proper padding', async () => {
       const { container } = render(<QRCodeModal coupon={mockCoupon} />);
+
+      // Wait for QR code generation to complete
+      await waitFor(() => {
+        expect(screen.getByAltText('QR Code for SAVE20')).toBeInTheDocument();
+      });
 
       const header = container.querySelector('.p-4');
       const content = container.querySelector('.p-6');

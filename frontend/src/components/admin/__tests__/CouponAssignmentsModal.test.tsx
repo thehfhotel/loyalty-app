@@ -173,12 +173,17 @@ describe('CouponAssignmentsModal', () => {
   });
 
   describe('Loading State', () => {
-    it('should display loading spinner initially', () => {
+    it('should display loading spinner initially', async () => {
       render(<CouponAssignmentsModal coupon={mockCoupon} isOpen={true} onClose={onClose} />);
 
       expect(screen.getByText('Loading assignments...')).toBeInTheDocument();
       const spinner = document.querySelector('.animate-spin');
       expect(spinner).toBeInTheDocument();
+
+      // Wait for async operations to complete to avoid act() warnings
+      await waitFor(() => {
+        expect(screen.queryByText('Loading assignments...')).not.toBeInTheDocument();
+      });
     });
 
     it('should hide loading state after data loads', async () => {

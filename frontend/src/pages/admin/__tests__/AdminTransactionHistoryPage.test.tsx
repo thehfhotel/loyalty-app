@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 
 // Mock data for testing
 const mockTransactionWithAllData = {
@@ -379,13 +379,27 @@ describe('AdminTransactionHistoryPage', () => {
   });
 
   describe('Loading State', () => {
-    it('shows loading state initially', () => {
-      // Don't resolve the promise yet
-      mockGetAdminTransactions.mockReturnValue(new Promise(() => {}));
+    it('shows loading state initially', async () => {
+      // Create a deferred promise we can control
+      let resolvePromise: (value: { transactions: never[]; total: number }) => void;
+      const deferredPromise = new Promise<{ transactions: never[]; total: number }>((resolve) => {
+        resolvePromise = resolve;
+      });
+
+      mockGetAdminTransactions.mockReturnValue(deferredPromise);
 
       render(<AdminTransactionHistoryPage />);
 
+      // Verify loading state is shown
       expect(screen.getByText('Loading...')).toBeInTheDocument();
+
+      // Resolve the promise and let React update
+      await act(async () => {
+        resolvePromise!({ transactions: [], total: 0 });
+      });
+
+      // Verify loading state is gone after data loads
+      expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
     });
   });
 });

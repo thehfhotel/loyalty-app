@@ -130,8 +130,12 @@ describe('AdminTransactionHistory', () => {
       });
     });
 
-    it('should render without crashing', () => {
+    it('should render without crashing', async () => {
       expect(() => render(<AdminTransactionHistory />)).not.toThrow();
+      // Wait for async operations to complete
+      await waitFor(() => {
+        expect(screen.queryByText('Transaction History')).toBeInTheDocument();
+      });
     });
 
     it('should have proper heading', async () => {
@@ -145,19 +149,29 @@ describe('AdminTransactionHistory', () => {
   });
 
   describe('Loading State', () => {
-    it('should display loading skeleton initially', () => {
+    it('should display loading skeleton initially', async () => {
       render(<AdminTransactionHistory />);
 
       expect(screen.getByText('Transaction History')).toBeInTheDocument();
       const skeletonElements = document.querySelectorAll('.animate-pulse');
       expect(skeletonElements.length).toBeGreaterThan(0);
+
+      // Wait for async operations to complete to avoid act() warning
+      await waitFor(() => {
+        expect(document.querySelectorAll('.animate-pulse')).toHaveLength(0);
+      });
     });
 
-    it('should display 5 skeleton items while loading', () => {
+    it('should display 5 skeleton items while loading', async () => {
       render(<AdminTransactionHistory />);
 
       const skeletonElements = document.querySelectorAll('.animate-pulse');
       expect(skeletonElements).toHaveLength(5);
+
+      // Wait for async operations to complete to avoid act() warning
+      await waitFor(() => {
+        expect(document.querySelectorAll('.animate-pulse')).toHaveLength(0);
+      });
     });
 
     it('should hide loading skeleton after data loads', async () => {

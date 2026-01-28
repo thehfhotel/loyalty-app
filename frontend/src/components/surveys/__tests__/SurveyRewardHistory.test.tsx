@@ -122,10 +122,15 @@ describe('SurveyRewardHistory', () => {
       });
     });
 
-    it('should render without crashing', () => {
+    it('should render without crashing', async () => {
       expect(() => render(
         <SurveyRewardHistoryComponent surveyId="survey-1" surveyTitle="Customer Feedback Survey" />
       )).not.toThrow();
+
+      // Wait for async operations to complete
+      await waitFor(() => {
+        expect(screen.getByText('Reward History')).toBeInTheDocument();
+      });
     });
 
     it('should have proper heading', async () => {
@@ -147,18 +152,28 @@ describe('SurveyRewardHistory', () => {
   });
 
   describe('Loading State', () => {
-    it('should show skeleton on initial load', () => {
+    it('should show skeleton on initial load', async () => {
       render(<SurveyRewardHistoryComponent surveyId="survey-1" surveyTitle="Customer Feedback Survey" />);
 
       const skeletonElements = document.querySelectorAll('.animate-pulse');
       expect(skeletonElements.length).toBeGreaterThan(0);
+
+      // Wait for async operations to complete
+      await waitFor(() => {
+        expect(document.querySelectorAll('.animate-pulse')).toHaveLength(0);
+      });
     });
 
-    it('should display 3 skeleton items while loading', () => {
+    it('should display 3 skeleton items while loading', async () => {
       render(<SurveyRewardHistoryComponent surveyId="survey-1" surveyTitle="Customer Feedback Survey" />);
 
       const skeletonItems = document.querySelectorAll('.animate-pulse .h-16');
       expect(skeletonItems).toHaveLength(3);
+
+      // Wait for async operations to complete
+      await waitFor(() => {
+        expect(document.querySelectorAll('.animate-pulse')).toHaveLength(0);
+      });
     });
 
     it('should hide loading skeleton after data loads', async () => {

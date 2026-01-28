@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- Test file uses non-null assertions for DOM element access */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import QuestionEditor from '../QuestionEditor';
 import { SurveyQuestion } from '../../../types/survey';
@@ -937,7 +937,7 @@ describe('QuestionEditor', () => {
       expect(questionCard).toHaveAttribute('draggable', 'false');
     });
 
-    it('should call onReorder when dropped on different position', () => {
+    it('should call onReorder when dropped on different position', async () => {
       const { container } = render(
         <QuestionEditor
           question={baseSingleChoiceQuestion}
@@ -952,25 +952,28 @@ describe('QuestionEditor', () => {
 
       const questionCard = container.querySelector('[data-question-id="q1"]') as HTMLElement;
 
-      // Simulate drag start
-      const dragStartEvent = new DragEvent('dragstart', {
-        bubbles: true,
-        dataTransfer: new DataTransfer(),
+      // Simulate drag start - wrap in act() because it triggers state updates (setIsDragging)
+      await act(async () => {
+        const dragStartEvent = new DragEvent('dragstart', {
+          bubbles: true,
+          dataTransfer: new DataTransfer(),
+        });
+        questionCard.dispatchEvent(dragStartEvent);
+        dragStartEvent.dataTransfer?.setData('text/plain', '0');
       });
-      questionCard.dispatchEvent(dragStartEvent);
-      dragStartEvent.dataTransfer?.setData('text/plain', '0');
 
       // Simulate drop
-      const dropEvent = new DragEvent('drop', {
-        bubbles: true,
-        dataTransfer: dragStartEvent.dataTransfer,
+      await act(async () => {
+        const dropEvent = new DragEvent('drop', {
+          bubbles: true,
+        });
+        Object.defineProperty(dropEvent, 'dataTransfer', {
+          value: {
+            getData: () => '0',
+          },
+        });
+        questionCard.dispatchEvent(dropEvent);
       });
-      Object.defineProperty(dropEvent, 'dataTransfer', {
-        value: {
-          getData: () => '0',
-        },
-      });
-      questionCard.dispatchEvent(dropEvent);
 
       expect(mockOnReorder).toHaveBeenCalledWith(0, 1);
     });

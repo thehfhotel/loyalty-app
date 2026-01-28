@@ -214,7 +214,7 @@ describe('SurveyCouponAssignments', () => {
   });
 
   describe('Loading State', () => {
-    it('should show skeleton loader on initial load', () => {
+    it('should show skeleton loader on initial load', async () => {
       render(
         <SurveyCouponAssignments
           surveyId="survey-1"
@@ -225,6 +225,11 @@ describe('SurveyCouponAssignments', () => {
 
       const skeleton = document.querySelector('.animate-pulse');
       expect(skeleton).toBeInTheDocument();
+
+      // Wait for loading to complete to avoid act() warnings
+      await waitFor(() => {
+        expect(document.querySelector('.animate-pulse')).not.toBeInTheDocument();
+      });
     });
 
     it('should hide skeleton after data loads', async () => {

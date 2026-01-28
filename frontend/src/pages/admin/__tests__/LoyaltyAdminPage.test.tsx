@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 
 // Mock data for testing
 const mockUserWithAllData = {
@@ -395,13 +395,29 @@ describe('LoyaltyAdminPage', () => {
   });
 
   describe('Loading State', () => {
-    it('shows loading state initially', () => {
-      // Don't resolve the promise yet
-      mockGetAllUsersLoyaltyStatus.mockReturnValue(new Promise(() => {}));
+    it('shows loading state initially', async () => {
+      // Use fake timers to control promise resolution timing
+      vi.useFakeTimers();
+
+      // Setup mock to resolve after a delay (not never)
+      mockGetAllUsersLoyaltyStatus.mockReturnValue(
+        new Promise((resolve) => setTimeout(() => resolve({ users: [], total: 0 }), 100))
+      );
 
       render(<LoyaltyAdminPage />);
 
       expect(screen.getByText('Loading...')).toBeInTheDocument();
+
+      // Advance timers and wait for React to process state updates
+      await act(async () => {
+        vi.runAllTimers();
+      });
+
+      // Verify loading is complete
+      expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+
+      // Restore real timers
+      vi.useRealTimers();
     });
   });
 
