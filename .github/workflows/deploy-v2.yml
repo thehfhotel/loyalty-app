@@ -574,6 +574,32 @@ jobs:
             sleep 2
           done
 
+      - name: Seed E2E test users
+        run: |
+          echo "Creating E2E test users..."
+          # Create test user 1
+          curl -sf -X POST http://localhost:4202/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"email":"e2e-browser@test.com","password":"E2ETestPassword123!","firstName":"E2E","lastName":"Browser"}' \
+            && echo "✓ Created e2e-browser@test.com" \
+            || echo "User may already exist"
+
+          # Create test user 2
+          curl -sf -X POST http://localhost:4202/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"email":"e2e-browser-2@test.com","password":"E2ETestPassword123!","firstName":"E2E","lastName":"Browser2"}' \
+            && echo "✓ Created e2e-browser-2@test.com" \
+            || echo "User may already exist"
+
+          # Create admin test user (email is in admins.e2e.json)
+          curl -sf -X POST http://localhost:4202/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"email":"e2e-admin@test.local","password":"AdminPassword123!","firstName":"E2E","lastName":"Admin"}' \
+            && echo "✓ Created e2e-admin@test.local" \
+            || echo "User may already exist"
+
+          echo "E2E test users seeded"
+
       - name: Run Playwright E2E tests
         run: npx playwright test
         env:
