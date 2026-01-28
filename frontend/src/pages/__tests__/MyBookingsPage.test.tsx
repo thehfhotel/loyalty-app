@@ -95,6 +95,18 @@ vi.mock('../../hooks/useTRPC', () => ({
           isPending: false,
         })),
       },
+      addSlip: {
+        useMutation: vi.fn(() => ({
+          mutateAsync: vi.fn(),
+          isPending: false,
+        })),
+      },
+      removeSlip: {
+        useMutation: vi.fn(() => ({
+          mutateAsync: vi.fn(),
+          isPending: false,
+        })),
+      },
     },
   },
 }));
@@ -162,6 +174,14 @@ vi.mock('react-router-dom', () => ({
   Link: ({ children, to, ...props }: { children: React.ReactNode; to: string }) => (
     <a href={to} {...props}>{children}</a>
   ),
+  useLocation: () => ({
+    pathname: '/my-bookings',
+    search: '',
+    hash: '',
+    state: null,
+    key: 'default',
+  }),
+  useNavigate: () => vi.fn(),
 }));
 
 // Mock MainLayout
@@ -256,9 +276,9 @@ describe('MyBookingsPage', () => {
       // Current tab has 1 booking
       expect(screen.getAllByText('Click for details').length).toBe(1);
 
-      // History tab has 3 bookings
+      // History tab has 4 bookings (booking-2, booking-3, booking-4, booking-5)
       await user.click(screen.getByTestId('tab-history'));
-      expect(screen.getAllByText('Click for details').length).toBe(3);
+      expect(screen.getAllByText('Click for details').length).toBe(4);
     });
   });
 

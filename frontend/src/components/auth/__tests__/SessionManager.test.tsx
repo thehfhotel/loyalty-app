@@ -27,13 +27,11 @@ vi.mock('../../../utils/notificationManager', () => ({
   },
 }));
 
-// Mock timers
-vi.useFakeTimers();
-
 describe('SessionManager', () => {
   const mockLogout = vi.fn();
 
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.clearAllMocks();
     vi.clearAllTimers();
 
