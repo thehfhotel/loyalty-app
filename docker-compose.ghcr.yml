@@ -23,9 +23,12 @@ services:
 
   frontend:
     image: ghcr.io/thehfhotel/loyalty-app/frontend:${IMAGE_TAG:-latest}
+    # Override command to listen on port 3000 (main nginx expects frontend:3000)
+    # The GHCR production image uses internal nginx on port 80, so we modify the config
+    command: ["/bin/sh", "-c", "sed -i 's/listen 80/listen 3000/' /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
     # Clear volume mounts for frontend too
     volumes:
-      - frontend_logs:/app/logs
+      - frontend_logs:/var/log/nginx
 
 volumes:
   backend_logs:

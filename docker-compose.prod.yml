@@ -93,8 +93,10 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       VITE_API_URL: ${VITE_API_URL}
     volumes:
-      # Remove development volume mounts for production
-      - frontend_logs:/app/logs
+      # GHCR frontend uses nginx:alpine with logs at /var/log/nginx
+      - frontend_logs:/var/log/nginx
+    # Note: GHCR deployments override command via docker-compose.ghcr.yml
+    # This command is only used for local builds (not GHCR)
     command: sh -c "echo 'Building frontend for production...' && npm run build && echo 'Starting preview server...' && npm run preview -- --host 0.0.0.0 --port 3000"
     restart: unless-stopped
 

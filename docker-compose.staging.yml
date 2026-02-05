@@ -77,8 +77,9 @@ services:
       NODE_ENV: staging
       VITE_API_URL: ${VITE_API_URL}
     # No source code bind mounts - uses GHCR image with built code
+    # GHCR frontend uses nginx:alpine with logs at /var/log/nginx
     volumes:
-      - frontend_dev_logs:/app/logs
+      - frontend_dev_logs:/var/log/nginx
 
   nginx:
     container_name: loyalty_nginx_dev
