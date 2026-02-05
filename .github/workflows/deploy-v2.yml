@@ -671,6 +671,8 @@ jobs:
           LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
           ENVEOF
           chmod 600 .env
+          # docker-compose.dev.yml expects .env.development
+          cp .env .env.development
 
       - name: Copy config files
         run: |
