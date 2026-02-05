@@ -693,6 +693,10 @@ jobs:
           set -euo pipefail
           COMPOSE_OVERRIDE="docker-compose.dev.yml"
 
+          # Export environment variables from .env file
+          set -a && source .env && set +a
+          export IMAGE_TAG
+
           # Pull images
           docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" pull backend frontend
 
@@ -803,6 +807,10 @@ jobs:
         run: |
           set -euo pipefail
           COMPOSE_OVERRIDE="docker-compose.prod.yml"
+
+          # Export environment variables from .env file
+          set -a && source .env && set +a
+          export IMAGE_TAG
 
           # Pull images
           docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" pull backend frontend
