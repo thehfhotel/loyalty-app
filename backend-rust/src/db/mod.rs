@@ -119,8 +119,8 @@ impl Database {
 /// }
 /// ```
 pub async fn init_pool(config: Option<DbConfig>) -> Result<Database> {
-    let database_url = std::env::var("DATABASE_URL")
-        .context("DATABASE_URL environment variable must be set")?;
+    let database_url =
+        std::env::var("DATABASE_URL").context("DATABASE_URL environment variable must be set")?;
 
     init_pool_with_url(&database_url, config).await
 }

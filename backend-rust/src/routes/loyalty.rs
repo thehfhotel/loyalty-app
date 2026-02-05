@@ -354,20 +354,28 @@ async fn get_status(
     .fetch_optional(state.db.pool())
     .await?;
 
-    let loyalty = loyalty.ok_or_else(|| AppError::NotFound("Loyalty status not found".to_string()))?;
+    let loyalty =
+        loyalty.ok_or_else(|| AppError::NotFound("Loyalty status not found".to_string()))?;
 
     // Build tier info if present
-    let tier_info = if let (Some(tier_id), Some(tier_name)) = (loyalty.tier_id, loyalty.tier_name.clone()) {
-        Some(TierInfo {
-            id: tier_id,
-            name: tier_name,
-            color: loyalty.tier_color.clone().unwrap_or_else(|| "#CD7F32".to_string()),
-            benefits: loyalty.tier_benefits.clone().unwrap_or(serde_json::json!({})),
-            min_nights: loyalty.tier_min_nights.unwrap_or(0),
-        })
-    } else {
-        None
-    };
+    let tier_info =
+        if let (Some(tier_id), Some(tier_name)) = (loyalty.tier_id, loyalty.tier_name.clone()) {
+            Some(TierInfo {
+                id: tier_id,
+                name: tier_name,
+                color: loyalty
+                    .tier_color
+                    .clone()
+                    .unwrap_or_else(|| "#CD7F32".to_string()),
+                benefits: loyalty
+                    .tier_benefits
+                    .clone()
+                    .unwrap_or(serde_json::json!({})),
+                min_nights: loyalty.tier_min_nights.unwrap_or(0),
+            })
+        } else {
+            None
+        };
 
     // Calculate next tier info
     let current_nights = loyalty.total_nights.unwrap_or(0);
@@ -436,12 +444,11 @@ async fn get_transactions(
     let offset = (page - 1) * limit;
 
     // Get total count
-    let total: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM points_transactions WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(state.db.pool())
-    .await?;
+    let total: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM points_transactions WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(state.db.pool())
+            .await?;
 
     // Get transactions
     let transactions: Vec<PointsTransactionRow> = sqlx::query_as(
@@ -461,8 +468,10 @@ async fn get_transactions(
     .fetch_all(state.db.pool())
     .await?;
 
-    let transaction_responses: Vec<PointsTransactionResponse> =
-        transactions.into_iter().map(PointsTransactionResponse::from).collect();
+    let transaction_responses: Vec<PointsTransactionResponse> = transactions
+        .into_iter()
+        .map(PointsTransactionResponse::from)
+        .collect();
 
     let total_pages = ((total.0 as f64) / (limit as f64)).ceil() as i32;
 
@@ -636,8 +645,8 @@ async fn recalculate_tier(
     .fetch_optional(&mut *tx)
     .await?;
 
-    let (total_nights, old_tier_id, old_tier_name) = current
-        .ok_or_else(|| AppError::NotFound("User loyalty record not found".to_string()))?;
+    let (total_nights, old_tier_id, old_tier_name) =
+        current.ok_or_else(|| AppError::NotFound("User loyalty record not found".to_string()))?;
 
     let total_nights = total_nights.unwrap_or(0);
 
@@ -655,9 +664,8 @@ async fn recalculate_tier(
     .fetch_optional(&mut *tx)
     .await?;
 
-    let new_tier = new_tier.ok_or_else(|| {
-        AppError::Internal("No tier found for user's night count".to_string())
-    })?;
+    let new_tier = new_tier
+        .ok_or_else(|| AppError::Internal("No tier found for user's night count".to_string()))?;
 
     let tier_changed = old_tier_id != Some(new_tier.id);
 
@@ -714,8 +722,7 @@ async fn recalculate_tier(
 /// - `POST /recalculate/:user_id` - Recalculate user's tier (admin only)
 pub fn routes() -> Router<AppState> {
     // Public routes (no auth required) - tiers can be viewed by anyone
-    let public_routes = Router::new()
-        .route("/tiers", get(get_tiers_full));
+    let public_routes = Router::new().route("/tiers", get(get_tiers_full));
 
     // Authenticated routes - require valid JWT token
     let auth_routes = Router::new()
@@ -810,19 +817,27 @@ async fn get_status_full(
     .fetch_optional(state.db())
     .await?;
 
-    let loyalty = loyalty.ok_or_else(|| AppError::NotFound("Loyalty status not found".to_string()))?;
+    let loyalty =
+        loyalty.ok_or_else(|| AppError::NotFound("Loyalty status not found".to_string()))?;
 
-    let tier_info = if let (Some(tier_id), Some(tier_name)) = (loyalty.tier_id, loyalty.tier_name.clone()) {
-        Some(TierInfo {
-            id: tier_id,
-            name: tier_name,
-            color: loyalty.tier_color.clone().unwrap_or_else(|| "#CD7F32".to_string()),
-            benefits: loyalty.tier_benefits.clone().unwrap_or(serde_json::json!({})),
-            min_nights: loyalty.tier_min_nights.unwrap_or(0),
-        })
-    } else {
-        None
-    };
+    let tier_info =
+        if let (Some(tier_id), Some(tier_name)) = (loyalty.tier_id, loyalty.tier_name.clone()) {
+            Some(TierInfo {
+                id: tier_id,
+                name: tier_name,
+                color: loyalty
+                    .tier_color
+                    .clone()
+                    .unwrap_or_else(|| "#CD7F32".to_string()),
+                benefits: loyalty
+                    .tier_benefits
+                    .clone()
+                    .unwrap_or(serde_json::json!({})),
+                min_nights: loyalty.tier_min_nights.unwrap_or(0),
+            })
+        } else {
+            None
+        };
 
     let current_nights = loyalty.total_nights.unwrap_or(0);
     let next_tier_info = get_next_tier_info(state.db(), current_nights).await?;
@@ -853,12 +868,11 @@ async fn get_transactions_full(
     let limit = params.limit.clamp(1, 100);
     let offset = (page - 1) * limit;
 
-    let total: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM points_transactions WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(state.db())
-    .await?;
+    let total: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM points_transactions WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(state.db())
+            .await?;
 
     let transactions: Vec<PointsTransactionRow> = sqlx::query_as(
         r#"
@@ -876,8 +890,10 @@ async fn get_transactions_full(
     .fetch_all(state.db())
     .await?;
 
-    let transaction_responses: Vec<PointsTransactionResponse> =
-        transactions.into_iter().map(PointsTransactionResponse::from).collect();
+    let transaction_responses: Vec<PointsTransactionResponse> = transactions
+        .into_iter()
+        .map(PointsTransactionResponse::from)
+        .collect();
 
     let total_pages = ((total.0 as f64) / (limit as f64)).ceil() as i32;
 
@@ -927,7 +943,10 @@ async fn award_points_full(
     let old_nights = old_nights.unwrap_or(0);
 
     let transaction_type = payload.source.as_deref().unwrap_or("admin_award");
-    let description = payload.description.clone().unwrap_or_else(|| "Points awarded by admin".to_string());
+    let description = payload
+        .description
+        .clone()
+        .unwrap_or_else(|| "Points awarded by admin".to_string());
 
     let transaction_id: (Uuid,) = sqlx::query_as(
         r#"
@@ -978,11 +997,13 @@ async fn award_points_full(
     let (_, new_tier_name, tier_changed) = if let Some(tier) = new_tier {
         let changed = old_tier_id != Some(tier.id);
         if changed {
-            sqlx::query("UPDATE user_loyalty SET tier_id = $1, tier_updated_at = NOW() WHERE user_id = $2")
-                .bind(tier.id)
-                .bind(payload.user_id)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE user_loyalty SET tier_id = $1, tier_updated_at = NOW() WHERE user_id = $2",
+            )
+            .bind(tier.id)
+            .bind(payload.user_id)
+            .execute(&mut *tx)
+            .await?;
         }
         (Some(tier.id), Some(tier.name), changed)
     } else {
@@ -1001,7 +1022,10 @@ async fn award_points_full(
         new_tier_name,
     };
 
-    Ok(Json(ApiResponse::with_message(result, "Points awarded successfully")))
+    Ok(Json(ApiResponse::with_message(
+        result,
+        "Points awarded successfully",
+    )))
 }
 
 /// POST /loyalty/recalculate/:userId - using FullAppState
@@ -1028,8 +1052,8 @@ async fn recalculate_tier_full(
     .fetch_optional(&mut *tx)
     .await?;
 
-    let (total_nights, old_tier_id, old_tier_name) = current
-        .ok_or_else(|| AppError::NotFound("User loyalty record not found".to_string()))?;
+    let (total_nights, old_tier_id, old_tier_name) =
+        current.ok_or_else(|| AppError::NotFound("User loyalty record not found".to_string()))?;
 
     let total_nights = total_nights.unwrap_or(0);
 
@@ -1046,9 +1070,8 @@ async fn recalculate_tier_full(
     .fetch_optional(&mut *tx)
     .await?;
 
-    let new_tier = new_tier.ok_or_else(|| {
-        AppError::Internal("No tier found for user's night count".to_string())
-    })?;
+    let new_tier = new_tier
+        .ok_or_else(|| AppError::Internal("No tier found for user's night count".to_string()))?;
 
     let tier_changed = old_tier_id != Some(new_tier.id);
 
@@ -1074,7 +1097,11 @@ async fn recalculate_tier_full(
 
     Ok(Json(ApiResponse::with_message(
         result,
-        if tier_changed { "Tier recalculated and updated" } else { "Tier recalculated, no change needed" },
+        if tier_changed {
+            "Tier recalculated and updated"
+        } else {
+            "Tier recalculated, no change needed"
+        },
     )))
 }
 
@@ -1116,7 +1143,8 @@ fn not_implemented_response() -> (StatusCode, Json<NotImplementedResponse>) {
         StatusCode::NOT_IMPLEMENTED,
         Json(NotImplementedResponse {
             error: "not_implemented".to_string(),
-            message: "This endpoint requires database connection. Use routes_with_state().".to_string(),
+            message: "This endpoint requires database connection. Use routes_with_state()."
+                .to_string(),
         }),
     )
 }

@@ -243,17 +243,17 @@ impl AuthService for AuthServiceImpl {
         let mut validation = Validation::default();
         validation.validate_exp = true;
 
-        let token_data: TokenData<Claims> =
-            decode(token, &self.decoding_key(), &validation).map_err(|e| match e.kind() {
+        let token_data: TokenData<Claims> = decode(token, &self.decoding_key(), &validation)
+            .map_err(|e| match e.kind() {
                 jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
                     AppError::Unauthorized("Access token has expired".to_string())
-                }
+                },
                 jsonwebtoken::errors::ErrorKind::InvalidToken => {
                     AppError::Unauthorized("Invalid access token".to_string())
-                }
+                },
                 jsonwebtoken::errors::ErrorKind::InvalidSignature => {
                     AppError::Unauthorized("Invalid token signature".to_string())
-                }
+                },
                 _ => AppError::Unauthorized(format!("Token verification failed: {}", e)),
             })?;
 
@@ -283,17 +283,17 @@ impl AuthService for AuthServiceImpl {
         let mut validation = Validation::default();
         validation.validate_exp = true;
 
-        let token_data: TokenData<RefreshClaims> =
-            decode(token, &self.decoding_key(), &validation).map_err(|e| match e.kind() {
+        let token_data: TokenData<RefreshClaims> = decode(token, &self.decoding_key(), &validation)
+            .map_err(|e| match e.kind() {
                 jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
                     AppError::Unauthorized("Refresh token has expired".to_string())
-                }
+                },
                 jsonwebtoken::errors::ErrorKind::InvalidToken => {
                     AppError::Unauthorized("Invalid refresh token".to_string())
-                }
+                },
                 jsonwebtoken::errors::ErrorKind::InvalidSignature => {
                     AppError::Unauthorized("Invalid token signature".to_string())
-                }
+                },
                 _ => AppError::Unauthorized(format!("Token verification failed: {}", e)),
             })?;
 
@@ -412,7 +412,9 @@ mod tests {
         let service1 = AuthServiceImpl::new("secret1".to_string());
         let service2 = AuthServiceImpl::new("secret2".to_string());
 
-        let token = service1.generate_access_token(123, "test@example.com").unwrap();
+        let token = service1
+            .generate_access_token(123, "test@example.com")
+            .unwrap();
         let result = service2.verify_access_token(&token);
 
         assert!(result.is_err());
@@ -502,7 +504,9 @@ mod tests {
         let service = create_test_service();
         let now = Utc::now().timestamp();
 
-        let token = service.generate_access_token(1, "test@example.com").unwrap();
+        let token = service
+            .generate_access_token(1, "test@example.com")
+            .unwrap();
         let claims = service.verify_access_token(&token).unwrap();
 
         // iat should be close to now (within 1 second)
@@ -516,7 +520,9 @@ mod tests {
     fn test_default_access_token_expiration_is_15_minutes() {
         let service = create_test_service();
 
-        let token = service.generate_access_token(1, "test@example.com").unwrap();
+        let token = service
+            .generate_access_token(1, "test@example.com")
+            .unwrap();
         let claims = service.verify_access_token(&token).unwrap();
 
         // Default access token expiration is 15 minutes (900 seconds)
@@ -654,7 +660,8 @@ mod tests {
             &Header::default(),
             &claims,
             &EncodingKey::from_secret(jwt_secret.as_bytes()),
-        ).unwrap();
+        )
+        .unwrap();
 
         let service = AuthServiceImpl::new(jwt_secret.to_string());
         let result = service.verify_access_token(&expired_token);
@@ -662,8 +669,12 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(AppError::Unauthorized(msg)) => {
-                assert!(msg.contains("expired"), "Expected expiration error, got: {}", msg);
-            }
+                assert!(
+                    msg.contains("expired"),
+                    "Expected expiration error, got: {}",
+                    msg
+                );
+            },
             _ => panic!("Expected Unauthorized error for expired token"),
         }
     }

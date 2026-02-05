@@ -15,10 +15,10 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::middleware::auth::{auth_middleware, has_role, AuthUser};
-use crate::state::AppState;
 use crate::models::survey::{
     CreateSurveyRequest, SurveyAnswerDto, SurveyResponseDto, UpdateSurveyRequest,
 };
+use crate::state::AppState;
 
 /// Pagination query parameters for survey listing
 #[derive(Debug, Deserialize)]

@@ -73,7 +73,7 @@ impl Default for StorageConfig {
             max_avatar_size: 15 * 1024 * 1024, // 15MB for avatar processing
             max_slip_size: 10 * 1024 * 1024,   // 10MB for slips
             max_storage_size: 10 * 1024 * 1024 * 1024, // 10GB total
-            avatar_size: 200, // 200x200 pixels
+            avatar_size: 200,                  // 200x200 pixels
         }
     }
 }
@@ -282,10 +282,12 @@ impl StorageService {
         let unique_filename = format!("{}_{}.{}", Uuid::new_v4(), safe_filename, extension);
 
         // Ensure directory exists
-        fs::create_dir_all(&self.config.upload_dir).await.map_err(|e| {
-            error!("Failed to create upload directory: {}", e);
-            AppError::Internal(format!("Failed to create upload directory: {}", e))
-        })?;
+        fs::create_dir_all(&self.config.upload_dir)
+            .await
+            .map_err(|e| {
+                error!("Failed to create upload directory: {}", e);
+                AppError::Internal(format!("Failed to create upload directory: {}", e))
+            })?;
 
         // Build the file path
         let file_path = self.config.upload_dir.join(&unique_filename);
@@ -351,10 +353,12 @@ impl StorageService {
         let filename = format!("avatar_{}_{}.{}", user_id, Uuid::new_v4(), extension);
 
         // Ensure avatars directory exists
-        fs::create_dir_all(&self.config.avatars_dir).await.map_err(|e| {
-            error!("Failed to create avatars directory: {}", e);
-            AppError::Internal(format!("Failed to create avatars directory: {}", e))
-        })?;
+        fs::create_dir_all(&self.config.avatars_dir)
+            .await
+            .map_err(|e| {
+                error!("Failed to create avatars directory: {}", e);
+                AppError::Internal(format!("Failed to create avatars directory: {}", e))
+            })?;
 
         // Build the file path
         let file_path = self.config.avatars_dir.join(&filename);
@@ -418,10 +422,12 @@ impl StorageService {
         let filename = format!("{}.{}", Uuid::new_v4(), extension);
 
         // Ensure slips directory exists
-        fs::create_dir_all(&self.config.slips_dir).await.map_err(|e| {
-            error!("Failed to create slips directory: {}", e);
-            AppError::Internal(format!("Failed to create slips directory: {}", e))
-        })?;
+        fs::create_dir_all(&self.config.slips_dir)
+            .await
+            .map_err(|e| {
+                error!("Failed to create slips directory: {}", e);
+                AppError::Internal(format!("Failed to create slips directory: {}", e))
+            })?;
 
         // Build the file path
         let file_path = self.config.slips_dir.join(&filename);
@@ -576,7 +582,7 @@ impl StorageService {
                         }
                     }
                 }
-            }
+            },
             Err(e) => {
                 error!("Error reading storage directory: {}", e);
                 return Ok(StorageStats {
@@ -584,7 +590,7 @@ impl StorageService {
                     total_size: 0,
                     average_size: 0,
                 });
-            }
+            },
         }
 
         let average_size = if total_files > 0 {
@@ -604,8 +610,7 @@ impl StorageService {
     pub async fn get_storage_report(&self) -> AppResult<StorageReport> {
         let stats = self.get_storage_stats().await?;
 
-        let usage_percent =
-            (stats.total_size as f64 / self.config.max_storage_size as f64) * 100.0;
+        let usage_percent = (stats.total_size as f64 / self.config.max_storage_size as f64) * 100.0;
 
         Ok(StorageReport {
             storage: StorageReportData {
@@ -641,14 +646,14 @@ impl StorageService {
                             Ok(_) => copied_count += 1,
                             Err(e) => {
                                 warn!("Failed to backup {:?}: {}", source_path, e);
-                            }
+                            },
                         }
                     }
                 }
-            }
+            },
             Err(e) => {
                 error!("Failed to read avatars directory for backup: {}", e);
-            }
+            },
         }
 
         info!(
@@ -671,19 +676,19 @@ impl StorageService {
                 while let Ok(Some(entry)) = entries.next_entry().await {
                     if let Some(name) = entry.file_name().to_str() {
                         // Try to parse directory name as date
-                        if let Ok(backup_date) =
-                            chrono::NaiveDate::parse_from_str(name, "%Y-%m-%d")
+                        if let Ok(backup_date) = chrono::NaiveDate::parse_from_str(name, "%Y-%m-%d")
                         {
-                            let backup_datetime = backup_date
-                                .and_hms_opt(0, 0, 0)
-                                .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc));
+                            let backup_datetime = backup_date.and_hms_opt(0, 0, 0).map(|dt| {
+                                chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+                                    dt,
+                                    chrono::Utc,
+                                )
+                            });
 
                             if let Some(dt) = backup_datetime {
                                 if dt < cutoff_date {
                                     let backup_path = entry.path();
-                                    if let Err(e) =
-                                        fs::remove_dir_all(&backup_path).await
-                                    {
+                                    if let Err(e) = fs::remove_dir_all(&backup_path).await {
                                         warn!(
                                             "Failed to delete old backup {:?}: {}",
                                             backup_path, e
@@ -696,10 +701,10 @@ impl StorageService {
                         }
                     }
                 }
-            }
+            },
             Err(e) => {
                 warn!("Error cleaning old backups: {}", e);
-            }
+            },
         }
     }
 }
@@ -720,12 +725,7 @@ fn sanitize_filename(filename: &str) -> String {
 
     // Remove any potentially dangerous characters
     name.chars()
-        .filter(|c| {
-            c.is_alphanumeric()
-                || *c == '.'
-                || *c == '-'
-                || *c == '_'
-        })
+        .filter(|c| c.is_alphanumeric() || *c == '.' || *c == '-' || *c == '_')
         .collect()
 }
 
@@ -792,7 +792,10 @@ mod tests {
         assert_eq!(AllowedMimeTypes::get_extension("image/png"), Some("png"));
         assert_eq!(AllowedMimeTypes::get_extension("image/gif"), Some("gif"));
         assert_eq!(AllowedMimeTypes::get_extension("image/webp"), Some("webp"));
-        assert_eq!(AllowedMimeTypes::get_extension("application/pdf"), Some("pdf"));
+        assert_eq!(
+            AllowedMimeTypes::get_extension("application/pdf"),
+            Some("pdf")
+        );
         assert_eq!(AllowedMimeTypes::get_extension("text/plain"), None);
     }
 
@@ -833,7 +836,9 @@ mod tests {
         let service = StorageService::with_config(config);
 
         let data = Bytes::from("fake pdf content");
-        let result = service.save_file(data, "document.pdf", "application/pdf").await;
+        let result = service
+            .save_file(data, "document.pdf", "application/pdf")
+            .await;
 
         assert!(result.is_ok());
         let filename = result.unwrap();

@@ -620,7 +620,10 @@ impl BookingService for BookingServiceImpl {
         let _nights = (data.check_out_date - data.check_in_date).num_days() as i32;
         let total_price = data.total_amount;
         // 10 points per THB spent (matching Node.js logic)
-        let points_earned = (total_price * Decimal::from(10)).to_string().parse::<i32>().unwrap_or(0);
+        let points_earned = (total_price * Decimal::from(10))
+            .to_string()
+            .parse::<i32>()
+            .unwrap_or(0);
 
         // Create booking
         let booking = sqlx::query_as::<_, Booking>(
@@ -674,7 +677,9 @@ impl BookingService for BookingServiceImpl {
         let booking_uuid = Self::i32_to_uuid(booking_id);
 
         // Check booking exists
-        let existing = self.get_booking(booking_id).await?
+        let existing = self
+            .get_booking(booking_id)
+            .await?
             .ok_or_else(|| AppError::NotFound("Booking not found".to_string()))?;
 
         // Can't update cancelled or completed bookings
@@ -761,7 +766,9 @@ impl BookingService for BookingServiceImpl {
         let booking_uuid = Self::i32_to_uuid(booking_id);
 
         // Check booking exists and is cancellable
-        let existing = self.get_booking(booking_id).await?
+        let existing = self
+            .get_booking(booking_id)
+            .await?
             .ok_or_else(|| AppError::NotFound("Booking not found".to_string()))?;
 
         if existing.status == BookingStatus::Cancelled {
@@ -799,10 +806,7 @@ impl BookingService for BookingServiceImpl {
         .fetch_one(self.pool())
         .await?;
 
-        tracing::info!(
-            booking_id = booking_id,
-            "Booking cancelled"
-        );
+        tracing::info!(booking_id = booking_id, "Booking cancelled");
 
         Ok(BookingResponse::from(booking))
     }
@@ -812,7 +816,9 @@ impl BookingService for BookingServiceImpl {
         let booking_uuid = Self::i32_to_uuid(booking_id);
 
         // Get booking with room type info
-        let existing = self.get_booking(booking_id).await?
+        let existing = self
+            .get_booking(booking_id)
+            .await?
             .ok_or_else(|| AppError::NotFound("Booking not found".to_string()))?;
 
         if existing.status != BookingStatus::Confirmed {
@@ -901,8 +907,12 @@ impl BookingService for BookingServiceImpl {
 
         // If room type name is provided, look it up
         let room_type_id = if let Some(ref room_type_name) = room_type {
-            let rt = self.get_room_type_by_name(room_type_name).await?
-                .ok_or_else(|| AppError::NotFound(format!("Room type '{}' not found", room_type_name)))?;
+            let rt = self
+                .get_room_type_by_name(room_type_name)
+                .await?
+                .ok_or_else(|| {
+                    AppError::NotFound(format!("Room type '{}' not found", room_type_name))
+                })?;
             Some(rt.id)
         } else {
             None
@@ -1036,9 +1046,6 @@ mod tests {
         };
 
         assert_eq!(dto.num_guests, 2);
-        assert_eq!(
-            (dto.check_out_date - dto.check_in_date).num_days(),
-            4
-        );
+        assert_eq!((dto.check_out_date - dto.check_in_date).num_days(), 4);
     }
 }

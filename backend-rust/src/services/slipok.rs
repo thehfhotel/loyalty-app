@@ -101,7 +101,10 @@ impl SlipVerificationResult {
             .map(|dt| dt.with_timezone(&Utc))
             .or_else(|| {
                 // Try parsing from transDate + transTime (yyyyMMdd + HH:mm:ss)
-                parse_thai_datetime(response.trans_date.as_deref(), response.trans_time.as_deref())
+                parse_thai_datetime(
+                    response.trans_date.as_deref(),
+                    response.trans_time.as_deref(),
+                )
             });
 
         let sender_name = response
@@ -115,9 +118,7 @@ impl SlipVerificationResult {
             .and_then(|r| r.display_name.clone().or_else(|| r.name.clone()));
 
         // Convert f64 amount to Decimal for precision
-        let amount = response.amount.and_then(|a| {
-            Decimal::try_from(a).ok()
-        });
+        let amount = response.amount.and_then(|a| Decimal::try_from(a).ok());
 
         Self {
             success: true,
@@ -166,14 +167,19 @@ impl SlipVerificationResult {
             bank_code: None,
             receiving_bank_code: None,
             error_code: Some("QUOTA_EXCEEDED".to_string()),
-            error_message: Some(message.unwrap_or_else(|| "SlipOK monthly quota exceeded".to_string())),
+            error_message: Some(
+                message.unwrap_or_else(|| "SlipOK monthly quota exceeded".to_string()),
+            ),
             raw_response: None,
         }
     }
 
     /// Create a not configured result
     fn not_configured() -> Self {
-        Self::failed("NOT_CONFIGURED", "SlipOK API key or branch ID not configured")
+        Self::failed(
+            "NOT_CONFIGURED",
+            "SlipOK API key or branch ID not configured",
+        )
     }
 }
 
@@ -305,7 +311,8 @@ impl SlipOKConfig {
             return None;
         }
 
-        let api_url = env::var("SLIPOK_API_URL").unwrap_or_else(|_| DEFAULT_SLIPOK_API_URL.to_string());
+        let api_url =
+            env::var("SLIPOK_API_URL").unwrap_or_else(|_| DEFAULT_SLIPOK_API_URL.to_string());
         let timeout_secs: u64 = env::var("SLIPOK_TIMEOUT_SECS")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -352,7 +359,12 @@ impl SlipOKService {
         let config = SlipOKConfig::from_env();
 
         let client = Client::builder()
-            .timeout(config.as_ref().map(|c| c.timeout).unwrap_or(Duration::from_secs(DEFAULT_TIMEOUT_SECS)))
+            .timeout(
+                config
+                    .as_ref()
+                    .map(|c| c.timeout)
+                    .unwrap_or(Duration::from_secs(DEFAULT_TIMEOUT_SECS)),
+            )
             .build()
             .expect("Failed to create HTTP client");
 
@@ -432,8 +444,12 @@ impl SlipOKService {
     /// # Returns
     ///
     /// A `Result<SlipVerificationResult, AppError>` indicating whether the slip was verified successfully
-    pub async fn verify_slip_url(&self, slip_image_url: &str) -> Result<SlipVerificationResult, AppError> {
-        self.verify_slip_url_with_context(slip_image_url, None).await
+    pub async fn verify_slip_url(
+        &self,
+        slip_image_url: &str,
+    ) -> Result<SlipVerificationResult, AppError> {
+        self.verify_slip_url_with_context(slip_image_url, None)
+            .await
     }
 
     /// Verify a payment slip using its image URL with optional booking context
@@ -461,7 +477,7 @@ impl SlipOKService {
             None => {
                 tracing::warn!("SlipOK API key or branch ID not configured, skipping verification");
                 return Ok(SlipVerificationResult::not_configured());
-            }
+            },
         };
 
         tracing::info!(
@@ -528,7 +544,7 @@ impl SlipOKService {
             None => {
                 tracing::warn!("SlipOK API key or branch ID not configured, skipping verification");
                 return Ok(SlipVerificationResult::not_configured());
-            }
+            },
         };
 
         tracing::info!(
@@ -578,7 +594,10 @@ impl SlipOKService {
 
         // Check for HTTP-level errors
         if !status.is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             tracing::error!(
                 status = %status,
                 error = %error_text,
@@ -597,13 +616,17 @@ impl SlipOKService {
         }
 
         // Parse response
-        let data: SlipOKResponse = response.json().await.map_err(|e| {
-            AppError::SlipOk(format!("Failed to parse response: {}", e))
-        })?;
+        let data: SlipOKResponse = response
+            .json()
+            .await
+            .map_err(|e| AppError::SlipOk(format!("Failed to parse response: {}", e)))?;
 
         // Handle response based on success flag
         if data.success {
-            let transaction_id = data.trans_ref.clone().unwrap_or_else(|| "unknown".to_string());
+            let transaction_id = data
+                .trans_ref
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string());
             tracing::info!(
                 transaction_id = %transaction_id,
                 amount = ?data.amount,
@@ -623,7 +646,9 @@ impl SlipOKService {
                 .code
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "VERIFICATION_FAILED".to_string());
-            let error_message = data.message.unwrap_or_else(|| "Slip verification failed".to_string());
+            let error_message = data
+                .message
+                .unwrap_or_else(|| "Slip verification failed".to_string());
 
             tracing::warn!(
                 error_code = %error_code,
@@ -718,7 +743,9 @@ fn parse_thai_datetime(date_str: Option<&str>, time_str: Option<&str>) -> Option
     // Note: For simplicity, we're treating this as UTC. In production,
     // you might want to use chrono-tz for proper timezone handling.
     let bangkok_offset = chrono::FixedOffset::east_opt(7 * 3600)?;
-    let datetime_with_tz = bangkok_offset.from_local_datetime(&naive_datetime).single()?;
+    let datetime_with_tz = bangkok_offset
+        .from_local_datetime(&naive_datetime)
+        .single()?;
 
     Some(datetime_with_tz.with_timezone(&Utc))
 }

@@ -33,8 +33,7 @@ pub fn test_database_url() -> String {
 
 /// Test Redis URL
 pub fn test_redis_url() -> String {
-    std::env::var("TEST_REDIS_URL")
-        .unwrap_or_else(|_| "redis://localhost:6383".to_string())
+    std::env::var("TEST_REDIS_URL").unwrap_or_else(|_| "redis://localhost:6383".to_string())
 }
 
 /// JWT secret for testing
@@ -167,7 +166,10 @@ impl TestApp {
     }
 
     /// Create a test user and return an authenticated client.
-    pub async fn create_authenticated_user(&self, email: &str) -> Result<(TestUser, TestClient), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn create_authenticated_user(
+        &self,
+        email: &str,
+    ) -> Result<(TestUser, TestClient), Box<dyn std::error::Error + Send + Sync>> {
         let user = create_test_user(&self.pool, email).await?;
         let token = get_auth_token(&user.id, &user.email);
         let client = TestClient::new(self.router.clone()).with_auth(&token);
@@ -209,7 +211,8 @@ fn create_test_config() -> loyalty_backend::Settings {
         },
         auth: AuthConfig {
             jwt_secret: TEST_JWT_SECRET.to_string(),
-            jwt_refresh_secret: "test-refresh-secret-key-for-testing-only-minimum-32-chars".to_string(),
+            jwt_refresh_secret: "test-refresh-secret-key-for-testing-only-minimum-32-chars"
+                .to_string(),
             session_secret: "test-session-secret-key-for-testing-only-minimum-32-chars".to_string(),
             access_token_expiry_secs: 3600,
             refresh_token_expiry_secs: 86400,
@@ -303,10 +306,7 @@ pub async fn create_isolated_test_db(test_name: &str) -> Result<TestDatabase, sq
     pool.execute(format!("CREATE SCHEMA {}", schema_name).as_str())
         .await?;
 
-    Ok(TestDatabase {
-        pool,
-        schema_name,
-    })
+    Ok(TestDatabase { pool, schema_name })
 }
 
 /// Run database migrations for tests
@@ -635,7 +635,10 @@ impl TestUser {
 /// Create a test user in the database.
 ///
 /// This is a convenience function that creates and inserts a test user.
-pub async fn create_test_user(pool: &PgPool, email: &str) -> Result<TestUser, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn create_test_user(
+    pool: &PgPool,
+    email: &str,
+) -> Result<TestUser, Box<dyn std::error::Error + Send + Sync>> {
     let user = TestUser::new(email);
     user.insert(pool).await?;
     Ok(user)
@@ -904,14 +907,17 @@ impl TestResponse {
         assert!(
             self.is_success(),
             "Expected success status, got {}. Body: {}",
-            self.status, self.body
+            self.status,
+            self.body
         );
     }
 
     /// Get a JSON field value as string
     pub fn json_field(&self, field: &str) -> Option<String> {
         let json: serde_json::Value = self.json().ok()?;
-        json.get(field).and_then(|v| v.as_str()).map(|s| s.to_string())
+        json.get(field)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     }
 }
 
@@ -1010,10 +1016,7 @@ pub async fn cleanup_redis(
 ) -> Result<(), redis::RedisError> {
     use redis::AsyncCommands;
 
-    let keys: Vec<String> = redis::cmd("KEYS")
-        .arg(pattern)
-        .query_async(conn)
-        .await?;
+    let keys: Vec<String> = redis::cmd("KEYS").arg(pattern).query_async(conn).await?;
 
     if !keys.is_empty() {
         let _: () = conn.del(keys).await?;
@@ -1068,7 +1071,9 @@ pub async fn setup_test() -> (PgPool, TestDatabase) {
     let _ = dotenvy::dotenv();
 
     // Initialize test database
-    let pool = init_test_db().await.expect("Failed to initialize test database");
+    let pool = init_test_db()
+        .await
+        .expect("Failed to initialize test database");
     let test_db = TestDatabase {
         pool: pool.clone(),
         schema_name: "public".to_string(),

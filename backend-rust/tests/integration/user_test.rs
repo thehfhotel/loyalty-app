@@ -12,8 +12,8 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::common::{
-    generate_test_token, init_test_db, init_test_redis,
-    setup_test, teardown_test, TestClient, TestUser, TEST_JWT_SECRET, TEST_USER_PASSWORD,
+    generate_test_token, init_test_db, init_test_redis, setup_test, teardown_test, TestClient,
+    TestUser, TEST_JWT_SECRET, TEST_USER_PASSWORD,
 };
 
 // ============================================================================
@@ -54,7 +54,8 @@ async fn create_test_user_with_profile(
     last_name: &str,
 ) -> Result<TestUser, sqlx::Error> {
     let user = TestUser::new(email);
-    user.insert_with_profile(pool, first_name, last_name).await?;
+    user.insert_with_profile(pool, first_name, last_name)
+        .await?;
     Ok(user)
 }
 
@@ -68,14 +69,14 @@ async fn create_test_user_with_loyalty(
     nights: i32,
 ) -> Result<TestUser, sqlx::Error> {
     let user = TestUser::new(email);
-    user.insert_with_profile(pool, first_name, last_name).await?;
+    user.insert_with_profile(pool, first_name, last_name)
+        .await?;
 
     // Get Bronze tier ID (default tier)
-    let tier_id: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM tiers WHERE name = 'Bronze' LIMIT 1"
-    )
-    .fetch_optional(pool)
-    .await?;
+    let tier_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM tiers WHERE name = 'Bronze' LIMIT 1")
+            .fetch_optional(pool)
+            .await?;
 
     // Insert loyalty data
     sqlx::query(
@@ -108,9 +109,7 @@ async fn test_get_current_user() {
         .await
         .expect("Failed to create test user");
 
-    let router = create_user_router()
-        .await
-        .expect("Failed to create router");
+    let router = create_user_router().await.expect("Failed to create router");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -123,7 +122,10 @@ async fn test_get_current_user() {
 
     let json: Value = response.json().expect("Response should be valid JSON");
 
-    assert!(json.get("success").is_some(), "Response should have 'success' field");
+    assert!(
+        json.get("success").is_some(),
+        "Response should have 'success' field"
+    );
     assert_eq!(
         json.get("success").and_then(|v| v.as_bool()),
         Some(true),
@@ -131,7 +133,9 @@ async fn test_get_current_user() {
     );
 
     let data = json.get("data").expect("Response should have 'data' field");
-    let profile = data.get("profile").expect("Data should have 'profile' field");
+    let profile = data
+        .get("profile")
+        .expect("Data should have 'profile' field");
 
     assert_eq!(
         profile.get("id").and_then(|v| v.as_str()),
@@ -172,9 +176,7 @@ async fn test_update_profile() {
         .await
         .expect("Failed to create test user");
 
-    let router = create_user_router()
-        .await
-        .expect("Failed to create router");
+    let router = create_user_router().await.expect("Failed to create router");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -199,7 +201,9 @@ async fn test_update_profile() {
     );
 
     let data = json.get("data").expect("Response should have 'data' field");
-    let profile = data.get("profile").expect("Data should have 'profile' field");
+    let profile = data
+        .get("profile")
+        .expect("Data should have 'profile' field");
 
     assert_eq!(
         profile.get("first_name").and_then(|v| v.as_str()),
@@ -251,9 +255,7 @@ async fn test_change_password() {
         .await
         .expect("Failed to create test user");
 
-    let router = create_user_router()
-        .await
-        .expect("Failed to create router");
+    let router = create_user_router().await.expect("Failed to create router");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router.clone()).with_auth(&token);
@@ -280,24 +282,20 @@ async fn test_change_password() {
 
     // Verify the message indicates success
     let message = json.get("message").and_then(|v| v.as_str());
-    assert!(
-        message.is_some(),
-        "Response should have a success message"
-    );
+    assert!(message.is_some(), "Response should have a success message");
     assert!(
         message.unwrap().to_lowercase().contains("password"),
         "Message should mention password"
     );
 
     // Verify old password no longer works by checking the hash was updated
-    let stored_hash: Option<String> = sqlx::query_scalar(
-        "SELECT password_hash FROM users WHERE id = $1"
-    )
-    .bind(user.id)
-    .fetch_optional(&pool)
-    .await
-    .expect("Query should succeed")
-    .flatten();
+    let stored_hash: Option<String> =
+        sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
+            .bind(user.id)
+            .fetch_optional(&pool)
+            .await
+            .expect("Query should succeed")
+            .flatten();
 
     assert!(stored_hash.is_some(), "Password hash should exist");
 
@@ -342,15 +340,13 @@ async fn test_get_loyalty_status() {
         "loyaltytest@example.com",
         "Loyal",
         "Customer",
-        1500,  // points
-        5,     // nights
+        1500, // points
+        5,    // nights
     )
     .await
     .expect("Failed to create test user with loyalty");
 
-    let router = create_user_router()
-        .await
-        .expect("Failed to create router");
+    let router = create_user_router().await.expect("Failed to create router");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -394,17 +390,11 @@ async fn test_get_loyalty_status() {
 
     // Verify tier exists (should be Bronze for default users)
     let tier = data.get("tier");
-    assert!(
-        tier.is_some(),
-        "Response should have tier information"
-    );
+    assert!(tier.is_some(), "Response should have tier information");
 
     if let Some(tier_obj) = tier {
         if !tier_obj.is_null() {
-            assert!(
-                tier_obj.get("name").is_some(),
-                "Tier should have a name"
-            );
+            assert!(tier_obj.get("name").is_some(), "Tier should have a name");
         }
     }
 
@@ -420,9 +410,7 @@ async fn test_get_loyalty_status() {
 #[ignore = "Requires running database and Redis"]
 async fn test_unauthorized_access() {
     // Arrange
-    let router = create_user_router()
-        .await
-        .expect("Failed to create router");
+    let router = create_user_router().await.expect("Failed to create router");
 
     // Create client WITHOUT auth token
     let client = TestClient::new(router);
@@ -442,10 +430,7 @@ async fn test_unauthorized_access() {
     );
 
     let error = json.get("error").and_then(|v| v.as_str());
-    assert!(
-        error.is_some(),
-        "Error field should be a string"
-    );
+    assert!(error.is_some(), "Error field should be a string");
     assert_eq!(
         error.unwrap(),
         "unauthorized",
@@ -454,19 +439,14 @@ async fn test_unauthorized_access() {
 
     // Verify message indicates missing/invalid token
     let message = json.get("message").and_then(|v| v.as_str());
-    assert!(
-        message.is_some(),
-        "Response should have 'message' field"
-    );
+    assert!(message.is_some(), "Response should have 'message' field");
 }
 
 #[tokio::test]
 #[ignore = "Requires running database and Redis"]
 async fn test_unauthorized_access_invalid_token() {
     // Arrange
-    let router = create_user_router()
-        .await
-        .expect("Failed to create router");
+    let router = create_user_router().await.expect("Failed to create router");
 
     // Create client with invalid token
     let client = TestClient::new(router).with_auth("invalid.token.here");
@@ -492,9 +472,7 @@ async fn test_unauthorized_access_expired_token() {
     use crate::common::generate_expired_token;
 
     // Arrange
-    let router = create_user_router()
-        .await
-        .expect("Failed to create router");
+    let router = create_user_router().await.expect("Failed to create router");
 
     let user_id = Uuid::new_v4();
     let expired_token = generate_expired_token(&user_id, "expired@example.com");
@@ -530,9 +508,7 @@ async fn test_update_profile_validation_error() {
         .await
         .expect("Failed to create test user");
 
-    let router = create_user_router()
-        .await
-        .expect("Failed to create router");
+    let router = create_user_router().await.expect("Failed to create router");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -571,9 +547,7 @@ async fn test_change_password_wrong_current() {
         .await
         .expect("Failed to create test user");
 
-    let router = create_user_router()
-        .await
-        .expect("Failed to create router");
+    let router = create_user_router().await.expect("Failed to create router");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -594,9 +568,9 @@ async fn test_change_password_wrong_current() {
     // Should indicate incorrect password
     let message = json.get("message").and_then(|v| v.as_str()).unwrap_or("");
     assert!(
-        message.to_lowercase().contains("incorrect") ||
-        message.to_lowercase().contains("invalid") ||
-        message.to_lowercase().contains("wrong"),
+        message.to_lowercase().contains("incorrect")
+            || message.to_lowercase().contains("invalid")
+            || message.to_lowercase().contains("wrong"),
         "Message should indicate password is incorrect: {}",
         message
     );
@@ -620,9 +594,7 @@ async fn test_get_loyalty_status_no_record() {
         .await
         .expect("Failed to create test user");
 
-    let router = create_user_router()
-        .await
-        .expect("Failed to create router");
+    let router = create_user_router().await.expect("Failed to create router");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);

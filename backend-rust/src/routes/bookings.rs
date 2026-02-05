@@ -159,9 +159,10 @@ async fn list_bookings(
     let user_id_filter = if is_admin {
         None
     } else {
-        Some(Uuid::parse_str(&auth_user.id).map_err(|_| {
-            AppError::InvalidToken("Invalid user ID in token".to_string())
-        })?)
+        Some(
+            Uuid::parse_str(&auth_user.id)
+                .map_err(|_| AppError::InvalidToken("Invalid user ID in token".to_string()))?,
+        )
     };
 
     // Query bookings from database
@@ -244,11 +245,7 @@ async fn create_booking(
         .map_err(|_| AppError::InvalidToken("Invalid user ID in token".to_string()))?;
 
     // Parse room type if provided
-    let room_type = req
-        .room_type
-        .as_deref()
-        .map(parse_room_type)
-        .transpose()?;
+    let room_type = req.room_type.as_deref().map(parse_room_type).transpose()?;
 
     // Create the booking
     let booking = insert_booking(
@@ -435,8 +432,12 @@ async fn complete_booking(
     let completed = complete_booking_in_db(state.db(), booking_id).await?;
 
     // Award loyalty points (10 points per THB spent)
-    let points_to_award =
-        (completed.total_amount.to_string().parse::<f64>().unwrap_or(0.0) * 10.0) as i32;
+    let points_to_award = (completed
+        .total_amount
+        .to_string()
+        .parse::<f64>()
+        .unwrap_or(0.0)
+        * 10.0) as i32;
 
     if points_to_award > 0 {
         award_loyalty_points(
@@ -507,10 +508,7 @@ async fn query_bookings(
     Ok((Vec::new(), 0))
 }
 
-async fn query_booking_by_id(
-    _db: &sqlx::PgPool,
-    booking_id: Uuid,
-) -> AppResult<BookingResponse> {
+async fn query_booking_by_id(_db: &sqlx::PgPool, booking_id: Uuid) -> AppResult<BookingResponse> {
     // TODO: Implement actual database query
     // This is a placeholder that returns a not found error
     Err(AppError::NotFound(format!("Booking {}", booking_id)))
@@ -701,7 +699,10 @@ mod tests {
 
     #[test]
     fn test_parse_room_type_valid() {
-        assert!(matches!(parse_room_type("standard"), Ok(RoomType::Standard)));
+        assert!(matches!(
+            parse_room_type("standard"),
+            Ok(RoomType::Standard)
+        ));
         assert!(matches!(parse_room_type("DELUXE"), Ok(RoomType::Deluxe)));
         assert!(matches!(parse_room_type("Suite"), Ok(RoomType::Suite)));
         assert!(matches!(

@@ -273,8 +273,7 @@ pub trait EmailService: Send + Sync {
     /// # Arguments
     /// * `to` - Recipient email address
     /// * `reset_token` - The password reset token
-    async fn send_password_reset_email(&self, to: &str, reset_token: &str)
-        -> Result<(), AppError>;
+    async fn send_password_reset_email(&self, to: &str, reset_token: &str) -> Result<(), AppError>;
 
     /// Send a welcome email
     ///
@@ -380,7 +379,7 @@ impl EmailService for EmailServiceImpl {
                     to, subject
                 );
                 return Ok(());
-            }
+            },
         };
 
         let mailer = match &self.mailer {
@@ -388,7 +387,7 @@ impl EmailService for EmailServiceImpl {
             None => {
                 warn!("SMTP mailer not initialized, skipping email to {}", to);
                 return Ok(());
-            }
+            },
         };
 
         let from_mailbox = Self::parse_mailbox(&config.from)?;
@@ -437,11 +436,7 @@ impl EmailService for EmailServiceImpl {
         Ok(())
     }
 
-    async fn send_password_reset_email(
-        &self,
-        to: &str,
-        reset_token: &str,
-    ) -> Result<(), AppError> {
+    async fn send_password_reset_email(&self, to: &str, reset_token: &str) -> Result<(), AppError> {
         let frontend_url = self.frontend_url();
         let html_body = templates::password_reset_template(reset_token, frontend_url);
         self.send_email(to, "Reset Your Password", &html_body).await
@@ -561,8 +556,7 @@ mod tests {
 
     #[test]
     fn test_password_reset_template() {
-        let template =
-            templates::password_reset_template("abc123token", "https://example.com");
+        let template = templates::password_reset_template("abc123token", "https://example.com");
         assert!(template.contains("https://example.com/reset-password?token=abc123token"));
         assert!(template.contains("Reset Your Password"));
         assert!(template.contains("expires in 1 hour"));

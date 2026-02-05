@@ -14,8 +14,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::common::{
-    generate_test_token, init_test_db, setup_test, teardown_test, TestClient, TestCoupon,
-    TestUser,
+    generate_test_token, init_test_db, setup_test, teardown_test, TestClient, TestCoupon, TestUser,
 };
 
 // ============================================================================
@@ -118,7 +117,9 @@ async fn test_list_coupons() {
 
     // Create test user
     let user = TestUser::new("coupon_list_user@example.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     // Create test coupons
     let coupon1 = TestCoupon::percentage("LIST10", 10.0);
@@ -156,7 +157,10 @@ async fn test_list_coupons() {
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
-    assert!(json.get("success").is_some(), "Response should have success field");
+    assert!(
+        json.get("success").is_some(),
+        "Response should have success field"
+    );
     assert_eq!(
         json.get("success").and_then(|v| v.as_bool()),
         Some(true),
@@ -189,14 +193,13 @@ async fn test_get_user_coupons() {
 
     // Create test user
     let user = TestUser::new("my_coupons_user@example.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     // Create test coupon
     let coupon = TestCoupon::percentage("MYTEST10", 10.0);
-    coupon
-        .insert(&pool)
-        .await
-        .expect("Failed to insert coupon");
+    coupon.insert(&pool).await.expect("Failed to insert coupon");
 
     // Assign coupon to user
     insert_user_coupon(&pool, user.id, coupon.id, "available")
@@ -264,7 +267,10 @@ async fn test_create_coupon_admin() {
 
     // Create admin user
     let admin = TestUser::admin("admin_create_coupon@example.com");
-    admin.insert(&pool).await.expect("Failed to insert admin user");
+    admin
+        .insert(&pool)
+        .await
+        .expect("Failed to insert admin user");
 
     // Generate admin auth token
     let token = generate_test_token(&admin.id, &admin.email);
@@ -374,7 +380,10 @@ async fn test_assign_coupon() {
 
     // Create admin user
     let admin = TestUser::admin("admin_assign@example.com");
-    admin.insert(&pool).await.expect("Failed to insert admin user");
+    admin
+        .insert(&pool)
+        .await
+        .expect("Failed to insert admin user");
 
     // Create regular user to receive coupon
     let user = TestUser::new("receiver@example.com");
@@ -382,10 +391,7 @@ async fn test_assign_coupon() {
 
     // Create test coupon
     let coupon = TestCoupon::percentage("ASSIGN10", 10.0);
-    coupon
-        .insert(&pool)
-        .await
-        .expect("Failed to insert coupon");
+    coupon.insert(&pool).await.expect("Failed to insert coupon");
 
     // Generate admin auth token
     let token = generate_test_token(&admin.id, &admin.email);
@@ -418,7 +424,10 @@ async fn test_assign_coupon() {
 
     // Verify assignment data
     let data = json.get("data").expect("Response should have data field");
-    assert!(data.is_array(), "Data should be an array of assigned coupons");
+    assert!(
+        data.is_array(),
+        "Data should be an array of assigned coupons"
+    );
 
     let assignments = data.as_array().unwrap();
     assert_eq!(assignments.len(), 1, "Should have one assignment");
@@ -460,10 +469,7 @@ async fn test_redeem_coupon() {
 
     // Create test coupon (percentage discount)
     let coupon = TestCoupon::percentage("REDEEM20", 20.0);
-    coupon
-        .insert(&pool)
-        .await
-        .expect("Failed to insert coupon");
+    coupon.insert(&pool).await.expect("Failed to insert coupon");
 
     // Assign coupon to user
     let (user_coupon_id, qr_code) = insert_user_coupon(&pool, user.id, coupon.id, "available")
@@ -511,10 +517,7 @@ async fn test_redeem_coupon() {
     let discount_amount = data
         .get("discountAmount")
         .and_then(|v| v.as_f64())
-        .or_else(|| {
-            data.get("discount_amount")
-                .and_then(|v| v.as_f64())
-        });
+        .or_else(|| data.get("discount_amount").and_then(|v| v.as_f64()));
     assert!(
         discount_amount.is_some(),
         "Response should have discount amount"
@@ -523,20 +526,16 @@ async fn test_redeem_coupon() {
     let final_amount = data
         .get("finalAmount")
         .and_then(|v| v.as_f64())
-        .or_else(|| {
-            data.get("final_amount")
-                .and_then(|v| v.as_f64())
-        });
+        .or_else(|| data.get("final_amount").and_then(|v| v.as_f64()));
     assert!(final_amount.is_some(), "Response should have final amount");
 
     // Verify coupon status in database
-    let coupon_status: String = sqlx::query_scalar(
-        "SELECT status::text FROM user_coupons WHERE id = $1",
-    )
-    .bind(user_coupon_id)
-    .fetch_one(&pool)
-    .await
-    .expect("Failed to fetch coupon status");
+    let coupon_status: String =
+        sqlx::query_scalar("SELECT status::text FROM user_coupons WHERE id = $1")
+            .bind(user_coupon_id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to fetch coupon status");
 
     assert_eq!(coupon_status, "used", "Coupon status should be 'used'");
 
@@ -565,10 +564,7 @@ async fn test_redeem_already_redeemed_fails() {
 
     // Create test coupon
     let coupon = TestCoupon::percentage("DOUBLE10", 10.0);
-    coupon
-        .insert(&pool)
-        .await
-        .expect("Failed to insert coupon");
+    coupon.insert(&pool).await.expect("Failed to insert coupon");
 
     // Assign coupon to user with 'used' status (already redeemed)
     let (_user_coupon_id, qr_code) = insert_user_coupon(&pool, user.id, coupon.id, "used")
@@ -649,10 +645,7 @@ async fn test_redeem_expired_coupon_fails() {
 
     // Create test coupon
     let coupon = TestCoupon::percentage("EXPIRED20", 20.0);
-    coupon
-        .insert(&pool)
-        .await
-        .expect("Failed to insert coupon");
+    coupon.insert(&pool).await.expect("Failed to insert coupon");
 
     // Create user coupon with expired status
     let user_coupon_id = Uuid::new_v4();
@@ -774,10 +767,7 @@ async fn test_validate_coupon_qr_code() {
 
     // Create test coupon
     let coupon = TestCoupon::percentage("VALIDATE10", 10.0);
-    coupon
-        .insert(&pool)
-        .await
-        .expect("Failed to insert coupon");
+    coupon.insert(&pool).await.expect("Failed to insert coupon");
 
     // Assign coupon to user
     let (_user_coupon_id, qr_code) = insert_user_coupon(&pool, user.id, coupon.id, "available")
@@ -857,7 +847,10 @@ async fn test_assign_coupon_to_multiple_users() {
 
     // Create admin user
     let admin = TestUser::admin("admin_multi_assign@example.com");
-    admin.insert(&pool).await.expect("Failed to insert admin user");
+    admin
+        .insert(&pool)
+        .await
+        .expect("Failed to insert admin user");
 
     // Create multiple users to receive coupons
     let user1 = TestUser::new("multi_receiver1@example.com");
@@ -871,10 +864,7 @@ async fn test_assign_coupon_to_multiple_users() {
 
     // Create test coupon
     let coupon = TestCoupon::percentage("MULTI25", 25.0);
-    coupon
-        .insert(&pool)
-        .await
-        .expect("Failed to insert coupon");
+    coupon.insert(&pool).await.expect("Failed to insert coupon");
 
     // Generate admin auth token
     let token = generate_test_token(&admin.id, &admin.email);
@@ -925,11 +915,7 @@ async fn test_assign_coupon_to_multiple_users() {
     let mut unique_qr_codes = qr_codes.clone();
     unique_qr_codes.sort();
     unique_qr_codes.dedup();
-    assert_eq!(
-        unique_qr_codes.len(),
-        3,
-        "All QR codes should be unique"
-    );
+    assert_eq!(unique_qr_codes.len(), 3, "All QR codes should be unique");
 
     // Clean up
     teardown_test(&test_db).await;

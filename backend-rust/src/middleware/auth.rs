@@ -10,7 +10,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 
 use crate::error::ErrorResponse;
@@ -62,8 +62,12 @@ impl IntoResponse for AuthError {
         let (status, message) = match self {
             AuthError::MissingToken => (StatusCode::UNAUTHORIZED, "Missing authentication token"),
             AuthError::InvalidToken => (StatusCode::UNAUTHORIZED, "Invalid authentication token"),
-            AuthError::ExpiredToken => (StatusCode::UNAUTHORIZED, "Authentication token has expired"),
-            AuthError::MalformedHeader => (StatusCode::UNAUTHORIZED, "Malformed authorization header"),
+            AuthError::ExpiredToken => {
+                (StatusCode::UNAUTHORIZED, "Authentication token has expired")
+            },
+            AuthError::MalformedHeader => {
+                (StatusCode::UNAUTHORIZED, "Malformed authorization header")
+            },
         };
 
         let body = Json(ErrorResponse {
@@ -112,7 +116,7 @@ fn validate_token(token: &str, jwt_secret: &str) -> Result<Claims, AuthError> {
                 jsonwebtoken::errors::ErrorKind::ExpiredSignature => Err(AuthError::ExpiredToken),
                 _ => Err(AuthError::InvalidToken),
             }
-        }
+        },
     }
 }
 
@@ -134,10 +138,7 @@ fn validate_token(token: &str, jwt_secret: &str) -> Result<Claims, AuthError> {
 ///     .route("/protected", get(handler))
 ///     .layer(middleware::from_fn_with_state(state, auth_middleware));
 /// ```
-pub async fn auth_middleware(
-    mut request: Request,
-    next: Next,
-) -> Result<Response, AuthError> {
+pub async fn auth_middleware(mut request: Request, next: Next) -> Result<Response, AuthError> {
     // Get JWT secret from environment
     let jwt_secret = std::env::var("JWT_SECRET")
         .unwrap_or_else(|_| "development-secret-change-in-production".to_string());
@@ -166,10 +167,7 @@ pub async fn auth_middleware(
 /// Similar to auth_middleware, but does not fail on missing/invalid tokens.
 /// Instead, it simply doesn't add AuthUser to extensions if authentication fails.
 /// Useful for routes that work differently for authenticated vs unauthenticated users.
-pub async fn optional_auth_middleware(
-    mut request: Request,
-    next: Next,
-) -> Response {
+pub async fn optional_auth_middleware(mut request: Request, next: Next) -> Response {
     let jwt_secret = std::env::var("JWT_SECRET")
         .unwrap_or_else(|_| "development-secret-change-in-production".to_string());
 
@@ -224,17 +222,14 @@ pub async fn require_role(
     next: Next,
     required_role: &'static str,
 ) -> Result<Response, Response> {
-    let auth_user = request
-        .extensions()
-        .get::<AuthUser>()
-        .ok_or_else(|| {
-            let body = Json(ErrorResponse {
-                error: "unauthorized".to_string(),
-                message: "Authentication required".to_string(),
-                details: None,
-            });
-            (StatusCode::UNAUTHORIZED, body).into_response()
-        })?;
+    let auth_user = request.extensions().get::<AuthUser>().ok_or_else(|| {
+        let body = Json(ErrorResponse {
+            error: "unauthorized".to_string(),
+            message: "Authentication required".to_string(),
+            details: None,
+        });
+        (StatusCode::UNAUTHORIZED, body).into_response()
+    })?;
 
     if !has_role(auth_user, required_role) {
         let body = Json(ErrorResponse {
@@ -251,8 +246,8 @@ pub async fn require_role(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jsonwebtoken::{encode, EncodingKey, Header};
     use chrono::Utc;
+    use jsonwebtoken::{encode, EncodingKey, Header};
 
     fn create_test_token(claims: &Claims, secret: &str) -> String {
         encode(

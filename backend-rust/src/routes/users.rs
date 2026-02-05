@@ -253,7 +253,9 @@ async fn get_current_user(
 
     let profile: UserProfileResponse = row.into();
 
-    Ok(Json(SuccessResponse::new(ProfileResponseWrapper { profile })))
+    Ok(Json(SuccessResponse::new(ProfileResponseWrapper {
+        profile,
+    })))
 }
 
 /// PUT /api/users/me - Update current user's profile
@@ -274,12 +276,11 @@ async fn update_current_user(
         .map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))?;
 
     // Check if user exists
-    let user_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND is_active = true)",
-    )
-    .bind(user_id)
-    .fetch_one(state.db())
-    .await?;
+    let user_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND is_active = true)")
+            .bind(user_id)
+            .fetch_one(state.db())
+            .await?;
 
     if !user_exists {
         return Err(AppError::NotFound("User not found".to_string()));
@@ -327,7 +328,9 @@ async fn update_current_user(
 
     let profile: UserProfileResponse = row.into();
 
-    Ok(Json(SuccessResponse::new(ProfileResponseWrapper { profile })))
+    Ok(Json(SuccessResponse::new(ProfileResponseWrapper {
+        profile,
+    })))
 }
 
 /// PUT /api/users/me/password - Change current user's password
@@ -347,13 +350,12 @@ async fn change_password(
         .map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))?;
 
     // Get current password hash
-    let current_hash: Option<String> = sqlx::query_scalar(
-        "SELECT password_hash FROM users WHERE id = $1 AND is_active = true",
-    )
-    .bind(user_id)
-    .fetch_optional(state.db())
-    .await?
-    .flatten();
+    let current_hash: Option<String> =
+        sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1 AND is_active = true")
+            .bind(user_id)
+            .fetch_optional(state.db())
+            .await?
+            .flatten();
 
     let current_hash = current_hash.ok_or_else(|| {
         AppError::BadRequest("User not found or account uses OAuth authentication".to_string())
@@ -361,7 +363,9 @@ async fn change_password(
 
     // Verify current password using argon2
     use argon2::{
-        password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+        password_hash::{
+            rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
+        },
         Argon2,
     };
 
@@ -380,13 +384,11 @@ async fn change_password(
         .to_string();
 
     // Update password
-    sqlx::query(
-        "UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1",
-    )
-    .bind(user_id)
-    .bind(new_hash)
-    .execute(state.db())
-    .await?;
+    sqlx::query("UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1")
+        .bind(user_id)
+        .bind(new_hash)
+        .execute(state.db())
+        .await?;
 
     Ok(Json(SuccessResponse::with_message(
         "Password changed successfully",
@@ -444,7 +446,7 @@ async fn get_loyalty_status(
                 tier_updated_at: r.tier_updated_at,
                 points_updated_at: r.points_updated_at,
             }
-        }
+        },
         None => {
             // User has no loyalty record yet, return default values
             LoyaltyStatusResponse {
@@ -455,7 +457,7 @@ async fn get_loyalty_status(
                 tier_updated_at: None,
                 points_updated_at: None,
             }
-        }
+        },
     };
 
     Ok(Json(SuccessResponse::new(loyalty_status)))
@@ -621,10 +623,12 @@ async fn delete_avatar(
     let user_id = Uuid::parse_str(&auth_user.id)
         .map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))?;
 
-    sqlx::query("UPDATE user_profiles SET avatar_url = NULL, updated_at = NOW() WHERE user_id = $1")
-        .bind(user_id)
-        .execute(state.db())
-        .await?;
+    sqlx::query(
+        "UPDATE user_profiles SET avatar_url = NULL, updated_at = NOW() WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .execute(state.db())
+    .await?;
 
     Ok(Json(SuccessResponse::with_message(
         "Avatar deleted successfully",
@@ -696,7 +700,8 @@ fn not_implemented_response() -> (StatusCode, Json<NotImplementedResponse>) {
         StatusCode::NOT_IMPLEMENTED,
         Json(NotImplementedResponse {
             error: "not_implemented".to_string(),
-            message: "This endpoint requires database connection. Use routes_with_state().".to_string(),
+            message: "This endpoint requires database connection. Use routes_with_state()."
+                .to_string(),
         }),
     )
 }

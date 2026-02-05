@@ -34,9 +34,8 @@ fn thai_phone_regex() -> &'static Regex {
         // - Landline: 02-xxx-xxxx (Bangkok), 0xx-xxx-xxxx (provinces)
         // - With or without dashes/spaces
         // - Optional +66 country code
-        Regex::new(
-            r"^(?:\+66|0)(?:(?:2\d{7})|(?:[3-9]\d{7,8})|(?:[689]\d{8}))$"
-        ).expect("Invalid Thai phone regex pattern")
+        Regex::new(r"^(?:\+66|0)(?:(?:2\d{7})|(?:[3-9]\d{7,8})|(?:[689]\d{8}))$")
+            .expect("Invalid Thai phone regex pattern")
     })
 }
 
@@ -314,7 +313,7 @@ pub fn validate_password_custom(password: &str) -> Result<(), validator::Validat
             let mut error = validator::ValidationError::new("invalid_password");
             error.message = Some(errors.join("; ").into());
             Err(error)
-        }
+        },
     }
 }
 
@@ -477,9 +476,7 @@ mod tests {
             let result = validate_password("Short1A");
             assert!(result.is_err());
             let errors = result.unwrap_err();
-            assert!(errors
-                .iter()
-                .any(|e| e.contains("at least 8 characters")));
+            assert!(errors.iter().any(|e| e.contains("at least 8 characters")));
         }
 
         #[test]
@@ -511,9 +508,7 @@ mod tests {
             let result = validate_password("Short1");
             assert!(result.is_err());
             let errors = result.unwrap_err();
-            assert!(errors
-                .iter()
-                .any(|e| e.contains("at least 8 characters")));
+            assert!(errors.iter().any(|e| e.contains("at least 8 characters")));
         }
 
         #[test]
@@ -608,8 +603,14 @@ mod tests {
 
         #[test]
         fn test_normalize_phone() {
-            assert_eq!(normalize_phone("081-234-5678"), Some("0812345678".to_string()));
-            assert_eq!(normalize_phone("+66812345678"), Some("0812345678".to_string()));
+            assert_eq!(
+                normalize_phone("081-234-5678"),
+                Some("0812345678".to_string())
+            );
+            assert_eq!(
+                normalize_phone("+66812345678"),
+                Some("0812345678".to_string())
+            );
             assert_eq!(normalize_phone("invalid"), None);
             assert_eq!(normalize_phone(""), None);
         }

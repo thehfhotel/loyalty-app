@@ -125,7 +125,12 @@ async fn upload_file(
     let name = filename.unwrap_or_else(|| "unknown".to_string());
     let mime_type = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
 
-    info!("Uploading file: {} ({}, {} bytes)", name, mime_type, data.len());
+    info!(
+        "Uploading file: {} ({}, {} bytes)",
+        name,
+        mime_type,
+        data.len()
+    );
 
     let url = state.storage.save_file(data, &name, &mime_type).await?;
 
@@ -168,31 +173,26 @@ async fn upload_avatar(
                 })?;
 
                 file_data = Some(data);
-            }
+            },
             "user_id" => {
                 let value = field.text().await.map_err(|e| {
                     error!("Failed to read user_id: {}", e);
                     AppError::BadRequest(format!("Failed to read user_id: {}", e))
                 })?;
                 user_id = Some(value);
-            }
+            },
             _ => {
                 debug!("Ignoring unknown field: {}", field_name);
-            }
+            },
         }
     }
 
-    let data = file_data.ok_or_else(|| {
-        AppError::BadRequest("No file uploaded".to_string())
-    })?;
+    let data = file_data.ok_or_else(|| AppError::BadRequest("No file uploaded".to_string()))?;
 
-    let uid = user_id.ok_or_else(|| {
-        AppError::MissingField("user_id".to_string())
-    })?;
+    let uid = user_id.ok_or_else(|| AppError::MissingField("user_id".to_string()))?;
 
-    let mime_type = content_type.ok_or_else(|| {
-        AppError::BadRequest("Content type is required".to_string())
-    })?;
+    let mime_type =
+        content_type.ok_or_else(|| AppError::BadRequest("Content type is required".to_string()))?;
 
     info!(
         "Processing avatar upload for user {}: {} bytes, {}",
@@ -244,15 +244,16 @@ async fn upload_slip(
         }
     }
 
-    let data = file_data.ok_or_else(|| {
-        AppError::BadRequest("No file uploaded".to_string())
-    })?;
+    let data = file_data.ok_or_else(|| AppError::BadRequest("No file uploaded".to_string()))?;
 
-    let mime_type = content_type.ok_or_else(|| {
-        AppError::BadRequest("Content type is required".to_string())
-    })?;
+    let mime_type =
+        content_type.ok_or_else(|| AppError::BadRequest("Content type is required".to_string()))?;
 
-    info!("Processing slip upload: {} bytes, {}", data.len(), mime_type);
+    info!(
+        "Processing slip upload: {} bytes, {}",
+        data.len(),
+        mime_type
+    );
 
     let url = state.storage.save_slip(data, &mime_type).await?;
 
@@ -294,9 +295,9 @@ async fn serve_slip(
 /// Helper function to serve static files
 async fn serve_static_file(path: &std::path::Path, filename: &str) -> Result<Response, AppError> {
     // Check if file exists
-    let file = File::open(path).await.map_err(|_| {
-        AppError::NotFound(format!("File not found: {}", filename))
-    })?;
+    let file = File::open(path)
+        .await
+        .map_err(|_| AppError::NotFound(format!("File not found: {}", filename)))?;
 
     // Get file metadata for content-length
     let metadata = file.metadata().await.map_err(|e| {
@@ -328,11 +329,7 @@ async fn serve_static_file(path: &std::path::Path, filename: &str) -> Result<Res
 
 /// Get content type based on file extension
 fn get_content_type(filename: &str) -> &'static str {
-    let extension = filename
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-        .to_lowercase();
+    let extension = filename.rsplit('.').next().unwrap_or("").to_lowercase();
 
     match extension.as_str() {
         "jpg" | "jpeg" => "image/jpeg",
@@ -353,9 +350,7 @@ fn get_content_type(filename: &str) -> &'static str {
 /// Get storage statistics (admin only)
 ///
 /// GET /storage/stats
-async fn get_storage_stats(
-    State(state): State<StorageState>,
-) -> AppResult<Json<StorageReport>> {
+async fn get_storage_stats(State(state): State<StorageState>) -> AppResult<Json<StorageReport>> {
     let report = state.storage.get_storage_report().await?;
     Ok(Json(report))
 }
@@ -363,9 +358,7 @@ async fn get_storage_stats(
 /// Trigger manual backup (admin only)
 ///
 /// POST /storage/backup
-async fn trigger_backup(
-    State(state): State<StorageState>,
-) -> AppResult<Json<BackupResponse>> {
+async fn trigger_backup(State(state): State<StorageState>) -> AppResult<Json<BackupResponse>> {
     info!("Manual backup triggered");
 
     // Clone the storage service for the background task
@@ -376,10 +369,10 @@ async fn trigger_backup(
         match storage.backup_avatars().await {
             Ok(count) => {
                 info!("Backup completed: {} files backed up", count);
-            }
+            },
             Err(e) => {
                 error!("Backup failed: {}", e);
-            }
+            },
         }
     });
 

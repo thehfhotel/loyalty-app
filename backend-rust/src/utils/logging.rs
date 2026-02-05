@@ -121,7 +121,7 @@ pub fn sanitize_log_value(value: &str, options: Option<SanitizeOptions>) -> Stri
                 // Check if this is a CSI sequence (ESC [)
                 if chars.peek() == Some(&'[') {
                     chars.next(); // consume '['
-                    // Skip until we hit a letter (the terminator)
+                                  // Skip until we hit a letter (the terminator)
                     while let Some(&next) = chars.peek() {
                         chars.next();
                         if next.is_ascii_alphabetic() {
@@ -262,16 +262,16 @@ pub fn sanitize_ip(ip: Option<&str>) -> String {
         Some(ip_str) => {
             let sanitized = sanitize_log_value(ip_str, None);
             // IP addresses should only contain numbers, dots, and colons (for IPv6)
-            let is_valid = sanitized.chars().all(|c| {
-                c.is_ascii_digit() || c == '.' || c == ':' || c.is_ascii_hexdigit()
-            });
+            let is_valid = sanitized
+                .chars()
+                .all(|c| c.is_ascii_digit() || c == '.' || c == ':' || c.is_ascii_hexdigit());
 
             if is_valid {
                 sanitized
             } else {
                 "invalid-ip".to_string()
             }
-        }
+        },
     }
 }
 
@@ -353,7 +353,7 @@ pub fn init_tracing(env: Option<Environment>) {
                         .with_target(true),
                 )
                 .init();
-        }
+        },
         Environment::Development => {
             // Pretty format for development - human-readable with colors
             tracing_subscriber::registry()
@@ -368,7 +368,7 @@ pub fn init_tracing(env: Option<Environment>) {
                         .with_span_events(FmtSpan::CLOSE),
                 )
                 .init();
-        }
+        },
     }
 
     tracing::info!(
@@ -430,14 +430,14 @@ impl OnFailure<ServerErrorsFailureClass> for RequestOnFailure {
                     latency_ms = %latency.as_millis(),
                     "Request failed with error status"
                 );
-            }
+            },
             ServerErrorsFailureClass::Error(msg) => {
                 tracing::error!(
                     error = %msg,
                     latency_ms = %latency.as_millis(),
                     "Request failed with error"
                 );
-            }
+            },
         }
     }
 }

@@ -71,7 +71,7 @@ async fn sse_events_handler(
             Err(e) => {
                 tracing::debug!(error = %e, "SSE broadcast receive error");
                 None
-            }
+            },
         }
     });
 
@@ -93,12 +93,11 @@ async fn sse_events_handler(
     // Wrap with cleanup on drop - CleanupStream will box internally
     let final_stream = CleanupStream::new(sse_stream, user_id, client_id);
 
-    Sse::new(final_stream)
-        .keep_alive(
-            KeepAlive::new()
-                .interval(Duration::from_secs(30))
-                .text("heartbeat"),
-        )
+    Sse::new(final_stream).keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(30))
+            .text("heartbeat"),
+    )
 }
 
 /// Type alias for pinned boxed stream
@@ -172,7 +171,7 @@ async fn _sse_events_with_query(
         Ok(Extension(user)) => {
             let sse = sse_events_handler(Extension(user)).await;
             sse.into_response()
-        }
+        },
         Err(_) => {
             // Try query parameter token
             if let Some(token) = query.token {
@@ -181,7 +180,7 @@ async fn _sse_events_with_query(
                     Ok(user) => {
                         let sse = sse_events_handler(Extension(user)).await;
                         sse.into_response()
-                    }
+                    },
                     Err(response) => response,
                 }
             } else {
@@ -191,14 +190,14 @@ async fn _sse_events_with_query(
                 ));
                 (StatusCode::UNAUTHORIZED, body).into_response()
             }
-        }
+        },
     }
 }
 
 /// Validate JWT token from query parameter
 fn validate_token_from_query(token: &str) -> Result<AuthUser, Response> {
-    use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
     use crate::middleware::auth::Claims;
+    use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 
     let jwt_secret = std::env::var("JWT_SECRET")
         .unwrap_or_else(|_| "development-secret-change-in-production".to_string());
@@ -214,12 +213,12 @@ fn validate_token_from_query(token: &str) -> Result<AuthUser, Response> {
             let (message, error_code) = match err.kind() {
                 jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
                     ("Token has expired", "token_expired")
-                }
+                },
                 _ => ("Invalid authentication token", "invalid_token"),
             };
             let body = Json(ErrorResponse::new(error_code, message));
             Err((StatusCode::UNAUTHORIZED, body).into_response())
-        }
+        },
     }
 }
 
@@ -232,7 +231,7 @@ async fn sse_handler_with_fallback(
         Some(Extension(user)) => {
             let sse = sse_events_handler(Extension(user)).await;
             sse.into_response()
-        }
+        },
         None => {
             // Try query parameter token
             if let Some(token) = query.token {
@@ -240,7 +239,7 @@ async fn sse_handler_with_fallback(
                     Ok(user) => {
                         let sse = sse_events_handler(Extension(user)).await;
                         sse.into_response()
-                    }
+                    },
                     Err(response) => response,
                 }
             } else {
@@ -250,15 +249,13 @@ async fn sse_handler_with_fallback(
                 ));
                 (StatusCode::UNAUTHORIZED, body).into_response()
             }
-        }
+        },
     }
 }
 
 /// SSE connection info endpoint
 /// Returns information about the current SSE connection state
-async fn sse_info_handler(
-    Extension(user): Extension<AuthUser>,
-) -> Json<serde_json::Value> {
+async fn sse_info_handler(Extension(user): Extension<AuthUser>) -> Json<serde_json::Value> {
     let sse_service = get_sse_service();
     let client_count = sse_service.get_client_count(&user.id).await;
 

@@ -19,6 +19,10 @@ pub mod user;
 
 // Re-export service traits and implementations
 pub use auth::{AuthService, AuthServiceImpl, Claims, RefreshClaims};
+pub use booking::{
+    BookingFilters, BookingResponse, BookingService, BookingServiceImpl, BookingStatus,
+    CreateBookingDto, UpdateBookingDto,
+};
 pub use coupon::{
     CouponFilters, CouponListResponse, CouponService, CouponServiceImpl, CreateCouponDto,
     UpdateCouponDto, UserCouponListResponse, UserCouponWithDetailsResponse,
@@ -26,9 +30,10 @@ pub use coupon::{
 pub use email::{EmailConfig, EmailService, EmailServiceImpl, NoOpEmailService};
 pub use loyalty::{
     AwardPointsParams, AwardPointsParamsUuid, LoyaltyService, LoyaltyServiceImpl,
-    PointsTransaction, PointsTransactionType, Tier, TierRecalculationResult,
-    TransactionPagination, UserLoyalty, UserLoyaltyWithTier,
+    PointsTransaction, PointsTransactionType, Tier, TierRecalculationResult, TransactionPagination,
+    UserLoyalty, UserLoyaltyWithTier,
 };
+pub use membership_id::{generate_membership_id, validate_membership_id};
 pub use notification::{
     CreateNotificationDto, NotificationFilters, NotificationListResponse, NotificationService,
     NotificationServiceImpl,
@@ -37,23 +42,16 @@ pub use oauth::{
     GoogleTokens, GoogleUserInfo, LineTokens, LineUserInfo, OAuthAuthResult, OAuthService,
     OAuthServiceImpl, OAuthUser, OAuthUserInfo,
 };
-pub use membership_id::{generate_membership_id, validate_membership_id};
-pub use survey::{SurveyService, SurveyServiceImpl};
-pub use user::{
-    CreateUserDto, PaginatedResult, Pagination, UpdateProfileDto, UpdateUserDto, UserService,
-    UserServiceImpl, UserWithProfile,
-};
-pub use booking::{
-    BookingFilters, BookingResponse, BookingService, BookingServiceImpl, BookingStatus,
-    CreateBookingDto, UpdateBookingDto,
-};
 pub use slipok::{
     SlipOKConfig, SlipOKHealthStatus, SlipOKService, SlipOkService, SlipVerificationResult,
     VerificationStatus,
 };
 pub use sse::{get_sse_service, SseConnectionManager, SseEvent, SseEventType};
-pub use storage::{
-    AllowedMimeTypes, StorageConfig, StorageReport, StorageService, StorageStats,
+pub use storage::{AllowedMimeTypes, StorageConfig, StorageReport, StorageService, StorageStats};
+pub use survey::{SurveyService, SurveyServiceImpl};
+pub use user::{
+    CreateUserDto, PaginatedResult, Pagination, UpdateProfileDto, UpdateUserDto, UserService,
+    UserServiceImpl, UserWithProfile,
 };
 
 use crate::db::Database;

@@ -12,10 +12,7 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::common::{
-    generate_test_token, init_test_db, init_test_redis,
-    TestClient, TestUser,
-};
+use crate::common::{generate_test_token, init_test_db, init_test_redis, TestClient, TestUser};
 
 // ============================================================================
 // Test Setup
@@ -109,9 +106,9 @@ async fn create_notifications_table(pool: &PgPool) -> Result<(), sqlx::Error> {
 
 /// Create a router with database and Redis state for notification testing
 async fn create_notification_router() -> Result<(Router, PgPool), Box<dyn std::error::Error>> {
+    use loyalty_backend::config::Settings;
     use loyalty_backend::routes;
     use loyalty_backend::state::AppState;
-    use loyalty_backend::config::Settings;
 
     // Initialize test database
     let pool = init_test_db().await?;
@@ -161,9 +158,18 @@ async fn test_list_notifications() {
     let notification2 = TestNotification::new(user.id, "Test Title 2", "Test message 2");
     let notification3 = TestNotification::read(user.id, "Read Title", "Read message");
 
-    notification1.insert(&pool).await.expect("Failed to insert notification 1");
-    notification2.insert(&pool).await.expect("Failed to insert notification 2");
-    notification3.insert(&pool).await.expect("Failed to insert notification 3");
+    notification1
+        .insert(&pool)
+        .await
+        .expect("Failed to insert notification 1");
+    notification2
+        .insert(&pool)
+        .await
+        .expect("Failed to insert notification 2");
+    notification3
+        .insert(&pool)
+        .await
+        .expect("Failed to insert notification 3");
 
     // Generate auth token
     let token = generate_test_token(&user.id, &user.email);
@@ -179,8 +185,14 @@ async fn test_list_notifications() {
     let json: Value = response.json().expect("Response should be valid JSON");
 
     // Check response structure
-    assert!(json.get("notifications").is_some(), "Response should have 'notifications' field");
-    assert!(json.get("pagination").is_some(), "Response should have 'pagination' field");
+    assert!(
+        json.get("notifications").is_some(),
+        "Response should have 'notifications' field"
+    );
+    assert!(
+        json.get("pagination").is_some(),
+        "Response should have 'pagination' field"
+    );
 
     // Check notifications are returned
     let notifications = json.get("notifications").unwrap().as_array().unwrap();
@@ -235,7 +247,11 @@ async fn test_list_notifications_unread_only() {
     let notifications = json.get("notifications").unwrap().as_array().unwrap();
 
     // Should only return unread notifications
-    assert_eq!(notifications.len(), 2, "Should return only unread notifications");
+    assert_eq!(
+        notifications.len(),
+        2,
+        "Should return only unread notifications"
+    );
 
     // Cleanup
     let _ = cleanup_notifications(&pool).await;
@@ -278,7 +294,8 @@ async fn test_list_notifications_pagination() {
 
     // Create more than default page size notifications
     for i in 0..25 {
-        let notification = TestNotification::new(user.id, &format!("Title {}", i), &format!("Message {}", i));
+        let notification =
+            TestNotification::new(user.id, &format!("Title {}", i), &format!("Message {}", i));
         notification.insert(&pool).await.expect("Failed to insert");
     }
 
@@ -349,7 +366,10 @@ async fn test_get_unread_count() {
     let json: Value = response.json().expect("Response should be valid JSON");
 
     assert_eq!(json.get("success").and_then(|v| v.as_bool()), Some(true));
-    assert!(json.get("data").is_some(), "Response should have 'data' field");
+    assert!(
+        json.get("data").is_some(),
+        "Response should have 'data' field"
+    );
 
     let data = json.get("data").unwrap();
     assert_eq!(
@@ -442,14 +462,20 @@ async fn test_mark_notification_read() {
     user.insert(&pool).await.expect("Failed to insert user");
 
     let notification = TestNotification::new(user.id, "Test Title", "Test message");
-    notification.insert(&pool).await.expect("Failed to insert notification");
+    notification
+        .insert(&pool)
+        .await
+        .expect("Failed to insert notification");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
 
     // Act
     let response = client
-        .put(&format!("/api/notifications/{}/read", notification.id), &serde_json::json!({}))
+        .put(
+            &format!("/api/notifications/{}/read", notification.id),
+            &serde_json::json!({}),
+        )
         .await;
 
     // Assert
@@ -458,7 +484,10 @@ async fn test_mark_notification_read() {
     let json: Value = response.json().expect("Response should be valid JSON");
 
     assert_eq!(json.get("success").and_then(|v| v.as_bool()), Some(true));
-    assert!(json.get("notification").is_some(), "Response should have 'notification' field");
+    assert!(
+        json.get("notification").is_some(),
+        "Response should have 'notification' field"
+    );
 
     let returned_notification = json.get("notification").unwrap();
     assert_eq!(
@@ -470,20 +499,24 @@ async fn test_mark_notification_read() {
         "Notification should have read_at set"
     );
     assert_eq!(
-        returned_notification.get("is_read").and_then(|v| v.as_bool()),
+        returned_notification
+            .get("is_read")
+            .and_then(|v| v.as_bool()),
         Some(true)
     );
 
     // Verify in database
-    let db_notification: (Option<chrono::DateTime<chrono::Utc>>,) = sqlx::query_as(
-        "SELECT read_at FROM notifications WHERE id = $1"
-    )
-    .bind(notification.id)
-    .fetch_one(&pool)
-    .await
-    .expect("Failed to fetch notification");
+    let db_notification: (Option<chrono::DateTime<chrono::Utc>>,) =
+        sqlx::query_as("SELECT read_at FROM notifications WHERE id = $1")
+            .bind(notification.id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to fetch notification");
 
-    assert!(db_notification.0.is_some(), "Database should have read_at set");
+    assert!(
+        db_notification.0.is_some(),
+        "Database should have read_at set"
+    );
 
     // Cleanup
     let _ = cleanup_notifications(&pool).await;
@@ -512,7 +545,10 @@ async fn test_mark_notification_read_not_found() {
 
     // Act
     let response = client
-        .put(&format!("/api/notifications/{}/read", non_existent_id), &serde_json::json!({}))
+        .put(
+            &format!("/api/notifications/{}/read", non_existent_id),
+            &serde_json::json!({}),
+        )
         .await;
 
     // Assert
@@ -544,7 +580,10 @@ async fn test_mark_notification_read_other_user() {
 
     // Create notification for user1
     let notification = TestNotification::new(user1.id, "User1 Notification", "Message");
-    notification.insert(&pool).await.expect("Failed to insert notification");
+    notification
+        .insert(&pool)
+        .await
+        .expect("Failed to insert notification");
 
     // Try to mark as read with user2's token
     let token = generate_test_token(&user2.id, &user2.email);
@@ -552,7 +591,10 @@ async fn test_mark_notification_read_other_user() {
 
     // Act
     let response = client
-        .put(&format!("/api/notifications/{}/read", notification.id), &serde_json::json!({}))
+        .put(
+            &format!("/api/notifications/{}/read", notification.id),
+            &serde_json::json!({}),
+        )
         .await;
 
     // Assert - Should return 404 (notification not found for this user)
@@ -587,8 +629,12 @@ async fn test_mark_all_read() {
 
     // Create multiple unread notifications
     for i in 0..5 {
-        let notification = TestNotification::new(user.id, &format!("Title {}", i), &format!("Message {}", i));
-        notification.insert(&pool).await.expect("Failed to insert notification");
+        let notification =
+            TestNotification::new(user.id, &format!("Title {}", i), &format!("Message {}", i));
+        notification
+            .insert(&pool)
+            .await
+            .expect("Failed to insert notification");
     }
 
     let token = generate_test_token(&user.id, &user.email);
@@ -612,15 +658,17 @@ async fn test_mark_all_read() {
     );
 
     // Verify all are now read in database
-    let unread_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL"
-    )
-    .bind(user.id)
-    .fetch_one(&pool)
-    .await
-    .expect("Failed to count unread");
+    let unread_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL")
+            .bind(user.id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to count unread");
 
-    assert_eq!(unread_count.0, 0, "All notifications should be marked as read");
+    assert_eq!(
+        unread_count.0, 0,
+        "All notifications should be marked as read"
+    );
 
     // Cleanup
     let _ = cleanup_notifications(&pool).await;
@@ -647,7 +695,10 @@ async fn test_mark_all_read_already_read() {
     // Create only read notifications
     for i in 0..3 {
         let notification = TestNotification::read(user.id, &format!("Read {}", i), "Message");
-        notification.insert(&pool).await.expect("Failed to insert notification");
+        notification
+            .insert(&pool)
+            .await
+            .expect("Failed to insert notification");
     }
 
     let token = generate_test_token(&user.id, &user.email);
@@ -716,7 +767,10 @@ async fn test_delete_notification() {
     user.insert(&pool).await.expect("Failed to insert user");
 
     let notification = TestNotification::new(user.id, "To Delete", "This will be deleted");
-    notification.insert(&pool).await.expect("Failed to insert notification");
+    notification
+        .insert(&pool)
+        .await
+        .expect("Failed to insert notification");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -732,16 +786,17 @@ async fn test_delete_notification() {
     let json: Value = response.json().expect("Response should be valid JSON");
 
     assert_eq!(json.get("success").and_then(|v| v.as_bool()), Some(true));
-    assert!(json.get("message").is_some(), "Response should have 'message' field");
+    assert!(
+        json.get("message").is_some(),
+        "Response should have 'message' field"
+    );
 
     // Verify deleted from database
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM notifications WHERE id = $1"
-    )
-    .bind(notification.id)
-    .fetch_one(&pool)
-    .await
-    .expect("Failed to count");
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM notifications WHERE id = $1")
+        .bind(notification.id)
+        .fetch_one(&pool)
+        .await
+        .expect("Failed to count");
 
     assert_eq!(count.0, 0, "Notification should be deleted from database");
 
@@ -803,7 +858,10 @@ async fn test_delete_notification_other_user() {
 
     // Create notification for user1
     let notification = TestNotification::new(user1.id, "User1 Notification", "Message");
-    notification.insert(&pool).await.expect("Failed to insert notification");
+    notification
+        .insert(&pool)
+        .await
+        .expect("Failed to insert notification");
 
     // Try to delete with user2's token
     let token = generate_test_token(&user2.id, &user2.email);
@@ -818,13 +876,11 @@ async fn test_delete_notification_other_user() {
     response.assert_status(404);
 
     // Verify notification still exists
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM notifications WHERE id = $1"
-    )
-    .bind(notification.id)
-    .fetch_one(&pool)
-    .await
-    .expect("Failed to count");
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM notifications WHERE id = $1")
+        .bind(notification.id)
+        .fetch_one(&pool)
+        .await
+        .expect("Failed to count");
 
     assert_eq!(count.0, 1, "Notification should still exist");
 
@@ -878,11 +934,17 @@ async fn test_list_notifications_excludes_expired() {
 
     // Create a valid notification
     let valid_notification = TestNotification::new(user.id, "Valid", "This is valid");
-    valid_notification.insert(&pool).await.expect("Failed to insert");
+    valid_notification
+        .insert(&pool)
+        .await
+        .expect("Failed to insert");
 
     // Create an expired notification
     let expired_notification = TestNotification::expired(user.id, "Expired", "This is expired");
-    expired_notification.insert(&pool).await.expect("Failed to insert");
+    expired_notification
+        .insert(&pool)
+        .await
+        .expect("Failed to insert");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -897,7 +959,11 @@ async fn test_list_notifications_excludes_expired() {
     let notifications = json.get("notifications").unwrap().as_array().unwrap();
 
     // Should only return the valid notification, not the expired one
-    assert_eq!(notifications.len(), 1, "Should only return non-expired notifications");
+    assert_eq!(
+        notifications.len(),
+        1,
+        "Should only return non-expired notifications"
+    );
     assert_eq!(
         notifications[0].get("title").and_then(|v| v.as_str()),
         Some("Valid")
@@ -943,16 +1009,34 @@ async fn test_notification_response_structure() {
 
     // Check all expected fields are present
     assert!(first.get("id").is_some(), "Should have 'id' field");
-    assert!(first.get("user_id").is_some(), "Should have 'user_id' field");
+    assert!(
+        first.get("user_id").is_some(),
+        "Should have 'user_id' field"
+    );
     assert!(first.get("title").is_some(), "Should have 'title' field");
-    assert!(first.get("message").is_some(), "Should have 'message' field");
+    assert!(
+        first.get("message").is_some(),
+        "Should have 'message' field"
+    );
     assert!(first.get("type").is_some(), "Should have 'type' field");
-    assert!(first.get("created_at").is_some(), "Should have 'created_at' field");
-    assert!(first.get("is_read").is_some(), "Should have 'is_read' field");
+    assert!(
+        first.get("created_at").is_some(),
+        "Should have 'created_at' field"
+    );
+    assert!(
+        first.get("is_read").is_some(),
+        "Should have 'is_read' field"
+    );
 
     // Verify values
-    assert_eq!(first.get("title").and_then(|v| v.as_str()), Some("Test Title"));
-    assert_eq!(first.get("message").and_then(|v| v.as_str()), Some("Test message"));
+    assert_eq!(
+        first.get("title").and_then(|v| v.as_str()),
+        Some("Test Title")
+    );
+    assert_eq!(
+        first.get("message").and_then(|v| v.as_str()),
+        Some("Test message")
+    );
     assert_eq!(first.get("is_read").and_then(|v| v.as_bool()), Some(false));
 
     // Cleanup

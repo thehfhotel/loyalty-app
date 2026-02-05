@@ -206,12 +206,17 @@ pub trait CouponService: Send + Sync {
     ) -> Result<Coupon, AppError>;
 
     /// Update an existing coupon
-    async fn update_coupon(&self, coupon_id: Uuid, data: UpdateCouponDto)
-        -> Result<Coupon, AppError>;
+    async fn update_coupon(
+        &self,
+        coupon_id: Uuid,
+        data: UpdateCouponDto,
+    ) -> Result<Coupon, AppError>;
 
     /// Get all coupons for a user
-    async fn get_user_coupons(&self, user_id: Uuid)
-        -> Result<Vec<UserCouponWithDetailsResponse>, AppError>;
+    async fn get_user_coupons(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<UserCouponWithDetailsResponse>, AppError>;
 
     /// Assign a coupon to a user
     async fn assign_coupon(
@@ -266,9 +271,7 @@ impl CouponService for CouponServiceImpl {
         if filters.search.is_some() {
             conditions.push(format!(
                 "(code ILIKE ${} OR name ILIKE ${} OR description ILIKE ${})",
-                param_idx,
-                param_idx,
-                param_idx
+                param_idx, param_idx, param_idx
             ));
             param_idx += 1;
         }
@@ -320,7 +323,9 @@ impl CouponService for CouponServiceImpl {
             ORDER BY created_at DESC
             LIMIT ${} OFFSET ${}
             "#,
-            where_clause, param_idx, param_idx + 1
+            where_clause,
+            param_idx,
+            param_idx + 1
         );
 
         let mut list_builder = sqlx::query_as::<_, Coupon>(&list_query);
@@ -399,9 +404,12 @@ impl CouponService for CouponServiceImpl {
             .tier_restrictions
             .map(|t| serde_json::to_value(t).unwrap_or(serde_json::Value::Array(vec![])));
 
-        let original_language = data.original_language.clone().unwrap_or_else(|| "th".to_string());
-        let available_languages =
-            serde_json::to_value(vec![&original_language]).unwrap_or(serde_json::Value::Array(vec![]));
+        let original_language = data
+            .original_language
+            .clone()
+            .unwrap_or_else(|| "th".to_string());
+        let available_languages = serde_json::to_value(vec![&original_language])
+            .unwrap_or(serde_json::Value::Array(vec![]));
 
         let coupon = sqlx::query_as::<_, Coupon>(
             r#"
@@ -461,15 +469,16 @@ impl CouponService for CouponServiceImpl {
         // Check if code is being changed and already exists
         if let Some(ref new_code) = data.code {
             if new_code != &existing.code {
-                let code_exists =
-                    sqlx::query_scalar::<_, i64>(
-                        "SELECT COUNT(*) FROM coupons WHERE code = $1 AND id != $2",
-                    )
-                    .bind(new_code)
-                    .bind(coupon_id)
-                    .fetch_one(self.state.db.pool())
-                    .await
-                    .map_err(|e| AppError::DatabaseQuery(format!("Failed to check coupon code: {}", e)))?;
+                let code_exists = sqlx::query_scalar::<_, i64>(
+                    "SELECT COUNT(*) FROM coupons WHERE code = $1 AND id != $2",
+                )
+                .bind(new_code)
+                .bind(coupon_id)
+                .fetch_one(self.state.db.pool())
+                .await
+                .map_err(|e| {
+                    AppError::DatabaseQuery(format!("Failed to check coupon code: {}", e))
+                })?;
 
                 if code_exists > 0 {
                     return Err(AppError::BadRequest(
@@ -612,9 +621,7 @@ impl CouponService for CouponServiceImpl {
         let coupon = self.get_coupon(coupon_id).await?;
 
         if coupon.status != Some(CouponStatus::Active) {
-            return Err(AppError::BadRequest(
-                "Coupon is not active".to_string(),
-            ));
+            return Err(AppError::BadRequest("Coupon is not active".to_string()));
         }
 
         // Check usage limit
@@ -634,7 +641,9 @@ impl CouponService for CouponServiceImpl {
         .bind(coupon_id)
         .fetch_one(self.state.db.pool())
         .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to check user coupon usage: {}", e)))?;
+        .map_err(|e| {
+            AppError::DatabaseQuery(format!("Failed to check user coupon usage: {}", e))
+        })?;
 
         let user_limit = coupon.usage_limit_per_user.unwrap_or(1);
         if user_usage_count >= user_limit as i64 {
@@ -784,7 +793,9 @@ impl CouponService for CouponServiceImpl {
         .bind(coupon_id)
         .fetch_one(self.state.db.pool())
         .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to check user coupon usage: {}", e)))?;
+        .map_err(|e| {
+            AppError::DatabaseQuery(format!("Failed to check user coupon usage: {}", e))
+        })?;
 
         let user_limit = coupon.usage_limit_per_user.unwrap_or(1);
         if user_usage_count >= user_limit as i64 {

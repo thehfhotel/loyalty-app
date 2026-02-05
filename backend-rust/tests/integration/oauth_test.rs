@@ -19,8 +19,8 @@ use wiremock::{
 use crate::common::{init_test_db, init_test_redis, setup_test, teardown_test, TestClient};
 
 use loyalty_backend::config::Settings;
-use loyalty_backend::state::AppState;
 use loyalty_backend::routes::oauth::routes;
+use loyalty_backend::state::AppState;
 
 // ============================================================================
 // Test Setup
@@ -33,7 +33,8 @@ fn create_test_settings_with_oauth(
 ) -> Settings {
     let mut settings = Settings::default();
     settings.auth.jwt_secret = "test-jwt-secret-key-for-testing-only-minimum-32-chars".to_string();
-    settings.auth.jwt_refresh_secret = "test-jwt-refresh-secret-key-for-testing-only-32-chars".to_string();
+    settings.auth.jwt_refresh_secret =
+        "test-jwt-refresh-secret-key-for-testing-only-32-chars".to_string();
     settings.auth.access_token_expiry_secs = 900;
     settings.auth.refresh_token_expiry_secs = 604800;
     settings.server.frontend_url = "http://localhost:3000".to_string();
@@ -59,7 +60,8 @@ fn create_test_settings_with_oauth(
 fn create_test_settings_without_oauth() -> Settings {
     let mut settings = Settings::default();
     settings.auth.jwt_secret = "test-jwt-secret-key-for-testing-only-minimum-32-chars".to_string();
-    settings.auth.jwt_refresh_secret = "test-jwt-refresh-secret-key-for-testing-only-32-chars".to_string();
+    settings.auth.jwt_refresh_secret =
+        "test-jwt-refresh-secret-key-for-testing-only-32-chars".to_string();
     settings.server.frontend_url = "http://localhost:3000".to_string();
     // OAuth not configured - client_id and client_secret are None
     settings
@@ -91,7 +93,7 @@ async fn test_google_oauth_redirect() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
@@ -128,7 +130,7 @@ async fn test_google_oauth_redirect_url_params() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
@@ -168,7 +170,7 @@ async fn test_google_oauth_redirect_not_configured() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
@@ -186,7 +188,9 @@ async fn test_google_oauth_redirect_not_configured() {
     // The redirect should indicate OAuth is not configured
     if response.status == 200 {
         assert!(
-            response.body.contains("not_configured") || response.body.contains("error") || response.body.contains("login"),
+            response.body.contains("not_configured")
+                || response.body.contains("error")
+                || response.body.contains("login"),
             "Response should indicate Google OAuth is not configured"
         );
     }
@@ -207,7 +211,7 @@ async fn test_line_oauth_redirect() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
@@ -228,7 +232,9 @@ async fn test_line_oauth_redirect() {
     // If it's a 200, it should be an HTML redirect page
     if response.status == 200 {
         assert!(
-            response.body.contains("access.line.me") || response.body.contains("Redirecting") || response.body.contains("LINE"),
+            response.body.contains("access.line.me")
+                || response.body.contains("Redirecting")
+                || response.body.contains("LINE"),
             "HTML response should contain redirect to LINE. Body: {}",
             response.body
         );
@@ -244,7 +250,7 @@ async fn test_line_oauth_redirect_url_params() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
@@ -283,7 +289,7 @@ async fn test_line_oauth_redirect_not_configured() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
@@ -301,7 +307,9 @@ async fn test_line_oauth_redirect_not_configured() {
     // The redirect should indicate OAuth is not configured
     if response.status == 200 {
         assert!(
-            response.body.contains("not_configured") || response.body.contains("error") || response.body.contains("login"),
+            response.body.contains("not_configured")
+                || response.body.contains("error")
+                || response.body.contains("login"),
             "Response should indicate LINE OAuth is not configured"
         );
     }
@@ -322,33 +330,31 @@ async fn test_google_callback_invalid_code() {
     // Mock Google token endpoint to return an error for invalid code
     Mock::given(method("POST"))
         .and(path("/token"))
-        .respond_with(
-            ResponseTemplate::new(400).set_body_json(serde_json::json!({
-                "error": "invalid_grant",
-                "error_description": "The authorization code is invalid or has expired."
-            })),
-        )
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": "invalid_grant",
+            "error_description": "The authorization code is invalid or has expired."
+        })))
         .mount(&mock_server)
         .await;
 
-    let settings = create_test_settings_with_oauth(
-        Some(&format!("{}/callback", mock_server.uri())),
-        None,
-    );
+    let settings =
+        create_test_settings_with_oauth(Some(&format!("{}/callback", mock_server.uri())), None);
 
     let app = match create_oauth_test_app(settings).await {
         Ok(app) => app,
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
 
     // Act - Call callback with invalid code and missing state
     // Note: Without a valid state, the callback should fail with session_expired or oauth_invalid
-    let response = client.get("/api/oauth/google/callback?code=invalid_code").await;
+    let response = client
+        .get("/api/oauth/google/callback?code=invalid_code")
+        .await;
 
     // Assert - Should return a redirect to login with error
     // The callback without a state parameter should fail
@@ -362,10 +368,10 @@ async fn test_google_callback_invalid_code() {
     // The response should indicate an error occurred
     if response.status == 200 {
         assert!(
-            response.body.contains("error") ||
-            response.body.contains("failed") ||
-            response.body.contains("invalid") ||
-            response.body.contains("login"),
+            response.body.contains("error")
+                || response.body.contains("failed")
+                || response.body.contains("invalid")
+                || response.body.contains("login"),
             "Response should indicate authentication error. Body: {}",
             response.body
         );
@@ -381,13 +387,15 @@ async fn test_google_callback_missing_state() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
 
     // Act - Call callback with code but no state (CSRF protection should fail)
-    let response = client.get("/api/oauth/google/callback?code=some_code").await;
+    let response = client
+        .get("/api/oauth/google/callback?code=some_code")
+        .await;
 
     // Assert - Should redirect with error due to missing state
     assert!(
@@ -399,10 +407,10 @@ async fn test_google_callback_missing_state() {
     // Should indicate invalid request or session expired
     if response.status == 200 {
         assert!(
-            response.body.contains("invalid") ||
-            response.body.contains("expired") ||
-            response.body.contains("error") ||
-            response.body.contains("login"),
+            response.body.contains("invalid")
+                || response.body.contains("expired")
+                || response.body.contains("error")
+                || response.body.contains("login"),
             "Response should indicate CSRF validation failed"
         );
     }
@@ -417,7 +425,7 @@ async fn test_google_callback_provider_error() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
@@ -437,9 +445,9 @@ async fn test_google_callback_provider_error() {
     // Should indicate OAuth provider error
     if response.status == 200 {
         assert!(
-            response.body.contains("error") ||
-            response.body.contains("denied") ||
-            response.body.contains("login"),
+            response.body.contains("error")
+                || response.body.contains("denied")
+                || response.body.contains("login"),
             "Response should indicate OAuth provider error"
         );
     }
@@ -460,32 +468,30 @@ async fn test_line_callback_invalid_code() {
     // Mock LINE token endpoint to return an error for invalid code
     Mock::given(method("POST"))
         .and(path("/oauth2/v2.1/token"))
-        .respond_with(
-            ResponseTemplate::new(400).set_body_json(serde_json::json!({
-                "error": "invalid_grant",
-                "error_description": "The authorization code is invalid or expired"
-            })),
-        )
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": "invalid_grant",
+            "error_description": "The authorization code is invalid or expired"
+        })))
         .mount(&mock_server)
         .await;
 
-    let settings = create_test_settings_with_oauth(
-        None,
-        Some(&format!("{}/callback", mock_server.uri())),
-    );
+    let settings =
+        create_test_settings_with_oauth(None, Some(&format!("{}/callback", mock_server.uri())));
 
     let app = match create_oauth_test_app(settings).await {
         Ok(app) => app,
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
 
     // Act - Call callback with invalid code and missing state
-    let response = client.get("/api/oauth/line/callback?code=invalid_code").await;
+    let response = client
+        .get("/api/oauth/line/callback?code=invalid_code")
+        .await;
 
     // Assert - Should return a redirect to login with error
     assert!(
@@ -498,10 +504,10 @@ async fn test_line_callback_invalid_code() {
     // The response should indicate an error occurred
     if response.status == 200 {
         assert!(
-            response.body.contains("error") ||
-            response.body.contains("failed") ||
-            response.body.contains("invalid") ||
-            response.body.contains("login"),
+            response.body.contains("error")
+                || response.body.contains("failed")
+                || response.body.contains("invalid")
+                || response.body.contains("login"),
             "Response should indicate authentication error. Body: {}",
             response.body
         );
@@ -517,7 +523,7 @@ async fn test_line_callback_missing_state() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
@@ -535,10 +541,10 @@ async fn test_line_callback_missing_state() {
     // Should indicate invalid request or session expired
     if response.status == 200 {
         assert!(
-            response.body.contains("invalid") ||
-            response.body.contains("expired") ||
-            response.body.contains("error") ||
-            response.body.contains("login"),
+            response.body.contains("invalid")
+                || response.body.contains("expired")
+                || response.body.contains("error")
+                || response.body.contains("login"),
             "Response should indicate CSRF validation failed"
         );
     }
@@ -553,14 +559,16 @@ async fn test_line_callback_provider_error() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
 
     // Act - Simulate OAuth provider returning an error
     let response = client
-        .get("/api/oauth/line/callback?error=access_denied&error_description=User%20denied%20access")
+        .get(
+            "/api/oauth/line/callback?error=access_denied&error_description=User%20denied%20access",
+        )
         .await;
 
     // Assert - Should redirect with provider error
@@ -573,9 +581,9 @@ async fn test_line_callback_provider_error() {
     // Should indicate OAuth provider error
     if response.status == 200 {
         assert!(
-            response.body.contains("error") ||
-            response.body.contains("denied") ||
-            response.body.contains("login"),
+            response.body.contains("error")
+                || response.body.contains("denied")
+                || response.body.contains("login"),
             "Response should indicate OAuth provider error"
         );
     }
@@ -594,7 +602,7 @@ async fn test_oauth_redirect_with_valid_return_url() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
@@ -621,7 +629,7 @@ async fn test_oauth_redirect_blocks_open_redirect() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
@@ -697,7 +705,10 @@ async fn test_google_oauth_flow_with_mocks() {
     // 4. Then fetch user info from the mocked userinfo endpoint
 
     // For now, verify the mock server is running
-    assert!(!mock_server.uri().is_empty(), "Mock server should be running");
+    assert!(
+        !mock_server.uri().is_empty(),
+        "Mock server should be running"
+    );
 }
 
 /// Test complete LINE OAuth flow with mocked external services
@@ -734,7 +745,10 @@ async fn test_line_oauth_flow_with_mocks() {
         .await;
 
     // Verify the mock server is running
-    assert!(!mock_server.uri().is_empty(), "Mock server should be running");
+    assert!(
+        !mock_server.uri().is_empty(),
+        "Mock server should be running"
+    );
 }
 
 // ============================================================================
@@ -750,7 +764,7 @@ async fn test_google_oauth_redirect_pwa_mode() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
@@ -775,13 +789,15 @@ async fn test_line_oauth_redirect_standalone_mode() {
         Err(e) => {
             eprintln!("Skipping test - test infrastructure not available: {}", e);
             return;
-        }
+        },
     };
 
     let client = TestClient::new(app);
 
     // Act - Request OAuth in standalone mode
-    let response = client.get("/api/oauth/line?standalone=true&platform=android").await;
+    let response = client
+        .get("/api/oauth/line?standalone=true&platform=android")
+        .await;
 
     // Assert - Should proceed with OAuth flow
     assert!(

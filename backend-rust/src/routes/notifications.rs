@@ -259,8 +259,10 @@ async fn list_notifications(
     };
 
     // Convert to response format
-    let notifications: Vec<NotificationResponse> =
-        notifications.into_iter().map(NotificationResponse::from).collect();
+    let notifications: Vec<NotificationResponse> = notifications
+        .into_iter()
+        .map(NotificationResponse::from)
+        .collect();
 
     tracing::debug!(
         user_id = %auth_user.id,

@@ -25,14 +25,14 @@ use crate::common::{
 
 /// Create a router with the survey routes for testing
 async fn create_survey_router(pool: &PgPool) -> Router {
+    use loyalty_backend::config::Settings;
     use loyalty_backend::routes;
     use loyalty_backend::state::AppState;
-    use loyalty_backend::config::Settings;
     use redis::aio::ConnectionManager;
 
     // Initialize test Redis connection
-    let redis_url = std::env::var("TEST_REDIS_URL")
-        .unwrap_or_else(|_| "redis://localhost:6383".to_string());
+    let redis_url =
+        std::env::var("TEST_REDIS_URL").unwrap_or_else(|_| "redis://localhost:6383".to_string());
     let redis_client = redis::Client::open(redis_url).expect("Failed to create Redis client");
     let redis = ConnectionManager::new(redis_client)
         .await
@@ -245,11 +245,15 @@ async fn cleanup_survey_tables(pool: &PgPool) -> Result<(), sqlx::Error> {
 async fn test_list_surveys() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     // Create a test user
     let user = TestUser::new("survey_list_test@example.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     // Create test surveys
     let _active_survey = create_test_survey(&pool, "Active Survey", "active", "public", None)
@@ -294,7 +298,9 @@ async fn test_list_surveys() {
 async fn test_list_surveys_unauthorized() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     let router = create_survey_router(&pool).await;
     let client = TestClient::new(router);
@@ -319,7 +325,9 @@ async fn test_list_surveys_unauthorized() {
 async fn test_get_survey_invitations() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     // Create a test user
     let user = TestUser::new("invitation_test@example.com");
@@ -328,9 +336,15 @@ async fn test_get_survey_invitations() {
         .expect("Failed to insert test user");
 
     // Create a survey
-    let survey_id = create_test_survey(&pool, "Invitation Test Survey", "active", "invite_only", None)
-        .await
-        .expect("Failed to create survey");
+    let survey_id = create_test_survey(
+        &pool,
+        "Invitation Test Survey",
+        "active",
+        "invite_only",
+        None,
+    )
+    .await
+    .expect("Failed to create survey");
 
     // Create an invitation for the user
     let _invitation_id = create_survey_invitation(&pool, survey_id, user.id, "pending")
@@ -370,7 +384,9 @@ async fn test_get_survey_invitations() {
 async fn test_get_survey_invitations_unauthorized() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     let router = create_survey_router(&pool).await;
     let client = TestClient::new(router);
@@ -395,11 +411,15 @@ async fn test_get_survey_invitations_unauthorized() {
 async fn test_get_survey_with_questions() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     // Create a test user
     let user = TestUser::new("survey_detail_test@example.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     // Create a survey with questions
     let survey_id = create_test_survey(&pool, "Detail Test Survey", "active", "public", None)
@@ -428,13 +448,22 @@ async fn test_get_survey_with_questions() {
 
         // Verify survey structure
         assert!(json.get("id").is_some(), "Response should have 'id' field");
-        assert!(json.get("title").is_some(), "Response should have 'title' field");
-        assert!(json.get("questions").is_some(), "Response should have 'questions' field");
+        assert!(
+            json.get("title").is_some(),
+            "Response should have 'title' field"
+        );
+        assert!(
+            json.get("questions").is_some(),
+            "Response should have 'questions' field"
+        );
 
         // Verify questions array
         let questions = json.get("questions").and_then(|q| q.as_array());
         assert!(questions.is_some(), "Questions should be an array");
-        assert!(questions.unwrap().len() >= 1, "Should have at least one question");
+        assert!(
+            questions.unwrap().len() >= 1,
+            "Should have at least one question"
+        );
     }
 
     // Cleanup
@@ -448,10 +477,14 @@ async fn test_get_survey_with_questions() {
 async fn test_get_survey_not_found() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     let user = TestUser::new("survey_notfound_test@example.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     let token = generate_test_token(&user.id, &user.email);
 
@@ -461,7 +494,9 @@ async fn test_get_survey_not_found() {
     let non_existent_id = Uuid::new_v4();
 
     // Act
-    let response = client.get(&format!("/api/surveys/{}", non_existent_id)).await;
+    let response = client
+        .get(&format!("/api/surveys/{}", non_existent_id))
+        .await;
 
     // Assert
     assert!(
@@ -484,7 +519,9 @@ async fn test_get_survey_not_found() {
 async fn test_submit_survey_response() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     // Create a test user
     let user = TestUser::new("survey_submit_test@example.com");
@@ -515,7 +552,10 @@ async fn test_submit_survey_response() {
 
     // Act
     let response = client
-        .post(&format!("/api/surveys/{}/responses", survey_id), &response_payload)
+        .post(
+            &format!("/api/surveys/{}/responses", survey_id),
+            &response_payload,
+        )
         .await;
 
     // Assert
@@ -531,8 +571,10 @@ async fn test_submit_survey_response() {
 
         // Verify response structure
         assert!(json.get("id").is_some(), "Response should have 'id' field");
-        assert!(json.get("survey_id").is_some() || json.get("surveyId").is_some(),
-            "Response should have 'survey_id' field");
+        assert!(
+            json.get("survey_id").is_some() || json.get("surveyId").is_some(),
+            "Response should have 'survey_id' field"
+        );
     }
 
     // Cleanup
@@ -546,10 +588,14 @@ async fn test_submit_survey_response() {
 async fn test_submit_survey_response_partial() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     let user = TestUser::new("survey_partial_test@example.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     let survey_id = create_test_survey(&pool, "Partial Submit Survey", "active", "public", None)
         .await
@@ -570,7 +616,10 @@ async fn test_submit_survey_response_partial() {
 
     // Act
     let response = client
-        .post(&format!("/api/surveys/{}/responses", survey_id), &response_payload)
+        .post(
+            &format!("/api/surveys/{}/responses", survey_id),
+            &response_payload,
+        )
         .await;
 
     // Assert
@@ -591,7 +640,9 @@ async fn test_submit_survey_response_partial() {
 async fn test_submit_survey_response_unauthorized() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     let survey_id = create_test_survey(&pool, "Unauth Submit Survey", "active", "public", None)
         .await
@@ -607,7 +658,10 @@ async fn test_submit_survey_response_unauthorized() {
 
     // Act
     let response = client
-        .post(&format!("/api/surveys/{}/responses", survey_id), &response_payload)
+        .post(
+            &format!("/api/surveys/{}/responses", survey_id),
+            &response_payload,
+        )
         .await;
 
     // Assert
@@ -628,11 +682,16 @@ async fn test_submit_survey_response_unauthorized() {
 async fn test_create_survey_admin() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     // Create an admin user
     let admin = TestUser::admin("survey_admin@example.com");
-    admin.insert(&pool).await.expect("Failed to insert admin user");
+    admin
+        .insert(&pool)
+        .await
+        .expect("Failed to insert admin user");
 
     // Generate admin auth token
     let token = generate_test_token(&admin.id, &admin.email);
@@ -705,11 +764,15 @@ async fn test_create_survey_admin() {
 async fn test_create_survey_forbidden_for_non_admin() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     // Create a regular user (not admin)
     let user = TestUser::new("regular_user@example.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     let token = generate_test_token(&user.id, &user.email);
 
@@ -744,7 +807,9 @@ async fn test_create_survey_forbidden_for_non_admin() {
 async fn test_create_survey_unauthorized() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     let router = create_survey_router(&pool).await;
     let client = TestClient::new(router);
@@ -777,27 +842,38 @@ async fn test_create_survey_unauthorized() {
 async fn test_get_survey_responses_admin() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     // Create an admin user
     let admin = TestUser::admin("responses_admin@example.com");
-    admin.insert_with_profile(&pool, "Admin", "User")
+    admin
+        .insert_with_profile(&pool, "Admin", "User")
         .await
         .expect("Failed to insert admin user");
 
     // Create a survey
-    let survey_id = create_test_survey(&pool, "Responses Test Survey", "active", "public", Some(admin.id))
-        .await
-        .expect("Failed to create survey");
+    let survey_id = create_test_survey(
+        &pool,
+        "Responses Test Survey",
+        "active",
+        "public",
+        Some(admin.id),
+    )
+    .await
+    .expect("Failed to create survey");
 
     // Create some test users and responses
     let user1 = TestUser::new("responder1@example.com");
-    user1.insert_with_profile(&pool, "User", "One")
+    user1
+        .insert_with_profile(&pool, "User", "One")
         .await
         .expect("Failed to insert user1");
 
     let user2 = TestUser::new("responder2@example.com");
-    user2.insert_with_profile(&pool, "User", "Two")
+    user2
+        .insert_with_profile(&pool, "User", "Two")
         .await
         .expect("Failed to insert user2");
 
@@ -812,15 +888,9 @@ async fn test_get_survey_responses_admin() {
     .await
     .expect("Failed to create response 1");
 
-    let _response2 = create_survey_response(
-        &pool,
-        survey_id,
-        user2.id,
-        json!({"q1": "2"}),
-        false,
-    )
-    .await
-    .expect("Failed to create response 2");
+    let _response2 = create_survey_response(&pool, survey_id, user2.id, json!({"q1": "2"}), false)
+        .await
+        .expect("Failed to create response 2");
 
     // Generate admin auth token
     let token = generate_test_token(&admin.id, &admin.email);
@@ -846,13 +916,22 @@ async fn test_get_survey_responses_admin() {
         let json: Value = response.json().expect("Response should be valid JSON");
 
         // Verify pagination structure
-        assert!(json.get("data").is_some() || json.get("responses").is_some(),
-            "Response should have 'data' or 'responses' field");
-        assert!(json.get("total").is_some(), "Response should have 'total' field");
-        assert!(json.get("page").is_some(), "Response should have 'page' field");
+        assert!(
+            json.get("data").is_some() || json.get("responses").is_some(),
+            "Response should have 'data' or 'responses' field"
+        );
+        assert!(
+            json.get("total").is_some(),
+            "Response should have 'total' field"
+        );
+        assert!(
+            json.get("page").is_some(),
+            "Response should have 'page' field"
+        );
 
         // Verify response count
-        let responses = json.get("data")
+        let responses = json
+            .get("data")
             .or_else(|| json.get("responses"))
             .and_then(|d| d.as_array());
         assert!(responses.is_some(), "Responses should be an array");
@@ -870,15 +949,25 @@ async fn test_get_survey_responses_admin() {
 async fn test_get_survey_responses_forbidden_for_non_admin() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     // Create a regular user
     let user = TestUser::new("non_admin_responses@example.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
-
-    let survey_id = create_test_survey(&pool, "Responses Forbidden Survey", "active", "public", None)
+    user.insert(&pool)
         .await
-        .expect("Failed to create survey");
+        .expect("Failed to insert test user");
+
+    let survey_id = create_test_survey(
+        &pool,
+        "Responses Forbidden Survey",
+        "active",
+        "public",
+        None,
+    )
+    .await
+    .expect("Failed to create survey");
 
     let token = generate_test_token(&user.id, &user.email);
 
@@ -908,7 +997,9 @@ async fn test_get_survey_responses_forbidden_for_non_admin() {
 async fn test_get_survey_responses_unauthorized() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     let survey_id = create_test_survey(&pool, "Unauth Responses Survey", "active", "public", None)
         .await
@@ -936,21 +1027,32 @@ async fn test_get_survey_responses_unauthorized() {
 async fn test_get_survey_responses_with_pagination() {
     // Arrange
     let (pool, test_db) = setup_test().await;
-    ensure_surveys_table(&pool).await.expect("Failed to create survey tables");
+    ensure_surveys_table(&pool)
+        .await
+        .expect("Failed to create survey tables");
 
     let admin = TestUser::admin("pagination_admin@example.com");
-    admin.insert_with_profile(&pool, "Admin", "Paginate")
+    admin
+        .insert_with_profile(&pool, "Admin", "Paginate")
         .await
         .expect("Failed to insert admin user");
 
-    let survey_id = create_test_survey(&pool, "Pagination Survey", "active", "public", Some(admin.id))
-        .await
-        .expect("Failed to create survey");
+    let survey_id = create_test_survey(
+        &pool,
+        "Pagination Survey",
+        "active",
+        "public",
+        Some(admin.id),
+    )
+    .await
+    .expect("Failed to create survey");
 
     // Create multiple responses
     for i in 0..15 {
         let user = TestUser::new(&format!("paginate_user{}@example.com", i));
-        user.insert(&pool).await.expect("Failed to insert test user");
+        user.insert(&pool)
+            .await
+            .expect("Failed to insert test user");
 
         let _ = create_survey_response(
             &pool,
@@ -970,7 +1072,10 @@ async fn test_get_survey_responses_with_pagination() {
 
     // Act - Request first page with limit of 5
     let response = client
-        .get(&format!("/api/surveys/{}/responses?page=1&limit=5", survey_id))
+        .get(&format!(
+            "/api/surveys/{}/responses?page=1&limit=5",
+            survey_id
+        ))
         .await;
 
     // Assert
@@ -989,11 +1094,16 @@ async fn test_get_survey_responses_with_pagination() {
         assert_eq!(json.get("total").and_then(|v| v.as_i64()), Some(15));
         assert_eq!(json.get("total_pages").and_then(|v| v.as_i64()), Some(3));
 
-        let responses = json.get("data")
+        let responses = json
+            .get("data")
             .or_else(|| json.get("responses"))
             .and_then(|d| d.as_array());
         assert!(responses.is_some());
-        assert_eq!(responses.unwrap().len(), 5, "First page should have 5 items");
+        assert_eq!(
+            responses.unwrap().len(),
+            5,
+            "First page should have 5 items"
+        );
     }
 
     // Cleanup

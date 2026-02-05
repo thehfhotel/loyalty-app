@@ -191,7 +191,9 @@ async fn test_list_bookings_returns_user_bookings() {
 
     // Create a test user
     let user = TestUser::new("booking-list@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     // Create some bookings for this user
     let _ = create_test_booking(&pool, user.id, "confirmed", 7, 10)
@@ -212,7 +214,10 @@ async fn test_list_bookings_returns_user_bookings() {
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
-    assert!(json.get("bookings").is_some(), "Response should have 'bookings' field");
+    assert!(
+        json.get("bookings").is_some(),
+        "Response should have 'bookings' field"
+    );
 
     let bookings = json.get("bookings").and_then(|v| v.as_array());
     assert!(bookings.is_some(), "Bookings should be an array");
@@ -243,7 +248,9 @@ async fn test_list_bookings_with_status_filter() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-filter@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     // Create bookings with different statuses
     let _ = create_test_booking(&pool, user.id, "confirmed", 7, 10).await;
@@ -285,7 +292,9 @@ async fn test_create_booking_success() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-create@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -332,7 +341,9 @@ async fn test_create_booking_invalid_dates() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-invalid@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -370,7 +381,9 @@ async fn test_create_booking_past_date() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-past@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -412,7 +425,9 @@ async fn test_get_booking_returns_details() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-get@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     // Create a booking
     let booking_id = create_test_booking(&pool, user.id, "confirmed", 7, 10)
@@ -434,10 +449,14 @@ async fn test_get_booking_returns_details() {
         Some(booking_id.to_string()).as_deref(),
         "Response should contain the correct booking ID"
     );
-    assert!(json.get("checkInDate").is_some() || json.get("check_in_date").is_some(),
-        "Response should have check-in date");
-    assert!(json.get("checkOutDate").is_some() || json.get("check_out_date").is_some(),
-        "Response should have check-out date");
+    assert!(
+        json.get("checkInDate").is_some() || json.get("check_in_date").is_some(),
+        "Response should have check-in date"
+    );
+    assert!(
+        json.get("checkOutDate").is_some() || json.get("check_out_date").is_some(),
+        "Response should have check-out date"
+    );
 
     teardown_test(&test_db).await;
 }
@@ -450,7 +469,9 @@ async fn test_get_booking_not_found() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-notfound@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -478,7 +499,10 @@ async fn test_get_booking_forbidden_for_other_user() {
 
     // Create another user
     let other_user = TestUser::new("other-user@test.com");
-    other_user.insert(&pool).await.expect("Failed to insert other user");
+    other_user
+        .insert(&pool)
+        .await
+        .expect("Failed to insert other user");
 
     // Create a booking for the owner
     let booking_id = create_test_booking(&pool, owner.id, "confirmed", 7, 10)
@@ -510,7 +534,9 @@ async fn test_cancel_booking_success() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-cancel@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     // Create a future booking (can be cancelled)
     let booking_id = create_test_booking(&pool, user.id, "confirmed", 7, 10)
@@ -526,7 +552,10 @@ async fn test_cancel_booking_success() {
 
     // Act
     let response = client
-        .post(&format!("/api/bookings/{}/cancel", booking_id), &cancel_request)
+        .post(
+            &format!("/api/bookings/{}/cancel", booking_id),
+            &cancel_request,
+        )
         .await;
 
     // Assert
@@ -550,7 +579,9 @@ async fn test_cancel_booking_already_cancelled() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-double-cancel@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     // Create an already cancelled booking
     let booking_id = create_test_booking(&pool, user.id, "cancelled", 7, 10)
@@ -566,7 +597,10 @@ async fn test_cancel_booking_already_cancelled() {
 
     // Act
     let response = client
-        .post(&format!("/api/bookings/{}/cancel", booking_id), &cancel_request)
+        .post(
+            &format!("/api/bookings/{}/cancel", booking_id),
+            &cancel_request,
+        )
         .await;
 
     // Assert - Should fail because already cancelled
@@ -583,7 +617,9 @@ async fn test_cancel_booking_completed_fails() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-cancel-completed@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     // Create a completed booking
     let booking_id = create_test_booking(&pool, user.id, "completed", -10, -7)
@@ -599,7 +635,10 @@ async fn test_cancel_booking_completed_fails() {
 
     // Act
     let response = client
-        .post(&format!("/api/bookings/{}/cancel", booking_id), &cancel_request)
+        .post(
+            &format!("/api/bookings/{}/cancel", booking_id),
+            &cancel_request,
+        )
         .await;
 
     // Assert - Should fail because booking is completed
@@ -654,7 +693,10 @@ async fn test_complete_booking_awards_points() {
 
     // Act
     let response = client
-        .post(&format!("/api/bookings/{}/complete", booking_id), &complete_request)
+        .post(
+            &format!("/api/bookings/{}/complete", booking_id),
+            &complete_request,
+        )
         .await;
 
     // Assert
@@ -701,7 +743,10 @@ async fn test_complete_booking_requires_admin() {
 
     // Act
     let response = client
-        .post(&format!("/api/bookings/{}/complete", booking_id), &complete_request)
+        .post(
+            &format!("/api/bookings/{}/complete", booking_id),
+            &complete_request,
+        )
         .await;
 
     // Assert - Should be forbidden for non-admin
@@ -737,7 +782,10 @@ async fn test_complete_booking_cannot_complete_cancelled() {
 
     // Act
     let response = client
-        .post(&format!("/api/bookings/{}/complete", booking_id), &complete_request)
+        .post(
+            &format!("/api/bookings/{}/complete", booking_id),
+            &complete_request,
+        )
         .await;
 
     // Assert - Should fail for cancelled booking
@@ -758,7 +806,9 @@ async fn test_check_availability_returns_availability() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("availability-check@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -800,7 +850,9 @@ async fn test_check_availability_with_room_type() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("availability-roomtype@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -830,7 +882,10 @@ async fn test_check_availability_with_room_type() {
     // If room type is returned, verify it matches
     if let Some(room_type) = json.get("roomType").or(json.get("room_type")) {
         assert!(
-            room_type.as_str().map(|s| s.to_lowercase().contains("deluxe")).unwrap_or(false),
+            room_type
+                .as_str()
+                .map(|s| s.to_lowercase().contains("deluxe"))
+                .unwrap_or(false),
             "Room type should be deluxe"
         );
     }
@@ -846,7 +901,9 @@ async fn test_check_availability_invalid_dates() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("availability-invalid@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     let token = generate_test_token(&user.id, &user.email);
     let client = TestClient::new(router).with_auth(&token);
@@ -887,7 +944,9 @@ async fn test_list_bookings_pagination() {
     let (router, _) = create_test_app().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-pagination@test.com");
-    user.insert(&pool).await.expect("Failed to insert test user");
+    user.insert(&pool)
+        .await
+        .expect("Failed to insert test user");
 
     // Create multiple bookings
     for i in 0..5 {
@@ -905,14 +964,15 @@ async fn test_list_bookings_pagination() {
 
     let json: Value = response.json().expect("Response should be valid JSON");
     assert!(json.get("bookings").is_some());
-    assert!(json.get("total").is_some() || json.get("totalPages").is_some() || json.get("total_pages").is_some());
+    assert!(
+        json.get("total").is_some()
+            || json.get("totalPages").is_some()
+            || json.get("total_pages").is_some()
+    );
 
     let bookings = json.get("bookings").and_then(|v| v.as_array());
     if let Some(bookings) = bookings {
-        assert!(
-            bookings.len() <= 2,
-            "Should respect page limit"
-        );
+        assert!(bookings.len() <= 2, "Should respect page limit");
     }
 
     teardown_test(&test_db).await;

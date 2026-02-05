@@ -11,8 +11,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::common::{
-    generate_test_token, init_test_db, init_test_redis, setup_test, teardown_test,
-    TestClient, TestDatabase, TestUser, TEST_JWT_SECRET,
+    generate_test_token, init_test_db, init_test_redis, setup_test, teardown_test, TestClient,
+    TestDatabase, TestUser, TEST_JWT_SECRET,
 };
 
 use loyalty_backend::config::Settings;
@@ -174,7 +174,9 @@ async fn create_regular_user(pool: &PgPool) -> (TestUser, String) {
 #[tokio::test]
 async fn test_list_users_admin() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     // Create admin user
     let (admin, token) = create_admin_user(&pool).await;
@@ -199,21 +201,42 @@ async fn test_list_users_admin() {
     let body: Value = response.json().expect("Response should be valid JSON");
 
     // Verify success response structure
-    assert_eq!(body.get("success"), Some(&json!(true)), "Response should indicate success");
+    assert_eq!(
+        body.get("success"),
+        Some(&json!(true)),
+        "Response should indicate success"
+    );
 
     // Verify data is an array
     let data = body.get("data").expect("Response should have data field");
     assert!(data.is_array(), "Data should be an array");
 
     // Verify pagination metadata exists
-    let pagination = body.get("pagination").expect("Response should have pagination");
-    assert!(pagination.get("page").is_some(), "Pagination should have page");
-    assert!(pagination.get("limit").is_some(), "Pagination should have limit");
-    assert!(pagination.get("total").is_some(), "Pagination should have total");
-    assert!(pagination.get("pages").is_some(), "Pagination should have pages");
+    let pagination = body
+        .get("pagination")
+        .expect("Response should have pagination");
+    assert!(
+        pagination.get("page").is_some(),
+        "Pagination should have page"
+    );
+    assert!(
+        pagination.get("limit").is_some(),
+        "Pagination should have limit"
+    );
+    assert!(
+        pagination.get("total").is_some(),
+        "Pagination should have total"
+    );
+    assert!(
+        pagination.get("pages").is_some(),
+        "Pagination should have pages"
+    );
 
     // Should have at least 4 users (admin + 3 created)
-    let total = pagination.get("total").and_then(|v| v.as_i64()).unwrap_or(0);
+    let total = pagination
+        .get("total")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     assert!(total >= 4, "Should have at least 4 users, got {}", total);
 
     teardown_test(&test_db).await;
@@ -224,14 +247,18 @@ async fn test_list_users_admin() {
 #[tokio::test]
 async fn test_list_users_pagination() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     let (_, token) = create_admin_user(&pool).await;
 
     // Create 5 additional users
     for i in 0..5 {
         let user = TestUser::new(&unique_email(&format!("page_user_{}", i)));
-        user.insert(&pool).await.expect("Failed to insert test user");
+        user.insert(&pool)
+            .await
+            .expect("Failed to insert test user");
     }
 
     let app = create_test_app(pool.clone()).await;
@@ -266,7 +293,9 @@ async fn test_list_users_pagination() {
 #[tokio::test]
 async fn test_list_users_non_admin_fails() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     // Create a regular (non-admin) user
     let (_, token) = create_regular_user(&pool).await;
@@ -306,7 +335,9 @@ async fn test_list_users_non_admin_fails() {
 #[tokio::test]
 async fn test_list_users_unauthenticated_fails() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     let app = create_test_app(pool.clone()).await;
     let client = TestClient::new(app);
@@ -329,7 +360,9 @@ async fn test_list_users_unauthenticated_fails() {
 #[tokio::test]
 async fn test_get_user_admin() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     let (_, token) = create_admin_user(&pool).await;
 
@@ -369,8 +402,14 @@ async fn test_get_user_admin() {
         "User email should match"
     );
     assert!(data.get("role").is_some(), "Response should include role");
-    assert!(data.get("is_active").is_some(), "Response should include is_active");
-    assert!(data.get("created_at").is_some(), "Response should include created_at");
+    assert!(
+        data.get("is_active").is_some(),
+        "Response should include is_active"
+    );
+    assert!(
+        data.get("created_at").is_some(),
+        "Response should include created_at"
+    );
 
     teardown_test(&test_db).await;
 }
@@ -380,7 +419,9 @@ async fn test_get_user_admin() {
 #[tokio::test]
 async fn test_get_user_not_found() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     let (_, token) = create_admin_user(&pool).await;
 
@@ -406,7 +447,9 @@ async fn test_get_user_not_found() {
 #[tokio::test]
 async fn test_update_user_admin() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     let (_, token) = create_admin_user(&pool).await;
 
@@ -427,7 +470,10 @@ async fn test_update_user_admin() {
 
     // Act - Update user
     let response = client
-        .put(&format!("/api/admin/users/{}", target_user.id), &update_payload)
+        .put(
+            &format!("/api/admin/users/{}", target_user.id),
+            &update_payload,
+        )
         .await;
 
     // Assert
@@ -460,7 +506,9 @@ async fn test_update_user_admin() {
 #[tokio::test]
 async fn test_update_user_email() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     let (_, token) = create_admin_user(&pool).await;
 
@@ -480,7 +528,10 @@ async fn test_update_user_email() {
 
     // Act
     let response = client
-        .put(&format!("/api/admin/users/{}", target_user.id), &update_payload)
+        .put(
+            &format!("/api/admin/users/{}", target_user.id),
+            &update_payload,
+        )
         .await;
 
     // Assert
@@ -507,14 +558,18 @@ async fn test_update_user_email() {
 #[tokio::test]
 async fn test_get_stats() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     let (_, token) = create_admin_user(&pool).await;
 
     // Create some users for stats
     for i in 0..3 {
         let user = TestUser::new(&unique_email(&format!("stats_user_{}", i)));
-        user.insert(&pool).await.expect("Failed to insert test user");
+        user.insert(&pool)
+            .await
+            .expect("Failed to insert test user");
     }
 
     let app = create_test_app(pool.clone()).await;
@@ -563,7 +618,10 @@ async fn test_get_stats() {
     );
 
     // Verify total_users is at least 4 (admin + 3 created)
-    let total_users = data.get("total_users").and_then(|v| v.as_i64()).unwrap_or(0);
+    let total_users = data
+        .get("total_users")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     assert!(
         total_users >= 4,
         "Total users should be at least 4, got {}",
@@ -578,7 +636,9 @@ async fn test_get_stats() {
 #[tokio::test]
 async fn test_get_stats_non_admin_fails() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     let (_, token) = create_regular_user(&pool).await;
 
@@ -603,7 +663,9 @@ async fn test_get_stats_non_admin_fails() {
 #[tokio::test]
 async fn test_broadcast_notification() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     let (_, token) = create_admin_user(&pool).await;
 
@@ -611,7 +673,9 @@ async fn test_broadcast_notification() {
     let mut user_ids = Vec::new();
     for i in 0..3 {
         let user = TestUser::new(&unique_email(&format!("broadcast_user_{}", i)));
-        user.insert(&pool).await.expect("Failed to insert test user");
+        user.insert(&pool)
+            .await
+            .expect("Failed to insert test user");
         user_ids.push(user.id);
     }
 
@@ -665,7 +729,9 @@ async fn test_broadcast_notification() {
 #[tokio::test]
 async fn test_broadcast_notification_validation() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     let (_, token) = create_admin_user(&pool).await;
 
@@ -698,7 +764,9 @@ async fn test_broadcast_notification_validation() {
 #[tokio::test]
 async fn test_broadcast_notification_non_admin_fails() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     let (_, token) = create_regular_user(&pool).await;
 
@@ -730,7 +798,9 @@ async fn test_broadcast_notification_non_admin_fails() {
 #[tokio::test]
 async fn test_list_users_search() {
     let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool).await.expect("Failed to create admin tables");
+    ensure_admin_tables(&pool)
+        .await
+        .expect("Failed to create admin tables");
 
     let (_, token) = create_admin_user(&pool).await;
 
@@ -745,7 +815,9 @@ async fn test_list_users_search() {
     // Create some other users
     for i in 0..2 {
         let user = TestUser::new(&unique_email(&format!("other_{}", i)));
-        user.insert(&pool).await.expect("Failed to insert test user");
+        user.insert(&pool)
+            .await
+            .expect("Failed to insert test user");
     }
 
     let app = create_test_app(pool.clone()).await;

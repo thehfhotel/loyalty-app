@@ -9,8 +9,8 @@
 
 use async_trait::async_trait;
 use oauth2::{
-    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    RedirectUrl, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl,
+    Scope, TokenResponse, TokenUrl,
 };
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
@@ -404,7 +404,9 @@ impl OAuthService for OAuthServiceImpl {
 
     fn get_google_auth_url(&self) -> Result<(String, CsrfToken), AppError> {
         if !self.is_google_configured() {
-            return Err(AppError::Configuration("Google OAuth is not configured".to_string()));
+            return Err(AppError::Configuration(
+                "Google OAuth is not configured".to_string(),
+            ));
         }
 
         let client = self.create_google_client()?;
@@ -423,7 +425,9 @@ impl OAuthService for OAuthServiceImpl {
 
     async fn exchange_google_code(&self, code: &str) -> Result<GoogleTokens, AppError> {
         if !self.is_google_configured() {
-            return Err(AppError::Configuration("Google OAuth is not configured".to_string()));
+            return Err(AppError::Configuration(
+                "Google OAuth is not configured".to_string(),
+            ));
         }
 
         let client = self.create_google_client()?;
@@ -480,7 +484,9 @@ impl OAuthService for OAuthServiceImpl {
 
     fn get_line_auth_url(&self) -> Result<(String, CsrfToken), AppError> {
         if !self.is_line_configured() {
-            return Err(AppError::Configuration("LINE OAuth is not configured".to_string()));
+            return Err(AppError::Configuration(
+                "LINE OAuth is not configured".to_string(),
+            ));
         }
 
         let client = self.create_line_client()?;
@@ -498,7 +504,9 @@ impl OAuthService for OAuthServiceImpl {
 
     async fn exchange_line_code(&self, code: &str) -> Result<LineTokens, AppError> {
         if !self.is_line_configured() {
-            return Err(AppError::Configuration("LINE OAuth is not configured".to_string()));
+            return Err(AppError::Configuration(
+                "LINE OAuth is not configured".to_string(),
+            ));
         }
 
         let client_id = self.line_config.client_id.as_ref().ok_or_else(|| {
@@ -589,10 +597,7 @@ impl OAuthService for OAuthServiceImpl {
             AppError::OAuth(format!("Failed to parse LINE user info: {}", e))
         })?;
 
-        debug!(
-            "Retrieved LINE user info for: {}",
-            user_info.display_name
-        );
+        debug!("Retrieved LINE user info for: {}", user_info.display_name);
 
         Ok(user_info)
     }
@@ -719,10 +724,7 @@ impl OAuthService for OAuthServiceImpl {
         }
 
         // Create new user
-        info!(
-            "[OAuth Service] Creating new {} user",
-            user_info.provider
-        );
+        info!("[OAuth Service] Creating new {} user", user_info.provider);
 
         let membership_id = self.generate_membership_id().await?;
 
@@ -855,25 +857,27 @@ impl OAuthServiceImpl {
     /// Ensure user is enrolled in the loyalty program
     async fn ensure_loyalty_enrollment(&self, user_id: &Uuid) -> Result<(), AppError> {
         // Check if user already has loyalty record
-        let existing: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT user_id FROM user_loyalty WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .fetch_optional(self.state.db.pool())
-        .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to check loyalty enrollment: {}", e)))?;
+        let existing: Option<(Uuid,)> =
+            sqlx::query_as("SELECT user_id FROM user_loyalty WHERE user_id = $1")
+                .bind(user_id)
+                .fetch_optional(self.state.db.pool())
+                .await
+                .map_err(|e| {
+                    AppError::DatabaseQuery(format!("Failed to check loyalty enrollment: {}", e))
+                })?;
 
         if existing.is_some() {
             return Ok(());
         }
 
         // Get default tier (Bronze)
-        let tier_id: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM tiers WHERE name = 'Bronze' LIMIT 1",
-        )
-        .fetch_optional(self.state.db.pool())
-        .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to get default tier: {}", e)))?;
+        let tier_id: Option<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM tiers WHERE name = 'Bronze' LIMIT 1")
+                .fetch_optional(self.state.db.pool())
+                .await
+                .map_err(|e| {
+                    AppError::DatabaseQuery(format!("Failed to get default tier: {}", e))
+                })?;
 
         let tier_id = tier_id
             .map(|(id,)| id)
@@ -893,7 +897,10 @@ impl OAuthServiceImpl {
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to create loyalty record: {}", e)))?;
 
-        info!("[OAuth Service] Created loyalty enrollment for user: {}", user_id);
+        info!(
+            "[OAuth Service] Created loyalty enrollment for user: {}",
+            user_id
+        );
 
         Ok(())
     }

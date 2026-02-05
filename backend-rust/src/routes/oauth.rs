@@ -236,12 +236,12 @@ fn url_encode(input: &str) -> String {
             // Unreserved characters (RFC 3986)
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 result.push(byte as char);
-            }
+            },
             // Encode everything else
             _ => {
                 result.push('%');
                 result.push_str(&format!("{:02X}", byte));
-            }
+            },
         }
     }
     result
@@ -255,15 +255,12 @@ fn generate_state_key() -> String {
 }
 
 /// Create OAuth state and store in Redis
-async fn create_oauth_state(
-    state: &AppState,
-    data: OAuthStateData,
-) -> AppResult<String> {
+async fn create_oauth_state(state: &AppState, data: OAuthStateData) -> AppResult<String> {
     let state_key = generate_state_key();
     let redis_key = format!("oauth_state:{}:{}", data.provider, state_key);
 
-    let json_data = serde_json::to_string(&data)
-        .map_err(|e| AppError::Serialization(e.to_string()))?;
+    let json_data =
+        serde_json::to_string(&data).map_err(|e| AppError::Serialization(e.to_string()))?;
 
     let mut redis = state.redis();
     redis
@@ -283,17 +280,14 @@ async fn get_oauth_state(
     let redis_key = format!("oauth_state:{}:{}", provider, state_key);
 
     let mut redis = state.redis();
-    let data: Option<String> = redis
-        .get(&redis_key)
-        .await
-        .map_err(AppError::Redis)?;
+    let data: Option<String> = redis.get(&redis_key).await.map_err(AppError::Redis)?;
 
     match data {
         Some(json_data) => {
             let state_data: OAuthStateData = serde_json::from_str(&json_data)
                 .map_err(|e| AppError::Serialization(e.to_string()))?;
             Ok(Some(state_data))
-        }
+        },
         None => Ok(None),
     }
 }
@@ -424,8 +418,11 @@ async fn google_oauth_init(
     // Check if Google OAuth is configured
     let Some(client_id) = config.oauth.google.client_id.as_ref() else {
         tracing::warn!("[OAuth] Google OAuth not configured");
-        return Redirect::to(&format!("{}/login?error=google_not_configured", frontend_url))
-            .into_response();
+        return Redirect::to(&format!(
+            "{}/login?error=google_not_configured",
+            frontend_url
+        ))
+        .into_response();
     };
 
     // Extract request metadata
@@ -466,7 +463,7 @@ async fn google_oauth_init(
             tracing::error!(error = ?e, "[OAuth] Failed to create OAuth state");
             return Redirect::to(&format!("{}/login?error=oauth_error", frontend_url))
                 .into_response();
-        }
+        },
     };
 
     // Build Google OAuth URL
@@ -525,7 +522,7 @@ async fn google_oauth_callback(
         _ => {
             tracing::error!("[OAuth] Google callback missing parameters");
             return build_error_redirect(frontend_url, "oauth_invalid", user_agent);
-        }
+        },
     };
 
     // Retrieve and validate OAuth state
@@ -534,11 +531,11 @@ async fn google_oauth_callback(
         Ok(None) => {
             tracing::error!(state_key = %state_key, "[OAuth] Invalid or expired OAuth state");
             return build_error_redirect(frontend_url, "session_expired", user_agent);
-        }
+        },
         Err(e) => {
             tracing::error!(error = ?e, "[OAuth] Failed to retrieve OAuth state");
             return build_error_redirect(frontend_url, "oauth_error", user_agent);
-        }
+        },
     };
 
     tracing::debug!(
@@ -556,7 +553,7 @@ async fn google_oauth_callback(
                 "oauth_token_failed",
                 user_agent,
             );
-        }
+        },
     };
 
     // Get user info from Google
@@ -569,7 +566,7 @@ async fn google_oauth_callback(
                 "oauth_profile_failed",
                 user_agent,
             );
-        }
+        },
     };
 
     // Process Google authentication
@@ -582,7 +579,7 @@ async fn google_oauth_callback(
                 "oauth_processing_failed",
                 user_agent,
             );
-        }
+        },
     };
 
     // Clean up state
@@ -617,18 +614,13 @@ async fn google_oauth_callback(
 /// Exchange Google authorization code for tokens
 async fn exchange_google_code(state: &AppState, code: &str) -> AppResult<OAuthTokenResponse> {
     let config = state.config();
-    let client_id = config
-        .oauth
-        .google
-        .client_id
-        .as_ref()
-        .ok_or_else(|| AppError::Configuration("Google client ID not configured".to_string()))?;
-    let client_secret = config
-        .oauth
-        .google
-        .client_secret
-        .as_ref()
-        .ok_or_else(|| AppError::Configuration("Google client secret not configured".to_string()))?;
+    let client_id =
+        config.oauth.google.client_id.as_ref().ok_or_else(|| {
+            AppError::Configuration("Google client ID not configured".to_string())
+        })?;
+    let client_secret = config.oauth.google.client_secret.as_ref().ok_or_else(|| {
+        AppError::Configuration("Google client secret not configured".to_string())
+    })?;
 
     let params = [
         ("grant_type", "authorization_code"),
@@ -682,7 +674,10 @@ async fn get_google_user_info(access_token: &str) -> AppResult<GoogleUserInfo> {
 }
 
 /// Process Google authentication and create/update user
-async fn process_google_auth(state: &AppState, user_info: GoogleUserInfo) -> AppResult<OAuthResult> {
+async fn process_google_auth(
+    state: &AppState,
+    user_info: GoogleUserInfo,
+) -> AppResult<OAuthResult> {
     let email = user_info
         .email
         .as_ref()
@@ -697,19 +692,26 @@ async fn process_google_auth(state: &AppState, user_info: GoogleUserInfo) -> App
     let db = state.db();
 
     // Check if user exists by email or OAuth provider ID
-    let existing_user: Option<(String, Option<String>, String, bool, bool, Option<String>)> = sqlx::query_as(
-        r#"SELECT id::text, email, role::text, is_active, email_verified, oauth_provider
+    let existing_user: Option<(String, Option<String>, String, bool, bool, Option<String>)> =
+        sqlx::query_as(
+            r#"SELECT id::text, email, role::text, is_active, email_verified, oauth_provider
            FROM users
            WHERE email = $1 OR (oauth_provider = 'google' AND oauth_provider_id = $2)"#,
-    )
-    .bind(email)
-    .bind(&user_info.id)
-    .fetch_optional(db)
-    .await
-    .map_err(AppError::Database)?;
+        )
+        .bind(email)
+        .bind(&user_info.id)
+        .fetch_optional(db)
+        .await
+        .map_err(AppError::Database)?;
 
-    let (user, is_new_user) = if let Some((id, user_email, role, is_active, email_verified, oauth_provider)) =
-        existing_user
+    let (user, is_new_user) = if let Some((
+        id,
+        user_email,
+        role,
+        is_active,
+        email_verified,
+        oauth_provider,
+    )) = existing_user
     {
         tracing::debug!(user_id = %id, "[OAuth] Existing Google user found");
 
@@ -742,11 +744,13 @@ async fn process_google_auth(state: &AppState, user_info: GoogleUserInfo) -> App
 
         // Mark email as verified if not already
         if !email_verified {
-            sqlx::query("UPDATE users SET email_verified = true, updated_at = NOW() WHERE id = $1::uuid")
-                .bind(&id)
-                .execute(db)
-                .await
-                .map_err(AppError::Database)?;
+            sqlx::query(
+                "UPDATE users SET email_verified = true, updated_at = NOW() WHERE id = $1::uuid",
+            )
+            .bind(&id)
+            .execute(db)
+            .await
+            .map_err(AppError::Database)?;
         }
 
         // Update OAuth provider info if not set
@@ -779,7 +783,12 @@ async fn process_google_auth(state: &AppState, user_info: GoogleUserInfo) -> App
         let first_name = user_info
             .given_name
             .as_deref()
-            .or_else(|| user_info.name.as_ref().map(|n| n.split(' ').next().unwrap_or("")))
+            .or_else(|| {
+                user_info
+                    .name
+                    .as_ref()
+                    .map(|n| n.split(' ').next().unwrap_or(""))
+            })
             .unwrap_or("");
         let last_name = user_info
             .family_name
@@ -849,15 +858,13 @@ async fn process_google_auth(state: &AppState, user_info: GoogleUserInfo) -> App
     };
 
     // Log OAuth login
-    sqlx::query(
-        "INSERT INTO user_audit_log (user_id, action, details) VALUES ($1::uuid, $2, $3)",
-    )
-    .bind(&user.id)
-    .bind("oauth_login")
-    .bind(serde_json::json!({ "provider": "google", "isNewUser": is_new_user }))
-    .execute(db)
-    .await
-    .map_err(AppError::Database)?;
+    sqlx::query("INSERT INTO user_audit_log (user_id, action, details) VALUES ($1::uuid, $2, $3)")
+        .bind(&user.id)
+        .bind("oauth_login")
+        .bind(serde_json::json!({ "provider": "google", "isNewUser": is_new_user }))
+        .execute(db)
+        .await
+        .map_err(AppError::Database)?;
 
     // Generate JWT tokens
     let tokens = generate_tokens(state, &user.id, user.email.as_deref(), &user.role).await?;
@@ -927,7 +934,7 @@ async fn line_oauth_init(
             tracing::error!(error = ?e, "[OAuth] Failed to create OAuth state");
             return Redirect::to(&format!("{}/login?error=oauth_error", frontend_url))
                 .into_response();
-        }
+        },
     };
 
     // Build LINE OAuth URL
@@ -986,7 +993,7 @@ async fn line_oauth_callback(
         _ => {
             tracing::error!("[OAuth] LINE callback missing parameters");
             return build_error_redirect(frontend_url, "oauth_invalid", user_agent);
-        }
+        },
     };
 
     // Retrieve and validate OAuth state
@@ -995,11 +1002,11 @@ async fn line_oauth_callback(
         Ok(None) => {
             tracing::error!(state_key = %state_key, "[OAuth] Invalid or expired OAuth state");
             return build_error_redirect(frontend_url, "session_expired", user_agent);
-        }
+        },
         Err(e) => {
             tracing::error!(error = ?e, "[OAuth] Failed to retrieve OAuth state");
             return build_error_redirect(frontend_url, "oauth_error", user_agent);
-        }
+        },
     };
 
     tracing::debug!(
@@ -1017,7 +1024,7 @@ async fn line_oauth_callback(
                 "oauth_token_failed",
                 user_agent,
             );
-        }
+        },
     };
 
     // Get user profile from LINE
@@ -1030,7 +1037,7 @@ async fn line_oauth_callback(
                 "oauth_profile_failed",
                 user_agent,
             );
-        }
+        },
     };
 
     // Process LINE authentication
@@ -1043,7 +1050,7 @@ async fn line_oauth_callback(
                 "oauth_processing_failed",
                 user_agent,
             );
-        }
+        },
     };
 
     // Clean up state
@@ -1083,12 +1090,10 @@ async fn exchange_line_code(state: &AppState, code: &str) -> AppResult<OAuthToke
         .client_id
         .as_ref()
         .ok_or_else(|| AppError::Configuration("LINE client ID not configured".to_string()))?;
-    let client_secret = config
-        .oauth
-        .line
-        .client_secret
-        .as_ref()
-        .ok_or_else(|| AppError::Configuration("LINE client secret not configured".to_string()))?;
+    let client_secret =
+        config.oauth.line.client_secret.as_ref().ok_or_else(|| {
+            AppError::Configuration("LINE client secret not configured".to_string())
+        })?;
 
     let params = [
         ("grant_type", "authorization_code"),
@@ -1167,7 +1172,8 @@ async fn process_line_auth(state: &AppState, profile: LineProfile) -> AppResult<
     .await
     .map_err(AppError::Database)?;
 
-    let (user, is_new_user) = if let Some((id, email, role, is_active, email_verified)) = existing_user
+    let (user, is_new_user) = if let Some((id, email, role, is_active, email_verified)) =
+        existing_user
     {
         tracing::debug!(user_id = %id, "[OAuth] Existing LINE user found");
 
@@ -1278,15 +1284,15 @@ async fn process_line_auth(state: &AppState, profile: LineProfile) -> AppResult<
     };
 
     // Log OAuth login
-    sqlx::query(
-        "INSERT INTO user_audit_log (user_id, action, details) VALUES ($1::uuid, $2, $3)",
-    )
-    .bind(&user.id)
-    .bind("oauth_login")
-    .bind(serde_json::json!({ "provider": "line", "isNewUser": is_new_user, "lineId": line_id }))
-    .execute(db)
-    .await
-    .map_err(AppError::Database)?;
+    sqlx::query("INSERT INTO user_audit_log (user_id, action, details) VALUES ($1::uuid, $2, $3)")
+        .bind(&user.id)
+        .bind("oauth_login")
+        .bind(
+            serde_json::json!({ "provider": "line", "isNewUser": is_new_user, "lineId": line_id }),
+        )
+        .execute(db)
+        .await
+        .map_err(AppError::Database)?;
 
     // Generate JWT tokens
     let tokens = generate_tokens(state, &user.id, user.email.as_deref(), &user.role).await?;
@@ -1357,7 +1363,7 @@ async fn link_provider(
                 provider = "google",
                 "[OAuth] Account linked successfully"
             );
-        }
+        },
         "line" => {
             let tokens = exchange_line_code(&state, &body.code).await?;
             let profile = get_line_profile(&tokens.access_token).await?;
@@ -1393,7 +1399,7 @@ async fn link_provider(
                 provider = "line",
                 "[OAuth] Account linked successfully"
             );
-        }
+        },
         _ => unreachable!(),
     }
 
@@ -1412,12 +1418,10 @@ async fn generate_membership_id(state: &AppState) -> AppResult<String> {
     let db = state.db();
 
     // Get next sequence value
-    let result: (i64,) = sqlx::query_as(
-        "SELECT nextval('membership_id_sequence')"
-    )
-    .fetch_one(db)
-    .await
-    .map_err(AppError::Database)?;
+    let result: (i64,) = sqlx::query_as("SELECT nextval('membership_id_sequence')")
+        .fetch_one(db)
+        .await
+        .map_err(AppError::Database)?;
 
     let sequence_num = result.0;
     let membership_id = format!("MBRX{:08}", sequence_num);
@@ -1445,20 +1449,17 @@ async fn create_default_notification_preferences(
 /// Ensure user is enrolled in loyalty program
 async fn ensure_loyalty_enrollment(db: &sqlx::PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
     // Check if already enrolled
-    let existing: Option<(i32,)> = sqlx::query_as(
-        "SELECT 1 FROM user_loyalty WHERE user_id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(db)
-    .await?;
+    let existing: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM user_loyalty WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_optional(db)
+        .await?;
 
     if existing.is_none() {
         // Get default tier (Bronze)
-        let tier: Option<(i32,)> = sqlx::query_as(
-            "SELECT id FROM tiers WHERE name = 'Bronze' LIMIT 1"
-        )
-        .fetch_optional(db)
-        .await?;
+        let tier: Option<(i32,)> =
+            sqlx::query_as("SELECT id FROM tiers WHERE name = 'Bronze' LIMIT 1")
+                .fetch_optional(db)
+                .await?;
 
         let tier_id = tier.map(|t| t.0).unwrap_or(1);
 

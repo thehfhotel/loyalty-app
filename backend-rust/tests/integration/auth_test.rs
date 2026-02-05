@@ -10,13 +10,11 @@ use axum::Router;
 use serde_json::{json, Value};
 use sqlx::PgPool;
 
-use crate::common::{
-    init_test_redis, setup_test, teardown_test, TestClient, TEST_JWT_SECRET,
-};
+use crate::common::{init_test_redis, setup_test, teardown_test, TestClient, TEST_JWT_SECRET};
 
+use loyalty_backend::config::Settings;
 use loyalty_backend::routes::auth::routes_with_state;
 use loyalty_backend::state::AppState;
-use loyalty_backend::config::Settings;
 
 // ============================================================================
 // Test Fixtures and Helpers
@@ -42,8 +40,7 @@ async fn create_test_app(pool: PgPool) -> Router {
     let state = AppState::new(pool, redis, settings);
 
     // Nest auth routes under /api like the main app does
-    Router::new()
-        .nest("/api", routes_with_state(state))
+    Router::new().nest("/api", routes_with_state(state))
 }
 
 /// Ensure required tables exist for auth tests
@@ -106,7 +103,9 @@ fn unique_email() -> String {
 #[tokio::test]
 async fn test_register_user_success() {
     let (pool, test_db) = setup_test().await;
-    ensure_auth_tables(&pool).await.expect("Failed to create auth tables");
+    ensure_auth_tables(&pool)
+        .await
+        .expect("Failed to create auth tables");
 
     let app = create_test_app(pool.clone()).await;
     let client = TestClient::new(app);
@@ -129,23 +128,42 @@ async fn test_register_user_success() {
     let body: Value = response.json().expect("Response should be valid JSON");
 
     // Verify user data is returned
-    assert!(body.get("user").is_some(), "Response should contain user object");
+    assert!(
+        body.get("user").is_some(),
+        "Response should contain user object"
+    );
     let user = &body["user"];
     assert_eq!(user["email"], email);
     assert_eq!(user["firstName"], "Test");
     assert_eq!(user["lastName"], "User");
     assert!(user["id"].is_string(), "User should have an ID");
-    assert!(user["membershipId"].is_string(), "User should have a membership ID");
+    assert!(
+        user["membershipId"].is_string(),
+        "User should have a membership ID"
+    );
 
     // Verify tokens are returned
-    assert!(body.get("tokens").is_some(), "Response should contain tokens");
+    assert!(
+        body.get("tokens").is_some(),
+        "Response should contain tokens"
+    );
     let tokens = &body["tokens"];
-    assert!(tokens["accessToken"].is_string(), "Should have access token");
-    assert!(tokens["refreshToken"].is_string(), "Should have refresh token");
+    assert!(
+        tokens["accessToken"].is_string(),
+        "Should have access token"
+    );
+    assert!(
+        tokens["refreshToken"].is_string(),
+        "Should have refresh token"
+    );
 
     // Verify access token is a valid JWT (has 3 parts separated by dots)
     let access_token = tokens["accessToken"].as_str().unwrap();
-    assert_eq!(access_token.split('.').count(), 3, "Access token should be a valid JWT");
+    assert_eq!(
+        access_token.split('.').count(),
+        3,
+        "Access token should be a valid JWT"
+    );
 
     // Verify user was actually created in database
     let db_user: Option<(String,)> = sqlx::query_as("SELECT email FROM users WHERE email = $1")
@@ -165,7 +183,9 @@ async fn test_register_user_success() {
 #[tokio::test]
 async fn test_register_duplicate_email_fails() {
     let (pool, test_db) = setup_test().await;
-    ensure_auth_tables(&pool).await.expect("Failed to create auth tables");
+    ensure_auth_tables(&pool)
+        .await
+        .expect("Failed to create auth tables");
 
     let app = create_test_app(pool.clone()).await;
     let client = TestClient::new(app);
@@ -198,15 +218,16 @@ async fn test_register_duplicate_email_fails() {
 
     // Verify error message
     let body: Value = response2.json().expect("Response should be valid JSON");
-    let error_message = body.get("error")
+    let error_message = body
+        .get("error")
         .or_else(|| body.get("message"))
         .map(|v| v.as_str().unwrap_or(""))
         .unwrap_or("");
 
     assert!(
-        error_message.to_lowercase().contains("email") ||
-        error_message.to_lowercase().contains("already") ||
-        error_message.to_lowercase().contains("registered"),
+        error_message.to_lowercase().contains("email")
+            || error_message.to_lowercase().contains("already")
+            || error_message.to_lowercase().contains("registered"),
         "Error message should indicate email issue: {}",
         error_message
     );
@@ -224,7 +245,9 @@ async fn test_register_duplicate_email_fails() {
 #[tokio::test]
 async fn test_login_success() {
     let (pool, test_db) = setup_test().await;
-    ensure_auth_tables(&pool).await.expect("Failed to create auth tables");
+    ensure_auth_tables(&pool)
+        .await
+        .expect("Failed to create auth tables");
 
     // First, register a user
     let app = create_test_app(pool.clone()).await;
@@ -258,22 +281,40 @@ async fn test_login_success() {
     login_response.assert_status(200);
 
     // Parse response body
-    let body: Value = login_response.json().expect("Response should be valid JSON");
+    let body: Value = login_response
+        .json()
+        .expect("Response should be valid JSON");
 
     // Verify user data is returned
-    assert!(body.get("user").is_some(), "Response should contain user object");
+    assert!(
+        body.get("user").is_some(),
+        "Response should contain user object"
+    );
     let user = &body["user"];
     assert_eq!(user["email"], email);
 
     // Verify tokens are returned
-    assert!(body.get("tokens").is_some(), "Response should contain tokens");
+    assert!(
+        body.get("tokens").is_some(),
+        "Response should contain tokens"
+    );
     let tokens = &body["tokens"];
-    assert!(tokens["accessToken"].is_string(), "Should have access token");
-    assert!(tokens["refreshToken"].is_string(), "Should have refresh token");
+    assert!(
+        tokens["accessToken"].is_string(),
+        "Should have access token"
+    );
+    assert!(
+        tokens["refreshToken"].is_string(),
+        "Should have refresh token"
+    );
 
     // Verify access token is a valid JWT
     let access_token = tokens["accessToken"].as_str().unwrap();
-    assert_eq!(access_token.split('.').count(), 3, "Access token should be a valid JWT");
+    assert_eq!(
+        access_token.split('.').count(),
+        3,
+        "Access token should be a valid JWT"
+    );
 
     teardown_test(&test_db).await;
 }
@@ -284,7 +325,9 @@ async fn test_login_success() {
 #[tokio::test]
 async fn test_login_invalid_password() {
     let (pool, test_db) = setup_test().await;
-    ensure_auth_tables(&pool).await.expect("Failed to create auth tables");
+    ensure_auth_tables(&pool)
+        .await
+        .expect("Failed to create auth tables");
 
     // First, register a user
     let app = create_test_app(pool.clone()).await;
@@ -319,16 +362,19 @@ async fn test_login_invalid_password() {
     response_assert_status(&login_response, 401);
 
     // Verify error message
-    let body: Value = login_response.json().expect("Response should be valid JSON");
-    let error_message = body.get("error")
+    let body: Value = login_response
+        .json()
+        .expect("Response should be valid JSON");
+    let error_message = body
+        .get("error")
         .or_else(|| body.get("message"))
         .map(|v| v.as_str().unwrap_or(""))
         .unwrap_or("");
 
     assert!(
-        error_message.to_lowercase().contains("invalid") ||
-        error_message.to_lowercase().contains("password") ||
-        error_message.to_lowercase().contains("unauthorized"),
+        error_message.to_lowercase().contains("invalid")
+            || error_message.to_lowercase().contains("password")
+            || error_message.to_lowercase().contains("unauthorized"),
         "Error message should indicate authentication failure: {}",
         error_message
     );
@@ -346,7 +392,9 @@ async fn test_login_invalid_password() {
 #[tokio::test]
 async fn test_refresh_token() {
     let (pool, test_db) = setup_test().await;
-    ensure_auth_tables(&pool).await.expect("Failed to create auth tables");
+    ensure_auth_tables(&pool)
+        .await
+        .expect("Failed to create auth tables");
 
     // Register and login to get tokens
     let app = create_test_app(pool.clone()).await;
@@ -365,7 +413,9 @@ async fn test_refresh_token() {
     let register_response = client.post("/api/auth/register", &register_payload).await;
     register_response.assert_status(201);
 
-    let register_body: Value = register_response.json().expect("Response should be valid JSON");
+    let register_body: Value = register_response
+        .json()
+        .expect("Response should be valid JSON");
     let original_refresh_token = register_body["tokens"]["refreshToken"]
         .as_str()
         .expect("Should have refresh token");
@@ -388,18 +438,34 @@ async fn test_refresh_token() {
     refresh_response.assert_status(200);
 
     // Parse response body
-    let refresh_body: Value = refresh_response.json().expect("Response should be valid JSON");
+    let refresh_body: Value = refresh_response
+        .json()
+        .expect("Response should be valid JSON");
 
     // Verify new tokens are returned
-    assert!(refresh_body.get("tokens").is_some(), "Response should contain tokens");
+    assert!(
+        refresh_body.get("tokens").is_some(),
+        "Response should contain tokens"
+    );
     let tokens = &refresh_body["tokens"];
 
-    let new_access_token = tokens["accessToken"].as_str().expect("Should have new access token");
-    let new_refresh_token = tokens["refreshToken"].as_str().expect("Should have new refresh token");
+    let new_access_token = tokens["accessToken"]
+        .as_str()
+        .expect("Should have new access token");
+    let new_refresh_token = tokens["refreshToken"]
+        .as_str()
+        .expect("Should have new refresh token");
 
     // New tokens should be valid JWTs
-    assert_eq!(new_access_token.split('.').count(), 3, "New access token should be a valid JWT");
-    assert!(!new_refresh_token.is_empty(), "New refresh token should not be empty");
+    assert_eq!(
+        new_access_token.split('.').count(),
+        3,
+        "New access token should be a valid JWT"
+    );
+    assert!(
+        !new_refresh_token.is_empty(),
+        "New refresh token should not be empty"
+    );
 
     // New access token should be different from the original (issued at different times)
     // Note: In practice, they could be the same if issued within the same second,
@@ -418,7 +484,9 @@ async fn test_refresh_token() {
 #[tokio::test]
 async fn test_logout() {
     let (pool, test_db) = setup_test().await;
-    ensure_auth_tables(&pool).await.expect("Failed to create auth tables");
+    ensure_auth_tables(&pool)
+        .await
+        .expect("Failed to create auth tables");
 
     // Register to get tokens
     let app = create_test_app(pool.clone()).await;
@@ -437,7 +505,9 @@ async fn test_logout() {
     let register_response = client.post("/api/auth/register", &register_payload).await;
     register_response.assert_status(201);
 
-    let register_body: Value = register_response.json().expect("Response should be valid JSON");
+    let register_body: Value = register_response
+        .json()
+        .expect("Response should be valid JSON");
     let access_token = register_body["tokens"]["accessToken"]
         .as_str()
         .expect("Should have access token");
@@ -459,15 +529,18 @@ async fn test_logout() {
     logout_response.assert_status(200);
 
     // Verify logout message
-    let logout_body: Value = logout_response.json().expect("Response should be valid JSON");
-    let message = logout_body.get("message")
+    let logout_body: Value = logout_response
+        .json()
+        .expect("Response should be valid JSON");
+    let message = logout_body
+        .get("message")
         .map(|v| v.as_str().unwrap_or(""))
         .unwrap_or("");
 
     assert!(
-        message.to_lowercase().contains("logged out") ||
-        message.to_lowercase().contains("logout") ||
-        message.to_lowercase().contains("success"),
+        message.to_lowercase().contains("logged out")
+            || message.to_lowercase().contains("logout")
+            || message.to_lowercase().contains("success"),
         "Should confirm successful logout: {}",
         message
     );
@@ -513,7 +586,9 @@ fn response_assert_status(response: &crate::common::TestResponse, expected: u16)
 #[tokio::test]
 async fn test_register_invalid_email() {
     let (pool, test_db) = setup_test().await;
-    ensure_auth_tables(&pool).await.expect("Failed to create auth tables");
+    ensure_auth_tables(&pool)
+        .await
+        .expect("Failed to create auth tables");
 
     let app = create_test_app(pool.clone()).await;
     let client = TestClient::new(app);
@@ -541,7 +616,9 @@ async fn test_register_invalid_email() {
 #[tokio::test]
 async fn test_register_short_password() {
     let (pool, test_db) = setup_test().await;
-    ensure_auth_tables(&pool).await.expect("Failed to create auth tables");
+    ensure_auth_tables(&pool)
+        .await
+        .expect("Failed to create auth tables");
 
     let app = create_test_app(pool.clone()).await;
     let client = TestClient::new(app);
@@ -569,7 +646,9 @@ async fn test_register_short_password() {
 #[tokio::test]
 async fn test_login_nonexistent_email() {
     let (pool, test_db) = setup_test().await;
-    ensure_auth_tables(&pool).await.expect("Failed to create auth tables");
+    ensure_auth_tables(&pool)
+        .await
+        .expect("Failed to create auth tables");
 
     let app = create_test_app(pool.clone()).await;
     let client = TestClient::new(app);
@@ -591,7 +670,9 @@ async fn test_login_nonexistent_email() {
 #[tokio::test]
 async fn test_refresh_invalid_token() {
     let (pool, test_db) = setup_test().await;
-    ensure_auth_tables(&pool).await.expect("Failed to create auth tables");
+    ensure_auth_tables(&pool)
+        .await
+        .expect("Failed to create auth tables");
 
     let app = create_test_app(pool.clone()).await;
     let client = TestClient::new(app);

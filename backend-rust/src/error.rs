@@ -383,27 +383,27 @@ impl AppError {
             Self::PayloadTooLarge => "Request payload is too large".to_string(),
             Self::UnsupportedMediaType(media_type) => {
                 format!("Unsupported media type: {}", media_type)
-            }
+            },
 
             // Rate limiting - safe to expose
             Self::RateLimitExceeded => "Too many requests, please try again later".to_string(),
             Self::TooManyRequests(seconds) => {
                 format!("Too many requests, please retry after {} seconds", seconds)
-            }
+            },
 
             // External services - hide details
             Self::OAuth(_) => "Authentication service error".to_string(),
             Self::OAuthProvider { provider, .. } => {
                 format!("Error connecting to {} authentication", provider)
-            }
+            },
             Self::SlipOk(_) => "Payment verification service error".to_string(),
             Self::EmailService(_) => "Email service temporarily unavailable".to_string(),
             Self::ExternalServiceUnavailable(service) => {
                 format!("{} is temporarily unavailable", service)
-            }
+            },
             Self::ExternalServiceTimeout(service) => {
                 format!("{} request timed out", service)
-            }
+            },
 
             // HTTP client errors - hide details
             Self::HttpRequest(_) => "External service error".to_string(),
@@ -448,7 +448,7 @@ impl IntoResponse for AppError {
         let body = match &self {
             AppError::ValidationWithDetails { details, .. } => {
                 ErrorResponse::with_details(error_code, message, details.clone())
-            }
+            },
             _ => ErrorResponse::new(error_code, message),
         };
 
@@ -517,9 +517,13 @@ mod tests {
     #[test]
     fn test_error_response_with_details() {
         let mut details = HashMap::new();
-        details.insert("email".to_string(), vec!["Invalid email format".to_string()]);
+        details.insert(
+            "email".to_string(),
+            vec!["Invalid email format".to_string()],
+        );
 
-        let response = ErrorResponse::with_details("validation_error", "Validation failed", details);
+        let response =
+            ErrorResponse::with_details("validation_error", "Validation failed", details);
         assert_eq!(response.error, "validation_error");
         assert!(response.details.is_some());
         assert!(response.details.unwrap().contains_key("email"));
@@ -527,20 +531,47 @@ mod tests {
 
     #[test]
     fn test_app_error_status_codes() {
-        assert_eq!(AppError::InvalidCredentials.status_code(), StatusCode::UNAUTHORIZED);
-        assert_eq!(AppError::Forbidden("test".to_string()).status_code(), StatusCode::FORBIDDEN);
-        assert_eq!(AppError::NotFound("User".to_string()).status_code(), StatusCode::NOT_FOUND);
-        assert_eq!(AppError::BadRequest("test".to_string()).status_code(), StatusCode::BAD_REQUEST);
-        assert_eq!(AppError::RateLimitExceeded.status_code(), StatusCode::TOO_MANY_REQUESTS);
-        assert_eq!(AppError::Internal("test".to_string()).status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            AppError::InvalidCredentials.status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            AppError::Forbidden("test".to_string()).status_code(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            AppError::NotFound("User".to_string()).status_code(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            AppError::BadRequest("test".to_string()).status_code(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            AppError::RateLimitExceeded.status_code(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
+            AppError::Internal("test".to_string()).status_code(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 
     #[test]
     fn test_app_error_codes() {
-        assert_eq!(AppError::InvalidCredentials.error_code(), "invalid_credentials");
+        assert_eq!(
+            AppError::InvalidCredentials.error_code(),
+            "invalid_credentials"
+        );
         assert_eq!(AppError::TokenExpired.error_code(), "token_expired");
-        assert_eq!(AppError::NotFound("test".to_string()).error_code(), "not_found");
-        assert_eq!(AppError::RateLimitExceeded.error_code(), "rate_limit_exceeded");
+        assert_eq!(
+            AppError::NotFound("test".to_string()).error_code(),
+            "not_found"
+        );
+        assert_eq!(
+            AppError::RateLimitExceeded.error_code(),
+            "rate_limit_exceeded"
+        );
     }
 
     #[test]

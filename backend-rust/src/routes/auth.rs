@@ -341,20 +341,21 @@ async fn generate_membership_id(db: &sqlx::PgPool) -> Result<String, AppError> {
         let id = generate_random_membership_id();
 
         // Check if ID already exists
-        let exists: Option<(i64,)> = sqlx::query_as(
-            "SELECT 1 FROM user_profiles WHERE membership_id = $1"
-        )
-        .bind(&id)
-        .fetch_optional(db)
-        .await
-        .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
+        let exists: Option<(i64,)> =
+            sqlx::query_as("SELECT 1 FROM user_profiles WHERE membership_id = $1")
+                .bind(&id)
+                .fetch_optional(db)
+                .await
+                .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
         if exists.is_none() {
             return Ok(id);
         }
     }
 
-    Err(AppError::Internal("Failed to generate unique membership ID".to_string()))
+    Err(AppError::Internal(
+        "Failed to generate unique membership ID".to_string(),
+    ))
 }
 
 /// Get user profile by ID
@@ -400,18 +401,18 @@ async fn register(
     Json(payload): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
     // Validate request
-    payload.validate().map_err(|e| AppError::Validation(e.to_string()))?;
+    payload
+        .validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let db = state.db();
 
     // Check if email already exists
-    let existing: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM users WHERE email = $1"
-    )
-    .bind(&payload.email)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
+    let existing: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE email = $1")
+        .bind(&payload.email)
+        .fetch_optional(db)
+        .await
+        .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
     if existing.is_some() {
         return Err(AppError::BadRequest("Email already registered".to_string()));
@@ -424,7 +425,10 @@ async fn register(
     let membership_id = generate_membership_id(db).await?;
 
     // Start transaction
-    let mut tx = db.begin().await.map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
+    let mut tx = db
+        .begin()
+        .await
+        .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
     // Create user
     let user_row: UserRow = sqlx::query_as(
@@ -498,7 +502,9 @@ async fn register(
     .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
     // Commit transaction
-    tx.commit().await.map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
     // Build response
     let user_response = UserResponse {
@@ -535,7 +541,9 @@ async fn login(
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
     // Validate request
-    payload.validate().map_err(|e| AppError::Validation(e.to_string()))?;
+    payload
+        .validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let db = state.db();
 
@@ -552,13 +560,14 @@ async fn login(
     .await
     .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
-    let user_row = user_row.ok_or_else(|| {
-        AppError::Unauthorized("Invalid email or password".to_string())
-    })?;
+    let user_row =
+        user_row.ok_or_else(|| AppError::Unauthorized("Invalid email or password".to_string()))?;
 
     // Check if user is active
     if !user_row.is_active.unwrap_or(true) {
-        return Err(AppError::Forbidden("Account is disabled. Please contact support.".to_string()));
+        return Err(AppError::Forbidden(
+            "Account is disabled. Please contact support.".to_string(),
+        ));
     }
 
     // Check if user has a password (might be OAuth-only account)
@@ -571,7 +580,9 @@ async fn login(
     // Verify password
     let is_valid = verify_password(&payload.password, password_hash).await?;
     if !is_valid {
-        return Err(AppError::Unauthorized("Invalid email or password".to_string()));
+        return Err(AppError::Unauthorized(
+            "Invalid email or password".to_string(),
+        ));
     }
 
     // Generate tokens
@@ -651,14 +662,12 @@ async fn logout(
 
     // Delete refresh token if provided
     if let Some(refresh_token) = &payload.refresh_token {
-        sqlx::query(
-            "DELETE FROM refresh_tokens WHERE user_id = $1 AND token = $2"
-        )
-        .bind(&user_id)
-        .bind(refresh_token)
-        .execute(db)
-        .await
-        .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
+        sqlx::query("DELETE FROM refresh_tokens WHERE user_id = $1 AND token = $2")
+            .bind(&user_id)
+            .bind(refresh_token)
+            .execute(db)
+            .await
+            .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
     }
 
     // Log logout action
@@ -701,9 +710,8 @@ async fn refresh(
     .await
     .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
-    let (user_id,) = token_row.ok_or_else(|| {
-        AppError::Unauthorized("Invalid or expired refresh token".to_string())
-    })?;
+    let (user_id,) = token_row
+        .ok_or_else(|| AppError::Unauthorized("Invalid or expired refresh token".to_string()))?;
 
     // Get user
     let user_row: Option<UserRow> = sqlx::query_as(
@@ -718,9 +726,8 @@ async fn refresh(
     .await
     .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
-    let user_row = user_row.ok_or_else(|| {
-        AppError::Unauthorized("User not found or inactive".to_string())
-    })?;
+    let user_row =
+        user_row.ok_or_else(|| AppError::Unauthorized("User not found or inactive".to_string()))?;
 
     // Generate new tokens
     let role_str = format!("{:?}", user_row.role.unwrap_or_default()).to_lowercase();
@@ -773,18 +780,19 @@ async fn forgot_password(
     Json(payload): Json<ForgotPasswordRequest>,
 ) -> Result<Json<MessageResponse>, AppError> {
     // Validate request
-    payload.validate().map_err(|e| AppError::Validation(e.to_string()))?;
+    payload
+        .validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let db = state.db();
 
     // Find user by email (don't reveal if email exists)
-    let user_row: Option<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, email FROM users WHERE email = $1"
-    )
-    .bind(&payload.email)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
+    let user_row: Option<(Uuid, String)> =
+        sqlx::query_as("SELECT id, email FROM users WHERE email = $1")
+            .bind(&payload.email)
+            .fetch_optional(db)
+            .await
+            .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
     if let Some((user_id, _email)) = user_row {
         // Generate reset token
@@ -836,7 +844,9 @@ async fn reset_password(
     Json(payload): Json<ResetPasswordRequest>,
 ) -> Result<Json<MessageResponse>, AppError> {
     // Validate request
-    payload.validate().map_err(|e| AppError::Validation(e.to_string()))?;
+    payload
+        .validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
 
     let db = state.db();
 
@@ -854,14 +864,15 @@ async fn reset_password(
     .await
     .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
-    let (user_id, hashed_token) = token_row.ok_or_else(|| {
-        AppError::BadRequest("Invalid or expired reset token".to_string())
-    })?;
+    let (user_id, hashed_token) = token_row
+        .ok_or_else(|| AppError::BadRequest("Invalid or expired reset token".to_string()))?;
 
     // Verify token
     let is_valid = verify_password(&payload.token, &hashed_token).await?;
     if !is_valid {
-        return Err(AppError::BadRequest("Invalid or expired reset token".to_string()));
+        return Err(AppError::BadRequest(
+            "Invalid or expired reset token".to_string(),
+        ));
     }
 
     // Hash new password
@@ -916,7 +927,9 @@ async fn me(
     // Get user profile
     let user_response = get_user_profile(db, &user_id).await?;
 
-    Ok(Json(MeResponse { user: user_response }))
+    Ok(Json(MeResponse {
+        user: user_response,
+    }))
 }
 
 // ============================================================================

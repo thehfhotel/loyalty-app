@@ -69,7 +69,11 @@ pub struct AssignCouponRequest {
     pub coupon_id: Uuid,
     /// List of user IDs to assign to
     #[serde(rename = "userIds")]
-    #[validate(length(min = 1, max = 100, message = "Must specify between 1 and 100 user IDs"))]
+    #[validate(length(
+        min = 1,
+        max = 100,
+        message = "Must specify between 1 and 100 user IDs"
+    ))]
     pub user_ids: Vec<Uuid>,
     /// Reason for assignment
     #[serde(rename = "assignedReason")]
@@ -106,7 +110,9 @@ fn validate_positive_decimal(value: &Decimal) -> Result<(), validator::Validatio
         Ok(())
     } else {
         let mut err = validator::ValidationError::new("range");
-        err.message = Some(std::borrow::Cow::Borrowed("Original amount must be positive"));
+        err.message = Some(std::borrow::Cow::Borrowed(
+            "Original amount must be positive",
+        ));
         Err(err)
     }
 }
@@ -559,13 +565,13 @@ async fn create_coupon(
                 return Err(AppError::Validation(
                     "Value is required for percentage and fixed_amount coupons".to_string(),
                 ));
-            }
+            },
             Some(v) if v <= Decimal::ZERO => {
                 return Err(AppError::Validation(
                     "Value must be positive for percentage and fixed_amount coupons".to_string(),
                 ));
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -585,7 +591,10 @@ async fn create_coupon(
 
     let coupon_id = Uuid::new_v4();
     let status = request.status.unwrap_or(CouponStatus::Draft);
-    let currency = request.currency.clone().unwrap_or_else(|| "THB".to_string());
+    let currency = request
+        .currency
+        .clone()
+        .unwrap_or_else(|| "THB".to_string());
 
     let coupon = sqlx::query_as::<_, CouponResponse>(
         r#"
@@ -670,13 +679,12 @@ async fn update_coupon(
     if let Some(value) = request.value {
         if value > Decimal::from(100) {
             // Check if it's a percentage type coupon
-            let existing: String = sqlx::query_scalar(
-                r#"SELECT type::text FROM coupons WHERE id = $1"#,
-            )
-            .bind(coupon_id)
-            .fetch_optional(state.db())
-            .await?
-            .ok_or_else(|| AppError::NotFound("Coupon".to_string()))?;
+            let existing: String =
+                sqlx::query_scalar(r#"SELECT type::text FROM coupons WHERE id = $1"#)
+                    .bind(coupon_id)
+                    .fetch_optional(state.db())
+                    .await?
+                    .ok_or_else(|| AppError::NotFound("Coupon".to_string()))?;
 
             if existing == "percentage" {
                 return Err(AppError::Validation(
@@ -973,7 +981,7 @@ async fn redeem_coupon(
             } else {
                 discount
             }
-        }
+        },
         "fixed_amount" => user_coupon.value.unwrap_or(Decimal::ZERO),
         _ => Decimal::ZERO, // BOGO, free_upgrade, free_service don't have numeric discounts
     };
@@ -1081,8 +1089,8 @@ async fn validate_coupon(
     let response = match user_coupon {
         Some(uc) => {
             let effective_expiry = uc.expires_at.or(uc.valid_until);
-            let is_valid = uc.status == "available"
-                && effective_expiry.map_or(true, |exp| exp > Utc::now());
+            let is_valid =
+                uc.status == "available" && effective_expiry.map_or(true, |exp| exp > Utc::now());
 
             CouponValidationResponse {
                 valid: is_valid,
@@ -1113,7 +1121,7 @@ async fn validate_coupon(
                     "Coupon is not available for use".to_string()
                 },
             }
-        }
+        },
         None => CouponValidationResponse {
             valid: false,
             data: None,
@@ -1354,7 +1362,10 @@ pub fn routes() -> Router<AppState> {
         .route("/:couponId", put(update_coupon))
         .route("/:couponId", delete(delete_coupon))
         .route("/assign", post(assign_coupon))
-        .route("/user-coupons/:userCouponId/revoke", post(revoke_user_coupon))
+        .route(
+            "/user-coupons/:userCouponId/revoke",
+            post(revoke_user_coupon),
+        )
         .route("/analytics/stats", get(get_coupon_stats))
         .route("/:couponId/redemptions", get(get_coupon_redemptions))
         .route("/:couponId/assignments", get(get_coupon_assignments))
@@ -1368,4 +1379,3 @@ pub fn routes() -> Router<AppState> {
         .merge(auth_routes)
         .merge(admin_routes)
 }
-

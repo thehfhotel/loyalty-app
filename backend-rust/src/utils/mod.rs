@@ -12,14 +12,23 @@ pub use logging::{
 };
 
 pub use validation::{
-    // Standalone validators
-    validate_email, validate_password, validate_phone,
-    // Custom validators for validator crate
-    validate_email_custom, validate_not_empty, validate_optional_email,
-    validate_optional_phone, validate_password_custom, validate_phone_custom,
-    validate_alphanumeric_underscore, validate_alphanumeric_underscore_custom,
     // Utility functions
-    normalize_phone, password_requirements, validate_length_range,
+    normalize_phone,
+    password_requirements,
+    validate_alphanumeric_underscore,
+    validate_alphanumeric_underscore_custom,
+    // Standalone validators
+    validate_email,
+    // Custom validators for validator crate
+    validate_email_custom,
+    validate_length_range,
+    validate_not_empty,
+    validate_optional_email,
+    validate_optional_phone,
+    validate_password,
+    validate_password_custom,
+    validate_phone,
+    validate_phone_custom,
     // Types
     PasswordValidationErrors,
 };

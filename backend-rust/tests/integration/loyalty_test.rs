@@ -205,8 +205,12 @@ async fn test_get_loyalty_status() {
     let (pool, test_db) = setup_test().await;
 
     // Ensure required columns exist
-    ensure_user_loyalty_columns(&pool).await.expect("Failed to add user_loyalty columns");
-    ensure_tiers_columns(&pool).await.expect("Failed to add tiers columns");
+    ensure_user_loyalty_columns(&pool)
+        .await
+        .expect("Failed to add user_loyalty columns");
+    ensure_tiers_columns(&pool)
+        .await
+        .expect("Failed to add tiers columns");
 
     let user = TestUser::new("loyalty_status@example.com");
     let user_id = insert_user_with_loyalty(&pool, &user, 500, 5)
@@ -228,7 +232,10 @@ async fn test_get_loyalty_status() {
 
     let json: Value = response.json().expect("Response should be valid JSON");
 
-    assert!(json.get("success").and_then(|v| v.as_bool()).unwrap_or(false));
+    assert!(json
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false));
 
     let data = json.get("data").expect("Response should have 'data' field");
 
@@ -313,13 +320,18 @@ async fn test_get_transactions() {
 
     let json: Value = response.json().expect("Response should be valid JSON");
 
-    assert!(json.get("success").and_then(|v| v.as_bool()).unwrap_or(false));
+    assert!(json
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false));
 
     let data = json.get("data").expect("Response should have 'data' field");
 
     // Check pagination fields
     assert!(
-        data.get("transactions").and_then(|v| v.as_array()).is_some(),
+        data.get("transactions")
+            .and_then(|v| v.as_array())
+            .is_some(),
         "Response should have 'transactions' array"
     );
     assert!(
@@ -374,7 +386,9 @@ async fn test_get_transactions_pagination() {
     let client = TestClient::new(router).with_auth(&token);
 
     // Act - request page 2 with limit 10
-    let response = client.get("/api/loyalty/transactions?page=2&limit=10").await;
+    let response = client
+        .get("/api/loyalty/transactions?page=2&limit=10")
+        .await;
 
     // Assert
     response.assert_status(200);
@@ -404,7 +418,11 @@ async fn test_get_transactions_pagination() {
     );
 
     let transactions = data.get("transactions").unwrap().as_array().unwrap();
-    assert_eq!(transactions.len(), 10, "Should have 10 transactions on page 2");
+    assert_eq!(
+        transactions.len(),
+        10,
+        "Should have 10 transactions on page 2"
+    );
 
     // Cleanup
     teardown_test(&test_db).await;
@@ -420,7 +438,9 @@ async fn test_get_tiers() {
     // Arrange
     let (pool, test_db) = setup_test().await;
 
-    ensure_tiers_columns(&pool).await.expect("Failed to add tiers columns");
+    ensure_tiers_columns(&pool)
+        .await
+        .expect("Failed to add tiers columns");
 
     let router = create_loyalty_router()
         .await
@@ -435,22 +455,37 @@ async fn test_get_tiers() {
 
     let json: Value = response.json().expect("Response should be valid JSON");
 
-    assert!(json.get("success").and_then(|v| v.as_bool()).unwrap_or(false));
+    assert!(json
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false));
 
     let data = json.get("data").expect("Response should have 'data' field");
 
     assert!(data.is_array(), "Data should be an array of tiers");
 
     let tiers = data.as_array().unwrap();
-    assert!(tiers.len() >= 4, "Should have at least 4 default tiers (Bronze, Silver, Gold, Platinum)");
+    assert!(
+        tiers.len() >= 4,
+        "Should have at least 4 default tiers (Bronze, Silver, Gold, Platinum)"
+    );
 
     // Check first tier (Bronze) structure
     let first_tier = &tiers[0];
     assert!(first_tier.get("id").is_some(), "Tier should have 'id'");
     assert!(first_tier.get("name").is_some(), "Tier should have 'name'");
-    assert!(first_tier.get("min_nights").is_some(), "Tier should have 'min_nights'");
-    assert!(first_tier.get("benefits").is_some(), "Tier should have 'benefits'");
-    assert!(first_tier.get("color").is_some(), "Tier should have 'color'");
+    assert!(
+        first_tier.get("min_nights").is_some(),
+        "Tier should have 'min_nights'"
+    );
+    assert!(
+        first_tier.get("benefits").is_some(),
+        "Tier should have 'benefits'"
+    );
+    assert!(
+        first_tier.get("color").is_some(),
+        "Tier should have 'color'"
+    );
 
     // Verify tiers are sorted by sort_order
     let tier_names: Vec<&str> = tiers
@@ -458,10 +493,7 @@ async fn test_get_tiers() {
         .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
         .collect();
 
-    assert!(
-        tier_names.contains(&"Bronze"),
-        "Should contain Bronze tier"
-    );
+    assert!(tier_names.contains(&"Bronze"), "Should contain Bronze tier");
     assert!(
         tier_names.contains(&"Platinum"),
         "Should contain Platinum tier"
@@ -493,7 +525,10 @@ async fn test_award_points_admin() {
 
     // Create admin user
     let admin_user = TestUser::admin("admin_award@example.com");
-    admin_user.insert(&pool).await.expect("Failed to insert admin user");
+    admin_user
+        .insert(&pool)
+        .await
+        .expect("Failed to insert admin user");
     let admin_token = generate_test_token(&admin_user.id, &admin_user.email);
 
     // Create target user
@@ -523,7 +558,10 @@ async fn test_award_points_admin() {
 
     let json: Value = response.json().expect("Response should be valid JSON");
 
-    assert!(json.get("success").and_then(|v| v.as_bool()).unwrap_or(false));
+    assert!(json
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false));
 
     let data = json.get("data").expect("Response should have 'data' field");
 
@@ -553,13 +591,12 @@ async fn test_award_points_admin() {
     );
 
     // Verify points were actually increased in the database
-    let loyalty: (i32, i32) = sqlx::query_as(
-        "SELECT current_points, total_nights FROM user_loyalty WHERE user_id = $1",
-    )
-    .bind(target_user_id)
-    .fetch_one(&pool)
-    .await
-    .expect("Failed to fetch updated loyalty");
+    let loyalty: (i32, i32) =
+        sqlx::query_as("SELECT current_points, total_nights FROM user_loyalty WHERE user_id = $1")
+            .bind(target_user_id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to fetch updated loyalty");
 
     assert_eq!(loyalty.0, 600, "Database should show 600 points");
     assert_eq!(loyalty.1, 5, "Database should show 5 nights");
@@ -623,13 +660,12 @@ async fn test_award_points_non_admin_fails() {
     );
 
     // Verify points were NOT changed
-    let loyalty: (i32,) = sqlx::query_as(
-        "SELECT current_points FROM user_loyalty WHERE user_id = $1",
-    )
-    .bind(target_user_id)
-    .fetch_one(&pool)
-    .await
-    .expect("Failed to fetch loyalty");
+    let loyalty: (i32,) =
+        sqlx::query_as("SELECT current_points FROM user_loyalty WHERE user_id = $1")
+            .bind(target_user_id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to fetch loyalty");
 
     assert_eq!(loyalty.0, 100, "Points should remain unchanged at 100");
 
@@ -659,7 +695,10 @@ async fn test_tier_recalculation() {
 
     // Create admin user
     let admin_user = TestUser::admin("admin_tier@example.com");
-    admin_user.insert(&pool).await.expect("Failed to insert admin user");
+    admin_user
+        .insert(&pool)
+        .await
+        .expect("Failed to insert admin user");
     let admin_token = generate_test_token(&admin_user.id, &admin_user.email);
 
     // Create target user with 8 nights (Silver tier: 1+ nights)
@@ -711,7 +750,10 @@ async fn test_tier_recalculation() {
     let data = json.get("data").expect("Response should have 'data' field");
 
     // Check if tier changed
-    let tier_changed = data.get("tier_changed").and_then(|v| v.as_bool()).unwrap_or(false);
+    let tier_changed = data
+        .get("tier_changed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let new_tier_name = data.get("new_tier_name").and_then(|v| v.as_str());
 
     // User should have upgraded
@@ -736,7 +778,11 @@ async fn test_tier_recalculation() {
     .await
     .expect("Failed to fetch final tier");
 
-    assert_eq!(final_tier.0.as_deref(), Some("Platinum"), "Database tier should be Platinum");
+    assert_eq!(
+        final_tier.0.as_deref(),
+        Some("Platinum"),
+        "Database tier should be Platinum"
+    );
     assert_eq!(final_tier.1, 20, "Database nights should be 20 (8 + 12)");
 
     // Cleanup
@@ -761,7 +807,10 @@ async fn test_tier_recalculation_no_change() {
 
     // Create admin user
     let admin_user = TestUser::admin("admin_no_change@example.com");
-    admin_user.insert(&pool).await.expect("Failed to insert admin user");
+    admin_user
+        .insert(&pool)
+        .await
+        .expect("Failed to insert admin user");
     let admin_token = generate_test_token(&admin_user.id, &admin_user.email);
 
     // Create target user with 5 nights (Silver tier)
@@ -792,7 +841,10 @@ async fn test_tier_recalculation_no_change() {
     let data = json.get("data").expect("Response should have 'data' field");
 
     // Tier should NOT have changed
-    let tier_changed = data.get("tier_changed").and_then(|v| v.as_bool()).unwrap_or(true);
+    let tier_changed = data
+        .get("tier_changed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     assert!(!tier_changed, "Tier should NOT have changed");
 
     // Verify nights increased but tier remains Silver
@@ -809,7 +861,11 @@ async fn test_tier_recalculation_no_change() {
     .await
     .expect("Failed to fetch final data");
 
-    assert_eq!(final_data.0.as_deref(), Some("Silver"), "Tier should remain Silver");
+    assert_eq!(
+        final_data.0.as_deref(),
+        Some("Silver"),
+        "Tier should remain Silver"
+    );
     assert_eq!(final_data.1, 7, "Nights should be 7");
 
     // Cleanup

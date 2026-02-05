@@ -18,8 +18,8 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use crate::common::{
-    generate_test_token, init_test_db, init_test_redis, setup_test, teardown_test,
-    TestUser, TEST_JWT_SECRET,
+    generate_test_token, init_test_db, init_test_redis, setup_test, teardown_test, TestUser,
+    TEST_JWT_SECRET,
 };
 
 use loyalty_backend::config::Settings;
@@ -58,7 +58,9 @@ async fn create_sse_test_app() -> Result<Router, Box<dyn std::error::Error>> {
     let state = AppState::new(pool, redis, settings);
 
     // Create router with SSE routes nested under /api
-    Ok(Router::new().nest("/api/sse", sse_routes()).with_state(state))
+    Ok(Router::new()
+        .nest("/api/sse", sse_routes())
+        .with_state(state))
 }
 
 /// Generate a unique email for testing
@@ -416,7 +418,10 @@ async fn test_sse_receives_loyalty_update() {
     );
 
     assert_eq!(
-        received_event.data.get("currentPoints").and_then(|v| v.as_i64()),
+        received_event
+            .data
+            .get("currentPoints")
+            .and_then(|v| v.as_i64()),
         Some(1500),
         "Points should match"
     );
@@ -665,8 +670,7 @@ async fn test_sse_info_returns_connection_info() {
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
-    let json: Value =
-        serde_json::from_slice(&body).expect("Response should be valid JSON");
+    let json: Value = serde_json::from_slice(&body).expect("Response should be valid JSON");
 
     // Verify response contains expected fields
     assert!(

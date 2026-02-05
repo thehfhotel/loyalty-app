@@ -243,9 +243,7 @@ pub struct BroadcastNotificationResponse {
 /// Check if the authenticated user has admin privileges
 fn require_admin(user: &AuthUser) -> AppResult<()> {
     if !has_role(user, "admin") {
-        return Err(AppError::Forbidden(
-            "Admin access required".to_string(),
-        ));
+        return Err(AppError::Forbidden("Admin access required".to_string()));
     }
     Ok(())
 }
@@ -450,13 +448,11 @@ async fn update_user(
     payload.validate().map_err(AppError::from)?;
 
     // Check if user exists
-    let _existing: Uuid = sqlx::query_scalar(
-        r#"SELECT id FROM users WHERE id = $1"#,
-    )
-    .bind(user_id)
-    .fetch_optional(state.db())
-    .await?
-    .ok_or_else(|| AppError::NotFound("User".to_string()))?;
+    let _existing: Uuid = sqlx::query_scalar(r#"SELECT id FROM users WHERE id = $1"#)
+        .bind(user_id)
+        .fetch_optional(state.db())
+        .await?
+        .ok_or_else(|| AppError::NotFound("User".to_string()))?;
 
     // Prevent admin from changing their own role to a lower level
     if user_id == Uuid::parse_str(&user.id).unwrap_or_default() {
@@ -645,24 +641,27 @@ async fn get_stats(
     // New users today
     let today_start = Utc::now().date_naive().and_hms_opt(0, 0, 0).unwrap();
     let today_start_utc = DateTime::<Utc>::from_naive_utc_and_offset(today_start, Utc);
-    let new_users_today: i64 = sqlx::query_scalar(r#"SELECT COUNT(*) FROM users WHERE created_at >= $1"#)
-        .bind(today_start_utc)
-        .fetch_one(state.db())
-        .await?;
+    let new_users_today: i64 =
+        sqlx::query_scalar(r#"SELECT COUNT(*) FROM users WHERE created_at >= $1"#)
+            .bind(today_start_utc)
+            .fetch_one(state.db())
+            .await?;
 
     // New users this week
     let week_ago = Utc::now() - Duration::days(7);
-    let new_users_this_week: i64 = sqlx::query_scalar(r#"SELECT COUNT(*) FROM users WHERE created_at >= $1"#)
-        .bind(week_ago)
-        .fetch_one(state.db())
-        .await?;
+    let new_users_this_week: i64 =
+        sqlx::query_scalar(r#"SELECT COUNT(*) FROM users WHERE created_at >= $1"#)
+            .bind(week_ago)
+            .fetch_one(state.db())
+            .await?;
 
     // New users this month
     let month_ago = Utc::now() - Duration::days(30);
-    let new_users_this_month: i64 = sqlx::query_scalar(r#"SELECT COUNT(*) FROM users WHERE created_at >= $1"#)
-        .bind(month_ago)
-        .fetch_one(state.db())
-        .await?;
+    let new_users_this_month: i64 =
+        sqlx::query_scalar(r#"SELECT COUNT(*) FROM users WHERE created_at >= $1"#)
+            .bind(month_ago)
+            .fetch_one(state.db())
+            .await?;
 
     // Users by tier
     #[derive(sqlx::FromRow)]
@@ -759,21 +758,15 @@ async fn get_analytics(
     let metric = query.metric.unwrap_or_else(|| "registrations".to_string());
 
     let data_points = match metric.as_str() {
-        "registrations" => {
-            get_registration_analytics(state.db(), start_date, end_date).await?
-        }
-        "points" => {
-            get_points_analytics(state.db(), start_date, end_date).await?
-        }
-        "bookings" => {
-            get_bookings_analytics(state.db(), start_date, end_date).await?
-        }
+        "registrations" => get_registration_analytics(state.db(), start_date, end_date).await?,
+        "points" => get_points_analytics(state.db(), start_date, end_date).await?,
+        "bookings" => get_bookings_analytics(state.db(), start_date, end_date).await?,
         _ => {
             return Err(AppError::BadRequest(format!(
                 "Unknown metric: {}. Valid metrics: registrations, points, bookings",
                 metric
             )));
-        }
+        },
     };
 
     let total: i64 = data_points.iter().map(|dp| dp.value).sum();
@@ -909,9 +902,7 @@ async fn broadcast_notification(
     // Validate the request
     payload.validate().map_err(AppError::from)?;
 
-    let notification_type = payload
-        .notification_type
-        .unwrap_or(NotificationType::Info);
+    let notification_type = payload.notification_type.unwrap_or(NotificationType::Info);
 
     // Build query to get target users based on filters
     let mut conditions = Vec::new();
@@ -948,9 +939,7 @@ async fn broadcast_notification(
         where_clause
     );
 
-    let user_ids: Vec<Uuid> = sqlx::query_scalar(&query_str)
-        .fetch_all(state.db())
-        .await?;
+    let user_ids: Vec<Uuid> = sqlx::query_scalar(&query_str).fetch_all(state.db()).await?;
 
     if user_ids.is_empty() {
         return Ok(Json(BroadcastNotificationResponse {
@@ -1145,7 +1134,7 @@ mod tests {
     #[test]
     fn test_list_users_query_defaults() {
         let query = ListUsersQuery {
-            page: 0, // Should be clamped to 1
+            page: 0,    // Should be clamped to 1
             limit: 200, // Should be clamped to 100
             search: None,
             sort_by: "invalid".to_string(),

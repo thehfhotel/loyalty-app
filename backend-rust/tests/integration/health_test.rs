@@ -51,9 +51,18 @@ async fn test_health_endpoint_json_structure() {
     let json: Value = response.json().expect("Response should be valid JSON");
 
     // Check required fields exist
-    assert!(json.get("status").is_some(), "Response should have 'status' field");
-    assert!(json.get("timestamp").is_some(), "Response should have 'timestamp' field");
-    assert!(json.get("version").is_some(), "Response should have 'version' field");
+    assert!(
+        json.get("status").is_some(),
+        "Response should have 'status' field"
+    );
+    assert!(
+        json.get("timestamp").is_some(),
+        "Response should have 'timestamp' field"
+    );
+    assert!(
+        json.get("version").is_some(),
+        "Response should have 'version' field"
+    );
 }
 
 /// Test that the health endpoint returns status "ok".
@@ -168,9 +177,18 @@ async fn test_health_db_json_structure() {
 
     let json: Value = response.json().expect("Response should be valid JSON");
 
-    assert!(json.get("status").is_some(), "Response should have 'status' field");
-    assert!(json.get("database").is_some(), "Response should have 'database' field");
-    assert!(json.get("timestamp").is_some(), "Response should have 'timestamp' field");
+    assert!(
+        json.get("status").is_some(),
+        "Response should have 'status' field"
+    );
+    assert!(
+        json.get("database").is_some(),
+        "Response should have 'database' field"
+    );
+    assert!(
+        json.get("timestamp").is_some(),
+        "Response should have 'timestamp' field"
+    );
 }
 
 // ============================================================================
@@ -219,9 +237,18 @@ async fn test_health_redis_json_structure() {
 
     let json: Value = response.json().expect("Response should be valid JSON");
 
-    assert!(json.get("status").is_some(), "Response should have 'status' field");
-    assert!(json.get("redis").is_some(), "Response should have 'redis' field");
-    assert!(json.get("timestamp").is_some(), "Response should have 'timestamp' field");
+    assert!(
+        json.get("status").is_some(),
+        "Response should have 'status' field"
+    );
+    assert!(
+        json.get("redis").is_some(),
+        "Response should have 'redis' field"
+    );
+    assert!(
+        json.get("timestamp").is_some(),
+        "Response should have 'timestamp' field"
+    );
 }
 
 // ============================================================================
@@ -275,11 +302,26 @@ async fn test_health_full_json_structure() {
 
     let json: Value = response.json().expect("Response should be valid JSON");
 
-    assert!(json.get("status").is_some(), "Response should have 'status' field");
-    assert!(json.get("timestamp").is_some(), "Response should have 'timestamp' field");
-    assert!(json.get("version").is_some(), "Response should have 'version' field");
-    assert!(json.get("database").is_some(), "Response should have 'database' field");
-    assert!(json.get("redis").is_some(), "Response should have 'redis' field");
+    assert!(
+        json.get("status").is_some(),
+        "Response should have 'status' field"
+    );
+    assert!(
+        json.get("timestamp").is_some(),
+        "Response should have 'timestamp' field"
+    );
+    assert!(
+        json.get("version").is_some(),
+        "Response should have 'version' field"
+    );
+    assert!(
+        json.get("database").is_some(),
+        "Response should have 'database' field"
+    );
+    assert!(
+        json.get("redis").is_some(),
+        "Response should have 'redis' field"
+    );
 }
 
 // ============================================================================

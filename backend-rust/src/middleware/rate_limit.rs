@@ -107,8 +107,8 @@ impl RateLimiter {
 
         // Check if limit exceeded
         if tracker.count >= self.config.max_requests {
-            let retry_after = self.config.window.as_secs()
-                - now.duration_since(tracker.window_start).as_secs();
+            let retry_after =
+                self.config.window.as_secs() - now.duration_since(tracker.window_start).as_secs();
             return Err(RateLimitError::TooManyRequests {
                 retry_after: retry_after as u32,
             });
@@ -125,9 +125,7 @@ impl RateLimiter {
         let now = Instant::now();
         let window = self.config.window;
 
-        requests.retain(|_, tracker| {
-            now.duration_since(tracker.window_start) < window
-        });
+        requests.retain(|_, tracker| now.duration_since(tracker.window_start) < window);
     }
 }
 
@@ -152,14 +150,11 @@ impl IntoResponse for RateLimitError {
 
                 (
                     StatusCode::TOO_MANY_REQUESTS,
-                    [(
-                        axum::http::header::RETRY_AFTER,
-                        retry_after.to_string(),
-                    )],
+                    [(axum::http::header::RETRY_AFTER, retry_after.to_string())],
                     body,
                 )
                     .into_response()
-            }
+            },
         }
     }
 }
@@ -284,7 +279,10 @@ mod tests {
 
         // 4th request should fail
         let result = limiter.check(ip).await;
-        assert!(matches!(result, Err(RateLimitError::TooManyRequests { .. })));
+        assert!(matches!(
+            result,
+            Err(RateLimitError::TooManyRequests { .. })
+        ));
     }
 
     #[tokio::test]

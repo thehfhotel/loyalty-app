@@ -731,7 +731,11 @@ impl UserService for UserServiceImpl {
             .map(|s| format!("%{}%", s))
             .unwrap_or_default();
         let has_search = pagination.search.is_some()
-            && pagination.search.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+            && pagination
+                .search
+                .as_ref()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
 
         // Get total count
         let total: Option<i64> = if has_search {
@@ -1035,7 +1039,10 @@ mod tests {
         let user_with_profile: UserWithProfile = row.into();
 
         assert!(user_with_profile.profile.is_none());
-        assert_eq!(user_with_profile.user.email, Some("test@example.com".to_string()));
+        assert_eq!(
+            user_with_profile.user.email,
+            Some("test@example.com".to_string())
+        );
     }
 
     #[test]
@@ -1136,17 +1143,17 @@ mod tests {
     fn test_validate_email_format_invalid_emails() {
         // Test various invalid email formats
         let invalid_emails = vec![
-            "",                           // empty
-            "plainaddress",               // missing @ and domain
-            "@no-local-part.com",         // missing local part
-            "missing-domain@",            // missing domain
-            "missing-at-sign.com",        // missing @
-            "two@@signs.com",             // double @
-            ".startswithdot@example.com", // starts with dot
-            "endswith.@example.com",      // ends with dot before @
+            "",                                  // empty
+            "plainaddress",                      // missing @ and domain
+            "@no-local-part.com",                // missing local part
+            "missing-domain@",                   // missing domain
+            "missing-at-sign.com",               // missing @
+            "two@@signs.com",                    // double @
+            ".startswithdot@example.com",        // starts with dot
+            "endswith.@example.com",             // ends with dot before @
             "contains..double.dots@example.com", // consecutive dots
-            "spaces in@local.com",        // spaces not allowed
-            "tab\there@example.com",      // tab character
+            "spaces in@local.com",               // spaces not allowed
+            "tab\there@example.com",             // tab character
         ];
 
         for email in invalid_emails {
@@ -1407,11 +1414,7 @@ mod tests {
 
     #[test]
     fn test_create_user_dto_with_different_roles() {
-        let roles = vec![
-            UserRole::Customer,
-            UserRole::Admin,
-            UserRole::SuperAdmin,
-        ];
+        let roles = vec![UserRole::Customer, UserRole::Admin, UserRole::SuperAdmin];
 
         for role in roles {
             let dto = CreateUserDto {

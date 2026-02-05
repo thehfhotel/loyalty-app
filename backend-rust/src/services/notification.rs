@@ -188,9 +188,8 @@ impl NotificationService for NotificationServiceImpl {
 
         // Get paginated notifications
         let notifications = if let Some(ref notif_type) = filters.notification_type {
-            sqlx::query_as::<_, Notification>(
-                &format!(
-                    r#"
+            sqlx::query_as::<_, Notification>(&format!(
+                r#"
                     SELECT
                         id,
                         user_id,
@@ -208,10 +207,13 @@ impl NotificationService for NotificationServiceImpl {
                     ORDER BY created_at DESC
                     LIMIT $2 OFFSET $3
                     "#,
-                    if unread_only { "AND read_at IS NULL" } else { "" },
-                    "AND type = $4"
-                )
-            )
+                if unread_only {
+                    "AND read_at IS NULL"
+                } else {
+                    ""
+                },
+                "AND type = $4"
+            ))
             .bind(user_id)
             .bind(per_page as i64)
             .bind(offset)
@@ -219,9 +221,8 @@ impl NotificationService for NotificationServiceImpl {
             .fetch_all(self.state.db.pool())
             .await?
         } else {
-            sqlx::query_as::<_, Notification>(
-                &format!(
-                    r#"
+            sqlx::query_as::<_, Notification>(&format!(
+                r#"
                     SELECT
                         id,
                         user_id,
@@ -239,9 +240,12 @@ impl NotificationService for NotificationServiceImpl {
                     ORDER BY created_at DESC
                     LIMIT $2 OFFSET $3
                     "#,
-                    if unread_only { "AND read_at IS NULL" } else { "" }
-                )
-            )
+                if unread_only {
+                    "AND read_at IS NULL"
+                } else {
+                    ""
+                }
+            ))
             .bind(user_id)
             .bind(per_page as i64)
             .bind(offset)

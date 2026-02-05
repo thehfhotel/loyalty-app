@@ -27,8 +27,8 @@ use tower_http::cors::{Any, CorsLayer};
 /// ```
 pub fn cors_layer() -> CorsLayer {
     // Get frontend URL from environment, default to localhost for development
-    let frontend_url = std::env::var("FRONTEND_URL")
-        .unwrap_or_else(|_| "http://localhost:3000".to_string());
+    let frontend_url =
+        std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
 
     // Parse the frontend URL into an allowed origin
     let allowed_origin = frontend_url
@@ -171,10 +171,8 @@ mod tests {
 
     #[test]
     fn test_cors_layer_multiple_origins_creation() {
-        let _layer = cors_layer_multiple_origins(vec![
-            "http://localhost:3000",
-            "https://example.com",
-        ]);
+        let _layer =
+            cors_layer_multiple_origins(vec!["http://localhost:3000", "https://example.com"]);
     }
 
     #[test]

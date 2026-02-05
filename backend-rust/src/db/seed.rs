@@ -229,12 +229,11 @@ async fn seed_membership_sequence(db: &PgPool) -> Result<()> {
     }
 
     // Check if sequence is already initialized
-    let existing: Option<(i32,)> = sqlx::query_as(
-        "SELECT id FROM membership_id_sequence WHERE id = 1",
-    )
-    .fetch_optional(db)
-    .await
-    .context("Failed to check existing membership_id_sequence")?;
+    let existing: Option<(i32,)> =
+        sqlx::query_as("SELECT id FROM membership_id_sequence WHERE id = 1")
+            .fetch_optional(db)
+            .await
+            .context("Failed to check existing membership_id_sequence")?;
 
     if existing.is_some() {
         info!("membership_id_sequence already initialized, skipping");
@@ -286,13 +285,11 @@ async fn seed_tiers(db: &PgPool) -> Result<()> {
 
     for tier in &tiers {
         // Check if tier already exists
-        let existing: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM tiers WHERE name = $1",
-        )
-        .bind(tier.name)
-        .fetch_optional(db)
-        .await
-        .context("Failed to check existing tier")?;
+        let existing: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM tiers WHERE name = $1")
+            .bind(tier.name)
+            .fetch_optional(db)
+            .await
+            .context("Failed to check existing tier")?;
 
         if existing.is_some() {
             info!("Tier {} already exists, skipping", tier.name);
@@ -352,13 +349,11 @@ async fn seed_surveys(db: &PgPool) -> Result<()> {
 
     for survey in surveys {
         // Check if survey already exists
-        let existing: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM surveys WHERE id = $1",
-        )
-        .bind(survey.id)
-        .fetch_optional(db)
-        .await
-        .context("Failed to check existing survey")?;
+        let existing: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM surveys WHERE id = $1")
+            .bind(survey.id)
+            .fetch_optional(db)
+            .await
+            .context("Failed to check existing survey")?;
 
         if existing.is_some() {
             info!("Survey {} already exists, skipping", survey.id);

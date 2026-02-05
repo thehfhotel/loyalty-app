@@ -3,7 +3,7 @@
  * Tests membership ID generation, retrieval, and statistics functionality
  */
 
-import { describe, expect, jest, beforeEach } from '@jest/globals';
+import { describe, expect, jest, beforeEach, test } from '@jest/globals';
 import { membershipIdService } from '../../../services/membershipIdService';
 import * as database from '../../../config/database';
 
@@ -41,6 +41,11 @@ describe('MembershipIdService', () => {
     });
 
     test('should generate sequential IDs within block boundaries', async () => {
+      // Mock Math.random to return predictable but different values
+      const mockRandom = jest.spyOn(Math, 'random');
+      mockRandom.mockReturnValueOnce(0.1);  // First call returns low value
+      mockRandom.mockReturnValueOnce(0.9);  // Second call returns high value
+
       // Mock first user
       mockQuery.mockResolvedValueOnce([{
         current_user_count: 1
@@ -60,6 +65,9 @@ describe('MembershipIdService', () => {
       }] as never);
 
       const secondId = await membershipIdService.generateUniqueMembershipId();
+
+      // Restore Math.random
+      mockRandom.mockRestore();
 
       // Both should start with 269 and be 8 digits
       expect(firstId).toMatch(/^269\d{5}$/);

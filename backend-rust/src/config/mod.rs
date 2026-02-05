@@ -621,9 +621,7 @@ impl Settings {
 
             // Warn about localhost database in production
             if self.database.url.contains("localhost") {
-                errors.push(
-                    "Production environment should not use localhost database".to_string(),
-                );
+                errors.push("Production environment should not use localhost database".to_string());
             }
         } else {
             // In development/staging, just validate minimum requirements

@@ -211,7 +211,10 @@ pub trait LoyaltyService: Send + Sync {
     async fn get_user_loyalty(&self, user_id: Uuid) -> Result<UserLoyaltyWithTier, AppError>;
 
     /// Award points to a user using the database stored procedure
-    async fn award_points(&self, params: AwardPointsParamsUuid) -> Result<PointsTransaction, AppError>;
+    async fn award_points(
+        &self,
+        params: AwardPointsParamsUuid,
+    ) -> Result<PointsTransaction, AppError>;
 
     /// Get a user's transaction history with pagination
     async fn get_transactions(
@@ -321,11 +324,14 @@ impl LoyaltyService for LoyaltyServiceImpl {
                 .await?;
 
                 Ok(row.into())
-            }
+            },
         }
     }
 
-    async fn award_points(&self, params: AwardPointsParamsUuid) -> Result<PointsTransaction, AppError> {
+    async fn award_points(
+        &self,
+        params: AwardPointsParamsUuid,
+    ) -> Result<PointsTransaction, AppError> {
         let nights = params.nights.unwrap_or(0);
 
         // Call the award_points stored procedure
@@ -350,7 +356,11 @@ impl LoyaltyService for LoyaltyServiceImpl {
             .get("transaction_id")
             .and_then(|v| v.as_str())
             .and_then(|s| Uuid::parse_str(s).ok())
-            .ok_or_else(|| AppError::Internal("Failed to parse transaction ID from stored procedure".to_string()))?;
+            .ok_or_else(|| {
+                AppError::Internal(
+                    "Failed to parse transaction ID from stored procedure".to_string(),
+                )
+            })?;
 
         info!(
             user_id = %params.user_id,
@@ -431,7 +441,7 @@ impl LoyaltyService for LoyaltyServiceImpl {
                 .await?;
 
                 Ok(default_tier)
-            }
+            },
         }
     }
 
@@ -476,7 +486,7 @@ impl LoyaltyService for LoyaltyServiceImpl {
                         user_id
                     )))
                 }
-            }
+            },
             None => Err(AppError::NotFound(format!(
                 "User loyalty record not found for user_id: {}",
                 user_id
@@ -697,14 +707,8 @@ mod tests {
 
     #[test]
     fn test_points_transaction_type_display() {
-        assert_eq!(
-            PointsTransactionType::EarnedStay.to_string(),
-            "earned_stay"
-        );
-        assert_eq!(
-            PointsTransactionType::AdminAward.to_string(),
-            "admin_award"
-        );
+        assert_eq!(PointsTransactionType::EarnedStay.to_string(), "earned_stay");
+        assert_eq!(PointsTransactionType::AdminAward.to_string(), "admin_award");
         assert_eq!(
             PointsTransactionType::AdminDeduction.to_string(),
             "admin_deduction"
@@ -761,9 +765,18 @@ mod tests {
         assert_eq!(calculate_points_multiplier(TierName::Platinum), 2.0);
 
         // Test that higher tiers always have higher or equal multipliers
-        assert!(calculate_points_multiplier(TierName::Silver) > calculate_points_multiplier(TierName::Bronze));
-        assert!(calculate_points_multiplier(TierName::Gold) > calculate_points_multiplier(TierName::Silver));
-        assert!(calculate_points_multiplier(TierName::Platinum) > calculate_points_multiplier(TierName::Gold));
+        assert!(
+            calculate_points_multiplier(TierName::Silver)
+                > calculate_points_multiplier(TierName::Bronze)
+        );
+        assert!(
+            calculate_points_multiplier(TierName::Gold)
+                > calculate_points_multiplier(TierName::Silver)
+        );
+        assert!(
+            calculate_points_multiplier(TierName::Platinum)
+                > calculate_points_multiplier(TierName::Gold)
+        );
     }
 
     #[test]
@@ -795,10 +808,10 @@ mod tests {
 
         // Test boundary conditions precisely
         assert_eq!(determine_tier_by_nights(0), TierName::Bronze);
-        assert_eq!(determine_tier_by_nights(1), TierName::Silver);  // Just crossed from Bronze
-        assert_eq!(determine_tier_by_nights(9), TierName::Silver);  // Just below Gold
-        assert_eq!(determine_tier_by_nights(10), TierName::Gold);   // Just crossed to Gold
-        assert_eq!(determine_tier_by_nights(19), TierName::Gold);   // Just below Platinum
+        assert_eq!(determine_tier_by_nights(1), TierName::Silver); // Just crossed from Bronze
+        assert_eq!(determine_tier_by_nights(9), TierName::Silver); // Just below Gold
+        assert_eq!(determine_tier_by_nights(10), TierName::Gold); // Just crossed to Gold
+        assert_eq!(determine_tier_by_nights(19), TierName::Gold); // Just below Platinum
         assert_eq!(determine_tier_by_nights(20), TierName::Platinum); // Just crossed to Platinum
 
         // Test negative nights (edge case - should default to Bronze)
@@ -895,9 +908,11 @@ mod tests {
         let result = empty_description.validate();
         assert!(result.is_err());
         let errors = result.unwrap_err();
-        assert!(errors.contains(&AwardPointsValidationError::InvalidDescription(
-            "Description cannot be empty".to_string()
-        )));
+        assert!(
+            errors.contains(&AwardPointsValidationError::InvalidDescription(
+                "Description cannot be empty".to_string()
+            ))
+        );
 
         // Test multiple validation errors at once
         let multiple_errors = AwardPointsParams {

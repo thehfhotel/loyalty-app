@@ -42,8 +42,7 @@ impl RedisManager {
         let sanitized = Self::sanitize_url(redis_url);
         info!("Initializing Redis connection to {}", sanitized);
 
-        let client = Client::open(redis_url)
-            .context("Failed to create Redis client")?;
+        let client = Client::open(redis_url).context("Failed to create Redis client")?;
 
         // ConnectionManager provides automatic reconnection
         let connection = ConnectionManager::new(client)
@@ -62,8 +61,8 @@ impl RedisManager {
     ///
     /// Falls back to "redis://localhost:6379" if not set
     pub async fn from_env() -> Result<Self> {
-        let redis_url = std::env::var("REDIS_URL")
-            .unwrap_or_else(|_| "redis://localhost:6379".to_string());
+        let redis_url =
+            std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
 
         Self::new(&redis_url).await
     }
@@ -97,7 +96,8 @@ impl RedisManager {
     /// # Returns
     /// * `Result<Option<String>>` - The value if found, None if key doesn't exist
     pub async fn get(&mut self, key: &str) -> Result<Option<String>> {
-        let result: Option<String> = self.conn()
+        let result: Option<String> = self
+            .conn()
             .get(key)
             .await
             .context("Failed to get key from Redis")?;
@@ -121,7 +121,7 @@ impl RedisManager {
                 let parsed = serde_json::from_str(&json_str)
                     .context("Failed to deserialize JSON from Redis")?;
                 Ok(Some(parsed))
-            }
+            },
             None => Ok(None),
         }
     }
@@ -132,7 +132,8 @@ impl RedisManager {
     /// * `key` - The key to set
     /// * `value` - The value to store
     pub async fn set(&mut self, key: &str, value: &str) -> Result<()> {
-        let _: () = self.conn()
+        let _: () = self
+            .conn()
             .set(key, value)
             .await
             .context("Failed to set key in Redis")?;
@@ -148,7 +149,8 @@ impl RedisManager {
     /// * `value` - The value to store
     /// * `ttl_secs` - Time to live in seconds
     pub async fn set_ex(&mut self, key: &str, value: &str, ttl_secs: u64) -> Result<()> {
-        let _: () = self.conn()
+        let _: () = self
+            .conn()
             .set_ex(key, value, ttl_secs)
             .await
             .context("Failed to set key with TTL in Redis")?;
@@ -169,8 +171,7 @@ impl RedisManager {
         value: &T,
         ttl_secs: Option<u64>,
     ) -> Result<()> {
-        let json_str = serde_json::to_string(value)
-            .context("Failed to serialize value to JSON")?;
+        let json_str = serde_json::to_string(value).context("Failed to serialize value to JSON")?;
 
         match ttl_secs {
             Some(ttl) => self.set_ex(key, &json_str, ttl).await,
@@ -186,7 +187,8 @@ impl RedisManager {
     /// # Returns
     /// * `Result<bool>` - True if key was deleted, false if it didn't exist
     pub async fn delete(&mut self, key: &str) -> Result<bool> {
-        let deleted: i32 = self.conn()
+        let deleted: i32 = self
+            .conn()
             .del(key)
             .await
             .context("Failed to delete key from Redis")?;
@@ -207,7 +209,8 @@ impl RedisManager {
             return Ok(0);
         }
 
-        let deleted: i32 = self.conn()
+        let deleted: i32 = self
+            .conn()
             .del(keys)
             .await
             .context("Failed to delete keys from Redis")?;
@@ -224,7 +227,8 @@ impl RedisManager {
     /// # Returns
     /// * `Result<bool>` - True if key exists
     pub async fn exists(&mut self, key: &str) -> Result<bool> {
-        let exists: bool = self.conn()
+        let exists: bool = self
+            .conn()
             .exists(key)
             .await
             .context("Failed to check key existence in Redis")?;
@@ -242,7 +246,8 @@ impl RedisManager {
     /// # Returns
     /// * `Result<bool>` - True if TTL was set, false if key doesn't exist
     pub async fn expire(&mut self, key: &str, ttl_secs: u64) -> Result<bool> {
-        let result: bool = self.conn()
+        let result: bool = self
+            .conn()
             .expire(key, ttl_secs as i64)
             .await
             .context("Failed to set TTL in Redis")?;
@@ -259,7 +264,8 @@ impl RedisManager {
     /// # Returns
     /// * `Result<Option<i64>>` - TTL in seconds, None if key doesn't exist or has no TTL
     pub async fn ttl(&mut self, key: &str) -> Result<Option<i64>> {
-        let ttl: i64 = self.conn()
+        let ttl: i64 = self
+            .conn()
             .ttl(key)
             .await
             .context("Failed to get TTL from Redis")?;
@@ -301,7 +307,10 @@ impl RedisManager {
     ///
     /// # Returns
     /// * `Result<Option<T>>` - Session data if found
-    pub async fn get_session<T: DeserializeOwned>(&mut self, session_id: &str) -> Result<Option<T>> {
+    pub async fn get_session<T: DeserializeOwned>(
+        &mut self,
+        session_id: &str,
+    ) -> Result<Option<T>> {
         let key = format!("{}{}", SESSION_PREFIX, session_id);
         let session = self.get_json(&key).await?;
 
@@ -340,7 +349,11 @@ impl RedisManager {
     ///
     /// # Returns
     /// * `Result<bool>` - True if session was refreshed, false if not found
-    pub async fn refresh_session(&mut self, session_id: &str, ttl_secs: Option<u64>) -> Result<bool> {
+    pub async fn refresh_session(
+        &mut self,
+        session_id: &str,
+        ttl_secs: Option<u64>,
+    ) -> Result<bool> {
         let key = format!("{}{}", SESSION_PREFIX, session_id);
         let ttl = ttl_secs.unwrap_or(DEFAULT_SESSION_TTL_SECS);
 

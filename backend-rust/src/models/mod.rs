@@ -18,7 +18,10 @@ pub mod user_profile;
 // Re-export commonly used types for convenience
 
 // User models
-pub use user::{CreateUserRequest, UpdateUserRequest, User, UserResponse, UserRole, UserSummary, UserWithProfile};
+pub use user::{
+    CreateUserRequest, UpdateUserRequest, User, UserResponse, UserRole, UserSummary,
+    UserWithProfile,
+};
 
 // User profile models
 pub use user_profile::{

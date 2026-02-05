@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
         Err(e) => {
             error!("Failed to load configuration: {}", e);
             return Err(anyhow::anyhow!("Configuration error: {}", e));
-        }
+        },
     };
 
     info!(
@@ -67,11 +67,11 @@ async fn main() -> anyhow::Result<()> {
         Ok(db) => {
             info!("PostgreSQL connection established");
             db
-        }
+        },
         Err(e) => {
             error!("Failed to connect to PostgreSQL: {}", e);
             return Err(anyhow::anyhow!("Database connection error: {}", e));
-        }
+        },
     };
 
     // Seed essential data (runs in all environments)
@@ -96,11 +96,11 @@ async fn main() -> anyhow::Result<()> {
         Ok(r) => {
             info!("Redis connection established");
             r
-        }
+        },
         Err(e) => {
             error!("Failed to connect to Redis: {}", e);
             return Err(anyhow::anyhow!("Redis connection error: {}", e));
-        }
+        },
     };
 
     // Create application state

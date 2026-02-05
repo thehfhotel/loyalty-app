@@ -2,12 +2,7 @@
 //!
 //! Provides endpoints for health monitoring and readiness checks.
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    routing::get,
-    Json, Router,
-};
+use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
 use chrono::Utc;
 use serde::Serialize;
 
@@ -135,7 +130,11 @@ async fn health_check_full(
     let all_healthy = db_status == "connected" && redis_status == "connected";
 
     let response = SystemHealthResponse {
-        status: if all_healthy { "ok".to_string() } else { "degraded".to_string() },
+        status: if all_healthy {
+            "ok".to_string()
+        } else {
+            "degraded".to_string()
+        },
         timestamp,
         version: env!("CARGO_PKG_VERSION").to_string(),
         database: db_status,

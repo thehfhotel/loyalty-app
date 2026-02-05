@@ -228,7 +228,7 @@ impl SseConnectionManager {
                             error = %e,
                             "Failed to send SSE event to client"
                         );
-                    }
+                    },
                 }
             }
 
@@ -274,7 +274,7 @@ impl SseConnectionManager {
                             error = %e,
                             "Failed to broadcast SSE event to client"
                         );
-                    }
+                    },
                 }
             }
         }
@@ -293,17 +293,17 @@ impl SseConnectionManager {
     }
 
     /// Broadcast a global event (uses the global channel)
-    pub fn broadcast_global(&self, event: SseEvent) -> Result<usize, broadcast::error::SendError<SseEvent>> {
+    pub fn broadcast_global(
+        &self,
+        event: SseEvent,
+    ) -> Result<usize, broadcast::error::SendError<SseEvent>> {
         self.global_sender.send(event)
     }
 
     /// Get the number of connected clients for a user
     pub async fn get_client_count(&self, user_id: &str) -> usize {
         let connections = self.connections.read().await;
-        connections
-            .get(user_id)
-            .map(|c| c.len())
-            .unwrap_or(0)
+        connections.get(user_id).map(|c| c.len()).unwrap_or(0)
     }
 
     /// Get the total number of connected clients across all users
@@ -346,12 +346,7 @@ pub mod helpers {
     }
 
     /// Send a loyalty update event to a user
-    pub async fn send_loyalty_update(
-        user_id: &str,
-        points: i32,
-        tier: &str,
-        total_nights: i32,
-    ) {
+    pub async fn send_loyalty_update(user_id: &str, points: i32, tier: &str, total_nights: i32) {
         let event = SseEvent::loyalty_update(serde_json::json!({
             "currentPoints": points,
             "tier": tier,

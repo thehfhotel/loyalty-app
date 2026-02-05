@@ -253,46 +253,46 @@ impl SurveyService for SurveyServiceImpl {
                 sqlx::query_scalar(&count_query)
                     .fetch_one(self.state.db.pool())
                     .await?
-            }
+            },
             (Some(status), None, None) => {
                 sqlx::query_scalar(&count_query)
                     .bind(status)
                     .fetch_one(self.state.db.pool())
                     .await?
-            }
+            },
             (None, Some(access_type), None) => {
                 sqlx::query_scalar(&count_query)
                     .bind(access_type)
                     .fetch_one(self.state.db.pool())
                     .await?
-            }
+            },
             (None, None, Some(created_by)) => {
                 sqlx::query_scalar(&count_query)
                     .bind(created_by)
                     .fetch_one(self.state.db.pool())
                     .await?
-            }
+            },
             (Some(status), Some(access_type), None) => {
                 sqlx::query_scalar(&count_query)
                     .bind(status)
                     .bind(access_type)
                     .fetch_one(self.state.db.pool())
                     .await?
-            }
+            },
             (Some(status), None, Some(created_by)) => {
                 sqlx::query_scalar(&count_query)
                     .bind(status)
                     .bind(created_by)
                     .fetch_one(self.state.db.pool())
                     .await?
-            }
+            },
             (None, Some(access_type), Some(created_by)) => {
                 sqlx::query_scalar(&count_query)
                     .bind(access_type)
                     .bind(created_by)
                     .fetch_one(self.state.db.pool())
                     .await?
-            }
+            },
             (Some(status), Some(access_type), Some(created_by)) => {
                 sqlx::query_scalar(&count_query)
                     .bind(status)
@@ -300,7 +300,7 @@ impl SurveyService for SurveyServiceImpl {
                     .bind(created_by)
                     .fetch_one(self.state.db.pool())
                     .await?
-            }
+            },
         };
 
         // Get surveys with pagination
@@ -327,7 +327,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(offset)
                         .fetch_all(self.state.db.pool())
                         .await?
-                }
+                },
                 (Some(status), None, None) => {
                     sqlx::query_as(&surveys_query)
                         .bind(status)
@@ -335,7 +335,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(offset)
                         .fetch_all(self.state.db.pool())
                         .await?
-                }
+                },
                 (None, Some(access_type), None) => {
                     sqlx::query_as(&surveys_query)
                         .bind(access_type)
@@ -343,7 +343,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(offset)
                         .fetch_all(self.state.db.pool())
                         .await?
-                }
+                },
                 (None, None, Some(created_by)) => {
                     sqlx::query_as(&surveys_query)
                         .bind(created_by)
@@ -351,7 +351,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(offset)
                         .fetch_all(self.state.db.pool())
                         .await?
-                }
+                },
                 (Some(status), Some(access_type), None) => {
                     sqlx::query_as(&surveys_query)
                         .bind(status)
@@ -360,7 +360,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(offset)
                         .fetch_all(self.state.db.pool())
                         .await?
-                }
+                },
                 (Some(status), None, Some(created_by)) => {
                     sqlx::query_as(&surveys_query)
                         .bind(status)
@@ -369,7 +369,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(offset)
                         .fetch_all(self.state.db.pool())
                         .await?
-                }
+                },
                 (None, Some(access_type), Some(created_by)) => {
                     sqlx::query_as(&surveys_query)
                         .bind(access_type)
@@ -378,7 +378,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(offset)
                         .fetch_all(self.state.db.pool())
                         .await?
-                }
+                },
                 (Some(status), Some(access_type), Some(created_by)) => {
                     sqlx::query_as(&surveys_query)
                         .bind(status)
@@ -388,7 +388,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(offset)
                         .fetch_all(self.state.db.pool())
                         .await?
-                }
+                },
             };
 
         let total_pages = ((total as f64) / (limit as f64)).ceil() as i32;
@@ -444,7 +444,7 @@ impl SurveyService for SurveyServiceImpl {
                     created_at: s.created_at,
                     updated_at: s.updated_at,
                 }))
-            }
+            },
             None => Ok(None),
         }
     }
@@ -575,12 +575,10 @@ impl SurveyService for SurveyServiceImpl {
         // Award survey completion coupons if newly completed
         if is_completed {
             // Call the stored procedure to award coupons
-            let _ = sqlx::query_scalar::<_, i32>(
-                "SELECT award_survey_completion_coupons($1)",
-            )
-            .bind(response.id)
-            .fetch_optional(self.state.db.pool())
-            .await;
+            let _ = sqlx::query_scalar::<_, i32>("SELECT award_survey_completion_coupons($1)")
+                .bind(response.id)
+                .fetch_optional(self.state.db.pool())
+                .await;
             // Ignore coupon errors - don't fail the survey submission
         }
 
@@ -598,12 +596,11 @@ impl SurveyService for SurveyServiceImpl {
         let offset = (page - 1) * limit;
 
         // Get total count
-        let total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM survey_responses WHERE survey_id = $1",
-        )
-        .bind(survey_id)
-        .fetch_one(self.state.db.pool())
-        .await?;
+        let total: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM survey_responses WHERE survey_id = $1")
+                .bind(survey_id)
+                .fetch_one(self.state.db.pool())
+                .await?;
 
         // Get responses with user details
         let responses = sqlx::query_as::<_, SurveyResponseWithUser>(

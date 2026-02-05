@@ -64,15 +64,13 @@ impl AdminConfig {
 }
 
 /// Global admin configuration (lazily loaded)
-static ADMIN_CONFIG: Lazy<RwLock<AdminConfig>> = Lazy::new(|| {
-    RwLock::new(load_admin_config())
-});
+static ADMIN_CONFIG: Lazy<RwLock<AdminConfig>> = Lazy::new(|| RwLock::new(load_admin_config()));
 
 /// Default paths to check for admin config file
 const CONFIG_PATHS: &[&str] = &[
-    "/app/config/admins.json",           // Docker container path
-    "./config/admins.json",               // Local development path
-    "../config/admins.json",              // Alternative local path
+    "/app/config/admins.json", // Docker container path
+    "./config/admins.json",    // Local development path
+    "../config/admins.json",   // Alternative local path
 ];
 
 /// Load admin configuration from file
@@ -90,14 +88,14 @@ fn load_admin_config() -> AdminConfig {
                         "Admin config loaded"
                     );
                     return config;
-                }
+                },
                 Err(e) => {
                     tracing::warn!(
                         path = %path_str,
                         error = %e,
                         "Failed to load admin config from path"
                     );
-                }
+                },
             }
         }
     }
@@ -115,14 +113,14 @@ fn load_admin_config() -> AdminConfig {
                         "Admin config loaded from ADMIN_CONFIG_PATH"
                     );
                     return config;
-                }
+                },
                 Err(e) => {
                     tracing::warn!(
                         path = %env_path,
                         error = %e,
                         "Failed to load admin config from ADMIN_CONFIG_PATH"
                     );
-                }
+                },
             }
         }
     }
@@ -133,11 +131,9 @@ fn load_admin_config() -> AdminConfig {
 
 /// Load configuration from a specific path
 fn load_config_from_path(path: &Path) -> Result<AdminConfig, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+    let content = fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
 
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse JSON: {}", e))
 }
 
 /// Get the current admin configuration
@@ -204,11 +200,9 @@ impl IntoResponse for AdminAuthError {
                 "unauthorized",
                 "Authentication required",
             ),
-            AdminAuthError::NotAdmin => (
-                StatusCode::FORBIDDEN,
-                "forbidden",
-                "Admin access required",
-            ),
+            AdminAuthError::NotAdmin => {
+                (StatusCode::FORBIDDEN, "forbidden", "Admin access required")
+            },
             AdminAuthError::NotSuperAdmin => (
                 StatusCode::FORBIDDEN,
                 "forbidden",
@@ -243,10 +237,7 @@ impl IntoResponse for AdminAuthError {
 ///     .layer(middleware::from_fn(admin_middleware))
 ///     .layer(middleware::from_fn(auth_middleware));
 /// ```
-pub async fn admin_middleware(
-    request: Request,
-    next: Next,
-) -> Result<Response, AdminAuthError> {
+pub async fn admin_middleware(request: Request, next: Next) -> Result<Response, AdminAuthError> {
     // Get authenticated user from request extensions
     let auth_user = request
         .extensions()
@@ -315,9 +306,7 @@ mod tests {
                 "admin@example.com".to_string(),
                 "ADMIN2@EXAMPLE.COM".to_string(),
             ],
-            super_admin_emails: vec![
-                "superadmin@example.com".to_string(),
-            ],
+            super_admin_emails: vec!["superadmin@example.com".to_string()],
             description: "Test config".to_string(),
         }
     }
@@ -354,7 +343,10 @@ mod tests {
         let config = create_test_config();
 
         // Super admin takes precedence
-        assert_eq!(config.get_required_role("superadmin@example.com"), Some("super_admin"));
+        assert_eq!(
+            config.get_required_role("superadmin@example.com"),
+            Some("super_admin")
+        );
 
         // Regular admin
         assert_eq!(config.get_required_role("admin@example.com"), Some("admin"));

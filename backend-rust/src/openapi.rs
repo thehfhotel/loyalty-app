@@ -2094,10 +2094,7 @@ pub mod paths {
 ///     .merge(api_routes);
 /// ```
 pub fn swagger_routes() -> Router {
-    Router::new().merge(
-        SwaggerUi::new("/api/docs")
-            .url("/api/openapi.json", ApiDoc::openapi()),
-    )
+    Router::new().merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))
 }
 
 /// Get the OpenAPI specification as a JSON string
@@ -2161,7 +2158,10 @@ mod tests {
         assert!(tag_names.contains(&"loyalty"));
 
         // Verify security scheme
-        let components = spec.components.as_ref().expect("Components should be present");
+        let components = spec
+            .components
+            .as_ref()
+            .expect("Components should be present");
         let security_schemes = &components.security_schemes;
         assert!(security_schemes.contains_key("bearer_auth"));
 
@@ -2177,8 +2177,7 @@ mod tests {
         let json = get_openapi_spec();
 
         // Should be valid JSON
-        let parsed: serde_json::Value =
-            serde_json::from_str(&json).expect("Should be valid JSON");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("Should be valid JSON");
 
         // Verify structure
         assert!(parsed["openapi"].as_str().is_some());
