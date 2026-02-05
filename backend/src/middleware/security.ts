@@ -495,14 +495,15 @@ export const productionSecurity = (req: Request, res: Response, next: NextFuncti
   
   const isHttps = req.secure || forwardedProto === 'https' || isCloudflareHttps;
 
-  // Allow localhost/internal requests to bypass HTTPS redirect for health checks
-  // This is safe because these are internal infrastructure checks, not external traffic
-  const localhostIPs = ['127.0.0.1', '::1', '::ffff:127.0.0.1'];
-  const isLocalhost = req.ip && localhostIPs.includes(req.ip);
+  // Allow health check requests to bypass HTTPS redirect
+  // Health checks come from internal infrastructure (Docker, nginx, load balancers)
+  // and may use internal network IPs, not localhost. This is safe because:
+  // 1. Health endpoints only return status info, no sensitive data
+  // 2. They're used by infrastructure monitoring, not end users
   const isHealthCheck = req.path === '/api/health' || req.path === '/health';
 
-  if (isLocalhost && isHealthCheck) {
-    // Skip HTTPS redirect for internal health checks
+  if (isHealthCheck) {
+    // Skip HTTPS redirect for health checks from any source
     return next();
   }
 
