@@ -712,6 +712,9 @@ jobs:
           # Deploy all services
           docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
 
+          # Restart nginx to refresh DNS cache for new backend container IP
+          docker restart loyalty_nginx_dev || true
+
       - name: Health check
         run: |
           sleep 10
@@ -826,6 +829,9 @@ jobs:
 
           # Deploy all services
           docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
+
+          # Restart nginx to refresh DNS cache for new backend container IP
+          docker restart loyalty_nginx_production || true
 
       - name: Health check
         run: |
