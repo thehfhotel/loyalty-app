@@ -627,7 +627,7 @@ jobs:
 
   deploy-staging:
     name: "Deploy to Staging"
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, deploy]
     needs: [build-and-push, e2e-tests]
     if: github.ref == 'refs/heads/main'
     timeout-minutes: 10
@@ -636,91 +636,92 @@ jobs:
       url: http://loyalty-dev.saichon.com
 
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE_TAG: ${{ github.sha }}
-          COMMIT_SHA: ${{ github.sha }}
+      - name: Checkout config files
+        uses: actions/checkout@v4
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: GHCR_TOKEN,IMAGE_TAG,COMMIT_SHA
-          script: |
-            set -euo pipefail
+          sparse-checkout: |
+            docker-compose.yml
+            docker-compose.ghcr.yml
+            docker-compose.dev.yml
+            nginx/nginx.conf
+            backend/prisma/schema.prisma
+          sparse-checkout-cone-mode: false
 
-            DEPLOY_PATH="/home/nut/loyalty-app-develop"
-            REPO="thehfhotel/loyalty-app"
-            COMPOSE_OVERRIDE="docker-compose.dev.yml"
+      - name: Create .env file
+        working-directory: /home/nut/loyalty-app-develop
+        run: |
+          cat > .env << 'ENVEOF'
+          NODE_ENV=development
+          JWT_SECRET=${{ secrets.DEV_JWT_SECRET }}
+          JWT_REFRESH_SECRET=${{ secrets.DEV_JWT_REFRESH_SECRET }}
+          SESSION_SECRET=${{ secrets.DEV_SESSION_SECRET }}
+          DATABASE_URL=postgresql://loyalty_dev:loyalty_dev_pass@postgres:5432/loyalty_dev_db
+          REDIS_URL=redis://redis:6379
+          FRONTEND_URL=${{ vars.DEV_FRONTEND_URL }}
+          BACKEND_URL=${{ vars.DEV_BACKEND_URL }}
+          VITE_API_URL=${{ vars.DEV_VITE_API_URL }}
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_CALLBACK_URL=${{ vars.DEV_GOOGLE_CALLBACK_URL }}
+          LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
+          LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_CALLBACK_URL=${{ vars.DEV_LINE_CALLBACK_URL }}
+          CORS_ORIGINS=${{ vars.DEV_CORS_ORIGINS }}
+          LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
+          LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
+          ENVEOF
+          chmod 600 .env
 
-            cd "$DEPLOY_PATH"
+      - name: Copy config files
+        run: |
+          DEPLOY_PATH="/home/nut/loyalty-app-develop"
+          cp docker-compose.yml "$DEPLOY_PATH/"
+          cp docker-compose.ghcr.yml "$DEPLOY_PATH/"
+          cp docker-compose.dev.yml "$DEPLOY_PATH/"
+          mkdir -p "$DEPLOY_PATH/nginx" "$DEPLOY_PATH/backend/prisma"
+          cp nginx/nginx.conf "$DEPLOY_PATH/nginx/"
+          cp backend/prisma/schema.prisma "$DEPLOY_PATH/backend/prisma/"
 
-            # Create .env file
-            cat > .env << 'ENVEOF'
-            NODE_ENV=development
-            JWT_SECRET=${{ secrets.DEV_JWT_SECRET }}
-            JWT_REFRESH_SECRET=${{ secrets.DEV_JWT_REFRESH_SECRET }}
-            SESSION_SECRET=${{ secrets.DEV_SESSION_SECRET }}
-            DATABASE_URL=postgresql://loyalty_dev:loyalty_dev_pass@postgres:5432/loyalty_dev_db
-            REDIS_URL=redis://redis:6379
-            FRONTEND_URL=${{ vars.DEV_FRONTEND_URL }}
-            BACKEND_URL=${{ vars.DEV_BACKEND_URL }}
-            VITE_API_URL=${{ vars.DEV_VITE_API_URL }}
-            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-            GOOGLE_CALLBACK_URL=${{ vars.DEV_GOOGLE_CALLBACK_URL }}
-            LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
-            LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
-            LINE_CALLBACK_URL=${{ vars.DEV_LINE_CALLBACK_URL }}
-            CORS_ORIGINS=${{ vars.DEV_CORS_ORIGINS }}
-            LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
-            LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
-            ENVEOF
-            chmod 600 .env
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u thehfhotel --password-stdin
 
-            # Update config files from GitHub
-            echo "Updating config files..."
-            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/docker-compose.yml" -o docker-compose.yml
-            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/docker-compose.ghcr.yml" -o docker-compose.ghcr.yml
-            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/${COMPOSE_OVERRIDE}" -o "${COMPOSE_OVERRIDE}"
-            mkdir -p nginx backend/prisma
-            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/nginx/nginx.conf" -o nginx/nginx.conf
-            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/backend/prisma/schema.prisma" -o backend/prisma/schema.prisma
+      - name: Deploy services
+        working-directory: /home/nut/loyalty-app-develop
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          COMPOSE_OVERRIDE="docker-compose.dev.yml"
 
-            # Login to GHCR
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u thehfhotel --password-stdin
+          # Pull images
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" pull backend frontend
 
-            # Export IMAGE_TAG for docker compose
-            export IMAGE_TAG
+          # Start database services
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d postgres redis
 
-            # Pull images
-            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" pull backend frontend
+          # Wait for postgres
+          sleep 10
 
-            # Start database services
-            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d postgres redis
+          # Run migrations
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" run --rm backend npx prisma migrate deploy || true
 
-            # Wait for postgres
-            sleep 10
+          # Deploy all services
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
 
-            # Run migrations
-            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" run --rm backend npx prisma migrate deploy || true
-
-            # Deploy all services
-            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
-
-            # Health check
-            sleep 10
-            for i in {1..30}; do
-              if curl -sf http://localhost:5001/api/health > /dev/null 2>&1; then
-                echo "Deployment successful!"
-                exit 0
-              fi
-              sleep 2
-            done
-            echo "Health check failed"
-            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" logs --tail=50 backend
-            exit 1
+      - name: Health check
+        run: |
+          sleep 10
+          for i in {1..30}; do
+            if curl -sf http://localhost:5001/api/health > /dev/null 2>&1; then
+              echo "Deployment successful!"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health check failed"
+          cd /home/nut/loyalty-app-develop
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.dev.yml logs --tail=50 backend
+          exit 1
 
   # =============================================================================
   # PHASE 5: DEPLOY TO PRODUCTION (main branch, requires approval)
@@ -728,7 +729,7 @@ jobs:
 
   deploy-production:
     name: "Deploy to Production"
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, deploy]
     needs: [deploy-staging]
     if: github.ref == 'refs/heads/main'
     timeout-minutes: 10
@@ -737,100 +738,101 @@ jobs:
       url: https://loyalty.saichon.com
 
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE_TAG: ${{ github.sha }}
-          COMMIT_SHA: ${{ github.sha }}
+      - name: Checkout config files
+        uses: actions/checkout@v4
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: GHCR_TOKEN,IMAGE_TAG,COMMIT_SHA
-          script: |
-            set -euo pipefail
+          sparse-checkout: |
+            docker-compose.yml
+            docker-compose.ghcr.yml
+            docker-compose.prod.yml
+            nginx/nginx.conf
+            backend/prisma/schema.prisma
+          sparse-checkout-cone-mode: false
 
-            DEPLOY_PATH="/home/nut/loyalty-app-production"
-            REPO="thehfhotel/loyalty-app"
-            COMPOSE_OVERRIDE="docker-compose.prod.yml"
+      - name: Create .env file
+        working-directory: /home/nut/loyalty-app-production
+        run: |
+          cat > .env << 'ENVEOF'
+          NODE_ENV=production
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          REDIS_URL=redis://redis:6379
+          FRONTEND_URL=${{ vars.FRONTEND_URL }}
+          BACKEND_URL=${{ vars.BACKEND_URL }}
+          VITE_API_URL=${{ vars.VITE_API_URL }}
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_CALLBACK_URL=${{ vars.GOOGLE_CALLBACK_URL }}
+          LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
+          LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
+          CORS_ORIGINS=${{ vars.CORS_ORIGINS }}
+          LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
+          LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USER=${{ secrets.SMTP_USER }}
+          SMTP_PASS=${{ secrets.SMTP_PASS }}
+          SMTP_FROM=${{ secrets.SMTP_FROM }}
+          IMAP_HOST=${{ secrets.IMAP_HOST }}
+          IMAP_PORT=${{ secrets.IMAP_PORT }}
+          IMAP_USER=${{ secrets.IMAP_USER }}
+          IMAP_PASS=${{ secrets.IMAP_PASS }}
+          ENVEOF
+          chmod 600 .env
 
-            cd "$DEPLOY_PATH"
+      - name: Copy config files
+        run: |
+          DEPLOY_PATH="/home/nut/loyalty-app-production"
+          cp docker-compose.yml "$DEPLOY_PATH/"
+          cp docker-compose.ghcr.yml "$DEPLOY_PATH/"
+          cp docker-compose.prod.yml "$DEPLOY_PATH/"
+          mkdir -p "$DEPLOY_PATH/nginx" "$DEPLOY_PATH/backend/prisma"
+          cp nginx/nginx.conf "$DEPLOY_PATH/nginx/"
+          cp backend/prisma/schema.prisma "$DEPLOY_PATH/backend/prisma/"
 
-            # Create .env file
-            cat > .env << 'ENVEOF'
-            NODE_ENV=production
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
-            SESSION_SECRET=${{ secrets.SESSION_SECRET }}
-            DATABASE_URL=${{ secrets.DATABASE_URL }}
-            REDIS_URL=redis://redis:6379
-            FRONTEND_URL=${{ vars.FRONTEND_URL }}
-            BACKEND_URL=${{ vars.BACKEND_URL }}
-            VITE_API_URL=${{ vars.VITE_API_URL }}
-            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-            GOOGLE_CALLBACK_URL=${{ vars.GOOGLE_CALLBACK_URL }}
-            LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
-            LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
-            LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
-            CORS_ORIGINS=${{ vars.CORS_ORIGINS }}
-            LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
-            LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
-            SMTP_HOST=${{ secrets.SMTP_HOST }}
-            SMTP_PORT=${{ secrets.SMTP_PORT }}
-            SMTP_USER=${{ secrets.SMTP_USER }}
-            SMTP_PASS=${{ secrets.SMTP_PASS }}
-            SMTP_FROM=${{ secrets.SMTP_FROM }}
-            IMAP_HOST=${{ secrets.IMAP_HOST }}
-            IMAP_PORT=${{ secrets.IMAP_PORT }}
-            IMAP_USER=${{ secrets.IMAP_USER }}
-            IMAP_PASS=${{ secrets.IMAP_PASS }}
-            ENVEOF
-            chmod 600 .env
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u thehfhotel --password-stdin
 
-            # Update config files from GitHub
-            echo "Updating config files..."
-            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/docker-compose.yml" -o docker-compose.yml
-            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/docker-compose.ghcr.yml" -o docker-compose.ghcr.yml
-            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/${COMPOSE_OVERRIDE}" -o "${COMPOSE_OVERRIDE}"
-            mkdir -p nginx backend/prisma
-            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/nginx/nginx.conf" -o nginx/nginx.conf
-            curl -sfL "https://raw.githubusercontent.com/${REPO}/${COMMIT_SHA}/backend/prisma/schema.prisma" -o backend/prisma/schema.prisma
+      - name: Deploy services
+        working-directory: /home/nut/loyalty-app-production
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          COMPOSE_OVERRIDE="docker-compose.prod.yml"
 
-            # Login to GHCR
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u thehfhotel --password-stdin
+          # Pull images
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" pull backend frontend
 
-            # Export IMAGE_TAG for docker compose
-            export IMAGE_TAG
+          # Start database services
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d postgres redis
 
-            # Pull images
-            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" pull backend frontend
+          # Wait for postgres
+          sleep 10
 
-            # Start database services
-            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d postgres redis
+          # Run migrations
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" run --rm backend npx prisma migrate deploy || true
 
-            # Wait for postgres
-            sleep 10
+          # Deploy all services
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
 
-            # Run migrations
-            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" run --rm backend npx prisma migrate deploy || true
-
-            # Deploy all services
-            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
-
-            # Health check
-            sleep 10
-            for i in {1..30}; do
-              if curl -sf http://localhost:4001/api/health > /dev/null 2>&1; then
-                echo "Deployment successful!"
-                exit 0
-              fi
-              sleep 2
-            done
-            echo "Health check failed"
-            docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" logs --tail=50 backend
-            exit 1
+      - name: Health check
+        run: |
+          sleep 10
+          for i in {1..30}; do
+            if curl -sf http://localhost:4001/api/health > /dev/null 2>&1; then
+              echo "Deployment successful!"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health check failed"
+          cd /home/nut/loyalty-app-production
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.prod.yml logs --tail=50 backend
+          exit 1
 
       - name: Deployment Summary
         run: |
