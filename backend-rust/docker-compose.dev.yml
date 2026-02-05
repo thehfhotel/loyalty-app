@@ -1,0 +1,57 @@
+# Development docker-compose override for Rust backend
+# Used for local development with hot reload via cargo-watch
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# IMPORTANT: This file uses development-specific settings
+# Ports are isolated to avoid conflicts with the main Node.js backend
+
+services:
+  postgres:
+    container_name: loyalty_rust_postgres_dev
+    ports:
+      - "5440:5432"  # Rust dev port 5440 (isolated from Node.js ports)
+    environment:
+      POSTGRES_USER: loyalty_rust_dev
+      POSTGRES_PASSWORD: loyalty_rust_dev_pass
+      POSTGRES_DB: loyalty_rust_dev_db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loyalty_rust_dev -d loyalty_rust_dev_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_rust_dev_data:/var/lib/postgresql/data
+
+  redis:
+    container_name: loyalty_rust_redis_dev
+    ports:
+      - "6385:6379"  # Rust dev port 6385 (isolated from Node.js ports)
+
+  backend-rust:
+    container_name: loyalty_backend_rust_dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    ports:
+      - "4010:4001"  # Rust dev port 4010 (Node.js uses 4000/4001)
+    environment:
+      NODE_ENV: development
+      PORT: 4001
+      DATABASE_URL: postgresql://loyalty_rust_dev:loyalty_rust_dev_pass@postgres:5432/loyalty_rust_dev_db
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-development-secret-change-in-production}
+      RUST_LOG: debug
+      RUST_BACKTRACE: 1
+    volumes:
+      # Mount source code for hot reload
+      - .:/app
+      # Exclude target directory to use container's compiled artifacts
+      - /app/target
+      - backend_rust_dev_logs:/app/logs
+    command: ["cargo", "watch", "-x", "run"]
+
+# Development-specific volumes
+volumes:
+  postgres_rust_dev_data:
+  backend_rust_dev_logs:

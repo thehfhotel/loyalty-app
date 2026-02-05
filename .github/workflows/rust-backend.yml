@@ -1,0 +1,249 @@
+name: Rust Backend CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend-rust/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend-rust/**'
+
+# Workflow-level concurrency: prevent parallel runs on same branch
+concurrency:
+  group: rust-backend-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Top-level permissions set to minimal read-only
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: thehfhotel
+  IMAGE_REPO: loyalty-app
+
+jobs:
+  # =============================================================================
+  # LINT: Format and Clippy checks
+  # =============================================================================
+
+  lint:
+    name: "Lint"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ hashFiles('backend-rust/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
+
+      - name: Check formatting
+        working-directory: ./backend-rust
+        run: cargo fmt --check
+
+      - name: Run Clippy
+        working-directory: ./backend-rust
+        run: cargo clippy -- -D warnings
+
+  # =============================================================================
+  # TEST: Run tests with PostgreSQL and Redis services
+  # =============================================================================
+
+  test:
+    name: "Test"
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: loyalty_rust_test
+          POSTGRES_PASSWORD: loyalty_rust_test_pass
+          POSTGRES_DB: loyalty_rust_test_db
+        ports:
+          - 5439:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6384:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libpq-dev
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ hashFiles('backend-rust/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
+
+      - name: Cache cargo target
+        uses: actions/cache@v4
+        with:
+          path: backend-rust/target
+          key: cargo-target-test-${{ hashFiles('backend-rust/Cargo.lock') }}
+          restore-keys: |
+            cargo-target-test-
+
+      - name: Run tests
+        working-directory: ./backend-rust
+        run: cargo test --verbose
+        env:
+          DATABASE_URL: postgresql://loyalty_rust_test:loyalty_rust_test_pass@localhost:5439/loyalty_rust_test_db
+          REDIS_URL: redis://localhost:6384
+          RUST_LOG: debug
+
+  # =============================================================================
+  # BUILD: Build release binary
+  # =============================================================================
+
+  build:
+    name: "Build"
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libpq-dev libssl-dev pkg-config
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ hashFiles('backend-rust/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
+
+      - name: Cache cargo target
+        uses: actions/cache@v4
+        with:
+          path: backend-rust/target
+          key: cargo-target-release-${{ hashFiles('backend-rust/Cargo.lock') }}
+          restore-keys: |
+            cargo-target-release-
+
+      - name: Build release binary
+        working-directory: ./backend-rust
+        run: cargo build --release --verbose
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: loyalty-backend-rust
+          path: backend-rust/target/release/loyalty-backend
+          retention-days: 7
+
+  # =============================================================================
+  # DOCKER: Build and push Docker image to GHCR
+  # =============================================================================
+
+  docker:
+    name: "Docker Build & Push"
+    runs-on: ubuntu-latest
+    needs: [test, build]
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/backend-rust
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend-rust
+          target: runner
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Summary
+        run: |
+          echo "## Rust Backend Docker Image Built" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Image Tags" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

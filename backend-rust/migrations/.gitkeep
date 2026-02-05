@@ -1,0 +1,9 @@
+# This directory contains sqlx database migrations
+# Migration files should be named: {timestamp}_{description}.sql
+# Example: 20240101120000_create_users.sql
+#
+# To create a new migration:
+# sqlx migrate add <description>
+#
+# To run migrations:
+# sqlx migrate run

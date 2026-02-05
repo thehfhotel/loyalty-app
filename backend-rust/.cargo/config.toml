@@ -1,0 +1,52 @@
+# Cargo configuration for the Rust backend
+
+[build]
+# Use all available CPU cores for parallel compilation
+jobs = -1
+
+# Enable incremental compilation for faster rebuilds
+incremental = true
+
+[profile.dev]
+# Development profile settings
+incremental = true
+# Faster debug builds with some optimizations
+opt-level = 0
+debug = true
+
+[profile.release]
+# Release profile with link-time optimization
+lto = "thin"
+# Single codegen unit for better optimization
+codegen-units = 1
+# Strip debug symbols for smaller binary
+strip = "symbols"
+# Enable optimizations
+opt-level = 3
+# Panic behavior
+panic = "abort"
+
+[profile.dev.package."*"]
+# Optimize dependencies even in dev mode for faster runtime
+opt-level = 2
+
+[target.x86_64-unknown-linux-gnu]
+# Linux-specific linker settings
+rustflags = ["-C", "target-cpu=native"]
+
+[target.x86_64-unknown-linux-musl]
+# MUSL target for static binaries (Alpine Linux)
+rustflags = ["-C", "target-feature=-crt-static"]
+
+[env]
+# Environment variables for builds
+# SQLX_OFFLINE = "true"  # Enable this for CI builds with pre-cached queries
+
+[alias]
+# Useful command aliases
+b = "build"
+c = "check"
+t = "test"
+r = "run"
+br = "build --release"
+rr = "run --release"

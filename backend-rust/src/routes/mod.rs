@@ -1,0 +1,80 @@
+//! Route definitions module
+//!
+//! Defines all API routes and their handlers.
+//! All routes are nested under /api prefix via the create_router function.
+
+pub mod admin;
+pub mod auth;
+pub mod bookings;
+pub mod coupons;
+pub mod health;
+pub mod loyalty;
+pub mod notifications;
+pub mod oauth;
+pub mod sse;
+pub mod storage;
+pub mod surveys;
+pub mod users;
+
+use axum::Router;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
+
+use crate::openapi::ApiDoc;
+use crate::state::AppState;
+
+/// Create the main application router with all routes nested under /api
+///
+/// This creates the full router with all API endpoints properly nested:
+/// - /api/health -> health routes (basic health checks, db, redis)
+/// - /api/auth -> authentication routes (login, register, etc.)
+/// - /api/users -> user management routes
+/// - /api/oauth -> OAuth provider routes (Google, LINE)
+/// - /api/loyalty -> loyalty program routes (points, tiers)
+/// - /api/coupons -> coupon management routes
+/// - /api/surveys -> survey routes
+/// - /api/bookings -> booking routes
+/// - /api/notifications -> notification routes
+/// - /api/admin -> admin panel routes
+/// - /api/sse -> server-sent events routes
+/// - /api/docs -> Swagger UI for API documentation
+/// - /api/openapi.json -> OpenAPI specification JSON
+///
+/// Note: Storage routes are not included here as they require a different state type.
+/// Use `storage::routes_with_state(StorageState)` separately if needed.
+///
+/// # Arguments
+///
+/// * `state` - Application state containing database pool, Redis connection, and config
+///
+/// # Returns
+///
+/// An Axum Router with all routes configured and state attached
+pub fn create_router(state: AppState) -> Router {
+    Router::new()
+        .nest("/api/health", health::routes())
+        .nest("/api/auth", auth::routes())
+        .nest("/api/users", users::routes())
+        .nest("/api/oauth", oauth::routes())
+        .nest("/api/loyalty", loyalty::routes())
+        .nest("/api/coupons", coupons::routes())
+        .nest("/api/surveys", surveys::routes())
+        .nest("/api/bookings", bookings::routes())
+        .nest("/api/notifications", notifications::routes())
+        .nest("/api/admin", admin::routes())
+        .nest("/api/sse", sse::routes())
+        // OpenAPI documentation routes
+        .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))
+        .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_module_exports() {
+        // Verify all modules are accessible
+        // This is a compile-time check that all modules exist
+    }
+}

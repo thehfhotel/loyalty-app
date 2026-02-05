@@ -1,0 +1,61 @@
+# Base docker-compose for Rust backend
+# Usage: docker compose up -d (base only)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d (development)
+#
+# This configuration reuses PostgreSQL and Redis patterns from the main project.
+# Port mappings are defined in environment-specific override files.
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: loyalty_rust_postgres
+    environment:
+      POSTGRES_USER: loyalty
+      POSTGRES_PASSWORD: loyalty_pass
+      POSTGRES_DB: loyalty_db
+    volumes:
+      - postgres_rust_data:/var/lib/postgresql/data
+    # PORTS: Defined in environment-specific override files (dev/prod)
+    # to prevent port conflicts when both environments run on same machine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: loyalty_rust_redis
+    # PORTS: Defined in environment-specific override files (dev/prod)
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend-rust:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: loyalty_backend_rust
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${BACKEND_RUST_PORT:-4001}
+      DATABASE_URL: postgresql://loyalty:loyalty_pass@postgres:5432/loyalty_db
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-development-secret-change-in-production}
+      RUST_LOG: ${RUST_LOG:-info}
+      RUST_BACKTRACE: ${RUST_BACKTRACE:-0}
+    # VOLUMES: Source mounts are in docker-compose.dev.yml ONLY
+    # Production uses Docker image contents - no source mount needed
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Command defined in override files (dev: cargo watch, prod: uses Dockerfile CMD)
+
+volumes:
+  postgres_rust_data:
+  backend_rust_logs:

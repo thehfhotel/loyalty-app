@@ -1,0 +1,26 @@
+edition = "2021"
+max_width = 100
+use_small_heuristics = "Default"
+
+# Import organization
+imports_granularity = "Module"
+group_imports = "StdExternalCrate"
+reorder_imports = true
+reorder_modules = true
+
+# Formatting preferences
+newline_style = "Unix"
+use_field_init_shorthand = true
+use_try_shorthand = true
+
+# Comment formatting
+wrap_comments = true
+comment_width = 100
+normalize_comments = true
+
+# Function formatting
+fn_args_layout = "Tall"
+fn_single_line = false
+
+# Control flow formatting
+match_block_trailing_comma = true
