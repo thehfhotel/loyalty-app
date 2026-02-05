@@ -494,27 +494,35 @@ export const productionSecurity = (req: Request, res: Response, next: NextFuncti
   }
   
   const isHttps = req.secure || forwardedProto === 'https' || isCloudflareHttps;
-  
+
+  // Allow localhost/internal requests to bypass HTTPS redirect for health checks
+  // This is safe because these are internal infrastructure checks, not external traffic
+  const localhostIPs = ['127.0.0.1', '::1', '::ffff:127.0.0.1'];
+  const isLocalhost = req.ip && localhostIPs.includes(req.ip);
+  const isHealthCheck = req.path === '/api/health' || req.path === '/health';
+
+  if (isLocalhost && isHealthCheck) {
+    // Skip HTTPS redirect for internal health checks
+    return next();
+  }
+
   // Enhanced logging for debugging Cloudflare tunnel
   logger.info('Production security check', {
     ip: req.ip,
     url: req.url,
     method: req.method,
     secure: req.secure,
-    forwardedProto,
-    cfVisitor,
     isCloudflareHttps,
     isHttps,
     host: req.get('host'),
     userAgent: req.get('user-agent')
   });
-  
+
   if (!isHttps) {
     logger.warn('HTTP request detected in production - redirecting to HTTPS', {
       ip: req.ip,
       url: req.url,
       secure: req.secure,
-      forwardedProto,
       isCloudflareHttps
     });
     return res.redirect(301, `https://${req.get('host')}${req.url}`);
