@@ -13,6 +13,9 @@
 services:
   backend:
     image: ghcr.io/thehfhotel/loyalty-app/backend:${IMAGE_TAG:-latest}
+    # Override entrypoint for GHCR images since the runner stage CMD is different
+    entrypoint: []
+    command: ["node", "dist/index.js"]
 
   frontend:
     image: ghcr.io/thehfhotel/loyalty-app/frontend:${IMAGE_TAG:-latest}
