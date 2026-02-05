@@ -1,0 +1,97 @@
+# Staging docker-compose override
+# Used for staging deployments with GHCR images (no source code bind mounts)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.staging.yml up -d
+#
+# This file provides staging-specific configuration:
+# - Different ports from production (to run on same host)
+# - Container names with _dev suffix
+# - Staging-specific environment variables
+# - NO source code bind mounts (uses GHCR built images)
+
+services:
+  postgres:
+    container_name: loyalty_postgres_dev
+    ports:
+      - "5435:5432"  # Dev port 5435 (prod uses 5434)
+    environment:
+      POSTGRES_USER: loyalty_dev
+      POSTGRES_PASSWORD: loyalty_dev_pass
+      POSTGRES_DB: loyalty_dev_db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loyalty_dev -d loyalty_dev_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+
+  redis:
+    container_name: loyalty_redis_dev
+    ports:
+      - "6380:6379"  # Dev port 6380 (prod uses 6379)
+
+  backend:
+    container_name: loyalty_backend_dev
+    environment:
+      NODE_ENV: staging
+      PORT: ${BACKEND_PORT:-4000}
+      DATABASE_URL: postgresql://loyalty_dev:loyalty_dev_pass@postgres:5432/loyalty_dev_db
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      SESSION_SECRET: ${SESSION_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL}
+      LINE_CHANNEL_ID: ${LINE_CHANNEL_ID}
+      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET}
+      LINE_CALLBACK_URL: ${LINE_CALLBACK_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
+      LOYALTY_USERNAME: ${LOYALTY_USERNAME}
+      LOYALTY_PASSWORD: ${LOYALTY_PASSWORD}
+      TRANSLATION_FEATURE_ENABLED: ${TRANSLATION_FEATURE_ENABLED:-false}
+      AZURE_TRANSLATION_TEXT_URI: ${AZURE_TRANSLATION_TEXT_URI:-}
+      AZURE_TRANSLATION_KEY_1: ${AZURE_TRANSLATION_KEY_1:-}
+      AZURE_TRANSLATION_KEY_2: ${AZURE_TRANSLATION_KEY_2:-}
+      AZURE_TRANSLATION_REGION: ${AZURE_TRANSLATION_REGION:-global}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      # Email Service (SMTP/IMAP)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      IMAP_HOST: ${IMAP_HOST:-}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_USER: ${IMAP_USER:-}
+      IMAP_PASS: ${IMAP_PASS:-}
+    # No source code bind mounts - uses GHCR image with built code
+    volumes:
+      - backend_dev_logs:/app/logs
+      - backend_dev_storage:/app/storage
+
+  frontend:
+    container_name: loyalty_frontend_dev
+    environment:
+      NODE_ENV: staging
+      VITE_API_URL: ${VITE_API_URL}
+    # No source code bind mounts - uses GHCR image with built code
+    volumes:
+      - frontend_dev_logs:/app/logs
+
+  nginx:
+    container_name: loyalty_nginx_dev
+    ports:
+      - "5001:80"  # Dev port 5001 (prod uses 4001)
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_dev_logs:/var/log/nginx
+
+# Staging-specific volumes
+volumes:
+  postgres_dev_data:
+  backend_dev_logs:
+  backend_dev_storage:
+  frontend_dev_logs:
+  nginx_dev_logs:
