@@ -95,9 +95,8 @@ services:
     volumes:
       # GHCR frontend uses nginx:alpine with logs at /var/log/nginx
       - frontend_logs:/var/log/nginx
-    # Note: GHCR deployments override command via docker-compose.ghcr.yml
-    # This command is only used for local builds (not GHCR)
-    command: sh -c "echo 'Building frontend for production...' && npm run build && echo 'Starting preview server...' && npm run preview -- --host 0.0.0.0 --port 3000"
+    # Command is set in docker-compose.ghcr.yml for GHCR deployments
+    # For local builds without GHCR, use: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
     restart: unless-stopped
 
   nginx:
