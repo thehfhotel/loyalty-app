@@ -11,8 +11,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::common::{
-    generate_test_token, init_test_redis, setup_test, teardown_test, TestClient, TestUser,
-    TEST_JWT_SECRET,
+    generate_test_token, generate_test_token_with_role, init_test_redis, setup_test, teardown_test,
+    TestClient, TestUser, TEST_JWT_SECRET,
 };
 
 use loyalty_backend::config::Settings;
@@ -149,7 +149,7 @@ async fn create_admin_user(pool: &PgPool) -> (TestUser, String) {
         .await
         .expect("Failed to insert admin user");
 
-    let token = generate_test_token(&admin.id, &admin.email);
+    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
     (admin, token)
 }
 

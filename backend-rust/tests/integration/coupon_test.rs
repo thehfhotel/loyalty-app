@@ -13,7 +13,8 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::common::{
-    generate_test_token, init_test_db, setup_test, teardown_test, TestClient, TestCoupon, TestUser,
+    generate_test_token, generate_test_token_with_role, init_test_db, setup_test, teardown_test,
+    TestClient, TestCoupon, TestUser,
 };
 
 // ============================================================================
@@ -272,7 +273,7 @@ async fn test_create_coupon_admin() {
         .expect("Failed to insert admin user");
 
     // Generate admin auth token
-    let token = generate_test_token(&admin.id, &admin.email);
+    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
 
     // Create router and client
     let router = create_coupon_router()
@@ -393,7 +394,7 @@ async fn test_assign_coupon() {
     coupon.insert(&pool).await.expect("Failed to insert coupon");
 
     // Generate admin auth token
-    let token = generate_test_token(&admin.id, &admin.email);
+    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
 
     // Create router and client
     let router = create_coupon_router()
@@ -866,7 +867,7 @@ async fn test_assign_coupon_to_multiple_users() {
     coupon.insert(&pool).await.expect("Failed to insert coupon");
 
     // Generate admin auth token
-    let token = generate_test_token(&admin.id, &admin.email);
+    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
 
     // Create router and client
     let router = create_coupon_router()

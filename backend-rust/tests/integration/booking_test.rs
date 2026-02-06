@@ -14,7 +14,8 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::common::{
-    generate_test_token, init_test_db, setup_test, teardown_test, TestClient, TestUser,
+    generate_test_token, generate_test_token_with_role, init_test_db, setup_test, teardown_test,
+    TestClient, TestUser,
 };
 
 // ============================================================================
@@ -684,7 +685,7 @@ async fn test_complete_booking_awards_points() {
         .await
         .expect("Failed to create booking");
 
-    let token = generate_test_token(&admin.id, &admin.email);
+    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
     let client = TestClient::new(router).with_auth(&token);
 
     let complete_request = json!({
@@ -773,7 +774,7 @@ async fn test_complete_booking_cannot_complete_cancelled() {
         .await
         .expect("Failed to create booking");
 
-    let token = generate_test_token(&admin.id, &admin.email);
+    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
     let client = TestClient::new(router).with_auth(&token);
 
     let complete_request = json!({
@@ -998,7 +999,7 @@ async fn test_admin_can_view_all_bookings() {
     user2.insert(&pool).await.expect("Failed to insert user2");
     let _ = create_test_booking(&pool, user2.id, "confirmed", 14, 17).await;
 
-    let token = generate_test_token(&admin.id, &admin.email);
+    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
     let client = TestClient::new(router).with_auth(&token);
 
     // Act - Admin lists all bookings

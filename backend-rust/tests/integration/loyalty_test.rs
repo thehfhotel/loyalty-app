@@ -12,7 +12,8 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::common::{
-    generate_test_token, init_test_db, setup_test, teardown_test, TestClient, TestUser,
+    generate_test_token, generate_test_token_with_role, init_test_db, setup_test, teardown_test,
+    TestClient, TestUser,
 };
 
 // ============================================================================
@@ -529,7 +530,7 @@ async fn test_award_points_admin() {
         .insert(&pool)
         .await
         .expect("Failed to insert admin user");
-    let admin_token = generate_test_token(&admin_user.id, &admin_user.email);
+    let admin_token = generate_test_token_with_role(&admin_user.id, &admin_user.email, "admin");
 
     // Create target user
     let target_user = TestUser::new("target_user@example.com");
@@ -699,7 +700,7 @@ async fn test_tier_recalculation() {
         .insert(&pool)
         .await
         .expect("Failed to insert admin user");
-    let admin_token = generate_test_token(&admin_user.id, &admin_user.email);
+    let admin_token = generate_test_token_with_role(&admin_user.id, &admin_user.email, "admin");
 
     // Create target user with 8 nights (Silver tier: 1+ nights)
     let target_user = TestUser::new("tier_upgrade@example.com");
@@ -811,7 +812,7 @@ async fn test_tier_recalculation_no_change() {
         .insert(&pool)
         .await
         .expect("Failed to insert admin user");
-    let admin_token = generate_test_token(&admin_user.id, &admin_user.email);
+    let admin_token = generate_test_token_with_role(&admin_user.id, &admin_user.email, "admin");
 
     // Create target user with 5 nights (Silver tier)
     let target_user = TestUser::new("tier_no_change@example.com");

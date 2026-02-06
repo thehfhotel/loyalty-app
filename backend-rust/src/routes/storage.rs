@@ -6,12 +6,12 @@
 //! - POST /api/storage/upload - General file upload
 //! - POST /api/storage/avatar - Avatar upload (requires authentication)
 //! - POST /api/storage/slip - Slip upload (requires authentication)
-//! - GET /api/storage/files/{filename} - Serve uploaded files
-//! - GET /api/storage/avatars/{filename} - Serve avatar images
-//! - GET /api/storage/slips/{filename} - Serve slip images
+//! - GET /api/storage/files/:filename - Serve uploaded files
+//! - GET /api/storage/avatars/:filename - Serve avatar images
+//! - GET /api/storage/slips/:filename - Serve slip images
 //! - GET /api/storage/stats - Get storage statistics (admin only)
 //! - POST /api/storage/backup - Trigger manual backup (admin only)
-//! - DELETE /api/storage/files/{filename} - Delete a file
+//! - DELETE /api/storage/files/:filename - Delete a file
 
 use axum::{
     body::Body,
@@ -407,14 +407,14 @@ pub fn routes() -> Router<StorageState> {
         .route("/avatar", post(upload_avatar))
         .route("/slip", post(upload_slip))
         // Serve files
-        .route("/files/{filename}", get(serve_file))
-        .route("/avatars/{filename}", get(serve_avatar))
-        .route("/slips/{filename}", get(serve_slip))
+        .route("/files/:filename", get(serve_file))
+        .route("/avatars/:filename", get(serve_avatar))
+        .route("/slips/:filename", get(serve_slip))
         // Admin routes
         .route("/stats", get(get_storage_stats))
         .route("/backup", post(trigger_backup))
         // Delete route
-        .route("/files/{filename}", axum::routing::delete(delete_file))
+        .route("/files/:filename", axum::routing::delete(delete_file))
 }
 
 /// Create storage routes with state

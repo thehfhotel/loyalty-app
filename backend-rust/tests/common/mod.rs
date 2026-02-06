@@ -926,23 +926,30 @@ impl TestResponse {
 
 /// Generate a test JWT token for a user
 pub fn generate_test_token(user_id: &Uuid, email: &str) -> String {
+    generate_test_token_with_role(user_id, email, "customer")
+}
+
+/// Generate a test JWT token for a user with a specific role
+pub fn generate_test_token_with_role(user_id: &Uuid, email: &str, role: &str) -> String {
     use jsonwebtoken::{encode, EncodingKey, Header};
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize, Deserialize)]
     struct Claims {
-        sub: String,
-        email: String,
+        id: String,
+        email: Option<String>,
+        role: String,
         exp: i64,
-        iat: i64,
+        iat: Option<i64>,
     }
 
     let now = Utc::now();
     let claims = Claims {
-        sub: user_id.to_string(),
-        email: email.to_string(),
+        id: user_id.to_string(),
+        email: Some(email.to_string()),
+        role: role.to_string(),
         exp: (now + Duration::hours(1)).timestamp(),
-        iat: now.timestamp(),
+        iat: Some(now.timestamp()),
     };
 
     encode(
@@ -960,18 +967,20 @@ pub fn generate_expired_token(user_id: &Uuid, email: &str) -> String {
 
     #[derive(Debug, Serialize, Deserialize)]
     struct Claims {
-        sub: String,
-        email: String,
+        id: String,
+        email: Option<String>,
+        role: String,
         exp: i64,
-        iat: i64,
+        iat: Option<i64>,
     }
 
     let now = Utc::now();
     let claims = Claims {
-        sub: user_id.to_string(),
-        email: email.to_string(),
+        id: user_id.to_string(),
+        email: Some(email.to_string()),
+        role: "customer".to_string(),
         exp: (now - Duration::hours(1)).timestamp(), // Expired 1 hour ago
-        iat: (now - Duration::hours(2)).timestamp(),
+        iat: Some((now - Duration::hours(2)).timestamp()),
     };
 
     encode(

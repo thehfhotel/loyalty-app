@@ -14,7 +14,10 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::common::{generate_test_token, setup_test, teardown_test, TestClient, TestUser};
+use crate::common::{
+    generate_test_token, generate_test_token_with_role, setup_test, teardown_test, TestClient,
+    TestUser,
+};
 
 // ============================================================================
 // Test Setup Helpers
@@ -691,7 +694,7 @@ async fn test_create_survey_admin() {
         .expect("Failed to insert admin user");
 
     // Generate admin auth token
-    let token = generate_test_token(&admin.id, &admin.email);
+    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
 
     // Create router and client
     let router = create_survey_router(&pool).await;
@@ -890,7 +893,7 @@ async fn test_get_survey_responses_admin() {
         .expect("Failed to create response 2");
 
     // Generate admin auth token
-    let token = generate_test_token(&admin.id, &admin.email);
+    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
 
     // Create router and client
     let router = create_survey_router(&pool).await;
@@ -1062,7 +1065,7 @@ async fn test_get_survey_responses_with_pagination() {
         .expect("Failed to create response");
     }
 
-    let token = generate_test_token(&admin.id, &admin.email);
+    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
 
     let router = create_survey_router(&pool).await;
     let client = TestClient::new(router).with_auth(&token);
