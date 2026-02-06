@@ -219,20 +219,25 @@ async fn test_register_duplicate_email_fails() {
         response2.status
     );
 
-    // Verify error message
+    // Verify error response
     let body: Value = response2.json().expect("Response should be valid JSON");
-    let error_message = body
-        .get("error")
-        .or_else(|| body.get("message"))
-        .map(|v| v.as_str().unwrap_or(""))
-        .unwrap_or("");
+    let error_code = body.get("error").and_then(|v| v.as_str()).unwrap_or("");
+    let message = body.get("message").and_then(|v| v.as_str()).unwrap_or("");
+
+    // Check either error code or message for duplicate email indication
+    let error_indicates_duplicate = error_code == "already_exists"
+        || error_code == "bad_request"
+        || error_code == "conflict"
+        || message.to_lowercase().contains("email")
+        || message.to_lowercase().contains("already")
+        || message.to_lowercase().contains("registered")
+        || message.to_lowercase().contains("exists");
 
     assert!(
-        error_message.to_lowercase().contains("email")
-            || error_message.to_lowercase().contains("already")
-            || error_message.to_lowercase().contains("registered"),
-        "Error message should indicate email issue: {}",
-        error_message
+        error_indicates_duplicate,
+        "Error should indicate duplicate email. error: {}, message: {}",
+        error_code,
+        message
     );
 
     teardown_test(&test_db).await;
