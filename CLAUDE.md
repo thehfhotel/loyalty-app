@@ -76,12 +76,18 @@ curl -X POST http://localhost:4001/api/loyalty/award-points
 ### Structure
 ```
 loyalty-app/
-├── backend/          # Node.js/Express API
+├── backend/          # Node.js/Express API (legacy, being migrated)
+├── backend-rust/     # Rust/Axum API (active development)
 ├── frontend/         # React/TypeScript SPA
 ├── scripts/          # Production scripts
 ├── tests/            # E2E tests
 └── docker-compose.*  # Environment configs
 ```
+
+**Backend Migration Status:** The backend is being migrated from Node.js to Rust. During this transition:
+- `backend-rust/` contains the new Rust implementation (Axum framework)
+- `backend/` contains the legacy Node.js implementation
+- Both may coexist until migration is complete (Phase 6 cleanup)
 
 ### Branching Model: Trunk-Based Development
 
@@ -158,7 +164,14 @@ docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compos
 
 **Migration:**
 - Single file: `backend/prisma/migrations/0_init/migration.sql`
-- Commands: `npm run db:generate` → `npm run db:migrate`
+- Commands: `npm run db:generate` → `npm run db:migrate` (in `backend/` directory)
+- Prisma is still used for migrations; Rust backend uses sqlx for queries
+
+**Rust Backend Database (sqlx):**
+- Uses runtime query checking (not compile-time macros)
+- Queries use `sqlx::query()` / `sqlx::query_as()` with `.bind()` parameters
+- Connection pool accessed via `state.pool()` method
+- `SQLX_OFFLINE` is disabled; queries validated at runtime
 
 **Automatic Seeding:**
 - **Essential data** (runs in ALL environments on startup):
@@ -179,7 +192,7 @@ Bronze: 0+, Silver: 1+, Gold: 10+, Platinum: 20+ nights
 
 **Use stored procedures, never direct UPDATE queries.**
 
-### TypeScript Error Handling
+### TypeScript Error Handling (Frontend/Legacy Backend)
 
 ```typescript
 // ✅ CORRECT
@@ -191,6 +204,37 @@ catch (error) {
   }
 }
 ```
+
+### Rust Backend Development
+
+**Build & Run:**
+```bash
+cd backend-rust
+cargo build           # Debug build
+cargo build --release # Release build (~21MB binary)
+cargo run             # Run locally
+cargo test            # Run all tests
+```
+
+**Rust Version:** 1.85 required (for edition2024)
+
+**Key Dependency Pins (Cargo.toml):** Rust 1.85 compatibility requires pinning:
+- `time@0.3.41` (0.3.46+ requires Rust 1.88)
+- `home@0.5.11` (0.5.12+ requires Rust 1.88)
+- `psm@0.1.24` (newer versions have unstable features)
+- `wiremock@0.6.2` (0.6.5+ has unstable feature issues)
+
+**Architecture Patterns:**
+- `AppState::new(pool, redis, config)` - main state constructor
+- Use `.pool()` accessor method, not direct field access
+- Routes use `routes().with_state(state)` pattern
+- Logging controlled via `RUST_LOG` env var (e.g., `RUST_LOG=debug`)
+
+**Test Infrastructure:**
+- Integration tests in `tests/integration/`
+- Common utilities in `tests/common/mod.rs`
+- Tests use `TestApp`, `TestUser`, `TestCoupon` fixtures
+- Test ports: DB=5438, Redis=6383 (for isolation)
 
 ### Frontend Dependencies
 
@@ -293,9 +337,10 @@ chore: Maintenance
 ```
 
 ### Testing Requirements
-- Pass TypeScript compilation
+- Pass TypeScript compilation (frontend)
+- Pass Rust compilation (`cargo build`)
 - Pass ESLint (warnings OK, errors NOT OK)
-- Pass ALL tests without bypassing
+- Pass ALL tests without bypassing (`cargo test`, `npm test`)
 - Maintain code coverage
 - Meaningful assertions only
 
@@ -316,8 +361,18 @@ docker compose up -d
 # Production (deployed from main with approval)
 # Managed by GitHub Actions - approve in GitHub UI
 
-# Database
-npm run db:generate && npm run db:migrate
+# Database migrations (still uses Prisma)
+cd backend && npm run db:generate && npm run db:migrate
+
+# Rust backend development
+cd backend-rust
+cargo build                    # Build
+cargo test                     # Run tests
+cargo run                      # Run locally
+RUST_LOG=debug cargo run       # Run with debug logging
+
+# Frontend quality checks
+cd frontend && npm run lint && npm run typecheck && npm run test
 
 # Git workflow (trunk-based)
 git checkout -b feature/my-feature
@@ -326,9 +381,6 @@ git commit -m "feat: description"  # Hooks run automatically
 git push -u origin feature/my-feature
 gh pr create --base main  # Create PR to main
 # After merge: auto-deploy to staging, then approve for production
-
-# Quality checks
-npm run lint && npm run typecheck && npm run test
 ```
 
 ## ⚠️ NON-NEGOTIABLE
@@ -354,6 +406,6 @@ npm run lint && npm run typecheck && npm run test
 
 ---
 
-**Last Updated**: January 26, 2026
+**Last Updated**: February 6, 2026
 **Enforced By**: Git hooks, CI/CD pipeline, project conventions
 **Compliance**: MANDATORY for all contributors
