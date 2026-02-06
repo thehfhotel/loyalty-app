@@ -998,15 +998,15 @@ pub fn routes() -> Router<AppState> {
         .route("/:id", get(get_survey))
         .route("/:id", put(update_survey))
         .route("/:id", delete(delete_survey))
-        // Survey response routes
+        // Survey response routes (use :id consistently)
         .route("/:id/responses", post(submit_response))
-        .route("/:surveyId/responses", get(get_survey_responses))
+        .route("/:id/responses", get(get_survey_responses))
         // Admin analytics and export routes
-        .route("/:surveyId/analytics", get(get_survey_analytics))
-        .route("/:surveyId/export", get(export_survey_responses))
+        .route("/:id/analytics", get(get_survey_analytics))
+        .route("/:id/export", get(export_survey_responses))
         // Invitation management routes
-        .route("/:surveyId/invitations", get(get_survey_invitations))
-        .route("/:surveyId/invitations/send", post(send_survey_invitations))
+        .route("/:id/invitations", get(get_survey_invitations))
+        .route("/:id/invitations/send", post(send_survey_invitations))
         .layer(middleware::from_fn(auth_middleware))
 }
 
