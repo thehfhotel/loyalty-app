@@ -107,7 +107,7 @@ Feature Branch → PR → main → Tests → Build GHCR → Staging → Producti
 
 | Component | Local Dev | Staging | Production |
 |-----------|-----------|---------|------------|
-| **Compose File** | `docker-compose.yml` | `+ docker-compose.dev.yml` | `+ docker-compose.prod.yml` |
+| **Compose File** | `docker-compose.yml` | `+ docker-compose.staging.yml` | `+ docker-compose.prod.yml` |
 | **Container Suffix** | (none) | `_dev` | `_production` |
 | **Nginx Port** | - | 5001 | 4001 |
 | **PostgreSQL Port** | - | 5435 | 5434 |
@@ -145,7 +145,7 @@ docker compose up -d
 # Staging server (deployed automatically from main)
 # Uses GHCR images, deployed via GitHub Actions
 cd /home/nut/loyalty-app-develop
-docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.staging.yml up -d
 
 # Production (deployed from main with approval)
 # Uses GHCR images, deployed via GitHub Actions
@@ -310,20 +310,6 @@ services:
 - Parameterized queries (prevent SQL injection)
 - Use stored procedures for complex operations
 - **Log injection prevention**: Always use `sanitizeUserId()`, `sanitizeEmail()`, `sanitizeLogValue()` from `backend/src/utils/logSanitizer.ts` for user-controlled values in logs
-
-### CodeQL Code Scanning
-
-**Important Limitations:**
-1. **JavaScript model packs don't support sanitizers** - CodeQL can't be taught to recognize custom sanitizer functions
-2. **Inline comments (`// codeql[]`, `// lgtm[]`) don't work** with GitHub Code Scanning - only with CLI
-3. **Dismiss false positives via API** when sanitizers are properly used:
-   ```bash
-   gh api -X PATCH repos/OWNER/REPO/code-scanning/alerts/NUMBER \
-     -f state=dismissed -f dismissed_reason="false positive" \
-     -f dismissed_comment="Sanitized via sanitizeUserId/sanitizeLogValue"
-   ```
-
-See `SECURITY.md` for full documentation.
 
 ### Git Commits
 ```

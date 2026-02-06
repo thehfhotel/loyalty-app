@@ -284,12 +284,7 @@ If secrets are accidentally committed or leaked:
 
 ### Overview
 
-This project uses GitHub CodeQL for Static Application Security Testing (SAST). CodeQL runs automatically on:
-- Push to `main` branch
-- Pull requests to `main`
-- Weekly scheduled scans (Monday 12:00 UTC)
-
-Configuration: `.github/workflows/codeql.yml`
+This project uses **GitHub's default CodeQL setup** for Static Application Security Testing (SAST). CodeQL runs automatically on pushes and pull requests to `main` — no custom workflow file is needed.
 
 ### Log Injection Prevention
 
@@ -324,42 +319,9 @@ logger.info(`Email: ${sanitizeEmail(userEmail)}`);
 logger.warn(`Invalid input: ${sanitizeLogValue(userInput)}`);
 ```
 
-### CodeQL Limitations (IMPORTANT)
-
-#### JavaScript Model Extensions Don't Support Sanitizers
-
-CodeQL data extensions for JavaScript only support:
-- `sourceModel` - Define taint sources
-- `sinkModel` - Define taint sinks
-- `summaryModel` - Define flow through functions
-- `typeModel` - Define type relationships
-
-**There is NO `sanitizerModel` or `barrierModel` for JavaScript.** This means CodeQL cannot be taught to recognize custom sanitizer functions via model packs.
-
-Reference: [Customizing Library Models for JavaScript](https://codeql.github.com/docs/codeql-language-guides/customizing-library-models-for-javascript/)
-
-#### Inline Suppression Comments Don't Work in Code Scanning
-
-GitHub Code Scanning does **NOT** support inline suppression comments:
-
-```typescript
-// These comments are IGNORED by GitHub Code Scanning:
-// codeql[js/log-injection]
-// lgtm[js/log-injection]
-logger.info(`User: ${sanitizeUserId(userId)}`);  // Still flagged!
-```
-
-The `// codeql[]` and `// lgtm[]` comments only work with:
-- CodeQL CLI (local analysis)
-- LGTM.com (deprecated)
-
-**They do NOT work with GitHub Code Scanning.**
-
-Reference: [GitHub CodeQL Issue #9383](https://github.com/github/codeql/issues/9383)
-
 ### Handling False Positives
 
-Since our sanitizer functions properly remove control characters but CodeQL can't recognize them, log injection alerts are **false positives**.
+CodeQL cannot recognize custom sanitizer functions in JavaScript, so log injection alerts on sanitized code are **false positives**.
 
 #### Dismissing Alerts via API
 
@@ -385,27 +347,9 @@ Valid values for `dismissed_reason`:
 ### Best Practices
 
 1. **Always use sanitizer functions** for user-controlled data in logs
-2. **Keep inline comments** (`// codeql[js/log-injection]`) for documentation even though they don't affect Code Scanning
-3. **Dismiss false positives via API** with clear comments explaining why
-4. **Review new alerts** before dismissing - ensure sanitizers are actually used
-5. **Update sanitizers** if new attack vectors are discovered
-
-### CodeQL Configuration Files
-
-```
-.github/
-├── codeql/
-│   ├── codeql-config.yml          # Main config (queries to run)
-│   └── extensions/                 # Auto-detected model packs
-│       └── loyalty-app-models/
-│           ├── codeql-pack.yml    # Pack definition
-│           └── models/
-│               └── log-sanitizers.yml  # Model definitions (for reference only)
-└── workflows/
-    └── codeql.yml                 # Workflow definition
-```
-
-**Note:** The model pack in `extensions/` is kept for documentation purposes but does not affect JavaScript log injection detection due to the limitation described above.
+2. **Dismiss false positives via API** with clear comments explaining why
+3. **Review new alerts** before dismissing - ensure sanitizers are actually used
+4. **Update sanitizers** if new attack vectors are discovered
 
 ## Additional Resources
 
@@ -415,12 +359,10 @@ Valid values for `dismissed_reason`:
 - [OWASP Log Injection](https://owasp.org/www-community/attacks/Log_Injection)
 - [OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html)
 - [GitHub CLI Secrets Commands](https://cli.github.com/manual/gh_secret)
-- [CodeQL JavaScript Models](https://codeql.github.com/docs/codeql-language-guides/customizing-library-models-for-javascript/)
-- [CodeQL Query Help: Log Injection](https://codeql.github.com/codeql-query-help/javascript/js-log-injection/)
 
 ---
 
-**Last Updated**: December 15, 2025
+**Last Updated**: February 7, 2026
 **Status**: ✅ All secrets migrated to GitHub Secrets
-**CodeQL**: ✅ Log injection alerts dismissed as false positives (sanitizers in use)
+**CodeQL**: ✅ Using GitHub default setup; log injection false positives dismissed (sanitizers in use)
 **Migration**: Completed - using GitHub Secrets → Workflow → .env → Docker Compose pattern

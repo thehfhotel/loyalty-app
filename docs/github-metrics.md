@@ -60,7 +60,7 @@ Time to fix: avg 9.78h | median 20.8m (27 incidents)
 - Permissions: `actions:write`, `contents:read`
 - Runner: `ubuntu-latest`
 - Summary: adds a short note to the retry workflow’s run summary when a rerun is requested.
-- Scope-limited: other workflows (e.g., CodeQL/code scanning) are not retried by this automation.
+- Scope-limited: other workflows (e.g., code scanning) are not retried by this automation.
 ## Interpretation notes
 
 - Flaky rate flags commits where at least one failed attempt was followed by a success on the same SHA. It does not inspect job-level test details or artifact data.
