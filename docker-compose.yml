@@ -32,13 +32,15 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ./backend-rust
       dockerfile: Dockerfile
       target: development
     container_name: loyalty_backend
     environment:
+      # Rust backend uses RUST_ENV or NODE_ENV for environment detection
+      RUST_ENV: ${RUST_ENV:-development}
       NODE_ENV: ${NODE_ENV:-development}
-      PORT: ${BACKEND_PORT:-4000}
+      PORT: ${BACKEND_PORT:-4001}
       DATABASE_URL: postgresql://loyalty:loyalty_pass@postgres:5432/loyalty_db
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
@@ -47,25 +49,29 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET is required}
       GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:?GOOGLE_CALLBACK_URL is required}
-      LINE_CHANNEL_ID: ${LINE_CHANNEL_ID:?LINE_CHANNEL_ID is required}
-      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET:?LINE_CHANNEL_SECRET is required}
+      LINE_CLIENT_ID: ${LINE_CHANNEL_ID:?LINE_CHANNEL_ID is required}
+      LINE_CLIENT_SECRET: ${LINE_CHANNEL_SECRET:?LINE_CHANNEL_SECRET is required}
       LINE_CALLBACK_URL: ${LINE_CALLBACK_URL:?LINE_CALLBACK_URL is required}
       FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL is required}
-      LOYALTY_USERNAME: ${LOYALTY_USERNAME:?LOYALTY_USERNAME is required}
-      LOYALTY_PASSWORD: ${LOYALTY_PASSWORD:?LOYALTY_PASSWORD is required}
-      TRANSLATION_FEATURE_ENABLED: ${TRANSLATION_FEATURE_ENABLED:-false}
-      AZURE_TRANSLATION_TEXT_URI: ${AZURE_TRANSLATION_TEXT_URI:-}
-      AZURE_TRANSLATION_KEY_1: ${AZURE_TRANSLATION_KEY_1:-}
-      AZURE_TRANSLATION_KEY_2: ${AZURE_TRANSLATION_KEY_2:-}
-      AZURE_TRANSLATION_REGION: ${AZURE_TRANSLATION_REGION:-global}
-    # VOLUMES: Source mounts (./backend:/app) are in docker-compose.dev.yml ONLY
+      # Email configuration (optional)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      IMAP_HOST: ${IMAP_HOST:-}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_USER: ${IMAP_USER:-}
+      IMAP_PASS: ${IMAP_PASS:-}
+      # Rust-specific logging
+      RUST_LOG: ${RUST_LOG:-info}
+    # VOLUMES: Source mounts (./backend-rust:/app) are in docker-compose.dev.yml ONLY
     # Production uses Docker image contents - no source mount needed
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # Command defined in override files (dev: npm run dev, prod: uses Dockerfile CMD)
+    # Command defined in override files (dev: cargo watch, prod: uses Dockerfile CMD)
 
   frontend:
     build:

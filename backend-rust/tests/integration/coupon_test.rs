@@ -9,7 +9,6 @@
 //! - Redemption validation
 
 use chrono::{Duration, Utc};
-use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use uuid::Uuid;
 

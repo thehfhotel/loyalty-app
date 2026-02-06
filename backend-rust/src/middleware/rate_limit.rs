@@ -233,24 +233,190 @@ pub fn strict_rate_limit_layer() -> RateLimiter {
     RateLimiter::new(RateLimitConfig::strict())
 }
 
-// TODO: Implement Redis-backed rate limiting for distributed deployments
-//
-// pub struct RedisRateLimiter {
-//     client: redis::Client,
-//     config: RateLimitConfig,
-//     key_prefix: String,
-// }
-//
-// impl RedisRateLimiter {
-//     pub async fn check(&self, ip: IpAddr) -> Result<(), RateLimitError> {
-//         // Use Redis INCR with EXPIRE for atomic rate limiting
-//         // Key format: rate_limit:{prefix}:{ip}
-//         // MULTI
-//         // INCR key
-//         // EXPIRE key window_secs NX
-//         // EXEC
-//     }
-// }
+/// Redis-backed rate limiter for distributed deployments
+///
+/// Uses atomic Redis operations (INCR with EXPIRE) to track request counts
+/// across multiple server instances. This is the recommended approach for
+/// production deployments with load balancing.
+///
+/// # Key Format
+/// Keys are stored as: `rate_limit:{prefix}:{ip}`
+///
+/// # Example
+/// ```rust,ignore
+/// use redis::aio::ConnectionManager;
+/// use loyalty_backend::middleware::rate_limit::{RedisRateLimiter, RateLimitConfig};
+///
+/// let redis_conn = ConnectionManager::new(client).await?;
+/// let limiter = RedisRateLimiter::new(redis_conn, RateLimitConfig::default(), "api");
+///
+/// // Check if request is allowed
+/// limiter.check("192.168.1.1".parse().unwrap()).await?;
+/// ```
+#[derive(Clone)]
+pub struct RedisRateLimiter {
+    /// Redis connection manager (handles reconnection automatically)
+    redis: redis::aio::ConnectionManager,
+    /// Rate limit configuration
+    config: RateLimitConfig,
+    /// Key prefix for namespacing rate limit keys
+    key_prefix: String,
+}
+
+impl RedisRateLimiter {
+    /// Create a new Redis-backed rate limiter
+    ///
+    /// # Arguments
+    /// * `redis` - Redis connection manager from AppState
+    /// * `config` - Rate limit configuration
+    /// * `key_prefix` - Prefix for Redis keys (e.g., "api", "auth", "login")
+    pub fn new(
+        redis: redis::aio::ConnectionManager,
+        config: RateLimitConfig,
+        key_prefix: impl Into<String>,
+    ) -> Self {
+        Self {
+            redis,
+            config,
+            key_prefix: key_prefix.into(),
+        }
+    }
+
+    /// Create a rate limiter with default configuration
+    pub fn with_defaults(
+        redis: redis::aio::ConnectionManager,
+        key_prefix: impl Into<String>,
+    ) -> Self {
+        Self::new(redis, RateLimitConfig::default(), key_prefix)
+    }
+
+    /// Create a strict rate limiter for sensitive endpoints
+    pub fn strict(redis: redis::aio::ConnectionManager, key_prefix: impl Into<String>) -> Self {
+        Self::new(redis, RateLimitConfig::strict(), key_prefix)
+    }
+
+    /// Check if a request from the given IP should be allowed
+    ///
+    /// Uses Redis INCR with EXPIRE for atomic rate limiting.
+    /// The expiration is only set on the first request in a window (NX flag).
+    ///
+    /// # Returns
+    /// - `Ok(())` if the request is allowed
+    /// - `Err(RateLimitError::TooManyRequests)` if the limit is exceeded
+    /// - `Err(RateLimitError::RedisError)` if Redis communication fails
+    pub async fn check(&self, ip: IpAddr) -> Result<(), RateLimitError> {
+        let key = format!("rate_limit:{}:{}", self.key_prefix, ip);
+        let window_secs = self.config.window.as_secs() as i64;
+        let mut conn = self.redis.clone();
+
+        // Atomic increment and get current count
+        // Uses a Lua script to ensure atomicity of INCR + EXPIRE NX
+        let script = redis::Script::new(
+            r#"
+            local current = redis.call('INCR', KEYS[1])
+            if current == 1 then
+                redis.call('EXPIRE', KEYS[1], ARGV[1])
+            end
+            local ttl = redis.call('TTL', KEYS[1])
+            return {current, ttl}
+            "#,
+        );
+
+        let result: Result<(i64, i64), redis::RedisError> = script
+            .key(&key)
+            .arg(window_secs)
+            .invoke_async(&mut conn)
+            .await;
+
+        match result {
+            Ok((count, ttl)) => {
+                if count > self.config.max_requests as i64 {
+                    let retry_after = if ttl > 0 {
+                        ttl as u32
+                    } else {
+                        window_secs as u32
+                    };
+                    return Err(RateLimitError::TooManyRequests { retry_after });
+                }
+                Ok(())
+            },
+            Err(e) => {
+                // Log the error but fail open to prevent blocking legitimate requests
+                // when Redis is temporarily unavailable
+                tracing::warn!("Redis rate limit check failed: {}. Allowing request.", e);
+                Ok(())
+            },
+        }
+    }
+
+    /// Get the current request count for an IP without incrementing
+    ///
+    /// Useful for debugging and monitoring.
+    pub async fn get_count(&self, ip: IpAddr) -> Result<u32, RateLimitError> {
+        use redis::AsyncCommands;
+
+        let key = format!("rate_limit:{}:{}", self.key_prefix, ip);
+        let mut conn = self.redis.clone();
+
+        match conn.get::<_, Option<u32>>(&key).await {
+            Ok(Some(count)) => Ok(count),
+            Ok(None) => Ok(0),
+            Err(e) => {
+                tracing::warn!("Redis get_count failed: {}", e);
+                Ok(0)
+            },
+        }
+    }
+
+    /// Reset the rate limit for an IP
+    ///
+    /// Useful for testing or manual intervention.
+    pub async fn reset(&self, ip: IpAddr) -> Result<(), RateLimitError> {
+        let key = format!("rate_limit:{}:{}", self.key_prefix, ip);
+        let mut conn = self.redis.clone();
+
+        let result: Result<(), redis::RedisError> =
+            redis::cmd("DEL").arg(&key).query_async(&mut conn).await;
+
+        if let Err(e) = result {
+            tracing::warn!("Redis reset failed: {}", e);
+        }
+        Ok(())
+    }
+
+    /// Get the remaining requests for an IP in the current window
+    pub async fn get_remaining(&self, ip: IpAddr) -> Result<u32, RateLimitError> {
+        let count = self.get_count(ip).await?;
+        let remaining = self.config.max_requests.saturating_sub(count);
+        Ok(remaining)
+    }
+}
+
+/// Rate limiting middleware using Redis-backed limiter
+///
+/// # Usage
+/// ```rust,ignore
+/// use axum::{Router, middleware};
+/// use loyalty_backend::middleware::rate_limit::{redis_rate_limit_middleware, RedisRateLimiter};
+///
+/// let limiter = RedisRateLimiter::new(redis_conn, RateLimitConfig::default(), "api");
+///
+/// let app = Router::new()
+///     .route("/api/login", post(login))
+///     .layer(middleware::from_fn_with_state(
+///         limiter,
+///         redis_rate_limit_middleware,
+///     ));
+/// ```
+pub async fn redis_rate_limit_middleware(
+    axum::extract::State(limiter): axum::extract::State<RedisRateLimiter>,
+    request: Request,
+    next: Next,
+) -> Result<Response, RateLimitError> {
+    let ip = get_client_ip(&request);
+    limiter.check(ip).await?;
+    Ok(next.run(request).await)
+}
 
 #[cfg(test)]
 mod tests {
@@ -332,5 +498,68 @@ mod tests {
 
         let relaxed = RateLimitConfig::relaxed();
         assert_eq!(relaxed.max_requests, 1000);
+    }
+
+    // Redis rate limiter tests require a running Redis instance
+    // These are integration tests that should be run with:
+    // cargo test -- --ignored
+
+    #[tokio::test]
+    #[ignore = "Requires running Redis instance"]
+    async fn test_redis_rate_limiter_allows_requests() {
+        use redis::aio::ConnectionManager;
+
+        let client = redis::Client::open("redis://127.0.0.1:6379").unwrap();
+        let conn = ConnectionManager::new(client).await.unwrap();
+        let limiter = RedisRateLimiter::new(conn, RateLimitConfig::new(5, 60), "test");
+        let ip: IpAddr = "192.168.100.1".parse().unwrap();
+
+        // Reset any existing state
+        limiter.reset(ip).await.unwrap();
+
+        // First 5 requests should succeed
+        for _ in 0..5 {
+            assert!(limiter.check(ip).await.is_ok());
+        }
+
+        // 6th request should fail
+        let result = limiter.check(ip).await;
+        assert!(matches!(
+            result,
+            Err(RateLimitError::TooManyRequests { .. })
+        ));
+
+        // Cleanup
+        limiter.reset(ip).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires running Redis instance"]
+    async fn test_redis_rate_limiter_get_remaining() {
+        use redis::aio::ConnectionManager;
+
+        let client = redis::Client::open("redis://127.0.0.1:6379").unwrap();
+        let conn = ConnectionManager::new(client).await.unwrap();
+        let limiter = RedisRateLimiter::new(conn, RateLimitConfig::new(10, 60), "test_remaining");
+        let ip: IpAddr = "192.168.100.2".parse().unwrap();
+
+        // Reset any existing state
+        limiter.reset(ip).await.unwrap();
+
+        // Initially should have all requests remaining
+        let remaining = limiter.get_remaining(ip).await.unwrap();
+        assert_eq!(remaining, 10);
+
+        // Make 3 requests
+        for _ in 0..3 {
+            limiter.check(ip).await.unwrap();
+        }
+
+        // Should have 7 remaining
+        let remaining = limiter.get_remaining(ip).await.unwrap();
+        assert_eq!(remaining, 7);
+
+        // Cleanup
+        limiter.reset(ip).await.unwrap();
     }
 }

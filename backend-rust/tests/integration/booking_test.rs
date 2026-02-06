@@ -9,7 +9,7 @@
 //! - Checking room availability
 
 use axum::Router;
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{Duration, Utc};
 use serde_json::{json, Value};
 use uuid::Uuid;
 

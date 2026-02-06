@@ -14,10 +14,7 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::common::{
-    generate_test_token, init_test_db, setup_test, teardown_test, TestClient, TestDatabase,
-    TestUser,
-};
+use crate::common::{generate_test_token, setup_test, teardown_test, TestClient, TestUser};
 
 // ============================================================================
 // Test Setup Helpers
@@ -461,7 +458,7 @@ async fn test_get_survey_with_questions() {
         let questions = json.get("questions").and_then(|q| q.as_array());
         assert!(questions.is_some(), "Questions should be an array");
         assert!(
-            questions.unwrap().len() >= 1,
+            !questions.unwrap().is_empty(),
             "Should have at least one question"
         );
     }

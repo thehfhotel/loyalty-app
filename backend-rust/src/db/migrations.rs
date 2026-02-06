@@ -240,8 +240,7 @@ mod tests {
         // This will work even without a database connection
         // It just reads the embedded migrations
         let migrations = get_available_migrations();
-        // Migrations list may be empty if no migrations exist yet
-        // This is just a compilation test
-        assert!(migrations.len() >= 0);
+        // Verify we have at least one migration
+        assert!(!migrations.is_empty(), "Expected at least one migration");
     }
 }

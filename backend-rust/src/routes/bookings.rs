@@ -10,9 +10,10 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
-use chrono::{NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 use validator::Validate;
 
@@ -492,30 +493,255 @@ async fn check_availability(
     Ok(Json(availability))
 }
 
-// ==================== DATABASE OPERATIONS ====================
-// Note: These are placeholder implementations. In a real application,
-// these would interact with the actual database using sqlx.
+// ==================== DATABASE ROW TYPES ====================
 
-async fn query_bookings(
-    _db: &sqlx::PgPool,
-    _user_id: Option<Uuid>,
-    _status: Option<&str>,
-    _limit: i32,
-    _offset: i32,
-) -> AppResult<(Vec<BookingResponse>, i64)> {
-    // TODO: Implement actual database query
-    // This is a placeholder that returns empty results
-    Ok((Vec::new(), 0))
+/// Database row for booking with room info
+#[derive(Debug, FromRow)]
+#[allow(dead_code)]
+struct BookingRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub room_id: Uuid,
+    pub room_type_id: Uuid,
+    pub check_in_date: NaiveDate,
+    pub check_out_date: NaiveDate,
+    pub num_guests: i32,
+    pub total_price: Decimal,
+    pub points_earned: Option<i32>,
+    pub status: String,
+    pub cancelled_at: Option<DateTime<Utc>>,
+    pub cancellation_reason: Option<String>,
+    pub notes: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    // Joined fields
+    pub room_number: Option<String>,
+    pub room_type_name: Option<String>,
 }
 
-async fn query_booking_by_id(_db: &sqlx::PgPool, booking_id: Uuid) -> AppResult<BookingResponse> {
-    // TODO: Implement actual database query
-    // This is a placeholder that returns a not found error
-    Err(AppError::NotFound(format!("Booking {}", booking_id)))
+impl BookingRow {
+    fn into_response(self) -> BookingResponse {
+        let nights = (self.check_out_date - self.check_in_date).num_days() as i32;
+        let room_type =
+            self.room_type_name
+                .as_deref()
+                .and_then(|name| match name.to_lowercase().as_str() {
+                    "standard" => Some(RoomType::Standard),
+                    "deluxe" => Some(RoomType::Deluxe),
+                    "suite" => Some(RoomType::Suite),
+                    "executive" => Some(RoomType::Executive),
+                    "presidential" => Some(RoomType::Presidential),
+                    _ => None,
+                });
+
+        let status = match self.status.as_str() {
+            "pending" => BookingStatus::Pending,
+            "confirmed" => BookingStatus::Confirmed,
+            "checked_in" => BookingStatus::CheckedIn,
+            "checked_out" | "completed" => BookingStatus::CheckedOut,
+            "cancelled" => BookingStatus::Cancelled,
+            "no_show" => BookingStatus::NoShow,
+            _ => BookingStatus::Confirmed,
+        };
+
+        BookingResponse {
+            id: self.id,
+            user_id: self.user_id,
+            booking_reference: format!("BK{}", self.id.to_string()[..8].to_uppercase()),
+            status,
+            check_in_date: self.check_in_date,
+            check_out_date: self.check_out_date,
+            nights_count: nights,
+            room_type,
+            room_number: self.room_number,
+            total_amount: self.total_price,
+            currency: "THB".to_string(),
+            guest_count: Some(self.num_guests),
+            special_requests: self.notes,
+            confirmation_number: Some(format!("CNF{}", self.id.to_string()[..12].to_uppercase())),
+            points_earned: self.points_earned,
+            points_redeemed: None,
+            created_at: self.created_at,
+        }
+    }
+}
+
+/// Room type row for availability check
+#[derive(Debug, FromRow)]
+struct RoomTypeRow {
+    pub id: Uuid,
+    pub name: String,
+    pub price_per_night: Decimal,
+}
+
+// ==================== DATABASE OPERATIONS ====================
+
+async fn query_bookings(
+    db: &PgPool,
+    user_id: Option<Uuid>,
+    status: Option<&str>,
+    limit: i32,
+    offset: i32,
+) -> AppResult<(Vec<BookingResponse>, i64)> {
+    // Build query dynamically based on filters
+    let (bookings, total) = if let Some(uid) = user_id {
+        // User-specific query
+        if let Some(st) = status {
+            let total: (i64,) =
+                sqlx::query_as("SELECT COUNT(*) FROM bookings WHERE user_id = $1 AND status = $2")
+                    .bind(uid)
+                    .bind(st)
+                    .fetch_one(db)
+                    .await?;
+
+            let rows: Vec<BookingRow> = sqlx::query_as(
+                r#"
+                SELECT
+                    b.id, b.user_id, b.room_id, b.room_type_id,
+                    b.check_in_date, b.check_out_date, b.num_guests,
+                    b.total_price, b.points_earned, b.status,
+                    b.cancelled_at, b.cancellation_reason, b.notes,
+                    b.created_at, b.updated_at,
+                    r.room_number, rt.name as room_type_name
+                FROM bookings b
+                LEFT JOIN rooms r ON b.room_id = r.id
+                LEFT JOIN room_types rt ON b.room_type_id = rt.id
+                WHERE b.user_id = $1 AND b.status = $2
+                ORDER BY b.created_at DESC
+                LIMIT $3 OFFSET $4
+                "#,
+            )
+            .bind(uid)
+            .bind(st)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(db)
+            .await?;
+
+            (rows, total.0)
+        } else {
+            let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM bookings WHERE user_id = $1")
+                .bind(uid)
+                .fetch_one(db)
+                .await?;
+
+            let rows: Vec<BookingRow> = sqlx::query_as(
+                r#"
+                SELECT
+                    b.id, b.user_id, b.room_id, b.room_type_id,
+                    b.check_in_date, b.check_out_date, b.num_guests,
+                    b.total_price, b.points_earned, b.status,
+                    b.cancelled_at, b.cancellation_reason, b.notes,
+                    b.created_at, b.updated_at,
+                    r.room_number, rt.name as room_type_name
+                FROM bookings b
+                LEFT JOIN rooms r ON b.room_id = r.id
+                LEFT JOIN room_types rt ON b.room_type_id = rt.id
+                WHERE b.user_id = $1
+                ORDER BY b.created_at DESC
+                LIMIT $2 OFFSET $3
+                "#,
+            )
+            .bind(uid)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(db)
+            .await?;
+
+            (rows, total.0)
+        }
+    } else {
+        // Admin query - all bookings
+        if let Some(st) = status {
+            let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM bookings WHERE status = $1")
+                .bind(st)
+                .fetch_one(db)
+                .await?;
+
+            let rows: Vec<BookingRow> = sqlx::query_as(
+                r#"
+                SELECT
+                    b.id, b.user_id, b.room_id, b.room_type_id,
+                    b.check_in_date, b.check_out_date, b.num_guests,
+                    b.total_price, b.points_earned, b.status,
+                    b.cancelled_at, b.cancellation_reason, b.notes,
+                    b.created_at, b.updated_at,
+                    r.room_number, rt.name as room_type_name
+                FROM bookings b
+                LEFT JOIN rooms r ON b.room_id = r.id
+                LEFT JOIN room_types rt ON b.room_type_id = rt.id
+                WHERE b.status = $1
+                ORDER BY b.created_at DESC
+                LIMIT $2 OFFSET $3
+                "#,
+            )
+            .bind(st)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(db)
+            .await?;
+
+            (rows, total.0)
+        } else {
+            let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM bookings")
+                .fetch_one(db)
+                .await?;
+
+            let rows: Vec<BookingRow> = sqlx::query_as(
+                r#"
+                SELECT
+                    b.id, b.user_id, b.room_id, b.room_type_id,
+                    b.check_in_date, b.check_out_date, b.num_guests,
+                    b.total_price, b.points_earned, b.status,
+                    b.cancelled_at, b.cancellation_reason, b.notes,
+                    b.created_at, b.updated_at,
+                    r.room_number, rt.name as room_type_name
+                FROM bookings b
+                LEFT JOIN rooms r ON b.room_id = r.id
+                LEFT JOIN room_types rt ON b.room_type_id = rt.id
+                ORDER BY b.created_at DESC
+                LIMIT $1 OFFSET $2
+                "#,
+            )
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(db)
+            .await?;
+
+            (rows, total.0)
+        }
+    };
+
+    let responses: Vec<BookingResponse> = bookings.into_iter().map(|r| r.into_response()).collect();
+    Ok((responses, total))
+}
+
+async fn query_booking_by_id(db: &PgPool, booking_id: Uuid) -> AppResult<BookingResponse> {
+    let row: BookingRow = sqlx::query_as(
+        r#"
+        SELECT
+            b.id, b.user_id, b.room_id, b.room_type_id,
+            b.check_in_date, b.check_out_date, b.num_guests,
+            b.total_price, b.points_earned, b.status,
+            b.cancelled_at, b.cancellation_reason, b.notes,
+            b.created_at, b.updated_at,
+            r.room_number, rt.name as room_type_name
+        FROM bookings b
+        LEFT JOIN rooms r ON b.room_id = r.id
+        LEFT JOIN room_types rt ON b.room_type_id = rt.id
+        WHERE b.id = $1
+        "#,
+    )
+    .bind(booking_id)
+    .fetch_optional(db)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Booking {}", booking_id)))?;
+
+    Ok(row.into_response())
 }
 
 async fn insert_booking(
-    _db: &sqlx::PgPool,
+    db: &PgPool,
     user_id: Uuid,
     check_in: NaiveDate,
     check_out: NaiveDate,
@@ -523,95 +749,383 @@ async fn insert_booking(
     guests: i32,
     special_requests: Option<String>,
 ) -> AppResult<BookingResponse> {
-    // TODO: Implement actual database insert
-    // This is a placeholder implementation
-    let nights = (check_out - check_in).num_days() as i32;
-    let price_per_night = Decimal::new(1500, 0); // 1500 THB placeholder
-    let total = price_per_night * Decimal::from(nights);
+    // Get room type info and find an available room
+    let room_type_name = room_type
+        .map(|rt| format!("{:?}", rt))
+        .unwrap_or_else(|| "Standard".to_string());
 
-    Ok(BookingResponse {
-        id: Uuid::new_v4(),
-        user_id,
-        booking_reference: format!("BK{}", Uuid::new_v4().to_string()[..8].to_uppercase()),
-        status: BookingStatus::Confirmed,
-        check_in_date: check_in,
-        check_out_date: check_out,
-        nights_count: nights,
-        room_type,
-        room_number: None,
-        total_amount: total,
-        currency: "THB".to_string(),
-        guest_count: Some(guests),
-        special_requests,
-        confirmation_number: Some(format!("CNF{}", chrono::Utc::now().timestamp())),
-        points_earned: None,
-        points_redeemed: None,
-        created_at: Some(Utc::now()),
-    })
+    // Find the room type
+    let room_type_row: RoomTypeRow = sqlx::query_as(
+        r#"
+        SELECT id, name, price_per_night
+        FROM room_types
+        WHERE LOWER(name) = LOWER($1) AND is_active = true
+        "#,
+    )
+    .bind(&room_type_name)
+    .fetch_optional(db)
+    .await?
+    .ok_or_else(|| AppError::BadRequest(format!("Room type '{}' not found", room_type_name)))?;
+
+    // Find an available room of this type
+    let room_id: Option<(Uuid,)> = sqlx::query_as(
+        r#"
+        SELECT r.id
+        FROM rooms r
+        WHERE r.room_type_id = $1
+          AND r.is_active = true
+          AND r.id NOT IN (
+            -- Exclude rooms with existing bookings that overlap
+            SELECT DISTINCT b.room_id
+            FROM bookings b
+            WHERE b.status NOT IN ('cancelled')
+              AND b.check_in_date < $3
+              AND b.check_out_date > $2
+          )
+          AND r.id NOT IN (
+            -- Exclude rooms with blocked dates in the range
+            SELECT DISTINCT rbd.room_id
+            FROM room_blocked_dates rbd
+            WHERE rbd.blocked_date >= $2 AND rbd.blocked_date < $3
+          )
+        LIMIT 1
+        "#,
+    )
+    .bind(room_type_row.id)
+    .bind(check_in)
+    .bind(check_out)
+    .fetch_optional(db)
+    .await?;
+
+    let room_id = room_id
+        .ok_or_else(|| AppError::BadRequest("No rooms available for selected dates".to_string()))?
+        .0;
+
+    // Calculate total price
+    let nights = (check_out - check_in).num_days() as i32;
+    let total_price = room_type_row.price_per_night * Decimal::from(nights);
+
+    // Insert booking
+    let row: BookingRow = sqlx::query_as(
+        r#"
+        INSERT INTO bookings (user_id, room_id, room_type_id, check_in_date, check_out_date, num_guests, total_price, notes, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'confirmed')
+        RETURNING
+            id, user_id, room_id, room_type_id, check_in_date, check_out_date,
+            num_guests, total_price, points_earned, status, cancelled_at,
+            cancellation_reason, notes, created_at, updated_at,
+            NULL::varchar as room_number, NULL::varchar as room_type_name
+        "#
+    )
+    .bind(user_id)
+    .bind(room_id)
+    .bind(room_type_row.id)
+    .bind(check_in)
+    .bind(check_out)
+    .bind(guests)
+    .bind(total_price)
+    .bind(&special_requests)
+    .fetch_one(db)
+    .await?;
+
+    // Fetch full booking with joins
+    query_booking_by_id(db, row.id).await
 }
 
 async fn update_booking_in_db(
-    _db: &sqlx::PgPool,
-    _booking_id: Uuid,
-    _check_in: NaiveDate,
-    _check_out: NaiveDate,
-    _room_type: Option<RoomType>,
-    _guests: i32,
-    _special_requests: Option<String>,
+    db: &PgPool,
+    booking_id: Uuid,
+    check_in: NaiveDate,
+    check_out: NaiveDate,
+    room_type: Option<RoomType>,
+    guests: i32,
+    special_requests: Option<String>,
 ) -> AppResult<BookingResponse> {
-    // TODO: Implement actual database update
-    Err(AppError::NotFound("Booking".to_string()))
+    // Get current booking
+    let current = query_booking_by_id(db, booking_id).await?;
+
+    // If room type changed, find new room
+    let (room_id, room_type_id, total_price) = if room_type != current.room_type {
+        let room_type_name = room_type
+            .map(|rt| format!("{:?}", rt))
+            .unwrap_or_else(|| "Standard".to_string());
+
+        let room_type_row: RoomTypeRow = sqlx::query_as(
+            r#"
+            SELECT id, name, price_per_night
+            FROM room_types
+            WHERE LOWER(name) = LOWER($1) AND is_active = true
+            "#,
+        )
+        .bind(&room_type_name)
+        .fetch_optional(db)
+        .await?
+        .ok_or_else(|| AppError::BadRequest(format!("Room type '{}' not found", room_type_name)))?;
+
+        // Find available room (excluding current booking)
+        let room_id: Option<(Uuid,)> = sqlx::query_as(
+            r#"
+            SELECT r.id
+            FROM rooms r
+            WHERE r.room_type_id = $1
+              AND r.is_active = true
+              AND r.id NOT IN (
+                SELECT DISTINCT b.room_id
+                FROM bookings b
+                WHERE b.status NOT IN ('cancelled')
+                  AND b.id != $4
+                  AND b.check_in_date < $3
+                  AND b.check_out_date > $2
+              )
+            LIMIT 1
+            "#,
+        )
+        .bind(room_type_row.id)
+        .bind(check_in)
+        .bind(check_out)
+        .bind(booking_id)
+        .fetch_optional(db)
+        .await?;
+
+        let room_id = room_id
+            .ok_or_else(|| {
+                AppError::BadRequest("No rooms available for selected dates".to_string())
+            })?
+            .0;
+
+        let nights = (check_out - check_in).num_days() as i32;
+        let total = room_type_row.price_per_night * Decimal::from(nights);
+
+        (room_id, room_type_row.id, total)
+    } else {
+        // Recalculate price with current room type
+        let room_info: (Uuid, Uuid, Decimal) = sqlx::query_as(
+            r#"
+            SELECT b.room_id, b.room_type_id, rt.price_per_night
+            FROM bookings b
+            JOIN room_types rt ON b.room_type_id = rt.id
+            WHERE b.id = $1
+            "#,
+        )
+        .bind(booking_id)
+        .fetch_one(db)
+        .await?;
+
+        let nights = (check_out - check_in).num_days() as i32;
+        let total = room_info.2 * Decimal::from(nights);
+
+        (room_info.0, room_info.1, total)
+    };
+
+    // Update booking
+    sqlx::query(
+        r#"
+        UPDATE bookings
+        SET room_id = $2, room_type_id = $3, check_in_date = $4, check_out_date = $5,
+            num_guests = $6, total_price = $7, notes = $8, updated_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(booking_id)
+    .bind(room_id)
+    .bind(room_type_id)
+    .bind(check_in)
+    .bind(check_out)
+    .bind(guests)
+    .bind(total_price)
+    .bind(&special_requests)
+    .execute(db)
+    .await?;
+
+    query_booking_by_id(db, booking_id).await
 }
 
 async fn cancel_booking_in_db(
-    _db: &sqlx::PgPool,
-    _booking_id: Uuid,
-    _reason: Option<String>,
+    db: &PgPool,
+    booking_id: Uuid,
+    reason: Option<String>,
     _admin_cancel: bool,
 ) -> AppResult<BookingResponse> {
-    // TODO: Implement actual database update
-    Err(AppError::NotFound("Booking".to_string()))
+    sqlx::query(
+        r#"
+        UPDATE bookings
+        SET status = 'cancelled', cancelled_at = NOW(), cancellation_reason = $2, updated_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(booking_id)
+    .bind(&reason)
+    .execute(db)
+    .await?;
+
+    query_booking_by_id(db, booking_id).await
 }
 
-async fn complete_booking_in_db(
-    _db: &sqlx::PgPool,
-    _booking_id: Uuid,
-) -> AppResult<BookingResponse> {
-    // TODO: Implement actual database update
-    Err(AppError::NotFound("Booking".to_string()))
+async fn complete_booking_in_db(db: &PgPool, booking_id: Uuid) -> AppResult<BookingResponse> {
+    sqlx::query(
+        r#"
+        UPDATE bookings
+        SET status = 'completed', updated_at = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(booking_id)
+    .execute(db)
+    .await?;
+
+    query_booking_by_id(db, booking_id).await
 }
 
 async fn check_room_availability(
-    _db: &sqlx::PgPool,
+    db: &PgPool,
     check_in: NaiveDate,
     check_out: NaiveDate,
     room_type: Option<RoomType>,
 ) -> AppResult<AvailabilityResponse> {
-    // TODO: Implement actual availability check
-    // This is a placeholder implementation
     let nights = (check_out - check_in).num_days() as i32;
-    let price_per_night = Decimal::new(1500, 0);
 
-    Ok(AvailabilityResponse {
-        available: true,
-        room_type: room_type.map(|rt| format!("{:?}", rt).to_lowercase()),
-        check_in,
-        check_out,
-        available_rooms: 5, // Placeholder
-        price_per_night: Some(price_per_night),
-        total_price: Some(price_per_night * Decimal::from(nights)),
-    })
+    if let Some(rt) = room_type {
+        let room_type_name = format!("{:?}", rt);
+
+        // Get room type info
+        let room_type_info: Option<RoomTypeRow> = sqlx::query_as(
+            r#"
+            SELECT id, name, price_per_night
+            FROM room_types
+            WHERE LOWER(name) = LOWER($1) AND is_active = true
+            "#,
+        )
+        .bind(&room_type_name)
+        .fetch_optional(db)
+        .await?;
+
+        if let Some(rt_info) = room_type_info {
+            // Count available rooms
+            let available_count: (i64,) = sqlx::query_as(
+                r#"
+                SELECT COUNT(*)
+                FROM rooms r
+                WHERE r.room_type_id = $1
+                  AND r.is_active = true
+                  AND r.id NOT IN (
+                    SELECT DISTINCT b.room_id
+                    FROM bookings b
+                    WHERE b.status NOT IN ('cancelled')
+                      AND b.check_in_date < $3
+                      AND b.check_out_date > $2
+                  )
+                  AND r.id NOT IN (
+                    SELECT DISTINCT rbd.room_id
+                    FROM room_blocked_dates rbd
+                    WHERE rbd.blocked_date >= $2 AND rbd.blocked_date < $3
+                  )
+                "#,
+            )
+            .bind(rt_info.id)
+            .bind(check_in)
+            .bind(check_out)
+            .fetch_one(db)
+            .await?;
+
+            let total_price = rt_info.price_per_night * Decimal::from(nights);
+
+            Ok(AvailabilityResponse {
+                available: available_count.0 > 0,
+                room_type: Some(rt_info.name.to_lowercase()),
+                check_in,
+                check_out,
+                available_rooms: available_count.0 as i32,
+                price_per_night: Some(rt_info.price_per_night),
+                total_price: Some(total_price),
+            })
+        } else {
+            Ok(AvailabilityResponse {
+                available: false,
+                room_type: Some(room_type_name.to_lowercase()),
+                check_in,
+                check_out,
+                available_rooms: 0,
+                price_per_night: None,
+                total_price: None,
+            })
+        }
+    } else {
+        // Check all room types
+        let total_available: (i64,) = sqlx::query_as(
+            r#"
+            SELECT COUNT(*)
+            FROM rooms r
+            WHERE r.is_active = true
+              AND r.id NOT IN (
+                SELECT DISTINCT b.room_id
+                FROM bookings b
+                WHERE b.status NOT IN ('cancelled')
+                  AND b.check_in_date < $2
+                  AND b.check_out_date > $1
+              )
+              AND r.id NOT IN (
+                SELECT DISTINCT rbd.room_id
+                FROM room_blocked_dates rbd
+                WHERE rbd.blocked_date >= $1 AND rbd.blocked_date < $2
+              )
+            "#,
+        )
+        .bind(check_in)
+        .bind(check_out)
+        .fetch_one(db)
+        .await?;
+
+        // Get cheapest room type for price reference
+        let cheapest: Option<(Decimal,)> =
+            sqlx::query_as("SELECT MIN(price_per_night) FROM room_types WHERE is_active = true")
+                .fetch_optional(db)
+                .await?;
+
+        let price_per_night = cheapest.map(|c| c.0);
+        let total_price = price_per_night.map(|p| p * Decimal::from(nights));
+
+        Ok(AvailabilityResponse {
+            available: total_available.0 > 0,
+            room_type: None,
+            check_in,
+            check_out,
+            available_rooms: total_available.0 as i32,
+            price_per_night,
+            total_price,
+        })
+    }
 }
 
 async fn award_loyalty_points(
-    _db: &sqlx::PgPool,
-    _user_id: Uuid,
-    _points: i32,
-    _nights: i32,
-    _booking_id: Uuid,
+    db: &PgPool,
+    user_id: Uuid,
+    points: i32,
+    nights: i32,
+    booking_id: Uuid,
 ) -> AppResult<()> {
-    // TODO: Implement loyalty points awarding using stored procedure
-    // This would call: SELECT award_points(user_id, points, 'booking', 'BOOKING-{booking_id}', nights)
+    // Use the award_points stored procedure
+    // award_points(p_user_id, p_points, p_type, p_description, p_reference_id, p_nights_stayed)
+    let reference_id = format!("BOOKING-{}", booking_id);
+
+    sqlx::query(
+        r#"
+        SELECT award_points($1, $2, 'earned_stay'::points_transaction_type, 'Points earned from booking', $3, $4)
+        "#
+    )
+    .bind(user_id)
+    .bind(points)
+    .bind(&reference_id)
+    .bind(nights)
+    .execute(db)
+    .await?;
+
+    // Update the booking with points earned
+    sqlx::query("UPDATE bookings SET points_earned = $2 WHERE id = $1")
+        .bind(booking_id)
+        .bind(points)
+        .execute(db)
+        .await?;
+
     Ok(())
 }
 

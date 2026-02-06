@@ -22,15 +22,17 @@ services:
   backend:
     container_name: loyalty_backend_production
     build:
-      target: runner  # Use production-optimized runner stage instead of development
+      target: runner  # Use production-optimized runner stage with Rust binary
     environment:
       # Environment variables are loaded from .env file created by GitHub Actions
       # The workflow injects secrets from GitHub Secrets into .env
       # Non-sensitive defaults only (all secrets come from .env)
 
+      RUST_ENV: ${RUST_ENV:-production}
       NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${BACKEND_PORT:-4001}
+      RUST_LOG: ${RUST_LOG:-info}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      CORS_ORIGINS: ${CORS_ORIGINS:-}
 
       # Secrets (loaded from .env created by GitHub Actions)
       JWT_SECRET: ${JWT_SECRET}
@@ -49,27 +51,15 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL}
-      LINE_CHANNEL_ID: ${LINE_CHANNEL_ID}
-      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET}
+      LINE_CLIENT_ID: ${LINE_CHANNEL_ID}
+      LINE_CLIENT_SECRET: ${LINE_CHANNEL_SECRET}
       LINE_CALLBACK_URL: ${LINE_CALLBACK_URL}
-
-      # Translation feature (disabled by default)
-      TRANSLATION_FEATURE_ENABLED: ${TRANSLATION_FEATURE_ENABLED:-false}
-      AZURE_TRANSLATION_TEXT_URI: ${AZURE_TRANSLATION_TEXT_URI:-}
-      AZURE_TRANSLATION_KEY_1: ${AZURE_TRANSLATION_KEY_1:-}
-      AZURE_TRANSLATION_KEY_2: ${AZURE_TRANSLATION_KEY_2:-}
-      AZURE_TRANSLATION_REGION: ${AZURE_TRANSLATION_REGION:-global}
-
-      # Loyalty System
-      LOYALTY_USERNAME: ${LOYALTY_USERNAME:-}
-      LOYALTY_PASSWORD: ${LOYALTY_PASSWORD:-}
 
       # Email Service (SMTP/IMAP)
       SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-}
       IMAP_HOST: ${IMAP_HOST:-}
       IMAP_PORT: ${IMAP_PORT:-993}
       IMAP_USER: ${IMAP_USER:-}
@@ -78,9 +68,9 @@ services:
       # Remove development volume mounts for production
       - backend_logs:/app/logs
       - backend_storage:/app/storage
-    # Use Dockerfile CMD (node dist/index.js) - no override needed
+    # Use Dockerfile CMD (/app/loyalty-backend) - no override needed
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:4001/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

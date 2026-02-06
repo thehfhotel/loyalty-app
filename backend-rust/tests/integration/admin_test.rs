@@ -11,8 +11,8 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::common::{
-    generate_test_token, init_test_db, init_test_redis, setup_test, teardown_test, TestClient,
-    TestDatabase, TestUser, TEST_JWT_SECRET,
+    generate_test_token, init_test_redis, setup_test, teardown_test, TestClient, TestUser,
+    TEST_JWT_SECRET,
 };
 
 use loyalty_backend::config::Settings;
@@ -179,7 +179,7 @@ async fn test_list_users_admin() {
         .expect("Failed to create admin tables");
 
     // Create admin user
-    let (admin, token) = create_admin_user(&pool).await;
+    let (_admin, token) = create_admin_user(&pool).await;
 
     // Create some additional users for the list
     for i in 0..3 {

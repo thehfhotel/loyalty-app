@@ -4,12 +4,13 @@
 //! and admin user management operations.
 
 use axum::{
-    extract::{Extension, Path, Query, State},
+    extract::{Extension, Multipart, Path, Query, State},
     http::StatusCode,
     middleware,
     routing::{delete, get, put},
     Json, Router,
 };
+use bytes::Bytes;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -19,6 +20,7 @@ use validator::Validate;
 
 use crate::error::AppError;
 use crate::middleware::auth::{auth_middleware, has_role, AuthUser};
+use crate::services::storage::{AllowedMimeTypes, StorageService};
 use crate::state::AppState as FullAppState;
 
 // ============================================================================
@@ -604,15 +606,98 @@ async fn list_users(
     }))
 }
 
-/// Upload avatar handler (placeholder)
+/// Avatar upload response with URL
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AvatarUploadResponse {
+    #[serde(rename = "avatarUrl")]
+    pub avatar_url: String,
+}
+
+/// Upload avatar handler
+///
+/// Accepts multipart form data with an 'avatar' field containing the image file.
+/// Supported formats: jpeg, jpg, png, gif, webp
+/// Maximum file size: 15MB
 async fn upload_avatar(
-    State(_state): State<FullAppState>,
-    Extension(_auth_user): Extension<AuthUser>,
-) -> Result<(StatusCode, Json<SuccessResponse<()>>), AppError> {
-    // TODO: Implement file upload handling with multipart form data
-    Err(AppError::Internal(
-        "Avatar upload not yet implemented".to_string(),
-    ))
+    State(state): State<FullAppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    mut multipart: Multipart,
+) -> Result<Json<SuccessResponse<AvatarUploadResponse>>, AppError> {
+    let user_id = Uuid::parse_str(&auth_user.id)
+        .map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))?;
+
+    // Extract the avatar file from multipart form data
+    let mut file_data: Option<Bytes> = None;
+    let mut content_type: Option<String> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::BadRequest(format!("Failed to read multipart data: {}", e)))?
+    {
+        let name = field.name().unwrap_or_default().to_string();
+        if name == "avatar" {
+            // Get content type
+            content_type = field
+                .content_type()
+                .map(|ct| ct.to_string())
+                .or_else(|| Some("image/jpeg".to_string()));
+
+            // Read file data
+            file_data =
+                Some(field.bytes().await.map_err(|e| {
+                    AppError::BadRequest(format!("Failed to read file data: {}", e))
+                })?);
+            break;
+        }
+    }
+
+    let data =
+        file_data.ok_or_else(|| AppError::BadRequest("No avatar file uploaded".to_string()))?;
+    let mime_type = content_type.unwrap_or_else(|| "image/jpeg".to_string());
+
+    // Validate content type
+    if !AllowedMimeTypes::is_valid_avatar_type(&mime_type) {
+        return Err(AppError::BadRequest(format!(
+            "Only image files are allowed (jpeg, jpg, png, gif, webp). Got: {}",
+            mime_type
+        )));
+    }
+
+    // Validate file size (15MB max for avatar processing)
+    const MAX_AVATAR_SIZE: usize = 15 * 1024 * 1024;
+    if data.len() > MAX_AVATAR_SIZE {
+        return Err(AppError::BadRequest(format!(
+            "File size too large. Maximum size is {}MB",
+            MAX_AVATAR_SIZE / (1024 * 1024)
+        )));
+    }
+
+    // Save avatar using storage service
+    let storage = StorageService::new();
+    storage.initialize().await?;
+
+    let relative_path = storage
+        .save_avatar(&user_id.to_string(), data, &mime_type)
+        .await?;
+
+    // Build the full URL path for the avatar
+    let avatar_url = format!("/storage/{}", relative_path);
+
+    // Update the user's profile with the new avatar URL
+    sqlx::query("UPDATE user_profiles SET avatar_url = $2, updated_at = NOW() WHERE user_id = $1")
+        .bind(user_id)
+        .bind(&avatar_url)
+        .execute(state.db())
+        .await?;
+
+    tracing::info!("Avatar uploaded for user {}: {}", user_id, avatar_url);
+
+    Ok(Json(SuccessResponse {
+        success: true,
+        message: Some("Avatar uploaded successfully".to_string()),
+        data: Some(AvatarUploadResponse { avatar_url }),
+    }))
 }
 
 /// Delete avatar handler

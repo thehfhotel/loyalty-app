@@ -7,7 +7,6 @@
 //! - Helper functions for making authenticated requests
 //! - Cleanup utilities
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::{body::Body, http::Request, Router};

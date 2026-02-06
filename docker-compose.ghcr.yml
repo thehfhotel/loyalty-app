@@ -13,9 +13,8 @@
 services:
   backend:
     image: ghcr.io/thehfhotel/loyalty-app/backend:${IMAGE_TAG:-latest}
-    # Override entrypoint for GHCR images since the runner stage CMD is different
-    entrypoint: []
-    command: ["node", "dist/index.js"]
+    # Rust binary runs directly from Dockerfile CMD (/app/loyalty-backend)
+    # No entrypoint/command override needed - the Dockerfile sets the correct CMD
     # Clear volume mounts that would override container contents with empty local directories
     volumes:
       - backend_logs:/app/logs

@@ -16,6 +16,7 @@ use validator::Validate;
 
 use crate::error::AppError;
 use crate::middleware::auth::{auth_middleware, AuthUser};
+use crate::services::email::{EmailService, EmailServiceImpl};
 
 /// Application state type alias for auth routes
 /// Uses the main state from crate::state or a compatible state type
@@ -824,7 +825,31 @@ async fn forgot_password(
         .await
         .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
-        // TODO: Send email with reset link containing reset_token
+        // Send email with reset link containing reset_token
+        let email_service = EmailServiceImpl::from_smtp_config(
+            &state.config().email.smtp,
+            &state.config().server.frontend_url,
+        );
+
+        if email_service.is_configured() {
+            if let Err(e) = email_service
+                .send_password_reset_email(&_email, &reset_token)
+                .await
+            {
+                // Log error but don't fail the request - we still want to return success
+                // to prevent email enumeration
+                tracing::error!("Failed to send password reset email: {}", e);
+            } else {
+                tracing::info!("Password reset email sent to user: {}", user_id);
+            }
+        } else {
+            // In development, log that email would have been sent
+            tracing::warn!(
+                "SMTP not configured, skipping password reset email for user: {}",
+                user_id
+            );
+        }
+
         tracing::info!("Password reset requested for user: {}", user_id);
     } else {
         // Log attempt for non-existent email (don't reveal to user)

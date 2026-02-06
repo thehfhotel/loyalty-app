@@ -4,16 +4,20 @@
 //! All routes are nested under /api prefix via the create_router function.
 
 pub mod admin;
+pub mod analytics;
 pub mod auth;
 pub mod bookings;
 pub mod coupons;
 pub mod health;
 pub mod loyalty;
+pub mod membership;
 pub mod notifications;
 pub mod oauth;
+pub mod slips;
 pub mod sse;
 pub mod storage;
 pub mod surveys;
+pub mod translation;
 pub mod users;
 
 use axum::Router;
@@ -37,6 +41,10 @@ use crate::state::AppState;
 /// - /api/notifications -> notification routes
 /// - /api/admin -> admin panel routes
 /// - /api/sse -> server-sent events routes
+/// - /api/membership -> membership ID management routes
+/// - /api/slips -> payment slip upload routes
+/// - /api/analytics -> analytics tracking routes
+/// - /api/translation -> content translation routes
 /// - /api/docs -> Swagger UI for API documentation
 /// - /api/openapi.json -> OpenAPI specification JSON
 ///
@@ -63,6 +71,10 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/notifications", notifications::routes())
         .nest("/api/admin", admin::routes())
         .nest("/api/sse", sse::routes())
+        .nest("/api/membership", membership::routes())
+        .nest("/api/slips", slips::routes())
+        .nest("/api/analytics", analytics::routes())
+        .nest("/api/translation", translation::routes())
         // OpenAPI documentation routes
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))
         .with_state(state)
@@ -70,6 +82,7 @@ pub fn create_router(state: AppState) -> Router {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
 
     #[test]

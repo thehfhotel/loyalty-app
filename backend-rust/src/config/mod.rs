@@ -805,6 +805,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn test_cors_origins_development() {
         let mut settings = Settings::default();
         settings.environment = Environment::Development;
@@ -816,6 +817,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn test_cors_origins_production() {
         let mut settings = Settings::default();
         settings.environment = Environment::Production;

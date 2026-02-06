@@ -10,13 +10,12 @@
 //! These tests use wiremock to mock Google/LINE token endpoints.
 
 use axum::Router;
-use serde_json::Value;
 use wiremock::{
     matchers::{method, path},
     Mock, MockServer, ResponseTemplate,
 };
 
-use crate::common::{init_test_db, init_test_redis, setup_test, teardown_test, TestClient};
+use crate::common::{init_test_db, init_test_redis, TestClient};
 
 use loyalty_backend::config::Settings;
 use loyalty_backend::routes::oauth::routes;

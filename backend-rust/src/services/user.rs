@@ -977,9 +977,8 @@ mod tests {
 
     #[test]
     fn test_user_service_impl_default() {
-        let service = UserServiceImpl::default();
-        // Just verify it creates successfully
-        drop(service);
+        // Just verify the type exists and can be created
+        let _service = UserServiceImpl;
     }
 
     #[test]
@@ -1420,7 +1419,7 @@ mod tests {
             let dto = CreateUserDto {
                 email: "user@example.com".to_string(),
                 password_hash: "hash".to_string(),
-                role: Some(role.clone()),
+                role: Some(role),
                 oauth_provider: None,
                 oauth_provider_id: None,
             };

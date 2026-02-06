@@ -27,6 +27,7 @@ permissions:
 
 env:
   NODE_VERSION: '24'
+  RUST_VERSION: '1.85'
   REGISTRY: ghcr.io
   IMAGE_OWNER: thehfhotel
   IMAGE_REPO: loyalty-app
@@ -39,10 +40,10 @@ jobs:
   prepare:
     name: "Prepare Workspace"
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
-      backend-cache-key: ${{ steps.cache-keys.outputs.backend }}
       frontend-cache-key: ${{ steps.cache-keys.outputs.frontend }}
+      rust-cache-key: ${{ steps.cache-keys.outputs.rust }}
 
     steps:
       - name: Checkout code
@@ -53,19 +54,30 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy, rustfmt
+
       - name: Generate cache keys
         id: cache-keys
         run: |
-          echo "backend=backend-deps-${{ hashFiles('backend/package-lock.json') }}" >> $GITHUB_OUTPUT
           echo "frontend=frontend-deps-${{ hashFiles('frontend/package-lock.json') }}" >> $GITHUB_OUTPUT
+          echo "rust=rust-deps-${{ hashFiles('backend-rust/Cargo.lock') }}" >> $GITHUB_OUTPUT
 
-      - name: Cache backend dependencies
+      - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
-          path: backend/node_modules
-          key: ${{ steps.cache-keys.outputs.backend }}
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            backend-rust/target/
+          key: ${{ steps.cache-keys.outputs.rust }}
           restore-keys: |
-            backend-deps-
+            rust-deps-
 
       - name: Cache frontend dependencies
         uses: actions/cache@v4
@@ -75,69 +87,61 @@ jobs:
           restore-keys: |
             frontend-deps-
 
-      - name: Install backend dependencies
-        working-directory: ./backend
-        run: npm ci
-
       - name: Install frontend dependencies
         working-directory: ./frontend
         run: npm ci
 
-      - name: Generate Prisma client
-        working-directory: ./backend
-        run: npm run db:generate
-
-      - name: Verify Prisma client
-        working-directory: ./backend
-        run: |
-          if [ ! -d "src/generated/prisma" ]; then
-            echo "Prisma client generation failed"
-            exit 1
-          fi
-          echo "Prisma client generated successfully"
+      - name: Build Rust dependencies (warm cache)
+        working-directory: ./backend-rust
+        run: cargo fetch
 
   # =============================================================================
   # PHASE 1: PARALLEL VALIDATION & TESTING
   # =============================================================================
 
   lint-backend:
-    name: "Lint Backend"
+    name: "Lint Backend (Rust)"
     runs-on: ubuntu-latest
     needs: prepare
-    timeout-minutes: 5
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy, rustfmt
 
-      - name: Restore backend dependencies
+      - name: Restore Rust cache
         uses: actions/cache@v4
         with:
-          path: backend/node_modules
-          key: ${{ needs.prepare.outputs.backend-cache-key }}
-          fail-on-cache-miss: true
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            backend-rust/target/
+          key: ${{ needs.prepare.outputs.rust-cache-key }}
+          restore-keys: |
+            rust-deps-
 
-      - name: Generate Prisma client
-        working-directory: ./backend
-        run: npm run db:generate
+      - name: Check formatting
+        working-directory: ./backend-rust
+        run: cargo fmt --all -- --check
 
-      - name: TypeScript check
-        working-directory: ./backend
-        run: npm run typecheck
+      - name: Run clippy (lints)
+        working-directory: ./backend-rust
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: ESLint
-        working-directory: ./backend
-        run: npm run lint:security
-
-      - name: npm audit
-        working-directory: ./backend
-        run: npm audit --audit-level=moderate
-        continue-on-error: true  # Prisma has transitive lodash vulnerability in dev deps
+      - name: Check for security vulnerabilities
+        working-directory: ./backend-rust
+        run: |
+          cargo install cargo-audit --locked || true
+          cargo audit || echo "Some vulnerabilities found - review output"
+        continue-on-error: true
 
   lint-frontend:
     name: "Lint Frontend"
@@ -154,23 +158,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Restore backend dependencies
-        uses: actions/cache@v4
-        with:
-          path: backend/node_modules
-          key: ${{ needs.prepare.outputs.backend-cache-key }}
-          fail-on-cache-miss: true
-
       - name: Restore frontend dependencies
         uses: actions/cache@v4
         with:
           path: frontend/node_modules
           key: ${{ needs.prepare.outputs.frontend-cache-key }}
           fail-on-cache-miss: true
-
-      - name: Generate Prisma client
-        working-directory: ./backend
-        run: npm run db:generate
 
       - name: TypeScript check
         working-directory: ./frontend
@@ -186,50 +179,39 @@ jobs:
         continue-on-error: true
 
   test-backend-unit:
-    name: "Backend Unit Tests"
+    name: "Backend Unit Tests (Rust)"
     runs-on: ubuntu-latest
     needs: prepare
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          toolchain: ${{ env.RUST_VERSION }}
 
-      - name: Restore backend dependencies
+      - name: Restore Rust cache
         uses: actions/cache@v4
         with:
-          path: backend/node_modules
-          key: ${{ needs.prepare.outputs.backend-cache-key }}
-          fail-on-cache-miss: true
-
-      - name: Generate Prisma client
-        working-directory: ./backend
-        run: npm run db:generate
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            backend-rust/target/
+          key: ${{ needs.prepare.outputs.rust-cache-key }}
+          restore-keys: |
+            rust-deps-
 
       - name: Run unit tests
-        working-directory: ./backend
-        run: npm run test:unit -- --coverage
+        working-directory: ./backend-rust
+        run: cargo test --lib --bins
         env:
-          NODE_ENV: test
-          DATABASE_URL: postgresql://test:test@localhost:5432/test
-          REDIS_URL: redis://localhost:6379
-          JWT_SECRET: test-jwt-secret-for-ci
-          JWT_REFRESH_SECRET: test-jwt-refresh-secret-for-ci
-          SESSION_SECRET: test-session-secret-for-ci
-          GOOGLE_CLIENT_ID: test-google-client-id
-          GOOGLE_CLIENT_SECRET: test-google-client-secret
-          GOOGLE_CALLBACK_URL: http://localhost:4000/api/auth/google/callback
-          LINE_CHANNEL_ID: test-line-channel-id
-          LINE_CHANNEL_SECRET: test-line-channel-secret
-          LINE_CALLBACK_URL: http://localhost:4000/api/auth/line/callback
-          FRONTEND_URL: http://localhost:3000
-          LOYALTY_USERNAME: test-loyalty-user
-          LOYALTY_PASSWORD: test-loyalty-pass
+          RUST_BACKTRACE: 1
+          RUST_LOG: debug
 
   test-frontend-unit:
     name: "Frontend Unit Tests"
@@ -261,10 +243,10 @@ jobs:
           CI: true
 
   test-backend-integration:
-    name: "Backend Integration Tests"
+    name: "Backend Integration Tests (Rust)"
     runs-on: ubuntu-latest
     needs: prepare
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -295,47 +277,42 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          toolchain: ${{ env.RUST_VERSION }}
 
-      - name: Restore backend dependencies
+      - name: Restore Rust cache
         uses: actions/cache@v4
         with:
-          path: backend/node_modules
-          key: ${{ needs.prepare.outputs.backend-cache-key }}
-          fail-on-cache-miss: true
-
-      - name: Generate Prisma client
-        working-directory: ./backend
-        run: npm run db:generate
-
-      - name: Run database migrations
-        working-directory: ./backend
-        run: npm run db:migrate:deploy
-        env:
-          DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            backend-rust/target/
+          key: ${{ needs.prepare.outputs.rust-cache-key }}
+          restore-keys: |
+            rust-deps-
 
       - name: Run integration tests
-        working-directory: ./backend
-        run: npm run test:integration
+        working-directory: ./backend-rust
+        run: cargo test --test '*'
         env:
-          NODE_ENV: test
+          RUST_BACKTRACE: 1
+          RUST_LOG: debug
           DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
           REDIS_URL: redis://localhost:6383
-          JWT_SECRET: test-jwt-secret-for-ci
-          JWT_REFRESH_SECRET: test-jwt-refresh-secret-for-ci
-          SESSION_SECRET: test-session-secret-for-ci
+          JWT_SECRET: test-jwt-secret-for-ci-minimum-32-characters-long
+          JWT_REFRESH_SECRET: test-jwt-refresh-secret-for-ci-minimum-32-chars
+          SESSION_SECRET: test-session-secret-for-ci-minimum-32-chars
           GOOGLE_CLIENT_ID: test-google-client-id
           GOOGLE_CLIENT_SECRET: test-google-client-secret
-          GOOGLE_CALLBACK_URL: http://localhost:4000/api/auth/google/callback
-          LINE_CHANNEL_ID: test-line-channel-id
-          LINE_CHANNEL_SECRET: test-line-channel-secret
-          LINE_CALLBACK_URL: http://localhost:4000/api/auth/line/callback
+          GOOGLE_CALLBACK_URL: http://localhost:4001/api/oauth/google/callback
+          LINE_CLIENT_ID: test-line-channel-id
+          LINE_CLIENT_SECRET: test-line-channel-secret
+          LINE_CALLBACK_URL: http://localhost:4001/api/oauth/line/callback
           FRONTEND_URL: http://localhost:3000
-          LOYALTY_USERNAME: test-loyalty-user
-          LOYALTY_PASSWORD: test-loyalty-pass
 
   # =============================================================================
   # PHASE 2: BUILD AND PUSH TO GHCR
@@ -346,7 +323,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint-backend, lint-frontend, test-backend-unit, test-frontend-unit, test-backend-integration]
     if: github.ref == 'refs/heads/main'
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -371,7 +348,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # -------------------------------------------------------------------------
-      # Backend Image
+      # Backend Image (Rust)
       # -------------------------------------------------------------------------
       - name: Extract backend metadata
         id: meta-backend
@@ -386,7 +363,7 @@ jobs:
       - name: Build and push backend
         uses: docker/build-push-action@v5
         with:
-          context: ./backend
+          context: ./backend-rust
           target: runner
           push: true
           tags: ${{ steps.meta-backend.outputs.tags }}
@@ -426,7 +403,7 @@ jobs:
         run: |
           echo "## Docker Images Built" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Backend" >> $GITHUB_STEP_SUMMARY
+          echo "### Backend (Rust)" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.meta-backend.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
@@ -508,33 +485,28 @@ jobs:
         run: |
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
 
-      - name: Run database migrations
-        run: |
-          docker run --rm --network host \
-            -e DATABASE_URL=postgresql://loyalty_e2e:loyalty_e2e_pass@localhost:5436/loyalty_e2e_db \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/backend:${{ github.sha }} \
-            npx prisma migrate deploy
+      # Note: Rust backend runs migrations automatically on startup
+      # No separate migration step needed
 
       - name: Start backend container
         run: |
           docker run -d --name backend --network host \
+            -e RUST_ENV=development \
             -e NODE_ENV=development \
             -e PORT=4202 \
             -e DATABASE_URL=postgresql://loyalty_e2e:loyalty_e2e_pass@localhost:5436/loyalty_e2e_db \
             -e REDIS_URL=redis://localhost:6381 \
             -e JWT_SECRET=e2e-jwt-secret-for-testing-minimum-64-characters-long-secure-token-string \
             -e JWT_REFRESH_SECRET=e2e-jwt-refresh-secret-for-testing-minimum-64-characters-long-string \
-            -e SESSION_SECRET=e2e-session-secret-for-testing-min-32-chars \
+            -e SESSION_SECRET=e2e-session-secret-for-testing-minimum-64-characters-long-secure-string \
             -e GOOGLE_CLIENT_ID=e2e-google-client-id \
             -e GOOGLE_CLIENT_SECRET=e2e-google-client-secret \
-            -e GOOGLE_CALLBACK_URL=http://localhost:4202/api/auth/google/callback \
-            -e LINE_CHANNEL_ID=e2e-line-channel-id \
-            -e LINE_CHANNEL_SECRET=e2e-line-channel-secret \
-            -e LINE_CALLBACK_URL=http://localhost:4202/api/auth/line/callback \
+            -e GOOGLE_CALLBACK_URL=http://localhost:4202/api/oauth/google/callback \
+            -e LINE_CLIENT_ID=e2e-line-channel-id \
+            -e LINE_CLIENT_SECRET=e2e-line-channel-secret \
+            -e LINE_CALLBACK_URL=http://localhost:4202/api/oauth/line/callback \
             -e FRONTEND_URL=http://localhost:3201 \
-            -e LOYALTY_USERNAME=e2e-loyalty-user \
-            -e LOYALTY_PASSWORD=e2e-loyalty-pass \
-            -v ${{ github.workspace }}/backend/config/admins.e2e.json:/app/config/admins.json:ro \
+            -e RUST_LOG=info \
             ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
 
       - name: Start frontend container
@@ -582,21 +554,21 @@ jobs:
           curl -sf -X POST http://localhost:4202/api/auth/register \
             -H "Content-Type: application/json" \
             -d '{"email":"e2e-browser@test.com","password":"E2ETestPassword123!","firstName":"E2E","lastName":"Browser"}' \
-            && echo "✓ Created e2e-browser@test.com" \
+            && echo "Created e2e-browser@test.com" \
             || echo "User may already exist"
 
           # Create test user 2
           curl -sf -X POST http://localhost:4202/api/auth/register \
             -H "Content-Type: application/json" \
             -d '{"email":"e2e-browser-2@test.com","password":"E2ETestPassword123!","firstName":"E2E","lastName":"Browser2"}' \
-            && echo "✓ Created e2e-browser-2@test.com" \
+            && echo "Created e2e-browser-2@test.com" \
             || echo "User may already exist"
 
           # Create admin test user (email is in admins.e2e.json)
           curl -sf -X POST http://localhost:4202/api/auth/register \
             -H "Content-Type: application/json" \
             -d '{"email":"e2e-admin@test.local","password":"AdminPassword123!","firstName":"E2E","lastName":"Admin"}' \
-            && echo "✓ Created e2e-admin@test.local" \
+            && echo "Created e2e-admin@test.local" \
             || echo "User may already exist"
 
           echo "E2E test users seeded"
@@ -644,13 +616,13 @@ jobs:
             docker-compose.ghcr.yml
             docker-compose.staging.yml
             nginx/nginx.conf
-            backend/prisma/schema.prisma
           sparse-checkout-cone-mode: false
 
       - name: Create .env file
         working-directory: /home/nut/loyalty-app-develop
         run: |
           cat > .env << 'ENVEOF'
+          RUST_ENV=staging
           NODE_ENV=staging
           JWT_SECRET=${{ secrets.DEV_JWT_SECRET }}
           JWT_REFRESH_SECRET=${{ secrets.DEV_JWT_REFRESH_SECRET }}
@@ -666,9 +638,7 @@ jobs:
           LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
           LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
           LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
-          CORS_ORIGINS=${{ vars.CORS_ORIGINS }}
-          LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
-          LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
+          RUST_LOG=info
           ENVEOF
           chmod 600 .env
 
@@ -678,9 +648,8 @@ jobs:
           cp docker-compose.yml "$DEPLOY_PATH/"
           cp docker-compose.ghcr.yml "$DEPLOY_PATH/"
           cp docker-compose.staging.yml "$DEPLOY_PATH/"
-          mkdir -p "$DEPLOY_PATH/nginx" "$DEPLOY_PATH/backend/prisma"
+          mkdir -p "$DEPLOY_PATH/nginx"
           cp nginx/nginx.conf "$DEPLOY_PATH/nginx/"
-          cp backend/prisma/schema.prisma "$DEPLOY_PATH/backend/prisma/"
 
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u thehfhotel --password-stdin
@@ -706,8 +675,8 @@ jobs:
           # Wait for postgres
           sleep 10
 
-          # Run migrations
-          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" run --rm backend npx prisma migrate deploy || true
+          # Note: Rust backend runs migrations automatically on startup
+          # No separate migration step needed
 
           # Deploy all services
           docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
@@ -717,7 +686,7 @@ jobs:
 
       - name: Health check
         run: |
-          sleep 10
+          sleep 15
           for i in {1..30}; do
             if curl -sf http://localhost:5001/api/health > /dev/null 2>&1; then
               echo "Deployment successful!"
@@ -753,13 +722,13 @@ jobs:
             docker-compose.ghcr.yml
             docker-compose.prod.yml
             nginx/nginx.conf
-            backend/prisma/schema.prisma
           sparse-checkout-cone-mode: false
 
       - name: Create .env file
         working-directory: /home/nut/loyalty-app-production
         run: |
           cat > .env << 'ENVEOF'
+          RUST_ENV=production
           NODE_ENV=production
           JWT_SECRET=${{ secrets.JWT_SECRET }}
           JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
@@ -775,18 +744,15 @@ jobs:
           LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
           LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
           LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
-          CORS_ORIGINS=${{ vars.CORS_ORIGINS }}
-          LOYALTY_USERNAME=${{ secrets.LOYALTY_USERNAME }}
-          LOYALTY_PASSWORD=${{ secrets.LOYALTY_PASSWORD }}
           SMTP_HOST=${{ secrets.SMTP_HOST }}
           SMTP_PORT=${{ secrets.SMTP_PORT }}
           SMTP_USER=${{ secrets.SMTP_USER }}
           SMTP_PASS=${{ secrets.SMTP_PASS }}
-          SMTP_FROM=${{ secrets.SMTP_FROM }}
           IMAP_HOST=${{ secrets.IMAP_HOST }}
           IMAP_PORT=${{ secrets.IMAP_PORT }}
           IMAP_USER=${{ secrets.IMAP_USER }}
           IMAP_PASS=${{ secrets.IMAP_PASS }}
+          RUST_LOG=info
           ENVEOF
           chmod 600 .env
 
@@ -796,9 +762,8 @@ jobs:
           cp docker-compose.yml "$DEPLOY_PATH/"
           cp docker-compose.ghcr.yml "$DEPLOY_PATH/"
           cp docker-compose.prod.yml "$DEPLOY_PATH/"
-          mkdir -p "$DEPLOY_PATH/nginx" "$DEPLOY_PATH/backend/prisma"
+          mkdir -p "$DEPLOY_PATH/nginx"
           cp nginx/nginx.conf "$DEPLOY_PATH/nginx/"
-          cp backend/prisma/schema.prisma "$DEPLOY_PATH/backend/prisma/"
 
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u thehfhotel --password-stdin
@@ -824,8 +789,8 @@ jobs:
           # Wait for postgres
           sleep 10
 
-          # Run migrations
-          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" run --rm backend npx prisma migrate deploy || true
+          # Note: Rust backend runs migrations automatically on startup
+          # No separate migration step needed
 
           # Deploy all services
           docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
@@ -835,7 +800,7 @@ jobs:
 
       - name: Health check
         run: |
-          sleep 10
+          sleep 15
           for i in {1..30}; do
             if curl -sf http://localhost:4001/api/health > /dev/null 2>&1; then
               echo "Deployment successful!"
@@ -855,3 +820,4 @@ jobs:
           echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Image Tag**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **URL**: https://loyalty.saichon.com" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend**: Rust (loyalty-backend)" >> $GITHUB_STEP_SUMMARY

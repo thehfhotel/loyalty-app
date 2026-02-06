@@ -33,8 +33,9 @@ services:
   backend:
     container_name: loyalty_backend_dev
     environment:
+      RUST_ENV: staging
       NODE_ENV: staging
-      PORT: ${BACKEND_PORT:-4000}
+      PORT: ${BACKEND_PORT:-4001}
       DATABASE_URL: postgresql://loyalty_dev:loyalty_dev_pass@postgres:5432/loyalty_dev_db
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
@@ -43,30 +44,23 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL}
-      LINE_CHANNEL_ID: ${LINE_CHANNEL_ID}
-      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET}
+      LINE_CLIENT_ID: ${LINE_CHANNEL_ID}
+      LINE_CLIENT_SECRET: ${LINE_CHANNEL_SECRET}
       LINE_CALLBACK_URL: ${LINE_CALLBACK_URL}
       FRONTEND_URL: ${FRONTEND_URL}
-      LOYALTY_USERNAME: ${LOYALTY_USERNAME}
-      LOYALTY_PASSWORD: ${LOYALTY_PASSWORD}
-      TRANSLATION_FEATURE_ENABLED: ${TRANSLATION_FEATURE_ENABLED:-false}
-      AZURE_TRANSLATION_TEXT_URI: ${AZURE_TRANSLATION_TEXT_URI:-}
-      AZURE_TRANSLATION_KEY_1: ${AZURE_TRANSLATION_KEY_1:-}
-      AZURE_TRANSLATION_KEY_2: ${AZURE_TRANSLATION_KEY_2:-}
-      AZURE_TRANSLATION_REGION: ${AZURE_TRANSLATION_REGION:-global}
+      # Rust-specific logging
+      RUST_LOG: ${RUST_LOG:-info}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      CORS_ORIGINS: ${CORS_ORIGINS}
       # Email Service (SMTP/IMAP)
       SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-}
       IMAP_HOST: ${IMAP_HOST:-}
       IMAP_PORT: ${IMAP_PORT:-993}
       IMAP_USER: ${IMAP_USER:-}
       IMAP_PASS: ${IMAP_PASS:-}
-    # No source code bind mounts - uses GHCR image with built code
+    # No source code bind mounts - uses GHCR image with built Rust binary
     volumes:
       - backend_dev_logs:/app/logs
       - backend_dev_storage:/app/storage
