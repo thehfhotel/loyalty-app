@@ -44,7 +44,6 @@ jobs:
     outputs:
       frontend-cache-key: ${{ steps.cache-keys.outputs.frontend }}
       backend-node-cache-key: ${{ steps.cache-keys.outputs.backend-node }}
-      rust-cache-key: ${{ steps.cache-keys.outputs.rust }}
 
     steps:
       - name: Checkout code
@@ -66,20 +65,13 @@ jobs:
         run: |
           echo "frontend=frontend-deps-${{ hashFiles('frontend/package-lock.json') }}" >> $GITHUB_OUTPUT
           echo "backend-node=backend-node-deps-${{ hashFiles('backend/package-lock.json') }}" >> $GITHUB_OUTPUT
-          echo "rust=rust-deps-${{ hashFiles('backend-rust/Cargo.lock') }}" >> $GITHUB_OUTPUT
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            backend-rust/target/
-          key: ${{ steps.cache-keys.outputs.rust }}
-          restore-keys: |
-            rust-deps-
+          workspaces: "backend-rust -> target"
+          shared-key: "rust-ci"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Cache frontend dependencies
         uses: actions/cache@v4
@@ -107,7 +99,10 @@ jobs:
 
       - name: Build Rust dependencies (warm cache)
         working-directory: ./backend-rust
-        run: cargo fetch
+        run: |
+          # Build all dependencies (but not our code) to warm the cache
+          cargo build --tests --lib 2>&1 | tail -20 || true
+          echo "Cache warmed with compiled dependencies"
 
   # =============================================================================
   # PHASE 1: PARALLEL VALIDATION & TESTING
@@ -130,17 +125,11 @@ jobs:
           components: clippy, rustfmt
 
       - name: Restore Rust cache
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            backend-rust/target/
-          key: ${{ needs.prepare.outputs.rust-cache-key }}
-          restore-keys: |
-            rust-deps-
+          workspaces: "backend-rust -> target"
+          shared-key: "rust-ci"
+          save-if: false
 
       - name: Check formatting
         working-directory: ./backend-rust
@@ -219,17 +208,11 @@ jobs:
           toolchain: ${{ env.RUST_VERSION }}
 
       - name: Restore Rust cache
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            backend-rust/target/
-          key: ${{ needs.prepare.outputs.rust-cache-key }}
-          restore-keys: |
-            rust-deps-
+          workspaces: "backend-rust -> target"
+          shared-key: "rust-ci"
+          save-if: false
 
       - name: Run unit tests
         working-directory: ./backend-rust
@@ -308,17 +291,11 @@ jobs:
           toolchain: ${{ env.RUST_VERSION }}
 
       - name: Restore Rust cache
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            backend-rust/target/
-          key: ${{ needs.prepare.outputs.rust-cache-key }}
-          restore-keys: |
-            rust-deps-
+          workspaces: "backend-rust -> target"
+          shared-key: "rust-ci"
+          save-if: false
 
       - name: Run integration tests
         working-directory: ./backend-rust
