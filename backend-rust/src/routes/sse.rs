@@ -195,6 +195,7 @@ async fn _sse_events_with_query(
 }
 
 /// Validate JWT token from query parameter
+#[allow(clippy::result_large_err)]
 fn validate_token_from_query(token: &str) -> Result<AuthUser, Response> {
     use crate::middleware::auth::Claims;
     use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
