@@ -236,8 +236,7 @@ async fn test_register_duplicate_email_fails() {
     assert!(
         error_indicates_duplicate,
         "Error should indicate duplicate email. error: {}, message: {}",
-        error_code,
-        message
+        error_code, message
     );
 
     teardown_test(&test_db).await;

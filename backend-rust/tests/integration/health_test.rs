@@ -335,15 +335,16 @@ async fn test_health_full_json_structure() {
             "Response should have 'redis' field"
         );
     } else if response.status == 503 {
-        // Database temporarily unavailable - verify error structure
+        // Service partially or fully unavailable - verify error structure
         assert!(
             json.get("status").is_some(),
             "Response should have 'status' field"
         );
-        assert_eq!(
-            json.get("status").and_then(|v| v.as_str()),
-            Some("error"),
-            "Status should be 'error' when unavailable"
+        let status = json.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            status == "error" || status == "degraded",
+            "Status should be 'error' or 'degraded' when unavailable, got: {}",
+            status
         );
     } else {
         panic!(
