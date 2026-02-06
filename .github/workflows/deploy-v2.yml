@@ -334,9 +334,15 @@ jobs:
           restore-keys: |
             cargo-registry-
 
+      - name: Run database migrations
+        run: |
+          PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -f backend-rust/migrations/20240101000000_init.sql
+        env:
+          PGPASSWORD: loyalty_test_pass
+
       - name: Run integration tests
         working-directory: ./backend-rust
-        run: cargo test --test '*'
+        run: cargo test --test '*' -- --test-threads=1
         env:
           RUST_BACKTRACE: 1
           RUST_LOG: debug
