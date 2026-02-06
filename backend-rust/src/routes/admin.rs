@@ -1020,9 +1020,9 @@ struct UserRow {
 
 impl From<UserRow> for AdminUserResponse {
     fn from(row: UserRow) -> Self {
-        let profile = if row.profile_user_id.is_some() {
+        let profile = if let Some(profile_user_id) = row.profile_user_id {
             Some(UserProfileResponse {
-                user_id: row.profile_user_id.unwrap(),
+                user_id: profile_user_id,
                 first_name: row.first_name.clone(),
                 last_name: row.last_name.clone(),
                 full_name: match (&row.first_name, &row.last_name) {
@@ -1043,9 +1043,9 @@ impl From<UserRow> for AdminUserResponse {
             None
         };
 
-        let loyalty = if row.loyalty_user_id.is_some() {
+        let loyalty = if let Some(loyalty_user_id) = row.loyalty_user_id {
             Some(UserLoyaltyResponse {
-                user_id: row.loyalty_user_id.unwrap(),
+                user_id: loyalty_user_id,
                 current_points: row.current_points.unwrap_or(0),
                 total_nights: row.total_nights.unwrap_or(0),
                 tier_id: row.tier_id,

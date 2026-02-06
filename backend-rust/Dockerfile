@@ -1,7 +1,7 @@
 # ==============================================================================
 # Stage 1: Chef - Install cargo-chef for dependency caching
 # ==============================================================================
-FROM rust:1.85-bookworm AS chef
+FROM rust:1.93-bookworm AS chef
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
@@ -42,7 +42,7 @@ RUN cargo build --release --bin loyalty-backend
 # ==============================================================================
 # Stage 4: Development - Full development environment with hot reload
 # ==============================================================================
-FROM rust:1.85-bookworm AS development
+FROM rust:1.93-bookworm AS development
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \

@@ -8,10 +8,11 @@ use sqlx::Type;
 use uuid::Uuid;
 
 /// Notification type enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[sqlx(type_name = "notification_type", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationType {
+    #[default]
     Info,
     Success,
     Warning,
@@ -23,12 +24,6 @@ pub enum NotificationType {
     Profile,
     TierChange,
     Points,
-}
-
-impl Default for NotificationType {
-    fn default() -> Self {
-        Self::Info
-    }
 }
 
 /// Notification database entity

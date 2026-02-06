@@ -86,23 +86,18 @@ pub struct UpdateBookingDto {
 // ==================== Enums ====================
 
 /// Booking status enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "varchar")]
 #[sqlx(rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum BookingStatus {
     /// Booking is confirmed and active
+    #[default]
     Confirmed,
     /// Booking has been cancelled
     Cancelled,
     /// Booking has been completed (guest checked out)
     Completed,
-}
-
-impl Default for BookingStatus {
-    fn default() -> Self {
-        Self::Confirmed
-    }
 }
 
 impl std::fmt::Display for BookingStatus {

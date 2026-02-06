@@ -276,12 +276,40 @@ pub async fn setup_test_db() -> Result<PgPool, sqlx::Error> {
 
 /// Clean up the test database.
 ///
-/// Drops all test data from the database tables.
+/// Drops all test data from all tables in reverse dependency order.
 pub async fn cleanup_test_db(pool: &PgPool) -> Result<(), sqlx::Error> {
-    // Truncate all tables in reverse dependency order
     pool.execute(
         r#"
-        TRUNCATE TABLE refresh_tokens, user_loyalty, user_profiles, coupons, users CASCADE
+        TRUNCATE TABLE
+            survey_reward_history,
+            survey_coupon_assignments,
+            survey_responses,
+            survey_invitations,
+            survey_translations,
+            surveys,
+            coupon_redemptions,
+            coupon_analytics,
+            coupon_translations,
+            user_coupons,
+            coupons,
+            notification_preferences,
+            notifications,
+            feature_toggle_audit,
+            feature_toggles,
+            translation_jobs,
+            points_transactions,
+            points_earning_rules,
+            account_linking_audit,
+            account_link_requests,
+            linked_accounts,
+            password_reset_tokens,
+            new_member_coupon_settings,
+            user_audit_log,
+            refresh_tokens,
+            user_loyalty,
+            user_profiles,
+            users
+        CASCADE
         "#,
     )
     .await?;
@@ -310,7 +338,7 @@ pub async fn create_isolated_test_db(test_name: &str) -> Result<TestDatabase, sq
     Ok(TestDatabase { pool, schema_name })
 }
 
-/// Run database migrations for tests
+/// Run database migrations for tests using the real migration SQL
 async fn run_test_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
     // Check if essential tables exist
     let table_exists: bool = sqlx::query_scalar(
@@ -326,176 +354,37 @@ async fn run_test_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
     .await?;
 
     if !table_exists {
-        // Run the migrations using sqlx migrate
-        // Note: In a real setup, you would use sqlx::migrate!() macro
-        // For now, we create minimal tables for testing
-        create_test_tables(pool).await?;
+        // Load and execute the real migration SQL
+        let migration_sql = include_str!("../../migrations/20240101000000_init.sql");
+        pool.execute(migration_sql).await?;
     }
+
+    // Seed tiers (matching real schema with color, sort_order, is_active, min_points)
+    seed_test_tiers(pool).await?;
+
+    // Seed membership_id_sequence (required for user registration)
+    pool.execute(
+        r#"
+        INSERT INTO membership_id_sequence (id, current_user_count)
+        VALUES (1, 0)
+        ON CONFLICT (id) DO NOTHING
+        "#,
+    )
+    .await?;
 
     Ok(())
 }
 
-/// Create minimal test tables if migrations haven't been run
-async fn create_test_tables(pool: &PgPool) -> Result<(), sqlx::Error> {
-    // Create user_role enum if it doesn't exist
+/// Seed tiers matching the real schema
+async fn seed_test_tiers(pool: &PgPool) -> Result<(), sqlx::Error> {
     pool.execute(
         r#"
-        DO $$ BEGIN
-            CREATE TYPE user_role AS ENUM ('customer', 'admin', 'super_admin');
-        EXCEPTION
-            WHEN duplicate_object THEN null;
-        END $$;
-        "#,
-    )
-    .await?;
-
-    // Create users table
-    pool.execute(
-        r#"
-        CREATE TABLE IF NOT EXISTS users (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            email VARCHAR(255) UNIQUE,
-            password_hash VARCHAR(255),
-            role user_role DEFAULT 'customer',
-            is_active BOOLEAN DEFAULT true,
-            email_verified BOOLEAN DEFAULT false,
-            oauth_provider VARCHAR(50),
-            oauth_provider_id VARCHAR(255),
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
-    .await?;
-
-    // Create user_profiles table
-    pool.execute(
-        r#"
-        CREATE TABLE IF NOT EXISTS user_profiles (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            first_name VARCHAR(100),
-            last_name VARCHAR(100),
-            phone VARCHAR(50),
-            avatar_url TEXT,
-            membership_id VARCHAR(50) UNIQUE,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
-    .await?;
-
-    // Create refresh_tokens table
-    pool.execute(
-        r#"
-        CREATE TABLE IF NOT EXISTS refresh_tokens (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            token_hash VARCHAR(255) NOT NULL,
-            expires_at TIMESTAMPTZ NOT NULL,
-            revoked BOOLEAN DEFAULT false,
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
-    .await?;
-
-    // Create tiers table
-    pool.execute(
-        r#"
-        CREATE TABLE IF NOT EXISTS tiers (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            name VARCHAR(50) NOT NULL UNIQUE,
-            min_nights INTEGER NOT NULL DEFAULT 0,
-            multiplier DECIMAL(3,2) NOT NULL DEFAULT 1.0,
-            benefits JSONB,
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
-    .await?;
-
-    // Create user_loyalty table
-    pool.execute(
-        r#"
-        CREATE TABLE IF NOT EXISTS user_loyalty (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            tier_id UUID REFERENCES tiers(id),
-            current_points INTEGER NOT NULL DEFAULT 0,
-            lifetime_points INTEGER NOT NULL DEFAULT 0,
-            total_nights INTEGER NOT NULL DEFAULT 0,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
-    .await?;
-
-    // Create coupon_type enum
-    pool.execute(
-        r#"
-        DO $$ BEGIN
-            CREATE TYPE coupon_type AS ENUM ('percentage', 'fixed_amount', 'bogo', 'free_upgrade', 'free_service');
-        EXCEPTION
-            WHEN duplicate_object THEN null;
-        END $$;
-        "#,
-    )
-    .await?;
-
-    // Create coupon_status enum
-    pool.execute(
-        r#"
-        DO $$ BEGIN
-            CREATE TYPE coupon_status AS ENUM ('draft', 'active', 'paused', 'expired', 'exhausted');
-        EXCEPTION
-            WHEN duplicate_object THEN null;
-        END $$;
-        "#,
-    )
-    .await?;
-
-    // Create coupons table
-    pool.execute(
-        r#"
-        CREATE TABLE IF NOT EXISTS coupons (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            code VARCHAR(50) NOT NULL UNIQUE,
-            name VARCHAR(255) NOT NULL,
-            description TEXT,
-            terms_and_conditions TEXT,
-            type coupon_type NOT NULL,
-            value DECIMAL(10,2),
-            currency VARCHAR(3) DEFAULT 'THB',
-            minimum_spend DECIMAL(10,2),
-            maximum_discount DECIMAL(10,2),
-            valid_from TIMESTAMPTZ,
-            valid_until TIMESTAMPTZ,
-            usage_limit INTEGER,
-            usage_limit_per_user INTEGER DEFAULT 1,
-            used_count INTEGER DEFAULT 0,
-            tier_restrictions JSONB,
-            customer_segment JSONB,
-            status coupon_status DEFAULT 'draft',
-            created_by UUID REFERENCES users(id),
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
-    .await?;
-
-    // Insert default tiers
-    pool.execute(
-        r#"
-        INSERT INTO tiers (name, min_nights, multiplier, benefits)
+        INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
         VALUES
-            ('Bronze', 0, 1.0, '{"discount": 0}'),
-            ('Silver', 1, 1.25, '{"discount": 5}'),
-            ('Gold', 10, 1.5, '{"discount": 10}'),
-            ('Platinum', 20, 2.0, '{"discount": 15}')
+            ('Bronze', 0, 0, '{"discount": 0}', '#CD7F32', 1, true),
+            ('Silver', 0, 1, '{"discount": 5}', '#C0C0C0', 2, true),
+            ('Gold', 0, 10, '{"discount": 10}', '#FFD700', 3, true),
+            ('Platinum', 0, 20, '{"discount": 15}', '#E5E4E2', 4, true)
         ON CONFLICT (name) DO NOTHING
         "#,
     )
@@ -518,15 +407,7 @@ impl TestDatabase {
 
     /// Clean up all test data
     pub async fn cleanup(&self) -> Result<(), sqlx::Error> {
-        // Truncate all tables in reverse dependency order
-        self.pool
-            .execute(
-                r#"
-                TRUNCATE TABLE refresh_tokens, user_loyalty, user_profiles, coupons, users CASCADE
-                "#,
-            )
-            .await?;
-        Ok(())
+        cleanup_test_db(&self.pool).await
     }
 
     /// Drop the test schema (for full cleanup)
@@ -616,16 +497,20 @@ impl TestUser {
     ) -> Result<(), sqlx::Error> {
         self.insert(pool).await?;
 
+        // Generate a unique membership_id (8-char uppercase hex from UUID)
+        let membership_id = self.id.to_string()[..8].to_uppercase();
+
         sqlx::query(
             r#"
             INSERT INTO user_profiles (user_id, first_name, last_name, membership_id)
             VALUES ($1, $2, $3, $4)
+            ON CONFLICT (user_id) DO NOTHING
             "#,
         )
         .bind(self.id)
         .bind(first_name)
         .bind(last_name)
-        .bind(self.id.to_string()[..8].to_uppercase())
+        .bind(membership_id)
         .execute(pool)
         .await?;
 

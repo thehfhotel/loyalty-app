@@ -19,7 +19,7 @@ comment_width = 100
 normalize_comments = true
 
 # Function formatting
-fn_args_layout = "Tall"
+fn_params_layout = "Tall"
 fn_single_line = false
 
 # Control flow formatting
