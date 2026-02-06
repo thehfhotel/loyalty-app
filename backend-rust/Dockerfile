@@ -19,6 +19,7 @@ FROM chef AS planner
 
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+COPY migrations ./migrations
 
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -34,6 +35,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 # Copy source code and build the application
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+COPY migrations ./migrations
 
 RUN cargo build --release --bin loyalty-backend
 
