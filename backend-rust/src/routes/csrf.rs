@@ -59,12 +59,7 @@ async fn get_csrf_token(State(state): State<AppState>) -> (HeaderMap, Json<CsrfT
         headers.insert(SET_COOKIE, header_value);
     }
 
-    (
-        headers,
-        Json(CsrfTokenResponse {
-            csrf_token: token,
-        }),
-    )
+    (headers, Json(CsrfTokenResponse { csrf_token: token }))
 }
 
 /// Create CSRF routes

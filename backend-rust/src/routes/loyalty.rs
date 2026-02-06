@@ -1392,7 +1392,7 @@ async fn get_user_loyalty_status_internal(
                 points_updated_at: loyalty.points_updated_at,
                 next_tier: next_tier_info,
             }))
-        }
+        },
         None => Ok(None),
     }
 }
@@ -1520,10 +1520,9 @@ async fn admin_get_users(
         .fetch_all(state.db())
         .await?;
 
-        let total: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM user_loyalty")
-                .fetch_one(state.db())
-                .await?;
+        let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM user_loyalty")
+            .fetch_one(state.db())
+            .await?;
 
         (users, total.0)
     };
@@ -1626,12 +1625,11 @@ async fn admin_deduct_points(
     }
 
     // Check if user has enough points
-    let current: Option<(Option<i32>,)> = sqlx::query_as(
-        "SELECT current_points FROM user_loyalty WHERE user_id = $1",
-    )
-    .bind(payload.user_id)
-    .fetch_optional(state.db())
-    .await?;
+    let current: Option<(Option<i32>,)> =
+        sqlx::query_as("SELECT current_points FROM user_loyalty WHERE user_id = $1")
+            .bind(payload.user_id)
+            .fetch_optional(state.db())
+            .await?;
 
     let current_points = current
         .ok_or_else(|| AppError::NotFound("User loyalty record not found".to_string()))?
@@ -1982,12 +1980,11 @@ async fn admin_award_spending_with_nights(
     .await?;
 
     // Get updated total nights
-    let loyalty: (Option<i32>,) = sqlx::query_as(
-        "SELECT total_nights FROM user_loyalty WHERE user_id = $1",
-    )
-    .bind(payload.user_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let loyalty: (Option<i32>,) =
+        sqlx::query_as("SELECT total_nights FROM user_loyalty WHERE user_id = $1")
+            .bind(payload.user_id)
+            .fetch_one(&mut *tx)
+            .await?;
     let new_total_nights = loyalty.0.unwrap_or(0);
 
     // Recalculate tier based on nights
@@ -2108,12 +2105,11 @@ async fn admin_award_nights(
     .await?;
 
     // Get updated total nights
-    let loyalty: (Option<i32>,) = sqlx::query_as(
-        "SELECT total_nights FROM user_loyalty WHERE user_id = $1",
-    )
-    .bind(payload.user_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let loyalty: (Option<i32>,) =
+        sqlx::query_as("SELECT total_nights FROM user_loyalty WHERE user_id = $1")
+            .bind(payload.user_id)
+            .fetch_one(&mut *tx)
+            .await?;
     let new_total_nights = loyalty.0.unwrap_or(0);
 
     // Recalculate tier based on nights
@@ -2181,12 +2177,11 @@ async fn admin_deduct_nights(
     }
 
     // Check if user has enough nights
-    let current: Option<(Option<i32>,)> = sqlx::query_as(
-        "SELECT total_nights FROM user_loyalty WHERE user_id = $1",
-    )
-    .bind(payload.user_id)
-    .fetch_optional(state.db())
-    .await?;
+    let current: Option<(Option<i32>,)> =
+        sqlx::query_as("SELECT total_nights FROM user_loyalty WHERE user_id = $1")
+            .bind(payload.user_id)
+            .fetch_optional(state.db())
+            .await?;
 
     let current_nights = current
         .ok_or_else(|| AppError::NotFound("User loyalty record not found".to_string()))?
@@ -2237,12 +2232,11 @@ async fn admin_deduct_nights(
     .await?;
 
     // Get updated total nights
-    let loyalty: (Option<i32>,) = sqlx::query_as(
-        "SELECT total_nights FROM user_loyalty WHERE user_id = $1",
-    )
-    .bind(payload.user_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let loyalty: (Option<i32>,) =
+        sqlx::query_as("SELECT total_nights FROM user_loyalty WHERE user_id = $1")
+            .bind(payload.user_id)
+            .fetch_one(&mut *tx)
+            .await?;
     let new_total_nights = loyalty.0.unwrap_or(0);
 
     // Recalculate tier based on nights

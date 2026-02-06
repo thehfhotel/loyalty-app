@@ -4,9 +4,9 @@
 
 version: 2
 updates:
-  # Backend (Node.js) Dependencies
-  - package-ecosystem: "npm"
-    directory: "/backend"
+  # Backend (Rust) Dependencies
+  - package-ecosystem: "cargo"
+    directory: "/backend-rust"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -23,18 +23,11 @@ updates:
     labels:
       - "dependencies"
       - "backend"
-    # Group minor and patch updates together to reduce PR noise
     groups:
-      development-dependencies:
-        dependency-type: "development"
+      minor-and-patch:
         update-types:
           - "minor"
           - "patch"
-      production-dependencies:
-        dependency-type: "production"
-        update-types:
-          - "patch"
-    # Security updates are always applied immediately (not grouped)
 
   # Frontend (Node.js) Dependencies
   - package-ecosystem: "npm"
@@ -121,9 +114,9 @@ updates:
           - "minor"
           - "patch"
 
-  # Docker Base Images (if using Dockerfile)
+  # Docker Base Images
   - package-ecosystem: "docker"
-    directory: "/backend"
+    directory: "/backend-rust"
     schedule:
       interval: "weekly"
       day: "monday"
