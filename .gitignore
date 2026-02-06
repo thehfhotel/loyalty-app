@@ -128,3 +128,9 @@ docker-compose.e2e.ci.yml
 
 # NPM cache (used by CI/CD)
 .npm-cache/
+
+# Claude agent files (IDE-specific, not for git)
+frontend/.claude/
+
+# Rust build artifacts
+backend-rust/target/
