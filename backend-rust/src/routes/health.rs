@@ -32,14 +32,32 @@ pub struct RedisHealthResponse {
     pub timestamp: String,
 }
 
-/// Full system health check response
+/// Services health status
+#[derive(Serialize)]
+pub struct ServicesHealth {
+    pub database: String,
+    pub redis: String,
+    pub storage: String,
+    pub email: String,
+}
+
+/// Memory usage info
+#[derive(Serialize)]
+pub struct MemoryInfo {
+    pub used: u64,
+    pub total: u64,
+}
+
+/// Full system health check response (matches Node.js format)
 #[derive(Serialize)]
 pub struct SystemHealthResponse {
     pub status: String,
     pub timestamp: String,
     pub version: String,
-    pub database: String,
-    pub redis: String,
+    pub environment: String,
+    pub services: ServicesHealth,
+    pub uptime: u64,
+    pub memory: MemoryInfo,
 }
 
 /// Basic health check handler
@@ -106,6 +124,7 @@ async fn health_check_redis(
 
 /// Full system health check handler
 /// Checks both database and Redis connectivity
+/// Returns response format matching Node.js: { status, services: { database, redis, ... } }
 async fn health_check_full(
     State(state): State<AppState>,
 ) -> Result<Json<SystemHealthResponse>, (StatusCode, Json<SystemHealthResponse>)> {
@@ -113,8 +132,8 @@ async fn health_check_full(
 
     // Check database
     let db_status = match sqlx::query("SELECT 1").execute(state.db()).await {
-        Ok(_) => "connected".to_string(),
-        Err(_) => "disconnected".to_string(),
+        Ok(_) => "healthy".to_string(),
+        Err(_) => "unhealthy".to_string(),
     };
 
     // Check Redis
@@ -123,22 +142,48 @@ async fn health_check_full(
         .query_async::<_, String>(&mut redis_conn)
         .await
     {
-        Ok(_) => "connected".to_string(),
-        Err(_) => "disconnected".to_string(),
+        Ok(_) => "healthy".to_string(),
+        Err(_) => "unhealthy".to_string(),
     };
 
-    let all_healthy = db_status == "connected" && redis_status == "connected";
+    let db_healthy = db_status == "healthy";
+    let redis_healthy = redis_status == "healthy";
+    let all_healthy = db_healthy && redis_healthy;
+
+    // Get environment from config
+    let environment = if state.is_production() {
+        "production"
+    } else {
+        "development"
+    }
+    .to_string();
+
+    // Build services health status
+    let services = ServicesHealth {
+        database: db_status,
+        redis: redis_status,
+        storage: "healthy".to_string(), // Storage is always available in Rust backend
+        email: "configured".to_string(), // Email service status
+    };
+
+    // Memory info (simplified for Rust - we don't have direct access like Node.js)
+    let memory = MemoryInfo {
+        used: 0, // Could use jemalloc stats if needed
+        total: 0,
+    };
 
     let response = SystemHealthResponse {
         status: if all_healthy {
-            "ok".to_string()
+            "healthy".to_string()
         } else {
             "degraded".to_string()
         },
         timestamp,
         version: env!("CARGO_PKG_VERSION").to_string(),
-        database: db_status,
-        redis: redis_status,
+        environment,
+        services,
+        uptime: 0, // Would need to track start time for actual uptime
+        memory,
     };
 
     if all_healthy {
@@ -148,10 +193,12 @@ async fn health_check_full(
     }
 }
 
-/// Create health routes (basic health check only, no state required)
+/// Create health routes
+/// The root `/` path returns full system health with services object to match Node.js format
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/", get(health_check))
+        .route("/", get(health_check_full))
+        .route("/basic", get(health_check))
         .route("/db", get(health_check_db))
         .route("/redis", get(health_check_redis))
         .route("/full", get(health_check_full))

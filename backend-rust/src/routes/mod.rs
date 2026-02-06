@@ -8,6 +8,7 @@ pub mod analytics;
 pub mod auth;
 pub mod bookings;
 pub mod coupons;
+pub mod csrf;
 pub mod health;
 pub mod loyalty;
 pub mod membership;
@@ -61,6 +62,7 @@ use crate::state::AppState;
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .nest("/api/health", health::routes())
+        .nest("/api/csrf-token", csrf::routes())
         .nest("/api/auth", auth::routes())
         .nest("/api/users", users::routes())
         .nest("/api/oauth", oauth::routes())
