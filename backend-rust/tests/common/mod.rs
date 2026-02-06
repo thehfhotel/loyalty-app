@@ -200,7 +200,7 @@ fn create_test_config() -> loyalty_backend::Settings {
         },
         database: DatabaseConfig {
             url: test_database_url(),
-            max_connections: 5,
+            max_connections: 10,
             min_connections: 1,
             connection_timeout_secs: 30,
         },
@@ -241,7 +241,7 @@ impl Default for TestDbConfig {
     fn default() -> Self {
         Self {
             database_url: test_database_url(),
-            max_connections: 5,
+            max_connections: 10,
         }
     }
 }
@@ -259,9 +259,11 @@ pub async fn setup_test_db() -> Result<PgPool, sqlx::Error> {
 
     let config = TestDbConfig::default();
 
-    // Create the connection pool
+    // Create the connection pool with appropriate timeouts
     let pool = PgPoolOptions::new()
         .max_connections(config.max_connections)
+        .acquire_timeout(std::time::Duration::from_secs(30))
+        .idle_timeout(std::time::Duration::from_secs(60))
         .connect(&config.database_url)
         .await?;
 

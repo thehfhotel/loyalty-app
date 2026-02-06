@@ -1105,16 +1105,16 @@ impl From<UserRow> for AdminUserResponse {
 pub fn router() -> Router<AppState> {
     Router::new()
         // User management
-        .route("/admin/users", get(list_users))
-        .route("/admin/users/:id", get(get_user))
-        .route("/admin/users/:id", put(update_user))
-        .route("/admin/users/:id", delete(delete_user))
+        .route("/users", get(list_users))
+        .route("/users/:id", get(get_user))
+        .route("/users/:id", put(update_user))
+        .route("/users/:id", delete(delete_user))
         // Dashboard stats
-        .route("/admin/stats", get(get_stats))
+        .route("/stats", get(get_stats))
         // Analytics
-        .route("/admin/analytics", get(get_analytics))
+        .route("/analytics", get(get_analytics))
         // Notifications
-        .route("/admin/notifications/broadcast", post(broadcast_notification))
+        .route("/notifications/broadcast", post(broadcast_notification))
         // Apply auth middleware to all routes
         .layer(middleware::from_fn(auth_middleware))
 }

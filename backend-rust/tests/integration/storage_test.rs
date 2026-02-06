@@ -538,17 +538,17 @@ async fn test_file_not_found() {
     // Verify error response structure
     let json_result = test_response.json();
     if let Ok(json) = json_result {
-        let error_message = json
-            .get("error")
-            .or_else(|| json.get("message"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        // Check error code or message field
+        let error_code = json.get("error").and_then(|v| v.as_str()).unwrap_or("");
+        let message = json.get("message").and_then(|v| v.as_str()).unwrap_or("");
 
         assert!(
-            error_message.to_lowercase().contains("not found")
-                || error_message.to_lowercase().contains("file"),
-            "Error message should indicate file not found: {}",
-            error_message
+            error_code == "not_found"
+                || message.to_lowercase().contains("not found")
+                || message.to_lowercase().contains("file"),
+            "Error should indicate file not found. error: {}, message: {}",
+            error_code,
+            message
         );
     }
 }
