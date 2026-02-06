@@ -623,7 +623,7 @@ impl TestUser {
         .bind(self.id)
         .bind(first_name)
         .bind(last_name)
-        .bind(format!("TEST{}", self.id.to_string()[..8].to_uppercase()))
+        .bind(&self.id.to_string()[..8].to_uppercase())
         .execute(pool)
         .await?;
 
