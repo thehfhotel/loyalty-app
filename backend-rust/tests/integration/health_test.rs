@@ -339,7 +339,10 @@ async fn test_health_endpoint_trailing_slash() {
     let response = client.get("/api/health/").await;
 
     assert!(
-        response.status == 200 || response.status == 404 || response.status == 308 || response.status == 503,
+        response.status == 200
+            || response.status == 404
+            || response.status == 308
+            || response.status == 503,
         "Should handle trailing slash gracefully, got status {}",
         response.status
     );
