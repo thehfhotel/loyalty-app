@@ -43,6 +43,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       frontend-cache-key: ${{ steps.cache-keys.outputs.frontend }}
+      backend-node-cache-key: ${{ steps.cache-keys.outputs.backend-node }}
       rust-cache-key: ${{ steps.cache-keys.outputs.rust }}
 
     steps:
@@ -64,6 +65,7 @@ jobs:
         id: cache-keys
         run: |
           echo "frontend=frontend-deps-${{ hashFiles('frontend/package-lock.json') }}" >> $GITHUB_OUTPUT
+          echo "backend-node=backend-node-deps-${{ hashFiles('backend/package-lock.json') }}" >> $GITHUB_OUTPUT
           echo "rust=rust-deps-${{ hashFiles('backend-rust/Cargo.lock') }}" >> $GITHUB_OUTPUT
 
       - name: Cache Rust dependencies
@@ -87,8 +89,20 @@ jobs:
           restore-keys: |
             frontend-deps-
 
+      - name: Cache backend Node.js dependencies (for tRPC types)
+        uses: actions/cache@v4
+        with:
+          path: backend/node_modules
+          key: ${{ steps.cache-keys.outputs.backend-node }}
+          restore-keys: |
+            backend-node-deps-
+
       - name: Install frontend dependencies
         working-directory: ./frontend
+        run: npm ci
+
+      - name: Install backend Node.js dependencies (for tRPC types)
+        working-directory: ./backend
         run: npm ci
 
       - name: Build Rust dependencies (warm cache)
@@ -164,6 +178,17 @@ jobs:
           path: frontend/node_modules
           key: ${{ needs.prepare.outputs.frontend-cache-key }}
           fail-on-cache-miss: true
+
+      - name: Restore backend Node.js dependencies (for tRPC types)
+        uses: actions/cache@v4
+        with:
+          path: backend/node_modules
+          key: ${{ needs.prepare.outputs.backend-node-cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Generate Prisma client (for tRPC types)
+        working-directory: ./backend
+        run: npx prisma generate
 
       - name: TypeScript check
         working-directory: ./frontend
