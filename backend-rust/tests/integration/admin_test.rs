@@ -35,6 +35,9 @@ fn create_test_settings() -> Settings {
 
 /// Create a test application with all routes including admin
 async fn create_test_app(pool: PgPool) -> Router {
+    // Set JWT_SECRET env var for auth middleware
+    std::env::set_var("JWT_SECRET", TEST_JWT_SECRET);
+
     let redis = init_test_redis()
         .await
         .expect("Failed to initialize test Redis");
