@@ -10,7 +10,7 @@ use axum::{
     extract::{Extension, Path, Query, State},
     http::StatusCode,
     middleware,
-    routing::{delete, get, put},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use chrono::{DateTime, Utc};
@@ -19,7 +19,7 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::middleware::auth::{auth_middleware, AuthUser};
+use crate::middleware::auth::{auth_middleware, has_role, AuthUser};
 use crate::state::AppState;
 
 // ==================== REQUEST/RESPONSE TYPES ====================
@@ -133,6 +133,30 @@ pub struct MarkAllReadResponse {
 pub struct DeleteNotificationResponse {
     pub success: bool,
     pub message: String,
+}
+
+/// Notification preferences response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NotificationPreferencesResponse {
+    pub user_id: Uuid,
+    pub email_notifications: bool,
+    pub push_notifications: bool,
+    pub sms_notifications: bool,
+}
+
+/// Update notification preferences request
+#[derive(Debug, Deserialize)]
+pub struct UpdatePreferencesRequest {
+    pub email_notifications: Option<bool>,
+    pub push_notifications: Option<bool>,
+    pub sms_notifications: Option<bool>,
+}
+
+/// Cleanup response
+#[derive(Debug, Serialize)]
+pub struct CleanupResponse {
+    pub success: bool,
+    pub deleted_count: i64,
 }
 
 /// Internal row type for count queries
@@ -455,6 +479,100 @@ async fn delete_notification(
     }))
 }
 
+/// GET /api/notifications/preferences
+async fn get_notification_preferences(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+) -> AppResult<Json<NotificationPreferencesResponse>> {
+    let user_id = Uuid::parse_str(&auth_user.id)
+        .map_err(|_| AppError::InvalidInput("Invalid user ID".to_string()))?;
+
+    let row: Option<(Uuid, bool, bool, bool)> = sqlx::query_as(
+        "SELECT user_id, email_notifications, push_notifications, sms_notifications FROM notification_preferences WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(state.db())
+    .await?;
+
+    match row {
+        Some((uid, email, push, sms)) => Ok(Json(NotificationPreferencesResponse {
+            user_id: uid,
+            email_notifications: email,
+            push_notifications: push,
+            sms_notifications: sms,
+        })),
+        None => Ok(Json(NotificationPreferencesResponse {
+            user_id,
+            email_notifications: true,
+            push_notifications: true,
+            sms_notifications: false,
+        })),
+    }
+}
+
+/// PUT /api/notifications/preferences
+async fn update_notification_preferences(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    Json(payload): Json<UpdatePreferencesRequest>,
+) -> AppResult<Json<NotificationPreferencesResponse>> {
+    let user_id = Uuid::parse_str(&auth_user.id)
+        .map_err(|_| AppError::InvalidInput("Invalid user ID".to_string()))?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO notification_preferences (user_id, email_notifications, push_notifications, sms_notifications)
+        VALUES ($1, COALESCE($2, true), COALESCE($3, true), COALESCE($4, false))
+        ON CONFLICT (user_id) DO UPDATE SET
+            email_notifications = COALESCE($2, notification_preferences.email_notifications),
+            push_notifications = COALESCE($3, notification_preferences.push_notifications),
+            sms_notifications = COALESCE($4, notification_preferences.sms_notifications),
+            updated_at = NOW()
+        "#,
+    )
+    .bind(user_id)
+    .bind(payload.email_notifications)
+    .bind(payload.push_notifications)
+    .bind(payload.sms_notifications)
+    .execute(state.db())
+    .await?;
+
+    let row: (Uuid, bool, bool, bool) = sqlx::query_as(
+        "SELECT user_id, email_notifications, push_notifications, sms_notifications FROM notification_preferences WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(state.db())
+    .await?;
+
+    Ok(Json(NotificationPreferencesResponse {
+        user_id: row.0,
+        email_notifications: row.1,
+        push_notifications: row.2,
+        sms_notifications: row.3,
+    }))
+}
+
+/// POST /api/notifications/admin/cleanup
+async fn cleanup_notifications(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+) -> AppResult<Json<CleanupResponse>> {
+    if !has_role(&auth_user, "admin") {
+        return Err(AppError::Forbidden("Admin access required".to_string()));
+    }
+
+    let result = sqlx::query(
+        "DELETE FROM notifications WHERE expires_at IS NOT NULL AND expires_at < NOW()",
+    )
+    .execute(state.db())
+    .await?;
+
+    Ok(Json(CleanupResponse {
+        success: true,
+        deleted_count: result.rows_affected() as i64,
+    }))
+}
+
 // ==================== ROUTER ====================
 
 /// Create notification router
@@ -475,6 +593,9 @@ pub fn router() -> Router<AppState> {
         .route("/:id/read", put(mark_notification_read))
         .route("/read-all", put(mark_all_notifications_read))
         .route("/:id", delete(delete_notification))
+        .route("/preferences", get(get_notification_preferences))
+        .route("/preferences", put(update_notification_preferences))
+        .route("/admin/cleanup", post(cleanup_notifications))
         .layer(middleware::from_fn(auth_middleware))
 }
 

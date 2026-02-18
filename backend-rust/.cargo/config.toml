@@ -31,8 +31,9 @@ panic = "abort"
 opt-level = 2
 
 [target.x86_64-unknown-linux-gnu]
-# Linux-specific linker settings
-rustflags = ["-C", "target-cpu=native"]
+# Note: target-cpu=native was removed because it causes SIGILL in CI
+# when sccache serves cached objects compiled with different CPU features.
+# For local performance, run: RUSTFLAGS="-C target-cpu=native" cargo build
 
 [target.x86_64-unknown-linux-musl]
 # MUSL target for static binaries (Alpine Linux)

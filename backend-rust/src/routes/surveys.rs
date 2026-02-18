@@ -974,6 +974,64 @@ async fn send_survey_invitations(
 }
 
 // ============================================================================
+// Coupon Assignment Stubs (Not Yet Implemented)
+// ============================================================================
+
+async fn create_coupon_assignment_stub(
+    Extension(_user): Extension<AuthUser>,
+) -> (StatusCode, Json<NotImplementedResponse>) {
+    not_implemented_response()
+}
+
+async fn get_coupon_assignments_stub(
+    Extension(_user): Extension<AuthUser>,
+    Path(_id): Path<Uuid>,
+) -> (StatusCode, Json<NotImplementedResponse>) {
+    not_implemented_response()
+}
+
+async fn update_coupon_assignment_stub(
+    Extension(_user): Extension<AuthUser>,
+    Path((_id, _coupon_id)): Path<(Uuid, Uuid)>,
+) -> (StatusCode, Json<NotImplementedResponse>) {
+    not_implemented_response()
+}
+
+async fn delete_coupon_assignment_stub(
+    Extension(_user): Extension<AuthUser>,
+    Path((_id, _coupon_id)): Path<(Uuid, Uuid)>,
+) -> (StatusCode, Json<NotImplementedResponse>) {
+    not_implemented_response()
+}
+
+async fn get_reward_history_stub(
+    Extension(_user): Extension<AuthUser>,
+    Path(_id): Path<Uuid>,
+) -> (StatusCode, Json<NotImplementedResponse>) {
+    not_implemented_response()
+}
+
+async fn get_all_coupon_assignments_stub(
+    Extension(_user): Extension<AuthUser>,
+) -> (StatusCode, Json<NotImplementedResponse>) {
+    not_implemented_response()
+}
+
+async fn send_invitations_to_users_stub(
+    Extension(_user): Extension<AuthUser>,
+    Path(_id): Path<Uuid>,
+) -> (StatusCode, Json<NotImplementedResponse>) {
+    not_implemented_response()
+}
+
+async fn resend_invitation_stub(
+    Extension(_user): Extension<AuthUser>,
+    Path(_id): Path<Uuid>,
+) -> (StatusCode, Json<NotImplementedResponse>) {
+    not_implemented_response()
+}
+
+// ============================================================================
 // Router Configuration
 // ============================================================================
 
@@ -1007,6 +1065,27 @@ pub fn routes() -> Router<AppState> {
         // Invitation management routes
         .route("/:id/invitations", get(get_survey_invitations))
         .route("/:id/invitations/send", post(send_survey_invitations))
+        // Coupon assignment routes
+        .route("/coupon-assignments", post(create_coupon_assignment_stub))
+        .route("/:id/coupon-assignments", get(get_coupon_assignments_stub))
+        .route(
+            "/:id/coupon-assignments/:couponId",
+            put(update_coupon_assignment_stub),
+        )
+        .route(
+            "/:id/coupon-assignments/:couponId",
+            delete(delete_coupon_assignment_stub),
+        )
+        .route("/:id/reward-history", get(get_reward_history_stub))
+        .route(
+            "/admin/coupon-assignments",
+            get(get_all_coupon_assignments_stub),
+        )
+        .route(
+            "/:id/invitations/send-to-users",
+            post(send_invitations_to_users_stub),
+        )
+        .route("/invitations/:id/resend", post(resend_invitation_stub))
         .layer(middleware::from_fn(auth_middleware))
 }
 

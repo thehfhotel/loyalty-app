@@ -212,11 +212,20 @@ jobs:
         env:
           PGPASSWORD: loyalty_test_pass
 
+      - name: Cache sqlx-cli
+        id: cache-sqlx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/sqlx
+          key: sqlx-cli-${{ runner.os }}-${{ env.RUST_VERSION }}
+
+      - name: Install sqlx-cli
+        if: steps.cache-sqlx.outputs.cache-hit != 'true'
+        run: cargo install sqlx-cli --no-default-features --features postgres --locked
+
       - name: Verify SQLx query cache
         working-directory: ./backend-rust
-        run: |
-          cargo install sqlx-cli --no-default-features --features postgres --locked || true
-          cargo sqlx prepare --check
+        run: cargo sqlx prepare --check
         env:
           DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
 
@@ -239,11 +248,12 @@ jobs:
           LINE_CALLBACK_URL: http://localhost:4001/api/oauth/line/callback
           FRONTEND_URL: http://localhost:3000
 
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
       - name: Check for security vulnerabilities
         working-directory: ./backend-rust
-        run: |
-          cargo install cargo-audit --locked || true
-          cargo audit || echo "Some vulnerabilities found - review output"
+        run: cargo audit || echo "Some vulnerabilities found - review output"
         continue-on-error: true
 
       - name: Show sccache stats

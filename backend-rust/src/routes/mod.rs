@@ -60,6 +60,11 @@ use crate::state::AppState;
 ///
 /// An Axum Router with all routes configured and state attached
 pub fn create_router(state: AppState) -> Router {
+    // Storage routes use a different state type, so mount separately
+    let storage_state = storage::StorageState::new(crate::services::storage::StorageService::new());
+    let storage_router =
+        Router::new().nest("/api/storage", storage::routes().with_state(storage_state));
+
     Router::new()
         .nest("/api/health", health::routes())
         .nest("/api/csrf-token", csrf::routes())
@@ -80,6 +85,8 @@ pub fn create_router(state: AppState) -> Router {
         // OpenAPI documentation routes
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))
         .with_state(state)
+        // Merge storage routes (separate state type)
+        .merge(storage_router)
 }
 
 #[cfg(test)]

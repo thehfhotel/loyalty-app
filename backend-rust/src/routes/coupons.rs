@@ -10,7 +10,7 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -98,6 +98,13 @@ pub struct ListUserCouponsQuery {
     /// User ID to view (admin only)
     #[serde(rename = "userId")]
     pub user_id: Option<String>,
+}
+
+/// Query parameters for analytics data
+#[derive(Debug, Deserialize, Default)]
+pub struct AnalyticsDataQuery {
+    /// Number of days to look back (default: 30, max: 365)
+    pub days: Option<u32>,
 }
 
 /// Request to assign a coupon to users
@@ -1442,6 +1449,51 @@ async fn get_coupon_assignments(
     })))
 }
 
+/// Get coupon analytics time-series data (admin only)
+///
+/// GET /api/coupons/analytics/data
+async fn get_coupon_analytics_data(
+    State(state): State<AppState>,
+    Extension(_user): Extension<AuthUser>,
+    Query(query): Query<AnalyticsDataQuery>,
+) -> AppResult<Json<SuccessResponse<serde_json::Value>>> {
+    let days = query.days.unwrap_or(30).min(365) as i64;
+    let start_date = Utc::now() - Duration::days(days);
+
+    // Note: Uses runtime query because the sqlx offline cache does not have
+    // this query cached, and we cannot regenerate the cache without a live DB.
+    let rows: Vec<(chrono::NaiveDate, i64)> = sqlx::query_as(
+        r#"
+        SELECT
+            DATE(uc.used_at) as date,
+            COUNT(*) as count
+        FROM user_coupons uc
+        WHERE uc.status = 'used'
+            AND uc.used_at >= $1
+        GROUP BY DATE(uc.used_at)
+        ORDER BY DATE(uc.used_at)
+        "#,
+    )
+    .bind(start_date)
+    .fetch_all(state.db())
+    .await?;
+
+    let data_points: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|(date, count)| {
+            serde_json::json!({
+                "date": date.to_string(),
+                "redemptions": count,
+            })
+        })
+        .collect();
+
+    Ok(Json(SuccessResponse::new(serde_json::json!({
+        "period_days": days,
+        "data_points": data_points,
+    }))))
+}
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -1486,6 +1538,7 @@ pub fn routes() -> Router<AppState> {
             post(revoke_user_coupon),
         )
         .route("/analytics/stats", get(get_coupon_stats))
+        .route("/analytics/data", get(get_coupon_analytics_data))
         .route("/:couponId/redemptions", get(get_coupon_redemptions))
         .route("/:couponId/assignments", get(get_coupon_assignments))
         .layer(middleware::from_fn(|req, next| {

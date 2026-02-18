@@ -10,12 +10,12 @@ test.describe('Admin User Management', () => {
 
   test.describe('User Listing Endpoints', () => {
     test('Admin user list endpoint should require authentication', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/users/admin/users`);
+      const response = await request.get(`${backendUrl}/api/admin/users`);
       expect([401, 403]).toContain(response.status());
     });
 
     test('Admin user list endpoint should reject invalid tokens', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/users/admin/users`, {
+      const response = await request.get(`${backendUrl}/api/admin/users`, {
         headers: {
           'Authorization': 'Bearer invalid-token',
         },
@@ -24,13 +24,13 @@ test.describe('Admin User Management', () => {
     });
 
     test('Admin user list endpoint should exist', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/users/admin/users`);
+      const response = await request.get(`${backendUrl}/api/admin/users`);
       // Should return 401 (auth required), not 404 (route exists)
       expect(response.status()).not.toBe(404);
     });
 
     test('Admin user list should support pagination parameters', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/users/admin/users?page=1&limit=10&search=test`);
+      const response = await request.get(`${backendUrl}/api/admin/users?page=1&limit=10&search=test`);
       // Without auth, returns 401, but route should exist
       expect([401, 403]).toContain(response.status());
     });
@@ -38,31 +38,31 @@ test.describe('Admin User Management', () => {
 
   test.describe('User Statistics', () => {
     test('Admin stats endpoint should require authentication', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/users/admin/stats`);
+      const response = await request.get(`${backendUrl}/api/admin/stats`);
       expect([401, 403]).toContain(response.status());
     });
 
     test('Admin stats endpoint should exist', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/users/admin/stats`);
+      const response = await request.get(`${backendUrl}/api/admin/stats`);
       expect(response.status()).not.toBe(404);
     });
   });
 
   test.describe('User Details', () => {
     test('Get user by ID endpoint should require authentication', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/users/admin/users/00000000-0000-0000-0000-000000000001`);
+      const response = await request.get(`${backendUrl}/api/admin/users/00000000-0000-0000-0000-000000000001`);
       expect([401, 403]).toContain(response.status());
     });
 
     test('Get user by ID endpoint should exist', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/users/admin/users/some-user-id`);
+      const response = await request.get(`${backendUrl}/api/admin/users/some-user-id`);
       expect(response.status()).not.toBe(404);
     });
   });
 
   test.describe('User Status Management', () => {
     test('Update user status endpoint should require authentication', async ({ request }) => {
-      const response = await request.patch(`${backendUrl}/api/users/admin/users/00000000-0000-0000-0000-000000000001/status`, {
+      const response = await request.patch(`${backendUrl}/api/admin/users/00000000-0000-0000-0000-000000000001/status`, {
         data: { isActive: false },
         headers: { 'Content-Type': 'application/json' },
       });
@@ -70,7 +70,7 @@ test.describe('Admin User Management', () => {
     });
 
     test('Update user status endpoint should exist', async ({ request }) => {
-      const response = await request.patch(`${backendUrl}/api/users/admin/users/test-id/status`, {
+      const response = await request.patch(`${backendUrl}/api/admin/users/test-id/status`, {
         data: { isActive: true },
         headers: { 'Content-Type': 'application/json' },
       });
@@ -80,7 +80,7 @@ test.describe('Admin User Management', () => {
 
   test.describe('User Role Management', () => {
     test('Update user role endpoint should require authentication', async ({ request }) => {
-      const response = await request.patch(`${backendUrl}/api/users/admin/users/00000000-0000-0000-0000-000000000001/role`, {
+      const response = await request.patch(`${backendUrl}/api/admin/users/00000000-0000-0000-0000-000000000001/role`, {
         data: { role: 'admin' },
         headers: { 'Content-Type': 'application/json' },
       });
@@ -88,7 +88,7 @@ test.describe('Admin User Management', () => {
     });
 
     test('Update user role endpoint should exist', async ({ request }) => {
-      const response = await request.patch(`${backendUrl}/api/users/admin/users/test-id/role`, {
+      const response = await request.patch(`${backendUrl}/api/admin/users/test-id/role`, {
         data: { role: 'customer' },
         headers: { 'Content-Type': 'application/json' },
       });
@@ -98,24 +98,24 @@ test.describe('Admin User Management', () => {
 
   test.describe('User Deletion', () => {
     test('Delete user endpoint should require authentication', async ({ request }) => {
-      const response = await request.delete(`${backendUrl}/api/users/admin/users/00000000-0000-0000-0000-000000000001`);
+      const response = await request.delete(`${backendUrl}/api/admin/users/00000000-0000-0000-0000-000000000001`);
       expect([401, 403]).toContain(response.status());
     });
 
     test('Delete user endpoint should exist', async ({ request }) => {
-      const response = await request.delete(`${backendUrl}/api/users/admin/users/test-id`);
+      const response = await request.delete(`${backendUrl}/api/admin/users/test-id`);
       expect(response.status()).not.toBe(404);
     });
   });
 
   test.describe('New Member Coupon Settings', () => {
     test('Get new member coupon settings should require authentication', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/users/admin/new-member-coupon-settings`);
+      const response = await request.get(`${backendUrl}/api/admin/new-member-coupon-settings`);
       expect([401, 403]).toContain(response.status());
     });
 
     test('Update new member coupon settings should require authentication', async ({ request }) => {
-      const response = await request.put(`${backendUrl}/api/users/admin/new-member-coupon-settings`, {
+      const response = await request.put(`${backendUrl}/api/admin/new-member-coupon-settings`, {
         data: { enabled: true },
         headers: { 'Content-Type': 'application/json' },
       });
@@ -123,10 +123,10 @@ test.describe('Admin User Management', () => {
     });
 
     test('New member coupon settings endpoints should exist', async ({ request }) => {
-      const getResponse = await request.get(`${backendUrl}/api/users/admin/new-member-coupon-settings`);
+      const getResponse = await request.get(`${backendUrl}/api/admin/new-member-coupon-settings`);
       expect(getResponse.status()).not.toBe(404);
 
-      const putResponse = await request.put(`${backendUrl}/api/users/admin/new-member-coupon-settings`, {
+      const putResponse = await request.put(`${backendUrl}/api/admin/new-member-coupon-settings`, {
         data: {},
         headers: { 'Content-Type': 'application/json' },
       });
@@ -136,12 +136,12 @@ test.describe('Admin User Management', () => {
 
   test.describe('Admin Coupon Status', () => {
     test('Get coupon status endpoint should require authentication', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/users/admin/coupon-status/00000000-0000-0000-0000-000000000001`);
+      const response = await request.get(`${backendUrl}/api/admin/coupon-status/00000000-0000-0000-0000-000000000001`);
       expect([401, 403]).toContain(response.status());
     });
 
     test('Get coupon status endpoint should exist', async ({ request }) => {
-      const response = await request.get(`${backendUrl}/api/users/admin/coupon-status/test-coupon-id`);
+      const response = await request.get(`${backendUrl}/api/admin/coupon-status/test-coupon-id`);
       expect(response.status()).not.toBe(404);
     });
   });
@@ -152,14 +152,14 @@ test.describe('Admin User API Contract Tests', () => {
 
   test('User management routes should be properly registered', async ({ request }) => {
     const routes = [
-      { method: 'GET', path: '/api/users/admin/users' },
-      { method: 'GET', path: '/api/users/admin/stats' },
-      { method: 'GET', path: '/api/users/admin/users/test-id' },
-      { method: 'PATCH', path: '/api/users/admin/users/test-id/status' },
-      { method: 'PATCH', path: '/api/users/admin/users/test-id/role' },
-      { method: 'DELETE', path: '/api/users/admin/users/test-id' },
-      { method: 'GET', path: '/api/users/admin/new-member-coupon-settings' },
-      { method: 'PUT', path: '/api/users/admin/new-member-coupon-settings' },
+      { method: 'GET', path: '/api/admin/users' },
+      { method: 'GET', path: '/api/admin/stats' },
+      { method: 'GET', path: '/api/admin/users/test-id' },
+      { method: 'PATCH', path: '/api/admin/users/test-id/status' },
+      { method: 'PATCH', path: '/api/admin/users/test-id/role' },
+      { method: 'DELETE', path: '/api/admin/users/test-id' },
+      { method: 'GET', path: '/api/admin/new-member-coupon-settings' },
+      { method: 'PUT', path: '/api/admin/new-member-coupon-settings' },
     ];
 
     for (const route of routes) {
