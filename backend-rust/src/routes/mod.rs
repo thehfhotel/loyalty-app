@@ -61,8 +61,7 @@ use crate::state::AppState;
 /// An Axum Router with all routes configured and state attached
 pub fn create_router(state: AppState) -> Router {
     // Storage routes use a different state type, so mount separately
-    let storage_state =
-        storage::StorageState::new(crate::services::storage::StorageService::new());
+    let storage_state = storage::StorageState::new(crate::services::storage::StorageService::new());
     let storage_router =
         Router::new().nest("/api/storage", storage::routes().with_state(storage_state));
 

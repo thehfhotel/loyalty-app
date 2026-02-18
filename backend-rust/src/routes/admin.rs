@@ -1042,11 +1042,10 @@ async fn get_new_member_coupon_settings(
 ) -> AppResult<Json<serde_json::Value>> {
     require_admin(&user)?;
 
-    let row: Option<(serde_json::Value,)> = sqlx::query_as(
-        "SELECT value FROM app_settings WHERE key = 'new_member_coupon' LIMIT 1",
-    )
-    .fetch_optional(state.db())
-    .await?;
+    let row: Option<(serde_json::Value,)> =
+        sqlx::query_as("SELECT value FROM app_settings WHERE key = 'new_member_coupon' LIMIT 1")
+            .fetch_optional(state.db())
+            .await?;
 
     match row {
         Some((value,)) => Ok(Json(serde_json::json!({

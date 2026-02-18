@@ -1480,10 +1480,12 @@ async fn get_coupon_analytics_data(
 
     let data_points: Vec<serde_json::Value> = rows
         .into_iter()
-        .map(|(date, count)| serde_json::json!({
-            "date": date.to_string(),
-            "redemptions": count,
-        }))
+        .map(|(date, count)| {
+            serde_json::json!({
+                "date": date.to_string(),
+                "redemptions": count,
+            })
+        })
         .collect();
 
     Ok(Json(SuccessResponse::new(serde_json::json!({
