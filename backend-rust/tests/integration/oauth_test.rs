@@ -73,8 +73,8 @@ async fn create_oauth_test_app(settings: Settings) -> Result<Router, Box<dyn std
 
     let state = AppState::new(pool, redis, settings);
 
-    // Mount OAuth routes under /api
-    Ok(Router::new().nest("/api", routes().with_state(state)))
+    // Mount OAuth routes under /api/oauth (matching production router)
+    Ok(Router::new().nest("/api/oauth", routes().with_state(state)))
 }
 
 // ============================================================================
