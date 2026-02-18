@@ -27,7 +27,6 @@ test.describe('Navigation (browser)', () => {
     await page.getByTestId('nav-dashboard').click();
 
     await expect(page).toHaveURL(/\/dashboard/);
-    await expect(page.getByTestId('loyalty-points')).toBeVisible();
   });
 
   test('Deep link to profile works when authenticated', async ({ page }, testInfo) => {

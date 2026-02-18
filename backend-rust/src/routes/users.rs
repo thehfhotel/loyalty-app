@@ -325,11 +325,14 @@ async fn update_current_user(
         return Err(AppError::NotFound("User not found".to_string()));
     }
 
+    // Generate membership_id for INSERT (only used if profile doesn't exist yet)
+    let membership_id = super::auth::generate_membership_id(state.db()).await?;
+
     // Upsert profile (insert or update)
     sqlx::query(
         r#"
-        INSERT INTO user_profiles (user_id, first_name, last_name, phone, date_of_birth, preferences, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        INSERT INTO user_profiles (user_id, first_name, last_name, phone, date_of_birth, preferences, membership_id, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
         ON CONFLICT (user_id) DO UPDATE SET
             first_name = COALESCE($2, user_profiles.first_name),
             last_name = COALESCE($3, user_profiles.last_name),
@@ -345,6 +348,7 @@ async fn update_current_user(
     .bind(&payload.phone)
     .bind(&payload.date_of_birth)
     .bind(&payload.preferences)
+    .bind(&membership_id)
     .execute(state.db())
     .await?;
 
@@ -412,11 +416,14 @@ async fn complete_profile(
         preferences = Some(serde_json::Value::Object(prefs));
     }
 
+    // Generate membership_id for INSERT (only used if profile doesn't exist yet)
+    let membership_id = super::auth::generate_membership_id(state.db()).await?;
+
     // Upsert profile
     sqlx::query(
         r#"
-        INSERT INTO user_profiles (user_id, first_name, last_name, phone, date_of_birth, preferences, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        INSERT INTO user_profiles (user_id, first_name, last_name, phone, date_of_birth, preferences, membership_id, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
         ON CONFLICT (user_id) DO UPDATE SET
             first_name = COALESCE($2, user_profiles.first_name),
             last_name = COALESCE($3, user_profiles.last_name),
@@ -432,6 +439,7 @@ async fn complete_profile(
     .bind(&payload.phone)
     .bind(&payload.date_of_birth)
     .bind(&preferences)
+    .bind(&membership_id)
     .execute(state.db())
     .await?;
 

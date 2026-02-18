@@ -135,21 +135,25 @@ pub struct DeleteNotificationResponse {
     pub message: String,
 }
 
+/// Single notification preference entry
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct NotificationPreference {
+    #[serde(rename = "type")]
+    pub pref_type: String,
+    pub enabled: bool,
+}
+
 /// Notification preferences response
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NotificationPreferencesResponse {
     pub user_id: Uuid,
-    pub email_notifications: bool,
-    pub push_notifications: bool,
-    pub sms_notifications: bool,
+    pub preferences: Vec<NotificationPreference>,
 }
 
 /// Update notification preferences request
 #[derive(Debug, Deserialize)]
 pub struct UpdatePreferencesRequest {
-    pub email_notifications: Option<bool>,
-    pub push_notifications: Option<bool>,
-    pub sms_notifications: Option<bool>,
+    pub preferences: Vec<NotificationPreference>,
 }
 
 /// Cleanup response
@@ -487,27 +491,22 @@ async fn get_notification_preferences(
     let user_id = Uuid::parse_str(&auth_user.id)
         .map_err(|_| AppError::InvalidInput("Invalid user ID".to_string()))?;
 
-    let row: Option<(Uuid, bool, bool, bool)> = sqlx::query_as(
-        "SELECT user_id, email_notifications, push_notifications, sms_notifications FROM notification_preferences WHERE user_id = $1",
+    let rows: Vec<(String, bool)> = sqlx::query_as(
+        "SELECT type, enabled FROM notification_preferences WHERE user_id = $1 ORDER BY type",
     )
     .bind(user_id)
-    .fetch_optional(state.db())
+    .fetch_all(state.db())
     .await?;
 
-    match row {
-        Some((uid, email, push, sms)) => Ok(Json(NotificationPreferencesResponse {
-            user_id: uid,
-            email_notifications: email,
-            push_notifications: push,
-            sms_notifications: sms,
-        })),
-        None => Ok(Json(NotificationPreferencesResponse {
-            user_id,
-            email_notifications: true,
-            push_notifications: true,
-            sms_notifications: false,
-        })),
-    }
+    let preferences: Vec<NotificationPreference> = rows
+        .into_iter()
+        .map(|(pref_type, enabled)| NotificationPreference { pref_type, enabled })
+        .collect();
+
+    Ok(Json(NotificationPreferencesResponse {
+        user_id,
+        preferences,
+    }))
 }
 
 /// PUT /api/notifications/preferences
@@ -519,36 +518,40 @@ async fn update_notification_preferences(
     let user_id = Uuid::parse_str(&auth_user.id)
         .map_err(|_| AppError::InvalidInput("Invalid user ID".to_string()))?;
 
-    sqlx::query(
-        r#"
-        INSERT INTO notification_preferences (user_id, email_notifications, push_notifications, sms_notifications)
-        VALUES ($1, COALESCE($2, true), COALESCE($3, true), COALESCE($4, false))
-        ON CONFLICT (user_id) DO UPDATE SET
-            email_notifications = COALESCE($2, notification_preferences.email_notifications),
-            push_notifications = COALESCE($3, notification_preferences.push_notifications),
-            sms_notifications = COALESCE($4, notification_preferences.sms_notifications),
-            updated_at = NOW()
-        "#,
+    // Upsert each preference row
+    for pref in &payload.preferences {
+        sqlx::query(
+            r#"
+            INSERT INTO notification_preferences (user_id, type, enabled)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, type) DO UPDATE SET
+                enabled = $3,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(user_id)
+        .bind(&pref.pref_type)
+        .bind(pref.enabled)
+        .execute(state.db())
+        .await?;
+    }
+
+    // Fetch all preferences for user
+    let rows: Vec<(String, bool)> = sqlx::query_as(
+        "SELECT type, enabled FROM notification_preferences WHERE user_id = $1 ORDER BY type",
     )
     .bind(user_id)
-    .bind(payload.email_notifications)
-    .bind(payload.push_notifications)
-    .bind(payload.sms_notifications)
-    .execute(state.db())
+    .fetch_all(state.db())
     .await?;
 
-    let row: (Uuid, bool, bool, bool) = sqlx::query_as(
-        "SELECT user_id, email_notifications, push_notifications, sms_notifications FROM notification_preferences WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(state.db())
-    .await?;
+    let preferences: Vec<NotificationPreference> = rows
+        .into_iter()
+        .map(|(pref_type, enabled)| NotificationPreference { pref_type, enabled })
+        .collect();
 
     Ok(Json(NotificationPreferencesResponse {
-        user_id: row.0,
-        email_notifications: row.1,
-        push_notifications: row.2,
-        sms_notifications: row.3,
+        user_id,
+        preferences,
     }))
 }
 

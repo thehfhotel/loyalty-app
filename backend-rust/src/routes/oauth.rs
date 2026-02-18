@@ -1431,18 +1431,47 @@ async fn generate_membership_id(state: &AppState) -> AppResult<String> {
 }
 
 /// Create default notification preferences for a user
+///
+/// Note: The database trigger `trigger_create_default_notification_preferences` already
+/// creates default preferences when a user is inserted. This function ensures they exist
+/// as a safety net (e.g., if the trigger didn't fire).
 async fn create_default_notification_preferences(
     db: &sqlx::PgPool,
     user_id: Uuid,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"INSERT INTO notification_preferences (user_id, email_notifications, push_notifications, sms_notifications)
-           VALUES ($1, true, true, false)
-           ON CONFLICT (user_id) DO NOTHING"#,
-    )
-    .bind(user_id)
-    .execute(db)
-    .await?;
+    // The DB trigger handles this automatically on user creation.
+    // Only insert if no preferences exist yet (safety net).
+    let count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM notification_preferences WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(db)
+            .await?;
+
+    if count.0 == 0 {
+        // Insert default preferences using the correct schema (type/enabled rows)
+        let default_types = [
+            "info",
+            "success",
+            "warning",
+            "error",
+            "system",
+            "reward",
+            "coupon",
+            "survey",
+            "profile",
+            "tier_change",
+            "points",
+        ];
+        for pref_type in default_types {
+            sqlx::query(
+                "INSERT INTO notification_preferences (user_id, type, enabled) VALUES ($1, $2, true) ON CONFLICT (user_id, type) DO NOTHING",
+            )
+            .bind(user_id)
+            .bind(pref_type)
+            .execute(db)
+            .await?;
+        }
+    }
 
     Ok(())
 }
