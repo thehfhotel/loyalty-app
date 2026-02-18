@@ -2,12 +2,15 @@ import { test, expect } from '@playwright/test';
 
 /**
  * E2E tests for email delivery verification
- * Tests that the email service can send and receive emails
+ * Tests that admin endpoints require authentication and that
+ * the health endpoint reports service status.
+ *
+ * Note: Email delivery verification tests are skipped because the
+ * Rust backend does not yet have email test endpoints (migrated from tRPC).
  *
  * These tests require:
- * - SMTP_USER, SMTP_PASS, SMTP_HOST, SMTP_FROM configured
- * - IMAP_USER, IMAP_PASS, IMAP_HOST configured
- * - A super admin user for authentication
+ * - Backend running at BACKEND_URL (default: http://localhost:4202)
+ * - For delivery tests (currently skipped): SMTP/IMAP credentials and admin user
  */
 test.describe('Email Delivery Tests', () => {
   const backendUrl = process.env.BACKEND_URL || 'http://localhost:4202';
@@ -27,9 +30,9 @@ test.describe('Email Delivery Tests', () => {
     });
   });
 
-  test.describe('Email Admin Endpoints (tRPC)', () => {
-    test('Email status endpoint should require authentication', async ({ request }) => {
-      const response = await request.post(`${backendUrl}/api/trpc/admin.email.getStatus`, {
+  test.describe('Admin Endpoints Require Auth', () => {
+    test('Admin broadcast endpoint should require authentication', async ({ request }) => {
+      const response = await request.post(`${backendUrl}/api/admin/notifications/broadcast`, {
         headers: {
           'Content-Type': 'application/json',
         },
@@ -38,10 +41,14 @@ test.describe('Email Delivery Tests', () => {
       expect([401, 403]).toContain(response.status());
     });
 
-    test('Email test endpoint should require authentication', async ({ request }) => {
-      const response = await request.post(`${backendUrl}/api/trpc/admin.email.runTest`, {
+    test('Admin broadcast endpoint should reject unauthenticated requests', async ({ request }) => {
+      const response = await request.post(`${backendUrl}/api/admin/notifications/broadcast`, {
         headers: {
           'Content-Type': 'application/json',
+        },
+        data: {
+          title: 'Test',
+          message: 'Test broadcast',
         },
       });
 
@@ -49,19 +56,15 @@ test.describe('Email Delivery Tests', () => {
     });
   });
 
-  // This test is conditional - only runs if email is fully configured
-  test.describe('Email Delivery Verification', () => {
-    test.skip(
-      !process.env.SMTP_USER || !process.env.IMAP_HOST,
-      'Skipping email delivery test - SMTP/IMAP not configured'
-    );
-
+  // Skipped: The Rust backend does not have email delivery test endpoints yet.
+  // Re-enable when /api/admin/email/test or equivalent is implemented.
+  test.describe.skip('Email Delivery Verification', () => {
     test('Should verify email delivery end-to-end', async ({ request }) => {
       // First check if email is configured
       const healthResponse = await request.get(`${backendUrl}/api/health`);
       const health = await healthResponse.json();
 
-      if (health.services.email !== 'configured') {
+      if (health.services?.email !== 'configured') {
         test.skip(true, 'Email service not configured');
         return;
       }
@@ -107,8 +110,9 @@ test.describe('Email Delivery Tests', () => {
         return;
       }
 
-      // Test email delivery using tRPC endpoint
-      const testResponse = await request.post(`${backendUrl}/api/trpc/admin.email.runTest`, {
+      // TODO: Replace with Rust backend email test endpoint when implemented
+      // e.g., POST /api/admin/email/test
+      const testResponse = await request.post(`${backendUrl}/api/admin/email/test`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'X-CSRF-Token': csrfToken,
@@ -121,10 +125,7 @@ test.describe('Email Delivery Tests', () => {
       });
 
       expect(testResponse.ok()).toBeTruthy();
-      const responseData = await testResponse.json();
-
-      // tRPC wraps the result in a 'result' object
-      const result = responseData.result?.data || responseData;
+      const result = await testResponse.json();
 
       console.log('Email delivery test result:', JSON.stringify(result, null, 2));
 

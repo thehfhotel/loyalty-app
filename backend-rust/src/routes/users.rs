@@ -42,6 +42,10 @@ pub struct UserProfileResponse {
     pub avatar_url: Option<String>,
     pub membership_id: Option<String>,
     pub preferences: Option<JsonValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gender: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub occupation: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -69,6 +73,18 @@ struct UserWithProfileRow {
 
 impl From<UserWithProfileRow> for UserProfileResponse {
     fn from(row: UserWithProfileRow) -> Self {
+        let gender = row
+            .preferences
+            .as_ref()
+            .and_then(|p| p.get("gender"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let occupation = row
+            .preferences
+            .as_ref()
+            .and_then(|p| p.get("occupation"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
         UserProfileResponse {
             id: row.id,
             email: row.email,
@@ -82,6 +98,8 @@ impl From<UserWithProfileRow> for UserProfileResponse {
             avatar_url: row.avatar_url,
             membership_id: row.membership_id,
             preferences: row.preferences,
+            gender,
+            occupation,
             created_at: row.created_at.unwrap_or_else(Utc::now),
             updated_at: row.updated_at.unwrap_or_else(Utc::now),
         }
@@ -103,6 +121,25 @@ pub struct UpdateProfileRequest {
     pub date_of_birth: Option<NaiveDate>,
 
     pub preferences: Option<JsonValue>,
+}
+
+/// Request payload for completing user profile (includes gender/occupation)
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+pub struct CompleteProfileRequest {
+    #[validate(length(min = 1, max = 100, message = "First name must be 1-100 characters"))]
+    pub first_name: Option<String>,
+
+    #[validate(length(min = 1, max = 100, message = "Last name must be 1-100 characters"))]
+    pub last_name: Option<String>,
+
+    #[validate(length(max = 20, message = "Phone number too long"))]
+    pub phone: Option<String>,
+
+    pub date_of_birth: Option<NaiveDate>,
+
+    pub gender: Option<String>,
+
+    pub occupation: Option<String>,
 }
 
 /// Request payload for changing password
@@ -333,6 +370,167 @@ async fn update_current_user(
     Ok(Json(SuccessResponse::new(ProfileResponseWrapper {
         profile,
     })))
+}
+
+/// PUT /api/users/complete-profile - Complete user profile with extended fields
+///
+/// Like update_current_user but additionally handles gender/occupation
+/// by merging them into the preferences JSON field.
+async fn complete_profile(
+    State(state): State<FullAppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    Json(payload): Json<CompleteProfileRequest>,
+) -> Result<Json<SuccessResponse<ProfileResponseWrapper>>, AppError> {
+    payload
+        .validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
+
+    let user_id = Uuid::parse_str(&auth_user.id)
+        .map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))?;
+
+    // Build preferences JSON merging gender/occupation
+    let mut preferences: Option<JsonValue> = None;
+    if payload.gender.is_some() || payload.occupation.is_some() {
+        // Get current preferences
+        let current_prefs: Option<JsonValue> =
+            sqlx::query_scalar("SELECT preferences FROM user_profiles WHERE user_id = $1")
+                .bind(user_id)
+                .fetch_optional(state.db())
+                .await?
+                .flatten();
+
+        let mut prefs = current_prefs
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default();
+
+        if let Some(ref gender) = payload.gender {
+            prefs.insert("gender".to_string(), serde_json::json!(gender));
+        }
+        if let Some(ref occupation) = payload.occupation {
+            prefs.insert("occupation".to_string(), serde_json::json!(occupation));
+        }
+        preferences = Some(serde_json::Value::Object(prefs));
+    }
+
+    // Upsert profile
+    sqlx::query(
+        r#"
+        INSERT INTO user_profiles (user_id, first_name, last_name, phone, date_of_birth, preferences, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        ON CONFLICT (user_id) DO UPDATE SET
+            first_name = COALESCE($2, user_profiles.first_name),
+            last_name = COALESCE($3, user_profiles.last_name),
+            phone = COALESCE($4, user_profiles.phone),
+            date_of_birth = COALESCE($5, user_profiles.date_of_birth),
+            preferences = COALESCE($6, user_profiles.preferences),
+            updated_at = NOW()
+        "#,
+    )
+    .bind(user_id)
+    .bind(&payload.first_name)
+    .bind(&payload.last_name)
+    .bind(&payload.phone)
+    .bind(&payload.date_of_birth)
+    .bind(&preferences)
+    .execute(state.db())
+    .await?;
+
+    // Fetch updated profile
+    let row = sqlx::query_as::<_, UserWithProfileRow>(
+        r#"
+        SELECT
+            u.id, u.email, u.role::text as role, u.is_active, u.email_verified,
+            u.created_at, u.updated_at,
+            p.first_name, p.last_name, p.phone, p.date_of_birth,
+            p.avatar_url, p.membership_id, p.preferences
+        FROM users u
+        LEFT JOIN user_profiles p ON u.id = p.user_id
+        WHERE u.id = $1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(state.db())
+    .await?;
+
+    let profile: UserProfileResponse = row.into();
+
+    Ok(Json(SuccessResponse::new(ProfileResponseWrapper {
+        profile,
+    })))
+}
+
+/// GET /api/users/profile-completion-status - Get profile completion status
+///
+/// Returns which profile fields have been filled in.
+async fn get_profile_completion_status(
+    State(state): State<FullAppState>,
+    Extension(auth_user): Extension<AuthUser>,
+) -> Result<Json<SuccessResponse<serde_json::Value>>, AppError> {
+    let user_id = Uuid::parse_str(&auth_user.id)
+        .map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))?;
+
+    let row = sqlx::query_as::<_, UserWithProfileRow>(
+        r#"
+        SELECT
+            u.id, u.email, u.role::text as role, u.is_active, u.email_verified,
+            u.created_at, u.updated_at,
+            p.first_name, p.last_name, p.phone, p.date_of_birth,
+            p.avatar_url, p.membership_id, p.preferences
+        FROM users u
+        LEFT JOIN user_profiles p ON u.id = p.user_id
+        WHERE u.id = $1 AND u.is_active = true
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(state.db())
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+    let has_first_name = row.first_name.as_ref().is_some_and(|s| !s.is_empty());
+    let has_last_name = row.last_name.as_ref().is_some_and(|s| !s.is_empty());
+    let has_phone = row.phone.as_ref().is_some_and(|s| !s.is_empty());
+    let has_dob = row.date_of_birth.is_some();
+    let has_avatar = row.avatar_url.as_ref().is_some_and(|s| !s.is_empty());
+
+    let prefs = row.preferences.as_ref();
+    let has_gender = prefs
+        .and_then(|p| p.get("gender"))
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty());
+    let has_occupation = prefs
+        .and_then(|p| p.get("occupation"))
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty());
+
+    let completed_fields = [
+        has_first_name,
+        has_last_name,
+        has_phone,
+        has_dob,
+        has_gender,
+        has_occupation,
+    ]
+    .iter()
+    .filter(|&&v| v)
+    .count();
+
+    let total_fields = 6;
+    let is_complete = completed_fields == total_fields;
+
+    Ok(Json(SuccessResponse::new(serde_json::json!({
+        "isComplete": is_complete,
+        "completedFields": completed_fields,
+        "totalFields": total_fields,
+        "fields": {
+            "firstName": has_first_name,
+            "lastName": has_last_name,
+            "phone": has_phone,
+            "dateOfBirth": has_dob,
+            "gender": has_gender,
+            "occupation": has_occupation,
+            "avatar": has_avatar,
+        }
+    }))))
 }
 
 /// PUT /api/users/me/password - Change current user's password
@@ -760,6 +958,12 @@ pub fn routes() -> Router<FullAppState> {
         .route("/me", put(update_current_user))
         .route("/me/password", put(change_password))
         .route("/me/loyalty", get(get_loyalty_status))
+        // Profile aliases (backwards compatibility)
+        .route("/profile", get(get_current_user))
+        .route("/profile", put(update_current_user))
+        // Complete profile (extended update with gender/occupation)
+        .route("/complete-profile", put(complete_profile))
+        .route("/profile-completion-status", get(get_profile_completion_status))
         // Avatar routes
         .route("/avatar", put(upload_avatar))
         .route("/avatar", delete(delete_avatar))

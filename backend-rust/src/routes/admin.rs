@@ -8,7 +8,7 @@
 use axum::{
     extract::{Extension, Path, Query, State},
     middleware,
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 use chrono::{DateTime, Duration, NaiveDate, Utc};
@@ -113,6 +113,25 @@ pub struct UpdateUserRequest {
     pub role: Option<UserRole>,
     pub is_active: Option<bool>,
     pub email_verified: Option<bool>,
+}
+
+/// Request for updating user status via PATCH
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateUserStatusRequest {
+    pub is_active: bool,
+}
+
+/// Request for updating user role via PATCH
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateUserRoleRequest {
+    pub role: UserRole,
+}
+
+/// Coupon status response
+#[derive(Debug, Clone, Serialize)]
+pub struct CouponStatusResponse {
+    pub success: bool,
+    pub data: serde_json::Value,
 }
 
 /// Response for updating a user
@@ -966,6 +985,141 @@ async fn broadcast_notification(
     }))
 }
 
+/// PATCH /api/admin/users/:id/status
+async fn update_user_status(
+    Extension(user): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+    Json(payload): Json<UpdateUserStatusRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    require_admin(&user)?;
+
+    sqlx::query("UPDATE users SET is_active = $2, updated_at = NOW() WHERE id = $1")
+        .bind(user_id)
+        .bind(payload.is_active)
+        .execute(state.db())
+        .await?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "User status updated successfully"
+    })))
+}
+
+/// PATCH /api/admin/users/:id/role
+async fn update_user_role(
+    Extension(user): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+    Json(payload): Json<UpdateUserRoleRequest>,
+) -> AppResult<Json<serde_json::Value>> {
+    require_admin(&user)?;
+
+    if user_id == Uuid::parse_str(&user.id).unwrap_or_default()
+        && payload.role == UserRole::Customer
+    {
+        return Err(AppError::BadRequest(
+            "Cannot demote yourself to customer".to_string(),
+        ));
+    }
+
+    sqlx::query("UPDATE users SET role = $2::text::user_role, updated_at = NOW() WHERE id = $1")
+        .bind(user_id)
+        .bind(payload.role.to_string())
+        .execute(state.db())
+        .await?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "User role updated successfully"
+    })))
+}
+
+/// GET /api/admin/new-member-coupon-settings
+async fn get_new_member_coupon_settings(
+    Extension(user): Extension<AuthUser>,
+    State(state): State<AppState>,
+) -> AppResult<Json<serde_json::Value>> {
+    require_admin(&user)?;
+
+    let row: Option<(serde_json::Value,)> = sqlx::query_as(
+        "SELECT value FROM app_settings WHERE key = 'new_member_coupon' LIMIT 1",
+    )
+    .fetch_optional(state.db())
+    .await?;
+
+    match row {
+        Some((value,)) => Ok(Json(serde_json::json!({
+            "success": true,
+            "data": value,
+        }))),
+        None => Ok(Json(serde_json::json!({
+            "success": true,
+            "data": {
+                "enabled": false,
+                "coupon_id": null,
+                "settings": {}
+            },
+        }))),
+    }
+}
+
+/// PUT /api/admin/new-member-coupon-settings
+async fn update_new_member_coupon_settings(
+    Extension(user): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Json(payload): Json<serde_json::Value>,
+) -> AppResult<Json<serde_json::Value>> {
+    require_admin(&user)?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO app_settings (key, value, updated_at)
+        VALUES ('new_member_coupon', $1, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()
+        "#,
+    )
+    .bind(&payload)
+    .execute(state.db())
+    .await?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "New member coupon settings updated successfully",
+        "data": payload,
+    })))
+}
+
+/// GET /api/admin/coupon-status/:couponId
+async fn get_coupon_status(
+    Extension(user): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(coupon_id): Path<Uuid>,
+) -> AppResult<Json<CouponStatusResponse>> {
+    require_admin(&user)?;
+
+    let row: Option<(String, Option<String>, Option<i32>, Option<i32>)> = sqlx::query_as(
+        "SELECT status::text, name, used_count, usage_limit FROM coupons WHERE id = $1",
+    )
+    .bind(coupon_id)
+    .fetch_optional(state.db())
+    .await?;
+
+    match row {
+        Some((status, name, used_count, usage_limit)) => Ok(Json(CouponStatusResponse {
+            success: true,
+            data: serde_json::json!({
+                "id": coupon_id,
+                "status": status,
+                "name": name,
+                "used_count": used_count.unwrap_or(0),
+                "usage_limit": usage_limit,
+            }),
+        })),
+        None => Err(AppError::NotFound("Coupon".to_string())),
+    }
+}
+
 // ============================================================================
 // Row Types for Complex Queries
 // ============================================================================
@@ -1095,12 +1249,18 @@ pub fn router() -> Router<AppState> {
         .route("/users/:id", get(get_user))
         .route("/users/:id", put(update_user))
         .route("/users/:id", delete(delete_user))
+        .route("/users/:id/status", patch(update_user_status))
+        .route("/users/:id/role", patch(update_user_role))
         // Dashboard stats
         .route("/stats", get(get_stats))
         // Analytics
         .route("/analytics", get(get_analytics))
         // Notifications
         .route("/notifications/broadcast", post(broadcast_notification))
+        // Coupon settings
+        .route("/new-member-coupon-settings", get(get_new_member_coupon_settings))
+        .route("/new-member-coupon-settings", put(update_new_member_coupon_settings))
+        .route("/coupon-status/:couponId", get(get_coupon_status))
         // Apply auth middleware to all routes
         .layer(middleware::from_fn(auth_middleware))
 }

@@ -178,7 +178,7 @@ test.describe('Authentication and Session Tests', () => {
   test.describe('Role-Based Access', () => {
     test('Admin endpoints should require admin role', async ({ request }) => {
       const adminEndpoints = [
-        { method: 'GET', path: '/api/users/admin/list' },
+        { method: 'GET', path: '/api/admin/users' },
         { method: 'GET', path: '/api/coupons/analytics/stats' },
         { method: 'POST', path: '/api/coupons/assign' },
       ];

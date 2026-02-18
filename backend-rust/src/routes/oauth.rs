@@ -6,6 +6,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::{header, StatusCode},
+    middleware,
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
     Extension, Json, Router,
@@ -16,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::middleware::auth::AuthUser;
+use crate::middleware::auth::{auth_middleware, AuthUser};
 use crate::state::AppState;
 
 // =============================================================================
@@ -1488,21 +1489,59 @@ fn build_error_redirect(base_url: &str, error_code: &str, user_agent: &str) -> R
     }
 }
 
+/// GET /api/oauth/me - Get current user's OAuth provider info
+async fn oauth_me(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+) -> AppResult<Json<serde_json::Value>> {
+    let user_id = Uuid::parse_str(&auth_user.id)
+        .map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))?;
+
+    let row: Option<(String, Option<String>, String, Option<String>, Option<String>)> =
+        sqlx::query_as(
+            "SELECT id::text, email, role::text, oauth_provider, oauth_provider_id FROM users WHERE id = $1",
+        )
+        .bind(user_id)
+        .fetch_optional(state.db())
+        .await
+        .map_err(AppError::Database)?;
+
+    match row {
+        Some((id, email, role, oauth_provider, oauth_id)) => Ok(Json(serde_json::json!({
+            "id": id,
+            "email": email,
+            "role": role,
+            "oauth_provider": oauth_provider,
+            "oauth_id": oauth_id,
+        }))),
+        None => Err(AppError::NotFound("User not found".to_string())),
+    }
+}
+
 // =============================================================================
 // Route Configuration
 // =============================================================================
 
 /// Create OAuth routes
 pub fn routes() -> Router<AppState> {
-    Router::new()
+    // Public OAuth routes (no auth required)
+    let public_routes = Router::new()
         // Google OAuth
-        .route("/oauth/google", get(google_oauth_init))
-        .route("/oauth/google/callback", get(google_oauth_callback))
+        .route("/google", get(google_oauth_init))
+        .route("/google/callback", get(google_oauth_callback))
         // LINE OAuth
-        .route("/oauth/line", get(line_oauth_init))
-        .route("/oauth/line/callback", get(line_oauth_callback))
+        .route("/line", get(line_oauth_init))
+        .route("/line/callback", get(line_oauth_callback));
+
+    // Authenticated routes
+    let auth_routes = Router::new()
         // Account linking (requires authentication)
-        .route("/oauth/link/:provider", post(link_provider))
+        .route("/link/:provider", post(link_provider))
+        // Get current user's OAuth info
+        .route("/me", get(oauth_me))
+        .layer(middleware::from_fn(auth_middleware));
+
+    public_routes.merge(auth_routes)
 }
 
 #[cfg(test)]
