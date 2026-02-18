@@ -294,9 +294,9 @@ async fn list_users(
 
     // Get total count
     let total: i64 = if let Some(ref pattern) = search_pattern {
-        sqlx::query_scalar(
+        sqlx::query_scalar!(
             r#"
-            SELECT COUNT(*)
+            SELECT COUNT(*) as "count!: i64"
             FROM users u
             LEFT JOIN user_profiles up ON u.id = up.user_id
             WHERE LOWER(COALESCE(u.email, '')) LIKE $1
@@ -304,18 +304,18 @@ async fn list_users(
                OR LOWER(COALESCE(up.last_name, '')) LIKE $1
                OR LOWER(COALESCE(up.membership_id, '')) LIKE $1
             "#,
+            pattern,
         )
-        .bind(pattern)
         .fetch_one(state.db())
         .await?
     } else {
-        sqlx::query_scalar(r#"SELECT COUNT(*) FROM users"#)
+        sqlx::query_scalar!(r#"SELECT COUNT(*) as "count!: i64" FROM users"#)
             .fetch_one(state.db())
             .await?
     };
 
     // Fetch users with dynamic ordering
-    // Note: We need to use raw SQL for dynamic ORDER BY
+    // Note: We need to use raw SQL for dynamic ORDER BY - keep as runtime query
     let order_clause = format!("ORDER BY {} {} NULLS LAST", sort_by, sort_order);
 
     let users = if let Some(ref pattern) = search_pattern {
@@ -405,6 +405,7 @@ async fn get_user(
 ) -> AppResult<Json<GetUserResponse>> {
     require_admin(&user)?;
 
+    // Note: Uses runtime query because it shares UserRow (with FromRow) with dynamic queries
     let row = sqlx::query_as::<_, UserRow>(
         r#"
         SELECT
@@ -448,11 +449,11 @@ async fn update_user(
     payload.validate().map_err(AppError::from)?;
 
     // Check if user exists
-    let _existing: Uuid = sqlx::query_scalar(r#"SELECT id FROM users WHERE id = $1"#)
-        .bind(user_id)
-        .fetch_optional(state.db())
-        .await?
-        .ok_or_else(|| AppError::NotFound("User".to_string()))?;
+    let _existing: Uuid =
+        sqlx::query_scalar!(r#"SELECT id as "id!" FROM users WHERE id = $1"#, user_id,)
+            .fetch_optional(state.db())
+            .await?
+            .ok_or_else(|| AppError::NotFound("User".to_string()))?;
 
     // Prevent admin from changing their own role to a lower level
     if user_id == Uuid::parse_str(&user.id).unwrap_or_default() {
@@ -465,7 +466,7 @@ async fn update_user(
         }
     }
 
-    // Build update query dynamically
+    // Build update query dynamically - keep as runtime (dynamic SET clause)
     let mut updates = Vec::new();
     let mut param_index = 1;
 
@@ -497,7 +498,7 @@ async fn update_user(
         updates.join(", ")
     );
 
-    // Execute update
+    // Execute update - keep as runtime (dynamic query)
     let mut query = sqlx::query_scalar::<_, Uuid>(&query_str).bind(user_id);
 
     if let Some(email) = &payload.email {
@@ -515,7 +516,7 @@ async fn update_user(
 
     query.fetch_one(state.db()).await?;
 
-    // Fetch updated user
+    // Fetch updated user - keep as runtime (shares UserRow with dynamic queries)
     let row = sqlx::query_as::<_, UserRow>(
         r#"
         SELECT
@@ -562,21 +563,21 @@ async fn delete_user(
     }
 
     // Check if user exists
-    let _existing: Uuid = sqlx::query_scalar(r#"SELECT id FROM users WHERE id = $1"#)
-        .bind(user_id)
-        .fetch_optional(state.db())
-        .await?
-        .ok_or_else(|| AppError::NotFound("User".to_string()))?;
+    let _existing: Uuid =
+        sqlx::query_scalar!(r#"SELECT id as "id!" FROM users WHERE id = $1"#, user_id,)
+            .fetch_optional(state.db())
+            .await?
+            .ok_or_else(|| AppError::NotFound("User".to_string()))?;
 
     // Soft delete: deactivate the user instead of hard delete
-    sqlx::query(
+    sqlx::query!(
         r#"
         UPDATE users
         SET is_active = false, updated_at = NOW()
         WHERE id = $1
         "#,
+        user_id,
     )
-    .bind(user_id)
     .execute(state.db())
     .await?;
 
@@ -595,28 +596,28 @@ async fn get_stats(
     require_admin(&user)?;
 
     // Total users
-    let total_users: i64 = sqlx::query_scalar(r#"SELECT COUNT(*) FROM users"#)
+    let total_users: i64 = sqlx::query_scalar!(r#"SELECT COUNT(*) as "count!: i64" FROM users"#)
         .fetch_one(state.db())
         .await?;
 
     // Active users (last 30 days based on updated_at or last login)
     let thirty_days_ago = Utc::now() - Duration::days(30);
-    let active_users: i64 = sqlx::query_scalar(
+    let active_users: i64 = sqlx::query_scalar!(
         r#"
-        SELECT COUNT(*)
+        SELECT COUNT(*) as "count!: i64"
         FROM users
         WHERE is_active = true
         AND updated_at >= $1
         "#,
+        thirty_days_ago,
     )
-    .bind(thirty_days_ago)
     .fetch_one(state.db())
     .await?;
 
     // Total points issued (sum of all positive point transactions)
-    let total_points_issued: i64 = sqlx::query_scalar(
+    let total_points_issued: i64 = sqlx::query_scalar!(
         r#"
-        SELECT COALESCE(SUM(points), 0)
+        SELECT COALESCE(SUM(points), 0) as "sum!: i64"
         FROM points_transactions
         WHERE points > 0
         "#,
@@ -626,12 +627,12 @@ async fn get_stats(
     .unwrap_or(0);
 
     // Total bookings (count of point transactions with type 'stay' or similar)
-    // Note: Since bookings table may not exist, we count from points_transactions
-    let total_bookings: i64 = sqlx::query_scalar(
+    // Note: type is a Postgres enum, so we cast to text for comparison
+    let total_bookings: i64 = sqlx::query_scalar!(
         r#"
-        SELECT COUNT(*)
+        SELECT COUNT(*) as "count!: i64"
         FROM points_transactions
-        WHERE type = 'stay' OR type = 'booking'
+        WHERE type::text = 'stay' OR type::text = 'booking'
         "#,
     )
     .fetch_one(state.db())
@@ -641,42 +642,38 @@ async fn get_stats(
     // New users today
     let today_start = Utc::now().date_naive().and_hms_opt(0, 0, 0).unwrap();
     let today_start_utc = DateTime::<Utc>::from_naive_utc_and_offset(today_start, Utc);
-    let new_users_today: i64 =
-        sqlx::query_scalar(r#"SELECT COUNT(*) FROM users WHERE created_at >= $1"#)
-            .bind(today_start_utc)
-            .fetch_one(state.db())
-            .await?;
+    let new_users_today: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) as "count!: i64" FROM users WHERE created_at >= $1"#,
+        today_start_utc,
+    )
+    .fetch_one(state.db())
+    .await?;
 
     // New users this week
     let week_ago = Utc::now() - Duration::days(7);
-    let new_users_this_week: i64 =
-        sqlx::query_scalar(r#"SELECT COUNT(*) FROM users WHERE created_at >= $1"#)
-            .bind(week_ago)
-            .fetch_one(state.db())
-            .await?;
+    let new_users_this_week: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) as "count!: i64" FROM users WHERE created_at >= $1"#,
+        week_ago,
+    )
+    .fetch_one(state.db())
+    .await?;
 
     // New users this month
     let month_ago = Utc::now() - Duration::days(30);
-    let new_users_this_month: i64 =
-        sqlx::query_scalar(r#"SELECT COUNT(*) FROM users WHERE created_at >= $1"#)
-            .bind(month_ago)
-            .fetch_one(state.db())
-            .await?;
+    let new_users_this_month: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) as "count!: i64" FROM users WHERE created_at >= $1"#,
+        month_ago,
+    )
+    .fetch_one(state.db())
+    .await?;
 
     // Users by tier
-    #[derive(sqlx::FromRow)]
-    struct TierCountRow {
-        tier_name: String,
-        tier_color: String,
-        count: i64,
-    }
-
-    let tier_counts = sqlx::query_as::<_, TierCountRow>(
+    let tier_rows = sqlx::query!(
         r#"
         SELECT
-            t.name as tier_name,
-            t.color as tier_color,
-            COUNT(ul.user_id) as count
+            t.name as "tier_name!",
+            t.color as "tier_color!",
+            COUNT(ul.user_id) as "count!: i64"
         FROM tiers t
         LEFT JOIN user_loyalty ul ON t.id = ul.tier_id
         WHERE t.is_active = true
@@ -687,7 +684,7 @@ async fn get_stats(
     .fetch_all(state.db())
     .await?;
 
-    let users_by_tier: Vec<TierUserCount> = tier_counts
+    let users_by_tier: Vec<TierUserCount> = tier_rows
         .into_iter()
         .map(|row| TierUserCount {
             tier_name: row.tier_name,
@@ -697,17 +694,11 @@ async fn get_stats(
         .collect();
 
     // Users by role
-    #[derive(sqlx::FromRow)]
-    struct RoleCountRow {
-        role: String,
-        count: i64,
-    }
-
-    let role_counts = sqlx::query_as::<_, RoleCountRow>(
+    let role_rows = sqlx::query!(
         r#"
         SELECT
-            role::text as role,
-            COUNT(*) as count
+            role::text as "role!",
+            COUNT(*) as "count!: i64"
         FROM users
         GROUP BY role
         ORDER BY role
@@ -716,7 +707,7 @@ async fn get_stats(
     .fetch_all(state.db())
     .await?;
 
-    let users_by_role: Vec<RoleUserCount> = role_counts
+    let users_by_role: Vec<RoleUserCount> = role_rows
         .into_iter()
         .map(|row| RoleUserCount {
             role: row.role,
@@ -789,32 +780,25 @@ async fn get_analytics(
     }))
 }
 
-/// Row type for analytics queries
-#[derive(sqlx::FromRow)]
-struct AnalyticsRow {
-    date: NaiveDate,
-    count: i64,
-}
-
 /// Helper: Get registration analytics
 async fn get_registration_analytics(
     db: &PgPool,
     start_date: NaiveDate,
     end_date: NaiveDate,
 ) -> AppResult<Vec<AnalyticsDataPoint>> {
-    let rows = sqlx::query_as::<_, AnalyticsRow>(
+    let rows = sqlx::query!(
         r#"
         SELECT
-            DATE(created_at) as date,
-            COUNT(*) as count
+            DATE(created_at) as "date!",
+            COUNT(*) as "count!: i64"
         FROM users
         WHERE DATE(created_at) >= $1 AND DATE(created_at) <= $2
         GROUP BY DATE(created_at)
         ORDER BY DATE(created_at)
         "#,
+        start_date,
+        end_date,
     )
-    .bind(start_date)
-    .bind(end_date)
     .fetch_all(db)
     .await?;
 
@@ -833,19 +817,19 @@ async fn get_points_analytics(
     start_date: NaiveDate,
     end_date: NaiveDate,
 ) -> AppResult<Vec<AnalyticsDataPoint>> {
-    let rows = sqlx::query_as::<_, AnalyticsRow>(
+    let rows = sqlx::query!(
         r#"
         SELECT
-            DATE(created_at) as date,
-            COALESCE(SUM(points), 0) as count
+            DATE(created_at) as "date!",
+            COALESCE(SUM(points), 0) as "count!: i64"
         FROM points_transactions
         WHERE DATE(created_at) >= $1 AND DATE(created_at) <= $2 AND points > 0
         GROUP BY DATE(created_at)
         ORDER BY DATE(created_at)
         "#,
+        start_date,
+        end_date,
     )
-    .bind(start_date)
-    .bind(end_date)
     .fetch_all(db)
     .await?;
 
@@ -864,20 +848,20 @@ async fn get_bookings_analytics(
     start_date: NaiveDate,
     end_date: NaiveDate,
 ) -> AppResult<Vec<AnalyticsDataPoint>> {
-    let rows = sqlx::query_as::<_, AnalyticsRow>(
+    let rows = sqlx::query!(
         r#"
         SELECT
-            DATE(created_at) as date,
-            COUNT(*) as count
+            DATE(created_at) as "date!",
+            COUNT(*) as "count!: i64"
         FROM points_transactions
         WHERE DATE(created_at) >= $1 AND DATE(created_at) <= $2
-            AND (type = 'stay' OR type = 'booking')
+            AND (type::text = 'stay' OR type::text = 'booking')
         GROUP BY DATE(created_at)
         ORDER BY DATE(created_at)
         "#,
+        start_date,
+        end_date,
     )
-    .bind(start_date)
-    .bind(end_date)
     .fetch_all(db)
     .await?;
 
@@ -904,7 +888,7 @@ async fn broadcast_notification(
 
     let notification_type = payload.notification_type.unwrap_or(NotificationType::Info);
 
-    // Build query to get target users based on filters
+    // Build query to get target users based on filters - keep as runtime (dynamic WHERE)
     let mut conditions = Vec::new();
     let mut params: Vec<String> = Vec::new();
 
@@ -928,7 +912,7 @@ async fn broadcast_notification(
         conditions.join(" AND ")
     };
 
-    // Get target user IDs
+    // Get target user IDs - keep as runtime (dynamic WHERE clause)
     let query_str = format!(
         r#"
         SELECT u.id
@@ -950,6 +934,8 @@ async fn broadcast_notification(
     }
 
     // Insert notifications for all target users
+    // Note: Uses runtime query because $5::notification_type enum cast
+    // is not supported by compile-time macros
     let notification_type_str = format!("{:?}", notification_type).to_lowercase();
     let data_json = payload.data.unwrap_or(serde_json::json!({}));
 
@@ -984,7 +970,7 @@ async fn broadcast_notification(
 // Row Types for Complex Queries
 // ============================================================================
 
-/// Row type for joined user queries
+/// Row type for joined user queries (used by both dynamic and static queries)
 #[derive(Debug, sqlx::FromRow)]
 struct UserRow {
     // User fields
@@ -1020,9 +1006,9 @@ struct UserRow {
 
 impl From<UserRow> for AdminUserResponse {
     fn from(row: UserRow) -> Self {
-        let profile = if row.profile_user_id.is_some() {
+        let profile = if let Some(profile_user_id) = row.profile_user_id {
             Some(UserProfileResponse {
-                user_id: row.profile_user_id.unwrap(),
+                user_id: profile_user_id,
                 first_name: row.first_name.clone(),
                 last_name: row.last_name.clone(),
                 full_name: match (&row.first_name, &row.last_name) {
@@ -1043,9 +1029,9 @@ impl From<UserRow> for AdminUserResponse {
             None
         };
 
-        let loyalty = if row.loyalty_user_id.is_some() {
+        let loyalty = if let Some(loyalty_user_id) = row.loyalty_user_id {
             Some(UserLoyaltyResponse {
-                user_id: row.loyalty_user_id.unwrap(),
+                user_id: loyalty_user_id,
                 current_points: row.current_points.unwrap_or(0),
                 total_nights: row.total_nights.unwrap_or(0),
                 tier_id: row.tier_id,

@@ -7,15 +7,15 @@ const mockBookings = [
   {
     id: 'booking-1',
     roomTypeName: 'Deluxe Room',
-    checkInDate: '2026-02-15',
-    checkOutDate: '2026-02-18',
+    checkInDate: '2027-06-15',
+    checkOutDate: '2027-06-18',
     numGuests: 2,
     totalPrice: 4500,
     pointsEarned: 450,
     status: 'confirmed',
     notes: 'Early check-in requested',
     cancellationReason: null,
-    createdAt: '2026-01-05',
+    createdAt: '2027-05-01',
   },
   {
     id: 'booking-2',
@@ -588,7 +588,7 @@ describe('MyBookingsPage', () => {
     it('should show only confirmed future bookings in current tab', () => {
       render(<MyBookingsPage />);
 
-      // Only booking-1 (confirmed + future check-in 2026-02-15) should be visible
+      // Only booking-1 (confirmed + future check-in 2027-06-15) should be visible
       expect(screen.getByTestId('booking-card-booking-1')).toBeInTheDocument();
 
       // These should NOT be visible in current tab
@@ -692,15 +692,15 @@ describe('MyBookingsPage', () => {
         {
           id: 'booking-future',
           roomTypeName: 'Deluxe Room',
-          checkInDate: '2026-02-15',
-          checkOutDate: '2026-02-18',
+          checkInDate: '2027-06-15',
+          checkOutDate: '2027-06-18',
           numGuests: 2,
           totalPrice: 4500,
           pointsEarned: 450,
           status: 'confirmed',
           notes: null,
           cancellationReason: null,
-          createdAt: '2026-01-05',
+          createdAt: '2027-05-01',
         },
       ];
 

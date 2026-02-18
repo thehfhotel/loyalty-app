@@ -1,0 +1,130 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                b.id, b.user_id, b.room_id, b.room_type_id,\n                b.check_in_date, b.check_out_date, b.num_guests,\n                b.total_price, COALESCE(b.points_earned, 0) as \"points_earned!\", b.status,\n                b.cancelled_at, b.cancellation_reason,\n                b.notes, b.created_at as \"created_at!\", b.updated_at as \"updated_at!\",\n                r.room_number as \"room_number?\", rt.name as \"room_type_name?\",\n                NULL::text as user_email, NULL::text as user_name\n            FROM bookings b\n            JOIN rooms r ON b.room_id = r.id\n            JOIN room_types rt ON b.room_type_id = rt.id\n            WHERE b.id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "room_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "room_type_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "check_in_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "check_out_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "num_guests",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "total_price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 8,
+        "name": "points_earned!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "cancelled_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "cancellation_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "notes",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "room_number?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 16,
+        "name": "room_type_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 17,
+        "name": "user_email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "user_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "e86ba0a8f54350f6046377d11870495695b80aa6665aee729a351b506ff4af77"
+}

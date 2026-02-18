@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_loyalty SET tier_id = $1, tier_updated_at = NOW() WHERE user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6b26e1f5621f47f6df470adc522fb012c71ffe598c2cecdedf1d3725f08246f6"
+}

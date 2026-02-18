@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT COUNT(*) as \"count!: i64\"\n            FROM coupons\n            WHERE status = 'active'\n                AND ($1::text IS NULL OR type::text = $1)\n                AND ($2::text IS NULL OR (code ILIKE $2 OR name ILIKE $2))\n                AND (valid_from IS NULL OR valid_from <= NOW())\n                AND (valid_until IS NULL OR valid_until > NOW())\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!: i64",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0ca3ddc8fc03d02c68222fc83affa81b5d7ce98e3328537007a55d50d86a3f77"
+}

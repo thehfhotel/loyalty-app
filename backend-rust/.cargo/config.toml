@@ -40,7 +40,7 @@ rustflags = ["-C", "target-feature=-crt-static"]
 
 [env]
 # Environment variables for builds
-# SQLX_OFFLINE = "true"  # Enable this for CI builds with pre-cached queries
+SQLX_OFFLINE = "true"  # Use pre-cached .sqlx/ query metadata for compilation without a live DB
 
 [alias]
 # Useful command aliases

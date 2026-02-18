@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT r.id, r.room_type_id, r.room_number, r.floor,\n                   r.is_active, r.created_at as \"created_at!\", r.updated_at as \"updated_at!\"\n            FROM rooms r\n            WHERE r.room_type_id = $1\n              AND r.is_active = true\n              AND r.id NOT IN (\n                  -- Exclude rooms with blocked dates in the range\n                  SELECT DISTINCT room_id FROM room_blocked_dates\n                  WHERE blocked_date >= $2 AND blocked_date < $3\n              )\n              AND r.id NOT IN (\n                  -- Exclude rooms with existing bookings in the range\n                  SELECT DISTINCT room_id FROM bookings\n                  WHERE status = 'confirmed'\n                    AND check_in_date < $3\n                    AND check_out_date > $2\n              )\n            ORDER BY r.room_number ASC\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "room_type_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "room_number",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "floor",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "1e6c0df1581c99b2b73acbd6c973f7ad87ea03042a8aa09522a2e9ca191fe3c7"
+}

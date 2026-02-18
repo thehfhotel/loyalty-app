@@ -252,21 +252,22 @@ impl LoyaltyServiceImpl {
 impl LoyaltyService for LoyaltyServiceImpl {
     async fn get_user_loyalty(&self, user_id: Uuid) -> Result<UserLoyaltyWithTier, AppError> {
         // First try to get the existing loyalty status with tier info
-        let result = sqlx::query_as::<_, UserLoyaltyWithTierRow>(
+        let result = sqlx::query_as!(
+            UserLoyaltyWithTierRow,
             r#"
             SELECT
                 ul.user_id,
-                COALESCE(ul.current_points, 0) as current_points,
-                COALESCE(ul.total_nights, 0) as total_nights,
-                t.name as tier_name,
-                t.color as tier_color,
-                COALESCE(t.benefits, '{}') as tier_benefits,
-                t.sort_order as tier_level,
+                COALESCE(ul.current_points, 0) as "current_points!",
+                COALESCE(ul.total_nights, 0) as "total_nights!",
+                t.name as "tier_name!",
+                t.color as "tier_color!",
+                COALESCE(t.benefits, '{}') as "tier_benefits!",
+                t.sort_order as "tier_level!",
                 CASE
                     WHEN next_tier.min_nights IS NOT NULL AND next_tier.min_nights > 0
-                    THEN LEAST(ROUND((ul.total_nights::numeric / next_tier.min_nights) * 100), 100)
-                    ELSE 100
-                END as progress_percentage,
+                    THEN LEAST(ROUND((ul.total_nights::numeric / next_tier.min_nights) * 100), 100)::bigint
+                    ELSE 100::bigint
+                END as "progress_percentage!",
                 next_tier.min_nights as next_tier_nights,
                 next_tier.name as next_tier_name,
                 CASE
@@ -279,8 +280,8 @@ impl LoyaltyService for LoyaltyServiceImpl {
             LEFT JOIN tiers next_tier ON next_tier.sort_order = t.sort_order + 1 AND next_tier.is_active = true
             WHERE ul.user_id = $1
             "#,
+            user_id,
         )
-        .bind(user_id)
         .fetch_optional(&self.db)
         .await?;
 
@@ -291,21 +292,22 @@ impl LoyaltyService for LoyaltyServiceImpl {
                 self.initialize_user_loyalty(user_id).await?;
 
                 // Retry fetching the loyalty status
-                let row = sqlx::query_as::<_, UserLoyaltyWithTierRow>(
+                let row = sqlx::query_as!(
+                    UserLoyaltyWithTierRow,
                     r#"
                     SELECT
                         ul.user_id,
-                        COALESCE(ul.current_points, 0) as current_points,
-                        COALESCE(ul.total_nights, 0) as total_nights,
-                        t.name as tier_name,
-                        t.color as tier_color,
-                        COALESCE(t.benefits, '{}') as tier_benefits,
-                        t.sort_order as tier_level,
+                        COALESCE(ul.current_points, 0) as "current_points!",
+                        COALESCE(ul.total_nights, 0) as "total_nights!",
+                        t.name as "tier_name!",
+                        t.color as "tier_color!",
+                        COALESCE(t.benefits, '{}') as "tier_benefits!",
+                        t.sort_order as "tier_level!",
                         CASE
                             WHEN next_tier.min_nights IS NOT NULL AND next_tier.min_nights > 0
-                            THEN LEAST(ROUND((ul.total_nights::numeric / next_tier.min_nights) * 100), 100)
-                            ELSE 100
-                        END as progress_percentage,
+                            THEN LEAST(ROUND((ul.total_nights::numeric / next_tier.min_nights) * 100), 100)::bigint
+                            ELSE 100::bigint
+                        END as "progress_percentage!",
                         next_tier.min_nights as next_tier_nights,
                         next_tier.name as next_tier_name,
                         CASE
@@ -318,8 +320,8 @@ impl LoyaltyService for LoyaltyServiceImpl {
                     LEFT JOIN tiers next_tier ON next_tier.sort_order = t.sort_order + 1 AND next_tier.is_active = true
                     WHERE ul.user_id = $1
                     "#,
+                    user_id,
                 )
-                .bind(user_id)
                 .fetch_one(&self.db)
                 .await?;
 
@@ -335,19 +337,19 @@ impl LoyaltyService for LoyaltyServiceImpl {
         let nights = params.nights.unwrap_or(0);
 
         // Call the award_points stored procedure
-        let result: JsonValue = sqlx::query_scalar(
+        let result: JsonValue = sqlx::query_scalar!(
             r#"
-            SELECT award_points($1, $2, $3::varchar, $4, $5, $6, $7, $8)
+            SELECT award_points($1, $2, $3::varchar, $4, $5, $6, $7, $8) as "result!"
             "#,
+            params.user_id,
+            params.points,
+            &params.source,
+            &params.description,
+            params.reference_id.as_deref(),
+            params.admin_user_id,
+            params.admin_reason.as_deref(),
+            nights,
         )
-        .bind(params.user_id)
-        .bind(params.points)
-        .bind(&params.source)
-        .bind(&params.description)
-        .bind(&params.reference_id)
-        .bind(params.admin_user_id)
-        .bind(&params.admin_reason)
-        .bind(nights)
         .fetch_one(&self.db)
         .await?;
 
@@ -370,19 +372,31 @@ impl LoyaltyService for LoyaltyServiceImpl {
         );
 
         // Fetch the created transaction
-        let transaction = sqlx::query_as::<_, PointsTransaction>(
+        let row = sqlx::query!(
             r#"
-            SELECT id, user_id, points, type, description, reference_id,
+            SELECT id, user_id, points, type as "transaction_type: PointsTransactionType", description, reference_id,
                    admin_user_id, admin_reason, expires_at, created_at, nights_stayed
             FROM points_transactions
             WHERE id = $1
             "#,
+            transaction_id,
         )
-        .bind(transaction_id)
         .fetch_one(&self.db)
         .await?;
 
-        Ok(transaction)
+        Ok(PointsTransaction {
+            id: row.id,
+            user_id: row.user_id,
+            points: row.points,
+            transaction_type: row.transaction_type,
+            description: row.description,
+            reference_id: row.reference_id,
+            admin_user_id: row.admin_user_id,
+            admin_reason: row.admin_reason,
+            expires_at: row.expires_at,
+            created_at: row.created_at,
+            nights_stayed: row.nights_stayed,
+        })
     }
 
     async fn get_transactions(
@@ -390,27 +404,43 @@ impl LoyaltyService for LoyaltyServiceImpl {
         user_id: Uuid,
         pagination: TransactionPagination,
     ) -> Result<Vec<PointsTransaction>, AppError> {
-        let transactions = sqlx::query_as::<_, PointsTransaction>(
+        let rows = sqlx::query!(
             r#"
-            SELECT id, user_id, points, type, description, reference_id,
+            SELECT id, user_id, points, type as "transaction_type: PointsTransactionType", description, reference_id,
                    admin_user_id, admin_reason, expires_at, created_at, nights_stayed
             FROM points_transactions
             WHERE user_id = $1
             ORDER BY created_at DESC
             LIMIT $2 OFFSET $3
             "#,
+            user_id,
+            pagination.limit as i64,
+            pagination.offset as i64,
         )
-        .bind(user_id)
-        .bind(pagination.limit)
-        .bind(pagination.offset)
         .fetch_all(&self.db)
         .await?;
 
-        Ok(transactions)
+        Ok(rows
+            .into_iter()
+            .map(|row| PointsTransaction {
+                id: row.id,
+                user_id: row.user_id,
+                points: row.points,
+                transaction_type: row.transaction_type,
+                description: row.description,
+                reference_id: row.reference_id,
+                admin_user_id: row.admin_user_id,
+                admin_reason: row.admin_reason,
+                expires_at: row.expires_at,
+                created_at: row.created_at,
+                nights_stayed: row.nights_stayed,
+            })
+            .collect())
     }
 
     async fn get_tier(&self, user_id: Uuid) -> Result<Tier, AppError> {
-        let tier = sqlx::query_as::<_, Tier>(
+        let tier = sqlx::query_as!(
+            Tier,
             r#"
             SELECT t.id, t.name, t.min_points, t.min_nights, t.benefits,
                    t.color, t.sort_order, t.is_active, t.created_at, t.updated_at
@@ -418,8 +448,8 @@ impl LoyaltyService for LoyaltyServiceImpl {
             JOIN user_loyalty ul ON ul.tier_id = t.id
             WHERE ul.user_id = $1
             "#,
+            user_id,
         )
-        .bind(user_id)
         .fetch_optional(&self.db)
         .await?;
 
@@ -427,7 +457,8 @@ impl LoyaltyService for LoyaltyServiceImpl {
             Some(t) => Ok(t),
             None => {
                 // User might not have loyalty status yet, return the default (Bronze) tier
-                let default_tier = sqlx::query_as::<_, Tier>(
+                let default_tier = sqlx::query_as!(
+                    Tier,
                     r#"
                     SELECT id, name, min_points, min_nights, benefits,
                            color, sort_order, is_active, created_at, updated_at
@@ -447,27 +478,29 @@ impl LoyaltyService for LoyaltyServiceImpl {
 
     async fn recalculate_tier(&self, user_id: Uuid) -> Result<Tier, AppError> {
         // Call the recalculate_user_tier_by_nights stored procedure
-        let result = sqlx::query_as::<_, TierRecalculationResult>(
+        let result = sqlx::query_as!(
+            TierRecalculationResult,
             r#"
             SELECT * FROM recalculate_user_tier_by_nights($1)
             "#,
+            user_id,
         )
-        .bind(user_id)
         .fetch_optional(&self.db)
         .await?;
 
         match result {
             Some(recalc_result) => {
                 if let Some(tier_id) = recalc_result.new_tier_id {
-                    let tier = sqlx::query_as::<_, Tier>(
+                    let tier = sqlx::query_as!(
+                        Tier,
                         r#"
                         SELECT id, name, min_points, min_nights, benefits,
                                color, sort_order, is_active, created_at, updated_at
                         FROM tiers
                         WHERE id = $1
                         "#,
+                        tier_id,
                     )
-                    .bind(tier_id)
                     .fetch_one(&self.db)
                     .await?;
 
@@ -495,7 +528,8 @@ impl LoyaltyService for LoyaltyServiceImpl {
     }
 
     async fn get_all_tiers(&self) -> Result<Vec<Tier>, AppError> {
-        let tiers = sqlx::query_as::<_, Tier>(
+        let tiers = sqlx::query_as!(
+            Tier,
             r#"
             SELECT id, name, min_points, min_nights, benefits,
                    color, sort_order, is_active, created_at, updated_at
@@ -512,9 +546,9 @@ impl LoyaltyService for LoyaltyServiceImpl {
 
     async fn initialize_user_loyalty(&self, user_id: Uuid) -> Result<UserLoyalty, AppError> {
         // Get the Bronze tier (lowest tier)
-        let bronze_tier: Uuid = sqlx::query_scalar(
+        let bronze_tier: Uuid = sqlx::query_scalar!(
             r#"
-            SELECT id FROM tiers
+            SELECT id as "id!" FROM tiers
             WHERE is_active = true
             ORDER BY sort_order ASC
             LIMIT 1
@@ -525,7 +559,8 @@ impl LoyaltyService for LoyaltyServiceImpl {
         .ok_or_else(|| AppError::Internal("No active tiers found in the system".to_string()))?;
 
         // Insert user loyalty record with ON CONFLICT to handle race conditions
-        let loyalty = sqlx::query_as::<_, UserLoyalty>(
+        let loyalty = sqlx::query_as!(
+            UserLoyalty,
             r#"
             INSERT INTO user_loyalty (user_id, current_points, total_nights, tier_id)
             VALUES ($1, 0, 0, $2)
@@ -534,9 +569,9 @@ impl LoyaltyService for LoyaltyServiceImpl {
             RETURNING user_id, current_points, total_nights, tier_id,
                       tier_updated_at, points_updated_at, created_at, updated_at
             "#,
+            user_id,
+            bronze_tier,
         )
-        .bind(user_id)
-        .bind(bronze_tier)
         .fetch_one(&self.db)
         .await?;
 

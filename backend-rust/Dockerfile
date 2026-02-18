@@ -1,7 +1,7 @@
 # ==============================================================================
 # Stage 1: Chef - Install cargo-chef for dependency caching
 # ==============================================================================
-FROM rust:1.85-bookworm AS chef
+FROM rust:1.93-bookworm AS chef
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
@@ -20,6 +20,7 @@ FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY migrations ./migrations
+COPY .cargo ./.cargo
 
 RUN cargo chef prepare --recipe-path recipe.json
 
@@ -34,6 +35,8 @@ RUN cargo chef cook --release --recipe-path recipe.json
 
 # Copy source code and build the application
 COPY Cargo.toml Cargo.lock ./
+COPY .cargo ./.cargo
+COPY .sqlx ./.sqlx
 COPY src ./src
 COPY migrations ./migrations
 
@@ -42,7 +45,7 @@ RUN cargo build --release --bin loyalty-backend
 # ==============================================================================
 # Stage 4: Development - Full development environment with hot reload
 # ==============================================================================
-FROM rust:1.85-bookworm AS development
+FROM rust:1.93-bookworm AS development
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \

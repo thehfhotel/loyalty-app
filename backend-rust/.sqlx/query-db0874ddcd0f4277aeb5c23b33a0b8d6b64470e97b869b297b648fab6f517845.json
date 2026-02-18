@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                si.id, si.survey_id, si.user_id, si.status, si.sent_at,\n                si.viewed_at, si.expires_at, si.created_at, si.updated_at,\n                u.email as user_email,\n                up.first_name as user_first_name,\n                up.last_name as user_last_name\n            FROM survey_invitations si\n            JOIN users u ON si.user_id = u.id\n            LEFT JOIN user_profiles up ON si.user_id = up.user_id\n            WHERE si.user_id = $1\n            ORDER BY si.created_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "survey_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "sent_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 5,
+        "name": "viewed_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 6,
+        "name": "expires_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 9,
+        "name": "user_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "user_first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "user_last_name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "db0874ddcd0f4277aeb5c23b33a0b8d6b64470e97b869b297b648fab6f517845"
+}

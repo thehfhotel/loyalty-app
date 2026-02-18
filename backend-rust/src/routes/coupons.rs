@@ -25,6 +25,45 @@ use crate::models::coupon::{
 use crate::state::AppState;
 
 // ============================================================================
+// Helper functions for parsing enum strings from compile-time macros
+// ============================================================================
+
+/// Parse a coupon type string from the database into the CouponType enum
+fn parse_coupon_type(s: &str) -> CouponType {
+    match s {
+        "percentage" => CouponType::Percentage,
+        "fixed_amount" => CouponType::FixedAmount,
+        "bogo" => CouponType::Bogo,
+        "free_upgrade" => CouponType::FreeUpgrade,
+        "free_service" => CouponType::FreeService,
+        _ => CouponType::Percentage,
+    }
+}
+
+/// Parse a coupon status string from the database into the CouponStatus enum
+fn parse_coupon_status(s: &str) -> CouponStatus {
+    match s {
+        "draft" => CouponStatus::Draft,
+        "active" => CouponStatus::Active,
+        "paused" => CouponStatus::Paused,
+        "expired" => CouponStatus::Expired,
+        "exhausted" => CouponStatus::Exhausted,
+        _ => CouponStatus::Draft,
+    }
+}
+
+/// Parse a user coupon status string from the database into the UserCouponStatus enum
+fn parse_user_coupon_status(s: &str) -> UserCouponStatus {
+    match s {
+        "available" => UserCouponStatus::Available,
+        "used" => UserCouponStatus::Used,
+        "expired" => UserCouponStatus::Expired,
+        "revoked" => UserCouponStatus::Revoked,
+        _ => UserCouponStatus::Available,
+    }
+}
+
+// ============================================================================
 // Request/Response DTOs
 // ============================================================================
 
@@ -218,7 +257,7 @@ pub struct CouponStats {
 }
 
 /// User coupon with coupon details
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize)]
 pub struct UserCouponWithDetails {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -232,7 +271,7 @@ pub struct UserCouponWithDetails {
     pub code: String,
     pub name: String,
     pub description: Option<String>,
-    #[sqlx(rename = "type")]
+    #[serde(rename = "type")]
     pub coupon_type: CouponType,
     pub value: Option<Decimal>,
     pub currency: Option<String>,
@@ -268,7 +307,7 @@ async fn list_coupons(
         let type_filter = query.coupon_type.as_deref();
         let search_filter = query.search.as_deref().map(|s| format!("%{}%", s));
 
-        let coupons = sqlx::query_as::<_, CouponResponse>(
+        let rows = sqlx::query!(
             r#"
             SELECT
                 id,
@@ -276,7 +315,7 @@ async fn list_coupons(
                 name,
                 description,
                 terms_and_conditions,
-                type as coupon_type,
+                type::text as "coupon_type!",
                 value,
                 currency,
                 minimum_spend,
@@ -286,7 +325,7 @@ async fn list_coupons(
                 usage_limit,
                 usage_limit_per_user,
                 used_count,
-                status,
+                status::text as "status",
                 created_at
             FROM coupons
             WHERE
@@ -296,28 +335,51 @@ async fn list_coupons(
             ORDER BY created_at DESC
             LIMIT $4 OFFSET $5
             "#,
+            status_filter,
+            type_filter,
+            search_filter.clone() as Option<String>,
+            limit as i64,
+            offset,
         )
-        .bind(status_filter)
-        .bind(type_filter)
-        .bind(&search_filter)
-        .bind(limit as i64)
-        .bind(offset)
         .fetch_all(state.db())
         .await?;
 
-        let total: i64 = sqlx::query_scalar(
+        let coupons: Vec<CouponResponse> = rows
+            .into_iter()
+            .map(|r| CouponResponse {
+                id: r.id,
+                code: r.code,
+                name: r.name,
+                description: r.description,
+                terms_and_conditions: r.terms_and_conditions,
+                coupon_type: parse_coupon_type(&r.coupon_type),
+                value: r.value,
+                currency: r.currency,
+                minimum_spend: r.minimum_spend,
+                maximum_discount: r.maximum_discount,
+                valid_from: r.valid_from,
+                valid_until: r.valid_until,
+                usage_limit: r.usage_limit,
+                usage_limit_per_user: r.usage_limit_per_user,
+                used_count: r.used_count,
+                status: r.status.map(|s| parse_coupon_status(&s)),
+                created_at: r.created_at,
+            })
+            .collect();
+
+        let total: i64 = sqlx::query_scalar!(
             r#"
-            SELECT COUNT(*)
+            SELECT COUNT(*) as "count!: i64"
             FROM coupons
             WHERE
                 ($1::text IS NULL OR status::text = $1)
                 AND ($2::text IS NULL OR type::text = $2)
                 AND ($3::text IS NULL OR (code ILIKE $3 OR name ILIKE $3))
             "#,
+            status_filter,
+            type_filter,
+            search_filter as Option<String>,
         )
-        .bind(status_filter)
-        .bind(type_filter)
-        .bind(&search_filter)
         .fetch_one(state.db())
         .await?;
 
@@ -327,7 +389,7 @@ async fn list_coupons(
         let type_filter = query.coupon_type.as_deref();
         let search_filter = query.search.as_deref().map(|s| format!("%{}%", s));
 
-        let coupons = sqlx::query_as::<_, CouponResponse>(
+        let rows = sqlx::query!(
             r#"
             SELECT
                 id,
@@ -335,7 +397,7 @@ async fn list_coupons(
                 name,
                 description,
                 terms_and_conditions,
-                type as coupon_type,
+                type::text as "coupon_type!",
                 value,
                 currency,
                 minimum_spend,
@@ -345,7 +407,7 @@ async fn list_coupons(
                 usage_limit,
                 usage_limit_per_user,
                 used_count,
-                status,
+                status::text as "status",
                 created_at
             FROM coupons
             WHERE status = 'active'
@@ -356,17 +418,40 @@ async fn list_coupons(
             ORDER BY created_at DESC
             LIMIT $3 OFFSET $4
             "#,
+            type_filter,
+            search_filter.clone() as Option<String>,
+            limit as i64,
+            offset,
         )
-        .bind(type_filter)
-        .bind(&search_filter)
-        .bind(limit as i64)
-        .bind(offset)
         .fetch_all(state.db())
         .await?;
 
-        let total: i64 = sqlx::query_scalar(
+        let coupons: Vec<CouponResponse> = rows
+            .into_iter()
+            .map(|r| CouponResponse {
+                id: r.id,
+                code: r.code,
+                name: r.name,
+                description: r.description,
+                terms_and_conditions: r.terms_and_conditions,
+                coupon_type: parse_coupon_type(&r.coupon_type),
+                value: r.value,
+                currency: r.currency,
+                minimum_spend: r.minimum_spend,
+                maximum_discount: r.maximum_discount,
+                valid_from: r.valid_from,
+                valid_until: r.valid_until,
+                usage_limit: r.usage_limit,
+                usage_limit_per_user: r.usage_limit_per_user,
+                used_count: r.used_count,
+                status: r.status.map(|s| parse_coupon_status(&s)),
+                created_at: r.created_at,
+            })
+            .collect();
+
+        let total: i64 = sqlx::query_scalar!(
             r#"
-            SELECT COUNT(*)
+            SELECT COUNT(*) as "count!: i64"
             FROM coupons
             WHERE status = 'active'
                 AND ($1::text IS NULL OR type::text = $1)
@@ -374,9 +459,9 @@ async fn list_coupons(
                 AND (valid_from IS NULL OR valid_from <= NOW())
                 AND (valid_until IS NULL OR valid_until > NOW())
             "#,
+            type_filter,
+            search_filter as Option<String>,
         )
-        .bind(type_filter)
-        .bind(&search_filter)
         .fetch_one(state.db())
         .await?;
 
@@ -421,13 +506,13 @@ async fn get_user_coupons(
 
     let status_filter = query.status.as_deref();
 
-    let user_coupons = sqlx::query_as::<_, UserCouponWithDetails>(
+    let rows = sqlx::query!(
         r#"
         SELECT
             uc.id,
             uc.user_id,
             uc.coupon_id,
-            uc.status,
+            uc.status::text as "status",
             uc.qr_code,
             uc.used_at,
             uc.expires_at,
@@ -435,7 +520,7 @@ async fn get_user_coupons(
             c.code,
             c.name,
             c.description,
-            c.type as coupon_type,
+            c.type::text as "coupon_type!",
             c.value,
             c.currency,
             c.minimum_spend,
@@ -449,24 +534,48 @@ async fn get_user_coupons(
         ORDER BY uc.created_at DESC
         LIMIT $3 OFFSET $4
         "#,
+        user_uuid,
+        status_filter,
+        limit as i64,
+        offset,
     )
-    .bind(user_uuid)
-    .bind(status_filter)
-    .bind(limit as i64)
-    .bind(offset)
     .fetch_all(state.db())
     .await?;
 
-    let total: i64 = sqlx::query_scalar(
+    let user_coupons: Vec<UserCouponWithDetails> = rows
+        .into_iter()
+        .map(|r| UserCouponWithDetails {
+            id: r.id,
+            user_id: r.user_id,
+            coupon_id: r.coupon_id,
+            status: r.status.map(|s| parse_user_coupon_status(&s)),
+            qr_code: r.qr_code,
+            used_at: r.used_at,
+            expires_at: r.expires_at,
+            created_at: r.created_at,
+            code: r.code,
+            name: r.name,
+            description: r.description,
+            coupon_type: parse_coupon_type(&r.coupon_type),
+            value: r.value,
+            currency: r.currency,
+            minimum_spend: r.minimum_spend,
+            maximum_discount: r.maximum_discount,
+            coupon_valid_from: r.coupon_valid_from,
+            coupon_valid_until: r.coupon_valid_until,
+        })
+        .collect();
+
+    let total: i64 = sqlx::query_scalar!(
         r#"
-        SELECT COUNT(*)
+        SELECT COUNT(*) as "count!: i64"
         FROM user_coupons
         WHERE user_id = $1
             AND ($2::text IS NULL OR status::text = $2)
         "#,
+        user_uuid,
+        status_filter,
     )
-    .bind(user_uuid)
-    .bind(status_filter)
     .fetch_one(state.db())
     .await?;
 
@@ -491,7 +600,7 @@ async fn get_coupon(
 ) -> AppResult<Json<SuccessResponse<CouponResponse>>> {
     let is_admin = user.role == "admin" || user.role == "super_admin";
 
-    let coupon = sqlx::query_as::<_, CouponResponse>(
+    let row = sqlx::query!(
         r#"
         SELECT
             id,
@@ -499,7 +608,7 @@ async fn get_coupon(
             name,
             description,
             terms_and_conditions,
-            type as coupon_type,
+            type::text as "coupon_type!",
             value,
             currency,
             minimum_spend,
@@ -509,16 +618,36 @@ async fn get_coupon(
             usage_limit,
             usage_limit_per_user,
             used_count,
-            status,
+            status::text as "status",
             created_at
         FROM coupons
         WHERE id = $1
         "#,
+        coupon_id,
     )
-    .bind(coupon_id)
     .fetch_optional(state.db())
     .await?
     .ok_or_else(|| AppError::NotFound("Coupon".to_string()))?;
+
+    let coupon = CouponResponse {
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        description: row.description,
+        terms_and_conditions: row.terms_and_conditions,
+        coupon_type: parse_coupon_type(&row.coupon_type),
+        value: row.value,
+        currency: row.currency,
+        minimum_spend: row.minimum_spend,
+        maximum_discount: row.maximum_discount,
+        valid_from: row.valid_from,
+        valid_until: row.valid_until,
+        usage_limit: row.usage_limit,
+        usage_limit_per_user: row.usage_limit_per_user,
+        used_count: row.used_count,
+        status: row.status.map(|s| parse_coupon_status(&s)),
+        created_at: row.created_at,
+    };
 
     // Non-admin users can only see active coupons
     if !is_admin && coupon.status != Some(CouponStatus::Active) {
@@ -596,6 +725,8 @@ async fn create_coupon(
         .clone()
         .unwrap_or_else(|| "THB".to_string());
 
+    // Note: Uses runtime query because bind params with enum type casts
+    // ($6::coupon_type, $17::coupon_status) are not supported by compile-time macros
     let coupon = sqlx::query_as::<_, CouponResponse>(
         r#"
         INSERT INTO coupons (
@@ -649,7 +780,7 @@ async fn create_coupon(
     .bind(user_uuid)
     .fetch_one(state.db())
     .await
-    .map_err(|e| {
+    .map_err(|e: sqlx::Error| {
         if e.to_string().contains("duplicate key") {
             AppError::AlreadyExists("A coupon with this code already exists".to_string())
         } else {
@@ -679,12 +810,13 @@ async fn update_coupon(
     if let Some(value) = request.value {
         if value > Decimal::from(100) {
             // Check if it's a percentage type coupon
-            let existing: String =
-                sqlx::query_scalar(r#"SELECT type::text FROM coupons WHERE id = $1"#)
-                    .bind(coupon_id)
-                    .fetch_optional(state.db())
-                    .await?
-                    .ok_or_else(|| AppError::NotFound("Coupon".to_string()))?;
+            let existing: String = sqlx::query_scalar!(
+                r#"SELECT type::text as "coupon_type!" FROM coupons WHERE id = $1"#,
+                coupon_id,
+            )
+            .fetch_optional(state.db())
+            .await?
+            .ok_or_else(|| AppError::NotFound("Coupon".to_string()))?;
 
             if existing == "percentage" {
                 return Err(AppError::Validation(
@@ -694,6 +826,8 @@ async fn update_coupon(
         }
     }
 
+    // Note: Uses runtime query because bind param $15 is Option<CouponStatus> (enum type)
+    // which is not supported by compile-time macros
     let coupon = sqlx::query_as::<_, CouponResponse>(
         r#"
         UPDATE coupons
@@ -767,8 +901,7 @@ async fn delete_coupon(
     Extension(_user): Extension<AuthUser>,
     Path(coupon_id): Path<Uuid>,
 ) -> AppResult<Json<SuccessResponse<()>>> {
-    let result = sqlx::query("DELETE FROM coupons WHERE id = $1")
-        .bind(coupon_id)
+    let result = sqlx::query!("DELETE FROM coupons WHERE id = $1", coupon_id)
         .execute(state.db())
         .await?;
 
@@ -810,22 +943,14 @@ async fn assign_coupon(
         .map_err(|_| AppError::InvalidInput("Invalid admin user ID format".to_string()))?;
 
     // Check if coupon exists and is active
-    #[derive(sqlx::FromRow)]
-    #[allow(dead_code)]
-    struct CouponCheckRow {
-        id: Uuid,
-        status: String,
-        valid_until: Option<DateTime<Utc>>,
-    }
-
-    let coupon = sqlx::query_as::<_, CouponCheckRow>(
+    let coupon = sqlx::query!(
         r#"
-        SELECT id, status::text as status, valid_until
+        SELECT id, status::text as "status!", valid_until
         FROM coupons
         WHERE id = $1
         "#,
+        request.coupon_id,
     )
-    .bind(request.coupon_id)
     .fetch_optional(state.db())
     .await?
     .ok_or_else(|| AppError::NotFound("Coupon".to_string()))?;
@@ -846,7 +971,7 @@ async fn assign_coupon(
         // Use custom expiry or coupon's valid_until
         let expires_at = request.custom_expiry.or(coupon.valid_until);
 
-        let user_coupon = sqlx::query_as::<_, UserCouponResponse>(
+        let row = sqlx::query!(
             r#"
             INSERT INTO user_coupons (
                 id, user_id, coupon_id, status, qr_code,
@@ -857,24 +982,33 @@ async fn assign_coupon(
                 id,
                 user_id,
                 coupon_id,
-                status,
+                status::text as "status",
                 qr_code,
                 used_at,
                 expires_at,
                 created_at
             "#,
+            user_coupon_id,
+            user_id,
+            request.coupon_id,
+            &qr_code,
+            admin_uuid,
+            request.assigned_reason.as_deref(),
+            expires_at,
         )
-        .bind(user_coupon_id)
-        .bind(user_id)
-        .bind(request.coupon_id)
-        .bind(&qr_code)
-        .bind(admin_uuid)
-        .bind(&request.assigned_reason)
-        .bind(expires_at)
         .fetch_one(state.db())
         .await?;
 
-        assigned_coupons.push(user_coupon);
+        assigned_coupons.push(UserCouponResponse {
+            id: row.id,
+            user_id: row.user_id,
+            coupon_id: row.coupon_id,
+            status: row.status.map(|s| parse_user_coupon_status(&s)),
+            qr_code: row.qr_code,
+            used_at: row.used_at,
+            expires_at: row.expires_at,
+            created_at: row.created_at,
+        });
     }
 
     Ok(Json(SuccessResponse::with_message(
@@ -908,28 +1042,14 @@ async fn redeem_coupon(
         .map_err(|_| AppError::InvalidInput("Invalid user ID format".to_string()))?;
 
     // Get user coupon by QR code with coupon details
-    #[derive(sqlx::FromRow)]
-    #[allow(dead_code)]
-    struct UserCouponRedeemRow {
-        id: Uuid,
-        user_id: Uuid,
-        status: String,
-        expires_at: Option<DateTime<Utc>>,
-        coupon_type: String,
-        value: Option<Decimal>,
-        minimum_spend: Option<Decimal>,
-        maximum_discount: Option<Decimal>,
-        currency: Option<String>,
-    }
-
-    let user_coupon = sqlx::query_as::<_, UserCouponRedeemRow>(
+    let user_coupon = sqlx::query!(
         r#"
         SELECT
             uc.id,
             uc.user_id,
-            uc.status::text as status,
+            uc.status::text as "status!",
             uc.expires_at,
-            c.type::text as coupon_type,
+            c.type::text as "coupon_type!",
             c.value,
             c.minimum_spend,
             c.maximum_discount,
@@ -938,8 +1058,8 @@ async fn redeem_coupon(
         JOIN coupons c ON uc.coupon_id = c.id
         WHERE uc.qr_code = $1
         "#,
+        &request.qr_code,
     )
-    .bind(&request.qr_code)
     .fetch_optional(state.db())
     .await?
     .ok_or_else(|| AppError::NotFound("Invalid QR code".to_string()))?;
@@ -998,7 +1118,7 @@ async fn redeem_coupon(
         "metadata": request.metadata
     });
 
-    sqlx::query(
+    sqlx::query!(
         r#"
         UPDATE user_coupons
         SET
@@ -1010,23 +1130,23 @@ async fn redeem_coupon(
             updated_at = NOW()
         WHERE id = $1
         "#,
+        user_coupon.id,
+        redeemer_uuid,
+        request.location.as_deref(),
+        &redemption_details,
     )
-    .bind(user_coupon.id)
-    .bind(redeemer_uuid)
-    .bind(&request.location)
-    .bind(&redemption_details)
     .execute(state.db())
     .await?;
 
     // Increment used_count on coupon
-    sqlx::query(
+    sqlx::query!(
         r#"
         UPDATE coupons
         SET used_count = COALESCE(used_count, 0) + 1, updated_at = NOW()
         WHERE id = (SELECT coupon_id FROM user_coupons WHERE id = $1)
         "#,
+        user_coupon.id,
     )
-    .bind(user_coupon.id)
     .execute(state.db())
     .await?;
 
@@ -1050,28 +1170,14 @@ async fn validate_coupon(
         return Err(AppError::Validation("QR code is required".to_string()));
     }
 
-    #[derive(sqlx::FromRow)]
-    struct CouponValidateRow {
-        status: String,
-        expires_at: Option<DateTime<Utc>>,
-        name: String,
-        description: Option<String>,
-        coupon_type: String,
-        value: Option<Decimal>,
-        currency: Option<String>,
-        minimum_spend: Option<Decimal>,
-        maximum_discount: Option<Decimal>,
-        valid_until: Option<DateTime<Utc>>,
-    }
-
-    let user_coupon = sqlx::query_as::<_, CouponValidateRow>(
+    let user_coupon = sqlx::query!(
         r#"
         SELECT
-            uc.status::text as status,
+            uc.status::text as "status!",
             uc.expires_at,
             c.name,
             c.description,
-            c.type::text as coupon_type,
+            c.type::text as "coupon_type!",
             c.value,
             c.currency,
             c.minimum_spend,
@@ -1081,8 +1187,8 @@ async fn validate_coupon(
         JOIN coupons c ON uc.coupon_id = c.id
         WHERE uc.qr_code = $1
         "#,
+        &qr_code,
     )
-    .bind(&qr_code)
     .fetch_optional(state.db())
     .await?;
 
@@ -1098,14 +1204,7 @@ async fn validate_coupon(
                     Some(CouponValidationData {
                         name: uc.name,
                         description: uc.description,
-                        coupon_type: match uc.coupon_type.as_str() {
-                            "percentage" => CouponType::Percentage,
-                            "fixed_amount" => CouponType::FixedAmount,
-                            "bogo" => CouponType::Bogo,
-                            "free_upgrade" => CouponType::FreeUpgrade,
-                            "free_service" => CouponType::FreeService,
-                            _ => CouponType::Percentage,
-                        },
+                        coupon_type: parse_coupon_type(&uc.coupon_type),
                         value: uc.value,
                         currency: uc.currency,
                         minimum_spend: uc.minimum_spend,
@@ -1141,14 +1240,14 @@ async fn revoke_user_coupon(
     Path(user_coupon_id): Path<Uuid>,
     Json(_request): Json<RevokeUserCouponRequest>,
 ) -> AppResult<Json<SuccessResponse<()>>> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         r#"
         UPDATE user_coupons
         SET status = 'revoked', updated_at = NOW()
         WHERE id = $1 AND status = 'available'
         "#,
+        user_coupon_id,
     )
-    .bind(user_coupon_id)
     .execute(state.db())
     .await?;
 
@@ -1172,21 +1271,13 @@ async fn get_coupon_stats(
     State(state): State<AppState>,
     Extension(_user): Extension<AuthUser>,
 ) -> AppResult<Json<SuccessResponse<CouponStats>>> {
-    #[derive(sqlx::FromRow)]
-    struct CouponStatsRow {
-        total_coupons: i64,
-        active_coupons: i64,
-        total_assigned: i64,
-        total_redeemed: i64,
-    }
-
-    let stats = sqlx::query_as::<_, CouponStatsRow>(
+    let stats = sqlx::query!(
         r#"
         SELECT
-            (SELECT COUNT(*) FROM coupons) as total_coupons,
-            (SELECT COUNT(*) FROM coupons WHERE status = 'active') as active_coupons,
-            (SELECT COUNT(*) FROM user_coupons) as total_assigned,
-            (SELECT COUNT(*) FROM user_coupons WHERE status = 'used') as total_redeemed
+            (SELECT COUNT(*) FROM coupons) as "total_coupons!: i64",
+            (SELECT COUNT(*) FROM coupons WHERE status = 'active') as "active_coupons!: i64",
+            (SELECT COUNT(*) FROM user_coupons) as "total_assigned!: i64",
+            (SELECT COUNT(*) FROM user_coupons WHERE status = 'used') as "total_redeemed!: i64"
         "#,
     )
     .fetch_one(state.db())
@@ -1220,13 +1311,13 @@ async fn get_coupon_redemptions(
     let limit = query.limit.unwrap_or(20).min(50).max(1);
     let offset = ((page - 1) * limit) as i64;
 
-    let redemptions = sqlx::query_as::<_, UserCouponResponse>(
+    let rows = sqlx::query!(
         r#"
         SELECT
             id,
             user_id,
             coupon_id,
-            status,
+            status::text as "status",
             qr_code,
             used_at,
             expires_at,
@@ -1236,21 +1327,35 @@ async fn get_coupon_redemptions(
         ORDER BY used_at DESC
         LIMIT $2 OFFSET $3
         "#,
+        coupon_id,
+        limit as i64,
+        offset,
     )
-    .bind(coupon_id)
-    .bind(limit as i64)
-    .bind(offset)
     .fetch_all(state.db())
     .await?;
 
-    let total: i64 = sqlx::query_scalar(
+    let redemptions: Vec<UserCouponResponse> = rows
+        .into_iter()
+        .map(|r| UserCouponResponse {
+            id: r.id,
+            user_id: r.user_id,
+            coupon_id: r.coupon_id,
+            status: r.status.map(|s| parse_user_coupon_status(&s)),
+            qr_code: r.qr_code,
+            used_at: r.used_at,
+            expires_at: r.expires_at,
+            created_at: r.created_at,
+        })
+        .collect();
+
+    let total: i64 = sqlx::query_scalar!(
         r#"
-        SELECT COUNT(*)
+        SELECT COUNT(*) as "count!: i64"
         FROM user_coupons
         WHERE coupon_id = $1 AND status = 'used'
         "#,
+        coupon_id,
     )
-    .bind(coupon_id)
     .fetch_one(state.db())
     .await?;
 
@@ -1278,13 +1383,13 @@ async fn get_coupon_assignments(
     let limit = query.limit.unwrap_or(20).min(50).max(1);
     let offset = ((page - 1) * limit) as i64;
 
-    let assignments = sqlx::query_as::<_, UserCouponResponse>(
+    let rows = sqlx::query!(
         r#"
         SELECT
             id,
             user_id,
             coupon_id,
-            status,
+            status::text as "status",
             qr_code,
             used_at,
             expires_at,
@@ -1294,21 +1399,35 @@ async fn get_coupon_assignments(
         ORDER BY created_at DESC
         LIMIT $2 OFFSET $3
         "#,
+        coupon_id,
+        limit as i64,
+        offset,
     )
-    .bind(coupon_id)
-    .bind(limit as i64)
-    .bind(offset)
     .fetch_all(state.db())
     .await?;
 
-    let total: i64 = sqlx::query_scalar(
+    let assignments: Vec<UserCouponResponse> = rows
+        .into_iter()
+        .map(|r| UserCouponResponse {
+            id: r.id,
+            user_id: r.user_id,
+            coupon_id: r.coupon_id,
+            status: r.status.map(|s| parse_user_coupon_status(&s)),
+            qr_code: r.qr_code,
+            used_at: r.used_at,
+            expires_at: r.expires_at,
+            created_at: r.created_at,
+        })
+        .collect();
+
+    let total: i64 = sqlx::query_scalar!(
         r#"
-        SELECT COUNT(*)
+        SELECT COUNT(*) as "count!: i64"
         FROM user_coupons
         WHERE coupon_id = $1
         "#,
+        coupon_id,
     )
-    .bind(coupon_id)
     .fetch_one(state.db())
     .await?;
 

@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO points_transactions (user_id, points, type, description, admin_user_id, admin_reason)\n        VALUES ($1, $2, 'admin_deduction'::points_transaction_type, $3, $4, $5)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Text",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fff108106a3e281bf84726ae01e8246c22a9e70f9ba847a5668a73b262c17fc7"
+}

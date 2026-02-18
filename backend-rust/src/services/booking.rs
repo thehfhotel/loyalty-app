@@ -86,23 +86,18 @@ pub struct UpdateBookingDto {
 // ==================== Enums ====================
 
 /// Booking status enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "varchar")]
 #[sqlx(rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum BookingStatus {
     /// Booking is confirmed and active
+    #[default]
     Confirmed,
     /// Booking has been cancelled
     Cancelled,
     /// Booking has been completed (guest checked out)
     Completed,
-}
-
-impl Default for BookingStatus {
-    fn default() -> Self {
-        Self::Confirmed
-    }
 }
 
 impl std::fmt::Display for BookingStatus {
@@ -145,8 +140,6 @@ pub struct Booking {
     pub status: String,
     pub cancelled_at: Option<DateTime<Utc>>,
     pub cancellation_reason: Option<String>,
-    pub cancelled_by: Option<Uuid>,
-    pub cancelled_by_admin: bool,
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -169,11 +162,7 @@ pub struct RoomType {
     pub description: Option<String>,
     pub price_per_night: Decimal,
     pub max_guests: i32,
-    pub bed_type: Option<String>,
-    pub amenities: serde_json::Value,
-    pub images: serde_json::Value,
     pub is_active: bool,
-    pub sort_order: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -185,7 +174,6 @@ pub struct Room {
     pub room_type_id: Uuid,
     pub room_number: String,
     pub floor: Option<i32>,
-    pub notes: Option<String>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -361,10 +349,11 @@ impl BookingServiceImpl {
         check_in: NaiveDate,
         check_out: NaiveDate,
     ) -> Result<Option<Room>, AppError> {
-        let room = sqlx::query_as::<_, Room>(
+        let room = sqlx::query_as!(
+            Room,
             r#"
-            SELECT r.id, r.room_type_id, r.room_number, r.floor, r.notes,
-                   r.is_active, r.created_at, r.updated_at
+            SELECT r.id, r.room_type_id, r.room_number, r.floor,
+                   r.is_active, r.created_at as "created_at!", r.updated_at as "updated_at!"
             FROM rooms r
             WHERE r.room_type_id = $1
               AND r.is_active = true
@@ -383,10 +372,10 @@ impl BookingServiceImpl {
             ORDER BY r.room_number ASC
             LIMIT 1
             "#,
+            room_type_id,
+            check_in,
+            check_out,
         )
-        .bind(room_type_id)
-        .bind(check_in)
-        .bind(check_out)
         .fetch_optional(self.pool())
         .await?;
 
@@ -395,15 +384,16 @@ impl BookingServiceImpl {
 
     /// Get room type by ID
     async fn get_room_type(&self, room_type_id: Uuid) -> Result<Option<RoomType>, AppError> {
-        let room_type = sqlx::query_as::<_, RoomType>(
+        let room_type = sqlx::query_as!(
+            RoomType,
             r#"
-            SELECT id, name, description, price_per_night, max_guests, bed_type,
-                   amenities, images, is_active, sort_order, created_at, updated_at
+            SELECT id, name, description, price_per_night, max_guests,
+                   is_active, created_at as "created_at!", updated_at as "updated_at!"
             FROM room_types
             WHERE id = $1 AND is_active = true
             "#,
+            room_type_id,
         )
-        .bind(room_type_id)
         .fetch_optional(self.pool())
         .await?;
 
@@ -447,15 +437,16 @@ impl BookingServiceImpl {
 
     /// Get room type by name
     async fn get_room_type_by_name(&self, name: &str) -> Result<Option<RoomType>, AppError> {
-        let room_type = sqlx::query_as::<_, RoomType>(
+        let room_type = sqlx::query_as!(
+            RoomType,
             r#"
-            SELECT id, name, description, price_per_night, max_guests, bed_type,
-                   amenities, images, is_active, sort_order, created_at, updated_at
+            SELECT id, name, description, price_per_night, max_guests,
+                   is_active, created_at as "created_at!", updated_at as "updated_at!"
             FROM room_types
             WHERE LOWER(name) = LOWER($1) AND is_active = true
             "#,
+            name,
         )
-        .bind(name)
         .fetch_optional(self.pool())
         .await?;
 
@@ -507,9 +498,8 @@ impl BookingService for BookingServiceImpl {
             SELECT
                 b.id, b.user_id, b.room_id, b.room_type_id,
                 b.check_in_date, b.check_out_date, b.num_guests,
-                b.total_price, b.points_earned, b.status,
+                b.total_price, COALESCE(b.points_earned, 0) as points_earned, b.status,
                 b.cancelled_at, b.cancellation_reason,
-                b.cancelled_by, COALESCE(b.cancelled_by_admin, false) as cancelled_by_admin,
                 b.notes, b.created_at, b.updated_at,
                 r.room_number, rt.name as room_type_name,
                 NULL::text as user_email, NULL::text as user_name
@@ -554,24 +544,24 @@ impl BookingService for BookingServiceImpl {
         // Convert i32 booking_id to Uuid for query
         let booking_uuid = Self::i32_to_uuid(booking_id);
 
-        let booking = sqlx::query_as::<_, Booking>(
+        let booking = sqlx::query_as!(
+            Booking,
             r#"
             SELECT
                 b.id, b.user_id, b.room_id, b.room_type_id,
                 b.check_in_date, b.check_out_date, b.num_guests,
-                b.total_price, b.points_earned, b.status,
+                b.total_price, COALESCE(b.points_earned, 0) as "points_earned!", b.status,
                 b.cancelled_at, b.cancellation_reason,
-                b.cancelled_by, COALESCE(b.cancelled_by_admin, false) as cancelled_by_admin,
-                b.notes, b.created_at, b.updated_at,
-                r.room_number, rt.name as room_type_name,
+                b.notes, b.created_at as "created_at!", b.updated_at as "updated_at!",
+                r.room_number as "room_number?", rt.name as "room_type_name?",
                 NULL::text as user_email, NULL::text as user_name
             FROM bookings b
             JOIN rooms r ON b.room_id = r.id
             JOIN room_types rt ON b.room_type_id = rt.id
             WHERE b.id = $1
             "#,
+            booking_uuid,
         )
-        .bind(booking_uuid)
         .fetch_optional(self.pool())
         .await?;
 
@@ -626,7 +616,8 @@ impl BookingService for BookingServiceImpl {
             .unwrap_or(0);
 
         // Create booking
-        let booking = sqlx::query_as::<_, Booking>(
+        let booking = sqlx::query_as!(
+            Booking,
             r#"
             INSERT INTO bookings (
                 user_id, room_id, room_type_id, check_in_date, check_out_date,
@@ -635,23 +626,22 @@ impl BookingService for BookingServiceImpl {
             RETURNING
                 id, user_id, room_id, room_type_id,
                 check_in_date, check_out_date, num_guests,
-                total_price, points_earned, status,
+                total_price, COALESCE(points_earned, 0) as "points_earned!", status,
                 cancelled_at, cancellation_reason,
-                cancelled_by, COALESCE(cancelled_by_admin, false) as cancelled_by_admin,
-                notes, created_at, updated_at,
+                notes, created_at as "created_at!", updated_at as "updated_at!",
                 NULL::text as room_number, NULL::text as room_type_name,
                 NULL::text as user_email, NULL::text as user_name
             "#,
+            data.user_id,
+            room.id,
+            data.room_type_id,
+            data.check_in_date,
+            data.check_out_date,
+            data.num_guests,
+            total_price,
+            points_earned,
+            data.notes.as_deref(),
         )
-        .bind(data.user_id)
-        .bind(room.id)
-        .bind(data.room_type_id)
-        .bind(data.check_in_date)
-        .bind(data.check_out_date)
-        .bind(data.num_guests)
-        .bind(total_price)
-        .bind(points_earned)
-        .bind(&data.notes)
         .fetch_one(self.pool())
         .await?;
 
@@ -701,20 +691,20 @@ impl BookingService for BookingServiceImpl {
 
         // If dates changed, verify availability (excluding current booking's room)
         if data.check_in_date.is_some() || data.check_out_date.is_some() {
-            let conflicts = sqlx::query_scalar::<_, i64>(
+            let conflicts = sqlx::query_scalar!(
                 r#"
-                SELECT COUNT(*) FROM bookings
+                SELECT COUNT(*) as "count!" FROM bookings
                 WHERE room_id = $1
                   AND id != $2
                   AND status = 'confirmed'
                   AND check_in_date < $4
                   AND check_out_date > $3
                 "#,
+                existing.room_id,
+                booking_uuid,
+                check_in,
+                check_out,
             )
-            .bind(existing.room_id)
-            .bind(booking_uuid)
-            .bind(check_in)
-            .bind(check_out)
             .fetch_one(self.pool())
             .await?;
 
@@ -726,7 +716,8 @@ impl BookingService for BookingServiceImpl {
         }
 
         // Update booking
-        let booking = sqlx::query_as::<_, Booking>(
+        let booking = sqlx::query_as!(
+            Booking,
             r#"
             UPDATE bookings SET
                 check_in_date = COALESCE($2, check_in_date),
@@ -739,20 +730,19 @@ impl BookingService for BookingServiceImpl {
             RETURNING
                 id, user_id, room_id, room_type_id,
                 check_in_date, check_out_date, num_guests,
-                total_price, points_earned, status,
+                total_price, COALESCE(points_earned, 0) as "points_earned!", status,
                 cancelled_at, cancellation_reason,
-                cancelled_by, COALESCE(cancelled_by_admin, false) as cancelled_by_admin,
-                notes, created_at, updated_at,
+                notes, created_at as "created_at!", updated_at as "updated_at!",
                 NULL::text as room_number, NULL::text as room_type_name,
                 NULL::text as user_email, NULL::text as user_name
             "#,
+            booking_uuid,
+            data.check_in_date,
+            data.check_out_date,
+            data.num_guests,
+            data.notes.as_deref(),
+            data.total_amount,
         )
-        .bind(booking_uuid)
-        .bind(data.check_in_date)
-        .bind(data.check_out_date)
-        .bind(data.num_guests)
-        .bind(&data.notes)
-        .bind(data.total_amount)
         .fetch_one(self.pool())
         .await?;
 
@@ -784,7 +774,8 @@ impl BookingService for BookingServiceImpl {
         }
 
         // Update booking status
-        let booking = sqlx::query_as::<_, Booking>(
+        let booking = sqlx::query_as!(
+            Booking,
             r#"
             UPDATE bookings SET
                 status = 'cancelled',
@@ -794,15 +785,14 @@ impl BookingService for BookingServiceImpl {
             RETURNING
                 id, user_id, room_id, room_type_id,
                 check_in_date, check_out_date, num_guests,
-                total_price, points_earned, status,
+                total_price, COALESCE(points_earned, 0) as "points_earned!", status,
                 cancelled_at, cancellation_reason,
-                cancelled_by, COALESCE(cancelled_by_admin, false) as cancelled_by_admin,
-                notes, created_at, updated_at,
+                notes, created_at as "created_at!", updated_at as "updated_at!",
                 NULL::text as room_number, NULL::text as room_type_name,
                 NULL::text as user_email, NULL::text as user_name
             "#,
+            booking_uuid,
         )
-        .bind(booking_uuid)
         .fetch_one(self.pool())
         .await?;
 
@@ -836,7 +826,8 @@ impl BookingService for BookingServiceImpl {
         }
 
         // Update booking status to completed
-        let booking = sqlx::query_as::<_, Booking>(
+        let booking = sqlx::query_as!(
+            Booking,
             r#"
             UPDATE bookings SET
                 status = 'completed',
@@ -845,15 +836,14 @@ impl BookingService for BookingServiceImpl {
             RETURNING
                 id, user_id, room_id, room_type_id,
                 check_in_date, check_out_date, num_guests,
-                total_price, points_earned, status,
+                total_price, COALESCE(points_earned, 0) as "points_earned!", status,
                 cancelled_at, cancellation_reason,
-                cancelled_by, COALESCE(cancelled_by_admin, false) as cancelled_by_admin,
-                notes, created_at, updated_at,
+                notes, created_at as "created_at!", updated_at as "updated_at!",
                 NULL::text as room_number, NULL::text as room_type_name,
                 NULL::text as user_email, NULL::text as user_name
             "#,
+            booking_uuid,
         )
-        .bind(booking_uuid)
         .fetch_one(self.pool())
         .await?;
 
@@ -925,9 +915,9 @@ impl BookingService for BookingServiceImpl {
             Ok(available_room.is_some())
         } else {
             // Check all room types - at least one room must be available
-            let available_count = sqlx::query_scalar::<_, i64>(
+            let available_count = sqlx::query_scalar!(
                 r#"
-                SELECT COUNT(*) FROM rooms r
+                SELECT COUNT(*) as "count!" FROM rooms r
                 JOIN room_types rt ON r.room_type_id = rt.id
                 WHERE r.is_active = true
                   AND rt.is_active = true
@@ -942,9 +932,9 @@ impl BookingService for BookingServiceImpl {
                         AND check_out_date > $1
                   )
                 "#,
+                check_in,
+                check_out,
             )
-            .bind(check_in)
-            .bind(check_out)
             .fetch_one(self.pool())
             .await?;
 
@@ -1012,8 +1002,6 @@ mod tests {
             status: "confirmed".to_string(),
             cancelled_at: None,
             cancellation_reason: None,
-            cancelled_by: None,
-            cancelled_by_admin: false,
             notes: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

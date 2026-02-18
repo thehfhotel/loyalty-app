@@ -1,0 +1,61 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id)\n            VALUES ($1, '', $2, $3, $4)\n            RETURNING id, email, role::text as role, is_active, email_verified,\n                      oauth_provider, oauth_provider_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "role",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "email_verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "oauth_provider",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "oauth_provider_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Bool",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "39277a73161162a0d3fb746bc56bdafbf0949906705cda5489772a829378a77c"
+}

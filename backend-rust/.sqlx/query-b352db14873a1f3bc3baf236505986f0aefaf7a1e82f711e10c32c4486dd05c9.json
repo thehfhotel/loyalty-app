@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT COUNT(*) as \"count!\" FROM rooms r\n                JOIN room_types rt ON r.room_type_id = rt.id\n                WHERE r.is_active = true\n                  AND rt.is_active = true\n                  AND r.id NOT IN (\n                      SELECT DISTINCT room_id FROM room_blocked_dates\n                      WHERE blocked_date >= $1 AND blocked_date < $2\n                  )\n                  AND r.id NOT IN (\n                      SELECT DISTINCT room_id FROM bookings\n                      WHERE status = 'confirmed'\n                        AND check_in_date < $2\n                        AND check_out_date > $1\n                  )\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b352db14873a1f3bc3baf236505986f0aefaf7a1e82f711e10c32c4486dd05c9"
+}

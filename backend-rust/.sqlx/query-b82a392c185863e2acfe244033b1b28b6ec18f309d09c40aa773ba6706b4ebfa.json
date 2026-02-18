@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO points_transactions (\n            user_id, points, type, description, reference_id, nights_stayed,\n            admin_user_id, admin_reason, created_at, expires_at\n        ) VALUES ($1, $2, $3::text::points_transaction_type, $4, $5, $6, $7, $8, NOW(), NOW() + INTERVAL '1 year')\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Text",
+        "Text",
+        "Varchar",
+        "Int4",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b82a392c185863e2acfe244033b1b28b6ec18f309d09c40aa773ba6706b4ebfa"
+}

@@ -163,15 +163,21 @@ docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compos
 ### Database Operations
 
 **Migration:**
-- Single file: `backend/prisma/migrations/0_init/migration.sql`
-- Commands: `npm run db:generate` → `npm run db:migrate` (in `backend/` directory)
-- Prisma is still used for migrations; Rust backend uses sqlx for queries
+- Single file: `backend-rust/migrations/20240101000000_init.sql`
+- Rust backend loads migration via `include_str!()` in tests; CI runs via `psql`
+- Migration creates 25+ tables, stored procedures, triggers, and indexes
+- Legacy Prisma migration in `backend/prisma/migrations/0_init/migration.sql`
 
 **Rust Backend Database (sqlx):**
-- Uses runtime query checking (not compile-time macros)
-- Queries use `sqlx::query()` / `sqlx::query_as()` with `.bind()` parameters
-- Connection pool accessed via `state.pool()` method
-- `SQLX_OFFLINE` is disabled; queries validated at runtime
+- Uses **compile-time query macros**: `sqlx::query!()` / `sqlx::query_as!()` / `sqlx::query_scalar!()`
+- SQL validated at compile time against `.sqlx/` offline cache (committed to git)
+- `SQLX_OFFLINE=true` in `.cargo/config.toml` — compilation works without a live DB
+- Dynamic SQL queries (format!-based WHERE) use runtime `sqlx::query()` / `sqlx::query_as()`
+- Regenerate cache: `DATABASE_URL=... cargo sqlx prepare` (requires live DB)
+- CI runs `cargo sqlx prepare --check` to verify cache is up-to-date
+- Connection pool accessed via `state.db()` method
+- Integration tests use real migration schema via `include_str!()`
+- CI pipeline verifies schema (25+ tables, 5+ stored procedures) after migration
 
 **Automatic Seeding:**
 - **Essential data** (runs in ALL environments on startup):
@@ -216,13 +222,7 @@ cargo run             # Run locally
 cargo test            # Run all tests
 ```
 
-**Rust Version:** 1.85 required (for edition2024)
-
-**Key Dependency Pins (Cargo.toml):** Rust 1.85 compatibility requires pinning:
-- `time@0.3.41` (0.3.46+ requires Rust 1.88)
-- `home@0.5.11` (0.5.12+ requires Rust 1.88)
-- `psm@0.1.24` (newer versions have unstable features)
-- `wiremock@0.6.2` (0.6.5+ has unstable feature issues)
+**Rust Version:** 1.93 (latest stable, no dependency pins needed)
 
 **Architecture Patterns:**
 - `AppState::new(pool, redis, config)` - main state constructor
@@ -356,6 +356,8 @@ cargo build                    # Build
 cargo test                     # Run tests
 cargo run                      # Run locally
 RUST_LOG=debug cargo run       # Run with debug logging
+cargo sqlx prepare             # Regenerate .sqlx/ cache (needs DATABASE_URL)
+cargo sqlx prepare --check     # Verify .sqlx/ cache is up-to-date
 
 # Frontend quality checks
 cd frontend && npm run lint && npm run typecheck && npm run test

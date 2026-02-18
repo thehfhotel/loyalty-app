@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) as \"count!: i64\"\n        FROM user_coupons\n        WHERE user_id = $1\n            AND ($2::text IS NULL OR status::text = $2)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!: i64",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4e0c177ede3a3d35ddc0e5f6127dee79ba902edf132b86596e207de25dcdeaae"
+}

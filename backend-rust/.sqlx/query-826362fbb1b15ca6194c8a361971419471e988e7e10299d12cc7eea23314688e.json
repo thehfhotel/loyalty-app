@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            DATE(created_at) as \"date!\",\n            COUNT(*) as \"count!: i64\"\n        FROM points_transactions\n        WHERE DATE(created_at) >= $1 AND DATE(created_at) <= $2\n            AND (type::text = 'stay' OR type::text = 'booking')\n        GROUP BY DATE(created_at)\n        ORDER BY DATE(created_at)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "date!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 1,
+        "name": "count!: i64",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "826362fbb1b15ca6194c8a361971419471e988e7e10299d12cc7eea23314688e"
+}

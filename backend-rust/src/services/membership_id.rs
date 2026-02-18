@@ -45,13 +45,14 @@ const MEMBERSHIP_ID_LENGTH: usize = 7;
 /// ```
 pub async fn generate_membership_id(db: &PgPool) -> Result<String, AppError> {
     // Get the next value from the database sequence
-    let sequence_value: i64 = sqlx::query_scalar("SELECT nextval('membership_id_sequence')")
-        .fetch_one(db)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get next membership ID sequence value: {}", e);
-            AppError::Database(e)
-        })?;
+    let sequence_value: i64 =
+        sqlx::query_scalar!("SELECT nextval('membership_id_sequence') as \"val!: i64\"")
+            .fetch_one(db)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get next membership ID sequence value: {}", e);
+                AppError::Database(e)
+            })?;
 
     // Validate the sequence value is positive
     if sequence_value <= 0 {

@@ -1,0 +1,191 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                uc.id,\n                uc.user_id,\n                uc.coupon_id,\n                uc.status as \"status: UserCouponStatus\",\n                uc.qr_code,\n                uc.used_at,\n                uc.used_by_admin,\n                uc.redemption_location,\n                uc.assigned_by,\n                uc.assigned_reason,\n                uc.expires_at,\n                uc.created_at as user_coupon_created_at,\n                c.code,\n                c.name,\n                c.description,\n                c.terms_and_conditions,\n                c.type as \"coupon_type: CouponType\",\n                c.value,\n                c.currency,\n                c.minimum_spend,\n                c.maximum_discount,\n                c.valid_from,\n                c.valid_until,\n                CASE\n                    WHEN uc.expires_at IS NOT NULL THEN uc.expires_at\n                    ELSE c.valid_until\n                END as effective_expiry,\n                CASE\n                    WHEN uc.expires_at IS NOT NULL AND uc.expires_at <= NOW() + INTERVAL '7 days' THEN true\n                    WHEN c.valid_until IS NOT NULL AND c.valid_until <= NOW() + INTERVAL '7 days' THEN true\n                    ELSE false\n                END as expiring_soon\n            FROM user_coupons uc\n            JOIN coupons c ON uc.coupon_id = c.id\n            WHERE uc.user_id = $1\n              AND uc.status = 'available'\n              AND (uc.expires_at IS NULL OR uc.expires_at > NOW())\n              AND (c.valid_until IS NULL OR c.valid_until > NOW())\n            ORDER BY uc.created_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "coupon_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "status: UserCouponStatus",
+        "type_info": {
+          "Custom": {
+            "name": "user_coupon_status",
+            "kind": {
+              "Enum": [
+                "available",
+                "used",
+                "expired",
+                "revoked"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "qr_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "used_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "used_by_admin",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "redemption_location",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "assigned_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 9,
+        "name": "assigned_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "user_coupon_created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "terms_and_conditions",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "coupon_type: CouponType",
+        "type_info": {
+          "Custom": {
+            "name": "coupon_type",
+            "kind": {
+              "Enum": [
+                "percentage",
+                "fixed_amount",
+                "bogo",
+                "free_upgrade",
+                "free_service"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "value",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 18,
+        "name": "currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 19,
+        "name": "minimum_spend",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 20,
+        "name": "maximum_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 21,
+        "name": "valid_from",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 22,
+        "name": "valid_until",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 23,
+        "name": "effective_expiry",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 24,
+        "name": "expiring_soon",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "aca80d33dd3765b0882907800121c62b24384a235cda5c218841d0a3c4506adc"
+}

@@ -327,8 +327,8 @@ impl OAuthServiceImpl {
 
     /// Generate membership ID using database sequence
     async fn generate_membership_id(&self) -> Result<String, AppError> {
-        let membership_id: String = sqlx::query_scalar(
-            "SELECT 'LYL' || LPAD(nextval('membership_id_sequence')::text, 8, '0')",
+        let membership_id: String = sqlx::query_scalar!(
+            r#"SELECT 'LYL' || LPAD(nextval('membership_id_sequence')::text, 8, '0') as "id!: String""#,
         )
         .fetch_one(self.state.db.pool())
         .await
@@ -612,16 +612,17 @@ impl OAuthService for OAuthServiceImpl {
         );
 
         // Try to find existing user by OAuth provider ID
-        let existing_user: Option<OAuthUser> = sqlx::query_as(
+        let existing_user: Option<OAuthUser> = sqlx::query_as!(
+            OAuthUser,
             r#"
             SELECT id, email, role::text as role, is_active, email_verified,
                    oauth_provider, oauth_provider_id
             FROM users
             WHERE oauth_provider = $1 AND oauth_provider_id = $2
             "#,
+            &user_info.provider,
+            &user_info.provider_id,
         )
-        .bind(&user_info.provider)
-        .bind(&user_info.provider_id)
         .fetch_optional(self.state.db.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to find user by OAuth ID: {}", e)))?;
@@ -652,15 +653,16 @@ impl OAuthService for OAuthServiceImpl {
 
         // If user has email, try to find by email
         if let Some(ref email) = user_info.email {
-            let existing_by_email: Option<OAuthUser> = sqlx::query_as(
+            let existing_by_email: Option<OAuthUser> = sqlx::query_as!(
+                OAuthUser,
                 r#"
                 SELECT id, email, role::text as role, is_active, email_verified,
                        oauth_provider, oauth_provider_id
                 FROM users
                 WHERE email = $1
                 "#,
+                email,
             )
-            .bind(email)
             .fetch_optional(self.state.db.pool())
             .await
             .map_err(|e| AppError::DatabaseQuery(format!("Failed to find user by email: {}", e)))?;
@@ -672,7 +674,7 @@ impl OAuthService for OAuthServiceImpl {
                 );
 
                 // Update OAuth provider info
-                sqlx::query(
+                sqlx::query!(
                     r#"
                     UPDATE users
                     SET oauth_provider = $1, oauth_provider_id = $2,
@@ -680,11 +682,11 @@ impl OAuthService for OAuthServiceImpl {
                         updated_at = NOW()
                     WHERE id = $4
                     "#,
+                    &user_info.provider,
+                    &user_info.provider_id,
+                    user_info.email_verified,
+                    user.id,
                 )
-                .bind(&user_info.provider)
-                .bind(&user_info.provider_id)
-                .bind(user_info.email_verified)
-                .bind(user.id)
                 .execute(self.state.db.pool())
                 .await
                 .map_err(|e| {
@@ -701,15 +703,16 @@ impl OAuthService for OAuthServiceImpl {
                     .await?;
 
                 // Refresh user data after update
-                let updated_user: OAuthUser = sqlx::query_as(
+                let updated_user: OAuthUser = sqlx::query_as!(
+                    OAuthUser,
                     r#"
                     SELECT id, email, role::text as role, is_active, email_verified,
                            oauth_provider, oauth_provider_id
                     FROM users
                     WHERE id = $1
                     "#,
+                    user.id,
                 )
-                .bind(user.id)
                 .fetch_one(self.state.db.pool())
                 .await
                 .map_err(|e| AppError::DatabaseQuery(format!("Failed to refresh user: {}", e)))?;
@@ -728,47 +731,48 @@ impl OAuthService for OAuthServiceImpl {
 
         let membership_id = self.generate_membership_id().await?;
 
-        let new_user: OAuthUser = sqlx::query_as(
+        let new_user: OAuthUser = sqlx::query_as!(
+            OAuthUser,
             r#"
             INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id)
             VALUES ($1, '', $2, $3, $4)
             RETURNING id, email, role::text as role, is_active, email_verified,
                       oauth_provider, oauth_provider_id
             "#,
+            user_info.email.as_deref(),
+            user_info.email_verified,
+            &user_info.provider,
+            &user_info.provider_id,
         )
-        .bind(&user_info.email)
-        .bind(user_info.email_verified)
-        .bind(&user_info.provider)
-        .bind(&user_info.provider_id)
         .fetch_one(self.state.db.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to create OAuth user: {}", e)))?;
 
         // Create user profile
-        sqlx::query(
+        sqlx::query!(
             r#"
             INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id)
             VALUES ($1, $2, $3, $4, $5)
             "#,
+            new_user.id,
+            user_info.first_name.as_deref(),
+            user_info.last_name.as_deref(),
+            user_info.avatar_url.as_deref(),
+            &membership_id,
         )
-        .bind(new_user.id)
-        .bind(&user_info.first_name)
-        .bind(&user_info.last_name)
-        .bind(&user_info.avatar_url)
-        .bind(&membership_id)
         .execute(self.state.db.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to create user profile: {}", e)))?;
 
         // Create default notification preferences (using trigger as fallback)
-        let _ = sqlx::query(
+        let _ = sqlx::query!(
             r#"
             INSERT INTO notification_preferences (user_id)
             VALUES ($1)
             ON CONFLICT (user_id) DO NOTHING
             "#,
+            new_user.id,
         )
-        .bind(new_user.id)
         .execute(self.state.db.pool())
         .await;
 
@@ -799,7 +803,7 @@ impl OAuthServiceImpl {
         user_info: &OAuthUserInfo,
     ) -> Result<(), AppError> {
         // Only update avatar if there's no local avatar (starting with /storage/ or emoji:)
-        sqlx::query(
+        sqlx::query!(
             r#"
             UPDATE user_profiles
             SET first_name = COALESCE(NULLIF($2, ''), first_name),
@@ -812,11 +816,11 @@ impl OAuthServiceImpl {
                 updated_at = NOW()
             WHERE user_id = $1
             "#,
+            user_id,
+            user_info.first_name.as_deref().unwrap_or(""),
+            user_info.last_name.as_deref().unwrap_or(""),
+            user_info.avatar_url.as_deref().unwrap_or(""),
         )
-        .bind(user_id)
-        .bind(&user_info.first_name.as_deref().unwrap_or(""))
-        .bind(&user_info.last_name.as_deref().unwrap_or(""))
-        .bind(&user_info.avatar_url.as_deref().unwrap_or(""))
         .execute(self.state.db.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to update user profile: {}", e)))?;
@@ -836,14 +840,14 @@ impl OAuthServiceImpl {
             "isNewUser": is_new_user
         });
 
-        sqlx::query(
+        sqlx::query!(
             r#"
             INSERT INTO user_audit_log (user_id, action, details)
             VALUES ($1, 'oauth_login', $2)
             "#,
+            user_id,
+            details,
         )
-        .bind(user_id)
-        .bind(details)
         .execute(self.state.db.pool())
         .await
         .map_err(|e| {
@@ -857,42 +861,42 @@ impl OAuthServiceImpl {
     /// Ensure user is enrolled in the loyalty program
     async fn ensure_loyalty_enrollment(&self, user_id: &Uuid) -> Result<(), AppError> {
         // Check if user already has loyalty record
-        let existing: Option<(Uuid,)> =
-            sqlx::query_as("SELECT user_id FROM user_loyalty WHERE user_id = $1")
-                .bind(user_id)
-                .fetch_optional(self.state.db.pool())
-                .await
-                .map_err(|e| {
-                    AppError::DatabaseQuery(format!("Failed to check loyalty enrollment: {}", e))
-                })?;
+        let existing = sqlx::query_scalar!(
+            r#"SELECT user_id FROM user_loyalty WHERE user_id = $1"#,
+            user_id,
+        )
+        .fetch_optional(self.state.db.pool())
+        .await
+        .map_err(|e| {
+            AppError::DatabaseQuery(format!("Failed to check loyalty enrollment: {}", e))
+        })?;
 
         if existing.is_some() {
             return Ok(());
         }
 
         // Get default tier (Bronze)
-        let tier_id: Option<(Uuid,)> =
-            sqlx::query_as("SELECT id FROM tiers WHERE name = 'Bronze' LIMIT 1")
+        let tier_id: Option<Uuid> =
+            sqlx::query_scalar!(r#"SELECT id FROM tiers WHERE name = 'Bronze' LIMIT 1"#,)
                 .fetch_optional(self.state.db.pool())
                 .await
                 .map_err(|e| {
                     AppError::DatabaseQuery(format!("Failed to get default tier: {}", e))
                 })?;
 
-        let tier_id = tier_id
-            .map(|(id,)| id)
-            .ok_or_else(|| AppError::NotFound("Default tier not found".to_string()))?;
+        let tier_id =
+            tier_id.ok_or_else(|| AppError::NotFound("Default tier not found".to_string()))?;
 
         // Create loyalty record
-        sqlx::query(
+        sqlx::query!(
             r#"
-            INSERT INTO user_loyalty (user_id, tier_id, current_points, lifetime_points, total_nights)
-            VALUES ($1, $2, 0, 0, 0)
+            INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights)
+            VALUES ($1, $2, 0, 0)
             ON CONFLICT (user_id) DO NOTHING
             "#,
+            user_id,
+            tier_id,
         )
-        .bind(user_id)
-        .bind(tier_id)
         .execute(self.state.db.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to create loyalty record: {}", e)))?;

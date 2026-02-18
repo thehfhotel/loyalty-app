@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights)\n            VALUES ($1, $2, 0, 0)\n            ON CONFLICT (user_id) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ce44165721d4f6f2aef8e0577fdf479db84de5b616fc286a1f18c2593c1127a"
+}

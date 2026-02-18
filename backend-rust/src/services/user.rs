@@ -325,13 +325,13 @@ impl Default for UserServiceImpl {
 #[async_trait]
 impl UserService for UserServiceImpl {
     async fn find_by_id(&self, db: &PgPool, user_id: Uuid) -> Result<Option<User>, AppError> {
-        let user = sqlx::query_as::<_, User>(
+        let row = sqlx::query!(
             r#"
             SELECT
                 id,
                 email,
                 password_hash,
-                role,
+                role as "role: UserRole",
                 is_active,
                 email_verified,
                 created_at,
@@ -341,22 +341,33 @@ impl UserService for UserServiceImpl {
             FROM users
             WHERE id = $1
             "#,
+            user_id,
         )
-        .bind(user_id)
         .fetch_optional(db)
         .await?;
 
-        Ok(user)
+        Ok(row.map(|r| User {
+            id: r.id,
+            email: r.email,
+            password_hash: r.password_hash,
+            role: r.role,
+            is_active: r.is_active,
+            email_verified: r.email_verified,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            oauth_provider: r.oauth_provider,
+            oauth_provider_id: r.oauth_provider_id,
+        }))
     }
 
     async fn find_by_email(&self, db: &PgPool, email: &str) -> Result<Option<User>, AppError> {
-        let user = sqlx::query_as::<_, User>(
+        let row = sqlx::query!(
             r#"
             SELECT
                 id,
                 email,
                 password_hash,
-                role,
+                role as "role: UserRole",
                 is_active,
                 email_verified,
                 created_at,
@@ -366,12 +377,23 @@ impl UserService for UserServiceImpl {
             FROM users
             WHERE LOWER(email) = LOWER($1)
             "#,
+            email,
         )
-        .bind(email)
         .fetch_optional(db)
         .await?;
 
-        Ok(user)
+        Ok(row.map(|r| User {
+            id: r.id,
+            email: r.email,
+            password_hash: r.password_hash,
+            role: r.role,
+            is_active: r.is_active,
+            email_verified: r.email_verified,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            oauth_provider: r.oauth_provider,
+            oauth_provider_id: r.oauth_provider_id,
+        }))
     }
 
     async fn find_by_membership_id(
@@ -379,13 +401,13 @@ impl UserService for UserServiceImpl {
         db: &PgPool,
         membership_id: &str,
     ) -> Result<Option<User>, AppError> {
-        let user = sqlx::query_as::<_, User>(
+        let row = sqlx::query!(
             r#"
             SELECT
                 u.id,
                 u.email,
                 u.password_hash,
-                u.role,
+                u.role as "role: UserRole",
                 u.is_active,
                 u.email_verified,
                 u.created_at,
@@ -396,12 +418,23 @@ impl UserService for UserServiceImpl {
             INNER JOIN user_profiles up ON u.id = up.user_id
             WHERE UPPER(up.membership_id) = UPPER($1)
             "#,
+            membership_id,
         )
-        .bind(membership_id)
         .fetch_optional(db)
         .await?;
 
-        Ok(user)
+        Ok(row.map(|r| User {
+            id: r.id,
+            email: r.email,
+            password_hash: r.password_hash,
+            role: r.role,
+            is_active: r.is_active,
+            email_verified: r.email_verified,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            oauth_provider: r.oauth_provider,
+            oauth_provider_id: r.oauth_provider_id,
+        }))
     }
 
     async fn create(&self, db: &PgPool, data: CreateUserDto) -> Result<User, AppError> {
@@ -420,7 +453,8 @@ impl UserService for UserServiceImpl {
         let mut tx = db.begin().await?;
 
         // Insert user
-        let user = sqlx::query_as::<_, User>(
+        let role = data.role.unwrap_or(UserRole::Customer);
+        let row = sqlx::query!(
             r#"
             INSERT INTO users (email, password_hash, role, is_active, email_verified, oauth_provider, oauth_provider_id)
             VALUES ($1, $2, $3, true, false, $4, $5)
@@ -428,7 +462,7 @@ impl UserService for UserServiceImpl {
                 id,
                 email,
                 password_hash,
-                role,
+                role as "role: UserRole",
                 is_active,
                 email_verified,
                 created_at,
@@ -436,46 +470,59 @@ impl UserService for UserServiceImpl {
                 oauth_provider,
                 oauth_provider_id
             "#,
+            &data.email,
+            &data.password_hash,
+            role as UserRole,
+            data.oauth_provider.as_deref(),
+            data.oauth_provider_id.as_deref(),
         )
-        .bind(&data.email)
-        .bind(&data.password_hash)
-        .bind(data.role.unwrap_or(UserRole::Customer))
-        .bind(&data.oauth_provider)
-        .bind(&data.oauth_provider_id)
         .fetch_one(&mut *tx)
         .await?;
 
+        let user = User {
+            id: row.id,
+            email: row.email,
+            password_hash: row.password_hash,
+            role: row.role,
+            is_active: row.is_active,
+            email_verified: row.email_verified,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            oauth_provider: row.oauth_provider,
+            oauth_provider_id: row.oauth_provider_id,
+        };
+
         // Generate membership ID using the sequence
-        let membership_id: String = sqlx::query_scalar(
+        let membership_id: String = sqlx::query_scalar!(
             r#"
-            SELECT TO_CHAR(nextval('membership_id_sequence'), 'FM00000000')
+            SELECT TO_CHAR(nextval('membership_id_sequence'), 'FM00000000') as "id!"
             "#,
         )
         .fetch_one(&mut *tx)
         .await?;
 
         // Create user profile with membership ID
-        sqlx::query(
+        sqlx::query!(
             r#"
             INSERT INTO user_profiles (user_id, membership_id)
             VALUES ($1, $2)
             "#,
+            user.id,
+            &membership_id,
         )
-        .bind(user.id)
-        .bind(&membership_id)
         .execute(&mut *tx)
         .await?;
 
         // Create initial loyalty record
-        sqlx::query(
+        sqlx::query!(
             r#"
-            INSERT INTO user_loyalty (user_id, current_points, lifetime_points, total_nights, tier_id)
-            SELECT $1, 0, 0, 0, id
+            INSERT INTO user_loyalty (user_id, current_points, total_nights, tier_id)
+            SELECT $1, 0, 0, id
             FROM tiers
             WHERE name = 'Bronze'
             "#,
+            user.id,
         )
-        .bind(user.id)
         .execute(&mut *tx)
         .await?;
 
@@ -520,7 +567,7 @@ impl UserService for UserServiceImpl {
         let is_active = data.is_active.or(existing_user.is_active);
         let email_verified = data.email_verified.or(existing_user.email_verified);
 
-        let user = sqlx::query_as::<_, User>(
+        let row = sqlx::query!(
             r#"
             UPDATE users
             SET email = $2, role = $3, is_active = $4, email_verified = $5, updated_at = NOW()
@@ -529,7 +576,7 @@ impl UserService for UserServiceImpl {
                 id,
                 email,
                 password_hash,
-                role,
+                role as "role: UserRole",
                 is_active,
                 email_verified,
                 created_at,
@@ -537,14 +584,27 @@ impl UserService for UserServiceImpl {
                 oauth_provider,
                 oauth_provider_id
             "#,
+            user_id,
+            email,
+            role as Option<UserRole>,
+            is_active,
+            email_verified,
         )
-        .bind(user_id)
-        .bind(email)
-        .bind(role)
-        .bind(is_active)
-        .bind(email_verified)
         .fetch_one(db)
         .await?;
+
+        let user = User {
+            id: row.id,
+            email: row.email,
+            password_hash: row.password_hash,
+            role: row.role,
+            is_active: row.is_active,
+            email_verified: row.email_verified,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            oauth_provider: row.oauth_provider,
+            oauth_provider_id: row.oauth_provider_id,
+        };
 
         Ok(user)
     }
@@ -555,15 +615,15 @@ impl UserService for UserServiceImpl {
         user_id: Uuid,
         hashed_password: &str,
     ) -> Result<(), AppError> {
-        let result = sqlx::query(
+        let result = sqlx::query!(
             r#"
             UPDATE users
             SET password_hash = $2, updated_at = NOW()
             WHERE id = $1
             "#,
+            user_id,
+            hashed_password,
         )
-        .bind(user_id)
-        .bind(hashed_password)
         .execute(db)
         .await?;
 
@@ -585,7 +645,8 @@ impl UserService for UserServiceImpl {
             .map_err(|e| AppError::Validation(e.to_string()))?;
 
         // Get current profile to merge preferences
-        let current_profile = sqlx::query_as::<_, UserProfile>(
+        let current_profile = sqlx::query_as!(
+            UserProfile,
             r#"
             SELECT
                 user_id,
@@ -601,8 +662,8 @@ impl UserService for UserServiceImpl {
             FROM user_profiles
             WHERE user_id = $1
             "#,
+            user_id,
         )
-        .bind(user_id)
         .fetch_optional(db)
         .await?
         .ok_or_else(|| AppError::NotFound("Profile not found".to_string()))?;
@@ -642,7 +703,8 @@ impl UserService for UserServiceImpl {
         let date_of_birth = data.date_of_birth.or(current_profile.date_of_birth);
         let avatar_url = data.avatar_url.or(current_profile.avatar_url);
 
-        let profile = sqlx::query_as::<_, UserProfile>(
+        let profile = sqlx::query_as!(
+            UserProfile,
             r#"
             UPDATE user_profiles
             SET
@@ -666,14 +728,14 @@ impl UserService for UserServiceImpl {
                 updated_at,
                 membership_id
             "#,
+            user_id,
+            first_name as Option<String>,
+            last_name as Option<String>,
+            phone as Option<String>,
+            date_of_birth as Option<NaiveDate>,
+            new_preferences,
+            avatar_url as Option<String>,
         )
-        .bind(user_id)
-        .bind(first_name)
-        .bind(last_name)
-        .bind(phone)
-        .bind(date_of_birth)
-        .bind(new_preferences)
-        .bind(avatar_url)
         .fetch_one(db)
         .await?;
 
@@ -685,12 +747,12 @@ impl UserService for UserServiceImpl {
         db: &PgPool,
         user_id: Uuid,
     ) -> Result<UserWithProfile, AppError> {
-        let row = sqlx::query_as::<_, UserWithProfileRow>(
+        let r = sqlx::query!(
             r#"
             SELECT
                 u.id,
                 u.email,
-                u.role,
+                u.role as "role: UserRole",
                 u.is_active,
                 u.email_verified,
                 u.created_at,
@@ -702,18 +764,38 @@ impl UserService for UserServiceImpl {
                 up.date_of_birth,
                 up.preferences,
                 up.avatar_url,
-                up.membership_id,
+                up.membership_id as "membership_id?",
                 up.created_at AS profile_created_at,
                 up.updated_at AS profile_updated_at
             FROM users u
             LEFT JOIN user_profiles up ON u.id = up.user_id
             WHERE u.id = $1
             "#,
+            user_id,
         )
-        .bind(user_id)
         .fetch_optional(db)
         .await?
         .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+        let row = UserWithProfileRow {
+            id: r.id,
+            email: r.email,
+            role: r.role,
+            is_active: r.is_active,
+            email_verified: r.email_verified,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            oauth_provider: r.oauth_provider,
+            first_name: r.first_name,
+            last_name: r.last_name,
+            phone: r.phone,
+            date_of_birth: r.date_of_birth,
+            preferences: r.preferences,
+            avatar_url: r.avatar_url,
+            membership_id: r.membership_id,
+            profile_created_at: r.profile_created_at,
+            profile_updated_at: r.profile_updated_at,
+        };
 
         Ok(row.into())
     }
@@ -738,10 +820,10 @@ impl UserService for UserServiceImpl {
                 .unwrap_or(false);
 
         // Get total count
-        let total: Option<i64> = if has_search {
-            sqlx::query_scalar(
+        let total: i64 = if has_search {
+            sqlx::query_scalar!(
                 r#"
-                SELECT COUNT(*)
+                SELECT COUNT(*) as "count!"
                 FROM users u
                 LEFT JOIN user_profiles up ON u.id = up.user_id
                 WHERE u.email ILIKE $1
@@ -750,26 +832,24 @@ impl UserService for UserServiceImpl {
                    OR up.membership_id ILIKE $1
                    OR up.phone ILIKE $1
                 "#,
+                &search_pattern,
             )
-            .bind(&search_pattern)
             .fetch_one(db)
             .await?
         } else {
-            sqlx::query_scalar("SELECT COUNT(*) FROM users")
+            sqlx::query_scalar!(r#"SELECT COUNT(*) as "count!" FROM users"#,)
                 .fetch_one(db)
                 .await?
         };
 
-        let total = total.unwrap_or(0);
-
         // Get paginated results
-        let rows: Vec<UserWithProfileRow> = if has_search {
-            sqlx::query_as::<_, UserWithProfileRow>(
+        let items: Vec<UserWithProfile> = if has_search {
+            let rows = sqlx::query!(
                 r#"
                 SELECT
                     u.id,
                     u.email,
-                    u.role,
+                    u.role as "role: UserRole",
                     u.is_active,
                     u.email_verified,
                     u.created_at,
@@ -781,7 +861,7 @@ impl UserService for UserServiceImpl {
                     up.date_of_birth,
                     up.preferences,
                     up.avatar_url,
-                    up.membership_id,
+                    up.membership_id as "membership_id?",
                     up.created_at AS profile_created_at,
                     up.updated_at AS profile_updated_at
                 FROM users u
@@ -794,19 +874,44 @@ impl UserService for UserServiceImpl {
                 ORDER BY u.created_at DESC
                 LIMIT $1 OFFSET $2
                 "#,
+                limit,
+                offset,
+                &search_pattern,
             )
-            .bind(limit)
-            .bind(offset)
-            .bind(&search_pattern)
             .fetch_all(db)
-            .await?
+            .await?;
+
+            rows.into_iter()
+                .map(|r| {
+                    let row = UserWithProfileRow {
+                        id: r.id,
+                        email: r.email,
+                        role: r.role,
+                        is_active: r.is_active,
+                        email_verified: r.email_verified,
+                        created_at: r.created_at,
+                        updated_at: r.updated_at,
+                        oauth_provider: r.oauth_provider,
+                        first_name: r.first_name,
+                        last_name: r.last_name,
+                        phone: r.phone,
+                        date_of_birth: r.date_of_birth,
+                        preferences: r.preferences,
+                        avatar_url: r.avatar_url,
+                        membership_id: r.membership_id,
+                        profile_created_at: r.profile_created_at,
+                        profile_updated_at: r.profile_updated_at,
+                    };
+                    UserWithProfile::from(row)
+                })
+                .collect()
         } else {
-            sqlx::query_as::<_, UserWithProfileRow>(
+            let rows = sqlx::query!(
                 r#"
                 SELECT
                     u.id,
                     u.email,
-                    u.role,
+                    u.role as "role: UserRole",
                     u.is_active,
                     u.email_verified,
                     u.created_at,
@@ -818,7 +923,7 @@ impl UserService for UserServiceImpl {
                     up.date_of_birth,
                     up.preferences,
                     up.avatar_url,
-                    up.membership_id,
+                    up.membership_id as "membership_id?",
                     up.created_at AS profile_created_at,
                     up.updated_at AS profile_updated_at
                 FROM users u
@@ -826,14 +931,37 @@ impl UserService for UserServiceImpl {
                 ORDER BY u.created_at DESC
                 LIMIT $1 OFFSET $2
                 "#,
+                limit,
+                offset,
             )
-            .bind(limit)
-            .bind(offset)
             .fetch_all(db)
-            .await?
-        };
+            .await?;
 
-        let items: Vec<UserWithProfile> = rows.into_iter().map(|row| row.into()).collect();
+            rows.into_iter()
+                .map(|r| {
+                    let row = UserWithProfileRow {
+                        id: r.id,
+                        email: r.email,
+                        role: r.role,
+                        is_active: r.is_active,
+                        email_verified: r.email_verified,
+                        created_at: r.created_at,
+                        updated_at: r.updated_at,
+                        oauth_provider: r.oauth_provider,
+                        first_name: r.first_name,
+                        last_name: r.last_name,
+                        phone: r.phone,
+                        date_of_birth: r.date_of_birth,
+                        preferences: r.preferences,
+                        avatar_url: r.avatar_url,
+                        membership_id: r.membership_id,
+                        profile_created_at: r.profile_created_at,
+                        profile_updated_at: r.profile_updated_at,
+                    };
+                    UserWithProfile::from(row)
+                })
+                .collect()
+        };
 
         Ok(PaginatedResult::new(items, total, &pagination))
     }

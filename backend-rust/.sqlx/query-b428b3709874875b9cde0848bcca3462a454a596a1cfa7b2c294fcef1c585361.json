@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE users\n                    SET oauth_provider = $1, oauth_provider_id = $2,\n                        email_verified = CASE WHEN $3 THEN true ELSE email_verified END,\n                        updated_at = NOW()\n                    WHERE id = $4\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Bool",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b428b3709874875b9cde0848bcca3462a454a596a1cfa7b2c294fcef1c585361"
+}

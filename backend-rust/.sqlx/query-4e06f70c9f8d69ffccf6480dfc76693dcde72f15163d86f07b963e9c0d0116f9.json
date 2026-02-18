@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_loyalty (user_id, current_points, total_nights, tier_id)\n            VALUES ($1, 0, 0, $2)\n            ON CONFLICT (user_id) DO UPDATE\n            SET updated_at = NOW()\n            RETURNING user_id, current_points, total_nights, tier_id,\n                      tier_updated_at, points_updated_at, created_at, updated_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "current_points",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "total_nights",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "tier_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "tier_updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "points_updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "4e06f70c9f8d69ffccf6480dfc76693dcde72f15163d86f07b963e9c0d0116f9"
+}

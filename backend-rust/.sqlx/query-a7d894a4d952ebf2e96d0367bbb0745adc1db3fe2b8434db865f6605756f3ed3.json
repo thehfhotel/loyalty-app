@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO membership_id_sequence (id, current_user_count)\n        VALUES (1, 0)\n        ON CONFLICT (id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "a7d894a4d952ebf2e96d0367bbb0745adc1db3fe2b8434db865f6605756f3ed3"
+}

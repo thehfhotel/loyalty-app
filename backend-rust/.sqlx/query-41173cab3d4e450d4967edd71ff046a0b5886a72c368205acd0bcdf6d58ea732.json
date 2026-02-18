@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT COUNT(*) as \"count!\" FROM bookings\n                WHERE room_id = $1\n                  AND id != $2\n                  AND status = 'confirmed'\n                  AND check_in_date < $4\n                  AND check_out_date > $3\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "41173cab3d4e450d4967edd71ff046a0b5886a72c368205acd0bcdf6d58ea732"
+}

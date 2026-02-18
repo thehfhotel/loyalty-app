@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, name, min_points, min_nights, benefits, color, sort_order, is_active, created_at, updated_at\n        FROM tiers\n        WHERE min_nights > $1 AND is_active = true\n        ORDER BY min_nights ASC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "min_points",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "min_nights",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "benefits",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "color",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "sort_order",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "4d1793610e6d7f3ad71e8523849e0ff2fe080ff18359b73c4558d824f27566e2"
+}

@@ -27,7 +27,7 @@ permissions:
 
 env:
   NODE_VERSION: '24'
-  RUST_VERSION: '1.85'
+  RUST_VERSION: '1.93'
   REGISTRY: ghcr.io
   IMAGE_OWNER: thehfhotel
   IMAGE_REPO: loyalty-app
@@ -99,7 +99,7 @@ jobs:
   validate-backend:
     name: "Validate Backend (Rust)"
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
 
     services:
       postgres:
@@ -139,16 +139,11 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: cargo-registry-${{ hashFiles('backend-rust/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-
+          workspaces: "backend-rust -> target"
+          cache-on-failure: true
 
       - name: Check formatting
         working-directory: ./backend-rust
@@ -170,6 +165,60 @@ jobs:
           PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -f backend-rust/migrations/20240101000000_init.sql
         env:
           PGPASSWORD: loyalty_test_pass
+
+      - name: Verify database schema
+        run: |
+          TABLE_COUNT=$(PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -t -c \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';")
+          TABLE_COUNT=$(echo "$TABLE_COUNT" | tr -d ' ')
+          echo "Tables created: $TABLE_COUNT"
+          if [ "$TABLE_COUNT" -lt 25 ]; then
+            echo "::error::Expected 25+ tables, found $TABLE_COUNT. Migration may have failed."
+            PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -c \
+              "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name;"
+            exit 1
+          fi
+
+          # Verify stored procedures exist
+          FUNC_COUNT=$(PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -t -c \
+            "SELECT count(*) FROM information_schema.routines WHERE routine_schema = 'public' AND routine_type = 'FUNCTION';")
+          FUNC_COUNT=$(echo "$FUNC_COUNT" | tr -d ' ')
+          echo "Stored procedures/functions: $FUNC_COUNT"
+          if [ "$FUNC_COUNT" -lt 5 ]; then
+            echo "::error::Expected 5+ stored procedures, found $FUNC_COUNT."
+            exit 1
+          fi
+
+          echo "Database schema verification passed"
+        env:
+          PGPASSWORD: loyalty_test_pass
+
+      - name: Seed test data
+        run: |
+          PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -c "
+            INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
+            VALUES
+              ('Bronze', 0, 0, '{\"discount\": 0}', '#CD7F32', 1, true),
+              ('Silver', 0, 1, '{\"discount\": 5}', '#C0C0C0', 2, true),
+              ('Gold', 0, 10, '{\"discount\": 10}', '#FFD700', 3, true),
+              ('Platinum', 0, 20, '{\"discount\": 15}', '#E5E4E2', 4, true)
+            ON CONFLICT (name) DO NOTHING;
+
+            INSERT INTO membership_id_sequence (id, current_user_count)
+            VALUES (1, 0)
+            ON CONFLICT (id) DO NOTHING;
+          "
+          echo "Test data seeded successfully"
+        env:
+          PGPASSWORD: loyalty_test_pass
+
+      - name: Verify SQLx query cache
+        working-directory: ./backend-rust
+        run: |
+          cargo install sqlx-cli --no-default-features --features postgres --locked || true
+          cargo sqlx prepare --check
+        env:
+          DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
 
       - name: Run integration tests
         working-directory: ./backend-rust
@@ -202,14 +251,14 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Rust Backend: Release binary build (runs in parallel with validate-backend)
-  # Uses rust:1.85-bookworm container to ensure glibc compatibility with the
+  # Uses rust:1.93-bookworm container to ensure glibc compatibility with the
   # debian:bookworm-slim production runner image.
   # ---------------------------------------------------------------------------
   build-backend-binary:
     name: "Build Backend Binary"
     runs-on: ubuntu-latest
     container:
-      image: rust:1.85-bookworm
+      image: rust:1.93-bookworm
     timeout-minutes: 25
 
     steps:
@@ -223,16 +272,12 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            /usr/local/cargo/registry/index/
-            /usr/local/cargo/registry/cache/
-            /usr/local/cargo/git/db/
-          key: cargo-registry-container-${{ hashFiles('backend-rust/Cargo.lock') }}
-          restore-keys: |
-            cargo-registry-container-
+          workspaces: "backend-rust -> target"
+          cache-on-failure: true
+          prefix-key: "v0-rust-container"
 
       - name: Build release binary
         working-directory: ./backend-rust

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            DATE(created_at) as \"date!\",\n            COUNT(*) as \"count!: i64\"\n        FROM users\n        WHERE DATE(created_at) >= $1 AND DATE(created_at) <= $2\n        GROUP BY DATE(created_at)\n        ORDER BY DATE(created_at)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "date!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 1,
+        "name": "count!: i64",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "3b3eb369794c1c0ac488e17c143a64f8a46d92faee10b0c23c2b06d400324bef"
+}

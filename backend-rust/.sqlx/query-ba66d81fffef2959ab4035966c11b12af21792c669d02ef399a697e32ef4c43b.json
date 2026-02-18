@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT t.id, t.name, t.min_points, t.min_nights, t.benefits,\n                   t.color, t.sort_order, t.is_active, t.created_at, t.updated_at\n            FROM tiers t\n            JOIN user_loyalty ul ON ul.tier_id = t.id\n            WHERE ul.user_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "min_points",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "min_nights",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "benefits",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "color",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "sort_order",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "ba66d81fffef2959ab4035966c11b12af21792c669d02ef399a697e32ef4c43b"
+}

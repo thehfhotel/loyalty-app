@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            ul.user_id,\n            ul.current_points,\n            ul.total_nights,\n            ul.tier_id,\n            ul.tier_updated_at,\n            ul.points_updated_at,\n            ul.created_at,\n            ul.updated_at,\n            t.name as tier_name,\n            t.min_points as tier_min_points,\n            t.min_nights as tier_min_nights,\n            t.benefits as tier_benefits,\n            t.color as tier_color,\n            t.sort_order as tier_sort_order\n        FROM user_loyalty ul\n        LEFT JOIN tiers t ON ul.tier_id = t.id\n        WHERE ul.user_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "current_points",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "total_nights",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "tier_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "tier_updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "points_updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "tier_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "tier_min_points",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "tier_min_nights",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "tier_benefits",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
+        "name": "tier_color",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "tier_sort_order",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "248cbe1a17ccf381d16003e4989e165b7d9ffb914f0aecae8419ce425fcffcbe"
+}

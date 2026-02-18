@@ -11,8 +11,8 @@
 # File uploads directory
 /uploads
 
-# SQLx offline mode cache
-.sqlx/
+# SQLx offline mode cache (committed for compile-time query verification)
+# .sqlx/
 
 # Cargo.lock (optional, usually committed for binaries)
 # Cargo.lock

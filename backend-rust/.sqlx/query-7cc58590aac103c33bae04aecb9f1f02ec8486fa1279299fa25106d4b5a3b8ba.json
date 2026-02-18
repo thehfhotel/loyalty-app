@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            uc.status::text as \"status!\",\n            uc.expires_at,\n            c.name,\n            c.description,\n            c.type::text as \"coupon_type!\",\n            c.value,\n            c.currency,\n            c.minimum_spend,\n            c.maximum_discount,\n            c.valid_until\n        FROM user_coupons uc\n        JOIN coupons c ON uc.coupon_id = c.id\n        WHERE uc.qr_code = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "coupon_type!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "value",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "minimum_spend",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 8,
+        "name": "maximum_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "valid_until",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      true,
+      false,
+      true,
+      null,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "7cc58590aac103c33bae04aecb9f1f02ec8486fa1279299fa25106d4b5a3b8ba"
+}
