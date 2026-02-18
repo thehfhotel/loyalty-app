@@ -141,6 +141,24 @@ jobs:
           RUST_BACKTRACE: 1
           RUST_LOG: debug
 
+      - name: Increase PostgreSQL max_connections for parallel tests
+        run: |
+          # Each parallel test creates its own DB + connection pool.
+          # Default max_connections=100 is too low when connections from
+          # completed tests linger (tokio runtime shutdown doesn't close TCP).
+          PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db \
+            -c "ALTER SYSTEM SET max_connections = 300;"
+          # Restart PostgreSQL to apply the change
+          CONTAINER_ID=$(docker ps -q --filter "publish=5438")
+          docker restart "$CONTAINER_ID"
+          # Wait for PostgreSQL to be ready
+          for i in $(seq 1 30); do
+            PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -c "SELECT 1;" 2>/dev/null && break
+            sleep 1
+          done
+        env:
+          PGPASSWORD: loyalty_test_pass
+
       - name: Grant CREATEDB for per-test database isolation
         run: |
           PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -c "ALTER USER loyalty_test CREATEDB;"
