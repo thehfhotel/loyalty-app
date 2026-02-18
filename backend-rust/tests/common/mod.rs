@@ -394,9 +394,7 @@ pub async fn setup_test() -> (PgPool, TestDatabase) {
 
     // Create a unique per-test database
     let db_name = format!("test_{}", Uuid::new_v4().simple());
-    let admin_pool = get_admin_pool()
-        .await
-        .expect("Failed to get admin pool");
+    let admin_pool = get_admin_pool().await.expect("Failed to get admin pool");
 
     sqlx::query(&format!(
         "CREATE DATABASE \"{}\" TEMPLATE \"{}\"",

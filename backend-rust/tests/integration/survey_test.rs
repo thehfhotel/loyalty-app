@@ -381,10 +381,9 @@ async fn test_submit_survey_response_partial() {
         .await
         .expect("Failed to insert test user");
 
-    let survey_id =
-        create_test_survey(app.db(), "Partial Submit Survey", "active", "public", None)
-            .await
-            .expect("Failed to create survey");
+    let survey_id = create_test_survey(app.db(), "Partial Submit Survey", "active", "public", None)
+        .await
+        .expect("Failed to create survey");
 
     let client = app.authenticated_client(&user.id, &user.email);
 
@@ -416,10 +415,9 @@ async fn test_submit_survey_response_partial() {
 async fn test_submit_survey_response_unauthorized() {
     let app = TestApp::new().await.expect("Failed to create test app");
 
-    let survey_id =
-        create_test_survey(app.db(), "Unauth Submit Survey", "active", "public", None)
-            .await
-            .expect("Failed to create survey");
+    let survey_id = create_test_survey(app.db(), "Unauth Submit Survey", "active", "public", None)
+        .await
+        .expect("Failed to create survey");
 
     let client = app.client();
 
@@ -691,10 +689,15 @@ async fn test_get_survey_responses_forbidden_for_non_admin() {
 async fn test_get_survey_responses_unauthorized() {
     let app = TestApp::new().await.expect("Failed to create test app");
 
-    let survey_id =
-        create_test_survey(app.db(), "Unauth Responses Survey", "active", "public", None)
-            .await
-            .expect("Failed to create survey");
+    let survey_id = create_test_survey(
+        app.db(),
+        "Unauth Responses Survey",
+        "active",
+        "public",
+        None,
+    )
+    .await
+    .expect("Failed to create survey");
 
     let client = app.client();
     let response = client

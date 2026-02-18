@@ -221,9 +221,7 @@ async fn test_create_coupon_non_admin_fails() {
     let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("regular_user@example.com");
-    user.insert(app.db())
-        .await
-        .expect("Failed to insert user");
+    user.insert(app.db()).await.expect("Failed to insert user");
 
     let client = app.authenticated_client(&user.id, &user.email);
 
@@ -256,9 +254,7 @@ async fn test_assign_coupon() {
         .expect("Failed to insert admin user");
 
     let user = TestUser::new("receiver@example.com");
-    user.insert(app.db())
-        .await
-        .expect("Failed to insert user");
+    user.insert(app.db()).await.expect("Failed to insert user");
 
     let coupon = TestCoupon::percentage("ASSIGN10", 10.0);
     coupon
@@ -317,9 +313,7 @@ async fn test_redeem_coupon() {
     let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("redeemer@example.com");
-    user.insert(app.db())
-        .await
-        .expect("Failed to insert user");
+    user.insert(app.db()).await.expect("Failed to insert user");
 
     let coupon = TestCoupon::percentage("REDEEM20", 20.0);
     coupon
@@ -327,10 +321,9 @@ async fn test_redeem_coupon() {
         .await
         .expect("Failed to insert coupon");
 
-    let (user_coupon_id, qr_code) =
-        insert_user_coupon(app.db(), user.id, coupon.id, "available")
-            .await
-            .expect("Failed to insert user coupon");
+    let (user_coupon_id, qr_code) = insert_user_coupon(app.db(), user.id, coupon.id, "available")
+        .await
+        .expect("Failed to insert user coupon");
 
     let client = app.authenticated_client(&user.id, &user.email);
 
@@ -396,9 +389,7 @@ async fn test_redeem_already_redeemed_fails() {
     let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("double_redeemer@example.com");
-    user.insert(app.db())
-        .await
-        .expect("Failed to insert user");
+    user.insert(app.db()).await.expect("Failed to insert user");
 
     let coupon = TestCoupon::percentage("DOUBLE10", 10.0);
     coupon
@@ -407,10 +398,9 @@ async fn test_redeem_already_redeemed_fails() {
         .expect("Failed to insert coupon");
 
     // Assign coupon to user with 'used' status (already redeemed)
-    let (_user_coupon_id, qr_code) =
-        insert_user_coupon(app.db(), user.id, coupon.id, "used")
-            .await
-            .expect("Failed to insert user coupon");
+    let (_user_coupon_id, qr_code) = insert_user_coupon(app.db(), user.id, coupon.id, "used")
+        .await
+        .expect("Failed to insert user coupon");
 
     let client = app.authenticated_client(&user.id, &user.email);
 
@@ -461,9 +451,7 @@ async fn test_redeem_expired_coupon_fails() {
     let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("expired_redeemer@example.com");
-    user.insert(app.db())
-        .await
-        .expect("Failed to insert user");
+    user.insert(app.db()).await.expect("Failed to insert user");
 
     let coupon = TestCoupon::percentage("EXPIRED20", 20.0);
     coupon
@@ -562,9 +550,7 @@ async fn test_validate_coupon_qr_code() {
     let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("validator@example.com");
-    user.insert(app.db())
-        .await
-        .expect("Failed to insert user");
+    user.insert(app.db()).await.expect("Failed to insert user");
 
     let coupon = TestCoupon::percentage("VALIDATE10", 10.0);
     coupon
@@ -572,10 +558,9 @@ async fn test_validate_coupon_qr_code() {
         .await
         .expect("Failed to insert coupon");
 
-    let (_user_coupon_id, qr_code) =
-        insert_user_coupon(app.db(), user.id, coupon.id, "available")
-            .await
-            .expect("Failed to insert user coupon");
+    let (_user_coupon_id, qr_code) = insert_user_coupon(app.db(), user.id, coupon.id, "available")
+        .await
+        .expect("Failed to insert user coupon");
 
     let client = app.client();
 

@@ -10,9 +10,7 @@
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::common::{
-    generate_expired_token, TestApp, TestClient, TestUser, TEST_USER_PASSWORD,
-};
+use crate::common::{generate_expired_token, TestApp, TestClient, TestUser, TEST_USER_PASSWORD};
 
 // ============================================================================
 // Test Setup Helpers
@@ -452,10 +450,9 @@ async fn test_update_profile_validation_error() {
 async fn test_change_password_wrong_current() {
     let app = TestApp::new().await.expect("Failed to create test app");
 
-    let user =
-        create_test_user_with_profile(app.db(), "wrongpwd@example.com", "Wrong", "Password")
-            .await
-            .expect("Failed to create test user");
+    let user = create_test_user_with_profile(app.db(), "wrongpwd@example.com", "Wrong", "Password")
+        .await
+        .expect("Failed to create test user");
 
     let client = app.authenticated_client(&user.id, &user.email);
 

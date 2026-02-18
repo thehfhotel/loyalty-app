@@ -492,9 +492,7 @@ async fn test_complete_booking_awards_points() {
         .expect("Failed to insert admin");
 
     let user = TestUser::new("user-with-booking@test.com");
-    user.insert(app.db())
-        .await
-        .expect("Failed to insert user");
+    user.insert(app.db()).await.expect("Failed to insert user");
 
     // Create user_loyalty record for the user
     sqlx::query(
@@ -549,9 +547,7 @@ async fn test_complete_booking_requires_admin() {
     let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("regular-user@test.com");
-    user.insert(app.db())
-        .await
-        .expect("Failed to insert user");
+    user.insert(app.db()).await.expect("Failed to insert user");
 
     let booking_id = create_test_booking(app.db(), user.id, "confirmed", -5, -2)
         .await
@@ -586,9 +582,7 @@ async fn test_complete_booking_cannot_complete_cancelled() {
         .expect("Failed to insert admin");
 
     let user = TestUser::new("user-cancelled@test.com");
-    user.insert(app.db())
-        .await
-        .expect("Failed to insert user");
+    user.insert(app.db()).await.expect("Failed to insert user");
 
     let booking_id = create_test_booking(app.db(), user.id, "cancelled", -5, -2)
         .await

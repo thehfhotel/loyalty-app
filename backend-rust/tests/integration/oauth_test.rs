@@ -68,7 +68,10 @@ fn create_test_settings_without_oauth() -> Settings {
 }
 
 /// Create a test application with OAuth routes
-async fn create_oauth_test_app(pool: PgPool, settings: Settings) -> Result<Router, Box<dyn std::error::Error>> {
+async fn create_oauth_test_app(
+    pool: PgPool,
+    settings: Settings,
+) -> Result<Router, Box<dyn std::error::Error>> {
     let redis = init_test_redis().await?;
     let state = AppState::new(pool, redis, settings);
     Ok(Router::new().nest("/api/oauth", routes().with_state(state)))
@@ -85,7 +88,9 @@ async fn create_oauth_test_app(pool: PgPool, settings: Settings) -> Result<Route
 async fn test_google_oauth_redirect() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     let response = client.get("/api/oauth/google").await;
@@ -115,7 +120,9 @@ async fn test_google_oauth_redirect() {
 async fn test_google_oauth_redirect_url_params() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     let response = client.get("/api/oauth/google").await;
@@ -149,7 +156,9 @@ async fn test_google_oauth_redirect_url_params() {
 async fn test_google_oauth_redirect_not_configured() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_without_oauth();
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     let response = client.get("/api/oauth/google").await;
@@ -184,7 +193,9 @@ async fn test_google_oauth_redirect_not_configured() {
 async fn test_line_oauth_redirect() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     let response = client.get("/api/oauth/line").await;
@@ -216,7 +227,9 @@ async fn test_line_oauth_redirect() {
 async fn test_line_oauth_redirect_url_params() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     let response = client.get("/api/oauth/line").await;
@@ -250,7 +263,9 @@ async fn test_line_oauth_redirect_url_params() {
 async fn test_line_oauth_redirect_not_configured() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_without_oauth();
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     let response = client.get("/api/oauth/line").await;
@@ -298,7 +313,9 @@ async fn test_google_callback_invalid_code() {
 
     let settings =
         create_test_settings_with_oauth(Some(&format!("{}/callback", mock_server.uri())), None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     // Without a valid state, the callback should fail with session_expired or oauth_invalid
@@ -332,7 +349,9 @@ async fn test_google_callback_invalid_code() {
 async fn test_google_callback_missing_state() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     // Call callback with code but no state (CSRF protection should fail)
@@ -364,7 +383,9 @@ async fn test_google_callback_missing_state() {
 async fn test_google_callback_provider_error() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     // Simulate OAuth provider returning an error (user denied access)
@@ -414,7 +435,9 @@ async fn test_line_callback_invalid_code() {
 
     let settings =
         create_test_settings_with_oauth(None, Some(&format!("{}/callback", mock_server.uri())));
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     let response = client
@@ -447,7 +470,9 @@ async fn test_line_callback_invalid_code() {
 async fn test_line_callback_missing_state() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     // Call callback with code but no state (CSRF protection should fail)
@@ -477,7 +502,9 @@ async fn test_line_callback_missing_state() {
 async fn test_line_callback_provider_error() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     // Simulate OAuth provider returning an error
@@ -514,7 +541,9 @@ async fn test_line_callback_provider_error() {
 async fn test_oauth_redirect_with_valid_return_url() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     // Request OAuth with a valid return URL (same origin as frontend)
@@ -536,7 +565,9 @@ async fn test_oauth_redirect_with_valid_return_url() {
 async fn test_oauth_redirect_blocks_open_redirect() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     // Attempt OAuth with a malicious return URL
@@ -665,7 +696,9 @@ async fn test_line_oauth_flow_with_mocks() {
 async fn test_google_oauth_redirect_pwa_mode() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     let response = client.get("/api/oauth/google?pwa=true&platform=ios").await;
@@ -684,7 +717,9 @@ async fn test_google_oauth_redirect_pwa_mode() {
 async fn test_line_oauth_redirect_standalone_mode() {
     let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
+    let app = create_oauth_test_app(pool, settings)
+        .await
+        .expect("Failed to create app");
     let client = TestClient::new(app);
 
     let response = client

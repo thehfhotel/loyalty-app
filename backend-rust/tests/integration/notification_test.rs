@@ -391,8 +391,14 @@ async fn test_mark_notification_read_other_user() {
 
     let user1 = TestUser::new("mark-read-user1@example.com");
     let user2 = TestUser::new("mark-read-user2@example.com");
-    user1.insert(app.db()).await.expect("Failed to insert user1");
-    user2.insert(app.db()).await.expect("Failed to insert user2");
+    user1
+        .insert(app.db())
+        .await
+        .expect("Failed to insert user1");
+    user2
+        .insert(app.db())
+        .await
+        .expect("Failed to insert user2");
 
     // Create notification for user1
     let notification = TestNotification::new(user1.id, "User1 Notification", "Message");
@@ -585,8 +591,14 @@ async fn test_delete_notification_other_user() {
 
     let user1 = TestUser::new("delete-user1@example.com");
     let user2 = TestUser::new("delete-user2@example.com");
-    user1.insert(app.db()).await.expect("Failed to insert user1");
-    user2.insert(app.db()).await.expect("Failed to insert user2");
+    user1
+        .insert(app.db())
+        .await
+        .expect("Failed to insert user1");
+    user2
+        .insert(app.db())
+        .await
+        .expect("Failed to insert user2");
 
     // Create notification for user1
     let notification = TestNotification::new(user1.id, "User1 Notification", "Message");
