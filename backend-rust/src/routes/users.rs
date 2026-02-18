@@ -29,6 +29,7 @@ use crate::state::AppState as FullAppState;
 
 /// User profile response with combined user and profile data
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserProfileResponse {
     pub id: Uuid,
     pub email: Option<String>,
@@ -108,6 +109,7 @@ impl From<UserWithProfileRow> for UserProfileResponse {
 
 /// Request payload for updating user profile
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateProfileRequest {
     #[validate(length(min = 1, max = 100, message = "First name must be 1-100 characters"))]
     pub first_name: Option<String>,
@@ -125,6 +127,7 @@ pub struct UpdateProfileRequest {
 
 /// Request payload for completing user profile (includes gender/occupation)
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
 pub struct CompleteProfileRequest {
     #[validate(length(min = 1, max = 100, message = "First name must be 1-100 characters"))]
     pub first_name: Option<String>,
