@@ -1,0 +1,354 @@
+name: CI Build & E2E
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_e2e:
+        description: 'Skip E2E tests'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: ci-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+  packages: write
+
+env:
+  NODE_VERSION: '24'
+  RUST_VERSION: '1.93'
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: thehfhotel
+  IMAGE_REPO: loyalty-app
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  # =============================================================================
+  # BUILD RUST BINARY
+  # =============================================================================
+
+  build-backend-binary:
+    name: "Build Backend Binary"
+    runs-on: ubuntu-latest
+    container:
+      image: rust:1.93-bookworm
+    timeout-minutes: 25
+
+    steps:
+      - name: Install system dependencies
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev libpq-dev
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "backend-rust -> target"
+          cache-on-failure: true
+          prefix-key: "v0-rust-container"
+
+      - name: Build release binary
+        working-directory: ./backend-rust
+        run: cargo build --release --bin loyalty-backend
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: loyalty-backend-binary
+          path: backend-rust/target/release/loyalty-backend
+          retention-days: 1
+
+      - name: Show sccache stats
+        if: always()
+        run: sccache --show-stats || true
+
+  # =============================================================================
+  # BUILD AND PUSH DOCKER IMAGES TO GHCR
+  # =============================================================================
+
+  build-and-push:
+    name: "Build & Push to GHCR"
+    runs-on: ubuntu-latest
+    needs: [build-backend-binary]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      backend-image: ${{ steps.meta-backend.outputs.tags }}
+      frontend-image: ${{ steps.meta-frontend.outputs.tags }}
+      image-tag: ${{ github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # -------------------------------------------------------------------------
+      # Backend Image (Rust) - uses pre-built binary from build-backend-binary
+      # -------------------------------------------------------------------------
+      - name: Download backend binary
+        uses: actions/download-artifact@v4
+        with:
+          name: loyalty-backend-binary
+          path: ./backend-binary
+
+      - name: Extract backend metadata
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/backend
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend-binary
+          file: ./backend-rust/Dockerfile.ci
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha,scope=backend-ci
+          cache-to: type=gha,mode=max,scope=backend-ci
+          platforms: linux/amd64
+
+      # -------------------------------------------------------------------------
+      # Frontend Image
+      # -------------------------------------------------------------------------
+      - name: Extract frontend metadata
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/frontend
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          target: production
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          build-args: |
+            VITE_API_URL=${{ vars.VITE_API_URL || 'https://loyalty.saichon.com/api' }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+          platforms: linux/amd64
+
+      - name: Summary
+        run: |
+          echo "## Docker Images Built" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Backend (Rust)" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta-backend.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Frontend" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta-frontend.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # =============================================================================
+  # E2E TESTS (using GHCR images)
+  # =============================================================================
+
+  e2e-tests:
+    name: "E2E Tests"
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event.inputs.skip_e2e != 'true'
+    timeout-minutes: 20
+    # E2E tests run sequentially to prevent port conflicts
+    concurrency:
+      group: e2e-tests
+      cancel-in-progress: false
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: loyalty_e2e
+          POSTGRES_PASSWORD: loyalty_e2e_pass
+          POSTGRES_DB: loyalty_e2e_db
+        ports:
+          - 5436:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install root dependencies (Playwright)
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull backend image
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
+
+      - name: Pull frontend image
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
+
+      - name: Start backend container
+        run: |
+          docker run -d --name backend --network host \
+            -e RUST_ENV=development \
+            -e NODE_ENV=development \
+            -e PORT=4202 \
+            -e DATABASE_URL=postgresql://loyalty_e2e:loyalty_e2e_pass@localhost:5436/loyalty_e2e_db \
+            -e REDIS_URL=redis://localhost:6381 \
+            -e JWT_SECRET=e2e-jwt-secret-for-testing-minimum-64-characters-long-secure-token-string \
+            -e JWT_REFRESH_SECRET=e2e-jwt-refresh-secret-for-testing-minimum-64-characters-long-string \
+            -e SESSION_SECRET=e2e-session-secret-for-testing-minimum-64-characters-long-secure-string \
+            -e GOOGLE_CLIENT_ID=e2e-google-client-id \
+            -e GOOGLE_CLIENT_SECRET=e2e-google-client-secret \
+            -e GOOGLE_CALLBACK_URL=http://localhost:4202/api/oauth/google/callback \
+            -e LINE_CLIENT_ID=e2e-line-channel-id \
+            -e LINE_CLIENT_SECRET=e2e-line-channel-secret \
+            -e LINE_CALLBACK_URL=http://localhost:4202/api/oauth/line/callback \
+            -e FRONTEND_URL=http://localhost:3201 \
+            -e RUST_LOG=info \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/backend:${{ github.sha }}
+
+      - name: Start frontend container
+        run: |
+          docker run -d --name frontend \
+            --add-host=host.docker.internal:host-gateway \
+            -v ${{ github.workspace }}/frontend/nginx.e2e.conf:/etc/nginx/nginx.conf:ro \
+            -p 3201:80 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/frontend:${{ github.sha }}
+
+      - name: Wait for services
+        run: |
+          echo "Waiting for backend..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:4202/api/health > /dev/null 2>&1; then
+              echo "Backend is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Backend failed to start"
+              docker logs backend
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Waiting for frontend..."
+          for i in {1..30}; do
+            if curl -sf http://localhost:3201 > /dev/null 2>&1; then
+              echo "Frontend is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Frontend failed to start"
+              docker logs frontend
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Seed E2E test users
+        run: |
+          echo "Creating E2E test users..."
+          # Create test user 1
+          curl -sf -X POST http://localhost:4202/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"email":"e2e-browser@test.com","password":"E2ETestPassword123!","firstName":"E2E","lastName":"Browser"}' \
+            && echo "Created e2e-browser@test.com" \
+            || echo "User may already exist"
+
+          # Create test user 2
+          curl -sf -X POST http://localhost:4202/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"email":"e2e-browser-2@test.com","password":"E2ETestPassword123!","firstName":"E2E","lastName":"Browser2"}' \
+            && echo "Created e2e-browser-2@test.com" \
+            || echo "User may already exist"
+
+          # Create admin test user (email is in admins.e2e.json)
+          curl -sf -X POST http://localhost:4202/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d '{"email":"e2e-admin@test.local","password":"AdminPassword123!","firstName":"E2E","lastName":"Admin"}' \
+            && echo "Created e2e-admin@test.local" \
+            || echo "User may already exist"
+
+          echo "E2E test users seeded"
+
+      - name: Run Playwright E2E tests
+        run: npx playwright test
+        env:
+          E2E_BASE_URL: http://localhost:3201
+          E2E_API_URL: http://localhost:4202/api
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Cleanup containers
+        if: always()
+        run: |
+          docker stop backend frontend 2>/dev/null || true
+          docker rm backend frontend 2>/dev/null || true
