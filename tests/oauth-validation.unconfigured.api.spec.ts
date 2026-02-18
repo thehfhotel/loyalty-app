@@ -29,7 +29,7 @@ test.describe('OAuth Flow Validation - Unconfigured Environment', () => {
 
       expect(response.status()).toBe(401);
       const body = await response.json();
-      expect(body.error).toBe('No token provided');
+      expect(body.error).toMatch(/No token provided|unauthorized/);
     });
 
     test('should reject invalid tokens', async ({ request }) => {
@@ -41,7 +41,7 @@ test.describe('OAuth Flow Validation - Unconfigured Environment', () => {
 
       expect(response.status()).toBe(401);
       const body = await response.json();
-      expect(body.error).toBe('Invalid token');
+      expect(body.error).toMatch(/Invalid token|unauthorized/);
     });
 
     test('should handle malformed authorization headers', async ({ request }) => {

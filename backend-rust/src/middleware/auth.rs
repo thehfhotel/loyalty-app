@@ -59,19 +59,31 @@ pub enum AuthError {
 
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
-        let (status, message) = match self {
-            AuthError::MissingToken => (StatusCode::UNAUTHORIZED, "Missing authentication token"),
-            AuthError::InvalidToken => (StatusCode::UNAUTHORIZED, "Invalid authentication token"),
-            AuthError::ExpiredToken => {
-                (StatusCode::UNAUTHORIZED, "Authentication token has expired")
-            },
-            AuthError::MalformedHeader => {
-                (StatusCode::UNAUTHORIZED, "Malformed authorization header")
-            },
+        let (status, error, message) = match self {
+            AuthError::MissingToken => (
+                StatusCode::UNAUTHORIZED,
+                "No token provided",
+                "Missing authentication token",
+            ),
+            AuthError::InvalidToken => (
+                StatusCode::UNAUTHORIZED,
+                "Invalid token",
+                "Invalid authentication token",
+            ),
+            AuthError::ExpiredToken => (
+                StatusCode::UNAUTHORIZED,
+                "Token expired",
+                "Authentication token has expired",
+            ),
+            AuthError::MalformedHeader => (
+                StatusCode::UNAUTHORIZED,
+                "No token provided",
+                "Malformed authorization header",
+            ),
         };
 
         let body = Json(ErrorResponse {
-            error: "unauthorized".to_string(),
+            error: error.to_string(),
             message: message.to_string(),
             details: None,
         });

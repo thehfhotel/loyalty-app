@@ -77,7 +77,8 @@ test.describe('Authentication and Session Tests', () => {
       });
 
       // Should redirect to Google or return error if not configured
-      expect([200, 302, 400, 500]).toContain(response.status());
+      // 303 is used by Axum's Redirect::to() (See Other)
+      expect([200, 302, 303, 400, 500]).toContain(response.status());
     });
 
     test('LINE OAuth endpoint should be accessible', async ({ request }) => {
@@ -86,7 +87,8 @@ test.describe('Authentication and Session Tests', () => {
       });
 
       // Should redirect to LINE or return error if not configured
-      expect([200, 302, 400, 500]).toContain(response.status());
+      // 303 is used by Axum's Redirect::to() (See Other)
+      expect([200, 302, 303, 400, 500]).toContain(response.status());
     });
 
     test('OAuth me endpoint should require authentication', async ({ request }) => {
@@ -114,8 +116,8 @@ test.describe('Authentication and Session Tests', () => {
         headers: { 'Content-Type': 'application/json' },
       });
 
-      // Should return 400 or 401 for missing token
-      expect([400, 401]).toContain(response.status());
+      // Should return 400 or 401 for missing token (422 from Axum JSON extractor)
+      expect([400, 401, 422]).toContain(response.status());
     });
 
     test('Refresh endpoint should reject expired refresh token with 401', async ({ request }) => {
@@ -210,8 +212,8 @@ test.describe('Authentication and Session Tests', () => {
         headers: { 'Content-Type': 'application/json' },
       });
 
-      // Should return 400 for invalid email format
-      expect([400, 401]).toContain(response.status());
+      // Should return 400 for invalid email format (422 from Axum JSON extractor)
+      expect([400, 401, 422]).toContain(response.status());
     });
 
     test('Login should require password', async ({ request }) => {
@@ -222,8 +224,8 @@ test.describe('Authentication and Session Tests', () => {
         headers: { 'Content-Type': 'application/json' },
       });
 
-      // Should return 400 for missing password
-      expect([400, 401]).toContain(response.status());
+      // Should return 400 for missing password (422 from Axum JSON extractor)
+      expect([400, 401, 422]).toContain(response.status());
     });
 
     test('Login should reject wrong credentials', async ({ request }) => {
@@ -255,8 +257,8 @@ test.describe('Authentication and Session Tests', () => {
           headers: { 'Content-Type': 'application/json' },
         });
 
-        // Should return 400 for validation errors
-        expect([400, 401, 409]).toContain(response.status());
+        // Should return 400 for validation errors (422 from Axum JSON extractor)
+        expect([400, 401, 409, 422]).toContain(response.status());
       }
     });
   });
@@ -286,7 +288,7 @@ test.describe('Authentication and Session Tests', () => {
       };
 
       const registerResponse = await request.post(`${backendUrl}/api/auth/register`, {
-        data: JSON.stringify(requestData),
+        data: requestData,
         headers: {
           'Content-Type': 'application/json',
           ...(cookies.length > 0 && { 'Cookie': cookies.join('; ') }),
