@@ -220,7 +220,7 @@ test.describe('Admin Loyalty API Contract Tests', () => {
   test('Customer loyalty endpoints should also be accessible', async ({ request }) => {
     const customerRoutes = [
       '/api/loyalty/status',
-      '/api/loyalty/history',
+      '/api/loyalty/transactions',
       '/api/loyalty/tiers',
     ];
 

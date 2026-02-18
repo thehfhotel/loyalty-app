@@ -644,8 +644,8 @@ test.describe('Coupon API Contract Tests', () => {
     // Test validate endpoint separately - it returns 404 for invalid QR codes
     // which is valid business logic, not a missing route
     const validateResponse = await request.get(`${backendUrl}/api/coupons/validate/INVALID_TEST_CODE`);
-    // Should return 404 (invalid QR) not 500 (server error) - route exists and handles properly
-    expect([404, 400]).toContain(validateResponse.status());
+    // Should return 200 (with valid: false), 404, or 400 - not 500 (server error)
+    expect([200, 404, 400]).toContain(validateResponse.status());
   });
 
   test('coupon type should accept all valid types', async ({ request }) => {

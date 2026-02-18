@@ -296,9 +296,9 @@ impl AppError {
             Self::InsufficientPermissions(_) => StatusCode::FORBIDDEN,
             Self::AccessDenied => StatusCode::FORBIDDEN,
 
-            // Validation errors - 400/422
-            Self::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
-            Self::ValidationWithDetails { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+            // Validation errors - 400
+            Self::Validation(_) => StatusCode::BAD_REQUEST,
+            Self::ValidationWithDetails { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidInput(_) => StatusCode::BAD_REQUEST,
 
             // Resource errors

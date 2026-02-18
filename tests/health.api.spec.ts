@@ -46,7 +46,8 @@ test.describe('OAuth Integration Tests', () => {
         maxRedirects: 0
       });
       // Should get a redirect or OAuth flow, not connection error
-      expect([200, 302, 401, 403]).toContain(response.status());
+      // 303 is used by Axum's Redirect::to() (See Other)
+      expect([200, 302, 303, 401, 403]).toContain(response.status());
     }
   });
 });

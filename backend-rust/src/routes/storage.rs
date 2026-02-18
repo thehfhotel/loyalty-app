@@ -17,6 +17,7 @@ use axum::{
     body::Body,
     extract::{Multipart, Path, State},
     http::{header, StatusCode},
+    middleware,
     response::Response,
     routing::{get, post},
     Json, Router,
@@ -29,6 +30,7 @@ use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info};
 
 use crate::error::{AppError, AppResult};
+use crate::middleware::auth::{auth_middleware, require_role};
 use crate::services::storage::{StorageReport, StorageService};
 
 /// State for storage routes
@@ -401,20 +403,26 @@ async fn delete_file(
 ///
 /// These routes are nested under /api/storage in the main router
 pub fn routes() -> Router<StorageState> {
-    Router::new()
-        // Upload routes
+    // Public routes - file serving and uploads
+    let public_routes = Router::new()
         .route("/upload", post(upload_file))
         .route("/avatar", post(upload_avatar))
         .route("/slip", post(upload_slip))
-        // Serve files
         .route("/files/:filename", get(serve_file))
         .route("/avatars/:filename", get(serve_avatar))
-        .route("/slips/:filename", get(serve_slip))
-        // Admin routes
+        .route("/slips/:filename", get(serve_slip));
+
+    // Admin routes - require authentication + admin role
+    let admin_routes = Router::new()
         .route("/stats", get(get_storage_stats))
         .route("/backup", post(trigger_backup))
-        // Delete route
         .route("/files/:filename", axum::routing::delete(delete_file))
+        .layer(middleware::from_fn(|req, next| {
+            require_role(req, next, "admin")
+        }))
+        .layer(middleware::from_fn(auth_middleware));
+
+    public_routes.merge(admin_routes)
 }
 
 /// Create storage routes with state
