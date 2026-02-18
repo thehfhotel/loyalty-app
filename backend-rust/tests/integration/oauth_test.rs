@@ -10,12 +10,13 @@
 //! These tests use wiremock to mock Google/LINE token endpoints.
 
 use axum::Router;
+use sqlx::PgPool;
 use wiremock::{
     matchers::{method, path},
     Mock, MockServer, ResponseTemplate,
 };
 
-use crate::common::{init_test_db, init_test_redis, TestClient};
+use crate::common::{init_test_redis, setup_test, teardown_test, TestClient};
 
 use loyalty_backend::config::Settings;
 use loyalty_backend::routes::oauth::routes;
@@ -67,13 +68,9 @@ fn create_test_settings_without_oauth() -> Settings {
 }
 
 /// Create a test application with OAuth routes
-async fn create_oauth_test_app(settings: Settings) -> Result<Router, Box<dyn std::error::Error>> {
-    let pool = init_test_db().await?;
+async fn create_oauth_test_app(pool: PgPool, settings: Settings) -> Result<Router, Box<dyn std::error::Error>> {
     let redis = init_test_redis().await?;
-
     let state = AppState::new(pool, redis, settings);
-
-    // Mount OAuth routes under /api/oauth (matching production router)
     Ok(Router::new().nest("/api/oauth", routes().with_state(state)))
 }
 
@@ -86,23 +83,15 @@ async fn create_oauth_test_app(settings: Settings) -> Result<Router, Box<dyn std
 /// Verify it returns a redirect to Google OAuth
 #[tokio::test]
 async fn test_google_oauth_redirect() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act
     let response = client.get("/api/oauth/google").await;
 
-    // Assert - Should return a redirect (302 or 303) to Google OAuth
-    // Note: The response might be 200 with HTML redirect for mobile Safari compatibility,
-    // or a proper HTTP redirect (302/303)
+    // Should return a redirect (302 or 303) to Google OAuth
+    // The response might be 200 with HTML redirect for mobile Safari compatibility
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status (302/303) or HTML redirect (200), got {}. Body: {}",
@@ -110,7 +99,6 @@ async fn test_google_oauth_redirect() {
         response.body
     );
 
-    // If it's a 200, it should be an HTML redirect page
     if response.status == 200 {
         assert!(
             response.body.contains("accounts.google.com") || response.body.contains("Redirecting"),
@@ -118,27 +106,21 @@ async fn test_google_oauth_redirect() {
             response.body
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 /// Test Google OAuth redirect includes required parameters
 #[tokio::test]
 async fn test_google_oauth_redirect_url_params() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act
     let response = client.get("/api/oauth/google").await;
 
     // The redirect URL should contain required OAuth parameters
-    // For HTML redirect response, check the body
     if response.status == 200 {
         let body = &response.body;
         assert!(
@@ -158,33 +140,27 @@ async fn test_google_oauth_redirect_url_params() {
             "Redirect should include state parameter for CSRF protection"
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 /// Test Google OAuth redirect when not configured
 #[tokio::test]
 async fn test_google_oauth_redirect_not_configured() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_without_oauth();
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act
     let response = client.get("/api/oauth/google").await;
 
-    // Assert - Should redirect to login with error when OAuth is not configured
+    // Should redirect to login with error when OAuth is not configured
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status, got {}",
         response.status
     );
 
-    // The redirect should indicate OAuth is not configured
     if response.status == 200 {
         assert!(
             response.body.contains("not_configured")
@@ -193,6 +169,8 @@ async fn test_google_oauth_redirect_not_configured() {
             "Response should indicate Google OAuth is not configured"
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 // ============================================================================
@@ -204,23 +182,15 @@ async fn test_google_oauth_redirect_not_configured() {
 /// Verify it returns a redirect to LINE OAuth
 #[tokio::test]
 async fn test_line_oauth_redirect() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act
     let response = client.get("/api/oauth/line").await;
 
-    // Assert - Should return a redirect (302 or 303) to LINE OAuth
-    // Note: The response might be 200 with HTML redirect for mobile Safari compatibility,
-    // or a proper HTTP redirect (302/303)
+    // Should return a redirect (302 or 303) to LINE OAuth
+    // The response might be 200 with HTML redirect for mobile Safari compatibility
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status (302/303) or HTML redirect (200), got {}. Body: {}",
@@ -228,7 +198,6 @@ async fn test_line_oauth_redirect() {
         response.body
     );
 
-    // If it's a 200, it should be an HTML redirect page
     if response.status == 200 {
         assert!(
             response.body.contains("access.line.me")
@@ -238,23 +207,18 @@ async fn test_line_oauth_redirect() {
             response.body
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 /// Test LINE OAuth redirect includes required parameters
 #[tokio::test]
 async fn test_line_oauth_redirect_url_params() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act
     let response = client.get("/api/oauth/line").await;
 
     // The redirect URL should contain required OAuth parameters
@@ -277,33 +241,27 @@ async fn test_line_oauth_redirect_url_params() {
             "Redirect should include state parameter for CSRF protection"
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 /// Test LINE OAuth redirect when not configured
 #[tokio::test]
 async fn test_line_oauth_redirect_not_configured() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_without_oauth();
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act
     let response = client.get("/api/oauth/line").await;
 
-    // Assert - Should redirect to login with error when OAuth is not configured
+    // Should redirect to login with error when OAuth is not configured
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status, got {}",
         response.status
     );
 
-    // The redirect should indicate OAuth is not configured
     if response.status == 200 {
         assert!(
             response.body.contains("not_configured")
@@ -312,6 +270,8 @@ async fn test_line_oauth_redirect_not_configured() {
             "Response should indicate LINE OAuth is not configured"
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 // ============================================================================
@@ -323,10 +283,10 @@ async fn test_line_oauth_redirect_not_configured() {
 /// Verify it returns an error redirect
 #[tokio::test]
 async fn test_google_callback_invalid_code() {
-    // Start a mock server to simulate Google's token endpoint
+    let (pool, test_db) = setup_test().await;
+
     let mock_server = MockServer::start().await;
 
-    // Mock Google token endpoint to return an error for invalid code
     Mock::given(method("POST"))
         .and(path("/token"))
         .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
@@ -338,25 +298,14 @@ async fn test_google_callback_invalid_code() {
 
     let settings =
         create_test_settings_with_oauth(Some(&format!("{}/callback", mock_server.uri())), None);
-
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act - Call callback with invalid code and missing state
-    // Note: Without a valid state, the callback should fail with session_expired or oauth_invalid
+    // Without a valid state, the callback should fail with session_expired or oauth_invalid
     let response = client
         .get("/api/oauth/google/callback?code=invalid_code")
         .await;
 
-    // Assert - Should return a redirect to login with error
-    // The callback without a state parameter should fail
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status, got {}. Body: {}",
@@ -364,7 +313,6 @@ async fn test_google_callback_invalid_code() {
         response.body
     );
 
-    // The response should indicate an error occurred
     if response.status == 200 {
         assert!(
             response.body.contains("error")
@@ -375,35 +323,29 @@ async fn test_google_callback_invalid_code() {
             response.body
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 /// Test Google OAuth callback with missing state parameter
 #[tokio::test]
 async fn test_google_callback_missing_state() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act - Call callback with code but no state (CSRF protection should fail)
+    // Call callback with code but no state (CSRF protection should fail)
     let response = client
         .get("/api/oauth/google/callback?code=some_code")
         .await;
 
-    // Assert - Should redirect with error due to missing state
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status, got {}",
         response.status
     );
 
-    // Should indicate invalid request or session expired
     if response.status == 200 {
         assert!(
             response.body.contains("invalid")
@@ -413,35 +355,29 @@ async fn test_google_callback_missing_state() {
             "Response should indicate CSRF validation failed"
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 /// Test Google OAuth callback with OAuth provider error
 #[tokio::test]
 async fn test_google_callback_provider_error() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act - Simulate OAuth provider returning an error (e.g., user denied access)
+    // Simulate OAuth provider returning an error (user denied access)
     let response = client
         .get("/api/oauth/google/callback?error=access_denied&error_description=User%20denied%20access")
         .await;
 
-    // Assert - Should redirect with provider error
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status, got {}",
         response.status
     );
 
-    // Should indicate OAuth provider error
     if response.status == 200 {
         assert!(
             response.body.contains("error")
@@ -450,6 +386,8 @@ async fn test_google_callback_provider_error() {
             "Response should indicate OAuth provider error"
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 // ============================================================================
@@ -461,10 +399,10 @@ async fn test_google_callback_provider_error() {
 /// Verify it returns an error redirect
 #[tokio::test]
 async fn test_line_callback_invalid_code() {
-    // Start a mock server to simulate LINE's token endpoint
+    let (pool, test_db) = setup_test().await;
+
     let mock_server = MockServer::start().await;
 
-    // Mock LINE token endpoint to return an error for invalid code
     Mock::given(method("POST"))
         .and(path("/oauth2/v2.1/token"))
         .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
@@ -476,23 +414,13 @@ async fn test_line_callback_invalid_code() {
 
     let settings =
         create_test_settings_with_oauth(None, Some(&format!("{}/callback", mock_server.uri())));
-
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act - Call callback with invalid code and missing state
     let response = client
         .get("/api/oauth/line/callback?code=invalid_code")
         .await;
 
-    // Assert - Should return a redirect to login with error
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status, got {}. Body: {}",
@@ -500,7 +428,6 @@ async fn test_line_callback_invalid_code() {
         response.body
     );
 
-    // The response should indicate an error occurred
     if response.status == 200 {
         assert!(
             response.body.contains("error")
@@ -511,33 +438,27 @@ async fn test_line_callback_invalid_code() {
             response.body
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 /// Test LINE OAuth callback with missing state parameter
 #[tokio::test]
 async fn test_line_callback_missing_state() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act - Call callback with code but no state (CSRF protection should fail)
+    // Call callback with code but no state (CSRF protection should fail)
     let response = client.get("/api/oauth/line/callback?code=some_code").await;
 
-    // Assert - Should redirect with error due to missing state
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status, got {}",
         response.status
     );
 
-    // Should indicate invalid request or session expired
     if response.status == 200 {
         assert!(
             response.body.contains("invalid")
@@ -547,37 +468,31 @@ async fn test_line_callback_missing_state() {
             "Response should indicate CSRF validation failed"
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 /// Test LINE OAuth callback with OAuth provider error
 #[tokio::test]
 async fn test_line_callback_provider_error() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act - Simulate OAuth provider returning an error
+    // Simulate OAuth provider returning an error
     let response = client
         .get(
             "/api/oauth/line/callback?error=access_denied&error_description=User%20denied%20access",
         )
         .await;
 
-    // Assert - Should redirect with provider error
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status, got {}",
         response.status
     );
 
-    // Should indicate OAuth provider error
     if response.status == 200 {
         assert!(
             response.body.contains("error")
@@ -586,6 +501,8 @@ async fn test_line_callback_provider_error() {
             "Response should indicate OAuth provider error"
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 // ============================================================================
@@ -595,64 +512,53 @@ async fn test_line_callback_provider_error() {
 /// Test OAuth redirect with custom return_url (same origin)
 #[tokio::test]
 async fn test_oauth_redirect_with_valid_return_url() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act - Request OAuth with a valid return URL (same origin as frontend)
+    // Request OAuth with a valid return URL (same origin as frontend)
     let response = client
         .get("/api/oauth/google?return_url=http://localhost:3000/dashboard")
         .await;
 
-    // Assert - Should proceed with OAuth flow
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status, got {}",
         response.status
     );
+
+    teardown_test(&test_db).await;
 }
 
 /// Test OAuth redirect blocks different origin return_url (open redirect protection)
 #[tokio::test]
 async fn test_oauth_redirect_blocks_open_redirect() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act - Attempt OAuth with a malicious return URL
+    // Attempt OAuth with a malicious return URL
     let response = client
         .get("/api/oauth/google?return_url=https://evil.com/phishing")
         .await;
 
-    // Assert - Should still proceed with OAuth but use default return URL
-    // The open redirect attempt should be logged and blocked
+    // Should still proceed with OAuth but use default return URL
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status, got {}",
         response.status
     );
 
-    // The redirect should NOT contain the evil.com domain
     if response.status == 200 {
         assert!(
             !response.body.contains("evil.com"),
             "Response should not redirect to malicious domain"
         );
     }
+
+    teardown_test(&test_db).await;
 }
 
 // ============================================================================
@@ -757,51 +663,39 @@ async fn test_line_oauth_flow_with_mocks() {
 /// Test OAuth redirect with PWA flag
 #[tokio::test]
 async fn test_google_oauth_redirect_pwa_mode() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act - Request OAuth in PWA mode
     let response = client.get("/api/oauth/google?pwa=true&platform=ios").await;
 
-    // Assert - Should proceed with OAuth flow
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status, got {}",
         response.status
     );
+
+    teardown_test(&test_db).await;
 }
 
 /// Test OAuth redirect in standalone mode
 #[tokio::test]
 async fn test_line_oauth_redirect_standalone_mode() {
+    let (pool, test_db) = setup_test().await;
     let settings = create_test_settings_with_oauth(None, None);
-    let app = match create_oauth_test_app(settings).await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Skipping test - test infrastructure not available: {}", e);
-            return;
-        },
-    };
-
+    let app = create_oauth_test_app(pool, settings).await.expect("Failed to create app");
     let client = TestClient::new(app);
 
-    // Act - Request OAuth in standalone mode
     let response = client
         .get("/api/oauth/line?standalone=true&platform=android")
         .await;
 
-    // Assert - Should proceed with OAuth flow
     assert!(
         response.status == 302 || response.status == 303 || response.status == 200,
         "Expected redirect status, got {}",
         response.status
     );
+
+    teardown_test(&test_db).await;
 }

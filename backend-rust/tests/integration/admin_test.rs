@@ -5,166 +5,37 @@
 //! - Dashboard statistics
 //! - Notification broadcasts
 
-use axum::Router;
 use serde_json::{json, Value};
-use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::common::{
-    generate_test_token, generate_test_token_with_role, init_test_redis, setup_test, teardown_test,
-    TestClient, TestUser, TEST_JWT_SECRET,
-};
-
-use loyalty_backend::config::Settings;
-use loyalty_backend::routes;
-use loyalty_backend::state::AppState;
+use crate::common::{TestApp, TestUser};
 
 // ============================================================================
 // Test Setup Helpers
 // ============================================================================
-
-/// Create test settings with appropriate defaults for testing
-fn create_test_settings() -> Settings {
-    let mut settings = Settings::default();
-    settings.auth.jwt_secret = TEST_JWT_SECRET.to_string();
-    settings.auth.jwt_refresh_secret = TEST_JWT_SECRET.to_string();
-    settings.auth.access_token_expiry_secs = 900;
-    settings.auth.refresh_token_expiry_secs = 604800;
-    settings
-}
-
-/// Create a test application with all routes including admin
-async fn create_test_app(pool: PgPool) -> Router {
-    // Set JWT_SECRET env var for auth middleware
-    std::env::set_var("JWT_SECRET", TEST_JWT_SECRET);
-
-    let redis = init_test_redis()
-        .await
-        .expect("Failed to initialize test Redis");
-
-    let settings = create_test_settings();
-    let state = AppState::new(pool, redis, settings);
-
-    routes::create_router(state)
-}
-
-/// Ensure required tables exist for admin tests
-async fn ensure_admin_tables(pool: &PgPool) -> Result<(), sqlx::Error> {
-    // Create notifications table if it doesn't exist
-    sqlx::query(
-        r#"
-        DO $$ BEGIN
-            CREATE TYPE notification_type AS ENUM ('info', 'success', 'warning', 'error', 'promo', 'system');
-        EXCEPTION
-            WHEN duplicate_object THEN null;
-        END $$;
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS notifications (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            title VARCHAR(200) NOT NULL,
-            message TEXT NOT NULL,
-            type notification_type DEFAULT 'info',
-            data JSONB DEFAULT '{}',
-            read BOOLEAN DEFAULT false,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    // Create points_transactions table if it doesn't exist
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS points_transactions (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            points INTEGER NOT NULL,
-            type VARCHAR(50) NOT NULL,
-            description TEXT,
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    // Ensure tiers have the required columns
-    sqlx::query(
-        r#"
-        DO $$ BEGIN
-            ALTER TABLE tiers ADD COLUMN IF NOT EXISTS color VARCHAR(20) DEFAULT '#CD7F32';
-            ALTER TABLE tiers ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
-            ALTER TABLE tiers ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
-        EXCEPTION
-            WHEN others THEN null;
-        END $$;
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    // Update tiers with colors if not set
-    sqlx::query(
-        r#"
-        UPDATE tiers SET
-            color = CASE name
-                WHEN 'Bronze' THEN '#CD7F32'
-                WHEN 'Silver' THEN '#C0C0C0'
-                WHEN 'Gold' THEN '#FFD700'
-                WHEN 'Platinum' THEN '#E5E4E2'
-                ELSE '#CD7F32'
-            END,
-            sort_order = CASE name
-                WHEN 'Bronze' THEN 1
-                WHEN 'Silver' THEN 2
-                WHEN 'Gold' THEN 3
-                WHEN 'Platinum' THEN 4
-                ELSE 0
-            END
-        WHERE color IS NULL OR color = '#CD7F32'
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
 
 /// Generate a unique test email
 fn unique_email(prefix: &str) -> String {
     format!("{}_{}_test@example.com", prefix, Uuid::new_v4())
 }
 
-/// Create and insert a test admin user, returning the user and JWT token
-async fn create_admin_user(pool: &PgPool) -> (TestUser, String) {
+/// Create and insert a test admin user
+async fn create_admin_user(pool: &sqlx::PgPool) -> TestUser {
     let admin = TestUser::admin(&unique_email("admin"));
     admin
         .insert_with_profile(pool, "Admin", "User")
         .await
         .expect("Failed to insert admin user");
-
-    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
-    (admin, token)
+    admin
 }
 
-/// Create and insert a regular test user, returning the user and JWT token
-async fn create_regular_user(pool: &PgPool) -> (TestUser, String) {
+/// Create and insert a regular test user
+async fn create_regular_user(pool: &sqlx::PgPool) -> TestUser {
     let user = TestUser::new(&unique_email("user"));
     user.insert_with_profile(pool, "Regular", "User")
         .await
         .expect("Failed to insert regular user");
-
-    let token = generate_test_token(&user.id, &user.email);
-    (user, token)
+    user
 }
 
 // ============================================================================
@@ -176,24 +47,19 @@ async fn create_regular_user(pool: &PgPool) -> (TestUser, String) {
 /// Requires admin role
 #[tokio::test]
 async fn test_list_users_admin() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Create admin user
-    let (_admin, token) = create_admin_user(&pool).await;
+    let admin = create_admin_user(app.db()).await;
 
     // Create some additional users for the list
     for i in 0..3 {
         let user = TestUser::new(&unique_email(&format!("list_user_{}", i)));
-        user.insert_with_profile(&pool, &format!("User{}", i), "Test")
+        user.insert_with_profile(app.db(), &format!("User{}", i), "Test")
             .await
             .expect("Failed to insert test user");
     }
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     // Act - Get users list
     let response = client.get("/api/admin/users").await;
@@ -242,30 +108,26 @@ async fn test_list_users_admin() {
         .unwrap_or(0);
     assert!(total >= 4, "Should have at least 4 users, got {}", total);
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test pagination parameters
 /// GET /api/admin/users?page=1&limit=2
 #[tokio::test]
 async fn test_list_users_pagination() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let (_, token) = create_admin_user(&pool).await;
+    let admin = create_admin_user(app.db()).await;
 
     // Create 5 additional users
     for i in 0..5 {
         let user = TestUser::new(&unique_email(&format!("page_user_{}", i)));
-        user.insert(&pool)
+        user.insert(app.db())
             .await
             .expect("Failed to insert test user");
     }
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     // Request page 1 with limit 2
     let response = client.get("/api/admin/users?page=1&limit=2").await;
@@ -283,7 +145,7 @@ async fn test_list_users_pagination() {
     assert_eq!(pagination.get("page"), Some(&json!(1)));
     assert_eq!(pagination.get("limit"), Some(&json!(2)));
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -295,16 +157,12 @@ async fn test_list_users_pagination() {
 /// Should return 403 Forbidden
 #[tokio::test]
 async fn test_list_users_non_admin_fails() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     // Create a regular (non-admin) user
-    let (_, token) = create_regular_user(&pool).await;
+    let user = create_regular_user(app.db()).await;
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     // Act - Try to access admin endpoint
     let response = client.get("/api/admin/users").await;
@@ -329,7 +187,7 @@ async fn test_list_users_non_admin_fails() {
         error_message
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test that unauthenticated requests are rejected
@@ -337,13 +195,9 @@ async fn test_list_users_non_admin_fails() {
 /// Should return 401 Unauthorized
 #[tokio::test]
 async fn test_list_users_unauthenticated_fails() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app);
+    let client = app.client();
 
     // Act - Try to access without auth token
     let response = client.get("/api/admin/users").await;
@@ -351,7 +205,7 @@ async fn test_list_users_unauthenticated_fails() {
     // Assert - Should be unauthorized
     response.assert_status(401);
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -362,22 +216,18 @@ async fn test_list_users_unauthenticated_fails() {
 /// GET /api/admin/users/:id
 #[tokio::test]
 async fn test_get_user_admin() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let (_, token) = create_admin_user(&pool).await;
+    let admin = create_admin_user(app.db()).await;
 
     // Create a target user to retrieve
     let target_user = TestUser::new(&unique_email("target"));
     target_user
-        .insert_with_profile(&pool, "Target", "User")
+        .insert_with_profile(app.db(), "Target", "User")
         .await
         .expect("Failed to insert target user");
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     // Act - Get specific user
     let response = client
@@ -414,22 +264,18 @@ async fn test_get_user_admin() {
         "Response should include created_at"
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test getting a non-existent user returns 404
 /// GET /api/admin/users/:id with invalid ID
 #[tokio::test]
 async fn test_get_user_not_found() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let (_, token) = create_admin_user(&pool).await;
+    let admin = create_admin_user(app.db()).await;
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     // Act - Get non-existent user
     let fake_id = Uuid::new_v4();
@@ -438,7 +284,7 @@ async fn test_get_user_not_found() {
     // Assert - Should be not found
     response.assert_status(404);
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -449,22 +295,18 @@ async fn test_get_user_not_found() {
 /// PUT /api/admin/users/:id
 #[tokio::test]
 async fn test_update_user_admin() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let (_, token) = create_admin_user(&pool).await;
+    let admin = create_admin_user(app.db()).await;
 
     // Create a target user to update
     let target_user = TestUser::new(&unique_email("update_target"));
     target_user
-        .insert_with_profile(&pool, "Original", "Name")
+        .insert_with_profile(app.db(), "Original", "Name")
         .await
         .expect("Failed to insert target user");
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     // Prepare update payload
     let update_payload = json!({
@@ -501,28 +343,24 @@ async fn test_update_user_admin() {
         "is_active should be updated to false"
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test updating user email
 /// PUT /api/admin/users/:id with email change
 #[tokio::test]
 async fn test_update_user_email() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let (_, token) = create_admin_user(&pool).await;
+    let admin = create_admin_user(app.db()).await;
 
     let target_user = TestUser::new(&unique_email("email_update"));
     target_user
-        .insert(&pool)
+        .insert(app.db())
         .await
         .expect("Failed to insert target user");
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     let new_email = unique_email("new_email");
     let update_payload = json!({
@@ -549,7 +387,7 @@ async fn test_update_user_email() {
         "Email should be updated"
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -560,23 +398,19 @@ async fn test_update_user_email() {
 /// GET /api/admin/stats
 #[tokio::test]
 async fn test_get_stats() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let (_, token) = create_admin_user(&pool).await;
+    let admin = create_admin_user(app.db()).await;
 
     // Create some users for stats
     for i in 0..3 {
         let user = TestUser::new(&unique_email(&format!("stats_user_{}", i)));
-        user.insert(&pool)
+        user.insert(app.db())
             .await
             .expect("Failed to insert test user");
     }
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     // Act - Get stats
     let response = client.get("/api/admin/stats").await;
@@ -631,22 +465,18 @@ async fn test_get_stats() {
         total_users
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test that non-admin cannot access stats
 /// GET /api/admin/stats with regular user
 #[tokio::test]
 async fn test_get_stats_non_admin_fails() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let (_, token) = create_regular_user(&pool).await;
+    let user = create_regular_user(app.db()).await;
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     // Act
     let response = client.get("/api/admin/stats").await;
@@ -654,7 +484,7 @@ async fn test_get_stats_non_admin_fails() {
     // Assert - Should be forbidden
     response.assert_status(403);
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -665,25 +495,21 @@ async fn test_get_stats_non_admin_fails() {
 /// POST /api/admin/notifications/broadcast
 #[tokio::test]
 async fn test_broadcast_notification() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let (_, token) = create_admin_user(&pool).await;
+    let admin = create_admin_user(app.db()).await;
 
     // Create some users to receive the notification
     let mut user_ids = Vec::new();
     for i in 0..3 {
         let user = TestUser::new(&unique_email(&format!("broadcast_user_{}", i)));
-        user.insert(&pool)
+        user.insert(app.db())
             .await
             .expect("Failed to insert test user");
         user_ids.push(user.id);
     }
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     // Prepare broadcast payload
     let broadcast_payload = json!({
@@ -724,22 +550,18 @@ async fn test_broadcast_notification() {
         notifications_sent
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test broadcast with title validation
 /// POST /api/admin/notifications/broadcast with empty title
 #[tokio::test]
 async fn test_broadcast_notification_validation() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let (_, token) = create_admin_user(&pool).await;
+    let admin = create_admin_user(app.db()).await;
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     // Prepare invalid payload (empty title)
     let invalid_payload = json!({
@@ -759,22 +581,18 @@ async fn test_broadcast_notification_validation() {
         response.status
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test that non-admin cannot broadcast notifications
 /// POST /api/admin/notifications/broadcast with regular user
 #[tokio::test]
 async fn test_broadcast_notification_non_admin_fails() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let (_, token) = create_regular_user(&pool).await;
+    let user = create_regular_user(app.db()).await;
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     let broadcast_payload = json!({
         "title": "Unauthorized Broadcast",
@@ -789,7 +607,7 @@ async fn test_broadcast_notification_non_admin_fails() {
     // Assert - Should be forbidden
     response.assert_status(403);
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -800,31 +618,27 @@ async fn test_broadcast_notification_non_admin_fails() {
 /// GET /api/admin/users?search=...
 #[tokio::test]
 async fn test_list_users_search() {
-    let (pool, test_db) = setup_test().await;
-    ensure_admin_tables(&pool)
-        .await
-        .expect("Failed to create admin tables");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let (_, token) = create_admin_user(&pool).await;
+    let admin = create_admin_user(app.db()).await;
 
     // Create a user with a unique searchable email
     let search_term = "uniquesearchterm";
     let searchable_user = TestUser::new(&format!("{}@example.com", search_term));
     searchable_user
-        .insert_with_profile(&pool, "Searchable", "User")
+        .insert_with_profile(app.db(), "Searchable", "User")
         .await
         .expect("Failed to insert searchable user");
 
     // Create some other users
     for i in 0..2 {
         let user = TestUser::new(&unique_email(&format!("other_{}", i)));
-        user.insert(&pool)
+        user.insert(app.db())
             .await
             .expect("Failed to insert test user");
     }
 
-    let app = create_test_app(pool.clone()).await;
-    let client = TestClient::new(app).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     // Act - Search for the specific user
     let response = client
@@ -847,5 +661,5 @@ async fn test_list_users_search() {
 
     assert!(found, "Should find user with search term in email");
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }

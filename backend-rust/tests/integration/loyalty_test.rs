@@ -7,32 +7,14 @@
 //! - Award points (admin only)
 //! - Tier recalculation
 
-use axum::Router;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::common::{
-    generate_test_token, generate_test_token_with_role, init_test_db, setup_test, teardown_test,
-    TestClient, TestUser,
-};
+use crate::common::{TestApp, TestUser};
 
 // ============================================================================
-// Test Setup
+// Test Setup Helpers
 // ============================================================================
-
-/// Create a router for loyalty testing with database state
-async fn create_loyalty_router() -> Result<Router, Box<dyn std::error::Error>> {
-    use loyalty_backend::routes::loyalty::routes_with_app_state;
-    use loyalty_backend::state::AppState;
-    use loyalty_backend::Settings;
-
-    let pool = init_test_db().await?;
-    let redis = crate::common::init_test_redis().await?;
-    let config = Settings::default();
-    let state = AppState::new(pool, redis, config);
-
-    Ok(Router::new().nest("/api/loyalty", routes_with_app_state(state)))
-}
 
 /// Insert a user with loyalty record into the test database
 async fn insert_user_with_loyalty(
@@ -41,10 +23,8 @@ async fn insert_user_with_loyalty(
     initial_points: i32,
     initial_nights: i32,
 ) -> Result<Uuid, sqlx::Error> {
-    // Insert user
     user.insert(pool).await?;
 
-    // Get Bronze tier ID (default tier for 0 nights)
     let tier_id: Option<(Uuid,)> = sqlx::query_as(
         "SELECT id FROM tiers WHERE min_nights <= $1 ORDER BY min_nights DESC LIMIT 1",
     )
@@ -54,7 +34,6 @@ async fn insert_user_with_loyalty(
 
     let tier_id = tier_id.map(|t| t.0);
 
-    // Create user_loyalty record
     sqlx::query(
         r#"
         INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights)
@@ -69,107 +48,6 @@ async fn insert_user_with_loyalty(
     .await?;
 
     Ok(user.id)
-}
-
-/// Create points_transactions table if it doesn't exist
-async fn ensure_points_transactions_table(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
-    // Create points_transaction_type enum if it doesn't exist
-    sqlx::query(
-        r#"
-        DO $$ BEGIN
-            CREATE TYPE points_transaction_type AS ENUM (
-                'earned_stay', 'earned_referral', 'earned_promotion',
-                'redeemed', 'expired', 'admin_award', 'admin_deduct', 'adjustment'
-            );
-        EXCEPTION
-            WHEN duplicate_object THEN null;
-        END $$;
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    // Create points_transactions table
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS points_transactions (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            points INTEGER NOT NULL,
-            type points_transaction_type NOT NULL,
-            description TEXT,
-            reference_id VARCHAR(255),
-            admin_user_id UUID REFERENCES users(id),
-            admin_reason TEXT,
-            expires_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            nights_stayed INTEGER DEFAULT 0
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
-/// Add additional columns to user_loyalty table if needed
-async fn ensure_user_loyalty_columns(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
-    // Add tier_updated_at and points_updated_at columns if they don't exist
-    sqlx::query(
-        r#"
-        DO $$ BEGIN
-            ALTER TABLE user_loyalty ADD COLUMN IF NOT EXISTS tier_updated_at TIMESTAMPTZ;
-            ALTER TABLE user_loyalty ADD COLUMN IF NOT EXISTS points_updated_at TIMESTAMPTZ;
-        END $$;
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
-/// Add additional columns to tiers table if needed
-async fn ensure_tiers_columns(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        DO $$ BEGIN
-            ALTER TABLE tiers ADD COLUMN IF NOT EXISTS min_points INTEGER DEFAULT 0;
-            ALTER TABLE tiers ADD COLUMN IF NOT EXISTS color VARCHAR(20) DEFAULT '#CD7F32';
-            ALTER TABLE tiers ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
-            ALTER TABLE tiers ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
-            ALTER TABLE tiers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-        END $$;
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    // Update sort_order for existing tiers
-    sqlx::query(
-        r#"
-        UPDATE tiers SET sort_order = CASE name
-            WHEN 'Bronze' THEN 0
-            WHEN 'Silver' THEN 1
-            WHEN 'Gold' THEN 2
-            WHEN 'Platinum' THEN 3
-            ELSE 0
-        END,
-        color = CASE name
-            WHEN 'Bronze' THEN '#CD7F32'
-            WHEN 'Silver' THEN '#C0C0C0'
-            WHEN 'Gold' THEN '#FFD700'
-            WHEN 'Platinum' THEN '#E5E4E2'
-            ELSE '#CD7F32'
-        END
-        WHERE sort_order = 0 OR sort_order IS NULL
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
 }
 
 /// Insert sample transactions for a user
@@ -200,35 +78,17 @@ async fn insert_sample_transactions(
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database"]
 async fn test_get_loyalty_status() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-
-    // Ensure required columns exist
-    ensure_user_loyalty_columns(&pool)
-        .await
-        .expect("Failed to add user_loyalty columns");
-    ensure_tiers_columns(&pool)
-        .await
-        .expect("Failed to add tiers columns");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("loyalty_status@example.com");
-    let user_id = insert_user_with_loyalty(&pool, &user, 500, 5)
+    let user_id = insert_user_with_loyalty(app.db(), &user, 500, 5)
         .await
         .expect("Failed to insert user with loyalty");
 
-    let token = generate_test_token(&user_id, &user.email);
-
-    let router = create_loyalty_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&token);
-
-    // Act
+    let client = app.authenticated_client(&user_id, &user.email);
     let response = client.get("/api/loyalty/status").await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -256,30 +116,24 @@ async fn test_get_loyalty_status() {
         "total_nights should be 5"
     );
 
-    // Check tier info is present
     assert!(
         data.get("tier").is_some(),
         "Response should have 'tier' field"
     );
 
-    // Cleanup
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database"]
 async fn test_get_loyalty_status_unauthenticated() {
-    // Arrange
-    let router = create_loyalty_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router); // No auth token
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let client = app.client();
 
-    // Act
     let response = client.get("/api/loyalty/status").await;
 
-    // Assert - should return 401 Unauthorized
     response.assert_status(401);
+
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -287,36 +141,21 @@ async fn test_get_loyalty_status_unauthenticated() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database"]
 async fn test_get_transactions() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-
-    ensure_points_transactions_table(&pool)
-        .await
-        .expect("Failed to create points_transactions table");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("transactions@example.com");
-    let user_id = insert_user_with_loyalty(&pool, &user, 1000, 10)
+    let user_id = insert_user_with_loyalty(app.db(), &user, 1000, 10)
         .await
         .expect("Failed to insert user with loyalty");
 
-    // Insert sample transactions
-    insert_sample_transactions(&pool, user_id, 5)
+    insert_sample_transactions(app.db(), user_id, 5)
         .await
         .expect("Failed to insert sample transactions");
 
-    let token = generate_test_token(&user_id, &user.email);
-
-    let router = create_loyalty_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&token);
-
-    // Act
+    let client = app.authenticated_client(&user_id, &user.email);
     let response = client.get("/api/loyalty/transactions").await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -328,7 +167,6 @@ async fn test_get_transactions() {
 
     let data = json.get("data").expect("Response should have 'data' field");
 
-    // Check pagination fields
     assert!(
         data.get("transactions")
             .and_then(|v| v.as_array())
@@ -355,43 +193,27 @@ async fn test_get_transactions() {
     let transactions = data.get("transactions").unwrap().as_array().unwrap();
     assert_eq!(transactions.len(), 5, "Should have 5 transactions");
 
-    // Cleanup
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database"]
 async fn test_get_transactions_pagination() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-
-    ensure_points_transactions_table(&pool)
-        .await
-        .expect("Failed to create points_transactions table");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("transactions_paginated@example.com");
-    let user_id = insert_user_with_loyalty(&pool, &user, 1000, 10)
+    let user_id = insert_user_with_loyalty(app.db(), &user, 1000, 10)
         .await
         .expect("Failed to insert user with loyalty");
 
-    // Insert 25 sample transactions
-    insert_sample_transactions(&pool, user_id, 25)
+    insert_sample_transactions(app.db(), user_id, 25)
         .await
         .expect("Failed to insert sample transactions");
 
-    let token = generate_test_token(&user_id, &user.email);
-
-    let router = create_loyalty_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&token);
-
-    // Act - request page 2 with limit 10
+    let client = app.authenticated_client(&user_id, &user.email);
     let response = client
         .get("/api/loyalty/transactions?page=2&limit=10")
         .await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -425,8 +247,7 @@ async fn test_get_transactions_pagination() {
         "Should have 10 transactions on page 2"
     );
 
-    // Cleanup
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -434,24 +255,12 @@ async fn test_get_transactions_pagination() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database"]
 async fn test_get_tiers() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let client = app.client();
 
-    ensure_tiers_columns(&pool)
-        .await
-        .expect("Failed to add tiers columns");
-
-    let router = create_loyalty_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router); // No auth required for tiers endpoint
-
-    // Act
     let response = client.get("/api/loyalty/tiers").await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -471,7 +280,6 @@ async fn test_get_tiers() {
         "Should have at least 4 default tiers (Bronze, Silver, Gold, Platinum)"
     );
 
-    // Check first tier (Bronze) structure
     let first_tier = &tiers[0];
     assert!(first_tier.get("id").is_some(), "Tier should have 'id'");
     assert!(first_tier.get("name").is_some(), "Tier should have 'name'");
@@ -488,7 +296,6 @@ async fn test_get_tiers() {
         "Tier should have 'color'"
     );
 
-    // Verify tiers are sorted by sort_order
     let tier_names: Vec<&str> = tiers
         .iter()
         .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
@@ -500,8 +307,7 @@ async fn test_get_tiers() {
         "Should contain Platinum tier"
     );
 
-    // Cleanup
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -509,41 +315,22 @@ async fn test_get_tiers() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database"]
 async fn test_award_points_admin() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    ensure_points_transactions_table(&pool)
-        .await
-        .expect("Failed to create points_transactions table");
-    ensure_user_loyalty_columns(&pool)
-        .await
-        .expect("Failed to add user_loyalty columns");
-    ensure_tiers_columns(&pool)
-        .await
-        .expect("Failed to add tiers columns");
-
-    // Create admin user
-    let admin_user = TestUser::admin("admin_award@example.com");
-    admin_user
-        .insert(&pool)
+    let admin = TestUser::admin("admin_award@example.com");
+    admin
+        .insert(app.db())
         .await
         .expect("Failed to insert admin user");
-    let admin_token = generate_test_token_with_role(&admin_user.id, &admin_user.email, "admin");
 
-    // Create target user
     let target_user = TestUser::new("target_user@example.com");
-    let target_user_id = insert_user_with_loyalty(&pool, &target_user, 100, 2)
+    let target_user_id = insert_user_with_loyalty(app.db(), &target_user, 100, 2)
         .await
         .expect("Failed to insert target user");
 
-    let router = create_loyalty_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&admin_token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
-    // Act - Award 500 points and 3 nights
     let payload = json!({
         "userId": target_user_id.to_string(),
         "points": 500,
@@ -554,7 +341,6 @@ async fn test_award_points_admin() {
 
     let response = client.post("/api/loyalty/award", &payload).await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -595,15 +381,14 @@ async fn test_award_points_admin() {
     let loyalty: (i32, i32) =
         sqlx::query_as("SELECT current_points, total_nights FROM user_loyalty WHERE user_id = $1")
             .bind(target_user_id)
-            .fetch_one(&pool)
+            .fetch_one(app.db())
             .await
             .expect("Failed to fetch updated loyalty");
 
     assert_eq!(loyalty.0, 600, "Database should show 600 points");
     assert_eq!(loyalty.1, 5, "Database should show 5 nights");
 
-    // Cleanup
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -611,37 +396,21 @@ async fn test_award_points_admin() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database"]
 async fn test_award_points_non_admin_fails() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    ensure_points_transactions_table(&pool)
-        .await
-        .expect("Failed to create points_transactions table");
-    ensure_user_loyalty_columns(&pool)
-        .await
-        .expect("Failed to add user_loyalty columns");
-
-    // Create regular user (not admin)
     let regular_user = TestUser::new("regular_user@example.com");
-    let regular_user_id = insert_user_with_loyalty(&pool, &regular_user, 100, 2)
+    let regular_user_id = insert_user_with_loyalty(app.db(), &regular_user, 100, 2)
         .await
         .expect("Failed to insert regular user");
-    let regular_token = generate_test_token(&regular_user_id, &regular_user.email);
 
-    // Create target user
     let target_user = TestUser::new("target_user2@example.com");
-    let target_user_id = insert_user_with_loyalty(&pool, &target_user, 100, 2)
+    let target_user_id = insert_user_with_loyalty(app.db(), &target_user, 100, 2)
         .await
         .expect("Failed to insert target user");
 
-    let router = create_loyalty_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&regular_token);
+    let client = app.authenticated_client(&regular_user_id, &regular_user.email);
 
-    // Act - Try to award points as non-admin
     let payload = json!({
         "userId": target_user_id.to_string(),
         "points": 500,
@@ -650,7 +419,6 @@ async fn test_award_points_non_admin_fails() {
 
     let response = client.post("/api/loyalty/award", &payload).await;
 
-    // Assert - Should return 403 Forbidden
     response.assert_status(403);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -664,14 +432,13 @@ async fn test_award_points_non_admin_fails() {
     let loyalty: (i32,) =
         sqlx::query_as("SELECT current_points FROM user_loyalty WHERE user_id = $1")
             .bind(target_user_id)
-            .fetch_one(&pool)
+            .fetch_one(app.db())
             .await
             .expect("Failed to fetch loyalty");
 
     assert_eq!(loyalty.0, 100, "Points should remain unchanged at 100");
 
-    // Cleanup
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -679,32 +446,18 @@ async fn test_award_points_non_admin_fails() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database"]
 async fn test_tier_recalculation() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    ensure_points_transactions_table(&pool)
-        .await
-        .expect("Failed to create points_transactions table");
-    ensure_user_loyalty_columns(&pool)
-        .await
-        .expect("Failed to add user_loyalty columns");
-    ensure_tiers_columns(&pool)
-        .await
-        .expect("Failed to add tiers columns");
-
-    // Create admin user
-    let admin_user = TestUser::admin("admin_tier@example.com");
-    admin_user
-        .insert(&pool)
+    let admin = TestUser::admin("admin_tier@example.com");
+    admin
+        .insert(app.db())
         .await
         .expect("Failed to insert admin user");
-    let admin_token = generate_test_token_with_role(&admin_user.id, &admin_user.email, "admin");
 
     // Create target user with 8 nights (Silver tier: 1+ nights)
     let target_user = TestUser::new("tier_upgrade@example.com");
-    let target_user_id = insert_user_with_loyalty(&pool, &target_user, 500, 8)
+    let target_user_id = insert_user_with_loyalty(app.db(), &target_user, 500, 8)
         .await
         .expect("Failed to insert target user");
 
@@ -718,7 +471,7 @@ async fn test_tier_recalculation() {
         "#,
     )
     .bind(target_user_id)
-    .fetch_one(&pool)
+    .fetch_one(app.db())
     .await
     .expect("Failed to fetch initial tier");
 
@@ -728,36 +481,29 @@ async fn test_tier_recalculation() {
         initial_tier.0
     );
 
-    let router = create_loyalty_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&admin_token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
-    // Act - Award enough nights to upgrade to Gold (10+ nights)
-    // Need to add at least 2 more nights (8 + 2 = 10)
+    // Award enough nights to upgrade to Platinum (20+ nights)
     let payload = json!({
         "userId": target_user_id.to_string(),
         "points": 200,
-        "nights": 12,  // Add 12 nights to reach Platinum (20+)
+        "nights": 12,  // Add 12 nights to reach Platinum (8 + 12 = 20)
         "description": "Test tier upgrade"
     });
 
     let response = client.post("/api/loyalty/award", &payload).await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
     let data = json.get("data").expect("Response should have 'data' field");
 
-    // Check if tier changed
     let tier_changed = data
         .get("tier_changed")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let new_tier_name = data.get("new_tier_name").and_then(|v| v.as_str());
 
-    // User should have upgraded
     assert!(tier_changed, "Tier should have changed");
     assert_eq!(
         new_tier_name,
@@ -775,7 +521,7 @@ async fn test_tier_recalculation() {
         "#,
     )
     .bind(target_user_id)
-    .fetch_one(&pool)
+    .fetch_one(app.db())
     .await
     .expect("Failed to fetch final tier");
 
@@ -786,46 +532,28 @@ async fn test_tier_recalculation() {
     );
     assert_eq!(final_tier.1, 20, "Database nights should be 20 (8 + 12)");
 
-    // Cleanup
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database"]
 async fn test_tier_recalculation_no_change() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    ensure_points_transactions_table(&pool)
-        .await
-        .expect("Failed to create points_transactions table");
-    ensure_user_loyalty_columns(&pool)
-        .await
-        .expect("Failed to add user_loyalty columns");
-    ensure_tiers_columns(&pool)
-        .await
-        .expect("Failed to add tiers columns");
-
-    // Create admin user
-    let admin_user = TestUser::admin("admin_no_change@example.com");
-    admin_user
-        .insert(&pool)
+    let admin = TestUser::admin("admin_no_change@example.com");
+    admin
+        .insert(app.db())
         .await
         .expect("Failed to insert admin user");
-    let admin_token = generate_test_token_with_role(&admin_user.id, &admin_user.email, "admin");
 
     // Create target user with 5 nights (Silver tier)
     let target_user = TestUser::new("tier_no_change@example.com");
-    let target_user_id = insert_user_with_loyalty(&pool, &target_user, 500, 5)
+    let target_user_id = insert_user_with_loyalty(app.db(), &target_user, 500, 5)
         .await
         .expect("Failed to insert target user");
 
-    let router = create_loyalty_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&admin_token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
-    // Act - Award small amount of nights (not enough to change tier)
+    // Award small amount of nights (not enough to change tier)
     let payload = json!({
         "userId": target_user_id.to_string(),
         "points": 100,
@@ -835,13 +563,11 @@ async fn test_tier_recalculation_no_change() {
 
     let response = client.post("/api/loyalty/award", &payload).await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
     let data = json.get("data").expect("Response should have 'data' field");
 
-    // Tier should NOT have changed
     let tier_changed = data
         .get("tier_changed")
         .and_then(|v| v.as_bool())
@@ -858,7 +584,7 @@ async fn test_tier_recalculation_no_change() {
         "#,
     )
     .bind(target_user_id)
-    .fetch_one(&pool)
+    .fetch_one(app.db())
     .await
     .expect("Failed to fetch final data");
 
@@ -869,6 +595,5 @@ async fn test_tier_recalculation_no_change() {
     );
     assert_eq!(final_data.1, 7, "Nights should be 7");
 
-    // Cleanup
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }

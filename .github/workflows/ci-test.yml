@@ -141,6 +141,12 @@ jobs:
           RUST_BACKTRACE: 1
           RUST_LOG: debug
 
+      - name: Grant CREATEDB for per-test database isolation
+        run: |
+          PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -c "ALTER USER loyalty_test CREATEDB;"
+        env:
+          PGPASSWORD: loyalty_test_pass
+
       - name: Run database migrations
         run: |
           PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -f backend-rust/migrations/20240101000000_init.sql
@@ -212,7 +218,7 @@ jobs:
 
       - name: Run integration tests
         working-directory: ./backend-rust
-        run: cargo test --test '*' -- --test-threads=1
+        run: cargo test --test '*'
         env:
           RUST_BACKTRACE: 1
           RUST_LOG: debug

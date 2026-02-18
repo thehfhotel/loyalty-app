@@ -12,29 +12,11 @@ use chrono::{Duration, Utc};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::common::{
-    generate_test_token, generate_test_token_with_role, init_test_db, setup_test, teardown_test,
-    TestClient, TestCoupon, TestUser,
-};
+use crate::common::{TestApp, TestCoupon, TestUser};
 
 // ============================================================================
 // Test Setup Helpers
 // ============================================================================
-
-/// Create a test router with coupon routes
-async fn create_coupon_router() -> Result<axum::Router, Box<dyn std::error::Error>> {
-    use loyalty_backend::routes::coupons;
-    use loyalty_backend::state::AppState;
-    use loyalty_backend::Settings;
-
-    let pool = init_test_db().await?;
-    let redis = crate::common::init_test_redis().await?;
-
-    let config = Settings::default();
-    let state = AppState::new(pool, redis, config);
-
-    Ok(coupons::routes().with_state(state))
-}
 
 /// Insert a user_coupon directly into the database for testing
 async fn insert_user_coupon(
@@ -63,97 +45,42 @@ async fn insert_user_coupon(
     Ok((user_coupon_id, qr_code))
 }
 
-/// Create test user_coupons table if not exists
-async fn ensure_user_coupons_table(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
-    // Create user_coupon_status enum if it doesn't exist
-    sqlx::query(
-        r#"
-        DO $$ BEGIN
-            CREATE TYPE user_coupon_status AS ENUM ('available', 'used', 'expired', 'revoked');
-        EXCEPTION
-            WHEN duplicate_object THEN null;
-        END $$;
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    // Create user_coupons table if not exists
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS user_coupons (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            coupon_id UUID NOT NULL REFERENCES coupons(id) ON DELETE CASCADE,
-            status user_coupon_status DEFAULT 'available',
-            qr_code TEXT NOT NULL UNIQUE,
-            used_at TIMESTAMPTZ,
-            used_by_admin UUID,
-            redemption_location VARCHAR(255),
-            redemption_details JSONB DEFAULT '{}',
-            assigned_by UUID,
-            assigned_reason TEXT,
-            expires_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
 // ============================================================================
 // Test: List Coupons
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_list_coupons() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Create test user
     let user = TestUser::new("coupon_list_user@example.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    // Create test coupons
     let coupon1 = TestCoupon::percentage("LIST10", 10.0);
     coupon1
-        .insert(&pool)
+        .insert(app.db())
         .await
         .expect("Failed to insert coupon 1");
 
     let coupon2 = TestCoupon::fixed_amount("LIST500", 500.0);
     coupon2
-        .insert(&pool)
+        .insert(app.db())
         .await
         .expect("Failed to insert coupon 2");
 
     // Create expired coupon (should not appear for regular users)
     let expired_coupon = TestCoupon::expired("EXPIRED10");
     expired_coupon
-        .insert(&pool)
+        .insert(app.db())
         .await
         .expect("Failed to insert expired coupon");
 
-    // Generate auth token
-    let token = generate_test_token(&user.id, &user.email);
+    let client = app.authenticated_client(&user.id, &user.email);
 
-    // Create router and client
-    let router = create_coupon_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&token);
+    let response = client.get("/api/coupons").await;
 
-    // Act
-    let response = client.get("/coupons").await;
-
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -167,13 +94,11 @@ async fn test_list_coupons() {
         "Success should be true"
     );
 
-    // Check data structure
     let data = json.get("data").expect("Response should have data field");
     assert!(data.get("items").is_some(), "Data should have items array");
     assert!(data.get("total").is_some(), "Data should have total count");
 
-    // Clean up
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -181,44 +106,28 @@ async fn test_list_coupons() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_get_user_coupons() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Ensure user_coupons table exists
-    ensure_user_coupons_table(&pool)
-        .await
-        .expect("Failed to ensure user_coupons table");
-
-    // Create test user
     let user = TestUser::new("my_coupons_user@example.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    // Create test coupon
     let coupon = TestCoupon::percentage("MYTEST10", 10.0);
-    coupon.insert(&pool).await.expect("Failed to insert coupon");
+    coupon
+        .insert(app.db())
+        .await
+        .expect("Failed to insert coupon");
 
-    // Assign coupon to user
-    insert_user_coupon(&pool, user.id, coupon.id, "available")
+    insert_user_coupon(app.db(), user.id, coupon.id, "available")
         .await
         .expect("Failed to insert user coupon");
 
-    // Generate auth token
-    let token = generate_test_token(&user.id, &user.email);
+    let client = app.authenticated_client(&user.id, &user.email);
 
-    // Create router and client
-    let router = create_coupon_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&token);
+    let response = client.get("/api/coupons/my-coupons").await;
 
-    // Act
-    let response = client.get("/coupons/my-coupons").await;
-
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -228,19 +137,16 @@ async fn test_get_user_coupons() {
         "Success should be true"
     );
 
-    // Check data structure
     let data = json.get("data").expect("Response should have data field");
     let items = data.get("items").and_then(|v| v.as_array());
     assert!(items.is_some(), "Data should have items array");
 
-    // Should have at least one coupon
     let items = items.unwrap();
     assert!(
         !items.is_empty(),
         "User should have at least one assigned coupon"
     );
 
-    // Verify the coupon data
     let first_coupon = &items[0];
     assert!(
         first_coupon.get("qr_code").is_some(),
@@ -251,8 +157,7 @@ async fn test_get_user_coupons() {
         "Coupon should have status"
     );
 
-    // Clean up
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -260,28 +165,17 @@ async fn test_get_user_coupons() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_create_coupon_admin() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Create admin user
     let admin = TestUser::admin("admin_create_coupon@example.com");
     admin
-        .insert(&pool)
+        .insert(app.db())
         .await
         .expect("Failed to insert admin user");
 
-    // Generate admin auth token
-    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
-    // Create router and client
-    let router = create_coupon_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&token);
-
-    // Prepare create coupon request
     let create_request = json!({
         "code": "ADMIN20",
         "name": "Admin Created Coupon",
@@ -296,10 +190,8 @@ async fn test_create_coupon_admin() {
         "usage_limit_per_user": 1
     });
 
-    // Act
-    let response = client.post("/coupons", &create_request).await;
+    let response = client.post("/api/coupons", &create_request).await;
 
-    // Assert
     response.assert_status(201);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -309,7 +201,6 @@ async fn test_create_coupon_admin() {
         "Success should be true"
     );
 
-    // Verify created coupon data
     let data = json.get("data").expect("Response should have data field");
     assert_eq!(
         data.get("code").and_then(|v| v.as_str()),
@@ -322,30 +213,20 @@ async fn test_create_coupon_admin() {
         "Coupon name should match"
     );
 
-    // Clean up
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_create_coupon_non_admin_fails() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Create regular user (not admin)
     let user = TestUser::new("regular_user@example.com");
-    user.insert(&pool).await.expect("Failed to insert user");
-
-    // Generate regular user auth token
-    let token = generate_test_token(&user.id, &user.email);
-
-    // Create router and client
-    let router = create_coupon_router()
+    user.insert(app.db())
         .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&token);
+        .expect("Failed to insert user");
 
-    // Prepare create coupon request
+    let client = app.authenticated_client(&user.id, &user.email);
+
     let create_request = json!({
         "code": "NOADMIN",
         "name": "Unauthorized Coupon",
@@ -353,14 +234,11 @@ async fn test_create_coupon_non_admin_fails() {
         "value": 10.0
     });
 
-    // Act
-    let response = client.post("/coupons", &create_request).await;
+    let response = client.post("/api/coupons", &create_request).await;
 
-    // Assert - Should fail with 403 Forbidden
     response.assert_status(403);
 
-    // Clean up
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -368,51 +246,36 @@ async fn test_create_coupon_non_admin_fails() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_assign_coupon() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Ensure user_coupons table exists
-    ensure_user_coupons_table(&pool)
-        .await
-        .expect("Failed to ensure user_coupons table");
-
-    // Create admin user
     let admin = TestUser::admin("admin_assign@example.com");
     admin
-        .insert(&pool)
+        .insert(app.db())
         .await
         .expect("Failed to insert admin user");
 
-    // Create regular user to receive coupon
     let user = TestUser::new("receiver@example.com");
-    user.insert(&pool).await.expect("Failed to insert user");
-
-    // Create test coupon
-    let coupon = TestCoupon::percentage("ASSIGN10", 10.0);
-    coupon.insert(&pool).await.expect("Failed to insert coupon");
-
-    // Generate admin auth token
-    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
-
-    // Create router and client
-    let router = create_coupon_router()
+    user.insert(app.db())
         .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&token);
+        .expect("Failed to insert user");
 
-    // Prepare assign request
+    let coupon = TestCoupon::percentage("ASSIGN10", 10.0);
+    coupon
+        .insert(app.db())
+        .await
+        .expect("Failed to insert coupon");
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
     let assign_request = json!({
         "couponId": coupon.id.to_string(),
         "userIds": [user.id.to_string()],
         "assignedReason": "Test assignment"
     });
 
-    // Act
-    let response = client.post("/coupons/assign", &assign_request).await;
+    let response = client.post("/api/coupons/assign", &assign_request).await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -422,7 +285,6 @@ async fn test_assign_coupon() {
         "Success should be true"
     );
 
-    // Verify assignment data
     let data = json.get("data").expect("Response should have data field");
     assert!(
         data.is_array(),
@@ -432,7 +294,6 @@ async fn test_assign_coupon() {
     let assignments = data.as_array().unwrap();
     assert_eq!(assignments.len(), 1, "Should have one assignment");
 
-    // Verify the assignment
     let assignment = &assignments[0];
     assert!(
         assignment.get("qr_code").is_some(),
@@ -444,8 +305,7 @@ async fn test_assign_coupon() {
         "User ID should match"
     );
 
-    // Clean up
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -453,49 +313,35 @@ async fn test_assign_coupon() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_redeem_coupon() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Ensure user_coupons table exists
-    ensure_user_coupons_table(&pool)
-        .await
-        .expect("Failed to ensure user_coupons table");
-
-    // Create test user
     let user = TestUser::new("redeemer@example.com");
-    user.insert(&pool).await.expect("Failed to insert user");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert user");
 
-    // Create test coupon (percentage discount)
     let coupon = TestCoupon::percentage("REDEEM20", 20.0);
-    coupon.insert(&pool).await.expect("Failed to insert coupon");
-
-    // Assign coupon to user
-    let (user_coupon_id, qr_code) = insert_user_coupon(&pool, user.id, coupon.id, "available")
+    coupon
+        .insert(app.db())
         .await
-        .expect("Failed to insert user coupon");
+        .expect("Failed to insert coupon");
 
-    // Generate auth token
-    let token = generate_test_token(&user.id, &user.email);
+    let (user_coupon_id, qr_code) =
+        insert_user_coupon(app.db(), user.id, coupon.id, "available")
+            .await
+            .expect("Failed to insert user coupon");
 
-    // Create router and client
-    let router = create_coupon_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
-    // Prepare redeem request
     let redeem_request = json!({
         "qrCode": qr_code,
         "originalAmount": 1000.00,
         "transactionReference": "TXN-TEST-001"
     });
 
-    // Act
-    let response = client.post("/coupons/redeem", &redeem_request).await;
+    let response = client.post("/api/coupons/redeem", &redeem_request).await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -505,7 +351,6 @@ async fn test_redeem_coupon() {
         "Success should be true"
     );
 
-    // Verify redemption data
     let data = json.get("data").expect("Response should have data field");
     assert_eq!(
         data.get("success").and_then(|v| v.as_bool()),
@@ -533,14 +378,13 @@ async fn test_redeem_coupon() {
     let coupon_status: String =
         sqlx::query_scalar("SELECT status::text FROM user_coupons WHERE id = $1")
             .bind(user_coupon_id)
-            .fetch_one(&pool)
+            .fetch_one(app.db())
             .await
             .expect("Failed to fetch coupon status");
 
     assert_eq!(coupon_status, "used", "Coupon status should be 'used'");
 
-    // Clean up
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -548,61 +392,47 @@ async fn test_redeem_coupon() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_redeem_already_redeemed_fails() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Ensure user_coupons table exists
-    ensure_user_coupons_table(&pool)
-        .await
-        .expect("Failed to ensure user_coupons table");
-
-    // Create test user
     let user = TestUser::new("double_redeemer@example.com");
-    user.insert(&pool).await.expect("Failed to insert user");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert user");
 
-    // Create test coupon
     let coupon = TestCoupon::percentage("DOUBLE10", 10.0);
-    coupon.insert(&pool).await.expect("Failed to insert coupon");
+    coupon
+        .insert(app.db())
+        .await
+        .expect("Failed to insert coupon");
 
     // Assign coupon to user with 'used' status (already redeemed)
-    let (_user_coupon_id, qr_code) = insert_user_coupon(&pool, user.id, coupon.id, "used")
-        .await
-        .expect("Failed to insert user coupon");
+    let (_user_coupon_id, qr_code) =
+        insert_user_coupon(app.db(), user.id, coupon.id, "used")
+            .await
+            .expect("Failed to insert user coupon");
 
-    // Generate auth token
-    let token = generate_test_token(&user.id, &user.email);
+    let client = app.authenticated_client(&user.id, &user.email);
 
-    // Create router and client
-    let router = create_coupon_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&token);
-
-    // Prepare redeem request for already-used coupon
     let redeem_request = json!({
         "qrCode": qr_code,
         "originalAmount": 500.00
     });
 
-    // Act
-    let response = client.post("/coupons/redeem", &redeem_request).await;
+    let response = client.post("/api/coupons/redeem", &redeem_request).await;
 
-    // Assert - Should fail because coupon is already used
-    // The exact status code depends on implementation (400 Bad Request or 422 Unprocessable Entity)
+    // Should fail because coupon is already used
+    // The exact status code depends on implementation (400, 422, or 200 with failure in body)
     assert!(
         response.status == 400 || response.status == 422 || response.status == 200,
         "Response should indicate failure"
     );
 
-    // If status is 200, check the response body for failure indication
     if response.status == 200 {
         let json: Value = response.json().expect("Response should be valid JSON");
         let data = json.get("data");
 
         if let Some(data) = data {
-            // The response might indicate failure in the data
             let success = data.get("success").and_then(|v| v.as_bool());
             let valid = data.get("valid").and_then(|v| v.as_bool());
 
@@ -612,7 +442,6 @@ async fn test_redeem_already_redeemed_fails() {
             );
         }
     } else {
-        // Check error response
         let json: Value = response.json().expect("Response should be valid JSON");
         assert!(
             json.get("error").is_some() || json.get("message").is_some(),
@@ -620,8 +449,7 @@ async fn test_redeem_already_redeemed_fails() {
         );
     }
 
-    // Clean up
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -629,29 +457,24 @@ async fn test_redeem_already_redeemed_fails() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_redeem_expired_coupon_fails() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Ensure user_coupons table exists
-    ensure_user_coupons_table(&pool)
-        .await
-        .expect("Failed to ensure user_coupons table");
-
-    // Create test user
     let user = TestUser::new("expired_redeemer@example.com");
-    user.insert(&pool).await.expect("Failed to insert user");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert user");
 
-    // Create test coupon
     let coupon = TestCoupon::percentage("EXPIRED20", 20.0);
-    coupon.insert(&pool).await.expect("Failed to insert coupon");
+    coupon
+        .insert(app.db())
+        .await
+        .expect("Failed to insert coupon");
 
-    // Create user coupon with expired status
+    // Create user coupon with expires_at in the past
     let user_coupon_id = Uuid::new_v4();
     let qr_code = format!("QR-EXPIRED-{}", user_coupon_id);
 
-    // Insert with expires_at in the past
     sqlx::query(
         r#"
         INSERT INTO user_coupons (id, user_id, coupon_id, status, qr_code, expires_at, created_at, updated_at)
@@ -663,29 +486,20 @@ async fn test_redeem_expired_coupon_fails() {
     .bind(coupon.id)
     .bind(&qr_code)
     .bind(Utc::now() - Duration::days(1)) // Expired yesterday
-    .execute(&pool)
+    .execute(app.db())
     .await
     .expect("Failed to insert expired user coupon");
 
-    // Generate auth token
-    let token = generate_test_token(&user.id, &user.email);
+    let client = app.authenticated_client(&user.id, &user.email);
 
-    // Create router and client
-    let router = create_coupon_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&token);
-
-    // Prepare redeem request for expired coupon
     let redeem_request = json!({
         "qrCode": qr_code,
         "originalAmount": 500.00
     });
 
-    // Act
-    let response = client.post("/coupons/redeem", &redeem_request).await;
+    let response = client.post("/api/coupons/redeem", &redeem_request).await;
 
-    // Assert - Should fail because coupon is expired
+    // Should fail because coupon is expired
     assert!(
         response.status == 400 || response.status == 422 || response.status == 200,
         "Response should indicate failure"
@@ -706,8 +520,7 @@ async fn test_redeem_expired_coupon_fails() {
         }
     }
 
-    // Clean up
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -715,35 +528,29 @@ async fn test_redeem_expired_coupon_fails() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_list_coupons_unauthenticated_fails() {
-    // Arrange
-    let router = create_coupon_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router); // No auth token
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Act
-    let response = client.get("/coupons").await;
+    let client = app.client();
 
-    // Assert - Should fail with 401 Unauthorized
+    let response = client.get("/api/coupons").await;
+
     response.assert_status(401);
+
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_get_my_coupons_unauthenticated_fails() {
-    // Arrange
-    let router = create_coupon_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router); // No auth token
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Act
-    let response = client.get("/coupons/my-coupons").await;
+    let client = app.client();
 
-    // Assert - Should fail with 401 Unauthorized
+    let response = client.get("/api/coupons/my-coupons").await;
+
     response.assert_status(401);
+
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -751,39 +558,31 @@ async fn test_get_my_coupons_unauthenticated_fails() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_validate_coupon_qr_code() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Ensure user_coupons table exists
-    ensure_user_coupons_table(&pool)
-        .await
-        .expect("Failed to ensure user_coupons table");
-
-    // Create test user
     let user = TestUser::new("validator@example.com");
-    user.insert(&pool).await.expect("Failed to insert user");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert user");
 
-    // Create test coupon
     let coupon = TestCoupon::percentage("VALIDATE10", 10.0);
-    coupon.insert(&pool).await.expect("Failed to insert coupon");
-
-    // Assign coupon to user
-    let (_user_coupon_id, qr_code) = insert_user_coupon(&pool, user.id, coupon.id, "available")
+    coupon
+        .insert(app.db())
         .await
-        .expect("Failed to insert user coupon");
+        .expect("Failed to insert coupon");
 
-    // Create router and client (validate endpoint is public)
-    let router = create_coupon_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router);
+    let (_user_coupon_id, qr_code) =
+        insert_user_coupon(app.db(), user.id, coupon.id, "available")
+            .await
+            .expect("Failed to insert user coupon");
 
-    // Act
-    let response = client.get(&format!("/coupons/validate/{}", qr_code)).await;
+    let client = app.client();
 
-    // Assert
+    let response = client
+        .get(&format!("/api/coupons/validate/{}", qr_code))
+        .await;
+
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -793,7 +592,6 @@ async fn test_validate_coupon_qr_code() {
         "Success should be true"
     );
 
-    // Verify validation data
     let data = json.get("data").expect("Response should have data field");
     assert_eq!(
         data.get("valid").and_then(|v| v.as_bool()),
@@ -801,23 +599,19 @@ async fn test_validate_coupon_qr_code() {
         "Coupon should be valid"
     );
 
-    // Clean up
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_validate_invalid_qr_code() {
-    // Arrange
-    let router = create_coupon_router()
-        .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router);
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Act - Use a non-existent QR code
-    let response = client.get("/coupons/validate/INVALID-QR-CODE-12345").await;
+    let client = app.client();
 
-    // Assert
+    let response = client
+        .get("/api/coupons/validate/INVALID-QR-CODE-12345")
+        .await;
+
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -828,6 +622,8 @@ async fn test_validate_invalid_qr_code() {
         Some(false),
         "Invalid QR code should not be valid"
     );
+
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -835,47 +631,41 @@ async fn test_validate_invalid_qr_code() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_assign_coupon_to_multiple_users() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Ensure user_coupons table exists
-    ensure_user_coupons_table(&pool)
-        .await
-        .expect("Failed to ensure user_coupons table");
-
-    // Create admin user
     let admin = TestUser::admin("admin_multi_assign@example.com");
     admin
-        .insert(&pool)
+        .insert(app.db())
         .await
         .expect("Failed to insert admin user");
 
-    // Create multiple users to receive coupons
     let user1 = TestUser::new("multi_receiver1@example.com");
-    user1.insert(&pool).await.expect("Failed to insert user 1");
+    user1
+        .insert(app.db())
+        .await
+        .expect("Failed to insert user 1");
 
     let user2 = TestUser::new("multi_receiver2@example.com");
-    user2.insert(&pool).await.expect("Failed to insert user 2");
+    user2
+        .insert(app.db())
+        .await
+        .expect("Failed to insert user 2");
 
     let user3 = TestUser::new("multi_receiver3@example.com");
-    user3.insert(&pool).await.expect("Failed to insert user 3");
-
-    // Create test coupon
-    let coupon = TestCoupon::percentage("MULTI25", 25.0);
-    coupon.insert(&pool).await.expect("Failed to insert coupon");
-
-    // Generate admin auth token
-    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
-
-    // Create router and client
-    let router = create_coupon_router()
+    user3
+        .insert(app.db())
         .await
-        .expect("Failed to create router");
-    let client = TestClient::new(router).with_auth(&token);
+        .expect("Failed to insert user 3");
 
-    // Prepare assign request with multiple users
+    let coupon = TestCoupon::percentage("MULTI25", 25.0);
+    coupon
+        .insert(app.db())
+        .await
+        .expect("Failed to insert coupon");
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
     let assign_request = json!({
         "couponId": coupon.id.to_string(),
         "userIds": [
@@ -886,10 +676,8 @@ async fn test_assign_coupon_to_multiple_users() {
         "assignedReason": "Bulk test assignment"
     });
 
-    // Act
-    let response = client.post("/coupons/assign", &assign_request).await;
+    let response = client.post("/api/coupons/assign", &assign_request).await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -899,7 +687,6 @@ async fn test_assign_coupon_to_multiple_users() {
         "Success should be true"
     );
 
-    // Verify all assignments were created
     let data = json.get("data").expect("Response should have data field");
     let assignments = data.as_array().expect("Data should be an array");
     assert_eq!(assignments.len(), 3, "Should have three assignments");
@@ -911,12 +698,10 @@ async fn test_assign_coupon_to_multiple_users() {
         .collect();
     assert_eq!(qr_codes.len(), 3, "All assignments should have QR codes");
 
-    // Verify all QR codes are unique
     let mut unique_qr_codes = qr_codes.clone();
     unique_qr_codes.sort();
     unique_qr_codes.dedup();
     assert_eq!(unique_qr_codes.len(), 3, "All QR codes should be unique");
 
-    // Clean up
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }

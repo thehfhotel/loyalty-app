@@ -8,43 +8,18 @@
 //! - Completing bookings (admin)
 //! - Checking room availability
 
-use axum::Router;
 use chrono::{Duration, Utc};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::common::{
-    generate_test_token, generate_test_token_with_role, init_test_db, setup_test, teardown_test,
-    TestClient, TestUser,
-};
+use crate::common::{TestApp, TestUser};
 
 // ============================================================================
 // Test Setup
 // ============================================================================
 
-/// Create test app state with database for booking tests
-async fn create_test_app() -> Result<(Router, sqlx::PgPool), Box<dyn std::error::Error>> {
-    let pool = init_test_db().await?;
-
-    // Create test settings
-    let settings = loyalty_backend::config::Settings::default();
-
-    // Initialize Redis connection for test
-    let redis_url =
-        std::env::var("TEST_REDIS_URL").unwrap_or_else(|_| "redis://localhost:6383".to_string());
-    let redis_client = redis::Client::open(redis_url)?;
-    let redis = redis::aio::ConnectionManager::new(redis_client).await?;
-
-    // Create app state
-    let state = loyalty_backend::AppState::new(pool.clone(), redis, settings);
-
-    // Create router with state
-    let router = loyalty_backend::routes::create_router(state);
-
-    Ok((router, pool))
-}
-
-/// Create a test booking in the database
+/// Create a test booking in the database.
+/// Tables (room_types, rooms, bookings) already exist from migration.
 async fn create_test_booking(
     pool: &sqlx::PgPool,
     user_id: Uuid,
@@ -59,28 +34,6 @@ async fn create_test_booking(
     let check_in = today + Duration::days(check_in_offset_days);
     let check_out = today + Duration::days(check_out_offset_days);
 
-    // First, ensure room_types table exists and insert a room type
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS room_types (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            name VARCHAR(100) NOT NULL,
-            description TEXT,
-            price_per_night DECIMAL(10,2) NOT NULL DEFAULT 1500.00,
-            max_guests INTEGER NOT NULL DEFAULT 2,
-            bed_type VARCHAR(50),
-            amenities JSONB DEFAULT '[]',
-            images JSONB DEFAULT '[]',
-            is_active BOOLEAN DEFAULT true,
-            sort_order INTEGER DEFAULT 0,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
     // Insert room type
     sqlx::query(
         r#"
@@ -90,24 +43,6 @@ async fn create_test_booking(
         "#,
     )
     .bind(room_type_id)
-    .execute(pool)
-    .await?;
-
-    // Create rooms table if not exists
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS rooms (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            room_type_id UUID REFERENCES room_types(id),
-            room_number VARCHAR(20) NOT NULL,
-            floor INTEGER,
-            notes TEXT,
-            is_active BOOLEAN DEFAULT true,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
     .execute(pool)
     .await?;
 
@@ -121,33 +56,6 @@ async fn create_test_booking(
     )
     .bind(room_id)
     .bind(room_type_id)
-    .execute(pool)
-    .await?;
-
-    // Create bookings table if not exists
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS bookings (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            room_id UUID NOT NULL REFERENCES rooms(id),
-            room_type_id UUID NOT NULL REFERENCES room_types(id),
-            check_in_date DATE NOT NULL,
-            check_out_date DATE NOT NULL,
-            num_guests INTEGER NOT NULL DEFAULT 1,
-            total_price DECIMAL(10,2) NOT NULL,
-            points_earned INTEGER NOT NULL DEFAULT 0,
-            status VARCHAR(20) NOT NULL DEFAULT 'confirmed',
-            cancelled_at TIMESTAMPTZ,
-            cancellation_reason TEXT,
-            cancelled_by UUID,
-            cancelled_by_admin BOOLEAN DEFAULT false,
-            notes TEXT,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        "#,
-    )
     .execute(pool)
     .await?;
 
@@ -183,35 +91,25 @@ async fn create_test_booking(
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_list_bookings_returns_user_bookings() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
-
-    // Create a test user
     let user = TestUser::new("booking-list@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    // Create some bookings for this user
-    let _ = create_test_booking(&pool, user.id, "confirmed", 7, 10)
+    let _ = create_test_booking(app.db(), user.id, "confirmed", 7, 10)
         .await
         .expect("Failed to create booking");
-    let _ = create_test_booking(&pool, user.id, "confirmed", 14, 17)
+    let _ = create_test_booking(app.db(), user.id, "confirmed", 14, 17)
         .await
         .expect("Failed to create booking");
 
-    // Generate auth token
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
-    // Act
     let response = client.get("/api/bookings").await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -223,53 +121,42 @@ async fn test_list_bookings_returns_user_bookings() {
     let bookings = json.get("bookings").and_then(|v| v.as_array());
     assert!(bookings.is_some(), "Bookings should be an array");
 
-    // Cleanup
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_list_bookings_requires_authentication() {
-    // Arrange
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
-    let client = TestClient::new(router);
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let client = app.client();
 
-    // Act - No auth token
     let response = client.get("/api/bookings").await;
 
-    // Assert
     response.assert_status(401);
+
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_list_bookings_with_status_filter() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-filter@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    // Create bookings with different statuses
-    let _ = create_test_booking(&pool, user.id, "confirmed", 7, 10).await;
-    let _ = create_test_booking(&pool, user.id, "cancelled", 14, 17).await;
+    let _ = create_test_booking(app.db(), user.id, "confirmed", 7, 10).await;
+    let _ = create_test_booking(app.db(), user.id, "cancelled", 14, 17).await;
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
-    // Act - Filter by confirmed status
     let response = client.get("/api/bookings?status=confirmed").await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
     let bookings = json.get("bookings").and_then(|v| v.as_array()).unwrap();
 
-    // All returned bookings should be confirmed
     for booking in bookings {
         assert_eq!(
             booking.get("status").and_then(|v| v.as_str()),
@@ -278,7 +165,7 @@ async fn test_list_bookings_with_status_filter() {
         );
     }
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -286,19 +173,15 @@ async fn test_list_bookings_with_status_filter() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_create_booking_success() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-create@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     let today = Utc::now().date_naive();
     let check_in = today + Duration::days(7);
@@ -312,10 +195,8 @@ async fn test_create_booking_success() {
         "specialRequests": "Late checkout if possible"
     });
 
-    // Act
     let response = client.post("/api/bookings", &booking_request).await;
 
-    // Assert
     assert!(
         response.status == 201 || response.status == 200,
         "Expected 201 Created or 200 OK, got {}. Body: {}",
@@ -331,23 +212,19 @@ async fn test_create_booking_success() {
         "New booking should be confirmed"
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_create_booking_invalid_dates() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-invalid@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     let today = Utc::now().date_naive();
     // Check-out before check-in (invalid)
@@ -361,33 +238,27 @@ async fn test_create_booking_invalid_dates() {
         "guests": 1
     });
 
-    // Act
     let response = client.post("/api/bookings", &booking_request).await;
 
-    // Assert - Should fail validation
     assert!(
         response.status == 400 || response.status == 422,
         "Expected 400 or 422 for invalid dates, got {}",
         response.status
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_create_booking_past_date() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-past@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     let today = Utc::now().date_naive();
     // Check-in in the past (invalid)
@@ -401,17 +272,15 @@ async fn test_create_booking_past_date() {
         "guests": 1
     });
 
-    // Act
     let response = client.post("/api/bookings", &booking_request).await;
 
-    // Assert - Should fail because check-in is in the past
     assert!(
         response.status == 400 || response.status == 422,
         "Expected 400 or 422 for past check-in date, got {}",
         response.status
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -419,29 +288,22 @@ async fn test_create_booking_past_date() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_get_booking_returns_details() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-get@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    // Create a booking
-    let booking_id = create_test_booking(&pool, user.id, "confirmed", 7, 10)
+    let booking_id = create_test_booking(app.db(), user.id, "confirmed", 7, 10)
         .await
         .expect("Failed to create booking");
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
-    // Act
     let response = client.get(&format!("/api/bookings/{}", booking_id)).await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -459,68 +321,56 @@ async fn test_get_booking_returns_details() {
         "Response should have check-out date"
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_get_booking_not_found() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-notfound@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
-    // Act - Try to get a non-existent booking
     let fake_id = Uuid::new_v4();
     let response = client.get(&format!("/api/bookings/{}", fake_id)).await;
 
-    // Assert
     response.assert_status(404);
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_get_booking_forbidden_for_other_user() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Create booking owner
     let owner = TestUser::new("booking-owner@test.com");
-    owner.insert(&pool).await.expect("Failed to insert owner");
+    owner
+        .insert(app.db())
+        .await
+        .expect("Failed to insert owner");
 
-    // Create another user
     let other_user = TestUser::new("other-user@test.com");
     other_user
-        .insert(&pool)
+        .insert(app.db())
         .await
         .expect("Failed to insert other user");
 
-    // Create a booking for the owner
-    let booking_id = create_test_booking(&pool, owner.id, "confirmed", 7, 10)
+    let booking_id = create_test_booking(app.db(), owner.id, "confirmed", 7, 10)
         .await
         .expect("Failed to create booking");
 
-    // Generate token for the OTHER user (not the owner)
-    let token = generate_test_token(&other_user.id, &other_user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    // Authenticate as the OTHER user (not the owner)
+    let client = app.authenticated_client(&other_user.id, &other_user.email);
 
-    // Act - Try to get owner's booking as other user
     let response = client.get(&format!("/api/bookings/{}", booking_id)).await;
 
-    // Assert - Should be forbidden
     response.assert_status(403);
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -528,30 +378,24 @@ async fn test_get_booking_forbidden_for_other_user() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_cancel_booking_success() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-cancel@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    // Create a future booking (can be cancelled)
-    let booking_id = create_test_booking(&pool, user.id, "confirmed", 7, 10)
+    let booking_id = create_test_booking(app.db(), user.id, "confirmed", 7, 10)
         .await
         .expect("Failed to create booking");
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     let cancel_request = json!({
         "reason": "Change of plans"
     });
 
-    // Act
     let response = client
         .post(
             &format!("/api/bookings/{}/cancel", booking_id),
@@ -559,7 +403,6 @@ async fn test_cancel_booking_success() {
         )
         .await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -569,34 +412,28 @@ async fn test_cancel_booking_success() {
         "Booking status should be cancelled"
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_cancel_booking_already_cancelled() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-double-cancel@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    // Create an already cancelled booking
-    let booking_id = create_test_booking(&pool, user.id, "cancelled", 7, 10)
+    let booking_id = create_test_booking(app.db(), user.id, "cancelled", 7, 10)
         .await
         .expect("Failed to create booking");
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     let cancel_request = json!({
         "reason": "Trying to cancel again"
     });
 
-    // Act
     let response = client
         .post(
             &format!("/api/bookings/{}/cancel", booking_id),
@@ -604,37 +441,30 @@ async fn test_cancel_booking_already_cancelled() {
         )
         .await;
 
-    // Assert - Should fail because already cancelled
     response.assert_status(400);
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_cancel_booking_completed_fails() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-cancel-completed@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    // Create a completed booking
-    let booking_id = create_test_booking(&pool, user.id, "completed", -10, -7)
+    let booking_id = create_test_booking(app.db(), user.id, "completed", -10, -7)
         .await
         .expect("Failed to create booking");
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     let cancel_request = json!({
         "reason": "Trying to cancel completed booking"
     });
 
-    // Act
     let response = client
         .post(
             &format!("/api/bookings/{}/cancel", booking_id),
@@ -642,10 +472,9 @@ async fn test_cancel_booking_completed_fails() {
         )
         .await;
 
-    // Assert - Should fail because booking is completed
     response.assert_status(400);
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -653,19 +482,19 @@ async fn test_cancel_booking_completed_fails() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_complete_booking_awards_points() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Create an admin user
     let admin = TestUser::admin("admin-complete@test.com");
-    admin.insert(&pool).await.expect("Failed to insert admin");
+    admin
+        .insert(app.db())
+        .await
+        .expect("Failed to insert admin");
 
-    // Create a regular user with a booking
     let user = TestUser::new("user-with-booking@test.com");
-    user.insert(&pool).await.expect("Failed to insert user");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert user");
 
     // Create user_loyalty record for the user
     sqlx::query(
@@ -676,23 +505,21 @@ async fn test_complete_booking_awards_points() {
         "#,
     )
     .bind(user.id)
-    .execute(&pool)
+    .execute(app.db())
     .await
     .expect("Failed to create user_loyalty");
 
     // Create a booking that's ready to complete (check-out date has passed)
-    let booking_id = create_test_booking(&pool, user.id, "confirmed", -5, -2)
+    let booking_id = create_test_booking(app.db(), user.id, "confirmed", -5, -2)
         .await
         .expect("Failed to create booking");
 
-    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     let complete_request = json!({
         "notes": "Completed by admin"
     });
 
-    // Act
     let response = client
         .post(
             &format!("/api/bookings/{}/complete", booking_id),
@@ -700,7 +527,6 @@ async fn test_complete_booking_awards_points() {
         )
         .await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -710,39 +536,33 @@ async fn test_complete_booking_awards_points() {
         "Booking status should be completed"
     );
 
-    // Verify points were awarded (check the response or query database)
     assert!(
         json.get("pointsEarned").is_some() || json.get("points_earned").is_some(),
         "Response should include points earned"
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_complete_booking_requires_admin() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Create a regular user (not admin)
     let user = TestUser::new("regular-user@test.com");
-    user.insert(&pool).await.expect("Failed to insert user");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert user");
 
-    // Create a booking
-    let booking_id = create_test_booking(&pool, user.id, "confirmed", -5, -2)
+    let booking_id = create_test_booking(app.db(), user.id, "confirmed", -5, -2)
         .await
         .expect("Failed to create booking");
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     let complete_request = json!({
         "notes": "Trying to complete as regular user"
     });
 
-    // Act
     let response = client
         .post(
             &format!("/api/bookings/{}/complete", booking_id),
@@ -750,38 +570,36 @@ async fn test_complete_booking_requires_admin() {
         )
         .await;
 
-    // Assert - Should be forbidden for non-admin
     response.assert_status(403);
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_complete_booking_cannot_complete_cancelled() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let admin = TestUser::admin("admin-cancel-complete@test.com");
-    admin.insert(&pool).await.expect("Failed to insert admin");
+    admin
+        .insert(app.db())
+        .await
+        .expect("Failed to insert admin");
 
     let user = TestUser::new("user-cancelled@test.com");
-    user.insert(&pool).await.expect("Failed to insert user");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert user");
 
-    // Create a cancelled booking
-    let booking_id = create_test_booking(&pool, user.id, "cancelled", -5, -2)
+    let booking_id = create_test_booking(app.db(), user.id, "cancelled", -5, -2)
         .await
         .expect("Failed to create booking");
 
-    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     let complete_request = json!({
         "notes": "Trying to complete cancelled booking"
     });
 
-    // Act
     let response = client
         .post(
             &format!("/api/bookings/{}/complete", booking_id),
@@ -789,10 +607,9 @@ async fn test_complete_booking_cannot_complete_cancelled() {
         )
         .await;
 
-    // Assert - Should fail for cancelled booking
     response.assert_status(400);
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -800,25 +617,20 @@ async fn test_complete_booking_cannot_complete_cancelled() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_check_availability_returns_availability() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("availability-check@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     let today = Utc::now().date_naive();
     let check_in = today + Duration::days(30);
     let check_out = today + Duration::days(33);
 
-    // Act
     let response = client
         .get(&format!(
             "/api/bookings/availability?checkIn={}&checkOut={}",
@@ -827,7 +639,6 @@ async fn test_check_availability_returns_availability() {
         ))
         .await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -840,29 +651,24 @@ async fn test_check_availability_returns_availability() {
         "Response should have available rooms count"
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_check_availability_with_room_type() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("availability-roomtype@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     let today = Utc::now().date_naive();
     let check_in = today + Duration::days(30);
     let check_out = today + Duration::days(33);
 
-    // Act
     let response = client
         .get(&format!(
             "/api/bookings/availability?checkIn={}&checkOut={}&roomType=deluxe",
@@ -871,7 +677,6 @@ async fn test_check_availability_with_room_type() {
         ))
         .await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -880,7 +685,6 @@ async fn test_check_availability_with_room_type() {
         "Response should have 'available' field"
     );
 
-    // If room type is returned, verify it matches
     if let Some(room_type) = json.get("roomType").or(json.get("room_type")) {
         assert!(
             room_type
@@ -891,30 +695,25 @@ async fn test_check_availability_with_room_type() {
         );
     }
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_check_availability_invalid_dates() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("availability-invalid@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
     let today = Utc::now().date_naive();
     // Check-out before check-in (invalid)
     let check_in = today + Duration::days(33);
     let check_out = today + Duration::days(30);
 
-    // Act
     let response = client
         .get(&format!(
             "/api/bookings/availability?checkIn={}&checkOut={}",
@@ -923,14 +722,13 @@ async fn test_check_availability_invalid_dates() {
         ))
         .await;
 
-    // Assert - Should fail validation
     assert!(
         response.status == 400 || response.status == 422,
         "Expected 400 or 422 for invalid dates, got {}",
         response.status
     );
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -938,29 +736,22 @@ async fn test_check_availability_invalid_dates() {
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_list_bookings_pagination() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new("booking-pagination@test.com");
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
-    // Create multiple bookings
     for i in 0..5 {
-        let _ = create_test_booking(&pool, user.id, "confirmed", 7 + i * 5, 10 + i * 5).await;
+        let _ = create_test_booking(app.db(), user.id, "confirmed", 7 + i * 5, 10 + i * 5).await;
     }
 
-    let token = generate_test_token(&user.id, &user.email);
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client(&user.id, &user.email);
 
-    // Act - Request with pagination
     let response = client.get("/api/bookings?page=1&limit=2").await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
@@ -976,42 +767,42 @@ async fn test_list_bookings_pagination() {
         assert!(bookings.len() <= 2, "Should respect page limit");
     }
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
-#[ignore = "Requires running database and Redis"]
 async fn test_admin_can_view_all_bookings() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
-    let (router, _) = create_test_app().await.expect("Failed to create test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Create admin
     let admin = TestUser::admin("admin-viewall@test.com");
-    admin.insert(&pool).await.expect("Failed to insert admin");
+    admin
+        .insert(app.db())
+        .await
+        .expect("Failed to insert admin");
 
-    // Create regular users with bookings
     let user1 = TestUser::new("user1-bookings@test.com");
-    user1.insert(&pool).await.expect("Failed to insert user1");
-    let _ = create_test_booking(&pool, user1.id, "confirmed", 7, 10).await;
+    user1
+        .insert(app.db())
+        .await
+        .expect("Failed to insert user1");
+    let _ = create_test_booking(app.db(), user1.id, "confirmed", 7, 10).await;
 
     let user2 = TestUser::new("user2-bookings@test.com");
-    user2.insert(&pool).await.expect("Failed to insert user2");
-    let _ = create_test_booking(&pool, user2.id, "confirmed", 14, 17).await;
+    user2
+        .insert(app.db())
+        .await
+        .expect("Failed to insert user2");
+    let _ = create_test_booking(app.db(), user2.id, "confirmed", 14, 17).await;
 
-    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
-    let client = TestClient::new(router).with_auth(&token);
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
-    // Act - Admin lists all bookings
     let response = client.get("/api/bookings").await;
 
-    // Assert
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
     let bookings = json.get("bookings").and_then(|v| v.as_array());
 
-    // Admin should see bookings from both users
     if let Some(bookings) = bookings {
         assert!(
             bookings.len() >= 2,
@@ -1019,5 +810,5 @@ async fn test_admin_can_view_all_bookings() {
         );
     }
 
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }

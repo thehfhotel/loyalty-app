@@ -2,7 +2,7 @@
 //!
 //! This module provides shared test infrastructure including:
 //! - TestApp struct for spinning up the app for testing
-//! - Test database setup and teardown
+//! - Per-test database isolation via CREATE DATABASE TEMPLATE
 //! - Test fixtures for users, coupons, and other entities
 //! - Helper functions for making authenticated requests
 //! - Cleanup utilities
@@ -30,6 +30,17 @@ pub fn test_database_url() -> String {
     })
 }
 
+/// Base database URL (connects to "postgres" DB for admin operations)
+fn admin_database_url() -> String {
+    let url = test_database_url();
+    // Replace the database name with "postgres" for admin operations
+    if let Some(pos) = url.rfind('/') {
+        format!("{}postgres", &url[..pos + 1])
+    } else {
+        url
+    }
+}
+
 /// Test Redis URL
 pub fn test_redis_url() -> String {
     std::env::var("TEST_REDIS_URL").unwrap_or_else(|_| "redis://localhost:6383".to_string())
@@ -42,104 +53,216 @@ pub const TEST_JWT_SECRET: &str = "test-jwt-secret-key-for-testing-only-minimum-
 pub const TEST_USER_PASSWORD: &str = "TestPassword123!";
 
 // ============================================================================
+// Template Database Infrastructure
+// ============================================================================
+
+/// Admin pool connects to "postgres" DB for CREATE/DROP DATABASE operations
+static ADMIN_POOL: Lazy<Arc<Mutex<Option<PgPool>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+
+/// Whether the template database has been created
+static TEMPLATE_READY: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+
+/// Template database name
+const TEMPLATE_DB_NAME: &str = "loyalty_test_template";
+
+/// Get or create the admin pool (connects to "postgres" database)
+async fn get_admin_pool() -> Result<PgPool, sqlx::Error> {
+    let mut guard = ADMIN_POOL.lock().await;
+    if let Some(pool) = guard.as_ref() {
+        return Ok(pool.clone());
+    }
+
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(std::time::Duration::from_secs(30))
+        .connect(&admin_database_url())
+        .await?;
+
+    *guard = Some(pool.clone());
+    Ok(pool)
+}
+
+/// Ensure the template database exists with migrations and seed data.
+/// This is called once per test run (idempotent via TEMPLATE_READY flag).
+async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut ready = TEMPLATE_READY.lock().await;
+    if *ready {
+        return Ok(());
+    }
+
+    let admin_pool = get_admin_pool().await?;
+
+    // Terminate any connections to the template database
+    let _ = sqlx::query(&format!(
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{}' AND pid <> pg_backend_pid()",
+        TEMPLATE_DB_NAME
+    ))
+    .execute(&admin_pool)
+    .await;
+
+    // Drop and recreate the template database
+    let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS \"{}\"", TEMPLATE_DB_NAME))
+        .execute(&admin_pool)
+        .await;
+
+    sqlx::query(&format!("CREATE DATABASE \"{}\"", TEMPLATE_DB_NAME))
+        .execute(&admin_pool)
+        .await?;
+
+    // Connect to the template database to run migrations and seeds
+    let template_url = {
+        let url = test_database_url();
+        if let Some(pos) = url.rfind('/') {
+            format!("{}{}", &url[..pos + 1], TEMPLATE_DB_NAME)
+        } else {
+            url
+        }
+    };
+
+    let template_pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&template_url)
+        .await?;
+
+    // Run migrations
+    let migration_sql = include_str!("../../migrations/20240101000000_init.sql");
+    template_pool.execute(migration_sql).await?;
+
+    // Seed tiers
+    template_pool
+        .execute(
+            r#"
+            INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
+            VALUES
+                ('Bronze', 0, 0, '{"discount": 0}', '#CD7F32', 1, true),
+                ('Silver', 0, 1, '{"discount": 5}', '#C0C0C0', 2, true),
+                ('Gold', 0, 10, '{"discount": 10}', '#FFD700', 3, true),
+                ('Platinum', 0, 20, '{"discount": 15}', '#E5E4E2', 4, true)
+            ON CONFLICT (name) DO NOTHING
+            "#,
+        )
+        .await?;
+
+    // Seed membership_id_sequence
+    template_pool
+        .execute(
+            r#"
+            INSERT INTO membership_id_sequence (id, current_user_count)
+            VALUES (1, 0)
+            ON CONFLICT (id) DO NOTHING
+            "#,
+        )
+        .await?;
+
+    // Close the template pool — required before using it as a TEMPLATE
+    template_pool.close().await;
+
+    // Clean up orphaned test databases from previous runs
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT datname FROM pg_database WHERE datname LIKE 'test_%' AND datistemplate = false",
+    )
+    .fetch_all(&admin_pool)
+    .await
+    .unwrap_or_default();
+
+    for (db_name,) in rows {
+        let _ = sqlx::query(&format!(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{}' AND pid <> pg_backend_pid()",
+            db_name
+        ))
+        .execute(&admin_pool)
+        .await;
+        let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS \"{}\"", db_name))
+            .execute(&admin_pool)
+            .await;
+    }
+
+    *ready = true;
+    Ok(())
+}
+
+// ============================================================================
 // TestApp - Main test application wrapper
 // ============================================================================
 
 /// TestApp wraps the application for integration testing.
 ///
-/// It provides:
-/// - A configured Router with all routes
-/// - Database pool for test data setup
-/// - Redis connection for cache testing
-/// - HTTP client for making requests
+/// Each TestApp instance gets its own isolated database created from a
+/// pre-migrated template. This allows tests to run in parallel without
+/// data conflicts.
 ///
 /// # Example
 ///
 /// ```ignore
-/// let app = TestApp::new().await?;
+/// let app = TestApp::new().await.expect("Failed to create test app");
 /// let response = app.client().get("/api/health").await;
 /// response.assert_status(200);
+/// app.cleanup().await.ok();
 /// ```
 pub struct TestApp {
     /// The configured Axum router
     router: Router,
-    /// Database connection pool
+    /// Database connection pool (to the per-test database)
     pool: PgPool,
     /// Redis connection manager
     redis: ConnectionManager,
-    /// Test database wrapper for cleanup
-    test_db: TestDatabase,
+    /// Per-test database name (for cleanup)
+    db_name: String,
 }
 
 impl TestApp {
-    /// Create a new TestApp instance with database and Redis connections.
+    /// Create a new TestApp instance with an isolated per-test database.
     ///
-    /// This sets up:
-    /// - Test database connection pool
-    /// - Test Redis connection
-    /// - Application router with all routes configured
+    /// This:
+    /// 1. Ensures the template database exists (one-time)
+    /// 2. Creates a unique per-test database from the template
+    /// 3. Connects to it and builds the full application router
     pub async fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        // Load env vars
         let _ = dotenvy::dotenv();
 
-        // Initialize test database
-        let pool = setup_test_db().await?;
+        // Ensure template DB is ready
+        ensure_template_db().await?;
+
+        // Create a unique per-test database
+        let db_name = format!("test_{}", Uuid::new_v4().simple());
+        let admin_pool = get_admin_pool().await?;
+
+        sqlx::query(&format!(
+            "CREATE DATABASE \"{}\" TEMPLATE \"{}\"",
+            db_name, TEMPLATE_DB_NAME
+        ))
+        .execute(&admin_pool)
+        .await?;
+
+        // Connect to the new per-test database
+        let test_url = {
+            let url = test_database_url();
+            if let Some(pos) = url.rfind('/') {
+                format!("{}{}", &url[..pos + 1], db_name)
+            } else {
+                url
+            }
+        };
+
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .acquire_timeout(std::time::Duration::from_secs(30))
+            .connect(&test_url)
+            .await?;
 
         // Initialize test Redis
         let redis = init_test_redis().await?;
 
-        // Create test database wrapper
-        let test_db = TestDatabase {
-            pool: pool.clone(),
-            schema_name: "public".to_string(),
-        };
-
-        // Create application state
+        // Create application state and router
         let config = create_test_config();
         let state = loyalty_backend::AppState::new(pool.clone(), redis.clone(), config);
-
-        // Create router with all routes
         let router = loyalty_backend::routes::create_router(state);
 
         Ok(Self {
             router,
             pool,
             redis,
-            test_db,
-        })
-    }
-
-    /// Create a TestApp without database/Redis (for basic health check testing).
-    ///
-    /// This creates a minimal app that can test stateless endpoints.
-    pub async fn new_minimal() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        // Load env vars
-        let _ = dotenvy::dotenv();
-
-        // Initialize test database
-        let pool = setup_test_db().await?;
-
-        // Initialize test Redis
-        let redis = init_test_redis().await?;
-
-        // Create test database wrapper
-        let test_db = TestDatabase {
-            pool: pool.clone(),
-            schema_name: "public".to_string(),
-        };
-
-        // Create application state with test config
-        let config = create_test_config();
-        let state = loyalty_backend::AppState::new(pool.clone(), redis.clone(), config);
-
-        // Create router
-        let router = loyalty_backend::routes::create_router(state);
-
-        Ok(Self {
-            router,
-            pool,
-            redis,
-            test_db,
+            db_name,
         })
     }
 
@@ -149,6 +272,7 @@ impl TestApp {
     }
 
     /// Get a clone of the Redis connection manager.
+    #[allow(dead_code)]
     pub fn redis(&self) -> ConnectionManager {
         self.redis.clone()
     }
@@ -164,7 +288,19 @@ impl TestApp {
         TestClient::new(self.router.clone()).with_auth(&token)
     }
 
+    /// Get an authenticated TestClient with a specific role.
+    pub fn authenticated_client_with_role(
+        &self,
+        user_id: &Uuid,
+        email: &str,
+        role: &str,
+    ) -> TestClient {
+        let token = generate_test_token_with_role(user_id, email, role);
+        TestClient::new(self.router.clone()).with_auth(&token)
+    }
+
     /// Create a test user and return an authenticated client.
+    #[allow(dead_code)]
     pub async fn create_authenticated_user(
         &self,
         email: &str,
@@ -175,12 +311,31 @@ impl TestApp {
         Ok((user, client))
     }
 
-    /// Clean up test data.
-    pub async fn cleanup(&self) -> Result<(), sqlx::Error> {
-        self.test_db.cleanup().await
+    /// Clean up: close pool and drop the per-test database.
+    pub async fn cleanup(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Close pool first (required before DROP DATABASE)
+        self.pool.close().await;
+
+        // Drop the per-test database
+        let admin_pool = get_admin_pool().await?;
+
+        // Terminate any remaining connections
+        let _ = sqlx::query(&format!(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{}' AND pid <> pg_backend_pid()",
+            self.db_name
+        ))
+        .execute(&admin_pool)
+        .await;
+
+        let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS \"{}\"", self.db_name))
+            .execute(&admin_pool)
+            .await;
+
+        Ok(())
     }
 
     /// Get the router for direct testing.
+    #[allow(dead_code)]
     pub fn router(&self) -> Router {
         self.router.clone()
     }
@@ -224,179 +379,130 @@ fn create_test_config() -> loyalty_backend::Settings {
 }
 
 // ============================================================================
-// Database Setup
+// Legacy Setup Functions (backward-compatible, now with per-test DB isolation)
 // ============================================================================
 
-/// Global test database pool (shared across tests for efficiency)
-static TEST_DB_POOL: Lazy<Arc<Mutex<Option<PgPool>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+/// Setup function to run before each test.
+/// Now creates an isolated per-test database.
+pub async fn setup_test() -> (PgPool, TestDatabase) {
+    let _ = dotenvy::dotenv();
 
-/// Test database configuration
-#[derive(Debug, Clone)]
-pub struct TestDbConfig {
-    pub database_url: String,
-    pub max_connections: u32,
-}
+    // Ensure template is ready
+    ensure_template_db()
+        .await
+        .expect("Failed to ensure template database");
 
-impl Default for TestDbConfig {
-    fn default() -> Self {
-        Self {
-            database_url: test_database_url(),
-            max_connections: 10,
+    // Create a unique per-test database
+    let db_name = format!("test_{}", Uuid::new_v4().simple());
+    let admin_pool = get_admin_pool()
+        .await
+        .expect("Failed to get admin pool");
+
+    sqlx::query(&format!(
+        "CREATE DATABASE \"{}\" TEMPLATE \"{}\"",
+        db_name, TEMPLATE_DB_NAME
+    ))
+    .execute(&admin_pool)
+    .await
+    .expect("Failed to create per-test database");
+
+    // Connect to the new per-test database
+    let test_url = {
+        let url = test_database_url();
+        if let Some(pos) = url.rfind('/') {
+            format!("{}{}", &url[..pos + 1], db_name)
+        } else {
+            url
         }
-    }
+    };
+
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(std::time::Duration::from_secs(30))
+        .connect(&test_url)
+        .await
+        .expect("Failed to connect to per-test database");
+
+    let test_db = TestDatabase {
+        pool: pool.clone(),
+        db_name,
+    };
+
+    (pool, test_db)
 }
 
-/// Set up the test database.
-///
-/// Creates a connection pool to the test database and runs migrations.
-/// This function is idempotent - calling it multiple times returns the same pool.
-pub async fn setup_test_db() -> Result<PgPool, sqlx::Error> {
-    let mut guard = TEST_DB_POOL.lock().await;
+/// Teardown function to run after each test.
+/// Drops the per-test database.
+pub async fn teardown_test(test_db: &TestDatabase) {
+    let _ = test_db.drop_database().await;
+}
 
-    if let Some(pool) = guard.as_ref() {
-        return Ok(pool.clone());
-    }
+/// Initialize the test database pool (legacy compatibility).
+/// Now creates a per-test database.
+pub async fn init_test_db() -> Result<PgPool, sqlx::Error> {
+    let _ = dotenvy::dotenv();
 
-    let config = TestDbConfig::default();
+    ensure_template_db()
+        .await
+        .map_err(|e| sqlx::Error::Configuration(e.to_string().into()))?;
 
-    // Create the connection pool with appropriate timeouts
+    let db_name = format!("test_{}", Uuid::new_v4().simple());
+    let admin_pool = get_admin_pool().await?;
+
+    sqlx::query(&format!(
+        "CREATE DATABASE \"{}\" TEMPLATE \"{}\"",
+        db_name, TEMPLATE_DB_NAME
+    ))
+    .execute(&admin_pool)
+    .await?;
+
+    let test_url = {
+        let url = test_database_url();
+        if let Some(pos) = url.rfind('/') {
+            format!("{}{}", &url[..pos + 1], db_name)
+        } else {
+            url
+        }
+    };
+
     let pool = PgPoolOptions::new()
-        .max_connections(config.max_connections)
+        .max_connections(5)
         .acquire_timeout(std::time::Duration::from_secs(30))
-        .idle_timeout(std::time::Duration::from_secs(60))
-        .connect(&config.database_url)
+        .connect(&test_url)
         .await?;
 
-    // Run migrations
-    run_test_migrations(&pool).await?;
+    // Store the db_name so it can be cleaned up
+    // We leak it via a global registry for legacy callers
+    register_test_db(db_name);
 
-    *guard = Some(pool.clone());
     Ok(pool)
 }
 
-/// Clean up the test database.
-///
-/// Drops all test data from all tables in reverse dependency order.
-pub async fn cleanup_test_db(pool: &PgPool) -> Result<(), sqlx::Error> {
-    pool.execute(
-        r#"
-        TRUNCATE TABLE
-            survey_reward_history,
-            survey_coupon_assignments,
-            survey_responses,
-            survey_invitations,
-            survey_translations,
-            surveys,
-            coupon_redemptions,
-            coupon_analytics,
-            coupon_translations,
-            user_coupons,
-            coupons,
-            notification_preferences,
-            notifications,
-            feature_toggle_audit,
-            feature_toggles,
-            translation_jobs,
-            points_transactions,
-            points_earning_rules,
-            account_linking_audit,
-            account_link_requests,
-            linked_accounts,
-            password_reset_tokens,
-            new_member_coupon_settings,
-            user_audit_log,
-            refresh_tokens,
-            user_loyalty,
-            user_profiles,
-            users
-        CASCADE
-        "#,
-    )
-    .await?;
-    Ok(())
+/// Set up the test database (legacy alias).
+pub async fn setup_test_db() -> Result<PgPool, sqlx::Error> {
+    init_test_db().await
 }
 
-/// Initialize the test database pool (legacy function, use setup_test_db instead)
-pub async fn init_test_db() -> Result<PgPool, sqlx::Error> {
-    setup_test_db().await
-}
+/// Registry for test databases created via init_test_db() so they get cleaned up
+static TEST_DB_REGISTRY: Lazy<Arc<Mutex<Vec<String>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
 
-/// Create an isolated test database for a specific test
-///
-/// This creates a unique schema within the test database for isolation.
-/// Each test gets its own schema to prevent interference.
-pub async fn create_isolated_test_db(test_name: &str) -> Result<TestDatabase, sqlx::Error> {
-    let pool = init_test_db().await?;
-    let schema_name = format!("test_{}", test_name.replace("::", "_").replace("-", "_"));
-
-    // Create a unique schema for this test
-    pool.execute(format!("DROP SCHEMA IF EXISTS {} CASCADE", schema_name).as_str())
-        .await?;
-    pool.execute(format!("CREATE SCHEMA {}", schema_name).as_str())
-        .await?;
-
-    Ok(TestDatabase { pool, schema_name })
-}
-
-/// Run database migrations for tests using the real migration SQL
-async fn run_test_migrations(pool: &PgPool) -> Result<(), sqlx::Error> {
-    // Check if essential tables exist
-    let table_exists: bool = sqlx::query_scalar(
-        r#"
-        SELECT EXISTS (
-            SELECT FROM information_schema.tables
-            WHERE table_schema = 'public'
-            AND table_name = 'users'
-        )
-        "#,
-    )
-    .fetch_one(pool)
-    .await?;
-
-    if !table_exists {
-        // Load and execute the real migration SQL
-        let migration_sql = include_str!("../../migrations/20240101000000_init.sql");
-        pool.execute(migration_sql).await?;
+fn register_test_db(name: String) {
+    // Use try_lock to avoid blocking; it's okay if we miss one
+    if let Ok(mut registry) = TEST_DB_REGISTRY.try_lock() {
+        registry.push(name);
     }
-
-    // Seed tiers (matching real schema with color, sort_order, is_active, min_points)
-    seed_test_tiers(pool).await?;
-
-    // Seed membership_id_sequence (required for user registration)
-    pool.execute(
-        r#"
-        INSERT INTO membership_id_sequence (id, current_user_count)
-        VALUES (1, 0)
-        ON CONFLICT (id) DO NOTHING
-        "#,
-    )
-    .await?;
-
-    Ok(())
 }
 
-/// Seed tiers matching the real schema
-async fn seed_test_tiers(pool: &PgPool) -> Result<(), sqlx::Error> {
-    pool.execute(
-        r#"
-        INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
-        VALUES
-            ('Bronze', 0, 0, '{"discount": 0}', '#CD7F32', 1, true),
-            ('Silver', 0, 1, '{"discount": 5}', '#C0C0C0', 2, true),
-            ('Gold', 0, 10, '{"discount": 10}', '#FFD700', 3, true),
-            ('Platinum', 0, 20, '{"discount": 15}', '#E5E4E2', 4, true)
-        ON CONFLICT (name) DO NOTHING
-        "#,
-    )
-    .await?;
+// ============================================================================
+// Test Database Wrapper
+// ============================================================================
 
-    Ok(())
-}
-
-/// Test database wrapper with cleanup functionality
+/// Test database wrapper with per-test isolation
 pub struct TestDatabase {
     pub pool: PgPool,
-    pub schema_name: String,
+    /// Per-test database name for cleanup
+    pub db_name: String,
 }
 
 impl TestDatabase {
@@ -405,16 +511,27 @@ impl TestDatabase {
         &self.pool
     }
 
-    /// Clean up all test data
+    /// Clean up: close pool and drop the per-test database
     pub async fn cleanup(&self) -> Result<(), sqlx::Error> {
-        cleanup_test_db(&self.pool).await
+        self.drop_database().await
     }
 
-    /// Drop the test schema (for full cleanup)
-    pub async fn drop_schema(&self) -> Result<(), sqlx::Error> {
-        self.pool
-            .execute(format!("DROP SCHEMA IF EXISTS {} CASCADE", self.schema_name).as_str())
-            .await?;
+    /// Drop the per-test database
+    pub async fn drop_database(&self) -> Result<(), sqlx::Error> {
+        self.pool.close().await;
+
+        if let Ok(admin_pool) = get_admin_pool().await {
+            let _ = sqlx::query(&format!(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{}' AND pid <> pg_backend_pid()",
+                self.db_name
+            ))
+            .execute(&admin_pool)
+            .await;
+
+            let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS \"{}\"", self.db_name))
+                .execute(&admin_pool)
+                .await;
+        }
         Ok(())
     }
 }
@@ -455,6 +572,7 @@ impl TestUser {
     }
 
     /// Create an unverified test user
+    #[allow(dead_code)]
     pub fn unverified(email: &str) -> Self {
         let mut user = Self::new(email);
         user.email_verified = false;
@@ -462,6 +580,7 @@ impl TestUser {
     }
 
     /// Create an inactive test user
+    #[allow(dead_code)]
     pub fn inactive(email: &str) -> Self {
         let mut user = Self::new(email);
         user.is_active = false;
@@ -519,8 +638,6 @@ impl TestUser {
 }
 
 /// Create a test user in the database.
-///
-/// This is a convenience function that creates and inserts a test user.
 pub async fn create_test_user(
     pool: &PgPool,
     email: &str,
@@ -617,9 +734,6 @@ impl TestCoupon {
 // ============================================================================
 
 /// HTTP client wrapper for making test requests.
-///
-/// TestClient provides a convenient API for making HTTP requests
-/// to the test application and inspecting responses.
 #[derive(Clone)]
 pub struct TestClient {
     router: Router,
@@ -678,6 +792,7 @@ impl TestClient {
     }
 
     /// Make a POST request with empty body
+    #[allow(dead_code)]
     pub async fn post_empty(&self, uri: &str) -> TestResponse {
         let mut request = Request::builder()
             .method("POST")
@@ -714,6 +829,7 @@ impl TestClient {
     }
 
     /// Make a PATCH request with JSON body
+    #[allow(dead_code)]
     pub async fn patch<T: Serialize>(&self, uri: &str, body: &T) -> TestResponse {
         let body_json = serde_json::to_string(body).unwrap();
 
@@ -789,6 +905,7 @@ impl TestResponse {
     }
 
     /// Assert the response is successful (2xx)
+    #[allow(dead_code)]
     pub fn assert_success(&self) {
         assert!(
             self.is_success(),
@@ -799,6 +916,7 @@ impl TestResponse {
     }
 
     /// Get a JSON field value as string
+    #[allow(dead_code)]
     pub fn json_field(&self, field: &str) -> Option<String> {
         let json: serde_json::Value = self.json().ok()?;
         json.get(field)
@@ -905,6 +1023,7 @@ pub async fn init_test_redis() -> Result<ConnectionManager, redis::RedisError> {
 }
 
 /// Clean up Redis test data
+#[allow(dead_code)]
 pub async fn cleanup_redis(
     conn: &mut ConnectionManager,
     pattern: &str,
@@ -917,6 +1036,17 @@ pub async fn cleanup_redis(
         let _: () = conn.del(keys).await?;
     }
 
+    Ok(())
+}
+
+// ============================================================================
+// Legacy cleanup (no longer needed with per-test DB isolation, but kept for compat)
+// ============================================================================
+
+/// Clean up the test database (legacy - no-op with per-test isolation).
+#[allow(dead_code)]
+pub async fn cleanup_test_db(_pool: &PgPool) -> Result<(), sqlx::Error> {
+    // No-op: each test has its own database that gets dropped on cleanup
     Ok(())
 }
 
@@ -955,34 +1085,6 @@ macro_rules! assert_error_code {
             json.get("error")
         );
     }};
-}
-
-// ============================================================================
-// Test Setup Helpers
-// ============================================================================
-
-/// Setup function to run before each test
-pub async fn setup_test() -> (PgPool, TestDatabase) {
-    let _ = dotenvy::dotenv();
-
-    // Initialize test database
-    let pool = init_test_db()
-        .await
-        .expect("Failed to initialize test database");
-    let test_db = TestDatabase {
-        pool: pool.clone(),
-        schema_name: "public".to_string(),
-    };
-
-    // Clean up any existing data
-    let _ = test_db.cleanup().await;
-
-    (pool, test_db)
-}
-
-/// Teardown function to run after each test
-pub async fn teardown_test(test_db: &TestDatabase) {
-    let _ = test_db.cleanup().await;
 }
 
 #[cfg(test)]

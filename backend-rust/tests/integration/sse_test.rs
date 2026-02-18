@@ -8,7 +8,6 @@
 use axum::{
     body::Body,
     http::{Request, StatusCode},
-    Router,
 };
 use futures::StreamExt;
 use serde_json::Value;
@@ -17,51 +16,9 @@ use tokio::time::timeout;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use crate::common::{
-    generate_test_token, init_test_db, init_test_redis, setup_test, teardown_test, TestUser,
-    TEST_JWT_SECRET,
-};
+use crate::common::{generate_expired_token, generate_test_token, TestApp, TestUser};
 
-use loyalty_backend::config::Settings;
-use loyalty_backend::routes::sse::routes as sse_routes;
 use loyalty_backend::services::sse::{get_sse_service, SseEvent};
-use loyalty_backend::state::AppState;
-
-// ============================================================================
-// Test Setup
-// ============================================================================
-
-/// Create test settings with appropriate defaults for testing
-fn create_test_settings() -> Settings {
-    let mut settings = Settings::default();
-    settings.auth.jwt_secret = TEST_JWT_SECRET.to_string();
-    settings.auth.jwt_refresh_secret = TEST_JWT_SECRET.to_string();
-    settings.auth.access_token_expiry_secs = 900; // 15 minutes
-    settings.auth.refresh_token_expiry_secs = 604800; // 7 days
-    settings
-}
-
-/// Create a test application with SSE routes
-async fn create_sse_test_app() -> Result<Router, Box<dyn std::error::Error>> {
-    // Initialize test database
-    let pool = init_test_db().await?;
-
-    // Initialize test Redis
-    let redis = init_test_redis().await?;
-
-    // Create test settings
-    let settings = create_test_settings();
-
-    // Set JWT_SECRET environment variable for auth middleware
-    std::env::set_var("JWT_SECRET", TEST_JWT_SECRET);
-
-    let state = AppState::new(pool, redis, settings);
-
-    // Create router with SSE routes nested under /api
-    Ok(Router::new()
-        .nest("/api/sse", sse_routes())
-        .with_state(state))
-}
 
 /// Generate a unique email for testing
 fn unique_email() -> String {
@@ -76,12 +33,8 @@ fn unique_email() -> String {
 /// GET /api/sse/events without token
 #[tokio::test]
 async fn test_sse_connection_requires_auth() {
-    // Arrange
-    let app = create_sse_test_app()
-        .await
-        .expect("Failed to create SSE test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Create request WITHOUT authentication
     let request = Request::builder()
         .method("GET")
         .uri("/api/sse/events")
@@ -89,10 +42,8 @@ async fn test_sse_connection_requires_auth() {
         .body(Body::empty())
         .unwrap();
 
-    // Act
-    let response = app.oneshot(request).await.unwrap();
+    let response = app.router().oneshot(request).await.unwrap();
 
-    // Assert
     assert_eq!(
         response.status(),
         StatusCode::UNAUTHORIZED,
@@ -128,6 +79,8 @@ async fn test_sse_connection_requires_auth() {
         "Response should indicate authentication is required: {}",
         body_str
     );
+
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -139,17 +92,12 @@ async fn test_sse_connection_requires_auth() {
 /// Connection established and receives event stream headers
 #[tokio::test]
 async fn test_sse_connection_success() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new(&unique_email());
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
-
-    let app = create_sse_test_app()
-        .await
-        .expect("Failed to create SSE test app");
 
     let token = generate_test_token(&user.id, &user.email);
 
@@ -163,9 +111,8 @@ async fn test_sse_connection_success() {
         .unwrap();
 
     // Act - Use timeout to prevent hanging if SSE stream doesn't respond
-    let response_result = timeout(Duration::from_secs(5), app.oneshot(request)).await;
+    let response_result = timeout(Duration::from_secs(5), app.router().oneshot(request)).await;
 
-    // Assert
     assert!(
         response_result.is_ok(),
         "SSE connection should respond within timeout"
@@ -234,25 +181,19 @@ async fn test_sse_connection_success() {
     // Note: It's okay if we can't read the first chunk in time - the important thing
     // is that the connection was established with correct headers
 
-    // Cleanup
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test SSE connection with token in query parameter (for EventSource)
 /// GET /api/sse/events?token=<jwt> should work
 #[tokio::test]
 async fn test_sse_connection_with_query_token() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new(&unique_email());
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
-
-    let app = create_sse_test_app()
-        .await
-        .expect("Failed to create SSE test app");
 
     let token = generate_test_token(&user.id, &user.email);
 
@@ -264,10 +205,8 @@ async fn test_sse_connection_with_query_token() {
         .body(Body::empty())
         .unwrap();
 
-    // Act
-    let response_result = timeout(Duration::from_secs(5), app.oneshot(request)).await;
+    let response_result = timeout(Duration::from_secs(5), app.router().oneshot(request)).await;
 
-    // Assert
     assert!(
         response_result.is_ok(),
         "SSE connection with query token should respond within timeout"
@@ -294,8 +233,7 @@ async fn test_sse_connection_with_query_token() {
         content_type
     );
 
-    // Cleanup
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -306,11 +244,10 @@ async fn test_sse_connection_with_query_token() {
 /// Connect to SSE, trigger a notification, verify event received
 #[tokio::test]
 async fn test_sse_receives_notification() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new(&unique_email());
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
@@ -368,17 +305,16 @@ async fn test_sse_receives_notification() {
 
     // Cleanup
     sse_service.remove_client(&user_id, _client_id).await;
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test SSE receives loyalty update events
 #[tokio::test]
 async fn test_sse_receives_loyalty_update() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new(&unique_email());
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
@@ -434,17 +370,16 @@ async fn test_sse_receives_loyalty_update() {
 
     // Cleanup
     sse_service.remove_client(&user_id, client_id).await;
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test SSE receives coupon assigned events
 #[tokio::test]
 async fn test_sse_receives_coupon_assigned() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new(&unique_email());
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
@@ -492,17 +427,16 @@ async fn test_sse_receives_coupon_assigned() {
 
     // Cleanup
     sse_service.remove_client(&user_id, client_id).await;
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test that multiple clients for the same user all receive events
 #[tokio::test]
 async fn test_sse_multiple_clients_receive_notification() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new(&unique_email());
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
 
@@ -547,24 +481,23 @@ async fn test_sse_multiple_clients_receive_notification() {
     // Cleanup
     sse_service.remove_client(&user_id, client_id_1).await;
     sse_service.remove_client(&user_id, client_id_2).await;
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test that events are only sent to the targeted user
 #[tokio::test]
 async fn test_sse_event_isolation() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user_1 = TestUser::new(&unique_email());
     let user_2 = TestUser::new(&unique_email());
 
     user_1
-        .insert(&pool)
+        .insert(app.db())
         .await
         .expect("Failed to insert test user 1");
     user_2
-        .insert(&pool)
+        .insert(app.db())
         .await
         .expect("Failed to insert test user 2");
 
@@ -603,49 +536,40 @@ async fn test_sse_event_isolation() {
     // Cleanup
     sse_service.remove_client(&user_id_1, client_id_1).await;
     sse_service.remove_client(&user_id_2, client_id_2).await;
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 /// Test SSE info endpoint requires authentication
 #[tokio::test]
 async fn test_sse_info_requires_auth() {
-    // Arrange
-    let app = create_sse_test_app()
-        .await
-        .expect("Failed to create SSE test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Create request WITHOUT authentication
     let request = Request::builder()
         .method("GET")
         .uri("/api/sse/info")
         .body(Body::empty())
         .unwrap();
 
-    // Act
-    let response = app.oneshot(request).await.unwrap();
+    let response = app.router().oneshot(request).await.unwrap();
 
-    // Assert
     assert_eq!(
         response.status(),
         StatusCode::UNAUTHORIZED,
         "SSE info endpoint without auth should return 401"
     );
+
+    app.cleanup().await.ok();
 }
 
 /// Test SSE info endpoint returns connection information
 #[tokio::test]
 async fn test_sse_info_returns_connection_info() {
-    // Arrange
-    let (pool, test_db) = setup_test().await;
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user = TestUser::new(&unique_email());
-    user.insert(&pool)
+    user.insert(app.db())
         .await
         .expect("Failed to insert test user");
-
-    let app = create_sse_test_app()
-        .await
-        .expect("Failed to create SSE test app");
 
     let token = generate_test_token(&user.id, &user.email);
 
@@ -657,10 +581,8 @@ async fn test_sse_info_returns_connection_info() {
         .body(Body::empty())
         .unwrap();
 
-    // Act
-    let response = app.oneshot(request).await.unwrap();
+    let response = app.router().oneshot(request).await.unwrap();
 
-    // Assert
     assert_eq!(
         response.status(),
         StatusCode::OK,
@@ -714,8 +636,7 @@ async fn test_sse_info_returns_connection_info() {
         "Should support coupon_assigned events"
     );
 
-    // Cleanup
-    teardown_test(&test_db).await;
+    app.cleanup().await.ok();
 }
 
 // ============================================================================
@@ -725,12 +646,8 @@ async fn test_sse_info_returns_connection_info() {
 /// Test SSE connection with invalid token returns 401
 #[tokio::test]
 async fn test_sse_connection_invalid_token() {
-    // Arrange
-    let app = create_sse_test_app()
-        .await
-        .expect("Failed to create SSE test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
-    // Create request with invalid token
     let request = Request::builder()
         .method("GET")
         .uri("/api/sse/events")
@@ -739,31 +656,25 @@ async fn test_sse_connection_invalid_token() {
         .body(Body::empty())
         .unwrap();
 
-    // Act
-    let response = app.oneshot(request).await.unwrap();
+    let response = app.router().oneshot(request).await.unwrap();
 
-    // Assert
     assert_eq!(
         response.status(),
         StatusCode::UNAUTHORIZED,
         "SSE connection with invalid token should return 401"
     );
+
+    app.cleanup().await.ok();
 }
 
 /// Test SSE connection with expired token returns 401
 #[tokio::test]
 async fn test_sse_connection_expired_token() {
-    use crate::common::generate_expired_token;
-
-    // Arrange
-    let app = create_sse_test_app()
-        .await
-        .expect("Failed to create SSE test app");
+    let app = TestApp::new().await.expect("Failed to create test app");
 
     let user_id = Uuid::new_v4();
     let expired_token = generate_expired_token(&user_id, "expired@example.com");
 
-    // Create request with expired token
     let request = Request::builder()
         .method("GET")
         .uri("/api/sse/events")
@@ -772,13 +683,13 @@ async fn test_sse_connection_expired_token() {
         .body(Body::empty())
         .unwrap();
 
-    // Act
-    let response = app.oneshot(request).await.unwrap();
+    let response = app.router().oneshot(request).await.unwrap();
 
-    // Assert
     assert_eq!(
         response.status(),
         StatusCode::UNAUTHORIZED,
         "SSE connection with expired token should return 401"
     );
+
+    app.cleanup().await.ok();
 }
