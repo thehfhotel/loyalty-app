@@ -231,7 +231,7 @@ jobs:
 
       - name: Run integration tests
         working-directory: ./backend-rust
-        run: cargo test --test '*' -- --test-threads=1 --include-ignored
+        run: cargo test --test '*' -- --test-threads=1
         env:
           RUST_BACKTRACE: 1
           RUST_LOG: debug

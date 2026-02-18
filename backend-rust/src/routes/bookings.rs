@@ -1172,15 +1172,15 @@ pub fn routes() -> Router<AppState> {
 pub fn router() -> Router<AppState> {
     Router::new()
         // Public availability check (but still requires auth for rate limiting)
-        .route("/bookings/availability", get(check_availability))
+        .route("/availability", get(check_availability))
         // User booking routes
-        .route("/bookings", get(list_bookings))
-        .route("/bookings", post(create_booking))
-        .route("/bookings/:id", get(get_booking))
-        .route("/bookings/:id", put(update_booking))
-        .route("/bookings/:id/cancel", post(cancel_booking))
+        .route("/", get(list_bookings))
+        .route("/", post(create_booking))
+        .route("/:id", get(get_booking))
+        .route("/:id", put(update_booking))
+        .route("/:id/cancel", post(cancel_booking))
         // Admin routes
-        .route("/bookings/:id/complete", post(complete_booking))
+        .route("/:id/complete", post(complete_booking))
         // Apply authentication middleware to all routes
         .layer(middleware::from_fn(auth_middleware))
 }
@@ -1198,13 +1198,13 @@ pub fn routes_without_auth() -> Router<AppState> {
 #[cfg(test)]
 pub fn router_without_auth() -> Router<AppState> {
     Router::new()
-        .route("/bookings/availability", get(check_availability))
-        .route("/bookings", get(list_bookings))
-        .route("/bookings", post(create_booking))
-        .route("/bookings/:id", get(get_booking))
-        .route("/bookings/:id", put(update_booking))
-        .route("/bookings/:id/cancel", post(cancel_booking))
-        .route("/bookings/:id/complete", post(complete_booking))
+        .route("/availability", get(check_availability))
+        .route("/", get(list_bookings))
+        .route("/", post(create_booking))
+        .route("/:id", get(get_booking))
+        .route("/:id", put(update_booking))
+        .route("/:id/cancel", post(cancel_booking))
+        .route("/:id/complete", post(complete_booking))
 }
 
 #[cfg(test)]
