@@ -319,7 +319,7 @@ fn generate_refresh_token_string() -> String {
 }
 
 /// Generate a random membership ID string
-fn generate_random_membership_id() -> String {
+pub(crate) fn generate_random_membership_id() -> String {
     use rand::Rng;
 
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -335,7 +335,7 @@ fn generate_random_membership_id() -> String {
 }
 
 /// Generate a unique membership ID (8 alphanumeric characters)
-async fn generate_membership_id(db: &sqlx::PgPool) -> Result<String, AppError> {
+pub(crate) async fn generate_membership_id(db: &sqlx::PgPool) -> Result<String, AppError> {
     // Try up to 10 times to generate a unique ID
     for _ in 0..10 {
         // Generate random ID in sync context (rng is not Send)

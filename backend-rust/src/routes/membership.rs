@@ -383,7 +383,7 @@ pub fn routes() -> Router<AppState> {
         .route("/my-id", get(get_my_membership_id))
         .route("/lookup/:membershipId", get(lookup_membership))
         .route("/stats", get(get_membership_stats))
-        .route("/regenerate/:userId", post(regenerate_membership_id))
+        .route("/:userId/regenerate", post(regenerate_membership_id))
         .layer(middleware::from_fn(auth_middleware))
 }
 
