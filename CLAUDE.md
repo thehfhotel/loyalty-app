@@ -169,7 +169,12 @@ docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compos
 - Legacy Prisma migration in `backend/prisma/migrations/0_init/migration.sql`
 
 **Rust Backend Database (sqlx):**
-- Uses runtime query checking with `sqlx::query()` / `sqlx::query_as()` / `sqlx::query_scalar()`
+- Uses **compile-time query macros**: `sqlx::query!()` / `sqlx::query_as!()` / `sqlx::query_scalar!()`
+- SQL validated at compile time against `.sqlx/` offline cache (committed to git)
+- `SQLX_OFFLINE=true` in `.cargo/config.toml` — compilation works without a live DB
+- Dynamic SQL queries (format!-based WHERE) use runtime `sqlx::query()` / `sqlx::query_as()`
+- Regenerate cache: `DATABASE_URL=... cargo sqlx prepare` (requires live DB)
+- CI runs `cargo sqlx prepare --check` to verify cache is up-to-date
 - Connection pool accessed via `state.db()` method
 - Integration tests use real migration schema via `include_str!()`
 - CI pipeline verifies schema (25+ tables, 5+ stored procedures) after migration
@@ -351,6 +356,8 @@ cargo build                    # Build
 cargo test                     # Run tests
 cargo run                      # Run locally
 RUST_LOG=debug cargo run       # Run with debug logging
+cargo sqlx prepare             # Regenerate .sqlx/ cache (needs DATABASE_URL)
+cargo sqlx prepare --check     # Verify .sqlx/ cache is up-to-date
 
 # Frontend quality checks
 cd frontend && npm run lint && npm run typecheck && npm run test

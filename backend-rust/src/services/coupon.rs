@@ -362,24 +362,52 @@ impl CouponService for CouponServiceImpl {
     }
 
     async fn get_coupon(&self, coupon_id: Uuid) -> Result<Coupon, AppError> {
-        let coupon = sqlx::query_as::<_, Coupon>(
+        let row = sqlx::query!(
             r#"
             SELECT id, code, name, description, terms_and_conditions,
-                   type as coupon_type, value, currency, minimum_spend, maximum_discount,
+                   type as "coupon_type: CouponType", value, currency, minimum_spend, maximum_discount,
                    valid_from, valid_until, usage_limit, usage_limit_per_user,
-                   used_count, tier_restrictions, customer_segment, status,
+                   used_count, tier_restrictions, customer_segment,
+                   status as "status: CouponStatus",
                    created_by, created_at, updated_at, original_language,
                    available_languages, last_translated, translation_status
             FROM coupons
             WHERE id = $1
             "#,
+            coupon_id,
         )
-        .bind(coupon_id)
         .fetch_optional(self.state.db.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to fetch coupon: {}", e)))?;
 
-        coupon.ok_or_else(|| AppError::NotFound("Coupon not found".to_string()))
+        row.map(|r| Coupon {
+            id: r.id,
+            code: r.code,
+            name: r.name,
+            description: r.description,
+            terms_and_conditions: r.terms_and_conditions,
+            coupon_type: r.coupon_type,
+            value: r.value,
+            currency: r.currency,
+            minimum_spend: r.minimum_spend,
+            maximum_discount: r.maximum_discount,
+            valid_from: r.valid_from,
+            valid_until: r.valid_until,
+            usage_limit: r.usage_limit,
+            usage_limit_per_user: r.usage_limit_per_user,
+            used_count: r.used_count,
+            tier_restrictions: r.tier_restrictions,
+            customer_segment: r.customer_segment,
+            status: r.status,
+            created_by: r.created_by,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            original_language: r.original_language,
+            available_languages: r.available_languages,
+            last_translated: r.last_translated,
+            translation_status: r.translation_status,
+        })
+        .ok_or_else(|| AppError::NotFound("Coupon not found".to_string()))
     }
 
     async fn create_coupon(
@@ -388,11 +416,13 @@ impl CouponService for CouponServiceImpl {
         created_by: Uuid,
     ) -> Result<Coupon, AppError> {
         // Check if code already exists
-        let existing = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM coupons WHERE code = $1")
-            .bind(&data.code)
-            .fetch_one(self.state.db.pool())
-            .await
-            .map_err(|e| AppError::DatabaseQuery(format!("Failed to check coupon code: {}", e)))?;
+        let existing = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) as "count!" FROM coupons WHERE code = $1"#,
+            &data.code,
+        )
+        .fetch_one(self.state.db.pool())
+        .await
+        .map_err(|e| AppError::DatabaseQuery(format!("Failed to check coupon code: {}", e)))?;
 
         if existing > 0 {
             return Err(AppError::BadRequest(
@@ -411,7 +441,11 @@ impl CouponService for CouponServiceImpl {
         let available_languages = serde_json::to_value(vec![&original_language])
             .unwrap_or(serde_json::Value::Array(vec![]));
 
-        let coupon = sqlx::query_as::<_, Coupon>(
+        let currency = data.currency.unwrap_or_else(|| "THB".to_string());
+        let valid_from = data.valid_from.unwrap_or_else(Utc::now);
+        let usage_limit_per_user = data.usage_limit_per_user.unwrap_or(1);
+
+        let row = sqlx::query!(
             r#"
             INSERT INTO coupons (
                 code, name, description, terms_and_conditions, type, value, currency,
@@ -420,34 +454,63 @@ impl CouponService for CouponServiceImpl {
                 original_language, available_languages
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             RETURNING id, code, name, description, terms_and_conditions,
-                      type as coupon_type, value, currency, minimum_spend, maximum_discount,
+                      type as "coupon_type: CouponType", value, currency, minimum_spend, maximum_discount,
                       valid_from, valid_until, usage_limit, usage_limit_per_user,
-                      used_count, tier_restrictions, customer_segment, status,
+                      used_count, tier_restrictions, customer_segment,
+                      status as "status: CouponStatus",
                       created_by, created_at, updated_at, original_language,
                       available_languages, last_translated, translation_status
             "#,
+            &data.code,
+            &data.name,
+            data.description.as_deref(),
+            data.terms_and_conditions.as_deref(),
+            &data.coupon_type as &CouponType,
+            data.value,
+            &currency,
+            data.minimum_spend,
+            data.maximum_discount,
+            valid_from,
+            data.valid_until,
+            data.usage_limit,
+            usage_limit_per_user,
+            tier_restrictions_json as Option<serde_json::Value>,
+            data.customer_segment as Option<serde_json::Value>,
+            created_by,
+            &original_language,
+            &available_languages,
         )
-        .bind(&data.code)
-        .bind(&data.name)
-        .bind(&data.description)
-        .bind(&data.terms_and_conditions)
-        .bind(&data.coupon_type)
-        .bind(&data.value)
-        .bind(&data.currency.unwrap_or_else(|| "THB".to_string()))
-        .bind(&data.minimum_spend)
-        .bind(&data.maximum_discount)
-        .bind(&data.valid_from.unwrap_or_else(Utc::now))
-        .bind(&data.valid_until)
-        .bind(&data.usage_limit)
-        .bind(&data.usage_limit_per_user.unwrap_or(1))
-        .bind(&tier_restrictions_json)
-        .bind(&data.customer_segment)
-        .bind(created_by)
-        .bind(&original_language)
-        .bind(&available_languages)
         .fetch_one(self.state.db.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to create coupon: {}", e)))?;
+
+        let coupon = Coupon {
+            id: row.id,
+            code: row.code,
+            name: row.name,
+            description: row.description,
+            terms_and_conditions: row.terms_and_conditions,
+            coupon_type: row.coupon_type,
+            value: row.value,
+            currency: row.currency,
+            minimum_spend: row.minimum_spend,
+            maximum_discount: row.maximum_discount,
+            valid_from: row.valid_from,
+            valid_until: row.valid_until,
+            usage_limit: row.usage_limit,
+            usage_limit_per_user: row.usage_limit_per_user,
+            used_count: row.used_count,
+            tier_restrictions: row.tier_restrictions,
+            customer_segment: row.customer_segment,
+            status: row.status,
+            created_by: row.created_by,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            original_language: row.original_language,
+            available_languages: row.available_languages,
+            last_translated: row.last_translated,
+            translation_status: row.translation_status,
+        };
 
         tracing::info!(
             coupon_code = %data.code,
@@ -469,11 +532,11 @@ impl CouponService for CouponServiceImpl {
         // Check if code is being changed and already exists
         if let Some(ref new_code) = data.code {
             if new_code != &existing.code {
-                let code_exists = sqlx::query_scalar::<_, i64>(
-                    "SELECT COUNT(*) FROM coupons WHERE code = $1 AND id != $2",
+                let code_exists = sqlx::query_scalar!(
+                    r#"SELECT COUNT(*) as "count!" FROM coupons WHERE code = $1 AND id != $2"#,
+                    new_code,
+                    coupon_id,
                 )
-                .bind(new_code)
-                .bind(coupon_id)
                 .fetch_one(self.state.db.pool())
                 .await
                 .map_err(|e| {
@@ -492,7 +555,7 @@ impl CouponService for CouponServiceImpl {
             .tier_restrictions
             .map(|t| serde_json::to_value(t).unwrap_or(serde_json::Value::Array(vec![])));
 
-        let coupon = sqlx::query_as::<_, Coupon>(
+        let row = sqlx::query!(
             r#"
             UPDATE coupons SET
                 code = COALESCE($2, code),
@@ -514,33 +577,62 @@ impl CouponService for CouponServiceImpl {
                 updated_at = NOW()
             WHERE id = $1
             RETURNING id, code, name, description, terms_and_conditions,
-                      type as coupon_type, value, currency, minimum_spend, maximum_discount,
+                      type as "coupon_type: CouponType", value, currency, minimum_spend, maximum_discount,
                       valid_from, valid_until, usage_limit, usage_limit_per_user,
-                      used_count, tier_restrictions, customer_segment, status,
+                      used_count, tier_restrictions, customer_segment,
+                      status as "status: CouponStatus",
                       created_by, created_at, updated_at, original_language,
                       available_languages, last_translated, translation_status
             "#,
+            coupon_id,
+            data.code.as_deref(),
+            data.name.as_deref(),
+            data.description.as_deref(),
+            data.terms_and_conditions.as_deref(),
+            data.coupon_type as Option<CouponType>,
+            data.value,
+            data.currency.as_deref(),
+            data.minimum_spend,
+            data.maximum_discount,
+            data.valid_from,
+            data.valid_until,
+            data.usage_limit,
+            data.usage_limit_per_user,
+            tier_restrictions_json as Option<serde_json::Value>,
+            data.customer_segment as Option<serde_json::Value>,
+            data.status as Option<CouponStatus>,
         )
-        .bind(coupon_id)
-        .bind(&data.code)
-        .bind(&data.name)
-        .bind(&data.description)
-        .bind(&data.terms_and_conditions)
-        .bind(&data.coupon_type)
-        .bind(&data.value)
-        .bind(&data.currency)
-        .bind(&data.minimum_spend)
-        .bind(&data.maximum_discount)
-        .bind(&data.valid_from)
-        .bind(&data.valid_until)
-        .bind(&data.usage_limit)
-        .bind(&data.usage_limit_per_user)
-        .bind(&tier_restrictions_json)
-        .bind(&data.customer_segment)
-        .bind(&data.status)
         .fetch_one(self.state.db.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to update coupon: {}", e)))?;
+
+        let coupon = Coupon {
+            id: row.id,
+            code: row.code,
+            name: row.name,
+            description: row.description,
+            terms_and_conditions: row.terms_and_conditions,
+            coupon_type: row.coupon_type,
+            value: row.value,
+            currency: row.currency,
+            minimum_spend: row.minimum_spend,
+            maximum_discount: row.maximum_discount,
+            valid_from: row.valid_from,
+            valid_until: row.valid_until,
+            usage_limit: row.usage_limit,
+            usage_limit_per_user: row.usage_limit_per_user,
+            used_count: row.used_count,
+            tier_restrictions: row.tier_restrictions,
+            customer_segment: row.customer_segment,
+            status: row.status,
+            created_by: row.created_by,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            original_language: row.original_language,
+            available_languages: row.available_languages,
+            last_translated: row.last_translated,
+            translation_status: row.translation_status,
+        };
 
         tracing::info!(
             coupon_id = %coupon_id,
@@ -554,13 +646,13 @@ impl CouponService for CouponServiceImpl {
         &self,
         user_id: Uuid,
     ) -> Result<Vec<UserCouponWithDetailsResponse>, AppError> {
-        let user_coupons = sqlx::query_as::<_, UserCouponWithDetails>(
+        let rows = sqlx::query!(
             r#"
             SELECT
                 uc.id,
                 uc.user_id,
                 uc.coupon_id,
-                uc.status,
+                uc.status as "status: UserCouponStatus",
                 uc.qr_code,
                 uc.used_at,
                 uc.used_by_admin,
@@ -573,7 +665,7 @@ impl CouponService for CouponServiceImpl {
                 c.name,
                 c.description,
                 c.terms_and_conditions,
-                c.type as coupon_type,
+                c.type as "coupon_type: CouponType",
                 c.value,
                 c.currency,
                 c.minimum_spend,
@@ -597,15 +689,44 @@ impl CouponService for CouponServiceImpl {
               AND (c.valid_until IS NULL OR c.valid_until > NOW())
             ORDER BY uc.created_at DESC
             "#,
+            user_id,
         )
-        .bind(user_id)
         .fetch_all(self.state.db.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to fetch user coupons: {}", e)))?;
 
-        Ok(user_coupons
+        Ok(rows
             .into_iter()
-            .map(UserCouponWithDetailsResponse::from)
+            .map(|r| {
+                let uc = UserCouponWithDetails {
+                    id: r.id,
+                    user_id: r.user_id,
+                    coupon_id: r.coupon_id,
+                    status: r.status,
+                    qr_code: r.qr_code,
+                    used_at: r.used_at,
+                    used_by_admin: r.used_by_admin,
+                    redemption_location: r.redemption_location,
+                    assigned_by: r.assigned_by,
+                    assigned_reason: r.assigned_reason,
+                    expires_at: r.expires_at,
+                    user_coupon_created_at: r.user_coupon_created_at,
+                    code: r.code,
+                    name: r.name,
+                    description: r.description,
+                    terms_and_conditions: r.terms_and_conditions,
+                    coupon_type: r.coupon_type,
+                    value: r.value,
+                    currency: r.currency,
+                    minimum_spend: r.minimum_spend,
+                    maximum_discount: r.maximum_discount,
+                    valid_from: r.valid_from,
+                    valid_until: r.valid_until,
+                    effective_expiry: r.effective_expiry,
+                    expiring_soon: r.expiring_soon,
+                };
+                UserCouponWithDetailsResponse::from(uc)
+            })
             .collect())
     }
 
@@ -634,11 +755,11 @@ impl CouponService for CouponServiceImpl {
         }
 
         // Check user's usage limit for this coupon
-        let user_usage_count = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM user_coupons WHERE user_id = $1 AND coupon_id = $2",
+        let user_usage_count = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) as "count!" FROM user_coupons WHERE user_id = $1 AND coupon_id = $2"#,
+            user_id,
+            coupon_id,
         )
-        .bind(user_id)
-        .bind(coupon_id)
         .fetch_one(self.state.db.pool())
         .await
         .map_err(|e| {
@@ -663,25 +784,44 @@ impl CouponService for CouponServiceImpl {
         // Determine expiry
         let expires_at = custom_expiry.or(coupon.valid_until);
 
-        let user_coupon = sqlx::query_as::<_, UserCoupon>(
+        let row = sqlx::query!(
             r#"
             INSERT INTO user_coupons (
                 user_id, coupon_id, qr_code, assigned_by, assigned_reason, expires_at
             ) VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id, user_id, coupon_id, status, qr_code, used_at,
+            RETURNING id, user_id, coupon_id,
+                      status as "status: UserCouponStatus",
+                      qr_code, used_at,
                       used_by_admin, redemption_location, redemption_details,
                       assigned_by, assigned_reason, expires_at, created_at, updated_at
             "#,
+            user_id,
+            coupon_id,
+            &qr_code,
+            assigned_by,
+            assigned_reason.as_deref(),
+            expires_at,
         )
-        .bind(user_id)
-        .bind(coupon_id)
-        .bind(&qr_code)
-        .bind(assigned_by)
-        .bind(&assigned_reason)
-        .bind(expires_at)
         .fetch_one(self.state.db.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to assign coupon: {}", e)))?;
+
+        let user_coupon = UserCoupon {
+            id: row.id,
+            user_id: row.user_id,
+            coupon_id: row.coupon_id,
+            status: row.status,
+            qr_code: row.qr_code,
+            used_at: row.used_at,
+            used_by_admin: row.used_by_admin,
+            redemption_location: row.redemption_location,
+            redemption_details: row.redemption_details,
+            assigned_by: row.assigned_by,
+            assigned_reason: row.assigned_reason,
+            expires_at: row.expires_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        };
 
         tracing::info!(
             user_id = %user_id,
@@ -694,20 +834,39 @@ impl CouponService for CouponServiceImpl {
 
     async fn redeem_coupon(&self, user_coupon_id: Uuid) -> Result<UserCoupon, AppError> {
         // Get the user coupon
-        let user_coupon = sqlx::query_as::<_, UserCoupon>(
+        let uc_row = sqlx::query!(
             r#"
-            SELECT id, user_id, coupon_id, status, qr_code, used_at,
+            SELECT id, user_id, coupon_id,
+                   status as "status: UserCouponStatus",
+                   qr_code, used_at,
                    used_by_admin, redemption_location, redemption_details,
                    assigned_by, assigned_reason, expires_at, created_at, updated_at
             FROM user_coupons
             WHERE id = $1
             "#,
+            user_coupon_id,
         )
-        .bind(user_coupon_id)
         .fetch_optional(self.state.db.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to fetch user coupon: {}", e)))?
         .ok_or_else(|| AppError::NotFound("User coupon not found".to_string()))?;
+
+        let user_coupon = UserCoupon {
+            id: uc_row.id,
+            user_id: uc_row.user_id,
+            coupon_id: uc_row.coupon_id,
+            status: uc_row.status,
+            qr_code: uc_row.qr_code,
+            used_at: uc_row.used_at,
+            used_by_admin: uc_row.used_by_admin,
+            redemption_location: uc_row.redemption_location,
+            redemption_details: uc_row.redemption_details,
+            assigned_by: uc_row.assigned_by,
+            assigned_reason: uc_row.assigned_reason,
+            expires_at: uc_row.expires_at,
+            created_at: uc_row.created_at,
+            updated_at: uc_row.updated_at,
+        };
 
         // Check if coupon is available
         if user_coupon.status != Some(UserCouponStatus::Available) {
@@ -724,27 +883,48 @@ impl CouponService for CouponServiceImpl {
         }
 
         // Update the user coupon status
-        let updated_coupon = sqlx::query_as::<_, UserCoupon>(
+        let upd_row = sqlx::query!(
             r#"
             UPDATE user_coupons
             SET status = 'used', used_at = NOW(), updated_at = NOW()
             WHERE id = $1
-            RETURNING id, user_id, coupon_id, status, qr_code, used_at,
+            RETURNING id, user_id, coupon_id,
+                      status as "status: UserCouponStatus",
+                      qr_code, used_at,
                       used_by_admin, redemption_location, redemption_details,
                       assigned_by, assigned_reason, expires_at, created_at, updated_at
             "#,
+            user_coupon_id,
         )
-        .bind(user_coupon_id)
         .fetch_one(self.state.db.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to redeem coupon: {}", e)))?;
 
+        let updated_coupon = UserCoupon {
+            id: upd_row.id,
+            user_id: upd_row.user_id,
+            coupon_id: upd_row.coupon_id,
+            status: upd_row.status,
+            qr_code: upd_row.qr_code,
+            used_at: upd_row.used_at,
+            used_by_admin: upd_row.used_by_admin,
+            redemption_location: upd_row.redemption_location,
+            redemption_details: upd_row.redemption_details,
+            assigned_by: upd_row.assigned_by,
+            assigned_reason: upd_row.assigned_reason,
+            expires_at: upd_row.expires_at,
+            created_at: upd_row.created_at,
+            updated_at: upd_row.updated_at,
+        };
+
         // Increment the coupon's used count
-        sqlx::query("UPDATE coupons SET used_count = COALESCE(used_count, 0) + 1, updated_at = NOW() WHERE id = $1")
-            .bind(user_coupon.coupon_id)
-            .execute(self.state.db.pool())
-            .await
-            .map_err(|e| AppError::DatabaseQuery(format!("Failed to update coupon used count: {}", e)))?;
+        sqlx::query!(
+            "UPDATE coupons SET used_count = COALESCE(used_count, 0) + 1, updated_at = NOW() WHERE id = $1",
+            user_coupon.coupon_id,
+        )
+        .execute(self.state.db.pool())
+        .await
+        .map_err(|e| AppError::DatabaseQuery(format!("Failed to update coupon used count: {}", e)))?;
 
         tracing::info!(
             user_coupon_id = %user_coupon_id,
@@ -786,11 +966,11 @@ impl CouponService for CouponServiceImpl {
         }
 
         // Check user's usage limit for this coupon
-        let user_usage_count = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM user_coupons WHERE user_id = $1 AND coupon_id = $2",
+        let user_usage_count = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) as "count!" FROM user_coupons WHERE user_id = $1 AND coupon_id = $2"#,
+            user_id,
+            coupon_id,
         )
-        .bind(user_id)
-        .bind(coupon_id)
         .fetch_one(self.state.db.pool())
         .await
         .map_err(|e| {
@@ -807,15 +987,15 @@ impl CouponService for CouponServiceImpl {
             if let Some(tiers) = tier_restrictions.as_array() {
                 if !tiers.is_empty() {
                     // Get user's tier
-                    let user_tier: Option<String> = sqlx::query_scalar(
+                    let user_tier: Option<String> = sqlx::query_scalar!(
                         r#"
-                        SELECT t.name
+                        SELECT t.name as "name!"
                         FROM user_loyalty ul
                         JOIN tiers t ON ul.tier_id = t.id
                         WHERE ul.user_id = $1
                         "#,
+                        user_id,
                     )
-                    .bind(user_id)
                     .fetch_optional(self.state.db.pool())
                     .await
                     .map_err(|e| {

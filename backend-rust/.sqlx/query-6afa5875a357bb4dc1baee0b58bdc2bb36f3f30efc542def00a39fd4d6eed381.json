@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE user_coupons\n        SET status = 'revoked', updated_at = NOW()\n        WHERE id = $1 AND status = 'available'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6afa5875a357bb4dc1baee0b58bdc2bb36f3f30efc542def00a39fd4d6eed381"
+}

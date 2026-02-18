@@ -125,12 +125,6 @@ struct CountRow {
     unread: i64,
 }
 
-/// Internal row type for single count result
-#[derive(FromRow)]
-struct SingleCount {
-    count: i64,
-}
-
 #[async_trait]
 impl NotificationService for NotificationServiceImpl {
     async fn list_notifications(
@@ -266,21 +260,20 @@ impl NotificationService for NotificationServiceImpl {
     }
 
     async fn get_unread_count(&self, user_id: Uuid) -> Result<i64, AppError> {
-        // Use the stored procedure if available, otherwise use direct query
-        let result = sqlx::query_as::<_, SingleCount>(
+        let count = sqlx::query_scalar!(
             r#"
-            SELECT COUNT(*) as count
+            SELECT COUNT(*) as "count!: i64"
             FROM notifications
             WHERE user_id = $1
               AND read_at IS NULL
               AND (expires_at IS NULL OR expires_at > NOW())
             "#,
+            user_id,
         )
-        .bind(user_id)
         .fetch_one(self.state.db.pool())
         .await?;
 
-        Ok(result.count)
+        Ok(count)
     }
 
     async fn create_notification(
@@ -289,7 +282,7 @@ impl NotificationService for NotificationServiceImpl {
     ) -> Result<Notification, AppError> {
         let notification_type = data.notification_type.unwrap_or_else(|| "info".to_string());
 
-        let notification = sqlx::query_as::<_, Notification>(
+        let row = sqlx::query!(
             r#"
             INSERT INTO notifications (
                 user_id, title, message, type, data, expires_at
@@ -306,19 +299,32 @@ impl NotificationService for NotificationServiceImpl {
                 updated_at,
                 expires_at
             "#,
+            data.user_id,
+            &data.title,
+            &data.message,
+            &notification_type,
+            data.data as Option<serde_json::Value>,
+            data.expires_at,
         )
-        .bind(data.user_id)
-        .bind(&data.title)
-        .bind(&data.message)
-        .bind(&notification_type)
-        .bind(&data.data)
-        .bind(data.expires_at)
         .fetch_one(self.state.db.pool())
         .await
         .map_err(|e| {
             tracing::error!("Failed to create notification: {}", e);
             AppError::Database(e)
         })?;
+
+        let notification = Notification {
+            id: row.id,
+            user_id: row.user_id,
+            title: row.title,
+            message: row.message,
+            notification_type: row.notification_type,
+            data: row.data,
+            read_at: row.read_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            expires_at: row.expires_at,
+        };
 
         tracing::info!(
             notification_id = %notification.id,
@@ -335,7 +341,7 @@ impl NotificationService for NotificationServiceImpl {
         notification_id: Uuid,
         user_id: Uuid,
     ) -> Result<Notification, AppError> {
-        let notification = sqlx::query_as::<_, Notification>(
+        let row = sqlx::query!(
             r#"
             UPDATE notifications
             SET read_at = NOW(), updated_at = NOW()
@@ -352,12 +358,25 @@ impl NotificationService for NotificationServiceImpl {
                 updated_at,
                 expires_at
             "#,
+            notification_id,
+            user_id,
         )
-        .bind(notification_id)
-        .bind(user_id)
         .fetch_optional(self.state.db.pool())
         .await?
         .ok_or_else(|| AppError::NotFound("Notification not found".to_string()))?;
+
+        let notification = Notification {
+            id: row.id,
+            user_id: row.user_id,
+            title: row.title,
+            message: row.message,
+            notification_type: row.notification_type,
+            data: row.data,
+            read_at: row.read_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            expires_at: row.expires_at,
+        };
 
         tracing::info!(
             notification_id = %notification_id,
@@ -369,14 +388,14 @@ impl NotificationService for NotificationServiceImpl {
     }
 
     async fn mark_all_as_read(&self, user_id: Uuid) -> Result<i64, AppError> {
-        let result = sqlx::query(
+        let result = sqlx::query!(
             r#"
             UPDATE notifications
             SET read_at = NOW(), updated_at = NOW()
             WHERE user_id = $1 AND read_at IS NULL
             "#,
+            user_id,
         )
-        .bind(user_id)
         .execute(self.state.db.pool())
         .await?;
 
@@ -396,14 +415,14 @@ impl NotificationService for NotificationServiceImpl {
         notification_id: Uuid,
         user_id: Uuid,
     ) -> Result<(), AppError> {
-        let result = sqlx::query(
+        let result = sqlx::query!(
             r#"
             DELETE FROM notifications
             WHERE id = $1 AND user_id = $2
             "#,
+            notification_id,
+            user_id,
         )
-        .bind(notification_id)
-        .bind(user_id)
         .execute(self.state.db.pool())
         .await?;
 

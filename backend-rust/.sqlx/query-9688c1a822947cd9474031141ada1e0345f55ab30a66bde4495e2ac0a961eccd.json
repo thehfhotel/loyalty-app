@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO surveys (\n                id, title, description, questions, target_segment,\n                access_type, status, created_at, updated_at\n            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9688c1a822947cd9474031141ada1e0345f55ab30a66bde4495e2ac0a961eccd"
+}

@@ -229,8 +229,8 @@ async fn seed_membership_sequence(db: &PgPool) -> Result<()> {
     }
 
     // Check if sequence is already initialized
-    let existing: Option<(i32,)> =
-        sqlx::query_as("SELECT id FROM membership_id_sequence WHERE id = 1")
+    let existing: Option<i32> =
+        sqlx::query_scalar!("SELECT id FROM membership_id_sequence WHERE id = 1")
             .fetch_optional(db)
             .await
             .context("Failed to check existing membership_id_sequence")?;
@@ -241,7 +241,7 @@ async fn seed_membership_sequence(db: &PgPool) -> Result<()> {
     }
 
     // Initialize the sequence
-    sqlx::query(
+    sqlx::query!(
         r#"
         INSERT INTO membership_id_sequence (id, current_user_count)
         VALUES (1, 0)
@@ -285,11 +285,11 @@ async fn seed_tiers(db: &PgPool) -> Result<()> {
 
     for tier in &tiers {
         // Check if tier already exists
-        let existing: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM tiers WHERE name = $1")
-            .bind(tier.name)
-            .fetch_optional(db)
-            .await
-            .context("Failed to check existing tier")?;
+        let existing: Option<Uuid> =
+            sqlx::query_scalar!("SELECT id FROM tiers WHERE name = $1", tier.name)
+                .fetch_optional(db)
+                .await
+                .context("Failed to check existing tier")?;
 
         if existing.is_some() {
             info!("Tier {} already exists, skipping", tier.name);
@@ -297,18 +297,18 @@ async fn seed_tiers(db: &PgPool) -> Result<()> {
         }
 
         // Insert the tier
-        sqlx::query(
+        sqlx::query!(
             r#"
             INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
             "#,
+            tier.name,
+            tier.min_points,
+            tier.min_nights,
+            &tier.benefits,
+            tier.color,
+            tier.sort_order
         )
-        .bind(tier.name)
-        .bind(tier.min_points)
-        .bind(tier.min_nights)
-        .bind(&tier.benefits)
-        .bind(tier.color)
-        .bind(tier.sort_order)
         .execute(db)
         .await
         .context(format!("Failed to insert tier {}", tier.name))?;
@@ -349,11 +349,11 @@ async fn seed_surveys(db: &PgPool) -> Result<()> {
 
     for survey in surveys {
         // Check if survey already exists
-        let existing: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM surveys WHERE id = $1")
-            .bind(survey.id)
-            .fetch_optional(db)
-            .await
-            .context("Failed to check existing survey")?;
+        let existing: Option<Uuid> =
+            sqlx::query_scalar!("SELECT id FROM surveys WHERE id = $1", survey.id)
+                .fetch_optional(db)
+                .await
+                .context("Failed to check existing survey")?;
 
         if existing.is_some() {
             info!("Survey {} already exists, skipping", survey.id);
@@ -361,21 +361,21 @@ async fn seed_surveys(db: &PgPool) -> Result<()> {
         }
 
         // Insert the survey
-        sqlx::query(
+        sqlx::query!(
             r#"
             INSERT INTO surveys (
                 id, title, description, questions, target_segment,
                 access_type, status, created_at, updated_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
             "#,
+            survey.id,
+            survey.title,
+            survey.description,
+            &survey.questions,
+            json!({}), // target_segment
+            survey.access_type,
+            survey.status
         )
-        .bind(survey.id)
-        .bind(survey.title)
-        .bind(survey.description)
-        .bind(&survey.questions)
-        .bind(json!({})) // target_segment
-        .bind(survey.access_type)
-        .bind(survey.status)
         .execute(db)
         .await
         .context(format!("Failed to insert survey {}", survey.id))?;

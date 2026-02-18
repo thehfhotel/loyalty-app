@@ -1,0 +1,131 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            pt.id,\n            pt.user_id,\n            pt.points,\n            pt.type::text as \"transaction_type!\",\n            pt.description,\n            pt.reference_id,\n            pt.admin_user_id,\n            pt.admin_reason,\n            pt.expires_at,\n            pt.created_at,\n            pt.nights_stayed,\n            u.email as user_email,\n            up.membership_id as user_membership_id,\n            up.first_name as user_first_name,\n            up.last_name as user_last_name,\n            admin.email as admin_email,\n            admin_profile.first_name as admin_first_name,\n            admin_profile.last_name as admin_last_name,\n            admin_profile.membership_id as admin_membership_id\n        FROM points_transactions pt\n        LEFT JOIN users u ON pt.user_id = u.id\n        LEFT JOIN user_profiles up ON u.id = up.user_id\n        LEFT JOIN users admin ON pt.admin_user_id = admin.id\n        LEFT JOIN user_profiles admin_profile ON admin.id = admin_profile.user_id\n        WHERE pt.type IN ('admin_award', 'admin_deduction', 'earned_stay')\n        ORDER BY pt.created_at DESC\n        LIMIT $1 OFFSET $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "points",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "transaction_type!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "reference_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "admin_user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "admin_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "nights_stayed",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "user_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "user_membership_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "user_first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "user_last_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "admin_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 16,
+        "name": "admin_first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 17,
+        "name": "admin_last_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 18,
+        "name": "admin_membership_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "cceab88c1386be0ae890b244381a59577aaf8915e2d6008cae458136131c1778"
+}

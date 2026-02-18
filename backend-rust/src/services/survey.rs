@@ -403,7 +403,8 @@ impl SurveyService for SurveyServiceImpl {
     }
 
     async fn get_survey(&self, survey_id: Uuid) -> Result<Option<Survey>, AppError> {
-        let survey = sqlx::query_as::<_, Survey>(
+        let survey = sqlx::query_as!(
+            Survey,
             r#"
             SELECT id, title, description, questions, target_segment, status,
                    scheduled_start, scheduled_end, created_by, created_at, updated_at,
@@ -411,8 +412,8 @@ impl SurveyService for SurveyServiceImpl {
             FROM surveys
             WHERE id = $1
             "#,
+            survey_id,
         )
-        .bind(survey_id)
         .fetch_optional(self.state.db.pool())
         .await?;
 
@@ -464,7 +465,8 @@ impl SurveyService for SurveyServiceImpl {
         let access_type = data.access_type.unwrap_or_else(|| "public".to_string());
         let status = data.status.unwrap_or_else(|| "draft".to_string());
 
-        let survey = sqlx::query_as::<_, Survey>(
+        let survey = sqlx::query_as!(
+            Survey,
             r#"
             INSERT INTO surveys (title, description, questions, target_segment, access_type, status, created_by)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -472,14 +474,14 @@ impl SurveyService for SurveyServiceImpl {
                       scheduled_start, scheduled_end, created_by, created_at, updated_at,
                       access_type, original_language, available_languages, last_translated, translation_status
             "#,
+            &data.title,
+            data.description.as_deref(),
+            &questions_json,
+            &target_segment_json,
+            &access_type,
+            &status,
+            created_by,
         )
-        .bind(&data.title)
-        .bind(&data.description)
-        .bind(&questions_json)
-        .bind(&target_segment_json)
-        .bind(&access_type)
-        .bind(&status)
-        .bind(created_by)
         .fetch_one(self.state.db.pool())
         .await?;
 
@@ -490,7 +492,8 @@ impl SurveyService for SurveyServiceImpl {
         &self,
         user_id: Uuid,
     ) -> Result<Vec<SurveyInvitationWithUser>, AppError> {
-        let invitations = sqlx::query_as::<_, SurveyInvitationWithUser>(
+        let invitations = sqlx::query_as!(
+            SurveyInvitationWithUser,
             r#"
             SELECT
                 si.id, si.survey_id, si.user_id, si.status, si.sent_at,
@@ -504,8 +507,8 @@ impl SurveyService for SurveyServiceImpl {
             WHERE si.user_id = $1
             ORDER BY si.created_at DESC
             "#,
+            user_id,
         )
-        .bind(user_id)
         .fetch_all(self.state.db.pool())
         .await?;
 
@@ -544,7 +547,8 @@ impl SurveyService for SurveyServiceImpl {
         };
 
         // Use upsert to handle both insert and update cases
-        let response = sqlx::query_as::<_, SurveyResponse>(
+        let response = sqlx::query_as!(
+            SurveyResponse,
             r#"
             INSERT INTO survey_responses (survey_id, user_id, answers, is_completed, progress, completed_at)
             VALUES ($1, $2, $3, $4, $5, $6)
@@ -562,23 +566,25 @@ impl SurveyService for SurveyServiceImpl {
             RETURNING id, survey_id, user_id, answers, is_completed, progress,
                       started_at, completed_at, created_at, updated_at
             "#,
+            data.survey_id,
+            data.user_id,
+            &data.answers,
+            is_completed,
+            progress,
+            completed_at,
         )
-        .bind(data.survey_id)
-        .bind(data.user_id)
-        .bind(&data.answers)
-        .bind(is_completed)
-        .bind(progress)
-        .bind(completed_at)
         .fetch_one(self.state.db.pool())
         .await?;
 
         // Award survey completion coupons if newly completed
         if is_completed {
             // Call the stored procedure to award coupons
-            let _ = sqlx::query_scalar::<_, i32>("SELECT award_survey_completion_coupons($1)")
-                .bind(response.id)
-                .fetch_optional(self.state.db.pool())
-                .await;
+            let _ = sqlx::query_scalar!(
+                r#"SELECT award_survey_completion_coupons($1) as "result""#,
+                response.id,
+            )
+            .fetch_optional(self.state.db.pool())
+            .await;
             // Ignore coupon errors - don't fail the survey submission
         }
 
@@ -596,14 +602,16 @@ impl SurveyService for SurveyServiceImpl {
         let offset = (page - 1) * limit;
 
         // Get total count
-        let total: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM survey_responses WHERE survey_id = $1")
-                .bind(survey_id)
-                .fetch_one(self.state.db.pool())
-                .await?;
+        let total: i64 = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) as "count!" FROM survey_responses WHERE survey_id = $1"#,
+            survey_id,
+        )
+        .fetch_one(self.state.db.pool())
+        .await?;
 
         // Get responses with user details
-        let responses = sqlx::query_as::<_, SurveyResponseWithUser>(
+        let responses = sqlx::query_as!(
+            SurveyResponseWithUser,
             r#"
             SELECT
                 sr.id, sr.survey_id, sr.user_id, sr.answers, sr.is_completed,
@@ -618,10 +626,10 @@ impl SurveyService for SurveyServiceImpl {
             ORDER BY sr.created_at DESC
             LIMIT $2 OFFSET $3
             "#,
+            survey_id,
+            limit as i64,
+            offset as i64,
         )
-        .bind(survey_id)
-        .bind(limit)
-        .bind(offset)
         .fetch_all(self.state.db.pool())
         .await?;
 

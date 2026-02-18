@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE user_profiles\n            SET first_name = COALESCE(NULLIF($2, ''), first_name),\n                last_name = COALESCE(NULLIF($3, ''), last_name),\n                avatar_url = CASE\n                    WHEN avatar_url IS NULL OR (NOT avatar_url LIKE '/storage/%' AND NOT avatar_url LIKE 'emoji:%')\n                    THEN COALESCE(NULLIF($4, ''), avatar_url)\n                    ELSE avatar_url\n                END,\n                updated_at = NOW()\n            WHERE user_id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "facf02e149bb7e1c51a365faf026f5202f7c7239578c157f7cd36031ad1e1adc"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO points_transactions (user_id, points, type, description, created_at)\n        SELECT\n            user_id,\n            -points,\n            'expired'::points_transaction_type,\n            'Points expired automatically',\n            NOW()\n        FROM points_transactions\n        WHERE expires_at <= NOW()\n        AND points > 0\n        AND id NOT IN (\n            SELECT reference_id::UUID\n            FROM points_transactions\n            WHERE type = 'expired'\n            AND reference_id IS NOT NULL\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "66d061da9bb1058ca7cc74583de18df67be62a3621667523a7b493cb223354e9"
+}

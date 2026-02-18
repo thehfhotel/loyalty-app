@@ -1,0 +1,222 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO coupons (\n                code, name, description, terms_and_conditions, type, value, currency,\n                minimum_spend, maximum_discount, valid_from, valid_until, usage_limit,\n                usage_limit_per_user, tier_restrictions, customer_segment, created_by,\n                original_language, available_languages\n            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)\n            RETURNING id, code, name, description, terms_and_conditions,\n                      type as \"coupon_type: CouponType\", value, currency, minimum_spend, maximum_discount,\n                      valid_from, valid_until, usage_limit, usage_limit_per_user,\n                      used_count, tier_restrictions, customer_segment,\n                      status as \"status: CouponStatus\",\n                      created_by, created_at, updated_at, original_language,\n                      available_languages, last_translated, translation_status\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "terms_and_conditions",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "coupon_type: CouponType",
+        "type_info": {
+          "Custom": {
+            "name": "coupon_type",
+            "kind": {
+              "Enum": [
+                "percentage",
+                "fixed_amount",
+                "bogo",
+                "free_upgrade",
+                "free_service"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "value",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "minimum_spend",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "maximum_discount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 10,
+        "name": "valid_from",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "valid_until",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "usage_limit",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "usage_limit_per_user",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 14,
+        "name": "used_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "tier_restrictions",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 16,
+        "name": "customer_segment",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 17,
+        "name": "status: CouponStatus",
+        "type_info": {
+          "Custom": {
+            "name": "coupon_status",
+            "kind": {
+              "Enum": [
+                "draft",
+                "active",
+                "paused",
+                "expired",
+                "exhausted"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 19,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 20,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 21,
+        "name": "original_language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 22,
+        "name": "available_languages",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 23,
+        "name": "last_translated",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 24,
+        "name": "translation_status",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Text",
+        {
+          "Custom": {
+            "name": "coupon_type",
+            "kind": {
+              "Enum": [
+                "percentage",
+                "fixed_amount",
+                "bogo",
+                "free_upgrade",
+                "free_service"
+              ]
+            }
+          }
+        },
+        "Numeric",
+        "Varchar",
+        "Numeric",
+        "Numeric",
+        "Timestamptz",
+        "Timestamptz",
+        "Int4",
+        "Int4",
+        "Jsonb",
+        "Jsonb",
+        "Uuid",
+        "Varchar",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "98cce373752800ec51973b1ec077a8f9b140f02a23e6a9fb7d63eee08a7860be"
+}

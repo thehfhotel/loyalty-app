@@ -1,0 +1,130 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    u.id,\n                    u.email,\n                    u.role as \"role: UserRole\",\n                    u.is_active,\n                    u.email_verified,\n                    u.created_at,\n                    u.updated_at,\n                    u.oauth_provider,\n                    up.first_name,\n                    up.last_name,\n                    up.phone,\n                    up.date_of_birth,\n                    up.preferences,\n                    up.avatar_url,\n                    up.membership_id as \"membership_id?\",\n                    up.created_at AS profile_created_at,\n                    up.updated_at AS profile_updated_at\n                FROM users u\n                LEFT JOIN user_profiles up ON u.id = up.user_id\n                ORDER BY u.created_at DESC\n                LIMIT $1 OFFSET $2\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "role: UserRole",
+        "type_info": {
+          "Custom": {
+            "name": "user_role",
+            "kind": {
+              "Enum": [
+                "customer",
+                "admin",
+                "super_admin"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "email_verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "oauth_provider",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "last_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "phone",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 11,
+        "name": "date_of_birth",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 12,
+        "name": "preferences",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 13,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "membership_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "profile_created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "profile_updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "f33137ea9531ac94a77c32697f5a6ecec1733d7ead176221ec88d65a1e836471"
+}

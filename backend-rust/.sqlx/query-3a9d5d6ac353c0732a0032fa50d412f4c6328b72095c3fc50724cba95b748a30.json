@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT current_points, total_nights, tier_id FROM user_loyalty WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "current_points",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "total_nights",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "tier_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "3a9d5d6ac353c0732a0032fa50d412f4c6328b72095c3fc50724cba95b748a30"
+}

@@ -1559,3 +1559,144 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION update_updated_at_column() IS 'Generic trigger function to automatically update updated_at timestamp';
+
+-- =====================================================
+-- BOOKING SYSTEM TABLES
+-- =====================================================
+
+-- CreateTable: room_types
+CREATE TABLE IF NOT EXISTS "public"."room_types" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "name" VARCHAR(100) NOT NULL,
+    "description" TEXT,
+    "price_per_night" DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    "max_guests" INTEGER NOT NULL DEFAULT 2,
+    "is_active" BOOLEAN NOT NULL DEFAULT TRUE,
+    "created_at" TIMESTAMPTZ(6) DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ(6) DEFAULT NOW(),
+
+    CONSTRAINT "room_types_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_room_types_name" ON "public"."room_types"(LOWER("name"));
+
+-- CreateTable: rooms
+CREATE TABLE IF NOT EXISTS "public"."rooms" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "room_type_id" UUID NOT NULL,
+    "room_number" VARCHAR(20) NOT NULL,
+    "floor" INTEGER,
+    "is_active" BOOLEAN NOT NULL DEFAULT TRUE,
+    "created_at" TIMESTAMPTZ(6) DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ(6) DEFAULT NOW(),
+
+    CONSTRAINT "rooms_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "rooms_room_number_key" UNIQUE ("room_number")
+);
+
+ALTER TABLE "public"."rooms" ADD CONSTRAINT "rooms_room_type_id_fkey"
+    FOREIGN KEY ("room_type_id") REFERENCES "public"."room_types"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
+
+CREATE INDEX IF NOT EXISTS "idx_rooms_room_type_id" ON "public"."rooms"("room_type_id");
+CREATE INDEX IF NOT EXISTS "idx_rooms_is_active" ON "public"."rooms"("is_active");
+
+-- CreateTable: room_blocked_dates
+CREATE TABLE IF NOT EXISTS "public"."room_blocked_dates" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "room_id" UUID NOT NULL,
+    "blocked_date" DATE NOT NULL,
+    "reason" TEXT,
+    "created_at" TIMESTAMPTZ(6) DEFAULT NOW(),
+
+    CONSTRAINT "room_blocked_dates_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "room_blocked_dates_room_date_key" UNIQUE ("room_id", "blocked_date")
+);
+
+ALTER TABLE "public"."room_blocked_dates" ADD CONSTRAINT "room_blocked_dates_room_id_fkey"
+    FOREIGN KEY ("room_id") REFERENCES "public"."rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
+
+CREATE INDEX IF NOT EXISTS "idx_room_blocked_dates_room_id" ON "public"."room_blocked_dates"("room_id");
+CREATE INDEX IF NOT EXISTS "idx_room_blocked_dates_date" ON "public"."room_blocked_dates"("blocked_date");
+
+-- CreateTable: bookings
+CREATE TABLE IF NOT EXISTS "public"."bookings" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "user_id" UUID NOT NULL,
+    "room_id" UUID NOT NULL,
+    "room_type_id" UUID NOT NULL,
+    "check_in_date" DATE NOT NULL,
+    "check_out_date" DATE NOT NULL,
+    "num_guests" INTEGER NOT NULL DEFAULT 1,
+    "total_price" DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    "points_earned" INTEGER,
+    "status" VARCHAR(20) NOT NULL DEFAULT 'confirmed',
+    "cancelled_at" TIMESTAMPTZ(6),
+    "cancellation_reason" TEXT,
+    "notes" TEXT,
+    "created_at" TIMESTAMPTZ(6) DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ(6) DEFAULT NOW(),
+
+    CONSTRAINT "bookings_pkey" PRIMARY KEY ("id")
+);
+
+ALTER TABLE "public"."bookings" ADD CONSTRAINT "bookings_user_id_fkey"
+    FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
+
+ALTER TABLE "public"."bookings" ADD CONSTRAINT "bookings_room_id_fkey"
+    FOREIGN KEY ("room_id") REFERENCES "public"."rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
+
+ALTER TABLE "public"."bookings" ADD CONSTRAINT "bookings_room_type_id_fkey"
+    FOREIGN KEY ("room_type_id") REFERENCES "public"."room_types"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
+
+ALTER TABLE "public"."bookings" ADD CONSTRAINT "chk_booking_status"
+    CHECK (status IN ('pending', 'confirmed', 'checked_in', 'checked_out', 'completed', 'cancelled', 'no_show'));
+
+ALTER TABLE "public"."bookings" ADD CONSTRAINT "chk_booking_dates"
+    CHECK (check_out_date > check_in_date);
+
+CREATE INDEX IF NOT EXISTS "idx_bookings_user_id" ON "public"."bookings"("user_id");
+CREATE INDEX IF NOT EXISTS "idx_bookings_room_id" ON "public"."bookings"("room_id");
+CREATE INDEX IF NOT EXISTS "idx_bookings_status" ON "public"."bookings"("status");
+CREATE INDEX IF NOT EXISTS "idx_bookings_dates" ON "public"."bookings"("check_in_date", "check_out_date");
+CREATE INDEX IF NOT EXISTS "idx_bookings_created_at" ON "public"."bookings"("created_at" DESC);
+
+-- =====================================================
+-- ANALYTICS TABLES
+-- =====================================================
+
+-- CreateTable: coupon_usage_analytics
+CREATE TABLE IF NOT EXISTS "public"."coupon_usage_analytics" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "user_id" UUID NOT NULL,
+    "coupon_id" UUID NOT NULL,
+    "user_coupon_id" UUID,
+    "event_type" TEXT NOT NULL,
+    "source" TEXT,
+    "metadata" JSONB,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "coupon_usage_analytics_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX IF NOT EXISTS "coupon_usage_analytics_user_id_idx" ON "public"."coupon_usage_analytics" ("user_id");
+CREATE INDEX IF NOT EXISTS "coupon_usage_analytics_coupon_id_idx" ON "public"."coupon_usage_analytics" ("coupon_id");
+CREATE INDEX IF NOT EXISTS "coupon_usage_analytics_event_type_idx" ON "public"."coupon_usage_analytics" ("event_type");
+CREATE INDEX IF NOT EXISTS "coupon_usage_analytics_created_at_idx" ON "public"."coupon_usage_analytics" ("created_at");
+
+-- CreateTable: profile_change_analytics
+CREATE TABLE IF NOT EXISTS "public"."profile_change_analytics" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "user_id" UUID NOT NULL,
+    "field" TEXT NOT NULL,
+    "old_value" TEXT,
+    "new_value" TEXT NOT NULL,
+    "change_source" TEXT NOT NULL,
+    "metadata" JSONB,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "profile_change_analytics_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX IF NOT EXISTS "profile_change_analytics_user_id_idx" ON "public"."profile_change_analytics" ("user_id");
+CREATE INDEX IF NOT EXISTS "profile_change_analytics_field_idx" ON "public"."profile_change_analytics" ("field");
+CREATE INDEX IF NOT EXISTS "profile_change_analytics_created_at_idx" ON "public"."profile_change_analytics" ("created_at");

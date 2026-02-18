@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT\n                        ul.user_id,\n                        COALESCE(ul.current_points, 0) as \"current_points!\",\n                        COALESCE(ul.total_nights, 0) as \"total_nights!\",\n                        t.name as \"tier_name!\",\n                        t.color as \"tier_color!\",\n                        COALESCE(t.benefits, '{}') as \"tier_benefits!\",\n                        t.sort_order as \"tier_level!\",\n                        CASE\n                            WHEN next_tier.min_nights IS NOT NULL AND next_tier.min_nights > 0\n                            THEN LEAST(ROUND((ul.total_nights::numeric / next_tier.min_nights) * 100), 100)::bigint\n                            ELSE 100::bigint\n                        END as \"progress_percentage!\",\n                        next_tier.min_nights as next_tier_nights,\n                        next_tier.name as next_tier_name,\n                        CASE\n                            WHEN next_tier.min_nights IS NOT NULL\n                            THEN GREATEST(next_tier.min_nights - COALESCE(ul.total_nights, 0), 0)\n                            ELSE NULL\n                        END as nights_to_next_tier\n                    FROM user_loyalty ul\n                    JOIN tiers t ON ul.tier_id = t.id\n                    LEFT JOIN tiers next_tier ON next_tier.sort_order = t.sort_order + 1 AND next_tier.is_active = true\n                    WHERE ul.user_id = $1\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "current_points!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "total_nights!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "tier_name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "tier_color!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "tier_benefits!",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "tier_level!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "progress_percentage!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "next_tier_nights",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "next_tier_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "nights_to_next_tier",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      false,
+      false,
+      null,
+      false,
+      null,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "a86e038580471750b0b7be7cfb26cf764c715be61c3bcdea1374064d15c49ea6"
+}

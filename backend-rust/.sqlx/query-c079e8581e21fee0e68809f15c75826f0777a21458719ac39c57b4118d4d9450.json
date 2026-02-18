@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE coupons\n        SET used_count = COALESCE(used_count, 0) + 1, updated_at = NOW()\n        WHERE id = (SELECT coupon_id FROM user_coupons WHERE id = $1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c079e8581e21fee0e68809f15c75826f0777a21458719ac39c57b4118d4d9450"
+}

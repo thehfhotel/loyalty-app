@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT COUNT(*) as \"count!: i64\"\n            FROM user_loyalty ul\n            JOIN users u ON ul.user_id = u.id\n            LEFT JOIN user_profiles up ON u.id = up.user_id\n            WHERE (u.email ILIKE $1 OR up.first_name ILIKE $1 OR up.last_name ILIKE $1\n                   OR u.id::text ILIKE $1 OR up.membership_id ILIKE $1 OR up.phone ILIKE $1)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!: i64",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b8f8aad16f91fe4f7971e9930ce07a7d208279bb65e1d2132ec9475c6e628bd9"
+}

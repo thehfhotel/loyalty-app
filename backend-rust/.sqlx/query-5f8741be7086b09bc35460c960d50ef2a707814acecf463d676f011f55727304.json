@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE user_loyalty\n        SET current_points = $1,\n            total_nights = $2,\n            points_updated_at = NOW(),\n            updated_at = NOW()\n        WHERE user_id = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5f8741be7086b09bc35460c960d50ef2a707814acecf463d676f011f55727304"
+}

@@ -1,0 +1,135 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE bookings SET\n                check_in_date = COALESCE($2, check_in_date),\n                check_out_date = COALESCE($3, check_out_date),\n                num_guests = COALESCE($4, num_guests),\n                notes = COALESCE($5, notes),\n                total_price = COALESCE($6, total_price),\n                updated_at = NOW()\n            WHERE id = $1\n            RETURNING\n                id, user_id, room_id, room_type_id,\n                check_in_date, check_out_date, num_guests,\n                total_price, COALESCE(points_earned, 0) as \"points_earned!\", status,\n                cancelled_at, cancellation_reason,\n                notes, created_at as \"created_at!\", updated_at as \"updated_at!\",\n                NULL::text as room_number, NULL::text as room_type_name,\n                NULL::text as user_email, NULL::text as user_name\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "room_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "room_type_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "check_in_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "check_out_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "num_guests",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "total_price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 8,
+        "name": "points_earned!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "cancelled_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "cancellation_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "notes",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "room_number",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "room_type_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 17,
+        "name": "user_email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 18,
+        "name": "user_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date",
+        "Int4",
+        "Text",
+        "Numeric"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "1646950b024642eef99200386eadba736d5ea004bf2c7a4fc8bddc616be5d9b3"
+}

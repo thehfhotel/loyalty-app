@@ -1,0 +1,132 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                ul.user_id,\n                ul.current_points,\n                ul.total_nights,\n                t.name as tier_name,\n                t.color as tier_color,\n                t.benefits as tier_benefits,\n                t.sort_order as tier_level,\n                CASE\n                    WHEN next_tier.min_nights IS NOT NULL\n                    THEN ROUND((ul.total_nights::numeric / next_tier.min_nights) * 100)::float8\n                    ELSE 100.0\n                END as progress_percentage,\n                next_tier.min_nights as next_tier_nights,\n                next_tier.name as next_tier_name,\n                CASE\n                    WHEN next_tier.min_nights IS NOT NULL\n                    THEN (next_tier.min_nights - ul.total_nights)\n                    ELSE NULL\n                END as nights_to_next_tier,\n                up.first_name,\n                up.last_name,\n                up.phone,\n                up.membership_id,\n                u.email,\n                u.oauth_provider,\n                u.oauth_provider_id,\n                u.created_at as user_created_at\n            FROM user_loyalty ul\n            JOIN tiers t ON ul.tier_id = t.id\n            LEFT JOIN tiers next_tier ON next_tier.sort_order = t.sort_order + 1 AND next_tier.is_active = true\n            JOIN users u ON ul.user_id = u.id\n            LEFT JOIN user_profiles up ON u.id = up.user_id\n            WHERE (u.email ILIKE $1 OR up.first_name ILIKE $1 OR up.last_name ILIKE $1\n                   OR u.id::text ILIKE $1 OR up.membership_id ILIKE $1 OR up.phone ILIKE $1)\n            ORDER BY ul.total_nights DESC, ul.current_points DESC\n            LIMIT $2 OFFSET $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "current_points",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "total_nights",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "tier_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "tier_color",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "tier_benefits",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "tier_level",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "progress_percentage",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 8,
+        "name": "next_tier_nights",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "next_tier_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "nights_to_next_tier",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "first_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "last_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "phone",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "membership_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 15,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 16,
+        "name": "oauth_provider",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 17,
+        "name": "oauth_provider_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 18,
+        "name": "user_created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      null,
+      false,
+      false,
+      null,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "5ffb6c185f4a230d8a357b072bbfed8b83489d662b3b4aeaeab5240bb9ec9bd5"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_audit_log (user_id, action, details)\n            VALUES ($1, 'oauth_login', $2)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4786dacae90436eabed33b7a165ba0b36fd66bb9f97436825b0c56afeb0975da"
+}
