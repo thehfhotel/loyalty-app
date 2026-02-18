@@ -73,8 +73,9 @@ async fn get_admin_pool() -> Result<PgPool, sqlx::Error> {
     }
 
     let pool = PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(3)
         .acquire_timeout(std::time::Duration::from_secs(30))
+        .idle_timeout(std::time::Duration::from_secs(5))
         .connect(&admin_database_url())
         .await?;
 
@@ -245,8 +246,10 @@ impl TestApp {
         };
 
         let pool = PgPoolOptions::new()
-            .max_connections(5)
+            .max_connections(2)
             .acquire_timeout(std::time::Duration::from_secs(30))
+            .idle_timeout(std::time::Duration::from_secs(2))
+            .max_lifetime(std::time::Duration::from_secs(60))
             .connect(&test_url)
             .await?;
 
@@ -355,8 +358,8 @@ fn create_test_config() -> loyalty_backend::Settings {
         },
         database: DatabaseConfig {
             url: test_database_url(),
-            max_connections: 10,
-            min_connections: 1,
+            max_connections: 2,
+            min_connections: 0,
             connection_timeout_secs: 30,
         },
         redis: RedisConfig {
@@ -415,8 +418,10 @@ pub async fn setup_test() -> (PgPool, TestDatabase) {
     };
 
     let pool = PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(2)
         .acquire_timeout(std::time::Duration::from_secs(30))
+        .idle_timeout(std::time::Duration::from_secs(2))
+        .max_lifetime(std::time::Duration::from_secs(60))
         .connect(&test_url)
         .await
         .expect("Failed to connect to per-test database");
@@ -464,8 +469,10 @@ pub async fn init_test_db() -> Result<PgPool, sqlx::Error> {
     };
 
     let pool = PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(2)
         .acquire_timeout(std::time::Duration::from_secs(30))
+        .idle_timeout(std::time::Duration::from_secs(2))
+        .max_lifetime(std::time::Duration::from_secs(60))
         .connect(&test_url)
         .await?;
 
