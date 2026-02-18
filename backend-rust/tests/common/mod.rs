@@ -73,8 +73,8 @@ async fn get_admin_pool() -> Result<PgPool, sqlx::Error> {
     }
 
     let pool = PgPoolOptions::new()
-        .max_connections(3)
-        .acquire_timeout(std::time::Duration::from_secs(30))
+        .max_connections(2)
+        .acquire_timeout(std::time::Duration::from_secs(10))
         .idle_timeout(std::time::Duration::from_secs(5))
         .max_lifetime(std::time::Duration::from_secs(30))
         .connect(&admin_database_url())
@@ -247,8 +247,8 @@ impl TestApp {
         };
 
         let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .acquire_timeout(std::time::Duration::from_secs(30))
+            .max_connections(3)
+            .acquire_timeout(std::time::Duration::from_secs(10))
             .idle_timeout(std::time::Duration::from_secs(5))
             .max_lifetime(std::time::Duration::from_secs(30))
             .connect(&test_url)
@@ -359,9 +359,9 @@ fn create_test_config() -> loyalty_backend::Settings {
         },
         database: DatabaseConfig {
             url: test_database_url(),
-            max_connections: 5,
+            max_connections: 3,
             min_connections: 0,
-            connection_timeout_secs: 30,
+            connection_timeout_secs: 10,
         },
         redis: RedisConfig {
             url: test_redis_url(),
@@ -419,8 +419,8 @@ pub async fn setup_test() -> (PgPool, TestDatabase) {
     };
 
     let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .acquire_timeout(std::time::Duration::from_secs(30))
+        .max_connections(3)
+        .acquire_timeout(std::time::Duration::from_secs(10))
         .idle_timeout(std::time::Duration::from_secs(5))
         .max_lifetime(std::time::Duration::from_secs(30))
         .connect(&test_url)
@@ -470,8 +470,8 @@ pub async fn init_test_db() -> Result<PgPool, sqlx::Error> {
     };
 
     let pool = PgPoolOptions::new()
-        .max_connections(5)
-        .acquire_timeout(std::time::Duration::from_secs(30))
+        .max_connections(3)
+        .acquire_timeout(std::time::Duration::from_secs(10))
         .idle_timeout(std::time::Duration::from_secs(5))
         .max_lifetime(std::time::Duration::from_secs(30))
         .connect(&test_url)

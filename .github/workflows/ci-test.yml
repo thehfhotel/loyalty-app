@@ -96,6 +96,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --shm-size=256mb
 
       redis:
         image: redis:7-alpine
@@ -141,14 +142,16 @@ jobs:
           RUST_BACKTRACE: 1
           RUST_LOG: debug
 
-      - name: Increase PostgreSQL max_connections for parallel tests
+      - name: Configure PostgreSQL for parallel tests
         run: |
           # Each parallel test creates its own DB + connection pool.
           # Default max_connections=100 is too low when connections from
           # completed tests linger (tokio runtime shutdown doesn't close TCP).
+          # idle_session_timeout auto-kills leaked connections after 10s idle.
           PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db \
-            -c "ALTER SYSTEM SET max_connections = 300;"
-          # Restart PostgreSQL to apply the change
+            -c "ALTER SYSTEM SET max_connections = 300;" \
+            -c "ALTER SYSTEM SET idle_session_timeout = '10s';"
+          # Restart PostgreSQL to apply the changes
           CONTAINER_ID=$(docker ps -q --filter "publish=5438")
           docker restart "$CONTAINER_ID"
           # Wait for PostgreSQL to be ready
@@ -156,6 +159,10 @@ jobs:
             PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -c "SELECT 1;" 2>/dev/null && break
             sleep 1
           done
+          # Verify settings applied
+          PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db \
+            -c "SHOW max_connections;" \
+            -c "SHOW idle_session_timeout;"
         env:
           PGPASSWORD: loyalty_test_pass
 
@@ -242,7 +249,7 @@ jobs:
           # Tests compile in ~10s and run in ~5-10min; 15min is generous.
           # timeout sends SIGTERM, then SIGKILL after 10s grace period.
           timeout --signal=TERM --kill-after=10 900 \
-            cargo test --test '*' 2>&1 | tee /tmp/test-output.txt
+            cargo test --test '*' -- --nocapture 2>&1 | tee /tmp/test-output.txt
           PIPE_EXIT=${PIPESTATUS[0]}
 
           # Check if tests passed by looking at the test result summary
@@ -270,8 +277,8 @@ jobs:
             exit $PIPE_EXIT
           fi
         env:
-          RUST_BACKTRACE: 1
-          RUST_LOG: debug
+          RUST_BACKTRACE: short
+          RUST_LOG: warn
           TEST_DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
           TEST_REDIS_URL: redis://localhost:6383
           JWT_SECRET: test-jwt-secret-for-ci-minimum-32-characters-long
