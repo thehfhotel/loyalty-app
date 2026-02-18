@@ -76,6 +76,7 @@ async fn get_admin_pool() -> Result<PgPool, sqlx::Error> {
         .max_connections(3)
         .acquire_timeout(std::time::Duration::from_secs(30))
         .idle_timeout(std::time::Duration::from_secs(5))
+        .max_lifetime(std::time::Duration::from_secs(30))
         .connect(&admin_database_url())
         .await?;
 

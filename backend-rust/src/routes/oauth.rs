@@ -1494,8 +1494,8 @@ async fn ensure_loyalty_enrollment(db: &sqlx::PgPool, user_id: Uuid) -> Result<(
         let tier_id = tier.map(|t| t.0).unwrap_or(1);
 
         sqlx::query(
-            r#"INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights, lifetime_points)
-               VALUES ($1, $2, 0, 0, 0)
+            r#"INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights)
+               VALUES ($1, $2, 0, 0)
                ON CONFLICT (user_id) DO NOTHING"#,
         )
         .bind(user_id)

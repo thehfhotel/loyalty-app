@@ -49,8 +49,8 @@ async fn create_test_user_with_loyalty(
 
     sqlx::query(
         r#"
-        INSERT INTO user_loyalty (user_id, tier_id, current_points, lifetime_points, total_nights)
-        VALUES ($1, $2, $3, $3, $4)
+        INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights)
+        VALUES ($1, $2, $3, $4)
         "#,
     )
     .bind(user.id)

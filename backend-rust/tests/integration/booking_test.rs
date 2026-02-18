@@ -34,29 +34,31 @@ async fn create_test_booking(
     let check_in = today + Duration::days(check_in_offset_days);
     let check_out = today + Duration::days(check_out_offset_days);
 
-    // Insert room type
-    sqlx::query(
+    // Reuse existing room type and room if they exist, otherwise create them
+    let room_type_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO room_types (id, name, price_per_night, max_guests)
         VALUES ($1, 'Deluxe Room', 2000.00, 2)
-        ON CONFLICT (id) DO NOTHING
+        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+        RETURNING id
         "#,
     )
     .bind(room_type_id)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
 
-    // Insert room
-    sqlx::query(
+    // Insert room (reuse existing if name conflicts)
+    let room_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO rooms (id, room_type_id, room_number, floor)
         VALUES ($1, $2, '101', 1)
-        ON CONFLICT (id) DO NOTHING
+        ON CONFLICT (room_number) DO UPDATE SET room_number = EXCLUDED.room_number
+        RETURNING id
         "#,
     )
     .bind(room_id)
     .bind(room_type_id)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
 
     // Calculate nights and price
@@ -497,8 +499,8 @@ async fn test_complete_booking_awards_points() {
     // Create user_loyalty record for the user
     sqlx::query(
         r#"
-        INSERT INTO user_loyalty (user_id, current_points, lifetime_points, total_nights)
-        VALUES ($1, 0, 0, 0)
+        INSERT INTO user_loyalty (user_id, current_points, total_nights)
+        VALUES ($1, 0, 0)
         ON CONFLICT (user_id) DO NOTHING
         "#,
     )
