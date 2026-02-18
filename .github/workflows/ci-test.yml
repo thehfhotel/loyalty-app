@@ -1,0 +1,316 @@
+name: CI Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.actor == 'dependabot[bot]' && 'dependabot-ci-test' || format('ci-test-{0}', github.ref) }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+env:
+  NODE_VERSION: '24'
+  RUST_VERSION: '1.93'
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  # =============================================================================
+  # WORKSPACE PREPARATION (Node.js only)
+  # =============================================================================
+
+  prepare:
+    name: "Prepare Workspace"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      frontend-cache-key: ${{ steps.cache-keys.outputs.frontend }}
+      backend-node-cache-key: ${{ steps.cache-keys.outputs.backend-node }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Generate cache keys
+        id: cache-keys
+        run: |
+          echo "frontend=frontend-deps-${{ hashFiles('frontend/package-lock.json') }}" >> $GITHUB_OUTPUT
+          echo "backend-node=backend-node-deps-${{ hashFiles('backend/package-lock.json') }}" >> $GITHUB_OUTPUT
+
+      - name: Cache frontend dependencies
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ steps.cache-keys.outputs.frontend }}
+          restore-keys: |
+            frontend-deps-
+
+      - name: Cache backend Node.js dependencies (for tRPC types)
+        uses: actions/cache@v4
+        with:
+          path: backend/node_modules
+          key: ${{ steps.cache-keys.outputs.backend-node }}
+          restore-keys: |
+            backend-node-deps-
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Install backend Node.js dependencies (for tRPC types)
+        working-directory: ./backend
+        run: npm ci
+
+  # =============================================================================
+  # PARALLEL VALIDATION & TESTING
+  # =============================================================================
+
+  validate-backend:
+    name: "Validate Backend (Rust)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: loyalty_test
+          POSTGRES_PASSWORD: loyalty_test_pass
+          POSTGRES_DB: loyalty_test_db
+        ports:
+          - 5438:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6383:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy, rustfmt
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "backend-rust -> target"
+          cache-on-failure: true
+
+      - name: Check formatting
+        working-directory: ./backend-rust
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy (lints)
+        working-directory: ./backend-rust
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run unit tests
+        working-directory: ./backend-rust
+        run: cargo test --lib --bins
+        env:
+          RUST_BACKTRACE: 1
+          RUST_LOG: debug
+
+      - name: Run database migrations
+        run: |
+          PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -f backend-rust/migrations/20240101000000_init.sql
+        env:
+          PGPASSWORD: loyalty_test_pass
+
+      - name: Verify database schema
+        run: |
+          TABLE_COUNT=$(PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -t -c \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';")
+          TABLE_COUNT=$(echo "$TABLE_COUNT" | tr -d ' ')
+          echo "Tables created: $TABLE_COUNT"
+          if [ "$TABLE_COUNT" -lt 25 ]; then
+            echo "::error::Expected 25+ tables, found $TABLE_COUNT. Migration may have failed."
+            PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -c \
+              "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name;"
+            exit 1
+          fi
+
+          # Verify stored procedures exist
+          FUNC_COUNT=$(PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -t -c \
+            "SELECT count(*) FROM information_schema.routines WHERE routine_schema = 'public' AND routine_type = 'FUNCTION';")
+          FUNC_COUNT=$(echo "$FUNC_COUNT" | tr -d ' ')
+          echo "Stored procedures/functions: $FUNC_COUNT"
+          if [ "$FUNC_COUNT" -lt 5 ]; then
+            echo "::error::Expected 5+ stored procedures, found $FUNC_COUNT."
+            exit 1
+          fi
+
+          echo "Database schema verification passed"
+        env:
+          PGPASSWORD: loyalty_test_pass
+
+      - name: Seed test data
+        run: |
+          PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -c "
+            INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
+            VALUES
+              ('Bronze', 0, 0, '{\"discount\": 0}', '#CD7F32', 1, true),
+              ('Silver', 0, 1, '{\"discount\": 5}', '#C0C0C0', 2, true),
+              ('Gold', 0, 10, '{\"discount\": 10}', '#FFD700', 3, true),
+              ('Platinum', 0, 20, '{\"discount\": 15}', '#E5E4E2', 4, true)
+            ON CONFLICT (name) DO NOTHING;
+
+            INSERT INTO membership_id_sequence (id, current_user_count)
+            VALUES (1, 0)
+            ON CONFLICT (id) DO NOTHING;
+          "
+          echo "Test data seeded successfully"
+        env:
+          PGPASSWORD: loyalty_test_pass
+
+      - name: Cache sqlx-cli
+        id: cache-sqlx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/sqlx
+          key: sqlx-cli-${{ runner.os }}-${{ env.RUST_VERSION }}
+
+      - name: Install sqlx-cli
+        if: steps.cache-sqlx.outputs.cache-hit != 'true'
+        run: cargo install sqlx-cli --no-default-features --features postgres --locked
+
+      - name: Verify SQLx query cache
+        working-directory: ./backend-rust
+        run: cargo sqlx prepare --check
+        env:
+          DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
+
+      - name: Run integration tests
+        working-directory: ./backend-rust
+        run: cargo test --test '*' -- --test-threads=1
+        env:
+          RUST_BACKTRACE: 1
+          RUST_LOG: debug
+          TEST_DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@localhost:5438/loyalty_test_db
+          TEST_REDIS_URL: redis://localhost:6383
+          JWT_SECRET: test-jwt-secret-for-ci-minimum-32-characters-long
+          JWT_REFRESH_SECRET: test-jwt-refresh-secret-for-ci-minimum-32-chars
+          SESSION_SECRET: test-session-secret-for-ci-minimum-32-chars
+          GOOGLE_CLIENT_ID: test-google-client-id
+          GOOGLE_CLIENT_SECRET: test-google-client-secret
+          GOOGLE_CALLBACK_URL: http://localhost:4001/api/oauth/google/callback
+          LINE_CLIENT_ID: test-line-channel-id
+          LINE_CLIENT_SECRET: test-line-channel-secret
+          LINE_CALLBACK_URL: http://localhost:4001/api/oauth/line/callback
+          FRONTEND_URL: http://localhost:3000
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Check for security vulnerabilities
+        working-directory: ./backend-rust
+        run: cargo audit || echo "Some vulnerabilities found - review output"
+        continue-on-error: true
+
+      - name: Show sccache stats
+        run: sccache --show-stats
+
+  lint-frontend:
+    name: "Lint Frontend"
+    runs-on: ubuntu-latest
+    needs: prepare
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore frontend dependencies
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ needs.prepare.outputs.frontend-cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Restore backend Node.js dependencies (for tRPC types)
+        uses: actions/cache@v4
+        with:
+          path: backend/node_modules
+          key: ${{ needs.prepare.outputs.backend-node-cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Generate Prisma client (for tRPC types)
+        working-directory: ./backend
+        run: npx prisma generate
+
+      - name: TypeScript check
+        working-directory: ./frontend
+        run: npm run typecheck
+
+      - name: ESLint
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: npm audit
+        working-directory: ./frontend
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+  test-frontend-unit:
+    name: "Frontend Unit Tests"
+    runs-on: ubuntu-latest
+    needs: prepare
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore frontend dependencies
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ needs.prepare.outputs.frontend-cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Run unit tests
+        working-directory: ./frontend
+        run: npm run test
+        env:
+          NODE_ENV: test
+          CI: true

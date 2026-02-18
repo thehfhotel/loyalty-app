@@ -1,0 +1,295 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI Tests", "CI Build & E2E"]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: thehfhotel
+  IMAGE_REPO: loyalty-app
+
+jobs:
+  # =============================================================================
+  # CHECK THAT BOTH CI WORKFLOWS PASSED FOR THIS COMMIT
+  # =============================================================================
+
+  check-prerequisites:
+    name: "Check Prerequisites"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      should-deploy: ${{ steps.check.outputs.ready }}
+      commit-sha: ${{ steps.check.outputs.sha }}
+
+    steps:
+      - name: Check all workflows passed
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA=${{ github.event.workflow_run.head_sha }}
+          echo "Checking workflow status for commit: $SHA"
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+          # Check CI Tests workflow
+          TEST_STATUS=$(gh run list -R ${{ github.repository }} \
+            --workflow=ci-test.yml --branch=main --commit=$SHA \
+            --json conclusion --jq '.[0].conclusion // "pending"')
+          echo "CI Tests status: $TEST_STATUS"
+
+          # Check CI Build & E2E workflow
+          BUILD_STATUS=$(gh run list -R ${{ github.repository }} \
+            --workflow=ci-build-e2e.yml --branch=main --commit=$SHA \
+            --json conclusion --jq '.[0].conclusion // "pending"')
+          echo "CI Build & E2E status: $BUILD_STATUS"
+
+          if [ "$TEST_STATUS" = "success" ] && [ "$BUILD_STATUS" = "success" ]; then
+            echo "Both workflows passed - proceeding with deployment"
+            echo "ready=true" >> $GITHUB_OUTPUT
+          else
+            echo "Not all workflows have passed yet (test=$TEST_STATUS, build=$BUILD_STATUS)"
+            echo "ready=false" >> $GITHUB_OUTPUT
+          fi
+
+  # =============================================================================
+  # DEPLOY TO STAGING (no approval needed)
+  # =============================================================================
+
+  deploy-staging:
+    name: "Deploy to Staging"
+    runs-on: [self-hosted, deploy]
+    needs: [check-prerequisites]
+    if: needs.check-prerequisites.outputs.should-deploy == 'true'
+    timeout-minutes: 10
+    environment:
+      name: development
+      url: http://loyalty-dev.saichon.com
+
+    steps:
+      - name: Checkout config files
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check-prerequisites.outputs.commit-sha }}
+          sparse-checkout: |
+            docker-compose.yml
+            docker-compose.ghcr.yml
+            docker-compose.staging.yml
+            nginx/nginx.conf
+          sparse-checkout-cone-mode: false
+
+      - name: Create .env file
+        working-directory: /home/nut/loyalty-app-develop
+        run: |
+          cat > .env << 'ENVEOF'
+          RUST_ENV=staging
+          NODE_ENV=staging
+          JWT_SECRET=${{ secrets.DEV_JWT_SECRET }}
+          JWT_REFRESH_SECRET=${{ secrets.DEV_JWT_REFRESH_SECRET }}
+          SESSION_SECRET=${{ secrets.DEV_SESSION_SECRET }}
+          DATABASE_URL=postgresql://loyalty_dev:loyalty_dev_pass@postgres:5432/loyalty_dev_db
+          REDIS_URL=redis://redis:6379
+          FRONTEND_URL=${{ vars.FRONTEND_URL }}
+          BACKEND_URL=${{ vars.BACKEND_URL }}
+          VITE_API_URL=${{ vars.VITE_API_URL }}
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_CALLBACK_URL=${{ vars.GOOGLE_CALLBACK_URL }}
+          LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
+          LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
+          RUST_LOG=info
+          ENVEOF
+          chmod 600 .env
+
+      - name: Copy config files
+        run: |
+          DEPLOY_PATH="/home/nut/loyalty-app-develop"
+          cp docker-compose.yml "$DEPLOY_PATH/"
+          cp docker-compose.ghcr.yml "$DEPLOY_PATH/"
+          cp docker-compose.staging.yml "$DEPLOY_PATH/"
+          mkdir -p "$DEPLOY_PATH/nginx"
+          cp nginx/nginx.conf "$DEPLOY_PATH/nginx/"
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u thehfhotel --password-stdin
+
+      - name: Deploy services
+        working-directory: /home/nut/loyalty-app-develop
+        env:
+          IMAGE_TAG: ${{ needs.check-prerequisites.outputs.commit-sha }}
+        run: |
+          set -euo pipefail
+          COMPOSE_OVERRIDE="docker-compose.staging.yml"
+
+          # Export environment variables from .env file
+          set -a && source .env && set +a
+          export IMAGE_TAG
+
+          # Pull images
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" pull backend frontend
+
+          # Start database services
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d postgres redis
+
+          # Wait for postgres
+          sleep 10
+
+          # Note: Rust backend runs migrations automatically on startup
+          # No separate migration step needed
+
+          # Deploy all services
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
+
+          # Restart nginx to refresh DNS cache for new backend container IP
+          docker restart loyalty_nginx_dev || true
+
+      - name: Health check
+        run: |
+          sleep 15
+          for i in {1..30}; do
+            if curl -sf http://localhost:5001/api/health > /dev/null 2>&1; then
+              echo "Deployment successful!"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health check failed"
+          cd /home/nut/loyalty-app-develop
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.staging.yml logs --tail=50 backend
+          exit 1
+
+  # =============================================================================
+  # DEPLOY TO PRODUCTION (requires approval)
+  # =============================================================================
+
+  deploy-production:
+    name: "Deploy to Production"
+    runs-on: [self-hosted, deploy]
+    needs: [check-prerequisites, deploy-staging]
+    if: needs.check-prerequisites.outputs.should-deploy == 'true'
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://loyalty.saichon.com
+
+    steps:
+      - name: Checkout config files
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check-prerequisites.outputs.commit-sha }}
+          sparse-checkout: |
+            docker-compose.yml
+            docker-compose.ghcr.yml
+            docker-compose.prod.yml
+            nginx/nginx.conf
+          sparse-checkout-cone-mode: false
+
+      - name: Create .env file
+        working-directory: /home/nut/loyalty-app-production
+        run: |
+          cat > .env << 'ENVEOF'
+          RUST_ENV=production
+          NODE_ENV=production
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          REDIS_URL=redis://redis:6379
+          FRONTEND_URL=${{ vars.FRONTEND_URL }}
+          BACKEND_URL=${{ vars.BACKEND_URL }}
+          VITE_API_URL=${{ vars.VITE_API_URL }}
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_CALLBACK_URL=${{ vars.GOOGLE_CALLBACK_URL }}
+          LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
+          LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USER=${{ secrets.SMTP_USER }}
+          SMTP_PASS=${{ secrets.SMTP_PASS }}
+          IMAP_HOST=${{ secrets.IMAP_HOST }}
+          IMAP_PORT=${{ secrets.IMAP_PORT }}
+          IMAP_USER=${{ secrets.IMAP_USER }}
+          IMAP_PASS=${{ secrets.IMAP_PASS }}
+          RUST_LOG=info
+          ENVEOF
+          chmod 600 .env
+
+      - name: Copy config files
+        run: |
+          DEPLOY_PATH="/home/nut/loyalty-app-production"
+          cp docker-compose.yml "$DEPLOY_PATH/"
+          cp docker-compose.ghcr.yml "$DEPLOY_PATH/"
+          cp docker-compose.prod.yml "$DEPLOY_PATH/"
+          mkdir -p "$DEPLOY_PATH/nginx"
+          cp nginx/nginx.conf "$DEPLOY_PATH/nginx/"
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u thehfhotel --password-stdin
+
+      - name: Deploy services
+        working-directory: /home/nut/loyalty-app-production
+        env:
+          IMAGE_TAG: ${{ needs.check-prerequisites.outputs.commit-sha }}
+        run: |
+          set -euo pipefail
+          COMPOSE_OVERRIDE="docker-compose.prod.yml"
+
+          # Export environment variables from .env file
+          set -a && source .env && set +a
+          export IMAGE_TAG
+
+          # Pull images
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" pull backend frontend
+
+          # Start database services
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d postgres redis
+
+          # Wait for postgres
+          sleep 10
+
+          # Note: Rust backend runs migrations automatically on startup
+          # No separate migration step needed
+
+          # Deploy all services
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
+
+          # Restart nginx to refresh DNS cache for new backend container IP
+          docker restart loyalty_nginx_production || true
+
+      - name: Health check
+        run: |
+          sleep 15
+          for i in {1..30}; do
+            if curl -sf http://localhost:4001/api/health > /dev/null 2>&1; then
+              echo "Deployment successful!"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health check failed"
+          cd /home/nut/loyalty-app-production
+          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.prod.yml logs --tail=50 backend
+          exit 1
+
+      - name: Deployment Summary
+        run: |
+          echo "## Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: \`${{ needs.check-prerequisites.outputs.commit-sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image Tag**: \`${{ needs.check-prerequisites.outputs.commit-sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: https://loyalty.saichon.com" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend**: Rust (loyalty-backend)" >> $GITHUB_STEP_SUMMARY
