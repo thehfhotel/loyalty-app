@@ -115,17 +115,32 @@ async fn get_admin_pool() -> Result<PgPool, sqlx::Error> {
 /// Create a per-test database using a fresh direct connection.
 /// This bypasses the cached admin pool entirely, avoiding tokio runtime
 /// lifetime issues. Used as a fallback when pool-based retries fail.
+///
+/// Handles "already exists" errors gracefully, since the pool-based attempt
+/// might have succeeded on the server but returned an error to the client
+/// (e.g., when the tokio runtime shut down before receiving the response).
 async fn create_db_fresh_connection(
     db_name: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut conn = sqlx::PgConnection::connect(&admin_database_url()).await?;
-    sqlx::query(&format!(
+    match sqlx::query(&format!(
         "CREATE DATABASE \"{}\" TEMPLATE \"{}\"",
         db_name, TEMPLATE_DB_NAME
     ))
     .execute(&mut conn)
-    .await?;
-    Ok(())
+    .await
+    {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            // 23505 = unique_violation (database already exists from a prior attempt)
+            if let sqlx::Error::Database(ref db_err) = e {
+                if db_err.code().map_or(false, |c| c == "23505") {
+                    return Ok(());
+                }
+            }
+            Err(e.into())
+        },
+    }
 }
 
 /// Ensure the template database exists with migrations and seed data.
