@@ -134,7 +134,7 @@ async fn create_db_fresh_connection(
         Err(e) => {
             // 23505 = unique_violation (database already exists from a prior attempt)
             if let sqlx::Error::Database(ref db_err) = e {
-                if db_err.code().map_or(false, |c| c == "23505") {
+                if db_err.code().is_some_and(|c| c == "23505") {
                     return Ok(());
                 }
             }
