@@ -81,7 +81,7 @@ async fn get_admin_pool() -> Result<PgPool, sqlx::Error> {
             Err(_) => {
                 // Pool is stale (its runtime died), discard and recreate
                 *guard = None;
-            }
+            },
         }
     }
 
