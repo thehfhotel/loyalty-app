@@ -12,7 +12,7 @@ use axum::{
 };
 use bytes::Bytes;
 use chrono::{DateTime, NaiveDate, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{self, Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -27,8 +27,25 @@ use crate::state::AppState as FullAppState;
 // Request/Response Types
 // ============================================================================
 
+/// Deserialize `Option<NaiveDate>` that treats empty strings as `None`.
+/// Needed because frontends may send `""` for optional date fields.
+fn deserialize_option_date<'de, D>(deserializer: D) -> Result<Option<NaiveDate>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    match opt {
+        None => Ok(None),
+        Some(s) if s.is_empty() => Ok(None),
+        Some(s) => NaiveDate::parse_from_str(&s, "%Y-%m-%d")
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+
 /// User profile response with combined user and profile data
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserProfileResponse {
     pub id: Uuid,
     pub email: Option<String>,
@@ -108,6 +125,7 @@ impl From<UserWithProfileRow> for UserProfileResponse {
 
 /// Request payload for updating user profile
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateProfileRequest {
     #[validate(length(min = 1, max = 100, message = "First name must be 1-100 characters"))]
     pub first_name: Option<String>,
@@ -118,6 +136,7 @@ pub struct UpdateProfileRequest {
     #[validate(length(max = 20, message = "Phone number too long"))]
     pub phone: Option<String>,
 
+    #[serde(default, deserialize_with = "deserialize_option_date")]
     pub date_of_birth: Option<NaiveDate>,
 
     pub preferences: Option<JsonValue>,
@@ -125,6 +144,7 @@ pub struct UpdateProfileRequest {
 
 /// Request payload for completing user profile (includes gender/occupation)
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
 pub struct CompleteProfileRequest {
     #[validate(length(min = 1, max = 100, message = "First name must be 1-100 characters"))]
     pub first_name: Option<String>,
@@ -135,6 +155,7 @@ pub struct CompleteProfileRequest {
     #[validate(length(max = 20, message = "Phone number too long"))]
     pub phone: Option<String>,
 
+    #[serde(default, deserialize_with = "deserialize_option_date")]
     pub date_of_birth: Option<NaiveDate>,
 
     pub gender: Option<String>,
@@ -144,6 +165,7 @@ pub struct CompleteProfileRequest {
 
 /// Request payload for changing password
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
 pub struct ChangePasswordRequest {
     #[validate(length(min = 1, message = "Current password is required"))]
     pub current_password: String,
@@ -172,6 +194,7 @@ fn default_limit() -> i64 {
 
 /// Pagination metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PaginationMeta {
     pub page: i64,
     pub limit: i64,
@@ -181,6 +204,7 @@ pub struct PaginationMeta {
 
 /// Paginated users response
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PaginatedUsersResponse {
     pub success: bool,
     pub data: Vec<UserProfileResponse>,
@@ -189,6 +213,7 @@ pub struct PaginatedUsersResponse {
 
 /// Loyalty status response
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LoyaltyStatusResponse {
     pub user_id: Uuid,
     pub current_points: i32,
@@ -200,6 +225,7 @@ pub struct LoyaltyStatusResponse {
 
 /// Tier information for loyalty status
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TierInfo {
     pub id: Uuid,
     pub name: String,
@@ -814,8 +840,8 @@ async fn list_users(
 
 /// Avatar upload response with URL
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AvatarUploadResponse {
-    #[serde(rename = "avatarUrl")]
     pub avatar_url: String,
 }
 

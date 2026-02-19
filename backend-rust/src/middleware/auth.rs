@@ -15,6 +15,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::ErrorResponse;
 
+/// JWT secret wrapper for injection via Extension layer.
+///
+/// This allows the auth middleware to read the JWT secret from AppState config
+/// (injected in `create_router`) rather than from environment variables,
+/// ensuring tests can provide their own secret via test config.
+#[derive(Clone)]
+pub struct JwtSecret(pub String);
+
 /// JWT claims structure matching the Node.js backend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
@@ -151,9 +159,16 @@ fn validate_token(token: &str, jwt_secret: &str) -> Result<Claims, AuthError> {
 ///     .layer(middleware::from_fn_with_state(state, auth_middleware));
 /// ```
 pub async fn auth_middleware(mut request: Request, next: Next) -> Result<Response, AuthError> {
-    // Get JWT secret from environment
-    let jwt_secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "development-secret-change-in-production".to_string());
+    // Get JWT secret from Extension (injected by create_router from AppState config),
+    // falling back to env var for backwards compatibility
+    let jwt_secret = request
+        .extensions()
+        .get::<JwtSecret>()
+        .map(|s| s.0.clone())
+        .unwrap_or_else(|| {
+            std::env::var("JWT_SECRET")
+                .unwrap_or_else(|_| "development-secret-change-in-production".to_string())
+        });
 
     // Extract Authorization header
     let auth_header = request
@@ -180,8 +195,14 @@ pub async fn auth_middleware(mut request: Request, next: Next) -> Result<Respons
 /// Instead, it simply doesn't add AuthUser to extensions if authentication fails.
 /// Useful for routes that work differently for authenticated vs unauthenticated users.
 pub async fn optional_auth_middleware(mut request: Request, next: Next) -> Response {
-    let jwt_secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "development-secret-change-in-production".to_string());
+    let jwt_secret = request
+        .extensions()
+        .get::<JwtSecret>()
+        .map(|s| s.0.clone())
+        .unwrap_or_else(|| {
+            std::env::var("JWT_SECRET")
+                .unwrap_or_else(|_| "development-secret-change-in-production".to_string())
+        });
 
     // Try to extract and validate token, but don't fail if not present
     if let Some(auth_header) = request

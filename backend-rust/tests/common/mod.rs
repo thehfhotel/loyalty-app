@@ -51,6 +51,11 @@ pub const TEST_JWT_SECRET: &str = "test-jwt-secret-key-for-testing-only-minimum-
 /// Test user password (unhashed)
 pub const TEST_USER_PASSWORD: &str = "TestPassword123!";
 
+/// Cached password hash for TEST_USER_PASSWORD (argon2 is CPU-intensive,
+/// so we compute once and reuse across all test users)
+static CACHED_TEST_PASSWORD_HASH: Lazy<String> =
+    Lazy::new(|| hash_test_password(TEST_USER_PASSWORD));
+
 // ============================================================================
 // Template Database Infrastructure
 // ============================================================================
@@ -719,7 +724,7 @@ impl TestUser {
         Self {
             id: Uuid::new_v4(),
             email: email.to_string(),
-            password_hash: hash_test_password(TEST_USER_PASSWORD),
+            password_hash: CACHED_TEST_PASSWORD_HASH.clone(),
             role: "customer".to_string(),
             is_active: true,
             email_verified: true,

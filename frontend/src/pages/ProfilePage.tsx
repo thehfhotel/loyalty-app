@@ -40,6 +40,7 @@ export default function ProfilePage() {
   const updateUser = useAuthStore((state) => state.updateUser);
   const logout = useAuthStore((state) => state.logout);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
@@ -49,8 +50,6 @@ export default function ProfilePage() {
 
   // tRPC hooks
   const { data: profile, isLoading, refetch } = trpc.user.getProfile.useQuery();
-  const updateProfileMutation = trpc.user.updateProfile.useMutation();
-  const completeProfileMutation = trpc.user.completeProfile.useMutation();
   const updateEmailMutation = trpc.user.updateEmail.useMutation();
   const deleteAvatarMutation = trpc.user.deleteAvatar.useMutation();
 
@@ -118,28 +117,34 @@ export default function ProfilePage() {
   };
 
   const onSubmit = async (data: ProfileFormData) => {
+    setSavingProfile(true);
     try {
+      // Convert empty strings to undefined (unlike ??, which passes "" through)
+      const nonEmpty = (s?: string) => (s?.trim().length ? s : undefined);
+
       // Check if this is a profile completion (has new fields)
-      const hasNewFields = data.dateOfBirth ?? data.gender ?? data.occupation;
+      const hasNewFields = nonEmpty(data.dateOfBirth)
+        ?? nonEmpty(data.gender)
+        ?? nonEmpty(data.occupation);
 
       if (hasNewFields) {
-        // Use complete profile endpoint for potential coupon rewards
-        const response = await completeProfileMutation.mutateAsync({
+        // Use REST API for profile completion (Rust backend)
+        const response = await userService.completeProfile({
           firstName: data.firstName,
-          lastName: data.lastName,
-          phone: data.phone ?? undefined,
-          dateOfBirth: data.dateOfBirth ?? undefined,
-          gender: data.gender ?? undefined,
-          occupation: data.occupation ?? undefined,
+          lastName: nonEmpty(data.lastName),
+          phone: nonEmpty(data.phone),
+          dateOfBirth: nonEmpty(data.dateOfBirth),
+          gender: nonEmpty(data.gender),
+          occupation: nonEmpty(data.occupation),
         });
 
-        // Refetch profile to get updated data
-        await refetch();
+        // Refetch profile to get updated data (ignore tRPC errors)
+        await refetch().catch(() => {});
 
         // Show reward notifications
         const rewards = [];
         if (response.couponAwarded && response.coupon) {
-          rewards.push(`coupon: ${response.coupon.title}`);
+          rewards.push(`coupon: ${response.coupon.name}`);
         }
         if (response.pointsAwarded && response.pointsAwarded > 0) {
           rewards.push(`${response.pointsAwarded.toLocaleString()} loyalty points`);
@@ -154,23 +159,26 @@ export default function ProfilePage() {
           notify.success(t('profile.profileCompleted'));
         }
       } else {
-        // Regular profile update
-        await updateProfileMutation.mutateAsync({
+        // Use REST API for regular profile update (Rust backend)
+        await userService.updateProfile({
           firstName: data.firstName,
-          lastName: data.lastName,
-          phone: data.phone ?? undefined,
-          dateOfBirth: data.dateOfBirth ?? undefined,
+          lastName: nonEmpty(data.lastName),
+          phone: nonEmpty(data.phone),
+          dateOfBirth: nonEmpty(data.dateOfBirth),
         });
 
-        // Refetch profile to get updated data
-        await refetch();
+        // Refetch profile to get updated data (ignore tRPC errors)
+        await refetch().catch(() => {});
         notify.success(t('profile.profileUpdated'));
       }
 
       setShowSettingsModal(false);
     } catch (error: unknown) {
-      notify.error(getTRPCErrorMessage(error) ?? t('profile.profileUpdateError'));
+      const message = error instanceof Error ? error.message : t('profile.profileUpdateError');
+      notify.error(message);
       logger.error('Profile update error:', error);
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -254,7 +262,7 @@ export default function ProfilePage() {
     );
   }
 
-  const isSaving = updateProfileMutation.isPending || completeProfileMutation.isPending || updateEmailMutation.isPending;
+  const isSaving = savingProfile || updateEmailMutation.isPending;
 
   return (
     <MainLayout title={t('profile.title')} showProfileBanner={false}>

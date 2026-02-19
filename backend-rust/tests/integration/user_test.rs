@@ -109,12 +109,12 @@ async fn test_get_current_user() {
         "Email should match"
     );
     assert_eq!(
-        profile.get("first_name").and_then(|v| v.as_str()),
+        profile.get("firstName").and_then(|v| v.as_str()),
         Some("John"),
         "First name should match"
     );
     assert_eq!(
-        profile.get("last_name").and_then(|v| v.as_str()),
+        profile.get("lastName").and_then(|v| v.as_str()),
         Some("Doe"),
         "Last name should match"
     );
@@ -137,8 +137,8 @@ async fn test_update_profile() {
     let client = app.authenticated_client(&user.id, &user.email);
 
     let update_payload = json!({
-        "first_name": "Janet",
-        "last_name": "Johnson"
+        "firstName": "Janet",
+        "lastName": "Johnson"
     });
 
     let response = client.put("/api/users/me", &update_payload).await;
@@ -159,12 +159,12 @@ async fn test_update_profile() {
         .expect("Data should have 'profile' field");
 
     assert_eq!(
-        profile.get("first_name").and_then(|v| v.as_str()),
+        profile.get("firstName").and_then(|v| v.as_str()),
         Some("Janet"),
         "First name should be updated to Janet"
     );
     assert_eq!(
-        profile.get("last_name").and_then(|v| v.as_str()),
+        profile.get("lastName").and_then(|v| v.as_str()),
         Some("Johnson"),
         "Last name should be updated to Johnson"
     );
@@ -180,12 +180,12 @@ async fn test_update_profile() {
         .expect("Should have profile data");
 
     assert_eq!(
-        get_profile.get("first_name").and_then(|v| v.as_str()),
+        get_profile.get("firstName").and_then(|v| v.as_str()),
         Some("Janet"),
         "Persisted first name should be Janet"
     );
     assert_eq!(
-        get_profile.get("last_name").and_then(|v| v.as_str()),
+        get_profile.get("lastName").and_then(|v| v.as_str()),
         Some("Johnson"),
         "Persisted last name should be Johnson"
     );
@@ -210,8 +210,8 @@ async fn test_change_password() {
 
     let new_password = "NewSecurePassword456!";
     let change_payload = json!({
-        "current_password": TEST_USER_PASSWORD,
-        "new_password": new_password
+        "currentPassword": TEST_USER_PASSWORD,
+        "newPassword": new_password
     });
 
     let response = client.put("/api/users/me/password", &change_payload).await;
@@ -302,19 +302,19 @@ async fn test_get_loyalty_status() {
     let data = json.get("data").expect("Response should have 'data' field");
 
     assert_eq!(
-        data.get("current_points").and_then(|v| v.as_i64()),
+        data.get("currentPoints").and_then(|v| v.as_i64()),
         Some(1500),
         "Current points should be 1500"
     );
 
     assert_eq!(
-        data.get("total_nights").and_then(|v| v.as_i64()),
+        data.get("totalNights").and_then(|v| v.as_i64()),
         Some(5),
         "Total nights should be 5"
     );
 
     assert_eq!(
-        data.get("user_id").and_then(|v| v.as_str()),
+        data.get("userId").and_then(|v| v.as_str()),
         Some(user.id.to_string().as_str()),
         "User ID should match"
     );
@@ -428,7 +428,7 @@ async fn test_update_profile_validation_error() {
 
     let long_name = "A".repeat(150);
     let update_payload = json!({
-        "first_name": long_name
+        "firstName": long_name
     });
 
     let response = client.put("/api/users/me", &update_payload).await;
@@ -457,8 +457,8 @@ async fn test_change_password_wrong_current() {
     let client = app.authenticated_client(&user.id, &user.email);
 
     let change_payload = json!({
-        "current_password": "WrongPassword123!",
-        "new_password": "NewPassword456!"
+        "currentPassword": "WrongPassword123!",
+        "newPassword": "NewPassword456!"
     });
 
     let response = client.put("/api/users/me/password", &change_payload).await;
@@ -509,12 +509,12 @@ async fn test_get_loyalty_status_no_record() {
     let data = json.get("data").expect("Response should have 'data' field");
 
     assert_eq!(
-        data.get("current_points").and_then(|v| v.as_i64()),
+        data.get("currentPoints").and_then(|v| v.as_i64()),
         Some(0),
         "Default points should be 0"
     );
     assert_eq!(
-        data.get("total_nights").and_then(|v| v.as_i64()),
+        data.get("totalNights").and_then(|v| v.as_i64()),
         Some(0),
         "Default nights should be 0"
     );

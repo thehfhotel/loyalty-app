@@ -21,10 +21,11 @@ pub mod surveys;
 pub mod translation;
 pub mod users;
 
-use axum::Router;
+use axum::{Extension, Router};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+use crate::middleware::auth::JwtSecret;
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 
@@ -60,6 +61,9 @@ use crate::state::AppState;
 ///
 /// An Axum Router with all routes configured and state attached
 pub fn create_router(state: AppState) -> Router {
+    // Extract JWT secret from config to inject as Extension for auth middleware
+    let jwt_secret = JwtSecret(state.config().auth.jwt_secret.clone());
+
     // Storage routes use a different state type, so mount separately
     let storage_state = storage::StorageState::new(crate::services::storage::StorageService::new());
     let storage_router =
@@ -87,6 +91,8 @@ pub fn create_router(state: AppState) -> Router {
         .with_state(state)
         // Merge storage routes (separate state type)
         .merge(storage_router)
+        // Inject JWT secret for auth middleware (must be after with_state so it wraps everything)
+        .layer(Extension(jwt_secret))
 }
 
 #[cfg(test)]

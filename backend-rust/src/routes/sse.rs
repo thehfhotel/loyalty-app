@@ -175,8 +175,10 @@ async fn _sse_events_with_query(
         Err(_) => {
             // Try query parameter token
             if let Some(token) = query.token {
+                let jwt_secret = std::env::var("JWT_SECRET")
+                    .unwrap_or_else(|_| "development-secret-change-in-production".to_string());
                 // Validate token manually
-                match validate_token_from_query(&token) {
+                match validate_token_from_query(&token, &jwt_secret) {
                     Ok(user) => {
                         let sse = sse_events_handler(Extension(user)).await;
                         sse.into_response()
@@ -196,12 +198,9 @@ async fn _sse_events_with_query(
 
 /// Validate JWT token from query parameter
 #[allow(clippy::result_large_err)]
-fn validate_token_from_query(token: &str) -> Result<AuthUser, Response> {
+fn validate_token_from_query(token: &str, jwt_secret: &str) -> Result<AuthUser, Response> {
     use crate::middleware::auth::Claims;
     use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-
-    let jwt_secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "development-secret-change-in-production".to_string());
 
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_bytes());
     let mut validation = Validation::new(Algorithm::HS256);
@@ -226,8 +225,14 @@ fn validate_token_from_query(token: &str) -> Result<AuthUser, Response> {
 /// Handler that attempts authentication via header first, then falls back to query
 async fn sse_handler_with_fallback(
     Query(query): Query<SseQuery>,
+    jwt_secret_ext: Option<Extension<crate::middleware::auth::JwtSecret>>,
     auth_user: Option<Extension<AuthUser>>,
 ) -> Response {
+    let jwt_secret = jwt_secret_ext.map(|Extension(s)| s.0).unwrap_or_else(|| {
+        std::env::var("JWT_SECRET")
+            .unwrap_or_else(|_| "development-secret-change-in-production".to_string())
+    });
+
     match auth_user {
         Some(Extension(user)) => {
             let sse = sse_events_handler(Extension(user)).await;
@@ -236,7 +241,7 @@ async fn sse_handler_with_fallback(
         None => {
             // Try query parameter token
             if let Some(token) = query.token {
-                match validate_token_from_query(&token) {
+                match validate_token_from_query(&token, &jwt_secret) {
                     Ok(user) => {
                         let sse = sse_events_handler(Extension(user)).await;
                         sse.into_response()
@@ -312,7 +317,7 @@ mod tests {
 
     #[test]
     fn test_validate_token_from_query_invalid() {
-        let result = validate_token_from_query("invalid-token");
+        let result = validate_token_from_query("invalid-token", "some-secret");
         assert!(result.is_err());
     }
 }

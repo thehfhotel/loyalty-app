@@ -51,7 +51,13 @@ test.describe('Error states (browser)', () => {
     await page.goto('/profile');
     await page.waitForLoadState('networkidle');
 
-    await page.route('**/trpc/user.updateProfile**', (route) => route.abort('failed'));
+    // Intercept REST API profile update (PUT /api/users/profile) - migrated from tRPC
+    await page.route('**/api/users/profile', (route) => {
+      if (route.request().method() === 'PUT') {
+        return route.abort('failed');
+      }
+      return route.continue();
+    });
 
     // Click edit button (Thai: "แก้ไขการตั้งค่า")
     await page.getByRole('button', { name: /edit settings|แก้ไขการตั้งค่า/i }).click();
@@ -62,7 +68,7 @@ test.describe('Error states (browser)', () => {
 
     // Check for error message (Thai: "ผิดพลาด")
     await expect(page.getByText(/error|ผิดพลาด|failed|ล้มเหลว/i)).toBeVisible();
-    await page.unroute('**/trpc/user.updateProfile**');
+    await page.unroute('**/api/users/profile');
   });
 
   // Skip: This test intercepts tRPC calls which are not supported by the Rust backend.

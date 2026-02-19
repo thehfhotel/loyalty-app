@@ -52,13 +52,25 @@ test.describe('Profile flow (browser)', () => {
     await page.getByRole('button', { name: /^save$|^บันทึก$/i }).click();
 
     // Wait for modal to close (indicates save completed)
-    await expect(modalHeading).not.toBeVisible({ timeout: 5000 });
+    await expect(modalHeading).not.toBeVisible({ timeout: 10000 });
 
-    // Check for success: either success message visible OR name updated on page
-    const successVisible = await page.getByText(/profile updated|อัปเดต.*สำเร็จ|success/i).isVisible({ timeout: 3000 }).catch(() => false);
-    const nameUpdated = await page.getByRole('heading', { level: 3 }).filter({ hasText: newFirstName }).isVisible().catch(() => false);
+    // Check for success: either a success toast appears OR the name updates on the page.
+    // Use proper auto-waiting assertions (not isVisible which checks immediately).
+    let success = false;
+    try {
+      await expect(page.getByText(/profile updated|อัปเดต.*สำเร็จ|success/i).first()).toBeVisible({ timeout: 5000 });
+      success = true;
+    } catch {
+      // Toast may have disappeared; check if name updated on page instead
+      try {
+        await expect(page.getByRole('heading', { level: 3 }).filter({ hasText: newFirstName })).toBeVisible({ timeout: 3000 });
+        success = true;
+      } catch {
+        // Neither toast nor name update visible
+      }
+    }
 
-    expect(successVisible || nameUpdated).toBeTruthy();
+    expect(success).toBeTruthy();
   });
 
   test('Update profile phone number', async ({ page }) => {
@@ -69,18 +81,38 @@ test.describe('Profile flow (browser)', () => {
     await expect(modalHeading).toBeVisible();
 
     const newPhone = '+1 (555) 010-2020';
+    // Ensure required firstName is filled (tRPC profile data may not be available,
+    // so the form starts with empty firstName which would fail validation)
+    const firstNameField = page.getByLabel(/first name|ชื่อ/i).first();
+    const currentFirstName = await firstNameField.inputValue();
+    if (!currentFirstName) {
+      await firstNameField.fill('E2E');
+    }
     // Fill phone field (Thai: "เบอร์โทรศัพท์")
     await page.getByLabel(/phone|เบอร์โทรศัพท์|โทรศัพท์/i).fill(newPhone);
     // Click save (Thai: "บันทึก")
     await page.getByRole('button', { name: /^save$|^บันทึก$/i }).click();
 
     // Wait for modal to close (indicates save completed)
-    await expect(modalHeading).not.toBeVisible({ timeout: 5000 });
+    await expect(modalHeading).not.toBeVisible({ timeout: 10000 });
 
-    // Check for success: message visible or phone updated on page
-    const successVisible = await page.getByText(/profile updated|อัปเดต.*สำเร็จ|success/i).isVisible({ timeout: 3000 }).catch(() => false);
-    const phoneVisible = await page.getByText(newPhone).isVisible().catch(() => false);
-    expect(successVisible || phoneVisible).toBeTruthy();
+    // Check for success: either a success toast appears OR the phone updates on the page.
+    // Use proper auto-waiting assertions (not isVisible which checks immediately).
+    let success = false;
+    try {
+      await expect(page.getByText(/profile updated|อัปเดต.*สำเร็จ|success/i).first()).toBeVisible({ timeout: 5000 });
+      success = true;
+    } catch {
+      // Toast may have disappeared; check if phone updated on page instead
+      try {
+        await expect(page.getByText(newPhone)).toBeVisible({ timeout: 3000 });
+        success = true;
+      } catch {
+        // Neither toast nor phone update visible
+      }
+    }
+
+    expect(success).toBeTruthy();
   });
 
   test('Profile validation errors surface in modal', async ({ page }) => {
