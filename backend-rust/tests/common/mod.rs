@@ -132,9 +132,11 @@ async fn create_db_fresh_connection(
     {
         Ok(_) => Ok(()),
         Err(e) => {
-            // 23505 = unique_violation (database already exists from a prior attempt)
+            // Ignore "already exists" errors:
+            // 42P04 = duplicate_database (CREATE DATABASE standard error)
+            // 23505 = unique_violation (race condition on pg_database_datname_index)
             if let sqlx::Error::Database(ref db_err) = e {
-                if db_err.code().is_some_and(|c| c == "23505") {
+                if db_err.code().is_some_and(|c| c == "42P04" || c == "23505") {
                     return Ok(());
                 }
             }
