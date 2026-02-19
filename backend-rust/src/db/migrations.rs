@@ -41,6 +41,10 @@ static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 pub async fn run_migrations(pool: &PgPool) -> Result<()> {
     info!("Running database migrations...");
 
+    // Bridge: detect databases previously managed by Prisma and mark
+    // the init migration as already applied so sqlx skips it.
+    bridge_prisma_migration(pool).await?;
+
     // Get information about pending migrations before running
     let applied = get_applied_migrations(pool).await?;
     let total_migrations = MIGRATOR.migrations.len();
@@ -66,6 +70,93 @@ pub async fn run_migrations(pool: &PgPool) -> Result<()> {
 
     info!("Database migrations completed successfully");
 
+    Ok(())
+}
+
+/// Bridge for Prisma-to-sqlx migration.
+///
+/// Detects databases whose tables were created by the legacy Prisma backend
+/// (before the Rust migration). Since Prisma doesn't use `_sqlx_migrations`,
+/// sqlx would try to re-run the init migration and fail on existing tables.
+/// This function marks the init migration as already applied.
+async fn bridge_prisma_migration(pool: &PgPool) -> Result<()> {
+    // Check if a core table exists (proof the schema was already created by Prisma)
+    let tables_exist: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+            SELECT FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'users'
+        )"#,
+    )
+    .fetch_one(pool)
+    .await
+    .context("Failed to check for existing tables")?;
+
+    if !tables_exist {
+        return Ok(()); // Fresh database — no bridge needed
+    }
+
+    // Check if sqlx already tracks the init migration
+    let sqlx_table_exists: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+            SELECT FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = '_sqlx_migrations'
+        )"#,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if sqlx_table_exists {
+        let init_tracked: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT FROM _sqlx_migrations WHERE version = 20240101000000)",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false);
+
+        if init_tracked {
+            return Ok(()); // Already tracked — nothing to do
+        }
+    }
+
+    info!("Detected pre-existing database (Prisma). Marking init migration as applied.");
+
+    // Create _sqlx_migrations table with the schema sqlx expects
+    sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS _sqlx_migrations (
+            version BIGINT PRIMARY KEY,
+            description TEXT NOT NULL,
+            installed_on TIMESTAMPTZ NOT NULL DEFAULT now(),
+            success BOOLEAN NOT NULL,
+            checksum BYTEA NOT NULL,
+            execution_time BIGINT NOT NULL DEFAULT 0
+        )"#,
+    )
+    .execute(pool)
+    .await
+    .context("Failed to create _sqlx_migrations table")?;
+
+    // Get the init migration's metadata from the embedded migrator
+    let init_migration = MIGRATOR
+        .migrations
+        .iter()
+        .find(|m| m.version == 20240101000000)
+        .context("Init migration (20240101000000) not found in embedded migrations")?;
+
+    // Mark as applied with the correct checksum
+    sqlx::query(
+        r#"INSERT INTO _sqlx_migrations (version, description, installed_on, success, checksum, execution_time)
+           VALUES ($1, $2, now(), true, $3, 0)
+           ON CONFLICT (version) DO NOTHING"#,
+    )
+    .bind(init_migration.version)
+    .bind(init_migration.description.as_ref())
+    .bind(&init_migration.checksum as &[u8])
+    .execute(pool)
+    .await
+    .context("Failed to mark init migration as applied")?;
+
+    info!("Init migration marked as applied (Prisma bridge)");
     Ok(())
 }
 
