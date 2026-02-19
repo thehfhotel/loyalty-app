@@ -65,11 +65,24 @@ static TEMPLATE_READY: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new
 /// Template database name
 const TEMPLATE_DB_NAME: &str = "loyalty_test_template";
 
-/// Get or create the admin pool (connects to "postgres" database)
+/// Get or create the admin pool (connects to "postgres" database).
+///
+/// The pool is cached in a static for reuse across tests. However, since each
+/// `#[tokio::test]` creates its own runtime, a pool created in one test's runtime
+/// becomes stale when that test completes (internal tasks die with the runtime).
+/// We detect this by running a health check query and recreate the pool if needed.
 async fn get_admin_pool() -> Result<PgPool, sqlx::Error> {
     let mut guard = ADMIN_POOL.lock().await;
+
+    // If we have a cached pool, verify it's still usable
     if let Some(pool) = guard.as_ref() {
-        return Ok(pool.clone());
+        match sqlx::query("SELECT 1").execute(pool).await {
+            Ok(_) => return Ok(pool.clone()),
+            Err(_) => {
+                // Pool is stale (its runtime died), discard and recreate
+                *guard = None;
+            }
+        }
     }
 
     let pool = PgPoolOptions::new()

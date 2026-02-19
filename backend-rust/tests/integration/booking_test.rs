@@ -621,6 +621,33 @@ async fn test_check_availability_returns_availability() {
         .await
         .expect("Failed to insert test user");
 
+    // Seed room_types and rooms so the availability query has data
+    let room_type_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO room_types (id, name, price_per_night, max_guests, is_active)
+        VALUES ($1, 'Standard Room', 1500.00, 2, true)
+        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+        "#,
+    )
+    .bind(room_type_id)
+    .execute(app.db())
+    .await
+    .expect("Failed to insert room type");
+
+    sqlx::query(
+        r#"
+        INSERT INTO rooms (id, room_type_id, room_number, floor, is_active)
+        VALUES ($1, $2, '201', 2, true)
+        ON CONFLICT (room_number) DO UPDATE SET room_number = EXCLUDED.room_number
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(room_type_id)
+    .execute(app.db())
+    .await
+    .expect("Failed to insert room");
+
     let client = app.authenticated_client(&user.id, &user.email);
 
     let today = Utc::now().date_naive();
@@ -658,6 +685,33 @@ async fn test_check_availability_with_room_type() {
     user.insert(app.db())
         .await
         .expect("Failed to insert test user");
+
+    // Seed a Deluxe room type and room so the availability query has data
+    let room_type_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO room_types (id, name, price_per_night, max_guests, is_active)
+        VALUES ($1, 'Deluxe', 2500.00, 2, true)
+        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+        "#,
+    )
+    .bind(room_type_id)
+    .execute(app.db())
+    .await
+    .expect("Failed to insert room type");
+
+    sqlx::query(
+        r#"
+        INSERT INTO rooms (id, room_type_id, room_number, floor, is_active)
+        VALUES ($1, $2, '301', 3, true)
+        ON CONFLICT (room_number) DO UPDATE SET room_number = EXCLUDED.room_number
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(room_type_id)
+    .execute(app.db())
+    .await
+    .expect("Failed to insert room");
 
     let client = app.authenticated_client(&user.id, &user.email);
 

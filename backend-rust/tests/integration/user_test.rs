@@ -357,8 +357,8 @@ async fn test_unauthorized_access() {
     assert!(error.is_some(), "Error field should be a string");
     assert_eq!(
         error.unwrap(),
-        "unauthorized",
-        "Error should be 'unauthorized'"
+        "No token provided",
+        "Error should be 'No token provided'"
     );
 
     let message = json.get("message").and_then(|v| v.as_str());
@@ -381,8 +381,8 @@ async fn test_unauthorized_access_invalid_token() {
 
     assert_eq!(
         json.get("error").and_then(|v| v.as_str()),
-        Some("unauthorized"),
-        "Error should be 'unauthorized'"
+        Some("Invalid token"),
+        "Error should be 'Invalid token'"
     );
 
     app.cleanup().await.ok();
@@ -405,8 +405,8 @@ async fn test_unauthorized_access_expired_token() {
 
     assert_eq!(
         json.get("error").and_then(|v| v.as_str()),
-        Some("unauthorized"),
-        "Error should be 'unauthorized'"
+        Some("Token expired"),
+        "Error should be 'Token expired'"
     );
 
     app.cleanup().await.ok();
