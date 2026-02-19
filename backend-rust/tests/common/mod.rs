@@ -14,7 +14,7 @@ use chrono::{Duration, Utc};
 use once_cell::sync::Lazy;
 use redis::aio::ConnectionManager;
 use serde::{de::DeserializeOwned, Serialize};
-use sqlx::{postgres::PgPoolOptions, Executor, PgPool};
+use sqlx::{postgres::PgPoolOptions, Connection, Executor, PgPool};
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -110,6 +110,22 @@ async fn get_admin_pool() -> Result<PgPool, sqlx::Error> {
         *guard = Some(pool.clone());
     }
     Ok(pool)
+}
+
+/// Create a per-test database using a fresh direct connection.
+/// This bypasses the cached admin pool entirely, avoiding tokio runtime
+/// lifetime issues. Used as a fallback when pool-based retries fail.
+async fn create_db_fresh_connection(
+    db_name: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut conn = sqlx::PgConnection::connect(&admin_database_url()).await?;
+    sqlx::query(&format!(
+        "CREATE DATABASE \"{}\" TEMPLATE \"{}\"",
+        db_name, TEMPLATE_DB_NAME
+    ))
+    .execute(&mut conn)
+    .await?;
+    Ok(())
 }
 
 /// Ensure the template database exists with migrations and seed data.
@@ -306,16 +322,26 @@ impl TestApp {
         // Ensure template DB is ready
         ensure_template_db().await?;
 
-        // Create a unique per-test database
+        // Create a unique per-test database.
+        // Try cached pool first, fall back to fresh direct connection.
         let db_name = format!("test_{}", Uuid::new_v4().simple());
-        let admin_pool = get_admin_pool().await?;
-
-        sqlx::query(&format!(
+        let create_sql = format!(
             "CREATE DATABASE \"{}\" TEMPLATE \"{}\"",
             db_name, TEMPLATE_DB_NAME
-        ))
-        .execute(&admin_pool)
-        .await?;
+        );
+
+        let mut created = false;
+        if let Ok(admin_pool) = get_admin_pool().await {
+            if sqlx::query(&create_sql).execute(&admin_pool).await.is_ok() {
+                created = true;
+            } else {
+                let mut guard = ADMIN_POOL.lock().unwrap_or_else(|e| e.into_inner());
+                *guard = None;
+            }
+        }
+        if !created {
+            create_db_fresh_connection(&db_name).await?;
+        }
 
         // Connect to the new per-test database
         let test_url = {
@@ -477,59 +503,36 @@ pub async fn setup_test() -> (PgPool, TestDatabase) {
         .await
         .expect("Failed to ensure template database");
 
-    // Create a unique per-test database with retry logic.
-    // When many #[tokio::test] tests run in parallel, each creates its own
-    // single-threaded runtime. A pool obtained from get_admin_pool() can become
-    // stale if the runtime that created it shuts down between the health check
-    // and the CREATE DATABASE query. We retry with exponential backoff,
-    // invalidating the cached pool on each failure so a fresh one is created.
+    // Create a unique per-test database.
+    // First try the cached admin pool for speed, then fall back to a fresh
+    // direct connection (bypasses tokio runtime lifetime issues entirely).
     let db_name = format!("test_{}", Uuid::new_v4().simple());
-    let max_retries = 5;
-    let mut last_err = None;
-    for attempt in 0..max_retries {
-        if attempt > 0 {
-            // Exponential backoff: 50ms, 100ms, 200ms, 400ms
-            let delay = std::time::Duration::from_millis(50 << (attempt - 1));
-            tokio::time::sleep(delay).await;
-            // Invalidate cached admin pool so next call creates a fresh one
-            {
-                let mut guard = ADMIN_POOL.lock().unwrap_or_else(|e| e.into_inner());
-                *guard = None;
-            }
-        }
-        let admin_pool = match get_admin_pool().await {
-            Ok(p) => p,
-            Err(e) => {
-                last_err = Some(format!(
-                    "Failed to get admin pool (attempt {}): {}",
-                    attempt + 1,
-                    e
-                ));
-                continue;
-            },
-        };
-        match sqlx::query(&format!(
+    let mut created = false;
+
+    // Attempt 1: use cached admin pool (fast path)
+    if let Ok(admin_pool) = get_admin_pool().await {
+        if sqlx::query(&format!(
             "CREATE DATABASE \"{}\" TEMPLATE \"{}\"",
             db_name, TEMPLATE_DB_NAME
         ))
         .execute(&admin_pool)
         .await
+        .is_ok()
         {
-            Ok(_) => {
-                last_err = None;
-                break;
-            },
-            Err(e) => {
-                last_err = Some(format!(
-                    "Failed to create per-test database (attempt {}): {}",
-                    attempt + 1,
-                    e
-                ));
-            },
+            created = true;
+        } else {
+            // Invalidate stale pool
+            let mut guard = ADMIN_POOL.lock().unwrap_or_else(|e| e.into_inner());
+            *guard = None;
         }
     }
-    if let Some(err) = last_err {
-        panic!("{}", err);
+
+    // Attempt 2: fresh direct connection (immune to tokio runtime issues)
+    if !created {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        create_db_fresh_connection(&db_name)
+            .await
+            .expect("Failed to create per-test database (fresh connection)");
     }
 
     // Connect to the new per-test database
@@ -575,14 +578,26 @@ pub async fn init_test_db() -> Result<PgPool, sqlx::Error> {
         .map_err(|e| sqlx::Error::Configuration(e.to_string().into()))?;
 
     let db_name = format!("test_{}", Uuid::new_v4().simple());
-    let admin_pool = get_admin_pool().await?;
 
-    sqlx::query(&format!(
-        "CREATE DATABASE \"{}\" TEMPLATE \"{}\"",
-        db_name, TEMPLATE_DB_NAME
-    ))
-    .execute(&admin_pool)
-    .await?;
+    // Try cached pool first, fall back to fresh direct connection
+    let mut created = false;
+    if let Ok(admin_pool) = get_admin_pool().await {
+        let create_sql = format!(
+            "CREATE DATABASE \"{}\" TEMPLATE \"{}\"",
+            db_name, TEMPLATE_DB_NAME
+        );
+        if sqlx::query(&create_sql).execute(&admin_pool).await.is_ok() {
+            created = true;
+        } else {
+            let mut guard = ADMIN_POOL.lock().unwrap_or_else(|e| e.into_inner());
+            *guard = None;
+        }
+    }
+    if !created {
+        create_db_fresh_connection(&db_name)
+            .await
+            .map_err(|e| sqlx::Error::Configuration(e.to_string().into()))?;
+    }
 
     let test_url = {
         let url = test_database_url();

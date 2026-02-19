@@ -1103,13 +1103,13 @@ async fn award_loyalty_points(
     nights: i32,
     booking_id: Uuid,
 ) -> AppResult<()> {
-    // Use the award_points stored procedure
-    // award_points(p_user_id, p_points, p_type, p_description, p_reference_id, p_nights_stayed)
     let reference_id = format!("BOOKING-{}", booking_id);
 
+    // Insert points transaction directly (avoids stored procedure type resolution issues)
     sqlx::query(
         r#"
-        SELECT award_points($1, $2, 'earned_stay'::varchar, 'Points earned from booking', $3, NULL, NULL, $4)
+        INSERT INTO points_transactions (user_id, points, type, description, reference_id, nights_stayed)
+        VALUES ($1, $2, 'earned_stay'::text::points_transaction_type, 'Points earned from booking', $3, $4)
         "#,
     )
     .bind(user_id)
@@ -1118,6 +1118,31 @@ async fn award_loyalty_points(
     .bind(nights)
     .execute(db)
     .await?;
+
+    // Update user loyalty totals
+    sqlx::query(
+        r#"
+        UPDATE user_loyalty
+        SET current_points = current_points + $2,
+            total_nights = COALESCE(total_nights, 0) + $3,
+            points_updated_at = NOW(),
+            updated_at = NOW()
+        WHERE user_id = $1
+        "#,
+    )
+    .bind(user_id)
+    .bind(points)
+    .bind(nights)
+    .execute(db)
+    .await?;
+
+    // Recalculate tier if nights were awarded
+    if nights > 0 {
+        sqlx::query("SELECT * FROM recalculate_user_tier_by_nights($1)")
+            .bind(user_id)
+            .execute(db)
+            .await?;
+    }
 
     // Update the booking with points earned
     sqlx::query("UPDATE bookings SET points_earned = $2 WHERE id = $1")
