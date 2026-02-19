@@ -80,7 +80,7 @@ jobs:
   validate-backend:
     name: "Validate Backend (Rust)"
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -96,7 +96,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-          --shm-size=256mb
 
       redis:
         image: redis:7-alpine
@@ -141,30 +140,6 @@ jobs:
         env:
           RUST_BACKTRACE: 1
           RUST_LOG: debug
-
-      - name: Configure PostgreSQL for parallel tests
-        run: |
-          # Each parallel test creates its own DB + connection pool.
-          # Default max_connections=100 is too low when connections from
-          # completed tests linger (tokio runtime shutdown doesn't close TCP).
-          # idle_session_timeout auto-kills leaked connections after 10s idle.
-          PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db \
-            -c "ALTER SYSTEM SET max_connections = 300;" \
-            -c "ALTER SYSTEM SET idle_session_timeout = '10s';"
-          # Restart PostgreSQL to apply the changes
-          CONTAINER_ID=$(docker ps -q --filter "publish=5438")
-          docker restart "$CONTAINER_ID"
-          # Wait for PostgreSQL to be ready
-          for i in $(seq 1 30); do
-            PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -c "SELECT 1;" 2>/dev/null && break
-            sleep 1
-          done
-          # Verify settings applied
-          PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db \
-            -c "SHOW max_connections;" \
-            -c "SHOW idle_session_timeout;"
-        env:
-          PGPASSWORD: loyalty_test_pass
 
       - name: Grant CREATEDB for per-test database isolation
         run: |
@@ -243,39 +218,7 @@ jobs:
 
       - name: Run integration tests
         working-directory: ./backend-rust
-        run: |
-          # Run tests with a process-level timeout to handle tokio runtime
-          # shutdown hangs (static SSE/pool singletons keep async tasks alive).
-          # Tests compile in ~10s and run in ~5-10min; 15min is generous.
-          # timeout sends SIGTERM, then SIGKILL after 10s grace period.
-          timeout --signal=TERM --kill-after=10 900 \
-            cargo test --test '*' -- --nocapture 2>&1 | tee /tmp/test-output.txt
-          PIPE_EXIT=${PIPESTATUS[0]}
-
-          # Check if tests passed by looking at the test result summary
-          if grep -q "test result: ok" /tmp/test-output.txt; then
-            echo "All integration tests passed"
-            exit 0
-          elif grep -q "test result: FAILED" /tmp/test-output.txt; then
-            echo "Some integration tests failed"
-            exit 1
-          elif [ $PIPE_EXIT -eq 124 ]; then
-            # timeout killed the process - check if all test lines show results
-            TOTAL=$(grep -c "^test " /tmp/test-output.txt || true)
-            PASSED=$(grep -c "\.\.\. ok$" /tmp/test-output.txt || true)
-            FAILED=$(grep -c "\.\.\. FAILED$" /tmp/test-output.txt || true)
-            echo "::warning::Process timed out before printing summary. Tests reported: $PASSED passed, $FAILED failed out of $TOTAL"
-            if [ "$FAILED" -gt 0 ]; then
-              exit 1
-            elif [ "$TOTAL" -gt 0 ] && [ "$PASSED" -eq "$TOTAL" ]; then
-              echo "All $TOTAL tests passed (process hung after completion)"
-              exit 0
-            else
-              exit 1
-            fi
-          else
-            exit $PIPE_EXIT
-          fi
+        run: cargo test --test '*'
         env:
           RUST_BACKTRACE: short
           RUST_LOG: warn
