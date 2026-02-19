@@ -352,20 +352,32 @@ async fn test_redeem_coupon() {
     );
 
     // For a 20% coupon on 1000 THB, discount should be 200 THB
+    // Note: Decimal serializes as a string (e.g., "200.00"), so check both number and string
     let discount_amount = data
         .get("discountAmount")
-        .and_then(|v| v.as_f64())
-        .or_else(|| data.get("discount_amount").and_then(|v| v.as_f64()));
+        .or_else(|| data.get("discount_amount"))
+        .and_then(|v| {
+            v.as_f64()
+                .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+        });
     assert!(
         discount_amount.is_some(),
-        "Response should have discount amount"
+        "Response should have discount amount. Data: {:?}",
+        data
     );
 
     let final_amount = data
         .get("finalAmount")
-        .and_then(|v| v.as_f64())
-        .or_else(|| data.get("final_amount").and_then(|v| v.as_f64()));
-    assert!(final_amount.is_some(), "Response should have final amount");
+        .or_else(|| data.get("final_amount"))
+        .and_then(|v| {
+            v.as_f64()
+                .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+        });
+    assert!(
+        final_amount.is_some(),
+        "Response should have final amount. Data: {:?}",
+        data
+    );
 
     // Verify coupon status in database
     let coupon_status: String =

@@ -28,38 +28,53 @@ async fn create_test_booking(
     check_out_offset_days: i64,
 ) -> Result<Uuid, sqlx::Error> {
     let booking_id = Uuid::new_v4();
-    let room_id = Uuid::new_v4();
-    let room_type_id = Uuid::new_v4();
     let today = Utc::now().date_naive();
     let check_in = today + Duration::days(check_in_offset_days);
     let check_out = today + Duration::days(check_out_offset_days);
 
-    // Reuse existing room type and room if they exist, otherwise create them
-    let room_type_id: Uuid = sqlx::query_scalar(
-        r#"
-        INSERT INTO room_types (id, name, price_per_night, max_guests)
-        VALUES ($1, 'Deluxe Room', 2000.00, 2)
-        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-        RETURNING id
-        "#,
+    // Get or create the test room type (unique index is on LOWER(name))
+    let room_type_id: Uuid = match sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM room_types WHERE LOWER(name) = LOWER('Deluxe Room')",
     )
-    .bind(room_type_id)
-    .fetch_one(pool)
-    .await?;
+    .fetch_optional(pool)
+    .await?
+    {
+        Some(id) => id,
+        None => {
+            sqlx::query_scalar(
+                r#"
+                INSERT INTO room_types (id, name, price_per_night, max_guests)
+                VALUES ($1, 'Deluxe Room', 2000.00, 2)
+                RETURNING id
+                "#,
+            )
+            .bind(Uuid::new_v4())
+            .fetch_one(pool)
+            .await?
+        },
+    };
 
-    // Insert room (reuse existing if name conflicts)
-    let room_id: Uuid = sqlx::query_scalar(
-        r#"
-        INSERT INTO rooms (id, room_type_id, room_number, floor)
-        VALUES ($1, $2, '101', 1)
-        ON CONFLICT (room_number) DO UPDATE SET room_number = EXCLUDED.room_number
-        RETURNING id
-        "#,
-    )
-    .bind(room_id)
-    .bind(room_type_id)
-    .fetch_one(pool)
-    .await?;
+    // Get or create the test room
+    let room_id: Uuid =
+        match sqlx::query_scalar::<_, Uuid>("SELECT id FROM rooms WHERE room_number = '101'")
+            .fetch_optional(pool)
+            .await?
+        {
+            Some(id) => id,
+            None => {
+                sqlx::query_scalar(
+                    r#"
+                INSERT INTO rooms (id, room_type_id, room_number, floor)
+                VALUES ($1, $2, '101', 1)
+                RETURNING id
+                "#,
+                )
+                .bind(Uuid::new_v4())
+                .bind(room_type_id)
+                .fetch_one(pool)
+                .await?
+            },
+        };
 
     // Calculate nights and price
     let nights = (check_out - check_in).num_days() as i32;
@@ -627,7 +642,6 @@ async fn test_check_availability_returns_availability() {
         r#"
         INSERT INTO room_types (id, name, price_per_night, max_guests, is_active)
         VALUES ($1, 'Standard Room', 1500.00, 2, true)
-        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
         "#,
     )
     .bind(room_type_id)
@@ -639,7 +653,6 @@ async fn test_check_availability_returns_availability() {
         r#"
         INSERT INTO rooms (id, room_type_id, room_number, floor, is_active)
         VALUES ($1, $2, '201', 2, true)
-        ON CONFLICT (room_number) DO UPDATE SET room_number = EXCLUDED.room_number
         "#,
     )
     .bind(Uuid::new_v4())
@@ -692,7 +705,6 @@ async fn test_check_availability_with_room_type() {
         r#"
         INSERT INTO room_types (id, name, price_per_night, max_guests, is_active)
         VALUES ($1, 'Deluxe', 2500.00, 2, true)
-        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
         "#,
     )
     .bind(room_type_id)
@@ -704,7 +716,6 @@ async fn test_check_availability_with_room_type() {
         r#"
         INSERT INTO rooms (id, room_type_id, room_number, floor, is_active)
         VALUES ($1, $2, '301', 3, true)
-        ON CONFLICT (room_number) DO UPDATE SET room_number = EXCLUDED.room_number
         "#,
     )
     .bind(Uuid::new_v4())

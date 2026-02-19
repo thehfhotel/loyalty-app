@@ -7,7 +7,7 @@
 //! - Helper functions for making authenticated requests
 //! - Cleanup utilities
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use axum::{body::Body, http::Request, Router};
 use chrono::{Duration, Utc};
@@ -15,7 +15,6 @@ use once_cell::sync::Lazy;
 use redis::aio::ConnectionManager;
 use serde::{de::DeserializeOwned, Serialize};
 use sqlx::{postgres::PgPoolOptions, Executor, PgPool};
-use tokio::sync::Mutex;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -56,11 +55,13 @@ pub const TEST_USER_PASSWORD: &str = "TestPassword123!";
 // Template Database Infrastructure
 // ============================================================================
 
-/// Admin pool connects to "postgres" DB for CREATE/DROP DATABASE operations
-static ADMIN_POOL: Lazy<Arc<Mutex<Option<PgPool>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+/// Admin pool connects to "postgres" DB for CREATE/DROP DATABASE operations.
+/// Uses std::sync::Mutex (not tokio) to avoid runtime dependency in statics.
+static ADMIN_POOL: Lazy<Mutex<Option<PgPool>>> = Lazy::new(|| Mutex::new(None));
 
-/// Whether the template database has been created
-static TEMPLATE_READY: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+/// Whether the template database has been created.
+/// Uses std::sync::Mutex to avoid tokio runtime dependency.
+static TEMPLATE_READY: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 /// Template database name
 const TEMPLATE_DB_NAME: &str = "loyalty_test_template";
@@ -68,23 +69,33 @@ const TEMPLATE_DB_NAME: &str = "loyalty_test_template";
 /// Get or create the admin pool (connects to "postgres" database).
 ///
 /// The pool is cached in a static for reuse across tests. However, since each
-/// `#[tokio::test]` creates its own runtime, a pool created in one test's runtime
-/// becomes stale when that test completes (internal tasks die with the runtime).
-/// We detect this by running a health check query and recreate the pool if needed.
+/// `#[tokio::test]` creates its own single-threaded runtime, a pool created in
+/// one test's runtime becomes stale when that test completes. We detect this by
+/// running a health check query and recreate the pool if needed.
+///
+/// Uses std::sync::Mutex (not tokio::sync::Mutex) to avoid depending on the
+/// tokio runtime context for lock acquisition, which prevents "Tokio 1.x context
+/// being shutdown" errors when tests run in parallel.
 async fn get_admin_pool() -> Result<PgPool, sqlx::Error> {
-    let mut guard = ADMIN_POOL.lock().await;
+    // Try to get a cached pool (hold std::sync::Mutex only briefly, never across await)
+    let cached = {
+        let guard = ADMIN_POOL.lock().unwrap_or_else(|e| e.into_inner());
+        guard.clone()
+    };
 
-    // If we have a cached pool, verify it's still usable
-    if let Some(pool) = guard.as_ref() {
-        match sqlx::query("SELECT 1").execute(pool).await {
-            Ok(_) => return Ok(pool.clone()),
+    // If we have a cached pool, health-check it outside the lock
+    if let Some(pool) = cached {
+        match sqlx::query("SELECT 1").execute(&pool).await {
+            Ok(_) => return Ok(pool),
             Err(_) => {
-                // Pool is stale (its runtime died), discard and recreate
+                // Pool is stale (its runtime died), discard it
+                let mut guard = ADMIN_POOL.lock().unwrap_or_else(|e| e.into_inner());
                 *guard = None;
             },
         }
     }
 
+    // Create a fresh pool in the current test's runtime
     let pool = PgPoolOptions::new()
         .max_connections(2)
         .acquire_timeout(std::time::Duration::from_secs(10))
@@ -93,16 +104,43 @@ async fn get_admin_pool() -> Result<PgPool, sqlx::Error> {
         .connect(&admin_database_url())
         .await?;
 
-    *guard = Some(pool.clone());
+    // Cache it
+    {
+        let mut guard = ADMIN_POOL.lock().unwrap_or_else(|e| e.into_inner());
+        *guard = Some(pool.clone());
+    }
     Ok(pool)
 }
 
 /// Ensure the template database exists with migrations and seed data.
 /// This is called once per test run (idempotent via TEMPLATE_READY flag).
+///
+/// Uses a tokio::sync::Mutex internally for the one-time initialization (since
+/// we need to hold a lock across async operations), but the fast-path check uses
+/// std::sync::Mutex to avoid runtime dependency.
 async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut ready = TEMPLATE_READY.lock().await;
-    if *ready {
-        return Ok(());
+    /// Tokio mutex for serializing template creation (held across await points).
+    /// Only used during the one-time initialization; after that, the fast path
+    /// in TEMPLATE_READY (std::sync::Mutex) skips this entirely.
+    static TEMPLATE_INIT: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
+
+    // Fast path: check if already ready (std::sync::Mutex, no runtime dependency)
+    {
+        let ready = TEMPLATE_READY.lock().unwrap_or_else(|e| e.into_inner());
+        if *ready {
+            return Ok(());
+        }
+    }
+
+    // Slow path: acquire tokio mutex to serialize template creation
+    let _init_guard = TEMPLATE_INIT.lock().await;
+
+    // Double-check after acquiring the init lock
+    {
+        let ready = TEMPLATE_READY.lock().unwrap_or_else(|e| e.into_inner());
+        if *ready {
+            return Ok(());
+        }
     }
 
     let admin_pool = get_admin_pool().await?;
@@ -192,7 +230,10 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
             .await;
     }
 
-    *ready = true;
+    {
+        let mut ready = TEMPLATE_READY.lock().unwrap_or_else(|e| e.into_inner());
+        *ready = true;
+    }
     Ok(())
 }
 
@@ -228,11 +269,40 @@ pub struct TestApp {
 impl TestApp {
     /// Create a new TestApp instance with an isolated per-test database.
     ///
-    /// This:
-    /// 1. Ensures the template database exists (one-time)
-    /// 2. Creates a unique per-test database from the template
-    /// 3. Connects to it and builds the full application router
+    /// Retries up to 3 times on transient "Tokio runtime shutdown" errors that
+    /// can occur when parallel `#[tokio::test]` runtimes race during cleanup.
     pub async fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        const MAX_RETRIES: u32 = 3;
+        let mut last_error = None;
+
+        for attempt in 0..MAX_RETRIES {
+            match Self::try_new().await {
+                Ok(app) => return Ok(app),
+                Err(e) => {
+                    let err_str = e.to_string();
+                    if err_str.contains("shutdown") && attempt + 1 < MAX_RETRIES {
+                        // Invalidate cached admin pool (it may reference a dead runtime)
+                        {
+                            let mut guard = ADMIN_POOL.lock().unwrap_or_else(|e| e.into_inner());
+                            *guard = None;
+                        }
+                        // Brief delay to let the stale runtime finish cleanup
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            50 * (attempt as u64 + 1),
+                        ))
+                        .await;
+                        last_error = Some(e);
+                        continue;
+                    }
+                    return Err(e);
+                },
+            }
+        }
+        Err(last_error.unwrap())
+    }
+
+    /// Inner implementation of TestApp creation.
+    async fn try_new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let _ = dotenvy::dotenv();
 
         // Ensure template DB is ready
