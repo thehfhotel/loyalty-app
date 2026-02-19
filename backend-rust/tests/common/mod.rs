@@ -269,10 +269,10 @@ pub struct TestApp {
 impl TestApp {
     /// Create a new TestApp instance with an isolated per-test database.
     ///
-    /// Retries up to 3 times on transient "Tokio runtime shutdown" errors that
+    /// Retries up to 5 times on transient "Tokio runtime shutdown" errors that
     /// can occur when parallel `#[tokio::test]` runtimes race during cleanup.
     pub async fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        const MAX_RETRIES: u32 = 3;
+        const MAX_RETRIES: u32 = 5;
         let mut last_error = None;
 
         for attempt in 0..MAX_RETRIES {
@@ -286,11 +286,9 @@ impl TestApp {
                             let mut guard = ADMIN_POOL.lock().unwrap_or_else(|e| e.into_inner());
                             *guard = None;
                         }
-                        // Brief delay to let the stale runtime finish cleanup
-                        tokio::time::sleep(std::time::Duration::from_millis(
-                            50 * (attempt as u64 + 1),
-                        ))
-                        .await;
+                        // Exponential backoff: 100ms, 200ms, 400ms, 800ms
+                        tokio::time::sleep(std::time::Duration::from_millis(100 * (1 << attempt)))
+                            .await;
                         last_error = Some(e);
                         continue;
                     }

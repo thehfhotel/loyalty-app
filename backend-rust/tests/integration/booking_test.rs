@@ -198,6 +198,31 @@ async fn test_create_booking_success() {
         .await
         .expect("Failed to insert test user");
 
+    // Seed a Deluxe room type and room so the booking can be created
+    let room_type_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO room_types (id, name, price_per_night, max_guests, is_active)
+        VALUES ($1, 'Deluxe', 2000.00, 2, true)
+        "#,
+    )
+    .bind(room_type_id)
+    .execute(app.db())
+    .await
+    .expect("Failed to insert room type");
+
+    sqlx::query(
+        r#"
+        INSERT INTO rooms (id, room_type_id, room_number, floor, is_active)
+        VALUES ($1, $2, '501', 5, true)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(room_type_id)
+    .execute(app.db())
+    .await
+    .expect("Failed to insert room");
+
     let client = app.authenticated_client(&user.id, &user.email);
 
     let today = Utc::now().date_naive();
