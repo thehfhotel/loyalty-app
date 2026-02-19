@@ -1109,7 +1109,7 @@ async fn award_loyalty_points(
 
     sqlx::query(
         r#"
-        SELECT award_points($1, $2, 'earned_stay'::points_transaction_type, 'Points earned from booking', $3, NULL, NULL, $4)
+        SELECT award_points($1, $2, 'earned_stay'::varchar, 'Points earned from booking', $3, NULL, NULL, $4)
         "#,
     )
     .bind(user_id)

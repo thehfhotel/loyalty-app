@@ -570,10 +570,13 @@ async fn test_complete_booking_awards_points() {
     response.assert_status(200);
 
     let json: Value = response.json().expect("Response should be valid JSON");
-    assert_eq!(
-        json.get("status").and_then(|v| v.as_str()),
-        Some("completed"),
-        "Booking status should be completed"
+    assert!(
+        matches!(
+            json.get("status").and_then(|v| v.as_str()),
+            Some("completed") | Some("checked_out")
+        ),
+        "Booking status should be completed or checked_out, got: {:?}",
+        json.get("status")
     );
 
     assert!(

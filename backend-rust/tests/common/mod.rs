@@ -477,17 +477,60 @@ pub async fn setup_test() -> (PgPool, TestDatabase) {
         .await
         .expect("Failed to ensure template database");
 
-    // Create a unique per-test database
+    // Create a unique per-test database with retry logic.
+    // When many #[tokio::test] tests run in parallel, each creates its own
+    // single-threaded runtime. A pool obtained from get_admin_pool() can become
+    // stale if the runtime that created it shuts down between the health check
+    // and the CREATE DATABASE query. We retry with exponential backoff,
+    // invalidating the cached pool on each failure so a fresh one is created.
     let db_name = format!("test_{}", Uuid::new_v4().simple());
-    let admin_pool = get_admin_pool().await.expect("Failed to get admin pool");
-
-    sqlx::query(&format!(
-        "CREATE DATABASE \"{}\" TEMPLATE \"{}\"",
-        db_name, TEMPLATE_DB_NAME
-    ))
-    .execute(&admin_pool)
-    .await
-    .expect("Failed to create per-test database");
+    let max_retries = 5;
+    let mut last_err = None;
+    for attempt in 0..max_retries {
+        if attempt > 0 {
+            // Exponential backoff: 50ms, 100ms, 200ms, 400ms
+            let delay = std::time::Duration::from_millis(50 << (attempt - 1));
+            tokio::time::sleep(delay).await;
+            // Invalidate cached admin pool so next call creates a fresh one
+            {
+                let mut guard = ADMIN_POOL.lock().unwrap_or_else(|e| e.into_inner());
+                *guard = None;
+            }
+        }
+        let admin_pool = match get_admin_pool().await {
+            Ok(p) => p,
+            Err(e) => {
+                last_err = Some(format!(
+                    "Failed to get admin pool (attempt {}): {}",
+                    attempt + 1,
+                    e
+                ));
+                continue;
+            },
+        };
+        match sqlx::query(&format!(
+            "CREATE DATABASE \"{}\" TEMPLATE \"{}\"",
+            db_name, TEMPLATE_DB_NAME
+        ))
+        .execute(&admin_pool)
+        .await
+        {
+            Ok(_) => {
+                last_err = None;
+                break;
+            },
+            Err(e) => {
+                last_err = Some(format!(
+                    "Failed to create per-test database (attempt {}): {}",
+                    attempt + 1,
+                    e
+                ));
+            },
+        }
+    }
+    if let Some(err) = last_err {
+        panic!("{}", err);
+    }
 
     // Connect to the new per-test database
     let test_url = {
