@@ -3,53 +3,15 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { FiCalendar, FiUsers, FiStar, FiAlertCircle, FiPlus, FiChevronRight, FiX, FiUpload, FiCheckCircle, FiClock, FiDollarSign, FiDownload } from 'react-icons/fi';
 import MainLayout from '../components/layout/MainLayout';
-import { trpc } from '../hooks/useTRPC';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import api from '../services/authService';
+import { bookingService } from '../services/bookingService';
+import type { Booking } from '../services/bookingService';
 import companyQRCode from '../assets/company-promptpay-qr.png';
 import kbankLogo from '../assets/kbank-logo.png';
 
 type BookingStatus = 'confirmed' | 'cancelled' | 'completed';
 type BookingTab = 'current' | 'history';
-type PaymentType = 'deposit' | 'full' | null;
-type SlipOkStatus = 'pending' | 'verified' | 'failed' | 'quota_exceeded' | null;
-type AdminVerificationStatus = 'pending' | 'verified' | 'needs_action' | null;
-
-// Slip from booking_slips table
-interface BookingSlip {
-  id: string;
-  slipUrl: string;
-  uploadedAt: string | Date;
-  slipokStatus: SlipOkStatus;
-  adminStatus: AdminVerificationStatus;
-}
-
-interface Booking {
-  id: string;
-  roomTypeName: string;
-  checkInDate: string | Date;
-  checkOutDate: string | Date;
-  numGuests: number;
-  totalPrice: number | string;
-  pointsEarned: number;
-  status: string;
-  notes?: string;
-  cancellationReason?: string;
-  cancelledByAdmin?: boolean;
-  createdAt: string | Date;
-  // Payment fields
-  paymentType?: PaymentType;
-  paymentAmount?: number;
-  // Multi-slip support
-  slips?: BookingSlip[];
-  // Legacy single slip fields (deprecated)
-  slipUrl?: string;
-  slipUploadedAt?: string | Date;
-  slipOkStatus?: SlipOkStatus;
-  adminVerificationStatus?: AdminVerificationStatus;
-  verifiedAt?: string | Date;
-  verifiedBy?: string;
-}
 
 const statusColors: Record<BookingStatus | 'cancelledByAdmin', { bg: string; text: string }> = {
   confirmed: { bg: 'bg-green-100', text: 'text-green-800' },
@@ -100,9 +62,11 @@ export default function MyBookingsPage() {
   const promptPayQRUrl = import.meta.env.VITE_PROMPTPAY_QR_IMAGE_URL ?? companyQRCode;
 
   // Queries - disable caching to always show fresh data
-  const { data: bookings, isLoading, refetch } = trpc.booking.getMyBookings.useQuery(undefined, {
+  const { data: bookings, isLoading, refetch } = useQuery({
+    queryKey: ['bookings', 'my'],
+    queryFn: () => bookingService.getMyBookings(),
     staleTime: 0,
-    refetchOnMount: 'always',
+    refetchOnMount: 'always' as const,
     refetchOnWindowFocus: true,
   });
 
@@ -132,7 +96,9 @@ export default function MyBookingsPage() {
   }, [bookings, isLoading, location.search, navigate]);
 
   // Mutations
-  const cancelBookingMutation = trpc.booking.cancelBooking.useMutation({
+  const cancelBookingMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      bookingService.cancelBooking(id, reason),
     onSuccess: () => {
       toast.success(t('booking.cancelSuccess'));
       setShowCancelModal(false);
@@ -140,21 +106,26 @@ export default function MyBookingsPage() {
       setCancelReason('');
       refetch();
     },
-    onError: (error: { message: string }) => {
+    onError: (error: Error) => {
       toast.error(error.message || t('booking.cancelError'));
     },
   });
 
   // Use new addSlip mutation (multi-slip support)
-  const addSlipMutation = trpc.booking.addSlip.useMutation();
+  const addSlipMutation = useMutation({
+    mutationFn: ({ bookingId, slipUrl }: { bookingId: string; slipUrl: string }) =>
+      bookingService.addSlip(bookingId, slipUrl),
+  });
 
   // Remove slip mutation
-  const removeSlipMutation = trpc.booking.removeSlip.useMutation({
+  const removeSlipMutation = useMutation({
+    mutationFn: ({ slipId }: { slipId: string }) =>
+      bookingService.removeSlip(slipId),
     onSuccess: () => {
       toast.success(t('payment.removeSlip'));
       refetch();
     },
-    onError: (error: { message: string }) => {
+    onError: (error: Error) => {
       toast.error(error.message || t('errors.error'));
     },
   });
@@ -263,17 +234,8 @@ export default function MyBookingsPage() {
 
     setIsUploading(true);
     try {
-      // Step 1: Upload file to get URL (using axios api for CSRF token)
-      const formData = new FormData();
-      formData.append('slip', slipFile);
-
-      const response = await api.post<{ url: string }>('/slips/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      const { url } = response.data;
+      // Step 1: Upload file to get URL
+      const { url } = await bookingService.uploadSlip(slipFile);
 
       // Step 2: Call addSlip mutation with URL (multi-slip support)
       await addSlipMutation.mutateAsync({

@@ -1,6 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+}
+
+function wrapper({ children }: { children: React.ReactNode }) {
+  const queryClient = createTestQueryClient();
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
 
 // Mock booking data
 const mockBookings = [
@@ -73,41 +88,21 @@ const mockBookings = [
   },
 ];
 
-// Mock tRPC hooks
-const mockRefetch = vi.fn();
-const mockMutate = vi.fn();
+// Mock bookingService
+const mockGetMyBookings = vi.fn();
+const mockCancelBooking = vi.fn();
+const mockAddSlip = vi.fn();
+const mockRemoveSlip = vi.fn();
+const mockUploadSlip = vi.fn();
 let mockBookingsData: typeof mockBookings | undefined = mockBookings;
-let mockIsLoading = false;
 
-vi.mock('../../hooks/useTRPC', () => ({
-  trpc: {
-    booking: {
-      getMyBookings: {
-        useQuery: vi.fn(() => ({
-          data: mockBookingsData,
-          isLoading: mockIsLoading,
-          refetch: mockRefetch,
-        })),
-      },
-      cancelBooking: {
-        useMutation: vi.fn(() => ({
-          mutate: mockMutate,
-          isPending: false,
-        })),
-      },
-      addSlip: {
-        useMutation: vi.fn(() => ({
-          mutateAsync: vi.fn(),
-          isPending: false,
-        })),
-      },
-      removeSlip: {
-        useMutation: vi.fn(() => ({
-          mutateAsync: vi.fn(),
-          isPending: false,
-        })),
-      },
-    },
+vi.mock('../../services/bookingService', () => ({
+  bookingService: {
+    getMyBookings: (...args: unknown[]) => mockGetMyBookings(...args),
+    cancelBooking: (...args: unknown[]) => mockCancelBooking(...args),
+    addSlip: (...args: unknown[]) => mockAddSlip(...args),
+    removeSlip: (...args: unknown[]) => mockRemoveSlip(...args),
+    uploadSlip: (...args: unknown[]) => mockUploadSlip(...args),
   },
 }));
 
@@ -197,17 +192,28 @@ vi.mock('../../components/layout/MainLayout', () => ({
 // Import component after mocks
 import MyBookingsPage from '../MyBookingsPage';
 
+/** Wait for the query to resolve and bookings UI to render */
+async function waitForBookingsLoaded() {
+  await waitFor(() => {
+    expect(screen.getByTestId('tab-current')).toBeInTheDocument();
+  });
+}
+
 describe('MyBookingsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockBookingsData = mockBookings;
-    mockIsLoading = false;
+    mockGetMyBookings.mockImplementation(() => Promise.resolve(mockBookingsData));
+    mockCancelBooking.mockResolvedValue(undefined);
+    mockAddSlip.mockResolvedValue(undefined);
+    mockRemoveSlip.mockResolvedValue(undefined);
+    mockUploadSlip.mockResolvedValue({ url: 'http://example.com/slip.png' });
   });
 
   describe('Loading State', () => {
     it('should render loading spinner when loading', () => {
-      mockIsLoading = true;
-      render(<MyBookingsPage />);
+      mockGetMyBookings.mockReturnValue(new Promise(() => {}));
+      render(<MyBookingsPage />, { wrapper });
 
       expect(screen.getByRole('heading', { name: 'My Bookings' })).toBeInTheDocument();
       // Check for loading spinner (animate-spin class)
@@ -217,27 +223,32 @@ describe('MyBookingsPage', () => {
   });
 
   describe('Empty State', () => {
-    it('should render empty state when no bookings', () => {
+    it('should render empty state when no bookings', async () => {
       mockBookingsData = [];
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
 
-      // With tabs, empty current tab shows "No upcoming bookings"
-      expect(screen.getByText('No upcoming bookings')).toBeInTheDocument();
+      await waitFor(() => {
+        // With tabs, empty current tab shows "No upcoming bookings"
+        expect(screen.getByText('No upcoming bookings')).toBeInTheDocument();
+      });
       expect(screen.getByText('Book Your First Room')).toBeInTheDocument();
     });
 
-    it('should render empty state when bookings is undefined', () => {
-      mockBookingsData = undefined;
-      render(<MyBookingsPage />);
+    it('should render empty state when bookings is undefined', async () => {
+      mockGetMyBookings.mockResolvedValue(undefined);
+      render(<MyBookingsPage />, { wrapper });
 
-      expect(screen.getByText('No upcoming bookings')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('No upcoming bookings')).toBeInTheDocument();
+      });
     });
   });
 
   describe('Booking Cards Rendering', () => {
     it('should render booking cards with correct info', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // Check first booking (confirmed) in current tab
       expect(screen.getByTestId('booking-card-booking-1')).toBeInTheDocument();
@@ -258,7 +269,8 @@ describe('MyBookingsPage', () => {
 
     it('should display prices correctly', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // Current tab shows booking-1
       expect(screen.getByText('฿4,500')).toBeInTheDocument();
@@ -271,7 +283,8 @@ describe('MyBookingsPage', () => {
 
     it('should display click for details hint', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // Current tab has 1 booking
       expect(screen.getAllByText('Click for details').length).toBe(1);
@@ -285,7 +298,8 @@ describe('MyBookingsPage', () => {
   describe('Booking Card Interaction', () => {
     it('should open details modal when clicking booking card', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       const card = screen.getByTestId('booking-card-booking-1');
       await user.click(card);
@@ -295,7 +309,8 @@ describe('MyBookingsPage', () => {
 
     it('should open details modal on Enter key', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       const card = screen.getByTestId('booking-card-booking-1');
       card.focus();
@@ -308,7 +323,8 @@ describe('MyBookingsPage', () => {
   describe('Booking Details Modal', () => {
     it('should show all booking information in modal', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // Open modal for first booking
       await user.click(screen.getByTestId('booking-card-booking-1'));
@@ -337,7 +353,8 @@ describe('MyBookingsPage', () => {
 
     it('should close modal when clicking close button', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('booking-card-booking-1'));
       expect(screen.getByTestId('booking-details-modal')).toBeInTheDocument();
@@ -348,7 +365,8 @@ describe('MyBookingsPage', () => {
 
     it('should close modal when clicking backdrop', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('booking-card-booking-1'));
       expect(screen.getByTestId('booking-details-modal')).toBeInTheDocument();
@@ -359,7 +377,8 @@ describe('MyBookingsPage', () => {
 
     it('should close modal when clicking Close button in footer', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('booking-card-booking-1'));
       expect(screen.getByTestId('booking-details-modal')).toBeInTheDocument();
@@ -370,7 +389,8 @@ describe('MyBookingsPage', () => {
 
     it('should show cancellation reason for cancelled bookings', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // booking-3 is cancelled and in history tab
       await user.click(screen.getByTestId('tab-history'));
@@ -385,7 +405,8 @@ describe('MyBookingsPage', () => {
   describe('Cancel Flow', () => {
     it('should show cancel button only for cancellable bookings', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // Open confirmed future booking modal - should have cancel button
       await user.click(screen.getByTestId('booking-card-booking-1'));
@@ -407,7 +428,8 @@ describe('MyBookingsPage', () => {
 
     it('should open cancel confirmation modal when clicking cancel button', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('booking-card-booking-1'));
       await user.click(screen.getByTestId('booking-details-cancel'));
@@ -423,7 +445,8 @@ describe('MyBookingsPage', () => {
 
     it('should close cancel modal when clicking close button', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('booking-card-booking-1'));
       await user.click(screen.getByTestId('booking-details-cancel'));
@@ -436,7 +459,8 @@ describe('MyBookingsPage', () => {
 
     it('should call mutate when confirming cancellation', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('booking-card-booking-1'));
       await user.click(screen.getByTestId('booking-details-cancel'));
@@ -447,30 +471,26 @@ describe('MyBookingsPage', () => {
       // Confirm cancel
       await user.click(screen.getByTestId('confirm-cancel-button'));
 
-      expect(mockMutate).toHaveBeenCalledWith({
-        id: 'booking-1',
-        reason: 'Test reason',
-      });
+      expect(mockCancelBooking).toHaveBeenCalledWith('booking-1', 'Test reason');
     });
 
     it('should allow cancellation without reason', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('booking-card-booking-1'));
       await user.click(screen.getByTestId('booking-details-cancel'));
       await user.click(screen.getByTestId('confirm-cancel-button'));
 
-      expect(mockMutate).toHaveBeenCalledWith({
-        id: 'booking-1',
-        reason: undefined,
-      });
+      expect(mockCancelBooking).toHaveBeenCalledWith('booking-1', undefined);
     });
   });
 
   describe('Status Display', () => {
-    it('should display confirmed status with green badge', () => {
-      render(<MyBookingsPage />);
+    it('should display confirmed status with green badge', async () => {
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       const card = screen.getByTestId('booking-card-booking-1');
       const badge = within(card).getByText('Confirmed');
@@ -479,7 +499,8 @@ describe('MyBookingsPage', () => {
 
     it('should display cancelled status with red badge', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // booking-3 is cancelled and in history tab
       await user.click(screen.getByTestId('tab-history'));
@@ -491,7 +512,8 @@ describe('MyBookingsPage', () => {
 
     it('should display completed status with blue badge', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // booking-2 is completed and in history tab
       await user.click(screen.getByTestId('tab-history'));
@@ -503,15 +525,17 @@ describe('MyBookingsPage', () => {
   });
 
   describe('New Booking Button', () => {
-    it('should render new booking button', () => {
-      render(<MyBookingsPage />);
+    it('should render new booking button', async () => {
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       expect(screen.getByTestId('new-booking-button')).toBeInTheDocument();
       expect(screen.getByText('Book Room')).toBeInTheDocument();
     });
 
-    it('should link to booking page', () => {
-      render(<MyBookingsPage />);
+    it('should link to booking page', async () => {
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       const link = screen.getByTestId('new-booking-button');
       expect(link).toHaveAttribute('href', '/booking');
@@ -519,15 +543,17 @@ describe('MyBookingsPage', () => {
   });
 
   describe('Tab Rendering', () => {
-    it('should render both tab buttons', () => {
-      render(<MyBookingsPage />);
+    it('should render both tab buttons', async () => {
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       expect(screen.getByTestId('tab-current')).toBeInTheDocument();
       expect(screen.getByTestId('tab-history')).toBeInTheDocument();
     });
 
-    it('should show Current Bookings tab as active by default', () => {
-      render(<MyBookingsPage />);
+    it('should show Current Bookings tab as active by default', async () => {
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       const currentTab = screen.getByTestId('tab-current');
       const historyTab = screen.getByTestId('tab-history');
@@ -536,8 +562,9 @@ describe('MyBookingsPage', () => {
       expect(historyTab).toHaveClass('border-transparent', 'text-gray-500');
     });
 
-    it('should display booking counts in tab labels', () => {
-      render(<MyBookingsPage />);
+    it('should display booking counts in tab labels', async () => {
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // booking-1 is confirmed + future = current (1)
       // booking-2 is completed = history
@@ -553,7 +580,8 @@ describe('MyBookingsPage', () => {
   describe('Tab Switching', () => {
     it('should switch to history tab when clicked', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       const historyTab = screen.getByTestId('tab-history');
       await user.click(historyTab);
@@ -563,7 +591,8 @@ describe('MyBookingsPage', () => {
 
     it('should update active tab styling on switch', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       const currentTab = screen.getByTestId('tab-current');
       const historyTab = screen.getByTestId('tab-history');
@@ -585,8 +614,9 @@ describe('MyBookingsPage', () => {
   });
 
   describe('Current Bookings Filter', () => {
-    it('should show only confirmed future bookings in current tab', () => {
-      render(<MyBookingsPage />);
+    it('should show only confirmed future bookings in current tab', async () => {
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // Only booking-1 (confirmed + future check-in 2027-06-15) should be visible
       expect(screen.getByTestId('booking-card-booking-1')).toBeInTheDocument();
@@ -597,22 +627,25 @@ describe('MyBookingsPage', () => {
       expect(screen.queryByTestId('booking-card-booking-4')).not.toBeInTheDocument();
     });
 
-    it('should NOT show cancelled bookings in current tab', () => {
-      render(<MyBookingsPage />);
+    it('should NOT show cancelled bookings in current tab', async () => {
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // booking-3 is cancelled
       expect(screen.queryByTestId('booking-card-booking-3')).not.toBeInTheDocument();
     });
 
-    it('should NOT show completed bookings in current tab', () => {
-      render(<MyBookingsPage />);
+    it('should NOT show completed bookings in current tab', async () => {
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // booking-2 is completed
       expect(screen.queryByTestId('booking-card-booking-2')).not.toBeInTheDocument();
     });
 
-    it('should NOT show past confirmed bookings in current tab', () => {
-      render(<MyBookingsPage />);
+    it('should NOT show past confirmed bookings in current tab', async () => {
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // booking-4 is confirmed but past (2025-12-01)
       expect(screen.queryByTestId('booking-card-booking-4')).not.toBeInTheDocument();
@@ -622,7 +655,8 @@ describe('MyBookingsPage', () => {
   describe('History Bookings Filter', () => {
     it('should show completed bookings in history tab', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('tab-history'));
 
@@ -632,7 +666,8 @@ describe('MyBookingsPage', () => {
 
     it('should show cancelled bookings in history tab', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('tab-history'));
 
@@ -642,7 +677,8 @@ describe('MyBookingsPage', () => {
 
     it('should show past confirmed bookings in history tab', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('tab-history'));
 
@@ -652,7 +688,8 @@ describe('MyBookingsPage', () => {
 
     it('should NOT show future confirmed bookings in history tab', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('tab-history'));
 
@@ -662,7 +699,7 @@ describe('MyBookingsPage', () => {
   });
 
   describe('Tab-specific Empty States', () => {
-    it('should show "No upcoming bookings" when current tab is empty', () => {
+    it('should show "No upcoming bookings" when current tab is empty', async () => {
       // Set mock to only have history bookings
       mockBookingsData = [
         {
@@ -680,9 +717,11 @@ describe('MyBookingsPage', () => {
         },
       ];
 
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
 
-      expect(screen.getByText('No upcoming bookings')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('No upcoming bookings')).toBeInTheDocument();
+      });
     });
 
     it('should show "No past bookings" when history tab is empty', async () => {
@@ -704,7 +743,8 @@ describe('MyBookingsPage', () => {
         },
       ];
 
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('tab-history'));
 
@@ -715,7 +755,8 @@ describe('MyBookingsPage', () => {
   describe('Tab Integration with Existing Features', () => {
     it('should open details modal when clicking card in current tab', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('booking-card-booking-1'));
 
@@ -724,7 +765,8 @@ describe('MyBookingsPage', () => {
 
     it('should open details modal when clicking card in history tab', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       await user.click(screen.getByTestId('tab-history'));
       await user.click(screen.getByTestId('booking-card-booking-2'));
@@ -734,7 +776,8 @@ describe('MyBookingsPage', () => {
 
     it('should show cancel button only for current bookings in modal', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // Open current booking - should have cancel button
       await user.click(screen.getByTestId('booking-card-booking-1'));
@@ -751,7 +794,8 @@ describe('MyBookingsPage', () => {
   describe('Admin Cancelled Booking Display', () => {
     it('should show "Cancelled by Admin" badge for bookings with cancelledByAdmin=true', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // Switch to history tab to see the admin-cancelled booking
       await user.click(screen.getByTestId('tab-history'));
@@ -767,7 +811,8 @@ describe('MyBookingsPage', () => {
 
     it('should show regular "Cancelled" badge for bookings with cancelledByAdmin=false', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // Switch to history tab
       await user.click(screen.getByTestId('tab-history'));
@@ -783,7 +828,8 @@ describe('MyBookingsPage', () => {
 
     it('should display admin cancellation reason in details modal', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // Switch to history tab
       await user.click(screen.getByTestId('tab-history'));
@@ -800,7 +846,8 @@ describe('MyBookingsPage', () => {
 
     it('should use amber/orange color for admin cancellation badge vs red for user cancellation', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // Switch to history tab
       await user.click(screen.getByTestId('tab-history'));
@@ -818,7 +865,8 @@ describe('MyBookingsPage', () => {
 
     it('should differentiate admin and user cancelled bookings in the modal', async () => {
       const user = userEvent.setup();
-      render(<MyBookingsPage />);
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
 
       // Switch to history tab
       await user.click(screen.getByTestId('tab-history'));

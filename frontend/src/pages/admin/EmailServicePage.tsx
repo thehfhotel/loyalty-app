@@ -1,18 +1,50 @@
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { trpc } from '../../hooks/useTRPC';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import { FiMail, FiCheck, FiX, FiRefreshCw } from 'react-icons/fi';
 
 export default function EmailServicePage() {
   const { t } = useTranslation();
 
+  // TODO: Replace with REST service when Rust admin email endpoints are implemented
+  interface EmailStatus {
+    configured: boolean;
+    smtpConnected: boolean;
+    imapConnected: boolean;
+    lastTestResult?: {
+      success: boolean;
+      timestamp: string;
+      deliveryTimeMs?: number;
+      error?: string;
+    };
+  }
+
+  interface TestResult {
+    success: boolean;
+    testId?: string;
+    smtpSent?: boolean;
+    imapReceived?: boolean;
+    deliveryTimeMs?: number;
+    error?: string;
+  }
+
   // Fetch email service status
-  const { data: status, isLoading: statusLoading, refetch: refetchStatus } = trpc.admin.email.getStatus.useQuery();
+  const { data: status, isLoading: statusLoading, refetch: refetchStatus } = useQuery<EmailStatus | null>({
+    queryKey: ['admin', 'email', 'status'],
+    queryFn: async () => {
+      // TODO: Replace with REST service when Rust admin email endpoints are implemented
+      return null;
+    },
+  });
 
   // Email test mutation
-  const testMutation = trpc.admin.email.runTest.useMutation({
-    onSuccess: (data: { success: boolean; testId?: string; smtpSent?: boolean; imapReceived?: boolean; deliveryTimeMs?: number; error?: string }) => {
+  const testMutation = useMutation<TestResult, Error, void>({
+    mutationFn: async () => {
+      // TODO: Replace with REST service when Rust admin email endpoints are implemented
+      throw new Error('Admin email service management is being migrated');
+    },
+    onSuccess: (data) => {
       if (data.success) {
         toast.success(t('emailService.test.success'));
       } else {

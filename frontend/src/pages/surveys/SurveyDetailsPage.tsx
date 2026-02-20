@@ -7,24 +7,23 @@ import SurveyPreview from '../../components/surveys/SurveyPreview';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import toast from 'react-hot-toast';
-import { trpc } from '../../hooks/useTRPC';
-import { getTRPCErrorMessage } from '../../hooks/useTRPC';
+import { useQuery } from '@tanstack/react-query';
+import { surveyService } from '../../services/surveyService';
 
 const SurveyDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
 
-  // Fetch survey using tRPC
+  // Fetch survey using React Query
   const {
     data: survey,
     isLoading: loading,
     error: surveyError
-  } = trpc.survey.getSurveyById.useQuery(
-    { surveyId: id ?? '' },
-    {
-      enabled: !!id
-    }
-  );
+  } = useQuery({
+    queryKey: ['surveys', id],
+    queryFn: () => surveyService.getSurveyById(id as string),
+    enabled: !!id,
+  });
 
   // Show error toast when error occurs
   React.useEffect(() => {
@@ -33,7 +32,7 @@ const SurveyDetailsPage: React.FC = () => {
     }
   }, [surveyError, t]);
 
-  const error = surveyError ? getTRPCErrorMessage(surveyError) : null;
+  const error = surveyError ? (surveyError instanceof Error ? surveyError.message : 'An error occurred') : null;
 
   // Memoize date formatting for performance
   const formatDate = useMemo(() => (dateString: string) => {

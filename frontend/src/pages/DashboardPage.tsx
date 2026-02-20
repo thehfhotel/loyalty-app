@@ -2,9 +2,10 @@ import { useAuthStore } from '../store/authStore';
 import { FiUser, FiAward, FiUsers, FiGift, FiMail, FiCalendar } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 import MainLayout from '../components/layout/MainLayout';
 import LoyaltyCarousel from '../components/loyalty/LoyaltyCarousel';
-import { trpc } from '../hooks/useTRPC';
+import { loyaltyService } from '../services/loyaltyService';
 
 export default function DashboardPage() {
   const { t } = useTranslation();
@@ -13,11 +14,14 @@ export default function DashboardPage() {
   // Check user roles
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
-  // Use tRPC hooks for data fetching
-  const { data: loyaltyStatus, isLoading: loyaltyLoading } = trpc.loyalty.getStatus.useQuery({});
-  const { data: transactionsData } = trpc.loyalty.getTransactions.useQuery({
-    page: 1,
-    pageSize: 10
+  // Use React Query + REST for data fetching
+  const { data: loyaltyStatus, isLoading: loyaltyLoading } = useQuery({
+    queryKey: ['loyalty', 'status'],
+    queryFn: () => loyaltyService.getUserLoyaltyStatus(),
+  });
+  const { data: transactionsData } = useQuery({
+    queryKey: ['loyalty', 'transactions', 1],
+    queryFn: () => loyaltyService.getPointsHistory(10, 0),
   });
 
   const transactions = transactionsData?.transactions ?? [];

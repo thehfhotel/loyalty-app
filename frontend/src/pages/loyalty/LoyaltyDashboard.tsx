@@ -1,23 +1,30 @@
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
+import { useQuery } from '@tanstack/react-query';
 import {
+  loyaltyService,
   PointsCalculation
 } from '../../services/loyaltyService';
 import PointsBalance from '../../components/loyalty/PointsBalance';
 import TierStatus from '../../components/loyalty/TierStatus';
 import TransactionList from '../../components/loyalty/TransactionList';
 import DashboardButton from '../../components/navigation/DashboardButton';
-import { trpc } from '../../hooks/useTRPC';
 
 export default function LoyaltyDashboard() {
   const { t } = useTranslation();
 
-  // Use tRPC hooks for data fetching
-  const { data: loyaltyStatus, isLoading: isLoadingStatus, error: statusError } = trpc.loyalty.getStatus.useQuery({});
-  const { data: allTiers, isLoading: isLoadingTiers } = trpc.loyalty.getAllTiers.useQuery();
-  const { data: transactionsData, isLoading: isLoadingTransactions } = trpc.loyalty.getTransactions.useQuery({
-    page: 1,
-    pageSize: 20
+  // Use React Query + REST for data fetching
+  const { data: loyaltyStatus, isLoading: isLoadingStatus, error: statusError } = useQuery({
+    queryKey: ['loyalty', 'status'],
+    queryFn: () => loyaltyService.getUserLoyaltyStatus(),
+  });
+  const { data: allTiers, isLoading: isLoadingTiers } = useQuery({
+    queryKey: ['loyalty', 'tiers'],
+    queryFn: () => loyaltyService.getTiers(),
+  });
+  const { data: transactionsData, isLoading: isLoadingTransactions } = useQuery({
+    queryKey: ['loyalty', 'transactions'],
+    queryFn: () => loyaltyService.getPointsHistory(20, 0),
   });
 
   // Combine loading states

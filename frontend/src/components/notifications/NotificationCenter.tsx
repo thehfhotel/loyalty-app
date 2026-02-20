@@ -3,8 +3,9 @@ import { FiBell, FiCheck, FiX, FiTrash2 } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../../store/authStore';
 import { formatDistanceToNow } from 'date-fns';
-import { trpc } from '../../hooks/useTRPC';
-import type { Notification, NotificationType } from '../../../../backend/src/types/notification';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { inAppNotificationService } from '../../services/inAppNotificationService';
+import type { Notification, NotificationType } from '../../types/notification';
 
 export default function NotificationCenter() {
   const { t } = useTranslation();
@@ -12,33 +13,33 @@ export default function NotificationCenter() {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Fetch notifications using tRPC
+  // Fetch notifications using React Query
   const {
     data: notificationsData,
     isLoading,
     refetch: refetchNotifications
-  } = trpc.notification.getNotifications.useQuery(
-    { page: 1, limit: 10, includeRead: true },
-    { enabled: !!user }
-  );
+  } = useQuery({
+    queryKey: ['notifications', 'list'],
+    queryFn: () => inAppNotificationService.getNotifications(1, 10, true),
+    enabled: !!user,
+  });
 
   // Mutations
-  const markAsReadMutation = trpc.notification.markMultipleAsRead.useMutation({
-    onSuccess: () => {
-      refetchNotifications();
-    }
+  const markAsReadMutation = useMutation({
+    mutationFn: ({ notificationIds }: { notificationIds: string[] }) =>
+      inAppNotificationService.markMultipleAsRead(notificationIds),
+    onSuccess: () => { refetchNotifications(); },
   });
 
-  const markAllAsReadMutation = trpc.notification.markAllAsRead.useMutation({
-    onSuccess: () => {
-      refetchNotifications();
-    }
+  const markAllAsReadMutation = useMutation({
+    mutationFn: () => inAppNotificationService.markAllAsRead(),
+    onSuccess: () => { refetchNotifications(); },
   });
 
-  const deleteNotificationMutation = trpc.notification.deleteNotification.useMutation({
-    onSuccess: () => {
-      refetchNotifications();
-    }
+  const deleteNotificationMutation = useMutation({
+    mutationFn: ({ notificationId }: { notificationId: string }) =>
+      inAppNotificationService.deleteNotification(notificationId),
+    onSuccess: () => { refetchNotifications(); },
   });
 
   const notifications: Notification[] = notificationsData?.notifications ?? [];

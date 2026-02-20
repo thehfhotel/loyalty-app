@@ -6,37 +6,41 @@ import { Survey } from '../../types/survey';
 import { useAuthRedirect } from '../../hooks/useAuthRedirect';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
-import { trpc } from '../../hooks/useTRPC';
-import { getTRPCErrorMessage } from '../../hooks/useTRPC';
+import { useQuery } from '@tanstack/react-query';
+import { surveyService } from '../../services/surveyService';
 
 const SurveyList: React.FC = () => {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuthRedirect(); // Additional auth check
   const [activeTab, setActiveTab] = useState<'public' | 'invited'>('public');
 
-  // Fetch public surveys using tRPC
+  // Fetch public surveys using React Query
   const {
     data: publicSurveys = [],
     isLoading: loadingPublic,
     error: publicError,
     refetch: refetchPublic
-  } = trpc.survey.getPublicSurveys.useQuery(undefined, {
+  } = useQuery({
+    queryKey: ['surveys', 'public'],
+    queryFn: () => surveyService.getPublicSurveys(),
     enabled: isAuthenticated,
   });
 
-  // Fetch invited surveys using tRPC
+  // Fetch invited surveys using React Query
   const {
     data: invitedSurveys = [],
     isLoading: loadingInvited,
     error: invitedError,
     refetch: refetchInvited
-  } = trpc.survey.getInvitedSurveys.useQuery(undefined, {
+  } = useQuery({
+    queryKey: ['surveys', 'invited'],
+    queryFn: () => surveyService.getInvitedSurveys(),
     enabled: isAuthenticated,
   });
 
   const loading = loadingPublic || loadingInvited;
   const error = publicError ?? invitedError;
-  const errorMessage = error ? getTRPCErrorMessage(error) : null;
+  const errorMessage = error ? (error instanceof Error ? error.message : 'An error occurred') : null;
 
   const loadSurveys = async () => {
     await Promise.all([refetchPublic(), refetchInvited()]);

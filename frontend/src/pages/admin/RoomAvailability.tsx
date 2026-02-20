@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { trpc } from '../../utils/trpc';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import DashboardButton from '../../components/navigation/DashboardButton';
 
 // Types
@@ -59,21 +59,29 @@ const RoomAvailability: React.FC = () => {
   const [showReasonModal, setShowReasonModal] = useState(false);
   const [viewedBlockReason, setViewedBlockReason] = useState('');
 
-  // tRPC queries
-  const utils = trpc.useUtils();
+  // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+  const queryClient = useQueryClient();
 
-  const { data: roomTypes } = trpc.booking.admin.getRoomTypes.useQuery(
-    { includeInactive: false },
-    { refetchOnWindowFocus: false }
-  );
+  const { data: roomTypes } = useQuery<RoomType[]>({
+    queryKey: ['admin', 'roomTypes', { includeInactive: false }],
+    queryFn: async () => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      return [];
+    },
+    refetchOnWindowFocus: false,
+  });
 
   // When 'all' is selected, don't filter by room type (pass undefined)
   const roomTypeFilter = selectedRoomTypeId === 'all' ? undefined : selectedRoomTypeId;
 
-  const { data: rooms } = trpc.booking.admin.getRooms.useQuery(
-    { roomTypeId: roomTypeFilter, includeInactive: false },
-    { refetchOnWindowFocus: false }
-  );
+  const { data: rooms } = useQuery<Room[]>({
+    queryKey: ['admin', 'rooms', { roomTypeId: roomTypeFilter, includeInactive: false }],
+    queryFn: async () => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      return [];
+    },
+    refetchOnWindowFocus: false,
+  });
 
   // Calculate date range for current month view
   const { startDate, endDate, daysInMonth } = useMemo(() => {
@@ -88,45 +96,53 @@ const RoomAvailability: React.FC = () => {
     return { startDate: start, endDate: end, daysInMonth: days };
   }, [currentMonth]);
 
-  const { data: blockedDates, isLoading: blockedLoading } = trpc.booking.admin.getAllBlockedDates.useQuery(
-    {
-      roomTypeId: roomTypeFilter,
-      startDate: startDate,
-      endDate: endDate,
+  const { data: blockedDates, isLoading: blockedLoading } = useQuery<RoomBlockedDates[]>({
+    queryKey: ['admin', 'blockedDates', { roomTypeId: roomTypeFilter, startDate, endDate }],
+    queryFn: async () => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      return [];
     },
-    { refetchOnWindowFocus: false }
-  );
+    refetchOnWindowFocus: false,
+  });
 
-  const { data: bookings, isLoading: bookingsLoading } = trpc.booking.admin.getRoomBookings.useQuery(
-    {
-      roomTypeId: roomTypeFilter,
-      startDate: startDate,
-      endDate: endDate,
+  const { data: bookings, isLoading: bookingsLoading } = useQuery<Booking[]>({
+    queryKey: ['admin', 'roomBookings', { roomTypeId: roomTypeFilter, startDate, endDate }],
+    queryFn: async () => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      return [];
     },
-    { refetchOnWindowFocus: false }
-  );
+    refetchOnWindowFocus: false,
+  });
 
-  const blockMutation = trpc.booking.admin.blockDates.useMutation({
+  const blockMutation = useMutation({
+    mutationFn: async (_data: { roomId: string; dates: Date[]; reason: string }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.availability.blockSuccess'));
-      utils.booking.admin.getAllBlockedDates.invalidate();
+      queryClient.invalidateQueries({ queryKey: ['admin', 'blockedDates'] });
       setShowBlockModal(false);
       setBlockReason('');
       setSelectedCells(new Set());
       setSelectedRoomId(null);
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast.error(error.message || t('admin.booking.availability.blockError'));
     },
   });
 
-  const unblockMutation = trpc.booking.admin.unblockDates.useMutation({
+  const unblockMutation = useMutation({
+    mutationFn: async (_data: { roomId: string; dates: Date[] }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.availability.unblockSuccess'));
-      utils.booking.admin.getAllBlockedDates.invalidate();
+      queryClient.invalidateQueries({ queryKey: ['admin', 'blockedDates'] });
       setSelectedCells(new Set());
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast.error(error.message || t('admin.booking.availability.unblockError'));
     },
   });

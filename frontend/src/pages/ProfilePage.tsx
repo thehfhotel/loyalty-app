@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 import { userService } from '../services/userService';
 import { useAuthStore } from '../store/authStore';
 import { notify } from '../utils/notificationManager';
@@ -16,7 +17,6 @@ import SettingsModal from '../components/profile/SettingsModal';
 import EmojiAvatar from '../components/profile/EmojiAvatar';
 import { ConfirmDialog } from '../components/common/ConfirmDialog';
 import EmailVerificationModal from '../components/profile/EmailVerificationModal';
-import { trpc, getTRPCErrorMessage } from '../hooks/useTRPC';
 
 const profileSchema = z.object({
   email: z.string().email('Please enter a valid email address').optional().or(z.literal('')),
@@ -48,10 +48,12 @@ export default function ProfilePage() {
   const [emailError, setEmailError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // tRPC hooks
-  const { data: profile, isLoading, refetch } = trpc.user.getProfile.useQuery();
-  const updateEmailMutation = trpc.user.updateEmail.useMutation();
-  const deleteAvatarMutation = trpc.user.deleteAvatar.useMutation();
+  // REST hooks
+  const { data: profile, isLoading, refetch } = useQuery({
+    queryKey: ['user', 'profile'],
+    queryFn: () => userService.getProfile(),
+  });
+  const [emailMutationPending, setEmailMutationPending] = useState(false);
 
   const {
     register: _register,
@@ -91,21 +93,24 @@ export default function ProfilePage() {
   const handleEmailVerificationNeeded = async (email: string) => {
     // Clear any previous email error
     setEmailError(null);
+    setEmailMutationPending(true);
 
     try {
-      // Call the tRPC mutation to initiate email change
-      await updateEmailMutation.mutateAsync({ email });
+      // Call the REST API to initiate email change
+      await userService.updateEmail(email);
 
       // Store the pending email and show verification modal
       setPendingEmail(email);
       setShowVerificationModal(true);
       setShowSettingsModal(false);
     } catch (error: unknown) {
-      const errorMessage = getTRPCErrorMessage(error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       // Set email error for red highlight in the modal
       setEmailError(errorMessage);
       notify.error(errorMessage ?? t('profile.emailChangeError', 'Failed to send verification code'));
       logger.error('Email verification initiation error:', error);
+    } finally {
+      setEmailMutationPending(false);
     }
   };
 
@@ -234,7 +239,7 @@ export default function ProfilePage() {
     setShowDeleteConfirm(false);
 
     try {
-      await deleteAvatarMutation.mutateAsync();
+      await userService.deleteAvatar();
 
       // Refetch profile to get updated data
       await refetch();
@@ -244,7 +249,8 @@ export default function ProfilePage() {
 
       notify.success(t('profile.photoRemoved'));
     } catch (error: unknown) {
-      notify.error(getTRPCErrorMessage(error) ?? t('profile.photoRemoveError'));
+      const msg = error instanceof Error ? error.message : t('profile.photoRemoveError');
+      notify.error(msg);
       logger.error('Delete avatar error:', error);
     } finally {
       setUploadingAvatar(false);
@@ -262,7 +268,7 @@ export default function ProfilePage() {
     );
   }
 
-  const isSaving = savingProfile || updateEmailMutation.isPending;
+  const isSaving = savingProfile || emailMutationPending;
 
   return (
     <MainLayout title={t('profile.title')} showProfileBanner={false}>

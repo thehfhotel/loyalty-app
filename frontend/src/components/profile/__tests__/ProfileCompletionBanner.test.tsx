@@ -2,10 +2,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ProfileCompletionBanner from '../ProfileCompletionBanner';
 import { useAuthStore } from '../../../store/authStore';
 import { notify } from '../../../utils/notificationManager';
-// trpc is mocked via vi.mock below
+
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+}
+
+function wrapper({ children }: { children: React.ReactNode }) {
+  const queryClient = createTestQueryClient();
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
 
 // Mock dependencies
 const mockTranslate = vi.fn((key: string, params?: any) => {
@@ -51,36 +65,15 @@ vi.mock('react-icons/fi', () => ({
 vi.mock('../../../store/authStore');
 vi.mock('../../../utils/notificationManager');
 
-// Create shared mock objects that can be modified by tests
-const mockQueryData = {
-  data: null as unknown,
-  isLoading: false,
-  error: null as unknown,
-  refetch: vi.fn(),
-};
+// Mock userService
+const mockGetProfileCompletionStatus = vi.fn();
+const mockCompleteProfile = vi.fn();
 
-const mockMutateAsync = vi.fn();
-const mockMutationState = {
-  mutateAsync: mockMutateAsync,
-  isPending: false,
-};
-
-// Mock tRPC hooks before they're imported
-vi.mock('../../../hooks/useTRPC', () => ({
-  trpc: {
-    user: {
-      getProfileCompletionStatus: {
-        useQuery: () => mockQueryData,
-      },
-      completeProfile: {
-        useMutation: () => mockMutationState,
-      },
-    },
+vi.mock('../../../services/userService', () => ({
+  userService: {
+    getProfileCompletionStatus: (...args: unknown[]) => mockGetProfileCompletionStatus(...args),
+    completeProfile: (...args: unknown[]) => mockCompleteProfile(...args),
   },
-  getTRPCErrorMessage: vi.fn((error: unknown) => {
-    if (error instanceof Error) return error.message;
-    return 'Unknown error';
-  }),
 }));
 
 vi.mock('../ProfileFormFields', () => ({
@@ -93,21 +86,18 @@ describe('ProfileCompletionBanner', () => {
   const mockUser = { id: 'user-123', email: 'test@example.com' };
   const mockUpdateUser = vi.fn();
 
-  // Helper function to mock tRPC query
+  // Helper function to mock the service query response
   const mockProfileCompletionQuery = (data: unknown) => {
-    mockQueryData.data = data;
-    mockQueryData.isLoading = false;
-    mockQueryData.error = null;
+    mockGetProfileCompletionStatus.mockResolvedValue(data);
   };
 
-  // Helper function to mock tRPC mutation
+  // Helper function to mock the service mutation
   const mockCompleteProfileMutation = (implementation?: (data: unknown) => Promise<unknown>) => {
-    mockMutateAsync.mockReset();
+    mockCompleteProfile.mockReset();
     if (implementation) {
-      mockMutateAsync.mockImplementation(implementation);
+      mockCompleteProfile.mockImplementation(implementation);
     }
-    mockMutationState.isPending = false;
-    return mockMutateAsync;
+    return mockCompleteProfile;
   };
 
   beforeEach(() => {
@@ -123,13 +113,9 @@ describe('ProfileCompletionBanner', () => {
       return selector(state);
     });
 
-    // Reset shared mocks
-    mockQueryData.data = null;
-    mockQueryData.isLoading = false;
-    mockQueryData.error = null;
-    mockQueryData.refetch.mockReset();
-    mockMutateAsync.mockReset();
-    mockMutationState.isPending = false;
+    // Reset service mocks
+    mockGetProfileCompletionStatus.mockResolvedValue(null);
+    mockCompleteProfile.mockReset();
 
     (notify.success as any) = vi.fn();
     (notify.error as any) = vi.fn();
@@ -147,7 +133,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      const { container } = render(<ProfileCompletionBanner />);
+      const { container } = render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(container).toBeTruthy();
@@ -161,7 +147,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('New Member Offer')).toBeInTheDocument();
@@ -175,7 +161,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      const { container } = render(<ProfileCompletionBanner className="custom-class" />);
+      const { container } = render(<ProfileCompletionBanner className="custom-class" />, { wrapper });
 
       await waitFor(() => {
         const banner = container.querySelector('.custom-class');
@@ -190,7 +176,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      const { container } = render(<ProfileCompletionBanner />);
+      const { container } = render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const banner = container.firstChild as HTMLElement;
@@ -206,7 +192,7 @@ describe('ProfileCompletionBanner', () => {
         return selector(state);
       });
 
-      const { container } = render(<ProfileCompletionBanner />);
+      const { container } = render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(container.firstChild).toBeNull();
@@ -220,7 +206,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      const { container } = render(<ProfileCompletionBanner />);
+      const { container } = render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(container.firstChild).toBeNull();
@@ -234,7 +220,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: false,
       });
 
-      const { container } = render(<ProfileCompletionBanner />);
+      const { container } = render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(container.firstChild).toBeNull();
@@ -244,7 +230,7 @@ describe('ProfileCompletionBanner', () => {
     it('should not render when API returns null', async () => {
       mockProfileCompletionQuery(null);
 
-      const { container } = render(<ProfileCompletionBanner />);
+      const { container } = render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(container.firstChild).toBeNull();
@@ -252,11 +238,9 @@ describe('ProfileCompletionBanner', () => {
     });
 
     it('should not render when API call fails', async () => {
-      mockQueryData.data = null;
-      mockQueryData.isLoading = false;
-      mockQueryData.error = new Error('API Error');
+      mockGetProfileCompletionStatus.mockRejectedValue(new Error('API Error'));
 
-      const { container } = render(<ProfileCompletionBanner />);
+      const { container } = render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(container.firstChild).toBeNull();
@@ -270,7 +254,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('Complete your profile to receive a welcome coupon!')).toBeInTheDocument();
@@ -288,7 +272,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      const { container } = render(<ProfileCompletionBanner />);
+      const { container } = render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(container.firstChild).toBeNull();
@@ -304,7 +288,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('New Member Offer')).toBeInTheDocument();
@@ -320,7 +304,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getAllByTestId('gift-icon')[0]).toBeInTheDocument();
@@ -334,7 +318,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('New Member Offer')).toBeInTheDocument();
@@ -348,7 +332,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('Complete your profile to receive a welcome coupon!')).toBeInTheDocument();
@@ -362,7 +346,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const buttons = screen.getAllByText('Complete Profile');
@@ -377,7 +361,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const dismissButton = screen.getByLabelText('Dismiss');
@@ -392,7 +376,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByTestId('chevron-icon')).toBeInTheDocument();
@@ -410,7 +394,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      const { container } = render(<ProfileCompletionBanner />);
+      const { container } = render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('New Member Offer')).toBeInTheDocument();
@@ -433,7 +417,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('New Member Offer')).toBeInTheDocument();
@@ -456,7 +440,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('Missing: First Name')).toBeInTheDocument();
@@ -470,7 +454,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('Missing: First Name and Last Name')).toBeInTheDocument();
@@ -484,7 +468,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('Missing: First Name, Last Name and Phone')).toBeInTheDocument();
@@ -498,7 +482,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('Missing: Date of Birth')).toBeInTheDocument();
@@ -512,7 +496,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('Missing: Gender')).toBeInTheDocument();
@@ -526,7 +510,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('Missing: Occupation')).toBeInTheDocument();
@@ -545,7 +529,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getAllByText('Complete Profile')[0]).toBeInTheDocument();
@@ -570,7 +554,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getAllByText('Complete Profile')[0]).toBeInTheDocument();
@@ -600,7 +584,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -628,7 +612,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -655,10 +639,10 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      // Set isPending to true to simulate saving state before render
-      mockMutationState.isPending = true;
+      // Make mutation never resolve to stay in pending state
+      mockCompleteProfile.mockImplementation(() => new Promise(() => {}));
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       // Open the modal
       await waitFor(() => {
@@ -667,7 +651,18 @@ describe('ProfileCompletionBanner', () => {
         fireEvent.click(openButton);
       });
 
-      // Wait for loading state to appear (isPending was set before render)
+      // Fill in the required field and submit to trigger the pending state
+      await waitFor(() => {
+        const firstNameInput = screen.getByPlaceholderText('Enter first name');
+        fireEvent.change(firstNameInput, { target: { value: 'John' } });
+      });
+
+      const submitButton = screen.getAllByText('Complete Profile').find(
+        (el) => el.tagName === 'BUTTON' && el.closest('form')
+      ) as HTMLButtonElement;
+      fireEvent.click(submitButton);
+
+      // Wait for loading state to appear
       await waitFor(() => {
         expect(screen.getByText('Saving...')).toBeInTheDocument();
       });
@@ -688,7 +683,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -708,7 +703,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -728,7 +723,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -748,7 +743,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -768,7 +763,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -788,7 +783,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -808,7 +803,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -828,7 +823,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -858,7 +853,7 @@ describe('ProfileCompletionBanner', () => {
         pointsAwarded: 100,
       }));
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -897,11 +892,11 @@ describe('ProfileCompletionBanner', () => {
 
       mockCompleteProfileMutation(() => Promise.resolve({
         couponAwarded: true,
-        coupon: { title: 'Welcome Coupon' },
+        coupon: { name: 'Welcome Coupon' },
         pointsAwarded: 100,
       }));
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -939,7 +934,7 @@ describe('ProfileCompletionBanner', () => {
         pointsAwarded: 0,
       }));
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -975,7 +970,7 @@ describe('ProfileCompletionBanner', () => {
         pointsAwarded: 100,
       }));
 
-      const { container } = render(<ProfileCompletionBanner />);
+      const { container } = render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -1011,7 +1006,7 @@ describe('ProfileCompletionBanner', () => {
         pointsAwarded: 100,
       }));
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -1053,7 +1048,7 @@ describe('ProfileCompletionBanner', () => {
         pointsAwarded: 100,
       }));
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -1087,7 +1082,7 @@ describe('ProfileCompletionBanner', () => {
 
       mockCompleteProfileMutation(() => Promise.reject(new Error('Network error')));
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -1120,7 +1115,7 @@ describe('ProfileCompletionBanner', () => {
 
       mockCompleteProfileMutation(() => Promise.reject(new Error('Network error')));
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -1155,16 +1150,27 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      // Set isPending to true to simulate loading state
-      mockMutationState.isPending = true;
+      // Make mutation never resolve to stay in pending state
+      mockCompleteProfile.mockImplementation(() => new Promise(() => {}));
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
         if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
+
+      // Fill in the required field and submit
+      await waitFor(() => {
+        const firstNameInput = screen.getByPlaceholderText('Enter first name');
+        fireEvent.change(firstNameInput, { target: { value: 'John' } });
+      });
+
+      const submitButton = screen.getAllByText('Complete Profile').find(
+        (el) => el.tagName === 'BUTTON' && el.closest('form')
+      ) as HTMLButtonElement;
+      fireEvent.click(submitButton);
 
       // When isPending is true, should show "Saving..."
       await waitFor(() => {
@@ -1179,16 +1185,27 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      // Set up the mutation with isPending: true to simulate loading state
-      mockMutationState.isPending = true;
+      // Make mutation never resolve to stay in pending state
+      mockCompleteProfile.mockImplementation(() => new Promise(() => {}));
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
         if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
+
+      // Fill in the required field and submit
+      await waitFor(() => {
+        const firstNameInput = screen.getByPlaceholderText('Enter first name');
+        fireEvent.change(firstNameInput, { target: { value: 'John' } });
+      });
+
+      const submitButton = screen.getAllByText('Complete Profile').find(
+        (el) => el.tagName === 'BUTTON' && el.closest('form')
+      ) as HTMLButtonElement;
+      fireEvent.click(submitButton);
 
       // When isPending is true, the submit button should show "Saving..." and be disabled
       await waitFor(() => {
@@ -1204,16 +1221,27 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      // Set up the mutation with isPending: true to simulate loading state
-      mockMutationState.isPending = true;
+      // Make mutation never resolve to stay in pending state
+      mockCompleteProfile.mockImplementation(() => new Promise(() => {}));
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
         if (!openButton) throw new Error('Open button not found');
         fireEvent.click(openButton);
       });
+
+      // Fill in the required field and submit
+      await waitFor(() => {
+        const firstNameInput = screen.getByPlaceholderText('Enter first name');
+        fireEvent.change(firstNameInput, { target: { value: 'John' } });
+      });
+
+      const submitButton = screen.getAllByText('Complete Profile').find(
+        (el) => el.tagName === 'BUTTON' && el.closest('form')
+      ) as HTMLButtonElement;
+      fireEvent.click(submitButton);
 
       // When isPending is true, the cancel button should be disabled
       await waitFor(() => {
@@ -1231,7 +1259,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -1253,7 +1281,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const openButton = screen.getAllByText('Complete Profile')[0];
@@ -1282,7 +1310,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const dismissButton = screen.getByLabelText('Dismiss');
@@ -1297,7 +1325,7 @@ describe('ProfileCompletionBanner', () => {
         newMemberCouponAvailable: true,
       });
 
-      render(<ProfileCompletionBanner />);
+      render(<ProfileCompletionBanner />, { wrapper });
 
       await waitFor(() => {
         const completeButton = screen.getAllByText('Complete Profile')[0];

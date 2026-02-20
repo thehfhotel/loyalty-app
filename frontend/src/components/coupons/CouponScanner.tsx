@@ -4,8 +4,7 @@ import { RedeemCouponResponse, Coupon, UserActiveCoupon } from '../../types/coup
 import { couponService } from '../../services/couponService';
 import { logger } from '../../utils/logger';
 import { notify } from '../../utils/notificationManager';
-import { trpc } from '../../hooks/useTRPC';
-import { getTRPCErrorMessage } from '../../hooks/useTRPC';
+import { useMutation } from '@tanstack/react-query';
 
 interface CouponScannerProps {
   onRedemptionComplete?: (result: RedeemCouponResponse) => void;
@@ -31,8 +30,10 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
   const [cameraActive, setCameraActive] = useState(false);
   const validationTimeout = useRef<number | null>(null);
 
-  // tRPC mutation for redeeming coupons
-  const redeemCouponMutation = trpc.coupon.redeemCoupon.useMutation();
+  const redeemCouponMutation = useMutation({
+    mutationFn: (data: { qrCode: string; originalAmount: number; transactionReference?: string; location?: string; metadata?: Record<string, unknown> }) =>
+      couponService.redeemCoupon(data),
+  });
 
   // Camera functionality (simplified - in production, use a proper QR code scanner library)
   const startCamera = useCallback(async () => {
@@ -168,7 +169,7 @@ const CouponScanner: React.FC<CouponScannerProps> = ({
       }
     } catch (err: unknown) {
       logger.error('Error redeeming coupon:', err);
-      const errorMessage = getTRPCErrorMessage(err);
+      const errorMessage = err instanceof Error ? err.message : 'Redemption failed';
       const errorResult: RedeemCouponResponse = {
         success: false,
         message: errorMessage,

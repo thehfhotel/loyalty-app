@@ -1,7 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import NotificationCenter from '../NotificationCenter';
+
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+}
+
+function wrapper({ children }: { children: React.ReactNode }) {
+  const queryClient = createTestQueryClient();
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
 
 // Use vi.hoisted to create all mock state before mocks run
 const mocks = vi.hoisted(() => {
@@ -12,32 +27,9 @@ const mocks = vi.hoisted(() => {
     role: 'customer',
   };
 
-  let _queryData: any = {
-    notifications: [],
-    unread: 0,
-    total: 0,
-    pagination: { total: 0 },
-  };
-
-  let _isLoading = false;
-  let _error: Error | null = null;
-  const _refetch = vi.fn();
-
-  const _mutate = vi.fn();
-  const _mutateAsync = vi.fn();
-
   return {
     getUser: () => _user,
     setUser: (user: typeof _user) => { _user = user; },
-    getQueryData: () => _queryData,
-    setQueryData: (data: any) => { _queryData = data; },
-    getIsLoading: () => _isLoading,
-    setIsLoading: (loading: boolean) => { _isLoading = loading; },
-    getError: () => _error,
-    setError: (error: Error | null) => { _error = error; },
-    refetch: _refetch,
-    mutate: _mutate,
-    mutateAsync: _mutateAsync,
   };
 });
 
@@ -48,40 +40,18 @@ vi.mock('../../../store/authStore', () => ({
   },
 }));
 
-// Mock tRPC
-vi.mock('../../../hooks/useTRPC', () => ({
-  trpc: {
-    notification: {
-      getNotifications: {
-        useQuery: vi.fn(() => ({
-          data: mocks.getQueryData(),
-          isLoading: mocks.getIsLoading(),
-          error: mocks.getError(),
-          refetch: mocks.refetch,
-        })),
-      },
-      markMultipleAsRead: {
-        useMutation: vi.fn(() => ({
-          mutate: mocks.mutate,
-          mutateAsync: mocks.mutateAsync,
-          isLoading: false,
-        })),
-      },
-      markAllAsRead: {
-        useMutation: vi.fn(() => ({
-          mutate: mocks.mutate,
-          mutateAsync: mocks.mutateAsync,
-          isLoading: false,
-        })),
-      },
-      deleteNotification: {
-        useMutation: vi.fn(() => ({
-          mutate: mocks.mutate,
-          mutateAsync: mocks.mutateAsync,
-          isLoading: false,
-        })),
-      },
-    },
+// Mock inAppNotificationService
+const mockGetNotifications = vi.fn();
+const mockMarkMultipleAsRead = vi.fn();
+const mockMarkAllAsRead = vi.fn();
+const mockDeleteNotification = vi.fn();
+
+vi.mock('../../../services/inAppNotificationService', () => ({
+  inAppNotificationService: {
+    getNotifications: (...args: unknown[]) => mockGetNotifications(...args),
+    markMultipleAsRead: (...args: unknown[]) => mockMarkMultipleAsRead(...args),
+    markAllAsRead: (...args: unknown[]) => mockMarkAllAsRead(...args),
+    deleteNotification: (...args: unknown[]) => mockDeleteNotification(...args),
   },
 }));
 
@@ -160,46 +130,42 @@ describe('NotificationCenter', () => {
     },
   ];
 
+  const defaultQueryData = {
+    notifications: mockNotifications,
+    unread: 2,
+    total: 3,
+    pagination: { total: 3 },
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
 
     // Reset user state
     mocks.setUser(defaultUser);
 
-    // Setup default tRPC mock responses
-    mocks.setQueryData({
-      notifications: mockNotifications,
-      unread: 2,
-      total: 3,
-      pagination: { total: 3 },
-    });
-
-    mocks.setIsLoading(false);
-    mocks.setError(null);
-
-    // Reset mutation mocks
-    mocks.mutate.mockClear();
-    mocks.mutateAsync.mockClear();
-    mocks.mutateAsync.mockResolvedValue(undefined);
-    mocks.refetch.mockClear();
+    // Setup default service mock responses
+    mockGetNotifications.mockResolvedValue(defaultQueryData);
+    mockMarkMultipleAsRead.mockResolvedValue(undefined);
+    mockMarkAllAsRead.mockResolvedValue(undefined);
+    mockDeleteNotification.mockResolvedValue(undefined);
   });
 
   describe('Basic Rendering', () => {
     it('should render the bell icon button', () => {
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       expect(screen.getByTestId('bell-icon')).toBeInTheDocument();
     });
 
     it('should have accessible label on bell button', () => {
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const button = screen.getByRole('button', { name: /notifications/i });
       expect(button).toBeInTheDocument();
     });
 
     it('should not show dropdown initially', () => {
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       expect(screen.queryByText('Notifications')).not.toBeInTheDocument();
     });
@@ -207,7 +173,7 @@ describe('NotificationCenter', () => {
     it('should not render when user is null', () => {
       mocks.setUser(null);
 
-      const { container } = render(<NotificationCenter />);
+      const { container } = render(<NotificationCenter />, { wrapper });
 
       expect(container.firstChild).toBeNull();
     });
@@ -215,7 +181,7 @@ describe('NotificationCenter', () => {
 
   describe('Notification Badge', () => {
     it('should show unread count badge', async () => {
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('2')).toBeInTheDocument();
@@ -232,14 +198,14 @@ describe('NotificationCenter', () => {
         createdAt: '2024-01-15T10:30:00Z',
       }));
 
-      mocks.setQueryData({
+      mockGetNotifications.mockResolvedValue({
         notifications: manyUnread,
         unread: 12,
         total: 12,
         pagination: { total: 12 },
       });
 
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       await waitFor(() => {
         expect(screen.getByText('9+')).toBeInTheDocument();
@@ -247,7 +213,7 @@ describe('NotificationCenter', () => {
     });
 
     it('should have red background for badge', async () => {
-      const { container } = render(<NotificationCenter />);
+      const { container } = render(<NotificationCenter />, { wrapper });
 
       await waitFor(() => {
         const badge = container.querySelector('.bg-red-500');
@@ -259,7 +225,7 @@ describe('NotificationCenter', () => {
   describe('Dropdown Toggle', () => {
     it('should open dropdown when bell icon clicked', async () => {
       const user = userEvent.setup();
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
       await user.click(bellButton);
@@ -271,11 +237,14 @@ describe('NotificationCenter', () => {
 
     it('should close dropdown when clicking outside', async () => {
       const user = userEvent.setup();
+      const queryClient = createTestQueryClient();
       render(
-        <div>
-          <NotificationCenter />
-          <div data-testid="outside">Outside</div>
-        </div>
+        <QueryClientProvider client={queryClient}>
+          <div>
+            <NotificationCenter />
+            <div data-testid="outside">Outside</div>
+          </div>
+        </QueryClientProvider>
       );
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
@@ -298,16 +267,10 @@ describe('NotificationCenter', () => {
     it('should show loading spinner when fetching notifications', async () => {
       const user = userEvent.setup();
 
-      // Set loading state
-      mocks.setIsLoading(true);
-      mocks.setQueryData({
-        notifications: [],
-        unread: 0,
-        total: 0,
-        pagination: { total: 0 },
-      });
+      // Make getNotifications never resolve to simulate loading
+      mockGetNotifications.mockReturnValue(new Promise(() => {}));
 
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
       await user.click(bellButton);
@@ -322,14 +285,14 @@ describe('NotificationCenter', () => {
     it('should show empty state when no notifications', async () => {
       const user = userEvent.setup();
 
-      mocks.setQueryData({
+      mockGetNotifications.mockResolvedValue({
         notifications: [],
         unread: 0,
         total: 0,
         pagination: { total: 0 },
       });
 
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
       await user.click(bellButton);
@@ -343,7 +306,7 @@ describe('NotificationCenter', () => {
   describe('Notification List Display', () => {
     it('should display all notifications', async () => {
       const user = userEvent.setup();
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
       await user.click(bellButton);
@@ -357,7 +320,7 @@ describe('NotificationCenter', () => {
 
     it('should display notification messages', async () => {
       const user = userEvent.setup();
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
       await user.click(bellButton);
@@ -371,7 +334,7 @@ describe('NotificationCenter', () => {
 
     it('should display notification icons based on type', async () => {
       const user = userEvent.setup();
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
       await user.click(bellButton);
@@ -387,14 +350,14 @@ describe('NotificationCenter', () => {
       const user = userEvent.setup();
 
       // Delay the mark-all-read mutation so we can check unread state before it resolves
-      let resolveMutation: ((value: unknown) => void) | undefined;
-      mocks.mutateAsync.mockImplementation(() => {
-        return new Promise((resolve) => {
-          resolveMutation = resolve;
-        });
-      });
+      mockMarkAllAsRead.mockImplementation(() => new Promise(() => {}));
 
-      const { container } = render(<NotificationCenter />);
+      const queryClient = createTestQueryClient();
+      const { container } = render(
+        <QueryClientProvider client={queryClient}>
+          <NotificationCenter />
+        </QueryClientProvider>
+      );
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
       await user.click(bellButton);
@@ -403,11 +366,6 @@ describe('NotificationCenter', () => {
         const unreadBgs = container.querySelectorAll('.bg-blue-50');
         expect(unreadBgs.length).toBeGreaterThan(0);
       });
-
-      // Cleanup: resolve the pending promise
-      if (resolveMutation) {
-        resolveMutation(undefined);
-      }
     });
   });
 
@@ -416,14 +374,9 @@ describe('NotificationCenter', () => {
       const user = userEvent.setup();
 
       // Delay the mark-all-read mutation so we can check unread state before it resolves
-      let resolveMutation: ((value: unknown) => void) | undefined;
-      mocks.mutateAsync.mockImplementation(() => {
-        return new Promise((resolve) => {
-          resolveMutation = resolve;
-        });
-      });
+      mockMarkAllAsRead.mockImplementation(() => new Promise(() => {}));
 
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
       await user.click(bellButton);
@@ -432,25 +385,15 @@ describe('NotificationCenter', () => {
         const checkIcons = screen.getAllByTestId('check-icon');
         expect(checkIcons.length).toBeGreaterThan(0);
       });
-
-      // Cleanup: resolve the pending promise
-      if (resolveMutation) {
-        resolveMutation(undefined);
-      }
     });
 
     it('should show "Mark all read" button when there are unread notifications', async () => {
       const user = userEvent.setup();
 
       // Delay the mark-all-read mutation so we can check unread state before it resolves
-      let resolveMutation: ((value: unknown) => void) | undefined;
-      mocks.mutateAsync.mockImplementation(() => {
-        return new Promise((resolve) => {
-          resolveMutation = resolve;
-        });
-      });
+      mockMarkAllAsRead.mockImplementation(() => new Promise(() => {}));
 
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
       await user.click(bellButton);
@@ -458,18 +401,13 @@ describe('NotificationCenter', () => {
       await waitFor(() => {
         expect(screen.getByText('Mark all read')).toBeInTheDocument();
       });
-
-      // Cleanup: resolve the pending promise
-      if (resolveMutation) {
-        resolveMutation(undefined);
-      }
     });
   });
 
   describe('Delete Functionality', () => {
     it('should display delete buttons for notifications', async () => {
       const user = userEvent.setup();
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
       await user.click(bellButton);
@@ -485,15 +423,9 @@ describe('NotificationCenter', () => {
     it('should handle fetch error gracefully', async () => {
       const user = userEvent.setup();
 
-      mocks.setError(new Error('Network error'));
-      mocks.setQueryData({
-        notifications: [],
-        unread: 0,
-        total: 0,
-        pagination: { total: 0 },
-      });
+      mockGetNotifications.mockRejectedValue(new Error('Network error'));
 
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
       await user.click(bellButton);
@@ -508,7 +440,7 @@ describe('NotificationCenter', () => {
 
   describe('Accessibility', () => {
     it('should have accessible bell button', () => {
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const button = screen.getByRole('button', { name: /notifications/i });
       expect(button).toHaveAttribute('aria-label', 'Notifications');
@@ -516,7 +448,7 @@ describe('NotificationCenter', () => {
 
     it('should have proper heading hierarchy', async () => {
       const user = userEvent.setup();
-      render(<NotificationCenter />);
+      render(<NotificationCenter />, { wrapper });
 
       const bellButton = screen.getByRole('button', { name: /notifications/i });
       await user.click(bellButton);

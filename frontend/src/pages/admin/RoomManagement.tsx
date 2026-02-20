@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { trpc } from '../../utils/trpc';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import DashboardButton from '../../components/navigation/DashboardButton';
 
 // Types based on backend schema
@@ -52,56 +52,73 @@ const RoomManagement: React.FC = () => {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [filterRoomTypeId, setFilterRoomTypeId] = useState<string>('');
 
-  // tRPC queries and mutations
-  const utils = trpc.useUtils();
+  // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+  const queryClient = useQueryClient();
 
-  const { data: roomTypes } = trpc.booking.admin.getRoomTypes.useQuery(
-    { includeInactive: true },
-    { refetchOnWindowFocus: false }
-  );
-
-  const { data: rooms, isLoading, error } = trpc.booking.admin.getRooms.useQuery(
-    {
-      roomTypeId: filterRoomTypeId || undefined,
-      includeInactive: true
+  const { data: roomTypes } = useQuery<RoomType[]>({
+    queryKey: ['admin', 'roomTypes', { includeInactive: true }],
+    queryFn: async () => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      return [];
     },
-    { refetchOnWindowFocus: false }
-  );
+    refetchOnWindowFocus: false,
+  });
 
-  const createMutation = trpc.booking.admin.createRoom.useMutation({
+  const { data: rooms, isLoading, error } = useQuery<Room[], Error>({
+    queryKey: ['admin', 'rooms', { roomTypeId: filterRoomTypeId || undefined, includeInactive: true }],
+    queryFn: async () => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      return [];
+    },
+    refetchOnWindowFocus: false,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (_data: { roomTypeId: string; roomNumber: string; floor?: number; notes?: string; isActive: boolean }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.rooms.createSuccess'));
-      utils.booking.admin.getRooms.invalidate();
+      queryClient.invalidateQueries({ queryKey: ['admin', 'rooms'] });
       setShowCreateModal(false);
       resetForm();
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast.error(error.message || t('admin.booking.rooms.createError'));
     },
   });
 
-  const updateMutation = trpc.booking.admin.updateRoom.useMutation({
+  const updateMutation = useMutation({
+    mutationFn: async (_data: { id: string; data: { roomTypeId: string; roomNumber: string; floor?: number; notes?: string; isActive: boolean } }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.rooms.updateSuccess'));
-      utils.booking.admin.getRooms.invalidate();
+      queryClient.invalidateQueries({ queryKey: ['admin', 'rooms'] });
       setShowEditModal(false);
       setSelectedRoom(null);
       resetForm();
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast.error(error.message || t('admin.booking.rooms.updateError'));
     },
   });
 
-  const deleteMutation = trpc.booking.admin.deleteRoom.useMutation({
+  const deleteMutation = useMutation({
+    mutationFn: async (_data: { id: string }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.rooms.deleteSuccess'));
-      utils.booking.admin.getRooms.invalidate();
+      queryClient.invalidateQueries({ queryKey: ['admin', 'rooms'] });
       setShowDeleteModal(false);
       setSelectedRoom(null);
       setDeleteConfirmText('');
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast.error(error.message || t('admin.booking.rooms.deleteError'));
     },
   });

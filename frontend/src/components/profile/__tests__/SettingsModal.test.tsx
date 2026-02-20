@@ -2,10 +2,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import SettingsModal from '../SettingsModal';
 import { useAuthStore } from '../../../store/authStore';
 import { UserProfile } from '../../../services/userService';
-// trpc is mocked via vi.mock below
+
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+}
+
+function wrapper({ children }: { children: React.ReactNode }) {
+  const queryClient = createTestQueryClient();
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
 
 // Mock dependencies
 const mockTranslate = vi.fn((key: string) => {
@@ -48,26 +62,14 @@ vi.mock('react-icons/fi', () => ({
 
 vi.mock('../../../store/authStore');
 
-// Create shared mock functions that can be accessed by tests
-const mockMutateAsync = vi.fn();
-const mockUpdateEmojiAvatarMutation = {
-  mutateAsync: mockMutateAsync,
-  isPending: false,
-};
+// Mock userService
+const mockUpdateEmojiAvatar = vi.fn();
 
-// Mock tRPC hooks before they're imported
-vi.mock('../../../hooks/useTRPC', () => ({
-  trpc: {
-    user: {
-      updateEmojiAvatar: {
-        useMutation: () => mockUpdateEmojiAvatarMutation,
-      },
-    },
+vi.mock('../../../services/userService', () => ({
+  userService: {
+    updateEmojiAvatar: (...args: unknown[]) => mockUpdateEmojiAvatar(...args),
   },
-  getTRPCErrorMessage: vi.fn((error: unknown) => {
-    if (error instanceof Error) return error.message;
-    return 'Unknown error';
-  }),
+  // Re-export UserProfile type (it's imported for type only, but keep the mock clean)
 }));
 
 vi.mock('../../../utils/notificationManager', () => ({
@@ -162,27 +164,26 @@ describe('SettingsModal', () => {
     });
 
     // Reset the shared mock for each test
-    mockMutateAsync.mockReset();
-    mockMutateAsync.mockResolvedValue(mockProfile);
-    mockUpdateEmojiAvatarMutation.isPending = false;
+    mockUpdateEmojiAvatar.mockReset();
+    mockUpdateEmojiAvatar.mockResolvedValue(mockProfile);
   });
 
   describe('Basic Rendering', () => {
     it('should render the component when isOpen is true', () => {
-      const { container } = render(<SettingsModal {...defaultProps} />);
+      const { container } = render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(container).toBeTruthy();
       expect(screen.getByText('Edit Profile')).toBeInTheDocument();
     });
 
     it('should not render when isOpen is false', () => {
-      const { container } = render(<SettingsModal {...defaultProps} isOpen={false} />);
+      const { container } = render(<SettingsModal {...defaultProps} isOpen={false} />, { wrapper });
 
       expect(container.firstChild).toBeNull();
     });
 
     it('should render modal with backdrop', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const backdrop = document.querySelector('.bg-gray-500');
       expect(backdrop).toBeInTheDocument();
@@ -190,13 +191,13 @@ describe('SettingsModal', () => {
     });
 
     it('should render modal title', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(screen.getByText('Edit Profile')).toBeInTheDocument();
     });
 
     it('should render close button with X icon', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(screen.getByTestId('x-icon')).toBeInTheDocument();
     });
@@ -204,7 +205,7 @@ describe('SettingsModal', () => {
 
   describe('Form Field Display', () => {
     it('should render email field with value from user', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const emailInput = screen.getByLabelText('Email');
       expect(emailInput).toBeInTheDocument();
@@ -212,13 +213,13 @@ describe('SettingsModal', () => {
     });
 
     it('should render email help text', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(screen.getByText('Email cannot be changed')).toBeInTheDocument();
     });
 
     it('should render firstName field with profile value', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const firstNameInput = screen.getByLabelText('First Name');
       expect(firstNameInput).toBeInTheDocument();
@@ -226,7 +227,7 @@ describe('SettingsModal', () => {
     });
 
     it('should render lastName field with profile value', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const lastNameInput = screen.getByLabelText('Last Name');
       expect(lastNameInput).toBeInTheDocument();
@@ -234,7 +235,7 @@ describe('SettingsModal', () => {
     });
 
     it('should render phone field with profile value', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const phoneInput = screen.getByLabelText('Phone');
       expect(phoneInput).toBeInTheDocument();
@@ -242,7 +243,7 @@ describe('SettingsModal', () => {
     });
 
     it('should render all form field components', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(screen.getByTestId('dob-field')).toBeInTheDocument();
       expect(screen.getByTestId('gender-field')).toBeInTheDocument();
@@ -250,7 +251,7 @@ describe('SettingsModal', () => {
     });
 
     it('should render field icons', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(screen.getAllByTestId('user-icon')).toHaveLength(2);
       expect(screen.getByTestId('phone-icon')).toBeInTheDocument();
@@ -265,7 +266,7 @@ describe('SettingsModal', () => {
         dateOfBirth: undefined,
       };
 
-      render(<SettingsModal {...defaultProps} profile={profileWithMissingData} />);
+      render(<SettingsModal {...defaultProps} profile={profileWithMissingData} />, { wrapper });
 
       const lastNameInput = screen.getByLabelText('Last Name');
       const phoneInput = screen.getByLabelText('Phone');
@@ -279,7 +280,7 @@ describe('SettingsModal', () => {
     it('should show validation error for empty firstName', async () => {
       const user = userEvent.setup();
       const onSubmit = vi.fn();
-      render(<SettingsModal {...defaultProps} onSubmit={onSubmit} />);
+      render(<SettingsModal {...defaultProps} onSubmit={onSubmit} />, { wrapper });
 
       const firstNameInput = screen.getByLabelText('First Name');
       await user.clear(firstNameInput);
@@ -298,7 +299,7 @@ describe('SettingsModal', () => {
     it('should allow empty email', async () => {
       const user = userEvent.setup();
       const onSubmit = vi.fn();
-      render(<SettingsModal {...defaultProps} onSubmit={onSubmit} />);
+      render(<SettingsModal {...defaultProps} onSubmit={onSubmit} />, { wrapper });
 
       const emailInput = screen.getByLabelText('Email');
       await user.clear(emailInput);
@@ -314,7 +315,7 @@ describe('SettingsModal', () => {
     it('should allow optional fields to be empty', async () => {
       const user = userEvent.setup();
       const onSubmit = vi.fn();
-      render(<SettingsModal {...defaultProps} onSubmit={onSubmit} />);
+      render(<SettingsModal {...defaultProps} onSubmit={onSubmit} />, { wrapper });
 
       const lastNameInput = screen.getByLabelText('Last Name');
       const phoneInput = screen.getByLabelText('Phone');
@@ -335,7 +336,7 @@ describe('SettingsModal', () => {
     it('should call onSubmit when form is submitted', async () => {
       const user = userEvent.setup();
       const onSubmit = vi.fn().mockResolvedValue(undefined);
-      render(<SettingsModal {...defaultProps} onSubmit={onSubmit} />);
+      render(<SettingsModal {...defaultProps} onSubmit={onSubmit} />, { wrapper });
 
       const saveButton = screen.getByText('Save');
       await user.click(saveButton);
@@ -348,7 +349,7 @@ describe('SettingsModal', () => {
     it('should call onSubmit with updated values', async () => {
       const user = userEvent.setup();
       const onSubmit = vi.fn().mockResolvedValue(undefined);
-      render(<SettingsModal {...defaultProps} onSubmit={onSubmit} />);
+      render(<SettingsModal {...defaultProps} onSubmit={onSubmit} />, { wrapper });
 
       const firstNameInput = screen.getByLabelText('First Name');
       await user.clear(firstNameInput);
@@ -367,7 +368,7 @@ describe('SettingsModal', () => {
     it('should not call onSubmit if firstName is empty', async () => {
       const user = userEvent.setup();
       const onSubmit = vi.fn();
-      render(<SettingsModal {...defaultProps} onSubmit={onSubmit} />);
+      render(<SettingsModal {...defaultProps} onSubmit={onSubmit} />, { wrapper });
 
       const firstNameInput = screen.getByLabelText('First Name');
       await user.clear(firstNameInput);
@@ -385,13 +386,13 @@ describe('SettingsModal', () => {
 
   describe('Avatar Section', () => {
     it('should render profile picture section', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(screen.getByText('Profile Picture')).toBeInTheDocument();
     });
 
     it('should render EmojiAvatar with profile avatarUrl', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const avatar = screen.getByTestId('emoji-avatar');
       expect(avatar).toBeInTheDocument();
@@ -400,34 +401,34 @@ describe('SettingsModal', () => {
     });
 
     it('should render Choose Emoji button', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(screen.getByText('Choose Emoji')).toBeInTheDocument();
       expect(screen.getByTestId('smile-icon')).toBeInTheDocument();
     });
 
     it('should render Upload Image button', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(screen.getByText('Upload Image')).toBeInTheDocument();
       expect(screen.getByTestId('camera-icon')).toBeInTheDocument();
     });
 
     it('should render Remove button when avatarUrl exists', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(screen.getByText('Remove')).toBeInTheDocument();
     });
 
     it('should not render Remove button when no avatarUrl', () => {
       const profileWithoutAvatar = { ...mockProfile, avatarUrl: undefined };
-      render(<SettingsModal {...defaultProps} profile={profileWithoutAvatar} />);
+      render(<SettingsModal {...defaultProps} profile={profileWithoutAvatar} />, { wrapper });
 
       expect(screen.queryByText('Remove')).not.toBeInTheDocument();
     });
 
     it('should render avatar help text', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(
         screen.getByText('Choose an emoji or upload your own image for your profile picture')
@@ -435,7 +436,7 @@ describe('SettingsModal', () => {
     });
 
     it('should render hidden file input', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const fileInput = document.querySelector('input[type="file"]');
       expect(fileInput).toBeInTheDocument();
@@ -447,7 +448,7 @@ describe('SettingsModal', () => {
   describe('Avatar Interactions', () => {
     it('should toggle emoji selector when Choose Emoji clicked', async () => {
       const user = userEvent.setup();
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(screen.queryByTestId('emoji-selector')).not.toBeInTheDocument();
 
@@ -459,7 +460,7 @@ describe('SettingsModal', () => {
 
     it('should close emoji selector when X clicked', async () => {
       const user = userEvent.setup();
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const chooseEmojiButton = screen.getByText('Choose Emoji');
       await user.click(chooseEmojiButton);
@@ -477,7 +478,7 @@ describe('SettingsModal', () => {
 
     it('should trigger file input when Upload Image clicked', async () => {
       const user = userEvent.setup();
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       const clickSpy = vi.spyOn(fileInput, 'click');
@@ -490,7 +491,7 @@ describe('SettingsModal', () => {
 
     it('should call onAvatarUpload when file selected', async () => {
       const onAvatarUpload = vi.fn();
-      render(<SettingsModal {...defaultProps} onAvatarUpload={onAvatarUpload} />);
+      render(<SettingsModal {...defaultProps} onAvatarUpload={onAvatarUpload} />, { wrapper });
 
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       const file = new File(['dummy content'], 'test.png', { type: 'image/png' });
@@ -503,7 +504,7 @@ describe('SettingsModal', () => {
     it('should call onDeleteAvatar when Remove clicked', async () => {
       const user = userEvent.setup();
       const onDeleteAvatar = vi.fn();
-      render(<SettingsModal {...defaultProps} onDeleteAvatar={onDeleteAvatar} />);
+      render(<SettingsModal {...defaultProps} onDeleteAvatar={onDeleteAvatar} />, { wrapper });
 
       const removeButton = screen.getByText('Remove');
       await user.click(removeButton);
@@ -514,9 +515,9 @@ describe('SettingsModal', () => {
     it('should call updateEmojiAvatar mutation when emoji selected', async () => {
       const user = userEvent.setup();
       const mockUpdatedProfile = { ...mockProfile, avatarUrl: 'emoji:😀' };
-      mockMutateAsync.mockResolvedValue(mockUpdatedProfile);
+      mockUpdateEmojiAvatar.mockResolvedValue(mockUpdatedProfile);
 
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const chooseEmojiButton = screen.getByText('Choose Emoji');
       await user.click(chooseEmojiButton);
@@ -525,16 +526,16 @@ describe('SettingsModal', () => {
       await user.click(selectEmojiButton);
 
       await waitFor(() => {
-        expect(mockMutateAsync).toHaveBeenCalledWith({ emoji: '😀' });
+        expect(mockUpdateEmojiAvatar).toHaveBeenCalledWith('😀');
       });
     });
 
     it('should close emoji selector after successful emoji selection', async () => {
       const user = userEvent.setup();
       const mockUpdatedProfile = { ...mockProfile, avatarUrl: 'emoji:😀' };
-      mockMutateAsync.mockResolvedValue(mockUpdatedProfile);
+      mockUpdateEmojiAvatar.mockResolvedValue(mockUpdatedProfile);
 
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const chooseEmojiButton = screen.getByText('Choose Emoji');
       await user.click(chooseEmojiButton);
@@ -551,9 +552,9 @@ describe('SettingsModal', () => {
       const user = userEvent.setup();
       const onProfileUpdate = vi.fn().mockResolvedValue(undefined);
       const mockUpdatedProfile = { ...mockProfile, avatarUrl: 'emoji:😀' };
-      mockMutateAsync.mockResolvedValue(mockUpdatedProfile);
+      mockUpdateEmojiAvatar.mockResolvedValue(mockUpdatedProfile);
 
-      render(<SettingsModal {...defaultProps} onProfileUpdate={onProfileUpdate} />);
+      render(<SettingsModal {...defaultProps} onProfileUpdate={onProfileUpdate} />, { wrapper });
 
       const chooseEmojiButton = screen.getByText('Choose Emoji');
       await user.click(chooseEmojiButton);
@@ -570,87 +571,119 @@ describe('SettingsModal', () => {
 
   describe('Loading States', () => {
     it('should show Saving... text when isSaving is true', () => {
-      render(<SettingsModal {...defaultProps} isSaving={true} />);
+      render(<SettingsModal {...defaultProps} isSaving={true} />, { wrapper });
 
       expect(screen.getByText('Saving...')).toBeInTheDocument();
     });
 
     it('should show Save text when isSaving is false', () => {
-      render(<SettingsModal {...defaultProps} isSaving={false} />);
+      render(<SettingsModal {...defaultProps} isSaving={false} />, { wrapper });
 
       expect(screen.getByText('Save')).toBeInTheDocument();
     });
 
     it('should disable submit button when isSaving is true', () => {
-      render(<SettingsModal {...defaultProps} isSaving={true} />);
+      render(<SettingsModal {...defaultProps} isSaving={true} />, { wrapper });
 
       const saveButton = screen.getByText('Saving...');
       expect(saveButton).toBeDisabled();
     });
 
     it('should enable submit button when isSaving is false', () => {
-      render(<SettingsModal {...defaultProps} isSaving={false} />);
+      render(<SettingsModal {...defaultProps} isSaving={false} />, { wrapper });
 
       const saveButton = screen.getByText('Save');
       expect(saveButton).not.toBeDisabled();
     });
 
     it('should disable Upload Image button when uploadingAvatar is true', () => {
-      render(<SettingsModal {...defaultProps} uploadingAvatar={true} />);
+      render(<SettingsModal {...defaultProps} uploadingAvatar={true} />, { wrapper });
 
       const uploadButton = screen.getByText('Upload Image');
       expect(uploadButton).toBeDisabled();
     });
 
     it('should disable Remove button when uploadingAvatar is true', () => {
-      render(<SettingsModal {...defaultProps} uploadingAvatar={true} />);
+      render(<SettingsModal {...defaultProps} uploadingAvatar={true} />, { wrapper });
 
       const removeButton = screen.getByText('Remove');
       expect(removeButton).toBeDisabled();
     });
 
     it('should disable Choose Emoji button when updatingEmoji', async () => {
-      // Set isPending to true to simulate loading state
-      mockUpdateEmojiAvatarMutation.isPending = true;
-      mockMutateAsync.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 1000)));
+      const user = userEvent.setup();
+      // Make mutation never resolve to stay in pending state
+      mockUpdateEmojiAvatar.mockImplementation(() => new Promise(() => {}));
 
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
+      // Open emoji selector and select an emoji to trigger the mutation
       const chooseEmojiButton = screen.getByText('Choose Emoji');
-      expect(chooseEmojiButton).toBeDisabled();
+      await user.click(chooseEmojiButton);
+      const selectEmojiButton = screen.getByTestId('select-emoji-button');
+      await user.click(selectEmojiButton);
+
+      // Now the Choose Emoji button should be disabled
+      await waitFor(() => {
+        expect(screen.getByText('Choose Emoji')).toBeDisabled();
+      });
     });
 
     it('should show loading spinner on avatar when updatingEmoji', async () => {
-      // Set isPending to true to simulate loading state
-      mockUpdateEmojiAvatarMutation.isPending = true;
-      mockMutateAsync.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 1000)));
+      const user = userEvent.setup();
+      // Make mutation never resolve to stay in pending state
+      mockUpdateEmojiAvatar.mockImplementation(() => new Promise(() => {}));
 
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
-      const spinner = document.querySelector('.animate-spin');
-      expect(spinner).toBeInTheDocument();
+      // Open emoji selector and select an emoji to trigger the mutation
+      const chooseEmojiButton = screen.getByText('Choose Emoji');
+      await user.click(chooseEmojiButton);
+      const selectEmojiButton = screen.getByTestId('select-emoji-button');
+      await user.click(selectEmojiButton);
+
+      await waitFor(() => {
+        const spinner = document.querySelector('.animate-spin');
+        expect(spinner).toBeInTheDocument();
+      });
     });
 
     it('should apply opacity-50 to avatar when updatingEmoji', async () => {
-      // Set isPending to true to simulate loading state
-      mockUpdateEmojiAvatarMutation.isPending = true;
-      mockMutateAsync.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 1000)));
+      const user = userEvent.setup();
+      // Make mutation never resolve to stay in pending state
+      mockUpdateEmojiAvatar.mockImplementation(() => new Promise(() => {}));
 
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
-      const avatar = screen.getByTestId('emoji-avatar');
-      expect(avatar).toHaveClass('opacity-50');
+      // Open emoji selector and select an emoji to trigger the mutation
+      const chooseEmojiButton = screen.getByText('Choose Emoji');
+      await user.click(chooseEmojiButton);
+      const selectEmojiButton = screen.getByTestId('select-emoji-button');
+      await user.click(selectEmojiButton);
+
+      await waitFor(() => {
+        const avatar = screen.getByTestId('emoji-avatar');
+        expect(avatar).toHaveClass('opacity-50');
+      });
     });
 
     it('should disable Upload Image when updatingEmoji', async () => {
-      // Set isPending to true to simulate loading state
-      mockUpdateEmojiAvatarMutation.isPending = true;
-      mockMutateAsync.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 1000)));
+      const user = userEvent.setup();
+      // Make mutation never resolve to stay in pending state
+      mockUpdateEmojiAvatar.mockImplementation(() => new Promise(() => {}));
 
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
-      const uploadButton = screen.getByText('Upload Image');
-      expect(uploadButton).toBeDisabled();
+      // Open emoji selector and select an emoji to trigger the mutation
+      const chooseEmojiButton = screen.getByText('Choose Emoji');
+      await user.click(chooseEmojiButton);
+      const selectEmojiButton = screen.getByTestId('select-emoji-button');
+      await user.click(selectEmojiButton);
+
+      await waitFor(() => {
+        const uploadButton = screen.getByText('Upload Image');
+        expect(uploadButton).toBeDisabled();
+      });
     });
   });
 
@@ -658,7 +691,7 @@ describe('SettingsModal', () => {
     it('should call onClose when close button clicked', async () => {
       const user = userEvent.setup();
       const onClose = vi.fn();
-      render(<SettingsModal {...defaultProps} onClose={onClose} />);
+      render(<SettingsModal {...defaultProps} onClose={onClose} />, { wrapper });
 
       const closeButton = screen.getByTestId('x-icon').parentElement;
       if (!closeButton) throw new Error('Close button not found');
@@ -670,7 +703,7 @@ describe('SettingsModal', () => {
     it('should call onClose when backdrop clicked', async () => {
       const user = userEvent.setup();
       const onClose = vi.fn();
-      render(<SettingsModal {...defaultProps} onClose={onClose} />);
+      render(<SettingsModal {...defaultProps} onClose={onClose} />, { wrapper });
 
       const backdrop = document.querySelector('.bg-gray-500') as HTMLElement;
       await user.click(backdrop);
@@ -681,7 +714,7 @@ describe('SettingsModal', () => {
     it('should call onClose when Cancel button clicked', async () => {
       const user = userEvent.setup();
       const onClose = vi.fn();
-      render(<SettingsModal {...defaultProps} onClose={onClose} />);
+      render(<SettingsModal {...defaultProps} onClose={onClose} />, { wrapper });
 
       const cancelButton = screen.getByText('Cancel');
       await user.click(cancelButton);
@@ -692,7 +725,7 @@ describe('SettingsModal', () => {
     it('should not close when modal content is clicked', async () => {
       const user = userEvent.setup();
       const onClose = vi.fn();
-      render(<SettingsModal {...defaultProps} onClose={onClose} />);
+      render(<SettingsModal {...defaultProps} onClose={onClose} />, { wrapper });
 
       const modalContent = screen.getByText('Edit Profile');
       await user.click(modalContent);
@@ -703,7 +736,7 @@ describe('SettingsModal', () => {
 
   describe('Form Reset on Profile Change', () => {
     it('should reset form when profile changes', () => {
-      const { rerender } = render(<SettingsModal {...defaultProps} />);
+      const { rerender } = render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const firstNameInput = screen.getByLabelText('First Name');
       expect(firstNameInput).toHaveValue('John');
@@ -715,7 +748,7 @@ describe('SettingsModal', () => {
     });
 
     it('should reset form when user email changes', () => {
-      const { rerender } = render(<SettingsModal {...defaultProps} />);
+      const { rerender } = render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const emailInput = screen.getByLabelText('Email');
       expect(emailInput).toHaveValue('test@example.com');
@@ -732,7 +765,7 @@ describe('SettingsModal', () => {
     });
 
     it('should format dateOfBirth to ISO date string', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const dobInput = screen.getByTestId('dob-input');
       expect(dobInput).toHaveValue('1990-01-01');
@@ -740,7 +773,7 @@ describe('SettingsModal', () => {
 
     it('should handle profile with no dateOfBirth', () => {
       const profileWithoutDOB = { ...mockProfile, dateOfBirth: undefined };
-      render(<SettingsModal {...defaultProps} profile={profileWithoutDOB} />);
+      render(<SettingsModal {...defaultProps} profile={profileWithoutDOB} />, { wrapper });
 
       const dobInput = screen.getByTestId('dob-input');
       expect(dobInput).toHaveValue('');
@@ -749,14 +782,14 @@ describe('SettingsModal', () => {
 
   describe('Accessibility', () => {
     it('should have proper form structure', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const form = document.querySelector('form');
       expect(form).toBeInTheDocument();
     });
 
     it('should have proper labels for form fields', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       expect(screen.getByLabelText('Email')).toBeInTheDocument();
       expect(screen.getByLabelText('First Name')).toBeInTheDocument();
@@ -765,7 +798,7 @@ describe('SettingsModal', () => {
     });
 
     it('should have proper button types', () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const cancelButton = screen.getByText('Cancel');
       const saveButton = screen.getByText('Save');
@@ -775,7 +808,7 @@ describe('SettingsModal', () => {
     });
 
     it('should support keyboard navigation', async () => {
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const firstNameInput = screen.getByLabelText('First Name');
       firstNameInput.focus();
@@ -786,7 +819,7 @@ describe('SettingsModal', () => {
 
   describe('Edge Cases', () => {
     it('should handle null profile gracefully', () => {
-      render(<SettingsModal {...defaultProps} profile={null} />);
+      render(<SettingsModal {...defaultProps} profile={null} />, { wrapper });
 
       const firstNameInput = screen.getByLabelText('First Name');
       expect(firstNameInput).toHaveValue('');
@@ -798,7 +831,7 @@ describe('SettingsModal', () => {
         return selector(state);
       });
 
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const emailInput = screen.getByLabelText('Email');
       expect(emailInput).toHaveValue('');
@@ -806,9 +839,9 @@ describe('SettingsModal', () => {
 
     it('should handle emoji selection error gracefully', async () => {
       const user = userEvent.setup();
-      mockMutateAsync.mockRejectedValue(new Error('Failed to update emoji'));
+      mockUpdateEmojiAvatar.mockRejectedValue(new Error('Failed to update emoji'));
 
-      render(<SettingsModal {...defaultProps} />);
+      render(<SettingsModal {...defaultProps} />, { wrapper });
 
       const chooseEmojiButton = screen.getByText('Choose Emoji');
       await user.click(chooseEmojiButton);
@@ -817,7 +850,7 @@ describe('SettingsModal', () => {
       await user.click(selectEmojiButton);
 
       await waitFor(() => {
-        expect(mockMutateAsync).toHaveBeenCalled();
+        expect(mockUpdateEmojiAvatar).toHaveBeenCalled();
       });
 
       // Modal should still be open
@@ -827,9 +860,9 @@ describe('SettingsModal', () => {
     it('should handle missing onProfileUpdate callback', async () => {
       const user = userEvent.setup();
       const mockUpdatedProfile = { ...mockProfile, avatarUrl: 'emoji:😀' };
-      mockMutateAsync.mockResolvedValue(mockUpdatedProfile);
+      mockUpdateEmojiAvatar.mockResolvedValue(mockUpdatedProfile);
 
-      render(<SettingsModal {...defaultProps} onProfileUpdate={undefined} />);
+      render(<SettingsModal {...defaultProps} onProfileUpdate={undefined} />, { wrapper });
 
       const chooseEmojiButton = screen.getByText('Choose Emoji');
       await user.click(chooseEmojiButton);
@@ -838,7 +871,7 @@ describe('SettingsModal', () => {
       await user.click(selectEmojiButton);
 
       await waitFor(() => {
-        expect(mockMutateAsync).toHaveBeenCalled();
+        expect(mockUpdateEmojiAvatar).toHaveBeenCalled();
       });
 
       // Should not crash
@@ -850,7 +883,7 @@ describe('SettingsModal', () => {
         ...mockProfile,
         dateOfBirth: new Date('1990-01-01').toISOString(),
       };
-      render(<SettingsModal {...defaultProps} profile={profileWithDateObject} />);
+      render(<SettingsModal {...defaultProps} profile={profileWithDateObject} />, { wrapper });
 
       const dobInput = screen.getByTestId('dob-input');
       expect(dobInput).toHaveValue('1990-01-01');

@@ -11,7 +11,7 @@ import {
   FiAlertTriangle
 } from 'react-icons/fi';
 import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
-import { trpc } from '../../hooks/useTRPC';
+import { useQuery, useMutation } from '@tanstack/react-query';
 
 // Types matching BookingManagement
 interface BookingUser {
@@ -111,12 +111,23 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
 
+  // TODO: Replace with REST service when Rust admin booking endpoints are implemented
   // Fetch room types for dropdown
-  const roomTypesQuery = trpc.booking.getRoomTypes.useQuery();
+  const roomTypesQuery = useQuery<RoomType[]>({
+    queryKey: ['booking', 'roomTypes'],
+    queryFn: async () => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      return [];
+    },
+  });
   const roomTypes = roomTypesQuery.data ?? [];
 
   // Update booking mutation
-  const updateBookingMutation = trpc.booking.admin.updateBooking.useMutation({
+  const updateBookingMutation = useMutation({
+    mutationFn: async (_data: { bookingId: string; checkInDate: Date; checkOutDate: Date; numGuests: number; roomTypeId: string; notes?: string; totalPrice: number }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.bookingManagement.messages.bookingUpdated'));
       onSave();
@@ -128,7 +139,11 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   });
 
   // Apply discount mutation
-  const applyDiscountMutation = trpc.booking.admin.applyDiscount.useMutation({
+  const applyDiscountMutation = useMutation({
+    mutationFn: async (_data: { bookingId: string; discountAmount: number; reason: string }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.bookingManagement.messages.discountApplied'));
       setShowDiscountForm(false);
@@ -140,7 +155,11 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   });
 
   // Cancel booking mutation
-  const cancelBookingMutation = trpc.booking.admin.cancelBooking.useMutation({
+  const cancelBookingMutation = useMutation({
+    mutationFn: async (_data: { bookingId: string; reason: string }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.cancel.success'));
       setIsCancelling(false);

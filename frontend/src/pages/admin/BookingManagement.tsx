@@ -16,7 +16,7 @@ import DashboardButton from '../../components/navigation/DashboardButton';
 import SlipViewerSidebar from '../../components/admin/SlipViewerSidebar';
 import BookingEditModal from './BookingEditModal';
 import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../../utils/dateFormatter';
-import { trpc } from '../../hooks/useTRPC';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAdminBookingSSE } from '../../hooks/useAdminBookingSSE';
 
 // Types for booking management
@@ -112,17 +112,20 @@ const BookingManagement: React.FC = () => {
   const pageSize = 10;
   const totalPages = Math.ceil(totalBookings / pageSize);
 
-  // tRPC queries and mutations
-  const bookingsQuery = trpc.booking.admin.getAllBookingsAdvanced.useQuery(
-    {
-      page: currentPage,
-      limit: pageSize,
-      search: debouncedSearchTerm || undefined,
-      status: statusFilter || undefined,
-      sortBy: sortField,
-      sortOrder: sortDirection
-    }
-  );
+  // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+  interface BookingsResponse {
+    bookings: Booking[];
+    total: number;
+    statusCounts?: StatusCounts;
+  }
+
+  const bookingsQuery = useQuery<BookingsResponse>({
+    queryKey: ['admin', 'bookings', { page: currentPage, limit: pageSize, search: debouncedSearchTerm || undefined, status: statusFilter || undefined, sortBy: sortField, sortOrder: sortDirection }],
+    queryFn: async () => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      return { bookings: [], total: 0, statusCounts: { all: 0, confirmed: 0, cancelled: 0, completed: 0 } };
+    },
+  });
 
   // Real-time updates via SSE - refetch when slip is uploaded
   useAdminBookingSSE(() => {
@@ -153,7 +156,11 @@ const BookingManagement: React.FC = () => {
     }
   }, [bookingsQuery.error, t]);
 
-  const verifySlipMutation = trpc.booking.admin.verifySlip.useMutation({
+  const verifySlipMutation = useMutation({
+    mutationFn: async (_data: { bookingId: string }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.bookingManagement.messages.slipVerified'));
       bookingsQuery.refetch();
@@ -170,7 +177,11 @@ const BookingManagement: React.FC = () => {
     }
   });
 
-  const markNeedsActionMutation = trpc.booking.admin.markNeedsAction.useMutation({
+  const markNeedsActionMutation = useMutation({
+    mutationFn: async (_data: { bookingId: string; notes: string }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.bookingManagement.messages.markedNeedsAction'));
       bookingsQuery.refetch();

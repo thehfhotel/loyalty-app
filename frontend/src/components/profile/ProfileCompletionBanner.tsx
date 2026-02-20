@@ -8,7 +8,8 @@ import { useAuthStore } from '../../store/authStore';
 import { notify } from '../../utils/notificationManager';
 import { logger } from '../../utils/logger';
 import { GenderField, OccupationField, DateOfBirthField } from './ProfileFormFields';
-import { trpc, getTRPCErrorMessage } from '../../hooks/useTRPC';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { userService } from '../../services/userService';
 
 interface ProfileCompletionBannerProps {
   className?: string;
@@ -32,15 +33,17 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
   const [isDismissed, setIsDismissed] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
-  // tRPC hooks
-  const { data: profileStatus, isLoading, refetch } = trpc.user.getProfileCompletionStatus.useQuery(
-    undefined,
-    {
-      enabled: !!user?.id,
-      retry: false
-    }
-  );
-  const completeProfileMutation = trpc.user.completeProfile.useMutation();
+  const { data: profileStatus, isLoading, refetch } = useQuery({
+    queryKey: ['user', 'profile-completion-status'],
+    queryFn: () => userService.getProfileCompletionStatus(),
+    enabled: !!user?.id,
+    retry: false,
+  });
+
+  const completeProfileMutation = useMutation({
+    mutationFn: (data: { firstName?: string; lastName?: string; phone?: string; dateOfBirth?: string; gender?: string; occupation?: string }) =>
+      userService.completeProfile(data),
+  });
 
   // Check if banner was previously dismissed in this session
   useEffect(() => {
@@ -109,7 +112,7 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
       // Show reward notifications
       const rewards = [];
       if (response.couponAwarded && response.coupon) {
-        rewards.push(`coupon: ${response.coupon.title}`);
+        rewards.push(`coupon: ${response.coupon.name}`);
       }
       if (response.pointsAwarded && response.pointsAwarded > 0) {
         rewards.push(`${response.pointsAwarded.toLocaleString()} loyalty points`);
@@ -133,7 +136,7 @@ export default function ProfileCompletionBanner({ className = '' }: ProfileCompl
       await refetch();
 
     } catch (error: unknown) {
-      notify.error(getTRPCErrorMessage(error) ?? t('profile.profileUpdateError'));
+      notify.error((error instanceof Error ? error.message : null) ?? t('profile.profileUpdateError'));
       logger.error('Profile completion error:', error);
     }
   };

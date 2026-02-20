@@ -11,7 +11,8 @@ import { EmojiSelectorInline } from './EmojiSelector';
 import { notify } from '../../utils/notificationManager';
 import { extractEmojiFromUrl } from '../../utils/emojiUtils';
 import { GenderField, OccupationField, DateOfBirthField } from './ProfileFormFields';
-import { trpc, getTRPCErrorMessage } from '../../hooks/useTRPC';
+import { useMutation } from '@tanstack/react-query';
+import { userService } from '../../services/userService';
 import { logger } from '../../utils/logger';
 
 const profileSchema = z.object({
@@ -62,8 +63,9 @@ export default function SettingsModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showEmojiSelector, setShowEmojiSelector] = useState(false);
 
-  // tRPC hooks
-  const updateEmojiAvatarMutation = trpc.user.updateEmojiAvatar.useMutation();
+  const updateEmojiAvatarMutation = useMutation({
+    mutationFn: ({ emoji }: { emoji: string }) => userService.updateEmojiAvatar(emoji),
+  });
 
   const {
     register,
@@ -121,7 +123,7 @@ export default function SettingsModal({
       setShowEmojiSelector(false);
       notify.success('Profile picture updated!');
     } catch (error: unknown) {
-      notify.error(getTRPCErrorMessage(error) ?? 'Failed to update profile picture');
+      notify.error(error instanceof Error ? error.message : 'Failed to update profile picture');
       logger.error('Update emoji avatar error:', error);
     }
   };

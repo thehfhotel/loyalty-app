@@ -2,8 +2,9 @@ import { useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { FiCalendar, FiUsers, FiCheck, FiStar, FiWifi, FiTv, FiCoffee, FiUpload, FiX, FiCheckCircle, FiClock, FiAlertCircle, FiDownload } from 'react-icons/fi';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import MainLayout from '../components/layout/MainLayout';
-import { trpc } from '../hooks/useTRPC';
+import { bookingService } from '../services/bookingService';
 import toast from 'react-hot-toast';
 import companyQRCode from '../assets/company-promptpay-qr.png';
 import kbankLogo from '../assets/kbank-logo.png';
@@ -32,7 +33,7 @@ interface CreatedBooking {
 export default function BookingPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
   // Form state
   const [checkIn, setCheckIn] = useState('');
@@ -66,29 +67,30 @@ export default function BookingPage() {
     : 0;
 
   // Queries
-  const { data: roomTypesWithAvailability, isLoading: isLoadingRoomTypes } = trpc.booking.checkAvailability.useQuery(
-    { checkIn: new Date(checkIn), checkOut: new Date(checkOut) },
-    { enabled: !!checkIn && !!checkOut && nights > 0 }
-  );
+  const { data: roomTypesWithAvailability, isLoading: isLoadingRoomTypes } = useQuery({
+    queryKey: ['bookings', 'availability', checkIn, checkOut],
+    queryFn: () => bookingService.checkAvailability(new Date(checkIn), new Date(checkOut)),
+    enabled: !!checkIn && !!checkOut && nights > 0,
+  });
 
   const selectedRoomType = roomTypesWithAvailability?.find(rt => rt.id === selectedRoomTypeId);
   const totalPrice = selectedRoomType ? selectedRoomType.pricePerNight * nights : 0;
   const pointsEarned = Math.floor(totalPrice * 10);
 
   // Mutations
-  const createBookingMutation = trpc.booking.createBooking.useMutation({
+  const createBookingMutation = useMutation({
+    mutationFn: (data: { roomTypeId: string; checkIn: Date; checkOut: Date; numGuests: number; notes?: string }) =>
+      bookingService.createBooking(data),
     onSuccess: async (data) => {
-      // Invalidate cache so MyBookingsPage shows fresh data
-      await utils.booking.getMyBookings.invalidate();
+      await queryClient.invalidateQueries({ queryKey: ['bookings'] });
       toast.success(t('booking.bookingSuccess'));
-      // Set created booking and move to payment step
       setCreatedBooking({
         id: data.id,
         totalPrice: Number(data.totalPrice),
       });
-      setCurrentStep(4); // Move to payment step
+      setCurrentStep(4);
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast.error(error.message || t('booking.bookingError'));
     },
   });

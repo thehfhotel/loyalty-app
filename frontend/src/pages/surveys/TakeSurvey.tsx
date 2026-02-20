@@ -7,8 +7,7 @@ import QuestionRenderer from '../../components/surveys/QuestionRenderer';
 import SurveyProgress from '../../components/surveys/SurveyProgress';
 import DashboardButton from '../../components/navigation/DashboardButton';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
-import { trpc } from '../../hooks/useTRPC';
-import { getTRPCErrorMessage } from '../../hooks/useTRPC';
+import { useQuery, useMutation } from '@tanstack/react-query';
 
 const TakeSurvey: React.FC = () => {
   const { t } = useTranslation();
@@ -19,29 +18,34 @@ const TakeSurvey: React.FC = () => {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Fetch survey using tRPC
+  // Fetch survey using React Query
   const {
     data: survey,
     isLoading: loadingSurvey,
     error: surveyError
-  } = trpc.survey.getSurveyById.useQuery(
-    { surveyId: id ?? '' },
-    { enabled: !!id }
-  );
+  } = useQuery({
+    queryKey: ['surveys', id],
+    queryFn: () => surveyService.getSurveyById(id as string),
+    enabled: !!id,
+  });
 
-  // Fetch user's previous response using tRPC
+  // Fetch user's previous response using React Query
   const {
     data: previousResponse
-  } = trpc.survey.getUserResponse.useQuery(
-    { surveyId: id ?? '' },
-    { enabled: !!id }
-  );
+  } = useQuery({
+    queryKey: ['surveys', id, 'response'],
+    queryFn: () => surveyService.getUserResponse(id as string),
+    enabled: !!id,
+  });
 
   // Submit response mutation
-  const submitResponseMutation = trpc.survey.submitResponse.useMutation();
+  const submitResponseMutation = useMutation({
+    mutationFn: (data: { survey_id: string; answers: Record<string, unknown>; is_completed: boolean }) =>
+      surveyService.submitResponse(data),
+  });
 
   const loading = loadingSurvey;
-  const error = surveyError ? getTRPCErrorMessage(surveyError) : null;
+  const error = surveyError ? (surveyError instanceof Error ? surveyError.message : 'An error occurred') : null;
 
   // Reset answers when previous response is loaded (allow fresh start for retakes)
   useEffect(() => {

@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { trpc } from '../../utils/trpc';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import DashboardButton from '../../components/navigation/DashboardButton';
 
 // Types based on backend schema
@@ -73,48 +73,64 @@ const RoomTypeManagement: React.FC = () => {
   const [imageInput, setImageInput] = useState('');
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
-  // tRPC queries and mutations
-  const utils = trpc.useUtils();
+  // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+  const queryClient = useQueryClient();
 
-  const { data: roomTypes, isLoading, error } = trpc.booking.admin.getRoomTypes.useQuery(
-    { includeInactive: true },
-    { refetchOnWindowFocus: false }
-  );
+  const { data: roomTypes, isLoading, error } = useQuery<RoomType[], Error>({
+    queryKey: ['admin', 'roomTypes', { includeInactive: true }],
+    queryFn: async () => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      return [];
+    },
+    refetchOnWindowFocus: false,
+  });
 
-  const createMutation = trpc.booking.admin.createRoomType.useMutation({
+  const createMutation = useMutation({
+    mutationFn: async (_data: Record<string, unknown>) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.roomTypes.createSuccess'));
-      utils.booking.admin.getRoomTypes.invalidate();
+      queryClient.invalidateQueries({ queryKey: ['admin', 'roomTypes'] });
       setShowCreateModal(false);
       resetForm();
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast.error(error.message || t('admin.booking.roomTypes.createError'));
     },
   });
 
-  const updateMutation = trpc.booking.admin.updateRoomType.useMutation({
+  const updateMutation = useMutation({
+    mutationFn: async (_data: { id: string; data: Record<string, unknown> }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.roomTypes.updateSuccess'));
-      utils.booking.admin.getRoomTypes.invalidate();
+      queryClient.invalidateQueries({ queryKey: ['admin', 'roomTypes'] });
       setShowEditModal(false);
       setSelectedRoomType(null);
       resetForm();
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast.error(error.message || t('admin.booking.roomTypes.updateError'));
     },
   });
 
-  const deleteMutation = trpc.booking.admin.deleteRoomType.useMutation({
+  const deleteMutation = useMutation({
+    mutationFn: async (_data: { id: string }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.roomTypes.deleteSuccess'));
-      utils.booking.admin.getRoomTypes.invalidate();
+      queryClient.invalidateQueries({ queryKey: ['admin', 'roomTypes'] });
       setShowDeleteModal(false);
       setSelectedRoomType(null);
       setDeleteConfirmText('');
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast.error(error.message || t('admin.booking.roomTypes.deleteError'));
     },
   });
@@ -164,7 +180,7 @@ const RoomTypeManagement: React.FC = () => {
       isActive: formData.isActive,
       sortOrder: formData.sortOrder,
     };
-    createMutation.mutate(data as Parameters<typeof createMutation.mutate>[0]);
+    createMutation.mutate(data as Record<string, unknown>);
   }, [formData, createMutation]);
 
   const handleUpdate = useCallback((e: React.FormEvent) => {
@@ -184,7 +200,7 @@ const RoomTypeManagement: React.FC = () => {
     };
     updateMutation.mutate({
       id: selectedRoomType.id,
-      data: data as Parameters<typeof updateMutation.mutate>[0]['data']
+      data: data as Record<string, unknown>
     });
   }, [selectedRoomType, formData, updateMutation]);
 

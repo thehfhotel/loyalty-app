@@ -1,11 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import CouponScanner from '../CouponScanner';
 import { couponService } from '../../../services/couponService';
 import { logger } from '../../../utils/logger';
 import { notify } from '../../../utils/notificationManager';
 import { UserActiveCoupon } from '../../../types/coupon';
+
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+}
+
+function wrapper({ children }: { children: React.ReactNode }) {
+  const queryClient = createTestQueryClient();
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
 
 // Mock dependencies
 const mockTranslate = vi.fn((key: string) => {
@@ -48,28 +63,8 @@ vi.mock('../../../services/couponService', () => ({
     validateCoupon: vi.fn(),
     calculateDiscount: vi.fn(),
     formatCouponValue: vi.fn(),
+    redeemCoupon: vi.fn(),
   },
-}));
-
-// Mock tRPC
-const mockRedeemCouponMutate = vi.fn();
-vi.mock('../../../hooks/useTRPC', () => ({
-  trpc: {
-    coupon: {
-      redeemCoupon: {
-        useMutation: vi.fn(() => ({
-          mutateAsync: mockRedeemCouponMutate,
-          isPending: false,
-        })),
-      },
-    },
-  },
-  getTRPCErrorMessage: vi.fn((err: unknown) => {
-    if (err instanceof Error) {
-      return err.message;
-    }
-    return 'An error occurred';
-  }),
 }));
 
 vi.mock('../../../utils/logger', () => ({
@@ -126,7 +121,7 @@ describe('CouponScanner', () => {
       data: mockValidCoupon as unknown as import('../../../types/coupon').Coupon,
     });
 
-    mockRedeemCouponMutate.mockResolvedValue({
+    vi.mocked(couponService.redeemCoupon).mockResolvedValue({
       success: true,
       message: 'Coupon redeemed successfully',
       discountAmount: 200,
@@ -153,26 +148,26 @@ describe('CouponScanner', () => {
 
   describe('Basic Rendering', () => {
     it('should render the component', () => {
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       expect(screen.getByText('Scan Coupon')).toBeInTheDocument();
     });
 
     it('should render without crashing', () => {
-      const { container } = render(<CouponScanner />);
+      const { container } = render(<CouponScanner />, { wrapper });
 
       expect(container).toBeTruthy();
     });
 
     it('should have proper container structure', () => {
-      const { container } = render(<CouponScanner />);
+      const { container } = render(<CouponScanner />, { wrapper });
 
       const card = container.firstChild as HTMLElement;
       expect(card).toHaveClass('bg-white', 'rounded-lg', 'shadow-lg');
     });
 
     it('should apply custom className', () => {
-      const { container } = render(<CouponScanner className="custom-class" />);
+      const { container } = render(<CouponScanner className="custom-class" />, { wrapper });
 
       const card = container.firstChild as HTMLElement;
       expect(card).toHaveClass('custom-class');
@@ -181,7 +176,7 @@ describe('CouponScanner', () => {
 
   describe('Scan Mode Toggle', () => {
     it('should default to manual entry mode', () => {
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const manualButton = screen.getByText('Manual Entry');
       expect(manualButton).toHaveClass('bg-white', 'text-gray-900', 'shadow-sm');
@@ -189,7 +184,7 @@ describe('CouponScanner', () => {
 
     it('should switch to camera mode when camera button clicked', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const cameraButton = screen.getByText('Scan Camera');
       await user.click(cameraButton);
@@ -199,7 +194,7 @@ describe('CouponScanner', () => {
 
     it('should switch back to manual mode when manual button clicked', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const cameraButton = screen.getByText('Scan Camera');
       const manualButton = screen.getByText('Manual Entry');
@@ -211,7 +206,7 @@ describe('CouponScanner', () => {
     });
 
     it('should not display camera view in manual mode', () => {
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       expect(screen.queryByText('Point camera at QR code')).not.toBeInTheDocument();
     });
@@ -220,7 +215,7 @@ describe('CouponScanner', () => {
   describe('Camera Permissions', () => {
     it('should request camera access when switching to camera mode', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const cameraButton = screen.getByText('Scan Camera');
       await user.click(cameraButton);
@@ -234,7 +229,7 @@ describe('CouponScanner', () => {
 
     it('should display camera helper text when camera is active', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const cameraButton = screen.getByText('Scan Camera');
       await user.click(cameraButton);
@@ -248,7 +243,7 @@ describe('CouponScanner', () => {
       const user = userEvent.setup();
       mockGetUserMedia.mockRejectedValueOnce(new Error('Permission denied'));
 
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const cameraButton = screen.getByText('Scan Camera');
       await user.click(cameraButton);
@@ -263,7 +258,7 @@ describe('CouponScanner', () => {
       const user = userEvent.setup();
       mockGetUserMedia.mockRejectedValueOnce(new Error('Permission denied'));
 
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const cameraButton = screen.getByText('Scan Camera');
       await user.click(cameraButton);
@@ -277,14 +272,14 @@ describe('CouponScanner', () => {
 
   describe('QR Code Input', () => {
     it('should display QR code input field', () => {
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       expect(screen.getByLabelText(/QR Code/)).toBeInTheDocument();
     });
 
     it('should update QR code value when typing', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const input = screen.getByLabelText(/QR Code/) as HTMLInputElement;
       await user.type(input, 'QR123456');
@@ -294,7 +289,7 @@ describe('CouponScanner', () => {
 
     it('should trigger validation when QR code length is 8 or more', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const input = screen.getByLabelText(/QR Code/);
       await user.type(input, 'QR123456');
@@ -306,7 +301,7 @@ describe('CouponScanner', () => {
 
     it('should not validate when QR code length is less than 8', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const input = screen.getByLabelText(/QR Code/);
       await user.type(input, 'QR123');
@@ -316,7 +311,7 @@ describe('CouponScanner', () => {
 
     it('should clear redemption result when QR code changes', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const input = screen.getByLabelText(/QR Code/);
       await user.type(input, 'QR123456');
@@ -341,7 +336,7 @@ describe('CouponScanner', () => {
   describe('Validation Result Display', () => {
     it('should display valid coupon message', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const input = screen.getByLabelText(/QR Code/);
       await user.type(input, 'QR123456');
@@ -353,7 +348,7 @@ describe('CouponScanner', () => {
 
     it('should display coupon details when valid', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const input = screen.getByLabelText(/QR Code/);
       await user.type(input, 'QR123456');
@@ -372,7 +367,7 @@ describe('CouponScanner', () => {
         message: 'Invalid coupon code',
       });
 
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const input = screen.getByLabelText(/QR Code/);
       await user.type(input, 'INVALID');
@@ -384,7 +379,7 @@ describe('CouponScanner', () => {
 
     it('should style valid coupon with green background', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const input = screen.getByLabelText(/QR Code/);
       await user.type(input, 'QR123456');
@@ -404,7 +399,7 @@ describe('CouponScanner', () => {
         message: 'Invalid coupon code',
       });
 
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const input = screen.getByLabelText(/QR Code/);
       await user.type(input, 'INVALID');
@@ -420,7 +415,7 @@ describe('CouponScanner', () => {
       const error = new Error('Network error');
       vi.mocked(couponService.validateCoupon).mockRejectedValueOnce(error);
 
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const input = screen.getByLabelText(/QR Code/);
       await user.type(input, 'QR123456');
@@ -434,14 +429,14 @@ describe('CouponScanner', () => {
 
   describe('Amount Input and Discount Preview', () => {
     it('should display original amount input', () => {
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       expect(screen.getByLabelText(/Original Amount/)).toBeInTheDocument();
     });
 
     it('should update amount value when typing', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const input = screen.getByLabelText(/Original Amount/) as HTMLInputElement;
       await user.type(input, '1000');
@@ -451,7 +446,7 @@ describe('CouponScanner', () => {
 
     it('should display discount preview when valid coupon and amount', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/);
       await user.type(qrInput, 'QR123456');
@@ -470,7 +465,7 @@ describe('CouponScanner', () => {
 
     it('should not display discount preview without valid coupon', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const amountInput = screen.getByLabelText(/Original Amount/);
       await user.type(amountInput, '1000');
@@ -480,7 +475,7 @@ describe('CouponScanner', () => {
 
     it('should calculate and display discount amounts', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/);
       await user.type(qrInput, 'QR123456');
@@ -500,7 +495,7 @@ describe('CouponScanner', () => {
 
   describe('Form Submission', () => {
     it('should disable submit button when no valid coupon', () => {
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const submitButton = screen.getByText('Redeem Coupon');
       expect(submitButton).toBeDisabled();
@@ -508,7 +503,7 @@ describe('CouponScanner', () => {
 
     it('should disable submit button when no amount', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/);
       await user.type(qrInput, 'QR123456');
@@ -521,7 +516,7 @@ describe('CouponScanner', () => {
 
     it('should enable submit button when valid coupon and amount', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/);
       await user.type(qrInput, 'QR123456');
@@ -541,7 +536,7 @@ describe('CouponScanner', () => {
 
     it('should call redeemCoupon mutation on submit', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/);
       await user.type(qrInput, 'QR123456');
@@ -557,7 +552,7 @@ describe('CouponScanner', () => {
       await user.click(submitButton);
 
       await waitFor(() => {
-        expect(mockRedeemCouponMutate).toHaveBeenCalledWith(
+        expect(couponService.redeemCoupon).toHaveBeenCalledWith(
           expect.objectContaining({
             qrCode: 'QR123456',
             originalAmount: 1000,
@@ -568,7 +563,7 @@ describe('CouponScanner', () => {
 
     it('should include optional fields in redemption request', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/);
       await user.type(qrInput, 'QR123456');
@@ -590,7 +585,7 @@ describe('CouponScanner', () => {
       await user.click(submitButton);
 
       await waitFor(() => {
-        expect(mockRedeemCouponMutate).toHaveBeenCalledWith(
+        expect(couponService.redeemCoupon).toHaveBeenCalledWith(
           expect.objectContaining({
             qrCode: 'QR123456',
             originalAmount: 1000,
@@ -603,7 +598,7 @@ describe('CouponScanner', () => {
 
     it('should display success message on successful redemption', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/);
       await user.type(qrInput, 'QR123456');
@@ -625,7 +620,7 @@ describe('CouponScanner', () => {
 
     it('should reset form after successful redemption', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/) as HTMLInputElement;
       await user.type(qrInput, 'QR123456');
@@ -653,7 +648,7 @@ describe('CouponScanner', () => {
     it('should call onRedemptionComplete callback on success', async () => {
       const user = userEvent.setup();
       const onRedemptionComplete = vi.fn();
-      render(<CouponScanner onRedemptionComplete={onRedemptionComplete} />);
+      render(<CouponScanner onRedemptionComplete={onRedemptionComplete} />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/);
       await user.type(qrInput, 'QR123456');
@@ -681,9 +676,9 @@ describe('CouponScanner', () => {
     it('should handle redemption error', async () => {
       const user = userEvent.setup();
       const error = new Error('Network error');
-      mockRedeemCouponMutate.mockRejectedValueOnce(error);
+      vi.mocked(couponService.redeemCoupon).mockRejectedValueOnce(error);
 
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/);
       await user.type(qrInput, 'QR123456');
@@ -706,7 +701,7 @@ describe('CouponScanner', () => {
 
     it('should reject invalid amount (zero)', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/);
       await user.type(qrInput, 'QR123456');
@@ -728,7 +723,7 @@ describe('CouponScanner', () => {
 
     it('should reject invalid amount (negative)', async () => {
       const user = userEvent.setup();
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/);
       await user.type(qrInput, 'QR123456');
@@ -750,7 +745,7 @@ describe('CouponScanner', () => {
 
     it('should show loading state during redemption', async () => {
       const user = userEvent.setup();
-      mockRedeemCouponMutate.mockImplementation(
+      vi.mocked(couponService.redeemCoupon).mockImplementation(
         () => new Promise((resolve) => setTimeout(() => resolve({
           success: true,
           message: 'Success',
@@ -759,7 +754,7 @@ describe('CouponScanner', () => {
         }), 100))
       );
 
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const qrInput = screen.getByLabelText(/QR Code/);
       await user.type(qrInput, 'QR123456');
@@ -785,14 +780,14 @@ describe('CouponScanner', () => {
   describe('Close Button', () => {
     it('should display close button when onClose provided', () => {
       const onClose = vi.fn();
-      render(<CouponScanner onClose={onClose} />);
+      render(<CouponScanner onClose={onClose} />, { wrapper });
 
       const closeButton = screen.getByText('×');
       expect(closeButton).toBeInTheDocument();
     });
 
     it('should not display close button when onClose not provided', () => {
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       expect(screen.queryByText('×')).not.toBeInTheDocument();
     });
@@ -800,7 +795,7 @@ describe('CouponScanner', () => {
     it('should call onClose when close button clicked', async () => {
       const user = userEvent.setup();
       const onClose = vi.fn();
-      render(<CouponScanner onClose={onClose} />);
+      render(<CouponScanner onClose={onClose} />, { wrapper });
 
       const closeButton = screen.getByText('×');
       await user.click(closeButton);
@@ -811,7 +806,7 @@ describe('CouponScanner', () => {
 
   describe('Translation Keys', () => {
     it('should use correct translation keys', () => {
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       expect(mockTranslate).toHaveBeenCalledWith('coupons.scanCoupon');
       expect(mockTranslate).toHaveBeenCalledWith('coupons.manualEntry');
@@ -821,21 +816,21 @@ describe('CouponScanner', () => {
 
   describe('Accessibility', () => {
     it('should have accessible form labels', () => {
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       expect(screen.getByLabelText(/QR Code/)).toBeInTheDocument();
       expect(screen.getByLabelText(/Original Amount/)).toBeInTheDocument();
     });
 
     it('should have accessible submit button', () => {
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const button = screen.getByText('Redeem Coupon');
       expect(button.tagName).toBe('BUTTON');
     });
 
     it('should have proper heading hierarchy', () => {
-      render(<CouponScanner />);
+      render(<CouponScanner />, { wrapper });
 
       const heading = screen.getByText('Scan Coupon');
       expect(heading.tagName).toBe('H2');

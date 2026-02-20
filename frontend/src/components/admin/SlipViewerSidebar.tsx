@@ -15,7 +15,7 @@ import {
   FiChevronRight
 } from 'react-icons/fi';
 import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
-import { trpc } from '../../hooks/useTRPC';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 
 // Types matching BookingManagement
@@ -124,8 +124,13 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
   const [currentSlipIndex, setCurrentSlipIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // TODO: Replace with REST service when Rust admin booking endpoints are implemented
   // Multi-slip verification mutations
-  const verifySlipByIdMutation = trpc.booking.admin.verifySlipById.useMutation({
+  const verifySlipByIdMutation = useMutation({
+    mutationFn: async (_data: { slipId: string }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.bookingManagement.messages.slipVerified'));
       onRefresh();
@@ -135,7 +140,11 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     }
   });
 
-  const markSlipNeedsActionMutation = trpc.booking.admin.markSlipNeedsActionById.useMutation({
+  const markSlipNeedsActionMutation = useMutation({
+    mutationFn: async (_data: { slipId: string; notes: string }) => {
+      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
+      throw new Error('Admin booking management is being migrated');
+    },
     onSuccess: () => {
       toast.success(t('admin.booking.bookingManagement.messages.needsActionMarked'));
       onRefresh();

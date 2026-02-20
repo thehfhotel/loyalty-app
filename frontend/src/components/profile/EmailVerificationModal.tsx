@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiX, FiMail, FiRefreshCw, FiCheck } from 'react-icons/fi';
 import { useTranslation } from 'react-i18next';
-import { trpc } from '../../utils/trpc';
+import { useMutation } from '@tanstack/react-query';
 
 interface EmailVerificationModalProps {
   isOpen: boolean;
@@ -16,54 +16,41 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
   onClose,
   newEmail,
   onVerified,
-  isRegistration = false,
+  isRegistration: _isRegistration = false,
 }) => {
   const { t } = useTranslation();
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [resendSuccess, setResendSuccess] = useState(false);
 
-  const verifyMutation = isRegistration
-    ? trpc.user.verifyRegistrationEmail.useMutation({
-        onSuccess: () => {
-          onVerified(newEmail);
-          onClose();
-        },
-        onError: (err) => {
-          setError(err.message || 'Verification failed');
-        },
-      })
-    : trpc.user.verifyEmail.useMutation({
-        onSuccess: (data) => {
-          onVerified(data.email);
-          onClose();
-        },
-        onError: (err) => {
-          setError(err.message || 'Verification failed');
-        },
-      });
+  const verifyMutation = useMutation({
+    mutationFn: async (_data: { code: string }) => {
+      // TODO: Replace with REST service when Rust email verification endpoints are implemented
+      throw new Error('Email verification is temporarily unavailable');
+    },
+    onSuccess: () => {
+      onVerified(newEmail);
+      onClose();
+    },
+    onError: (err: Error) => {
+      setError(err.message || 'Verification failed');
+    },
+  });
 
-  const resendMutation = isRegistration
-    ? trpc.user.resendRegistrationVerification.useMutation({
-        onSuccess: () => {
-          setResendSuccess(true);
-          setError(null);
-        },
-        onError: (err) => {
-          setError(err.message || 'Failed to resend code');
-          setResendSuccess(false);
-        },
-      })
-    : trpc.user.resendVerificationCode.useMutation({
-        onSuccess: () => {
-          setResendSuccess(true);
-          setError(null);
-        },
-        onError: (err) => {
-          setError(err.message || 'Failed to resend code');
-          setResendSuccess(false);
-        },
-      });
+  const resendMutation = useMutation({
+    mutationFn: async () => {
+      // TODO: Replace with REST service when Rust email verification endpoints are implemented
+      throw new Error('Email verification is temporarily unavailable');
+    },
+    onSuccess: () => {
+      setResendSuccess(true);
+      setError(null);
+    },
+    onError: (err: Error) => {
+      setError(err.message || 'Failed to resend code');
+      setResendSuccess(false);
+    },
+  });
 
   // Clear resend success message after 3 seconds
   useEffect(() => {

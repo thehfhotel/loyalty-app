@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 import { UserActiveCoupon } from '../../types/coupon';
 import { couponService } from '../../services/couponService';
 import CouponCard from '../../components/coupons/CouponCard';
 import QRCodeModal from '../../components/coupons/QRCodeModal';
 import CouponDetailsModal from '../../components/coupons/CouponDetailsModal';
 import DashboardButton from '../../components/navigation/DashboardButton';
-import { trpc } from '../../hooks/useTRPC';
-import { getTRPCErrorMessage } from '../../hooks/useTRPC';
 
 type CouponFilter = 'active' | 'used' | 'expired';
 
@@ -32,11 +31,10 @@ const CouponWallet: React.FC = () => {
     }
   };
 
-  // Fetch coupons using tRPC
-  const { data: couponResponse, isLoading, error, refetch } = trpc.coupon.getMyCoupons.useQuery({
-    page,
-    limit: 20,
-    status: getStatusFromFilter(activeFilter),
+  // Fetch coupons using REST
+  const { data: couponResponse, isLoading, error, refetch } = useQuery({
+    queryKey: ['coupons', 'my', page, activeFilter],
+    queryFn: () => couponService.getUserCoupons(page, 20, getStatusFromFilter(activeFilter)),
   });
 
   const coupons = couponResponse?.coupons ?? [];
@@ -84,7 +82,7 @@ const CouponWallet: React.FC = () => {
     ? coupons.filter((coupon: UserActiveCoupon) => couponService.isExpiringSoon(coupon))
     : [];
 
-  const errorMessage = error ? getTRPCErrorMessage(error) : null;
+  const errorMessage = error ? (error instanceof Error ? error.message : 'An unexpected error occurred') : null;
 
   if (isLoading && coupons.length === 0) {
     return (
