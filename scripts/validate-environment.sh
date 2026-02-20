@@ -88,7 +88,7 @@ validate "Docker daemon" "docker info" "Docker daemon is not running"
 log "📁 Project Structure:"
 validate "docker-compose.yml" "test -f docker-compose.yml" "docker-compose.yml not found"
 validate "docker-compose.prod.yml" "test -f docker-compose.prod.yml" "docker-compose.prod.yml not found"
-validate "backend Dockerfile" "test -f backend/Dockerfile" "backend/Dockerfile not found"
+validate "backend-rust directory" "test -d backend-rust" "backend-rust/ directory not found"
 validate "frontend Dockerfile" "test -f frontend/Dockerfile" "frontend/Dockerfile not found"
 validate "nginx configuration" "test -f nginx/nginx.conf" "nginx/nginx.conf not found"
 

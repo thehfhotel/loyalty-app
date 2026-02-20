@@ -265,8 +265,7 @@ test.describe('Error Handling Validation', () => {
   test('should detect improper error type handling', async () => {
     // This test looks for the specific TypeScript error we encountered
     const serviceFiles = [
-      path.join(projectRoot, 'backend/src/services/prismaUserService.ts'),
-      path.join(projectRoot, 'backend/src/config/multer.ts')
+      path.join(projectRoot, 'backend-rust/src/routes/user.rs'),
     ];
 
     for (const filePath of serviceFiles) {

@@ -1,5 +1,0 @@
-{
-  "adminEmails": ["e2e-admin@test.local"],
-  "superAdminEmails": ["e2e-admin@test.local"],
-  "description": "E2E test admin configuration. Mounted into E2E Docker containers via deploy-v2.yml volume mount."
-}

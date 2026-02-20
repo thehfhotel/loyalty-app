@@ -30,11 +30,9 @@ lerna-debug.log*
 
 # Storage and uploads (user data)
 storage/
-backend/storage/
 frontend/storage/
 uploads/
 public/uploads/
-backend/uploads/
 */storage/
 */uploads/
 

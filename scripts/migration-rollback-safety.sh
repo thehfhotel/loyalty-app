@@ -39,7 +39,6 @@ TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 MAX_BACKUPS=10
 
 # CI Environment Detection
-# In CI environments, some checks (backups, pg_dump) are not applicable
 if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ]; then
     IS_CI=true
 else
@@ -84,11 +83,6 @@ if [ ! -f "package.json" ]; then
     exit 1
 fi
 
-if [ ! -d "backend" ]; then
-    print_error "Backend directory not found"
-    exit 1
-fi
-
 # Create backup directory if needed
 mkdir -p "$BACKUP_DIR"
 
@@ -106,37 +100,34 @@ create_database_backup() {
 
     print_status "Creating database backup: $backup_name"
 
-    cd backend
-    
     # Get database URL from environment or .env
     local db_url
     if [ -f ".env" ]; then
         db_url=$(grep "^DATABASE_URL=" .env | cut -d'=' -f2- | tr -d '"')
     fi
-    
+
     if [ -z "$db_url" ]; then
         db_url="$DATABASE_URL"
     fi
-    
+
     if [ -z "$db_url" ]; then
         print_error "DATABASE_URL not found in environment or .env file"
-        cd ..
         return 1
     fi
-    
+
     # Extract database connection details
     local db_host db_port db_name db_user db_pass
-    
+
     # Parse PostgreSQL URL format: postgresql://user:pass@host:port/dbname
     if echo "$db_url" | grep -q "postgresql://"; then
         local url_without_scheme="${db_url#postgresql://}"
         local user_pass_host="${url_without_scheme%/*}"
         db_name="${url_without_scheme##*/}"
-        
+
         if echo "$user_pass_host" | grep -q "@"; then
             local user_pass="${user_pass_host%@*}"
             local host_port="${user_pass_host#*@}"
-            
+
             if echo "$user_pass" | grep -q ":"; then
                 db_user="${user_pass%:*}"
                 db_pass="${user_pass#*:}"
@@ -144,7 +135,7 @@ create_database_backup() {
                 db_user="$user_pass"
                 db_pass=""
             fi
-            
+
             if echo "$host_port" | grep -q ":"; then
                 db_host="${host_port%:*}"
                 db_port="${host_port#*:}"
@@ -160,31 +151,27 @@ create_database_backup() {
         fi
     else
         print_error "Unsupported database URL format"
-        cd ..
         return 1
     fi
-    
+
     print_status "Connecting to database: $db_user@$db_host:$db_port/$db_name"
-    
+
     # Create backup using pg_dump
     if command -v pg_dump >/dev/null 2>&1; then
-        # Set password if provided
         if [ -n "$db_pass" ]; then
             export PGPASSWORD="$db_pass"
         fi
-        
+
         if pg_dump -h "$db_host" -p "$db_port" -U "$db_user" -d "$db_name" \
            --clean --if-exists --create --verbose \
-           > "../$backup_file" 2>/dev/null; then
+           > "$backup_file" 2>/dev/null; then
             print_success "Database backup created: $backup_file"
-            
-            # Get backup file size
+
             local backup_size
-            backup_size=$(du -h "../$backup_file" | cut -f1)
+            backup_size=$(du -h "$backup_file" | cut -f1)
             print_status "Backup size: $backup_size"
-            
-            # Create backup metadata
-            cat > "../$BACKUP_DIR/${backup_name}.meta" <<EOF
+
+            cat > "$BACKUP_DIR/${backup_name}.meta" <<EOF
 {
   "backup_name": "$backup_name",
   "timestamp": "$TIMESTAMP",
@@ -195,19 +182,16 @@ create_database_backup() {
   "created_by": "migration-rollback-safety.sh"
 }
 EOF
-            
+
             unset PGPASSWORD
-            cd ..
             return 0
         else
             print_error "Failed to create database backup"
             unset PGPASSWORD
-            cd ..
             return 1
         fi
     else
         print_error "pg_dump not found - install PostgreSQL client tools"
-        cd ..
         return 1
     fi
 }
@@ -215,12 +199,12 @@ EOF
 # Function to list available backups
 list_backups() {
     print_status "Available database backups:"
-    
+
     if [ -d "$BACKUP_DIR" ] && [ "$(ls -A "$BACKUP_DIR"/*.sql 2>/dev/null)" ]; then
         echo ""
         printf "%-25s %-15s %-10s %s\n" "BACKUP NAME" "DATE" "SIZE" "STATUS"
         echo "------------------------------------------------------------"
-        
+
         for backup_file in "$BACKUP_DIR"/*.sql; do
             if [ -f "$backup_file" ]; then
                 local backup_name
@@ -229,7 +213,7 @@ list_backups() {
                 backup_date=$(date -r "$backup_file" +"%Y-%m-%d %H:%M" 2>/dev/null || stat -c %y "$backup_file" 2>/dev/null | cut -d' ' -f1,2 | cut -d'.' -f1)
                 local backup_size
                 backup_size=$(du -h "$backup_file" | cut -f1)
-                
+
                 printf "%-25s %-15s %-10s %s\n" "$backup_name" "$backup_date" "$backup_size" "✓ Ready"
             fi
         done
@@ -244,30 +228,25 @@ list_backups() {
 show_rollback_procedures() {
     print_status "Database Rollback Procedures"
     echo ""
-    
+
     echo "1. EMERGENCY ROLLBACK (if migration fails):"
     echo "   ./scripts/migration-rollback-safety.sh backup pre_rollback_\$(date +%Y%m%d_%H%M%S)"
-    echo "   cd backend && npm run db:migrate:reset"
     echo "   # Restore from most recent backup"
     echo ""
-    
-    echo "2. SELECTIVE ROLLBACK (rollback specific migration):"
-    echo "   # Currently not supported by Prisma - would require custom SQL"
-    echo "   # Best practice: Create new migration to undo changes"
-    echo ""
-    
-    echo "3. FULL DATABASE RESTORE:"
+
+    echo "2. FULL DATABASE RESTORE:"
     echo "   # Drop and recreate database, then restore from backup"
     echo "   # WARNING: This will lose ALL data since backup"
     echo ""
-    
-    echo "4. DATA-SAFE ROLLBACK:"
-    echo "   # Recommended approach - create reverse migration"
-    echo "   cd backend && npx prisma migrate dev --name \"rollback_previous_migration\""
+
+    echo "3. MIGRATION ROLLBACK:"
+    echo "   # The Rust backend uses a single init migration"
+    echo "   # To rollback, restore from a database backup"
+    echo "   # Migration file: backend-rust/migrations/20240101000000_init.sql"
     echo ""
-    
+
     list_backups
-    
+
     if [ -d "$BACKUP_DIR" ] && [ "$(ls -A "$BACKUP_DIR"/*.sql 2>/dev/null)" ]; then
         echo "To restore from a backup:"
         echo "  psql -h HOST -p PORT -U USER -d DATABASE < $BACKUP_DIR/BACKUP_NAME.sql"
@@ -278,18 +257,18 @@ show_rollback_procedures() {
 # Function to check rollback safety
 check_rollback_safety() {
     local safety_score=0
-    local max_score=7
+    local max_score=6
 
     print_status "Checking rollback safety status..."
 
-    # Adjust max score for CI environment (3 checks are skipped)
+    # Adjust max score for CI environment
     if [ "$IS_CI" = true ]; then
         print_status "Running in CI environment - backup checks will be skipped"
-        max_score=4
+        max_score=3
     fi
     echo ""
 
-    # Check 1: Backup availability (skip in CI - no local backups needed)
+    # Check 1: Backup availability (skip in CI)
     if [ "$IS_CI" = true ]; then
         print_status "⊘ Backup check skipped (CI environment)"
     elif [ -d "$BACKUP_DIR" ] && [ "$(ls -A "$BACKUP_DIR"/*.sql 2>/dev/null)" ]; then
@@ -299,7 +278,7 @@ check_rollback_safety() {
         print_warning "✗ No database backups found"
     fi
 
-    # Check 2: Recent backup (within last 24 hours) (skip in CI)
+    # Check 2: Recent backup (skip in CI)
     if [ "$IS_CI" = true ]; then
         print_status "⊘ Recent backup check skipped (CI environment)"
     else
@@ -325,7 +304,7 @@ check_rollback_safety() {
         fi
     fi
 
-    # Check 3: pg_dump availability (skip in CI - not installed on runners)
+    # Check 3: pg_dump availability (skip in CI)
     if [ "$IS_CI" = true ]; then
         print_status "⊘ pg_dump check skipped (CI environment)"
     elif command -v pg_dump >/dev/null 2>&1; then
@@ -334,55 +313,45 @@ check_rollback_safety() {
     else
         print_warning "✗ pg_dump not available (install PostgreSQL client)"
     fi
-    
-    # Check 4: Database connectivity
-    cd backend
-    if timeout 10 npm run db:generate >/dev/null 2>&1; then
-        print_success "✓ Database connection working"
-        ((safety_score++))
-    else
-        print_warning "✗ Database connection issues"
-    fi
-    cd ..
-    
-    # Check 5: Migration files present
-    if [ -d "backend/prisma/migrations" ] && [ "$(ls -A backend/prisma/migrations 2>/dev/null)" ]; then
+
+    # Check 4: Migration files present
+    if [ -f "backend-rust/migrations/20240101000000_init.sql" ]; then
         print_success "✓ Migration files available"
         ((safety_score++))
     else
         print_warning "✗ No migration files found"
     fi
-    
-    # Check 6: Sufficient disk space
+
+    # Check 5: Sufficient disk space
     local available_space_gb
     available_space_gb=$(df . | tail -1 | awk '{print $4}')
     available_space_gb=$((available_space_gb / 1024 / 1024))
-    
+
     if [ $available_space_gb -gt 1 ]; then
         print_success "✓ Sufficient disk space (${available_space_gb}GB)"
         ((safety_score++))
     else
         print_warning "✗ Low disk space (${available_space_gb}GB)"
     fi
-    
-    # Check 7: Environment configuration
-    if [ -f "backend/.env" ] || [ -n "$DATABASE_URL" ]; then
+
+    # Check 6: Environment configuration
+    if [ -f ".env" ] || [ -n "$DATABASE_URL" ]; then
         print_success "✓ Database configuration present"
         ((safety_score++))
     else
         print_warning "✗ Database configuration missing"
     fi
-    
+
     echo ""
     print_status "Rollback Safety Score: $safety_score/$max_score"
-    
+
     if [ $safety_score -eq $max_score ]; then
         print_success "🛡️ EXCELLENT - Rollback safety fully configured"
         return 0
-    elif [ $safety_score -ge 5 ]; then
+    elif [ $safety_score -ge 4 ]; then
         print_success "✅ GOOD - Rollback safety mostly configured"
         return 0
-    elif [ $safety_score -ge 3 ]; then
+    elif [ $safety_score -ge 2 ]; then
         print_warning "⚠️ FAIR - Some rollback safety issues"
         return 1
     else
@@ -394,23 +363,22 @@ check_rollback_safety() {
 # Function to cleanup old backups
 cleanup_old_backups() {
     print_status "Cleaning up old backups (keeping last $MAX_BACKUPS)..."
-    
+
     if [ ! -d "$BACKUP_DIR" ]; then
         print_status "No backup directory found"
         return 0
     fi
-    
+
     local backup_count
     backup_count=$(ls -1 "$BACKUP_DIR"/*.sql 2>/dev/null | wc -l)
-    
+
     if [ $backup_count -le $MAX_BACKUPS ]; then
         print_success "Only $backup_count backups found, no cleanup needed"
         return 0
     fi
-    
+
     print_status "Found $backup_count backups, removing oldest $(($backup_count - $MAX_BACKUPS))"
-    
-    # Remove oldest backups (keep newest MAX_BACKUPS)
+
     ls -t "$BACKUP_DIR"/*.sql | tail -n +$(($MAX_BACKUPS + 1)) | while read -r old_backup; do
         local backup_name
         backup_name=$(basename "$old_backup" .sql)
@@ -418,7 +386,7 @@ cleanup_old_backups() {
         rm -f "$old_backup"
         rm -f "$BACKUP_DIR/${backup_name}.meta"
     done
-    
+
     print_success "Backup cleanup completed"
 }
 

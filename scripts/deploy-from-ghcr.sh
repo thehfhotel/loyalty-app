@@ -113,13 +113,6 @@ update_config "docker-compose.ghcr.yml" || true
 update_config "$COMPOSE_OVERRIDE" || true
 update_config "nginx/nginx.conf" || true
 
-# Prisma schema for migrations
-mkdir -p "backend/prisma/migrations"
-update_config "backend/prisma/schema.prisma" || true
-
-# Copy migrations directory structure if needed
-# Note: Migrations are run inside the container which has the full schema
-
 log "Config files updated"
 
 # =============================================================================
@@ -161,11 +154,8 @@ for i in {1..30}; do
   sleep 2
 done
 
-# Run migrations using the backend image
-log "Applying Prisma migrations..."
-docker compose $COMPOSE_FILES run --rm backend npx prisma migrate deploy || {
-  log "Warning: Migration failed or no pending migrations"
-}
+# Rust backend runs migrations on startup automatically
+log "Rust backend will run migrations on startup"
 
 log "Database migrations complete"
 

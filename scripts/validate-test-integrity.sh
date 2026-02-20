@@ -155,14 +155,6 @@ if [ -d "tests" ]; then
     done
 fi
 
-if [ -d "backend/src/__tests__" ]; then
-    find backend/src/__tests__ -name "*.ts" -o -name "*.js" | while read -r file; do
-        if [ -f "$file" ]; then
-            check_file_violations "$file"
-        fi
-    done
-fi
-
 if [ -d "frontend/src/__tests__" ]; then
     find frontend/src/__tests__ -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" | while read -r file; do
         if [ -f "$file" ]; then

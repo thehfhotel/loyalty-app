@@ -64,14 +64,13 @@ docker compose up -d
 
 ```
 loyalty-app/
-├── backend/                 # Node.js API server
+├── backend-rust/            # Rust/Axum API server
 │   ├── src/
-│   │   ├── controllers/     # Route handlers
-│   │   ├── middleware/      # Express middleware
-│   │   ├── routes/          # API routes
-│   │   ├── services/        # Business logic
-│   │   ├── types/           # TypeScript types
-│   │   └── utils/           # Utility functions
+│   │   ├── routes/          # API route handlers
+│   │   ├── models/          # Data models
+│   │   ├── middleware/      # Axum middleware
+│   │   └── config/          # Configuration
+│   ├── migrations/          # SQL migration files
 │   └── Dockerfile
 ├── frontend/                # React PWA
 │   ├── src/
@@ -81,10 +80,8 @@ loyalty-app/
 │   │   ├── store/           # State management
 │   │   └── styles/          # CSS styles
 │   └── Dockerfile
-├── database/
-│   └── migrations/          # SQL migration files
 ├── nginx/                   # Reverse proxy config
-└── docker compose.yml      # Development environment
+└── docker-compose.yml       # Development environment
 ```
 
 ## API Endpoints

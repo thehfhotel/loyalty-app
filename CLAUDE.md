@@ -76,18 +76,12 @@ curl -X POST http://localhost:4001/api/loyalty/award-points
 ### Structure
 ```
 loyalty-app/
-├── backend/          # Node.js/Express API (legacy, being migrated)
-├── backend-rust/     # Rust/Axum API (active development)
+├── backend-rust/     # Rust/Axum API (production backend)
 ├── frontend/         # React/TypeScript SPA
 ├── scripts/          # Production scripts
 ├── tests/            # E2E tests
 └── docker-compose.*  # Environment configs
 ```
-
-**Backend Migration Status:** The backend is being migrated from Node.js to Rust. During this transition:
-- `backend-rust/` contains the new Rust implementation (Axum framework)
-- `backend/` contains the legacy Node.js implementation
-- Both may coexist until migration is complete (Phase 6 cleanup)
 
 ### Branching Model: Trunk-Based Development
 
@@ -156,7 +150,7 @@ docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compos
 **Key Points:**
 - **Trunk-based**: Only `main` branch, no `develop` branch
 - Staging/Production use GHCR images (no source code on server)
-- Deployment directories contain only: compose files, nginx config, .env, prisma schema
+- Deployment directories contain only: compose files, nginx config, .env
 - Environment variables loaded from `.env` file created by GitHub Actions
 - Production deployment requires manual approval in GitHub
 
@@ -166,7 +160,6 @@ docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compos
 - Single file: `backend-rust/migrations/20240101000000_init.sql`
 - Rust backend loads migration via `include_str!()` in tests; CI runs via `psql`
 - Migration creates 25+ tables, stored procedures, triggers, and indexes
-- Legacy Prisma migration in `backend/prisma/migrations/0_init/migration.sql`
 
 **Rust Backend Database (sqlx):**
 - Uses **compile-time query macros**: `sqlx::query!()` / `sqlx::query_as!()` / `sqlx::query_scalar!()`
@@ -198,7 +191,7 @@ Bronze: 0+, Silver: 1+, Gold: 10+, Platinum: 20+ nights
 
 **Use stored procedures, never direct UPDATE queries.**
 
-### TypeScript Error Handling (Frontend/Legacy Backend)
+### TypeScript Error Handling (Frontend)
 
 ```typescript
 // ✅ CORRECT
@@ -273,7 +266,7 @@ Before creating frontend API calls:
 - Generated inline in `.github/workflows/deploy.yml`
 - Services: postgres, redis, backend, frontend (all containerized)
 - Uses host network mode for Docker-in-Docker compatibility
-- E2E admin config (`backend/config/admins.e2e.json`) is mounted for test admin privileges
+- Admin config is mounted for test admin privileges
 
 **Network Configuration:**
 ```yaml
@@ -289,7 +282,7 @@ services:
   backend:
     network_mode: host
     volumes:
-      - ./backend/config/admins.e2e.json:/app/config/admins.json:ro
+      # Admin config mounted for E2E tests
     environment:
       PORT: 4202
       DATABASE_URL: postgresql://...@localhost:5436/...
@@ -309,7 +302,7 @@ services:
 - Sanitize user content (prevent XSS)
 - Parameterized queries (prevent SQL injection)
 - Use stored procedures for complex operations
-- **Log injection prevention**: Always use `sanitizeUserId()`, `sanitizeEmail()`, `sanitizeLogValue()` from `backend/src/utils/logSanitizer.ts` for user-controlled values in logs
+- **Log injection prevention**: Sanitize user-controlled values in log output
 
 ### Git Commits
 ```
@@ -347,10 +340,7 @@ docker compose up -d
 # Production (deployed from main with approval)
 # Managed by GitHub Actions - approve in GitHub UI
 
-# Database migrations (still uses Prisma)
-cd backend && npm run db:generate && npm run db:migrate
-
-# Rust backend development
+# Backend development
 cd backend-rust
 cargo build                    # Build
 cargo test                     # Run tests
@@ -394,6 +384,6 @@ gh pr create --base main  # Create PR to main
 
 ---
 
-**Last Updated**: February 6, 2026
+**Last Updated**: February 20, 2026
 **Enforced By**: Git hooks, CI/CD pipeline, project conventions
 **Compliance**: MANDATORY for all contributors
