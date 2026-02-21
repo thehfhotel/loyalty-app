@@ -80,8 +80,8 @@ test.describe('Page loading (browser)', () => {
     await page.goto('/coupons');
     await page.waitForLoadState('networkidle');
 
-    // Page should render without crashing
-    await expect(page.getByRole('main')).toBeVisible({ timeout: 10000 });
+    // Page should render without crashing (CouponWallet uses h1 heading, not <main>)
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 10000 });
 
     expect(errors).toHaveLength(0);
   });
