@@ -31,7 +31,8 @@ class SurveyService {
   // Admin Survey Management
   async createSurvey(data: CreateSurveyRequest): Promise<Survey> {
     const response = await surveyAxios.post('/surveys', data);
-    return response.data.survey;
+    // Rust returns SurveyResponseDto directly (no survey wrapper)
+    return response.data;
   }
 
   async getSurveys(
@@ -70,18 +71,21 @@ class SurveyService {
 
   async getSurveyById(id: string): Promise<Survey> {
     const response = await surveyAxios.get(`/surveys/${id}`);
-    return response.data.survey;
+    // Rust returns SurveyResponseDto directly (no survey wrapper)
+    return response.data;
   }
 
   async getSurveyWithTranslations(id: string, language?: string): Promise<Survey> {
     const params = language ? `?language=${language}` : '';
     const response = await surveyAxios.get(`/surveys/${id}/translations${params}`);
-    return response.data.survey;
+    // Rust returns SurveyResponseDto directly (no survey wrapper)
+    return response.data;
   }
 
   async updateSurvey(id: string, data: UpdateSurveyRequest): Promise<Survey> {
     const response = await surveyAxios.put(`/surveys/${id}`, data);
-    return response.data.survey;
+    // Rust returns SurveyResponseDto directly (no survey wrapper)
+    return response.data;
   }
 
   async deleteSurvey(id: string): Promise<void> {
@@ -90,33 +94,68 @@ class SurveyService {
 
   // Customer Survey Experience
   async getAvailableSurveys(): Promise<Survey[]> {
-    const response = await surveyAxios.get('/surveys/available/user');
-    return response.data.surveys;
+    try {
+      const response = await surveyAxios.get('/surveys/available/user');
+      return response.data.surveys ?? [];
+    } catch (error) {
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status: number } };
+        if (axiosError.response?.status === 501) {
+          return [];
+        }
+      }
+      throw error;
+    }
   }
 
   async getPublicSurveys(): Promise<Survey[]> {
-    const response = await surveyAxios.get('/surveys/public/user');
-    return response.data.surveys;
+    try {
+      const response = await surveyAxios.get('/surveys/public/user');
+      return response.data.surveys ?? [];
+    } catch (error) {
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status: number } };
+        if (axiosError.response?.status === 501) {
+          return [];
+        }
+      }
+      throw error;
+    }
   }
 
   async getInvitedSurveys(): Promise<Survey[]> {
-    const response = await surveyAxios.get('/surveys/invited/user');
-    return response.data.surveys;
+    try {
+      const response = await surveyAxios.get('/surveys/invited/user');
+      return response.data.surveys ?? [];
+    } catch (error) {
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status: number } };
+        if (axiosError.response?.status === 501) {
+          return [];
+        }
+      }
+      throw error;
+    }
   }
 
   async submitResponse(data: SubmitResponseRequest): Promise<SurveyResponse> {
-    const response = await surveyAxios.post('/surveys/responses', data);
-    return response.data.response;
+    const response = await surveyAxios.post(`/surveys/${data.survey_id}/responses`, {
+      answers: data.answers,
+      is_completed: data.is_completed ?? true,
+    });
+    // Rust returns SubmitResponseResponse directly (no response wrapper)
+    return response.data;
   }
 
   async getUserResponse(surveyId: string): Promise<SurveyResponse | null> {
     try {
       const response = await surveyAxios.get(`/surveys/responses/${surveyId}/user`);
-      return response.data.response;
+      // Rust returns response directly (no response wrapper)
+      return response.data;
     } catch (error) {
       if (error && typeof error === 'object' && 'response' in error) {
         const axiosError = error as { response?: { status: number } };
-        if (axiosError.response?.status === 404) {
+        if (axiosError.response?.status === 404 || axiosError.response?.status === 501) {
           return null;
         }
       }
@@ -151,7 +190,7 @@ class SurveyService {
   // Survey Invitations Management
   async getSurveyInvitations(surveyId: string): Promise<SurveyInvitation[]> {
     const response = await surveyAxios.get(`/surveys/${surveyId}/invitations`);
-    return response.data.invitations;
+    return response.data.invitations ?? response.data;
   }
 
   async sendSurveyInvitations(surveyId: string): Promise<{ sent: number }> {
@@ -173,7 +212,7 @@ class SurveyService {
   // Survey Coupon Assignment Management
   async assignCouponToSurvey(data: AssignCouponToSurveyRequest): Promise<SurveyCouponAssignment> {
     const response = await surveyAxios.post('/surveys/coupon-assignments', data);
-    return response.data.assignment;
+    return response.data.assignment ?? response.data;
   }
 
   async getSurveyCouponAssignments(
@@ -196,7 +235,7 @@ class SurveyService {
       `/surveys/${surveyId}/coupon-assignments/${couponId}`,
       data
     );
-    return response.data.assignment;
+    return response.data.assignment ?? response.data;
   }
 
   async removeCouponFromSurvey(surveyId: string, couponId: string): Promise<void> {

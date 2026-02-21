@@ -3,16 +3,21 @@ import type { Notification } from '../types/notification';
 
 export interface NotificationsResponse {
   notifications: Notification[];
-  unread: number;
-  total: number;
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
 }
 
 export const inAppNotificationService = {
   async getNotifications(page = 1, limit = 10, includeRead = true): Promise<NotificationsResponse> {
     const response = await api.get('/notifications', {
-      params: { page, limit, includeRead },
+      params: { page, limit, unread_only: !includeRead },
     });
-    return response.data.data;
+    // Rust returns NotificationsListResponse { notifications, pagination } directly
+    return response.data;
   },
 
   async markMultipleAsRead(notificationIds: string[]): Promise<void> {

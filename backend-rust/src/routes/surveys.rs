@@ -45,6 +45,7 @@ pub struct PaginatedResponse<T> {
 
 /// Survey invitation response
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SurveyInvitationResponse {
     pub id: Uuid,
     pub survey_id: Uuid,
@@ -70,6 +71,7 @@ pub struct SubmitResponseRequest {
 
 /// Survey response submission result
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubmitResponseResponse {
     pub id: Uuid,
     pub survey_id: Uuid,

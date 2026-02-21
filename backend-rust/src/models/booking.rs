@@ -88,6 +88,7 @@ pub struct UpdateBookingRequest {
 
 /// Booking response DTO
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BookingResponse {
     pub id: Uuid,
     pub user_id: Uuid,

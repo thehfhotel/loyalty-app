@@ -52,6 +52,7 @@ pub struct NotificationDto {
 
 /// Notification in API response format
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NotificationResponse {
     pub id: Uuid,
     pub user_id: Uuid,

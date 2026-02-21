@@ -133,6 +133,7 @@ pub struct UpdateSurveyRequest {
 
 /// Survey response DTO
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SurveyResponseDto {
     pub id: Uuid,
     pub title: String,
@@ -155,6 +156,7 @@ pub struct SubmitSurveyResponseRequest {
 
 /// Survey response answer DTO
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SurveyAnswerDto {
     pub id: Uuid,
     pub survey_id: Option<Uuid>,

@@ -42,12 +42,14 @@ export interface User {
 export const userService = {
   async getProfile(): Promise<UserProfile> {
     const response = await api.get('/users/profile');
-    return response.data.profile;
+    // Rust returns SuccessResponse<ProfileResponseWrapper> { success, data: { profile } }
+    return response.data.data.profile;
   },
 
   async updateProfile(data: Partial<UserProfile>): Promise<UserProfile> {
     const response = await api.put('/users/profile', data);
-    return response.data.profile;
+    // Rust returns SuccessResponse<ProfileResponseWrapper> { success, data: { profile } }
+    return response.data.data.profile;
   },
 
   async uploadAvatar(file: File): Promise<{ data: { avatarUrl: string } }> {
@@ -63,7 +65,9 @@ export const userService = {
   },
 
   async updateEmojiAvatar(emoji: string): Promise<UserProfile> {
-    const response = await api.put('/users/avatar/emoji', { emoji });
+    // No dedicated emoji avatar endpoint in Rust backend.
+    // Update profile with emoji as avatar_url instead.
+    const response = await api.put('/users/profile', { avatarUrl: emoji });
     return response.data.data.profile;
   },
 

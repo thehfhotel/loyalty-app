@@ -56,27 +56,31 @@ export const bookingService = {
   async checkAvailability(checkIn: Date, checkOut: Date): Promise<RoomTypeAvailability[]> {
     const response = await api.get('/bookings/availability', {
       params: {
-        checkIn: checkIn.toISOString(),
-        checkOut: checkOut.toISOString(),
+        checkIn: checkIn.toISOString().split('T')[0],
+        checkOut: checkOut.toISOString().split('T')[0],
       },
     });
-    return response.data.data;
+    // Rust returns a single AvailabilityResponse directly (not an array wrapped in data)
+    // Wrap in array for frontend compatibility
+    return [response.data];
   },
 
   async createBooking(data: CreateBookingData): Promise<Booking> {
     const response = await api.post('/bookings', {
       roomTypeId: data.roomTypeId,
-      checkIn: data.checkIn.toISOString(),
-      checkOut: data.checkOut.toISOString(),
-      numGuests: data.numGuests,
-      notes: data.notes,
+      checkIn: data.checkIn.toISOString().split('T')[0],
+      checkOut: data.checkOut.toISOString().split('T')[0],
+      guests: data.numGuests,
+      specialRequests: data.notes,
     });
-    return response.data.data;
+    // Rust returns BookingResponse directly (no data wrapper)
+    return response.data;
   },
 
   async getMyBookings(): Promise<Booking[]> {
     const response = await api.get('/bookings');
-    return response.data.data;
+    // Rust returns BookingListResponse { bookings, total, page, limit, totalPages }
+    return response.data.bookings;
   },
 
   async cancelBooking(id: string, reason?: string): Promise<void> {
