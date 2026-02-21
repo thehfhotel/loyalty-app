@@ -114,11 +114,27 @@ export class LoyaltyService {
 
   /**
    * Get current user's loyalty status
+   * Transforms the nested Rust API response into the flat UserLoyaltyStatus format
    */
   async getUserLoyaltyStatus(): Promise<UserLoyaltyStatus> {
     try {
       const response = await api.get('/loyalty/status');
-      return response.data.data;
+      const raw = response.data.data;
+      // Rust API returns nested structure: { tier: { name, color, ... }, next_tier: { name, ... } }
+      // Frontend expects flat structure: { tier_name, tier_color, ... }
+      return {
+        user_id: raw.user_id,
+        current_points: raw.current_points ?? 0,
+        total_nights: raw.total_nights ?? 0,
+        tier_name: raw.tier?.name ?? 'Bronze',
+        tier_color: raw.tier?.color ?? '#CD7F32',
+        tier_benefits: raw.tier?.benefits ?? {},
+        tier_level: raw.tier?.min_nights ?? 0,
+        progress_percentage: raw.next_tier?.progress_percentage ?? 100,
+        next_tier_nights: raw.next_tier?.min_nights ?? null,
+        next_tier_name: raw.next_tier?.name ?? null,
+        nights_to_next_tier: raw.next_tier?.nights_needed ?? null,
+      };
     } catch (error) {
       logger.error('Error fetching loyalty status:', error);
       throw new Error('Failed to fetch loyalty status');
@@ -143,8 +159,9 @@ export class LoyaltyService {
    */
   async getPointsHistory(limit: number = 50, offset: number = 0): Promise<PointsHistoryResponse> {
     try {
-      const response = await api.get('/loyalty/history', {
-        params: { limit, offset }
+      const page = Math.floor(offset / limit) + 1;
+      const response = await api.get('/loyalty/transactions', {
+        params: { page, limit }
       });
       return response.data.data;
     } catch (error) {
