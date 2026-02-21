@@ -66,7 +66,7 @@ test.describe('Page loading (browser)', () => {
     await page.waitForLoadState('networkidle');
 
     // Page should render without crashing (may show empty state)
-    await expect(page.locator('main, [data-testid="bookings-page"], h1, h2')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('main, [data-testid="bookings-page"], h1, h2').first()).toBeVisible({ timeout: 10000 });
 
     expect(errors).toHaveLength(0);
   });
@@ -81,7 +81,7 @@ test.describe('Page loading (browser)', () => {
     await page.waitForLoadState('networkidle');
 
     // Page should render without crashing
-    await expect(page.locator('main, [data-testid="coupons-page"], h1, h2')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('main, [data-testid="coupons-page"], h1, h2').first()).toBeVisible({ timeout: 10000 });
 
     expect(errors).toHaveLength(0);
   });
