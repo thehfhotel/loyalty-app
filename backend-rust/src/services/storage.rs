@@ -959,9 +959,8 @@ mod tests {
         let service = StorageService::with_config(config);
 
         // Create a valid BMP image in memory
-        let img: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::from_fn(10, 10, |_, _| {
-            Rgb([255u8, 0, 0])
-        });
+        let img: ImageBuffer<Rgb<u8>, Vec<u8>> =
+            ImageBuffer::from_fn(10, 10, |_, _| Rgb([255u8, 0, 0]));
         let mut bmp_data = Vec::new();
         img.write_to(
             &mut std::io::Cursor::new(&mut bmp_data),
