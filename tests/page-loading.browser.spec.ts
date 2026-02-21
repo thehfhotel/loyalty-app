@@ -62,11 +62,11 @@ test.describe('Page loading (browser)', () => {
 
     const user = getTestUserForWorker(testInfo.workerIndex);
     await loginViaUI(page, user.email, user.password);
-    await page.goto('/bookings');
+    await page.goto('/my-bookings');
     await page.waitForLoadState('networkidle');
 
     // Page should render without crashing (may show empty state)
-    await expect(page.locator('main, [data-testid="bookings-page"], h1, h2').first()).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('main')).toBeVisible({ timeout: 10000 });
 
     expect(errors).toHaveLength(0);
   });
@@ -81,7 +81,7 @@ test.describe('Page loading (browser)', () => {
     await page.waitForLoadState('networkidle');
 
     // Page should render without crashing
-    await expect(page.locator('main, [data-testid="coupons-page"], h1, h2').first()).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('main')).toBeVisible({ timeout: 10000 });
 
     expect(errors).toHaveLength(0);
   });
@@ -104,7 +104,7 @@ test.describe('Page loading (browser)', () => {
     await loginViaUI(page, user.email, user.password);
 
     // Visit each main page
-    const pages = ['/dashboard', '/profile', '/bookings', '/coupons'];
+    const pages = ['/dashboard', '/profile', '/my-bookings', '/coupons'];
     for (const path of pages) {
       await page.goto(path);
       await page.waitForLoadState('networkidle');
