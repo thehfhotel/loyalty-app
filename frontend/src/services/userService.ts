@@ -56,7 +56,7 @@ export const userService = {
     const formData = new FormData();
     formData.append('avatar', file);
     
-    const response = await api.post('/users/avatar', formData, {
+    const response = await api.put('/users/avatar', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
