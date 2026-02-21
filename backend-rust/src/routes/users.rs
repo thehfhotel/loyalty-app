@@ -20,7 +20,7 @@ use validator::Validate;
 
 use crate::error::AppError;
 use crate::middleware::auth::{auth_middleware, has_role, AuthUser};
-use crate::services::storage::{AllowedMimeTypes, StorageService};
+use crate::services::storage::StorageService;
 use crate::state::AppState as FullAppState;
 
 // ============================================================================
@@ -888,10 +888,12 @@ async fn upload_avatar(
         file_data.ok_or_else(|| AppError::BadRequest("No avatar file uploaded".to_string()))?;
     let mime_type = content_type.unwrap_or_else(|| "image/jpeg".to_string());
 
-    // Validate content type
-    if !AllowedMimeTypes::is_valid_avatar_type(&mime_type) {
+    // Accept any image type - the image processing library will validate
+    // by attempting to decode. This supports JPEG, PNG, GIF, WebP, BMP,
+    // TIFF, ICO, and other formats from mobile and desktop devices.
+    if !mime_type.starts_with("image/") && mime_type != "application/octet-stream" {
         return Err(AppError::BadRequest(format!(
-            "Only image files are allowed (jpeg, jpg, png, gif, webp). Got: {}",
+            "Only image files are allowed. Got: {}",
             mime_type
         )));
     }

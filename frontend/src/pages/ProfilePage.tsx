@@ -191,15 +191,15 @@ export default function ProfilePage() {
     const file = event.target.files?.[0];
     if (!file) {return;}
 
-    // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
+    // Accept any image type - backend handles format conversion
+    // This supports JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC, etc. from mobile and PC
+    if (!file.type.startsWith('image/')) {
       notify.error(t('profile.invalidImageType'));
       return;
     }
 
-    // Validate file size (5MB)
-    const maxSize = 5 * 1024 * 1024;
+    // Validate file size (15MB - backend will resize and compress)
+    const maxSize = 15 * 1024 * 1024;
     if (file.size > maxSize) {
       notify.error(t('profile.fileTooLarge'));
       return;

@@ -11,7 +11,9 @@
 //! - MAX_FILE_SIZE: Maximum file size in bytes (default: 5MB)
 
 use bytes::Bytes;
+use image::ImageReader;
 use std::env;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -73,7 +75,7 @@ impl Default for StorageConfig {
             max_avatar_size: 15 * 1024 * 1024, // 15MB for avatar processing
             max_slip_size: 10 * 1024 * 1024,   // 10MB for slips
             max_storage_size: 10 * 1024 * 1024 * 1024, // 10GB total
-            avatar_size: 200,                  // 200x200 pixels
+            avatar_size: 400,                  // 400x400 pixels (2x for retina)
         }
     }
 }
@@ -314,27 +316,23 @@ impl StorageService {
 
     /// Save an avatar image for a user
     ///
+    /// Accepts any image format supported by the `image` crate (JPEG, PNG, GIF,
+    /// WebP, BMP, TIFF, ICO, etc.). The image is decoded, resized to fit within
+    /// the configured avatar_size, and re-encoded as JPEG for consistency.
+    ///
     /// # Arguments
     /// * `user_id` - The user's ID (as string)
     /// * `data` - The image data as bytes
-    /// * `content_type` - The MIME type of the image
+    /// * `_content_type` - The MIME type (used for logging only; actual format is detected from bytes)
     ///
     /// # Returns
-    /// The unique filename assigned to the avatar
+    /// The relative path to the saved avatar (always .jpg)
     pub async fn save_avatar(
         &self,
         user_id: &str,
         data: Bytes,
-        content_type: &str,
+        _content_type: &str,
     ) -> AppResult<String> {
-        // Validate content type
-        if !AllowedMimeTypes::is_valid_avatar_type(content_type) {
-            return Err(AppError::UnsupportedMediaType(format!(
-                "Only image files are allowed (jpeg, jpg, png, gif, webp). Got: {}",
-                content_type
-            )));
-        }
-
         // Validate file size
         if data.len() > self.config.max_avatar_size {
             let max_mb = self.config.max_avatar_size / (1024 * 1024);
@@ -344,13 +342,14 @@ impl StorageService {
             )));
         }
 
+        // Process image: decode, resize, convert to JPEG
+        let processed = process_avatar_image(&data, self.config.avatar_size)?;
+
         // Delete old avatar if exists
         self.delete_user_avatar(user_id).await?;
 
-        // Generate avatar filename with UUID for uniqueness
-        // Format: avatar_{user_id}_{uuid}.{ext}
-        let extension = AllowedMimeTypes::get_extension(content_type).unwrap_or("jpg");
-        let filename = format!("avatar_{}_{}.{}", user_id, Uuid::new_v4(), extension);
+        // Always save as JPEG after processing
+        let filename = format!("avatar_{}_{}.jpg", user_id, Uuid::new_v4());
 
         // Ensure avatars directory exists
         fs::create_dir_all(&self.config.avatars_dir)
@@ -363,13 +362,13 @@ impl StorageService {
         // Build the file path
         let file_path = self.config.avatars_dir.join(&filename);
 
-        // Write file
+        // Write processed file
         let mut file = fs::File::create(&file_path).await.map_err(|e| {
             error!("Failed to create avatar file {:?}: {}", file_path, e);
             AppError::Internal(format!("Failed to create avatar file: {}", e))
         })?;
 
-        file.write_all(&data).await.map_err(|e| {
+        file.write_all(&processed).await.map_err(|e| {
             error!("Failed to write avatar file {:?}: {}", file_path, e);
             AppError::Internal(format!("Failed to write avatar file: {}", e))
         })?;
@@ -383,11 +382,11 @@ impl StorageService {
         let relative_path = format!("avatars/{}", filename);
 
         info!(
-            "Avatar saved for user {}: {} (size: {} bytes, type: {})",
+            "Avatar saved for user {}: {} (original: {} bytes, processed: {} bytes)",
             user_id,
             relative_path,
             data.len(),
-            content_type
+            processed.len(),
         );
         Ok(relative_path)
     }
@@ -715,6 +714,42 @@ impl Default for StorageService {
     }
 }
 
+/// Process an avatar image: decode any supported format, resize, and convert to JPEG.
+///
+/// Supports JPEG, PNG, GIF, WebP, BMP, TIFF, ICO, and other formats supported by
+/// the `image` crate. The image is resized to fit within `max_size x max_size` pixels
+/// while maintaining aspect ratio, then encoded as JPEG at 90% quality.
+fn process_avatar_image(data: &[u8], max_size: u32) -> AppResult<Vec<u8>> {
+    // Decode the image (auto-detects format from bytes)
+    let img = ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_err(|e| AppError::BadRequest(format!("Cannot read image: {}", e)))?
+        .decode()
+        .map_err(|e| {
+            AppError::BadRequest(format!(
+                "Unsupported or corrupted image format: {}. Supported formats: JPEG, PNG, GIF, WebP, BMP, TIFF, ICO",
+                e
+            ))
+        })?;
+
+    // Resize if larger than max_size (maintains aspect ratio)
+    let resized = if img.width() > max_size || img.height() > max_size {
+        img.thumbnail(max_size, max_size)
+    } else {
+        img
+    };
+
+    // Encode as JPEG with 90% quality
+    let mut buf = Vec::new();
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 90);
+    resized.write_with_encoder(encoder).map_err(|e| {
+        error!("Failed to encode avatar as JPEG: {}", e);
+        AppError::Internal(format!("Failed to encode image: {}", e))
+    })?;
+
+    Ok(buf)
+}
+
 /// Sanitize a filename to prevent path traversal attacks
 fn sanitize_filename(filename: &str) -> String {
     // Extract just the filename without any path components
@@ -747,7 +782,7 @@ mod tests {
     fn test_storage_config_default() {
         let config = StorageConfig::default();
         assert_eq!(config.max_file_size, DEFAULT_MAX_FILE_SIZE);
-        assert_eq!(config.avatar_size, 200);
+        assert_eq!(config.avatar_size, 400);
     }
 
     #[test]
@@ -885,30 +920,63 @@ mod tests {
         let config = StorageConfig::new(temp_dir.path());
         let service = StorageService::with_config(config);
 
-        let data = Bytes::from("fake image data");
+        // Use a valid 1x1 PNG image
+        let png_data: &[u8] = &[
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+            0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+            0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ];
+        let data = Bytes::from_static(png_data);
         let result = service.save_avatar("123", data, "image/png").await;
 
         assert!(result.is_ok());
         let filename = result.unwrap();
         assert!(filename.starts_with("avatars/avatar_123_"));
-        assert!(filename.ends_with(".png"));
+        // Always saved as JPEG after processing
+        assert!(filename.ends_with(".jpg"));
     }
 
     #[tokio::test]
-    async fn test_save_avatar_invalid_type() {
+    async fn test_save_avatar_invalid_data() {
         let temp_dir = tempdir().unwrap();
         let config = StorageConfig::new(temp_dir.path());
         let service = StorageService::with_config(config);
 
-        let data = Bytes::from("fake pdf data");
-        let result = service.save_avatar("123", data, "application/pdf").await;
+        // Non-image data should be rejected by the image decoder
+        let data = Bytes::from("this is not an image");
+        let result = service.save_avatar("123", data, "image/png").await;
 
         assert!(result.is_err());
-        if let Err(AppError::UnsupportedMediaType(_)) = result {
-            // Expected - PDFs not allowed for avatars
-        } else {
-            panic!("Expected UnsupportedMediaType error");
-        }
+    }
+
+    #[tokio::test]
+    async fn test_save_avatar_bmp_converted_to_jpeg() {
+        use image::{ImageBuffer, Rgb};
+        let temp_dir = tempdir().unwrap();
+        let config = StorageConfig::new(temp_dir.path());
+        let service = StorageService::with_config(config);
+
+        // Create a valid BMP image in memory
+        let img: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::from_fn(10, 10, |_, _| {
+            Rgb([255u8, 0, 0])
+        });
+        let mut bmp_data = Vec::new();
+        img.write_to(
+            &mut std::io::Cursor::new(&mut bmp_data),
+            image::ImageFormat::Bmp,
+        )
+        .unwrap();
+
+        let result = service
+            .save_avatar("456", Bytes::from(bmp_data), "image/bmp")
+            .await;
+
+        assert!(result.is_ok());
+        let filename = result.unwrap();
+        // BMP input should be converted to JPEG
+        assert!(filename.ends_with(".jpg"));
     }
 
     #[tokio::test]
@@ -945,6 +1013,55 @@ mod tests {
 
         let path = service.get_file_path("test.jpg");
         assert_eq!(path, PathBuf::from("/uploads/test.jpg"));
+    }
+
+    #[test]
+    fn test_process_avatar_image_resize() {
+        use image::{ImageBuffer, Rgb};
+
+        // Create a 1000x800 image
+        let img: ImageBuffer<Rgb<u8>, Vec<u8>> =
+            ImageBuffer::from_fn(1000, 800, |_, _| Rgb([0u8, 128, 255]));
+        let mut png_data = Vec::new();
+        img.write_to(
+            &mut std::io::Cursor::new(&mut png_data),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+
+        let result = process_avatar_image(&png_data, 400).unwrap();
+
+        // Verify it's a valid JPEG and was resized
+        let decoded = image::load_from_memory(&result).unwrap();
+        assert!(decoded.width() <= 400);
+        assert!(decoded.height() <= 400);
+    }
+
+    #[test]
+    fn test_process_avatar_image_small_not_upscaled() {
+        use image::{ImageBuffer, Rgb};
+
+        // Create a small 50x50 image - should not be upscaled
+        let img: ImageBuffer<Rgb<u8>, Vec<u8>> =
+            ImageBuffer::from_fn(50, 50, |_, _| Rgb([255u8, 0, 0]));
+        let mut png_data = Vec::new();
+        img.write_to(
+            &mut std::io::Cursor::new(&mut png_data),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+
+        let result = process_avatar_image(&png_data, 400).unwrap();
+
+        let decoded = image::load_from_memory(&result).unwrap();
+        assert_eq!(decoded.width(), 50);
+        assert_eq!(decoded.height(), 50);
+    }
+
+    #[test]
+    fn test_process_avatar_image_invalid_data() {
+        let result = process_avatar_image(b"not an image", 400);
+        assert!(result.is_err());
     }
 
     #[test]
