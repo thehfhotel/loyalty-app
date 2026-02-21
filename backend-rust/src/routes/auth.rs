@@ -489,6 +489,20 @@ async fn register(
     .await
     .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
+    // Create initial loyalty record (Bronze tier, 0 points, 0 nights)
+    sqlx::query(
+        r#"
+        INSERT INTO user_loyalty (user_id, current_points, total_nights, tier_id)
+        SELECT $1, 0, 0, id
+        FROM tiers
+        WHERE name = 'Bronze'
+        "#,
+    )
+    .bind(&user_row.id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
+
     // Log registration action
     sqlx::query(
         r#"
