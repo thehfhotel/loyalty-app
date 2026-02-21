@@ -711,10 +711,7 @@ async fn test_notification_response_structure() {
     let first = &notifications[0];
 
     assert!(first.get("id").is_some(), "Should have 'id' field");
-    assert!(
-        first.get("userId").is_some(),
-        "Should have 'userId' field"
-    );
+    assert!(first.get("userId").is_some(), "Should have 'userId' field");
     assert!(first.get("title").is_some(), "Should have 'title' field");
     assert!(
         first.get("message").is_some(),
@@ -725,10 +722,7 @@ async fn test_notification_response_structure() {
         first.get("createdAt").is_some(),
         "Should have 'createdAt' field"
     );
-    assert!(
-        first.get("isRead").is_some(),
-        "Should have 'isRead' field"
-    );
+    assert!(first.get("isRead").is_some(), "Should have 'isRead' field");
 
     assert_eq!(
         first.get("title").and_then(|v| v.as_str()),
