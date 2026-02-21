@@ -337,12 +337,12 @@ async fn test_mark_notification_read() {
         Some(notification.id.to_string().as_str())
     );
     assert!(
-        returned_notification.get("read_at").is_some(),
-        "Notification should have read_at set"
+        returned_notification.get("readAt").is_some(),
+        "Notification should have readAt set"
     );
     assert_eq!(
         returned_notification
-            .get("is_read")
+            .get("isRead")
             .and_then(|v| v.as_bool()),
         Some(true)
     );
@@ -712,8 +712,8 @@ async fn test_notification_response_structure() {
 
     assert!(first.get("id").is_some(), "Should have 'id' field");
     assert!(
-        first.get("user_id").is_some(),
-        "Should have 'user_id' field"
+        first.get("userId").is_some(),
+        "Should have 'userId' field"
     );
     assert!(first.get("title").is_some(), "Should have 'title' field");
     assert!(
@@ -722,12 +722,12 @@ async fn test_notification_response_structure() {
     );
     assert!(first.get("type").is_some(), "Should have 'type' field");
     assert!(
-        first.get("created_at").is_some(),
-        "Should have 'created_at' field"
+        first.get("createdAt").is_some(),
+        "Should have 'createdAt' field"
     );
     assert!(
-        first.get("is_read").is_some(),
-        "Should have 'is_read' field"
+        first.get("isRead").is_some(),
+        "Should have 'isRead' field"
     );
 
     assert_eq!(
@@ -738,7 +738,7 @@ async fn test_notification_response_structure() {
         first.get("message").and_then(|v| v.as_str()),
         Some("Test message")
     );
-    assert_eq!(first.get("is_read").and_then(|v| v.as_bool()), Some(false));
+    assert_eq!(first.get("isRead").and_then(|v| v.as_bool()), Some(false));
 
     app.cleanup().await.ok();
 }
