@@ -53,7 +53,7 @@ futures = "0.3"
 tokio-stream = { version = "0.1", features = ["sync"] }
 bytes = "1"
 mime = "0.3"
-rand = "0.8"
+rand = "0.9"
 base64 = "0.22"
 hex = "0.4"
 sha2 = "0.10"
