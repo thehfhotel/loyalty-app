@@ -67,9 +67,19 @@ jobs:
   # DEPLOY TO STAGING (no approval needed)
   # =============================================================================
 
+  # ---------------------------------------------------------------------------
+  # Phase-1 deploy pattern (mirrors new-hotel / payroll / host-metrics-pusher):
+  # GH-hosted ubuntu-latest installs cloudflared + the per-env SSH key, then
+  # SSHes to deploy@evergreen.thehfhotel.org through the asgard cloudflared
+  # tunnel. The SSH key in /home/deploy/.ssh/authorized_keys is forced-command
+  # pinned to /srv/run-deploy-loyalty-app-{staging,production}.sh — no other
+  # commands are reachable. The shim takes a JSON payload on stdin (commit_sha,
+  # base64 tarball of compose + nginx.conf, ghcr token, env), writes a 0600
+  # .env, runs `docker compose pull && up -d`, and verifies /api/health.
+  # ---------------------------------------------------------------------------
   deploy-staging:
     name: "Deploy to Staging"
-    runs-on: [self-hosted, deploy]
+    runs-on: ubuntu-latest
     needs: [check-prerequisites]
     if: needs.check-prerequisites.outputs.should-deploy == 'true'
     timeout-minutes: 10
@@ -89,86 +99,92 @@ jobs:
             nginx/nginx.conf
           sparse-checkout-cone-mode: false
 
-      - name: Create .env file
-        working-directory: /home/nut/loyalty-app-develop
+      - name: Install cloudflared
         run: |
-          cat > .env << 'ENVEOF'
-          RUST_ENV=staging
-          NODE_ENV=staging
-          JWT_SECRET=${{ secrets.DEV_JWT_SECRET }}
-          JWT_REFRESH_SECRET=${{ secrets.DEV_JWT_REFRESH_SECRET }}
-          SESSION_SECRET=${{ secrets.DEV_SESSION_SECRET }}
-          DATABASE_URL=postgresql://loyalty_dev:loyalty_dev_pass@postgres:5432/loyalty_dev_db
-          REDIS_URL=redis://redis:6379
-          FRONTEND_URL=${{ vars.FRONTEND_URL }}
-          BACKEND_URL=${{ vars.BACKEND_URL }}
-          VITE_API_URL=${{ vars.VITE_API_URL }}
-          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_CALLBACK_URL=${{ vars.GOOGLE_CALLBACK_URL }}
-          LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
-          LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
-          LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
-          RUST_LOG=info
-          ENVEOF
-          chmod 600 .env
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+            -o /tmp/cloudflared
+          sudo install -m 755 /tmp/cloudflared /usr/local/bin/cloudflared
+          cloudflared --version
 
-      - name: Copy config files
-        run: |
-          DEPLOY_PATH="/home/nut/loyalty-app-develop"
-          cp docker-compose.yml "$DEPLOY_PATH/"
-          cp docker-compose.ghcr.yml "$DEPLOY_PATH/"
-          cp docker-compose.staging.yml "$DEPLOY_PATH/"
-          mkdir -p "$DEPLOY_PATH/nginx"
-          cp nginx/nginx.conf "$DEPLOY_PATH/nginx/"
-
-      - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u thehfhotel --password-stdin
-
-      - name: Deploy services
-        working-directory: /home/nut/loyalty-app-develop
+      - name: Install SSH key + known_hosts
         env:
-          IMAGE_TAG: ${{ needs.check-prerequisites.outputs.commit-sha }}
+          SSH_KEY:  ${{ secrets.EVERGREEN_DEPLOY_SSH_KEY }}
+          HOST_KEY: ${{ secrets.EVERGREEN_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY"  > ~/.ssh/deploy_key  && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy via SSH to evergreen
+        env:
+          COMMIT_SHA:           ${{ needs.check-prerequisites.outputs.commit-sha }}
+          GHCR_USER:            ${{ github.actor }}
+          GHCR_TOKEN:           ${{ secrets.GITHUB_TOKEN }}
+          JWT_SECRET:           ${{ secrets.DEV_JWT_SECRET }}
+          JWT_REFRESH_SECRET:   ${{ secrets.DEV_JWT_REFRESH_SECRET }}
+          SESSION_SECRET:       ${{ secrets.DEV_SESSION_SECRET }}
+          GOOGLE_CLIENT_ID:     ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_CALLBACK_URL:  ${{ vars.GOOGLE_CALLBACK_URL }}
+          LINE_CHANNEL_ID:      ${{ secrets.LINE_CHANNEL_ID }}
+          LINE_CHANNEL_SECRET:  ${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_CALLBACK_URL:    ${{ vars.LINE_CALLBACK_URL }}
+          FRONTEND_URL:         ${{ vars.FRONTEND_URL }}
+          BACKEND_URL:          ${{ vars.BACKEND_URL }}
+          VITE_API_URL:         ${{ vars.VITE_API_URL }}
         run: |
           set -euo pipefail
-          COMPOSE_OVERRIDE="docker-compose.staging.yml"
+          tar -czf /tmp/deploy.tar.gz \
+            docker-compose.yml docker-compose.ghcr.yml docker-compose.staging.yml \
+            nginx/nginx.conf
 
-          # Export environment variables from .env file
-          set -a && source .env && set +a
-          export IMAGE_TAG
-
-          # Pull images
-          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" pull backend frontend
-
-          # Start database services
-          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d postgres redis
-
-          # Wait for postgres
-          sleep 10
-
-          # Note: Rust backend runs migrations automatically on startup
-          # No separate migration step needed
-
-          # Deploy all services
-          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
-
-          # Restart nginx to refresh DNS cache for new backend container IP
-          docker restart loyalty_nginx_dev || true
-
-      - name: Health check
-        run: |
-          sleep 15
-          for i in {1..30}; do
-            if curl -sf http://localhost:5001/api/health > /dev/null 2>&1; then
-              echo "Deployment successful!"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Health check failed"
-          cd /home/nut/loyalty-app-develop
-          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.staging.yml logs --tail=50 backend
-          exit 1
+          jq -n \
+            --arg commit_sha           "$COMMIT_SHA" \
+            --arg deploy_payload_b64   "$(base64 -w0 < /tmp/deploy.tar.gz)" \
+            --arg ghcr_user            "$GHCR_USER" \
+            --arg ghcr_token           "$GHCR_TOKEN" \
+            --arg JWT_SECRET           "$JWT_SECRET" \
+            --arg JWT_REFRESH_SECRET   "$JWT_REFRESH_SECRET" \
+            --arg SESSION_SECRET       "$SESSION_SECRET" \
+            --arg GOOGLE_CLIENT_ID     "$GOOGLE_CLIENT_ID" \
+            --arg GOOGLE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET" \
+            --arg GOOGLE_CALLBACK_URL  "$GOOGLE_CALLBACK_URL" \
+            --arg LINE_CHANNEL_ID      "$LINE_CHANNEL_ID" \
+            --arg LINE_CHANNEL_SECRET  "$LINE_CHANNEL_SECRET" \
+            --arg LINE_CALLBACK_URL    "$LINE_CALLBACK_URL" \
+            --arg FRONTEND_URL         "$FRONTEND_URL" \
+            --arg BACKEND_URL          "$BACKEND_URL" \
+            --arg VITE_API_URL         "$VITE_API_URL" \
+            '{
+              commit_sha: $commit_sha,
+              deploy_payload_b64: $deploy_payload_b64,
+              ghcr: { user: $ghcr_user, token: $ghcr_token },
+              env: {
+                RUST_ENV:             "staging",
+                NODE_ENV:             "staging",
+                RUST_LOG:             "info",
+                LOG_LEVEL:            "info",
+                JWT_SECRET:           $JWT_SECRET,
+                JWT_REFRESH_SECRET:   $JWT_REFRESH_SECRET,
+                SESSION_SECRET:       $SESSION_SECRET,
+                DATABASE_URL:         "postgresql://loyalty_dev:loyalty_dev_pass@postgres:5432/loyalty_dev_db",
+                REDIS_URL:            "redis://redis:6379",
+                FRONTEND_URL:         $FRONTEND_URL,
+                BACKEND_URL:          $BACKEND_URL,
+                VITE_API_URL:         $VITE_API_URL,
+                GOOGLE_CLIENT_ID:     $GOOGLE_CLIENT_ID,
+                GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET,
+                GOOGLE_CALLBACK_URL:  $GOOGLE_CALLBACK_URL,
+                LINE_CHANNEL_ID:      $LINE_CHANNEL_ID,
+                LINE_CHANNEL_SECRET:  $LINE_CHANNEL_SECRET,
+                LINE_CALLBACK_URL:    $LINE_CALLBACK_URL
+              }
+            }' \
+          | ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o ProxyCommand="cloudflared --edge-ip-version 4 access ssh --hostname %h" \
+              deploy@evergreen.thehfhotel.org
 
   # =============================================================================
   # DEPLOY TO PRODUCTION (requires approval)
@@ -176,7 +192,7 @@ jobs:
 
   deploy-production:
     name: "Deploy to Production"
-    runs-on: [self-hosted, deploy]
+    runs-on: ubuntu-latest
     needs: [check-prerequisites, deploy-staging]
     if: needs.check-prerequisites.outputs.should-deploy == 'true'
     timeout-minutes: 10
@@ -196,94 +212,118 @@ jobs:
             nginx/nginx.conf
           sparse-checkout-cone-mode: false
 
-      - name: Create .env file
-        working-directory: /home/nut/loyalty-app-production
+      - name: Install cloudflared
         run: |
-          cat > .env << 'ENVEOF'
-          RUST_ENV=production
-          NODE_ENV=production
-          JWT_SECRET=${{ secrets.JWT_SECRET }}
-          JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
-          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
-          DATABASE_URL=${{ secrets.DATABASE_URL }}
-          REDIS_URL=redis://redis:6379
-          FRONTEND_URL=${{ vars.FRONTEND_URL }}
-          BACKEND_URL=${{ vars.BACKEND_URL }}
-          VITE_API_URL=${{ vars.VITE_API_URL }}
-          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_CALLBACK_URL=${{ vars.GOOGLE_CALLBACK_URL }}
-          LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
-          LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
-          LINE_CALLBACK_URL=${{ vars.LINE_CALLBACK_URL }}
-          SMTP_HOST=${{ secrets.SMTP_HOST }}
-          SMTP_PORT=${{ secrets.SMTP_PORT }}
-          SMTP_USER=${{ secrets.SMTP_USER }}
-          SMTP_PASS=${{ secrets.SMTP_PASS }}
-          IMAP_HOST=${{ secrets.IMAP_HOST }}
-          IMAP_PORT=${{ secrets.IMAP_PORT }}
-          IMAP_USER=${{ secrets.IMAP_USER }}
-          IMAP_PASS=${{ secrets.IMAP_PASS }}
-          RUST_LOG=info
-          ENVEOF
-          chmod 600 .env
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+            -o /tmp/cloudflared
+          sudo install -m 755 /tmp/cloudflared /usr/local/bin/cloudflared
+          cloudflared --version
 
-      - name: Copy config files
-        run: |
-          DEPLOY_PATH="/home/nut/loyalty-app-production"
-          cp docker-compose.yml "$DEPLOY_PATH/"
-          cp docker-compose.ghcr.yml "$DEPLOY_PATH/"
-          cp docker-compose.prod.yml "$DEPLOY_PATH/"
-          mkdir -p "$DEPLOY_PATH/nginx"
-          cp nginx/nginx.conf "$DEPLOY_PATH/nginx/"
-
-      - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u thehfhotel --password-stdin
-
-      - name: Deploy services
-        working-directory: /home/nut/loyalty-app-production
+      - name: Install SSH key + known_hosts
         env:
-          IMAGE_TAG: ${{ needs.check-prerequisites.outputs.commit-sha }}
+          SSH_KEY:  ${{ secrets.EVERGREEN_DEPLOY_SSH_KEY }}
+          HOST_KEY: ${{ secrets.EVERGREEN_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY"  > ~/.ssh/deploy_key  && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy via SSH to evergreen
+        env:
+          COMMIT_SHA:           ${{ needs.check-prerequisites.outputs.commit-sha }}
+          GHCR_USER:            ${{ github.actor }}
+          GHCR_TOKEN:           ${{ secrets.GITHUB_TOKEN }}
+          JWT_SECRET:           ${{ secrets.JWT_SECRET }}
+          JWT_REFRESH_SECRET:   ${{ secrets.JWT_REFRESH_SECRET }}
+          SESSION_SECRET:       ${{ secrets.SESSION_SECRET }}
+          DATABASE_URL:         ${{ secrets.DATABASE_URL }}
+          GOOGLE_CLIENT_ID:     ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_CALLBACK_URL:  ${{ vars.GOOGLE_CALLBACK_URL }}
+          LINE_CHANNEL_ID:      ${{ secrets.LINE_CHANNEL_ID }}
+          LINE_CHANNEL_SECRET:  ${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_CALLBACK_URL:    ${{ vars.LINE_CALLBACK_URL }}
+          FRONTEND_URL:         ${{ vars.FRONTEND_URL }}
+          BACKEND_URL:          ${{ vars.BACKEND_URL }}
+          VITE_API_URL:         ${{ vars.VITE_API_URL }}
+          SMTP_HOST:            ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:            ${{ secrets.SMTP_PORT }}
+          SMTP_USER:            ${{ secrets.SMTP_USER }}
+          SMTP_PASS:            ${{ secrets.SMTP_PASS }}
+          IMAP_HOST:            ${{ secrets.IMAP_HOST }}
+          IMAP_PORT:            ${{ secrets.IMAP_PORT }}
+          IMAP_USER:            ${{ secrets.IMAP_USER }}
+          IMAP_PASS:            ${{ secrets.IMAP_PASS }}
         run: |
           set -euo pipefail
-          COMPOSE_OVERRIDE="docker-compose.prod.yml"
+          tar -czf /tmp/deploy.tar.gz \
+            docker-compose.yml docker-compose.ghcr.yml docker-compose.prod.yml \
+            nginx/nginx.conf
 
-          # Export environment variables from .env file
-          set -a && source .env && set +a
-          export IMAGE_TAG
-
-          # Pull images
-          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" pull backend frontend
-
-          # Start database services
-          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d postgres redis
-
-          # Wait for postgres
-          sleep 10
-
-          # Note: Rust backend runs migrations automatically on startup
-          # No separate migration step needed
-
-          # Deploy all services
-          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f "$COMPOSE_OVERRIDE" up -d --remove-orphans
-
-          # Restart nginx to refresh DNS cache for new backend container IP
-          docker restart loyalty_nginx_production || true
-
-      - name: Health check
-        run: |
-          sleep 15
-          for i in {1..30}; do
-            if curl -sf http://localhost:4001/api/health > /dev/null 2>&1; then
-              echo "Deployment successful!"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Health check failed"
-          cd /home/nut/loyalty-app-production
-          docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.prod.yml logs --tail=50 backend
-          exit 1
+          jq -n \
+            --arg commit_sha           "$COMMIT_SHA" \
+            --arg deploy_payload_b64   "$(base64 -w0 < /tmp/deploy.tar.gz)" \
+            --arg ghcr_user            "$GHCR_USER" \
+            --arg ghcr_token           "$GHCR_TOKEN" \
+            --arg JWT_SECRET           "$JWT_SECRET" \
+            --arg JWT_REFRESH_SECRET   "$JWT_REFRESH_SECRET" \
+            --arg SESSION_SECRET       "$SESSION_SECRET" \
+            --arg DATABASE_URL         "$DATABASE_URL" \
+            --arg GOOGLE_CLIENT_ID     "$GOOGLE_CLIENT_ID" \
+            --arg GOOGLE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET" \
+            --arg GOOGLE_CALLBACK_URL  "$GOOGLE_CALLBACK_URL" \
+            --arg LINE_CHANNEL_ID      "$LINE_CHANNEL_ID" \
+            --arg LINE_CHANNEL_SECRET  "$LINE_CHANNEL_SECRET" \
+            --arg LINE_CALLBACK_URL    "$LINE_CALLBACK_URL" \
+            --arg FRONTEND_URL         "$FRONTEND_URL" \
+            --arg BACKEND_URL          "$BACKEND_URL" \
+            --arg VITE_API_URL         "$VITE_API_URL" \
+            --arg SMTP_HOST            "${SMTP_HOST:-}" \
+            --arg SMTP_PORT            "${SMTP_PORT:-587}" \
+            --arg SMTP_USER            "${SMTP_USER:-}" \
+            --arg SMTP_PASS            "${SMTP_PASS:-}" \
+            --arg IMAP_HOST            "${IMAP_HOST:-}" \
+            --arg IMAP_PORT            "${IMAP_PORT:-993}" \
+            --arg IMAP_USER            "${IMAP_USER:-}" \
+            --arg IMAP_PASS            "${IMAP_PASS:-}" \
+            '{
+              commit_sha: $commit_sha,
+              deploy_payload_b64: $deploy_payload_b64,
+              ghcr: { user: $ghcr_user, token: $ghcr_token },
+              env: {
+                RUST_ENV:             "production",
+                NODE_ENV:             "production",
+                RUST_LOG:             "info",
+                LOG_LEVEL:            "info",
+                JWT_SECRET:           $JWT_SECRET,
+                JWT_REFRESH_SECRET:   $JWT_REFRESH_SECRET,
+                SESSION_SECRET:       $SESSION_SECRET,
+                DATABASE_URL:         $DATABASE_URL,
+                REDIS_URL:            "redis://redis:6379",
+                FRONTEND_URL:         $FRONTEND_URL,
+                BACKEND_URL:          $BACKEND_URL,
+                VITE_API_URL:         $VITE_API_URL,
+                GOOGLE_CLIENT_ID:     $GOOGLE_CLIENT_ID,
+                GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET,
+                GOOGLE_CALLBACK_URL:  $GOOGLE_CALLBACK_URL,
+                LINE_CHANNEL_ID:      $LINE_CHANNEL_ID,
+                LINE_CHANNEL_SECRET:  $LINE_CHANNEL_SECRET,
+                LINE_CALLBACK_URL:    $LINE_CALLBACK_URL,
+                SMTP_HOST:            $SMTP_HOST,
+                SMTP_PORT:            $SMTP_PORT,
+                SMTP_USER:            $SMTP_USER,
+                SMTP_PASS:            $SMTP_PASS,
+                IMAP_HOST:            $IMAP_HOST,
+                IMAP_PORT:            $IMAP_PORT,
+                IMAP_USER:            $IMAP_USER,
+                IMAP_PASS:            $IMAP_PASS
+              }
+            }' \
+          | ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o ProxyCommand="cloudflared --edge-ip-version 4 access ssh --hostname %h" \
+              deploy@evergreen.thehfhotel.org
 
       - name: Deployment Summary
         run: |
