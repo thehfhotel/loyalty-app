@@ -398,13 +398,11 @@ async fn update_survey_in_db(
     req: &UpdateSurveyRequest,
 ) -> Result<Option<SurveyResponseDto>, AppError> {
     // Check if survey exists
-    let existing = query_survey_by_id(db, survey_id).await?;
-    if existing.is_none() {
+    let Some(current) = query_survey_by_id(db, survey_id).await? else {
         return Ok(None);
-    }
+    };
 
     // Build dynamic update - for simplicity, we'll update all provided fields
-    let current = existing.unwrap();
 
     let title = req.title.as_ref().unwrap_or(&current.title);
     let description = req.description.clone().or(current.description);

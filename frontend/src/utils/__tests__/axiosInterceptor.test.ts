@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import axios, { AxiosError, AxiosHeaders, InternalAxiosRequestConfig } from 'axios';
-import { setupAxiosInterceptors, addAuthTokenInterceptor, clearCsrfToken, ApiError } from '../axiosInterceptor';
+import { setupAxiosInterceptors, addAuthTokenInterceptor, ApiError } from '../axiosInterceptor';
 
 // Mock dependencies
 vi.mock('../notificationManager', () => ({
@@ -44,7 +44,6 @@ const originalLocation = window.location;
 describe('axiosInterceptor - Auth Refresh Loop Prevention', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    clearCsrfToken();
     mockAccessToken = 'valid-token';
     mockRefreshToken = 'valid-refresh-token';
 
@@ -225,7 +224,6 @@ describe('addAuthTokenInterceptor - Instance interceptor', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    clearCsrfToken();
     mockAccessToken = 'valid-token';
     mockRefreshToken = 'valid-refresh-token';
 
@@ -281,22 +279,6 @@ describe('addAuthTokenInterceptor - Instance interceptor', () => {
 
       expect(refreshUrl.includes('/auth/refresh')).toBe(true);
       expect(regularUrl.includes('/auth/refresh')).toBe(false);
-    });
-  });
-
-  describe('CSRF token handling', () => {
-    it('should add CSRF token for POST requests', async () => {
-      // Request interceptor should add CSRF token for non-GET methods
-      const methodsRequiringCsrf = ['POST', 'PUT', 'DELETE', 'PATCH'];
-      const methodsNotRequiringCsrf = ['GET', 'HEAD', 'OPTIONS'];
-
-      methodsRequiringCsrf.forEach(method => {
-        expect(!['GET', 'HEAD', 'OPTIONS'].includes(method)).toBe(true);
-      });
-
-      methodsNotRequiringCsrf.forEach(method => {
-        expect(['GET', 'HEAD', 'OPTIONS'].includes(method)).toBe(true);
-      });
     });
   });
 

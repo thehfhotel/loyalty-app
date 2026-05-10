@@ -18,7 +18,6 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::services::loyalty::{AwardPointsParamsUuid, LoyaltyService, LoyaltyServiceImpl};
-use crate::services::AppState;
 
 // ==================== DTOs ====================
 
@@ -328,18 +327,18 @@ pub trait BookingService: Send + Sync {
 
 /// Implementation of the BookingService trait
 pub struct BookingServiceImpl {
-    state: AppState,
+    pool: PgPool,
 }
 
 impl BookingServiceImpl {
     /// Create a new BookingServiceImpl instance
-    pub fn new(state: AppState) -> Self {
-        Self { state }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
     }
 
     /// Get a reference to the database pool
     fn pool(&self) -> &PgPool {
-        self.state.db.pool()
+        &self.pool
     }
 
     /// Get an available room for the given room type and date range

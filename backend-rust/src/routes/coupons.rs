@@ -502,10 +502,9 @@ async fn get_user_coupons(
     let is_admin = user.role == "admin" || user.role == "super_admin";
 
     // Determine which user's coupons to fetch
-    let target_user_id = if is_admin && query.user_id.is_some() {
-        query.user_id.clone().unwrap()
-    } else {
-        user.id.clone()
+    let target_user_id = match query.user_id.clone() {
+        Some(id) if is_admin => id,
+        _ => user.id.clone(),
     };
 
     let user_uuid = Uuid::parse_str(&target_user_id)

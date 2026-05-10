@@ -619,6 +619,30 @@ impl Settings {
                 errors.push("SESSION_SECRET appears to be a default value".to_string());
             }
 
+            // Reject placeholder secrets shipped in .env example files. These are
+            // long enough to bypass the length check but are publicly known.
+            const PLACEHOLDER_PREFIXES: &[&str] = &["EXAMPLE_DO_NOT_USE_", "REPLACE_ME"];
+            for prefix in PLACEHOLDER_PREFIXES {
+                if self.auth.jwt_secret.starts_with(prefix) {
+                    errors.push(format!(
+                        "JWT_SECRET starts with placeholder prefix '{}' and must be replaced",
+                        prefix
+                    ));
+                }
+                if self.auth.jwt_refresh_secret.starts_with(prefix) {
+                    errors.push(format!(
+                        "JWT_REFRESH_SECRET starts with placeholder prefix '{}' and must be replaced",
+                        prefix
+                    ));
+                }
+                if self.auth.session_secret.starts_with(prefix) {
+                    errors.push(format!(
+                        "SESSION_SECRET starts with placeholder prefix '{}' and must be replaced",
+                        prefix
+                    ));
+                }
+            }
+
             // Warn about localhost database in production
             if self.database.url.contains("localhost") {
                 errors.push("Production environment should not use localhost database".to_string());
@@ -826,5 +850,76 @@ mod tests {
         let origins = settings.cors_origins();
         assert_eq!(origins.len(), 1);
         assert!(origins.contains(&"https://app.example.com".to_string()));
+    }
+
+    /// Build a production Settings instance preloaded with strong, non-placeholder
+    /// secrets so individual tests can mutate just one secret to assert validation.
+    #[allow(clippy::field_reassign_with_default)]
+    fn production_settings_with_strong_secrets() -> Settings {
+        // 64+ char secrets that pass length validation and aren't on the weak list.
+        let strong = "a".repeat(70);
+        let mut settings = Settings::default();
+        settings.environment = Environment::Production;
+        settings.auth.jwt_secret = strong.clone();
+        settings.auth.jwt_refresh_secret = strong.clone();
+        settings.auth.session_secret = strong;
+        settings.database.url = "postgresql://user:pass@db.internal:5432/loyalty".to_string();
+        settings.redis.url = "redis://redis.internal:6379".to_string();
+        settings.server.port = 4001;
+        settings
+    }
+
+    #[test]
+    fn test_validate_rejects_example_do_not_use_jwt_secret() {
+        let mut settings = production_settings_with_strong_secrets();
+        // Long enough to pass the length check but a publicly known placeholder.
+        settings.auth.jwt_secret = format!("EXAMPLE_DO_NOT_USE_{}", "x".repeat(80));
+
+        let err = settings
+            .validate()
+            .expect_err("placeholder JWT_SECRET must be rejected in production");
+        let message = err.to_string();
+        assert!(
+            message.contains("JWT_SECRET") && message.contains("EXAMPLE_DO_NOT_USE_"),
+            "expected error to mention JWT_SECRET and the placeholder prefix, got: {message}",
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_replace_me_refresh_secret() {
+        let mut settings = production_settings_with_strong_secrets();
+        settings.auth.jwt_refresh_secret = format!("REPLACE_ME_{}", "y".repeat(80));
+
+        let err = settings
+            .validate()
+            .expect_err("placeholder JWT_REFRESH_SECRET must be rejected in production");
+        let message = err.to_string();
+        assert!(
+            message.contains("JWT_REFRESH_SECRET") && message.contains("REPLACE_ME"),
+            "expected error to mention JWT_REFRESH_SECRET and the placeholder prefix, got: {message}",
+        );
+    }
+
+    #[test]
+    fn test_validate_rejects_example_do_not_use_session_secret() {
+        let mut settings = production_settings_with_strong_secrets();
+        settings.auth.session_secret = format!("EXAMPLE_DO_NOT_USE_{}", "z".repeat(80));
+
+        let err = settings
+            .validate()
+            .expect_err("placeholder SESSION_SECRET must be rejected in production");
+        let message = err.to_string();
+        assert!(
+            message.contains("SESSION_SECRET") && message.contains("EXAMPLE_DO_NOT_USE_"),
+            "expected error to mention SESSION_SECRET and the placeholder prefix, got: {message}",
+        );
+    }
+
+    #[test]
+    fn test_validate_accepts_strong_non_placeholder_secrets_in_production() {
+        let settings = production_settings_with_strong_secrets();
+        settings
+            .validate()
+            .expect("strong, non-placeholder production secrets should pass validation");
     }
 }
