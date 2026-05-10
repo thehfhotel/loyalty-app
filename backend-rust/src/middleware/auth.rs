@@ -10,10 +10,94 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use axum_extra::extract::cookie::Cookie;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 
 use crate::error::ErrorResponse;
+
+// ============================================================================
+// Refresh-token Cookie Helpers (Phase 1 of HttpOnly cookie migration)
+// ============================================================================
+
+/// Cookie name for the refresh token.
+///
+/// Phase 1 of the migration to HttpOnly-cookie refresh tokens. The cookie is
+/// emitted alongside the existing JSON `refreshToken` field so the frontend
+/// can keep using `localStorage` until Phase 2 switches it over.
+pub const REFRESH_COOKIE_NAME: &str = "refresh_token";
+
+/// Cookie path the refresh-token cookie is scoped to.
+///
+/// Limiting the path to `/api/auth` means the cookie is only sent on the
+/// auth endpoints (login, logout, refresh) — not on every API call. This
+/// reduces the blast radius if any future endpoint were to log raw cookies.
+pub const REFRESH_COOKIE_PATH: &str = "/api/auth";
+
+/// Build the `Set-Cookie` value for the refresh token.
+///
+/// Returns the fully-formatted `Set-Cookie` header value (without the field
+/// name). Use [`refresh_cookie_for_jar`] to get an `axum_extra::Cookie` for
+/// adding to a `CookieJar` extractor instead.
+///
+/// Attributes (defense-in-depth against XSS / CSRF):
+/// - `HttpOnly`: prevents `document.cookie` access from JS, neutralising XSS
+///   attempts to steal the refresh token.
+/// - `Secure`: forces HTTPS-only transport. Production runs behind Cloudflare
+///   over HTTPS, so this is unconditional. Local dev over plain HTTP simply
+///   won't see the cookie applied — that's acceptable during the migration
+///   because the JSON `refreshToken` field is still returned (Phase 1).
+/// - `SameSite=Strict`: blocks cross-site requests from sending the cookie,
+///   defending against CSRF.
+/// - `Path=/api/auth`: scopes the cookie to the auth endpoints only.
+/// - `Max-Age`: aligns with the refresh-token expiry stored server-side so
+///   the browser drops the cookie at the same time the DB row expires.
+///
+/// We build the header string by hand rather than using `Cookie::build()...`
+/// because the `cookie` crate's `max_age()` setter requires a `time::Duration`
+/// from the `time` crate, which isn't a direct dependency. Hand-building keeps
+/// the dependency surface minimal and makes the exact wire format obvious.
+pub fn build_refresh_cookie_header(token: &str, max_age_secs: i64) -> String {
+    let safe_max_age = max_age_secs.max(0);
+    format!(
+        "{name}={value}; Max-Age={max_age}; Path={path}; HttpOnly; Secure; SameSite=Strict",
+        name = REFRESH_COOKIE_NAME,
+        value = token,
+        max_age = safe_max_age,
+        path = REFRESH_COOKIE_PATH,
+    )
+}
+
+/// Build a `Set-Cookie` value that clears the refresh-token cookie.
+///
+/// Setting `Max-Age=0` with the same `Path` and security attributes tells the
+/// browser to drop the cookie immediately. Used by `/api/auth/logout`.
+pub fn build_clear_refresh_cookie_header() -> String {
+    build_refresh_cookie_header("", 0)
+}
+
+/// Build an `axum_extra::Cookie` for the refresh token suitable for adding to
+/// a `CookieJar` returned from a handler.
+///
+/// Defers to [`build_refresh_cookie_header`] for the wire format and parses
+/// the result back into a `Cookie`. The `Cookie::parse_encoded` round-trip
+/// guarantees the two paths produce byte-identical headers and lets us reuse
+/// one source of truth for cookie attributes.
+pub fn build_refresh_cookie(token: String, max_age_secs: i64) -> Cookie<'static> {
+    let header = build_refresh_cookie_header(&token, max_age_secs);
+    Cookie::parse_encoded(header)
+        .expect("refresh cookie header is well-formed by construction")
+        .into_owned()
+}
+
+/// Build an `axum_extra::Cookie` that clears the refresh-token cookie when
+/// added to a `CookieJar`.
+pub fn build_clear_refresh_cookie() -> Cookie<'static> {
+    let header = build_clear_refresh_cookie_header();
+    Cookie::parse_encoded(header)
+        .expect("clear cookie header is well-formed by construction")
+        .into_owned()
+}
 
 /// JWT secret wrapper for injection via Extension layer.
 ///
@@ -410,5 +494,75 @@ mod tests {
         assert!(has_role(&user, "customer"));
         assert!(has_role(&user, "admin"));
         assert!(has_role(&user, "super_admin"));
+    }
+
+    // ------------------------------------------------------------------
+    // Refresh-token cookie helper tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_build_refresh_cookie_header_has_all_required_attributes() {
+        let header = build_refresh_cookie_header("token-value-abc", 604_800);
+
+        assert!(header.starts_with("refresh_token=token-value-abc"));
+        assert!(header.contains("HttpOnly"));
+        assert!(header.contains("Secure"));
+        assert!(header.contains("SameSite=Strict"));
+        assert!(header.contains("Path=/api/auth"));
+        assert!(header.contains("Max-Age=604800"));
+    }
+
+    #[test]
+    fn test_build_refresh_cookie_header_clamps_negative_max_age_to_zero() {
+        // Defensive: if the caller passes a negative duration (e.g. computed
+        // from a stale `expires_at` timestamp), we clamp to 0 rather than
+        // emitting a malformed `Max-Age=-N` that browsers would reject.
+        let header = build_refresh_cookie_header("tok", -42);
+        assert!(header.contains("Max-Age=0"), "header was: {header}");
+    }
+
+    #[test]
+    fn test_build_refresh_cookie_returns_axum_extra_cookie_with_same_attrs() {
+        // The CookieJar-friendly variant must produce exactly the same wire
+        // format as the raw header builder — both paths share one source of
+        // truth so login (which uses CookieJar) and OAuth callbacks (which
+        // append a raw header) cannot drift apart.
+        let cookie = build_refresh_cookie("xyz".to_string(), 3600);
+        let serialised = cookie.to_string();
+
+        assert!(serialised.contains("refresh_token=xyz"));
+        assert!(serialised.contains("HttpOnly"));
+        assert!(serialised.contains("Secure"));
+        assert!(serialised.contains("SameSite=Strict"));
+        assert!(serialised.contains("Path=/api/auth"));
+        assert!(serialised.contains("Max-Age=3600"));
+    }
+
+    #[test]
+    fn test_build_clear_refresh_cookie_header_is_zero_max_age_with_empty_value() {
+        let header = build_clear_refresh_cookie_header();
+
+        assert!(header.starts_with("refresh_token=;"));
+        assert!(header.contains("Max-Age=0"));
+        assert!(header.contains("HttpOnly"));
+        assert!(header.contains("Secure"));
+        assert!(header.contains("SameSite=Strict"));
+        assert!(header.contains("Path=/api/auth"));
+    }
+
+    #[test]
+    fn test_build_clear_refresh_cookie_returns_cookiejar_compatible_clear_cookie() {
+        let cookie = build_clear_refresh_cookie();
+        let serialised = cookie.to_string();
+
+        assert!(
+            serialised.starts_with("refresh_token=") && !serialised.starts_with("refresh_token=x"),
+            "Cookie value should be empty so the browser drops the entry: {serialised}"
+        );
+        assert!(serialised.contains("Max-Age=0"), "header was: {serialised}");
+        assert!(serialised.contains("HttpOnly"));
+        assert!(serialised.contains("Secure"));
+        assert!(serialised.contains("SameSite=Strict"));
+        assert!(serialised.contains("Path=/api/auth"));
     }
 }

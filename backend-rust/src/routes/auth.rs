@@ -9,13 +9,17 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use axum_extra::extract::cookie::CookieJar;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
 use crate::error::AppError;
-use crate::middleware::auth::{auth_middleware, AuthUser};
+use crate::middleware::auth::{
+    auth_middleware, build_clear_refresh_cookie, build_refresh_cookie, AuthUser,
+    REFRESH_COOKIE_NAME,
+};
 use crate::services::email::{EmailService, EmailServiceImpl};
 
 /// Application state type alias for auth routes
@@ -75,12 +79,17 @@ pub struct LogoutRequest {
     pub refresh_token: Option<String>,
 }
 
-/// Refresh token request payload
-#[derive(Debug, Clone, Deserialize)]
+/// Refresh token request payload.
+///
+/// `refresh_token` is optional because Phase 1 of the cookie migration accepts
+/// the token from EITHER this JSON body field OR the `refresh_token` HttpOnly
+/// cookie. If both are present, the body wins so the frontend can be migrated
+/// gradually without coordinating a flag day.
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct RefreshTokenRequest {
-    /// The refresh token
-    #[serde(rename = "refreshToken")]
-    pub refresh_token: String,
+    /// The refresh token (optional — falls back to the cookie if absent)
+    #[serde(default, rename = "refreshToken")]
+    pub refresh_token: Option<String>,
 }
 
 /// Forgot password request payload
@@ -550,11 +559,18 @@ async fn register(
 }
 
 /// POST /api/auth/login
-/// Authenticates a user with email and password
+/// Authenticates a user with email and password.
+///
+/// Phase 1 of the HttpOnly-cookie migration: returns the refresh token in BOTH
+/// the JSON body (for backward compatibility with the localStorage frontend)
+/// AND a `refresh_token` HttpOnly cookie (for the migrated frontend in later
+/// phases). See `crate::middleware::auth::build_refresh_cookie` for the cookie
+/// attributes and rationale.
 async fn login(
     State(state): State<AppState>,
+    jar: CookieJar,
     Json(payload): Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, AppError> {
+) -> Result<(CookieJar, Json<AuthResponse>), AppError> {
     // Validate request
     payload
         .validate()
@@ -653,33 +669,60 @@ async fn login(
 
     tracing::info!("User logged in: {}", user_response.id);
 
-    Ok(Json(AuthResponse {
-        user: user_response,
-        tokens: AuthTokens {
-            access_token,
-            refresh_token,
-        },
-    }))
+    // Phase 1: also set the refresh token as an HttpOnly cookie. Cookie's
+    // Max-Age aligns with the DB row expiry so the browser drops the cookie
+    // when the server-side token expires.
+    let refresh_max_age_secs = (refresh_expires_at - Utc::now()).num_seconds().max(0);
+    let jar = jar.add(build_refresh_cookie(
+        refresh_token.clone(),
+        refresh_max_age_secs,
+    ));
+
+    Ok((
+        jar,
+        Json(AuthResponse {
+            user: user_response,
+            tokens: AuthTokens {
+                access_token,
+                refresh_token,
+            },
+        }),
+    ))
 }
 
 /// POST /api/auth/logout
-/// Invalidates the user's refresh token
+/// Invalidates the user's refresh token and clears the refresh-token cookie.
+///
+/// Phase 1: in addition to the existing DB cleanup, emits a `Set-Cookie`
+/// header with `Max-Age=0` so the browser drops any cookie set during login.
 async fn logout(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
+    jar: CookieJar,
     Json(payload): Json<LogoutRequest>,
-) -> Result<Json<MessageResponse>, AppError> {
+) -> Result<(CookieJar, Json<MessageResponse>), AppError> {
     let db = state.db();
 
     // Parse user ID
     let user_id = Uuid::parse_str(&auth_user.id)
         .map_err(|_| AppError::Unauthorized("Invalid user ID".to_string()))?;
 
-    // Delete refresh token if provided
+    // Delete refresh token if provided in the body. (Cookie-only logout falls
+    // back to relying on the cookie clear below; the server-side row will be
+    // garbage-collected on its `expires_at`.)
     if let Some(refresh_token) = &payload.refresh_token {
         sqlx::query("DELETE FROM refresh_tokens WHERE user_id = $1 AND token = $2")
             .bind(&user_id)
             .bind(refresh_token)
+            .execute(db)
+            .await
+            .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
+    } else if let Some(cookie_token) = jar.get(REFRESH_COOKIE_NAME).map(|c| c.value().to_string()) {
+        // If the body didn't carry the token but the cookie did, also delete
+        // the row so the server-side state matches the cleared cookie.
+        sqlx::query("DELETE FROM refresh_tokens WHERE user_id = $1 AND token = $2")
+            .bind(&user_id)
+            .bind(&cookie_token)
             .execute(db)
             .await
             .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
@@ -699,18 +742,48 @@ async fn logout(
 
     tracing::info!("User logged out: {}", user_id);
 
-    Ok(Json(MessageResponse {
-        message: "Logged out successfully".to_string(),
-    }))
+    // Always clear the cookie, even if no refresh_token was supplied.
+    let jar = jar.add(build_clear_refresh_cookie());
+
+    Ok((
+        jar,
+        Json(MessageResponse {
+            message: "Logged out successfully".to_string(),
+        }),
+    ))
 }
 
 /// POST /api/auth/refresh
-/// Issues a new access token using a refresh token
+/// Issues a new access token using a refresh token.
+///
+/// Phase 1: accepts the refresh token from EITHER (a) the JSON body
+/// `refreshToken` field OR (b) the `refresh_token` HttpOnly cookie. If both
+/// are present, the body wins so the frontend can switch over gradually.
+/// Both paths produce the same response and rotate the refresh-token cookie.
+///
+/// The body is itself optional — a cookie-only client can `POST /api/auth/refresh`
+/// with no body at all.
 async fn refresh(
     State(state): State<AppState>,
-    Json(payload): Json<RefreshTokenRequest>,
-) -> Result<Json<TokenRefreshResponse>, AppError> {
+    jar: CookieJar,
+    payload: Option<Json<RefreshTokenRequest>>,
+) -> Result<(CookieJar, Json<TokenRefreshResponse>), AppError> {
     let db = state.db();
+
+    // Body precedence: if the body carries a non-empty refreshToken, use it;
+    // otherwise fall back to the cookie. Empty body strings are treated as
+    // absent so a buggy frontend sending {"refreshToken": ""} still works.
+    let body_token = payload
+        .and_then(|Json(req)| req.refresh_token)
+        .filter(|t| !t.is_empty());
+    let cookie_token = jar
+        .get(REFRESH_COOKIE_NAME)
+        .map(|c| c.value().to_string())
+        .filter(|t| !t.is_empty());
+
+    let supplied_token = body_token.or(cookie_token).ok_or_else(|| {
+        AppError::Unauthorized("Missing refresh token (body or cookie required)".to_string())
+    })?;
 
     // Find valid refresh token
     let token_row: Option<(Uuid,)> = sqlx::query_as(
@@ -720,7 +793,7 @@ async fn refresh(
         WHERE token = $1 AND expires_at > NOW()
         "#,
     )
-    .bind(&payload.refresh_token)
+    .bind(&supplied_token)
     .fetch_optional(db)
     .await
     .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
@@ -760,7 +833,7 @@ async fn refresh(
 
     // Delete old refresh token and insert new one
     sqlx::query("DELETE FROM refresh_tokens WHERE token = $1")
-        .bind(&payload.refresh_token)
+        .bind(&supplied_token)
         .execute(db)
         .await
         .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
@@ -780,12 +853,23 @@ async fn refresh(
 
     tracing::debug!("Token refreshed for user: {}", user_row.id);
 
-    Ok(Json(TokenRefreshResponse {
-        tokens: AuthTokens {
-            access_token,
-            refresh_token: new_refresh_token,
-        },
-    }))
+    // Rotate the cookie too so cookie-using clients stay in sync with the new
+    // server-side token. Max-Age matches the new DB row's expiry.
+    let refresh_max_age_secs = (refresh_expires_at - Utc::now()).num_seconds().max(0);
+    let jar = jar.add(build_refresh_cookie(
+        new_refresh_token.clone(),
+        refresh_max_age_secs,
+    ));
+
+    Ok((
+        jar,
+        Json(TokenRefreshResponse {
+            tokens: AuthTokens {
+                access_token,
+                refresh_token: new_refresh_token,
+            },
+        }),
+    ))
 }
 
 /// POST /api/auth/forgot-password (or /api/auth/reset-password/request)

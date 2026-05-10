@@ -9,7 +9,11 @@
 
 use std::sync::{Arc, Mutex};
 
-use axum::{body::Body, http::Request, Router};
+use axum::{
+    body::Body,
+    http::{HeaderMap, Request},
+    Router,
+};
 use chrono::{Duration, Utc};
 use once_cell::sync::Lazy;
 use redis::aio::ConnectionManager;
@@ -905,6 +909,9 @@ impl TestCoupon {
 pub struct TestClient {
     router: Router,
     auth_token: Option<String>,
+    /// Optional `Cookie` request header value (e.g. `"refresh_token=abc"`).
+    /// Used by tests that need to exercise cookie-based auth flows.
+    cookie_header: Option<String>,
 }
 
 impl TestClient {
@@ -913,6 +920,7 @@ impl TestClient {
         Self {
             router,
             auth_token: None,
+            cookie_header: None,
         }
     }
 
@@ -922,18 +930,40 @@ impl TestClient {
         self
     }
 
+    /// Attach a raw `Cookie` request header to all subsequent requests.
+    ///
+    /// `value` should be the full header value without the field name, e.g.
+    /// `"refresh_token=abc; other=xyz"`. Pass a single cookie pair when
+    /// testing cookie-based auth: `with_cookie("refresh_token=abc")`.
+    #[allow(dead_code)]
+    pub fn with_cookie(mut self, value: &str) -> Self {
+        self.cookie_header = Some(value.to_string());
+        self
+    }
+
+    /// Apply the auth/cookie headers configured on this client to a builder.
+    fn apply_common_headers(
+        &self,
+        mut builder: axum::http::request::Builder,
+    ) -> axum::http::request::Builder {
+        if let Some(token) = &self.auth_token {
+            builder = builder.header("Authorization", format!("Bearer {}", token));
+        }
+        if let Some(cookie) = &self.cookie_header {
+            builder = builder.header("Cookie", cookie);
+        }
+        builder
+    }
+
     /// Make a GET request
     pub async fn get(&self, uri: &str) -> TestResponse {
-        let mut request = Request::builder()
+        let builder = Request::builder()
             .method("GET")
             .uri(uri)
             .header("Content-Type", "application/json");
+        let builder = self.apply_common_headers(builder);
 
-        if let Some(token) = &self.auth_token {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-
-        let request = request.body(Body::empty()).unwrap();
+        let request = builder.body(Body::empty()).unwrap();
         let response = self.router.clone().oneshot(request).await.unwrap();
 
         TestResponse::from_response(response).await
@@ -943,16 +973,13 @@ impl TestClient {
     pub async fn post<T: Serialize>(&self, uri: &str, body: &T) -> TestResponse {
         let body_json = serde_json::to_string(body).unwrap();
 
-        let mut request = Request::builder()
+        let builder = Request::builder()
             .method("POST")
             .uri(uri)
             .header("Content-Type", "application/json");
+        let builder = self.apply_common_headers(builder);
 
-        if let Some(token) = &self.auth_token {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-
-        let request = request.body(Body::from(body_json)).unwrap();
+        let request = builder.body(Body::from(body_json)).unwrap();
         let response = self.router.clone().oneshot(request).await.unwrap();
 
         TestResponse::from_response(response).await
@@ -961,16 +988,13 @@ impl TestClient {
     /// Make a POST request with empty body
     #[allow(dead_code)]
     pub async fn post_empty(&self, uri: &str) -> TestResponse {
-        let mut request = Request::builder()
+        let builder = Request::builder()
             .method("POST")
             .uri(uri)
             .header("Content-Type", "application/json");
+        let builder = self.apply_common_headers(builder);
 
-        if let Some(token) = &self.auth_token {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-
-        let request = request.body(Body::empty()).unwrap();
+        let request = builder.body(Body::empty()).unwrap();
         let response = self.router.clone().oneshot(request).await.unwrap();
 
         TestResponse::from_response(response).await
@@ -980,16 +1004,13 @@ impl TestClient {
     pub async fn put<T: Serialize>(&self, uri: &str, body: &T) -> TestResponse {
         let body_json = serde_json::to_string(body).unwrap();
 
-        let mut request = Request::builder()
+        let builder = Request::builder()
             .method("PUT")
             .uri(uri)
             .header("Content-Type", "application/json");
+        let builder = self.apply_common_headers(builder);
 
-        if let Some(token) = &self.auth_token {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-
-        let request = request.body(Body::from(body_json)).unwrap();
+        let request = builder.body(Body::from(body_json)).unwrap();
         let response = self.router.clone().oneshot(request).await.unwrap();
 
         TestResponse::from_response(response).await
@@ -1000,16 +1021,13 @@ impl TestClient {
     pub async fn patch<T: Serialize>(&self, uri: &str, body: &T) -> TestResponse {
         let body_json = serde_json::to_string(body).unwrap();
 
-        let mut request = Request::builder()
+        let builder = Request::builder()
             .method("PATCH")
             .uri(uri)
             .header("Content-Type", "application/json");
+        let builder = self.apply_common_headers(builder);
 
-        if let Some(token) = &self.auth_token {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-
-        let request = request.body(Body::from(body_json)).unwrap();
+        let request = builder.body(Body::from(body_json)).unwrap();
         let response = self.router.clone().oneshot(request).await.unwrap();
 
         TestResponse::from_response(response).await
@@ -1017,16 +1035,13 @@ impl TestClient {
 
     /// Make a DELETE request
     pub async fn delete(&self, uri: &str) -> TestResponse {
-        let mut request = Request::builder()
+        let builder = Request::builder()
             .method("DELETE")
             .uri(uri)
             .header("Content-Type", "application/json");
+        let builder = self.apply_common_headers(builder);
 
-        if let Some(token) = &self.auth_token {
-            request = request.header("Authorization", format!("Bearer {}", token));
-        }
-
-        let request = request.body(Body::empty()).unwrap();
+        let request = builder.body(Body::empty()).unwrap();
         let response = self.router.clone().oneshot(request).await.unwrap();
 
         TestResponse::from_response(response).await
@@ -1038,18 +1053,49 @@ impl TestClient {
 pub struct TestResponse {
     pub status: u16,
     pub body: String,
+    /// All response headers, captured so tests can assert on `Set-Cookie`
+    /// and other response metadata.
+    pub headers: HeaderMap,
 }
 
 impl TestResponse {
     /// Create from an axum response
     async fn from_response(response: axum::response::Response) -> Self {
         let status = response.status().as_u16();
+        let headers = response.headers().clone();
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
         let body = String::from_utf8(body.to_vec()).unwrap();
 
-        Self { status, body }
+        Self {
+            status,
+            body,
+            headers,
+        }
+    }
+
+    /// Return all `Set-Cookie` header values as owned strings.
+    ///
+    /// A handler may emit multiple `Set-Cookie` headers (e.g. one per cookie),
+    /// so this returns a `Vec` rather than a single value.
+    #[allow(dead_code)]
+    pub fn set_cookie_values(&self) -> Vec<String> {
+        self.headers
+            .get_all(axum::http::header::SET_COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok().map(str::to_string))
+            .collect()
+    }
+
+    /// Find the first `Set-Cookie` header whose name matches `cookie_name`,
+    /// returning the entire header value (with attributes).
+    #[allow(dead_code)]
+    pub fn set_cookie_for(&self, cookie_name: &str) -> Option<String> {
+        let prefix = format!("{}=", cookie_name);
+        self.set_cookie_values()
+            .into_iter()
+            .find(|v| v.starts_with(&prefix))
     }
 
     /// Parse the body as JSON
