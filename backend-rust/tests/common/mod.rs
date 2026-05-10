@@ -511,6 +511,7 @@ fn create_test_config() -> loyalty_backend::Settings {
         oauth: OAuthConfig::default(),
         email: EmailConfig::default(),
         slipok: SlipokConfig::default(),
+        promptpay: PromptPayConfig::default(),
         security: SecurityConfig::default(),
     }
 }
