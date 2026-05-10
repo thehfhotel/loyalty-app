@@ -3,15 +3,15 @@
 //! Provides endpoints for file upload, avatar management, and file serving.
 //!
 //! Routes (all nested under /api/storage):
-//! - POST /api/storage/upload - General file upload
-//! - POST /api/storage/avatar - Avatar upload (requires authentication)
-//! - POST /api/storage/slip - Slip upload (requires authentication)
-//! - GET /api/storage/files/:filename - Serve uploaded files
-//! - GET /api/storage/avatars/:filename - Serve avatar images
-//! - GET /api/storage/slips/:filename - Serve slip images
+//! - POST /api/storage/upload - General file upload (authenticated)
+//! - POST /api/storage/avatar - Avatar upload (authenticated; user derived from JWT)
+//! - POST /api/storage/slip - Slip upload (authenticated)
+//! - GET /api/storage/files/:filename - Serve uploaded files (public)
+//! - GET /api/storage/avatars/:filename - Serve avatar images (public)
+//! - GET /api/storage/slips/:filename - Serve slip images (public)
 //! - GET /api/storage/stats - Get storage statistics (admin only)
 //! - POST /api/storage/backup - Trigger manual backup (admin only)
-//! - DELETE /api/storage/files/:filename - Delete a file
+//! - DELETE /api/storage/files/:filename - Delete a file (admin only)
 
 use axum::{
     body::Body,
@@ -20,17 +20,17 @@ use axum::{
     middleware,
     response::Response,
     routing::{get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use bytes::Bytes;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::sync::Arc;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info};
 
 use crate::error::{AppError, AppResult};
-use crate::middleware::auth::{auth_middleware, require_role};
+use crate::middleware::auth::{auth_middleware, require_role, AuthUser};
 use crate::services::storage::{StorageReport, StorageService};
 
 /// State for storage routes
@@ -83,23 +83,20 @@ pub struct BackupResponse {
     pub files_backed_up: Option<u64>,
 }
 
-/// Request body for avatar upload with user context
-#[derive(Debug, Deserialize)]
-pub struct AvatarUploadRequest {
-    pub user_id: String,
-}
-
 /// General file upload handler
 ///
 /// POST /storage/upload
 /// Content-Type: multipart/form-data
+/// Authentication: required (Bearer token)
 ///
 /// Form fields:
 /// - file: The file to upload
 async fn upload_file(
     State(state): State<StorageState>,
+    Extension(auth_user): Extension<AuthUser>,
     mut multipart: Multipart,
 ) -> AppResult<Json<UploadResponse>> {
+    debug!(user_id = %auth_user.id, "upload_file invoked");
     let mut file_data: Option<Bytes> = None;
     let mut filename: Option<String> = None;
     let mut content_type: Option<String> = None;
@@ -147,17 +144,20 @@ async fn upload_file(
 ///
 /// POST /storage/avatar
 /// Content-Type: multipart/form-data
+/// Authentication: required (Bearer token). The avatar is always saved
+/// against the authenticated user's ID — clients cannot specify a target
+/// user. (Previously the endpoint trusted a `user_id` form field, which
+/// allowed unauthenticated overwrite of any user's avatar.)
 ///
 /// Form fields:
-/// - avatar: The avatar image file
-/// - user_id: The user's ID (should come from auth middleware in production)
+/// - avatar (or file): The avatar image file
 async fn upload_avatar(
     State(state): State<StorageState>,
+    Extension(auth_user): Extension<AuthUser>,
     mut multipart: Multipart,
 ) -> AppResult<Json<AvatarUploadResponse>> {
     let mut file_data: Option<Bytes> = None;
     let mut content_type: Option<String> = None;
-    let mut user_id: Option<String> = None;
 
     while let Some(field) = multipart.next_field().await.map_err(|e| {
         error!("Failed to read multipart field: {}", e);
@@ -176,13 +176,6 @@ async fn upload_avatar(
 
                 file_data = Some(data);
             },
-            "user_id" => {
-                let value = field.text().await.map_err(|e| {
-                    error!("Failed to read user_id: {}", e);
-                    AppError::BadRequest(format!("Failed to read user_id: {}", e))
-                })?;
-                user_id = Some(value);
-            },
             _ => {
                 debug!("Ignoring unknown field: {}", field_name);
             },
@@ -190,9 +183,7 @@ async fn upload_avatar(
     }
 
     let data = file_data.ok_or_else(|| AppError::BadRequest("No file uploaded".to_string()))?;
-
-    let uid = user_id.ok_or_else(|| AppError::MissingField("user_id".to_string()))?;
-
+    let uid = auth_user.id.clone();
     let mime_type =
         content_type.ok_or_else(|| AppError::BadRequest("Content type is required".to_string()))?;
 
@@ -218,13 +209,16 @@ async fn upload_avatar(
 ///
 /// POST /storage/slip
 /// Content-Type: multipart/form-data
+/// Authentication: required (Bearer token)
 ///
 /// Form fields:
-/// - slip: The slip image file
+/// - slip (or file): The slip image file
 async fn upload_slip(
     State(state): State<StorageState>,
+    Extension(auth_user): Extension<AuthUser>,
     mut multipart: Multipart,
 ) -> AppResult<Json<SlipUploadResponse>> {
+    debug!(user_id = %auth_user.id, "upload_slip invoked");
     let mut file_data: Option<Bytes> = None;
     let mut content_type: Option<String> = None;
 
@@ -403,14 +397,23 @@ async fn delete_file(
 ///
 /// These routes are nested under /api/storage in the main router
 pub fn routes() -> Router<StorageState> {
-    // Public routes - file serving and uploads
-    let public_routes = Router::new()
-        .route("/upload", post(upload_file))
-        .route("/avatar", post(upload_avatar))
-        .route("/slip", post(upload_slip))
+    // File-serving routes are intentionally public (any client can fetch a
+    // saved avatar/slip/file by URL — the URLs themselves are unguessable
+    // because they include UUIDs).
+    let public_get_routes = Router::new()
         .route("/files/:filename", get(serve_file))
         .route("/avatars/:filename", get(serve_avatar))
         .route("/slips/:filename", get(serve_slip));
+
+    // POST upload routes require authentication. The avatar route always
+    // saves to the authenticated user's slot — clients CANNOT specify a
+    // target user via the multipart body. Without this gate, any caller
+    // could overwrite any user's avatar (or fill the disk).
+    let authenticated_upload_routes = Router::new()
+        .route("/upload", post(upload_file))
+        .route("/avatar", post(upload_avatar))
+        .route("/slip", post(upload_slip))
+        .layer(middleware::from_fn(auth_middleware));
 
     // Admin routes - require authentication + admin role
     let admin_routes = Router::new()
@@ -422,7 +425,9 @@ pub fn routes() -> Router<StorageState> {
         }))
         .layer(middleware::from_fn(auth_middleware));
 
-    public_routes.merge(admin_routes)
+    public_get_routes
+        .merge(authenticated_upload_routes)
+        .merge(admin_routes)
 }
 
 /// Create storage routes with state

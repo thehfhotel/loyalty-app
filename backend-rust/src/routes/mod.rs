@@ -20,11 +20,12 @@ pub mod surveys;
 pub mod translation;
 pub mod users;
 
-use axum::{Extension, Router};
+use axum::{middleware, Extension, Router};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::middleware::auth::JwtSecret;
+use crate::middleware::rate_limit::{redis_rate_limit_middleware, RedisRateLimiter};
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 
@@ -63,14 +64,40 @@ pub fn create_router(state: AppState) -> Router {
     // Extract JWT secret from config to inject as Extension for auth middleware
     let jwt_secret = JwtSecret(state.config().auth.jwt_secret.clone());
 
+    // Rate limiters are only attached in production. In development and test
+    // we disable them so iterative testing (login retries, integration suites
+    // hitting the same endpoints from 127.0.0.1) doesn't trip the strict
+    // 5/min threshold. The limiter itself fails open if Redis is unavailable,
+    // so leaving it on in dev would still mostly work — but disabling is
+    // simpler and avoids flaky tests.
+    let rate_limiters = if state.is_production() {
+        Some((
+            RedisRateLimiter::with_defaults(state.redis(), "api"),
+            RedisRateLimiter::strict(state.redis(), "auth"),
+        ))
+    } else {
+        None
+    };
+
     // Storage routes use a different state type, so mount separately
     let storage_state = storage::StorageState::new(crate::services::storage::StorageService::new());
     let storage_router =
         Router::new().nest("/api/storage", storage::routes().with_state(storage_state));
 
-    Router::new()
+    // Auth routes get a tighter (strict) rate limit on top of the global one
+    // when running in production. The strict layer is applied per-router so
+    // it stacks under the global limiter in main.rs.
+    let auth_routes = match &rate_limiters {
+        Some((_default, strict)) => auth::routes().layer(middleware::from_fn_with_state(
+            strict.clone(),
+            redis_rate_limit_middleware,
+        )),
+        None => auth::routes(),
+    };
+
+    let app = Router::new()
         .nest("/api/health", health::routes())
-        .nest("/api/auth", auth::routes())
+        .nest("/api/auth", auth_routes)
         .nest("/api/users", users::routes())
         .nest("/api/oauth", oauth::routes())
         .nest("/api/loyalty", loyalty::routes())
@@ -88,9 +115,19 @@ pub fn create_router(state: AppState) -> Router {
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))
         .with_state(state)
         // Merge storage routes (separate state type)
-        .merge(storage_router)
-        // Inject JWT secret for auth middleware (must be after with_state so it wraps everything)
-        .layer(Extension(jwt_secret))
+        .merge(storage_router);
+
+    // Apply the global default rate limiter (production only) on top of
+    // everything, then inject the JWT secret so auth_middleware can read it.
+    let app = match rate_limiters {
+        Some((default_limiter, _strict)) => app.layer(middleware::from_fn_with_state(
+            default_limiter,
+            redis_rate_limit_middleware,
+        )),
+        None => app,
+    };
+
+    app.layer(Extension(jwt_secret))
 }
 
 #[cfg(test)]
