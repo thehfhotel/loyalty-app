@@ -10,14 +10,13 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::coupon::{
     Coupon, CouponResponse, CouponStatus, CouponType, UserCoupon, UserCouponStatus,
 };
-use crate::services::AppState;
 
 /// Filters for listing coupons
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -237,13 +236,18 @@ pub trait CouponService: Send + Sync {
 
 /// Implementation of the CouponService trait
 pub struct CouponServiceImpl {
-    state: AppState,
+    pool: PgPool,
 }
 
 impl CouponServiceImpl {
     /// Create a new CouponServiceImpl instance
-    pub fn new(state: AppState) -> Self {
-        Self { state }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+
+    /// Get a reference to the database pool
+    fn pool(&self) -> &PgPool {
+        &self.pool
     }
 }
 
@@ -305,7 +309,7 @@ impl CouponService for CouponServiceImpl {
         }
 
         let total = count_builder
-            .fetch_one(self.state.db.pool())
+            .fetch_one(self.pool())
             .await
             .map_err(|e| AppError::DatabaseQuery(format!("Failed to count coupons: {}", e)))?;
 
@@ -346,7 +350,7 @@ impl CouponService for CouponServiceImpl {
         list_builder = list_builder.bind(limit).bind(offset);
 
         let coupons = list_builder
-            .fetch_all(self.state.db.pool())
+            .fetch_all(self.pool())
             .await
             .map_err(|e| AppError::DatabaseQuery(format!("Failed to fetch coupons: {}", e)))?;
 
@@ -376,7 +380,7 @@ impl CouponService for CouponServiceImpl {
             "#,
             coupon_id,
         )
-        .fetch_optional(self.state.db.pool())
+        .fetch_optional(self.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to fetch coupon: {}", e)))?;
 
@@ -420,7 +424,7 @@ impl CouponService for CouponServiceImpl {
             r#"SELECT COUNT(*) as "count!" FROM coupons WHERE code = $1"#,
             &data.code,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to check coupon code: {}", e)))?;
 
@@ -480,7 +484,7 @@ impl CouponService for CouponServiceImpl {
             &original_language,
             &available_languages,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to create coupon: {}", e)))?;
 
@@ -537,7 +541,7 @@ impl CouponService for CouponServiceImpl {
                     new_code,
                     coupon_id,
                 )
-                .fetch_one(self.state.db.pool())
+                .fetch_one(self.pool())
                 .await
                 .map_err(|e| {
                     AppError::DatabaseQuery(format!("Failed to check coupon code: {}", e))
@@ -602,7 +606,7 @@ impl CouponService for CouponServiceImpl {
             data.customer_segment as Option<serde_json::Value>,
             data.status as Option<CouponStatus>,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to update coupon: {}", e)))?;
 
@@ -691,7 +695,7 @@ impl CouponService for CouponServiceImpl {
             "#,
             user_id,
         )
-        .fetch_all(self.state.db.pool())
+        .fetch_all(self.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to fetch user coupons: {}", e)))?;
 
@@ -760,7 +764,7 @@ impl CouponService for CouponServiceImpl {
             user_id,
             coupon_id,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.pool())
         .await
         .map_err(|e| {
             AppError::DatabaseQuery(format!("Failed to check user coupon usage: {}", e))
@@ -802,7 +806,7 @@ impl CouponService for CouponServiceImpl {
             assigned_reason.as_deref(),
             expires_at,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to assign coupon: {}", e)))?;
 
@@ -846,7 +850,7 @@ impl CouponService for CouponServiceImpl {
             "#,
             user_coupon_id,
         )
-        .fetch_optional(self.state.db.pool())
+        .fetch_optional(self.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to fetch user coupon: {}", e)))?
         .ok_or_else(|| AppError::NotFound("User coupon not found".to_string()))?;
@@ -896,7 +900,7 @@ impl CouponService for CouponServiceImpl {
             "#,
             user_coupon_id,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to redeem coupon: {}", e)))?;
 
@@ -922,7 +926,7 @@ impl CouponService for CouponServiceImpl {
             "UPDATE coupons SET used_count = COALESCE(used_count, 0) + 1, updated_at = NOW() WHERE id = $1",
             user_coupon.coupon_id,
         )
-        .execute(self.state.db.pool())
+        .execute(self.pool())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to update coupon used count: {}", e)))?;
 
@@ -971,7 +975,7 @@ impl CouponService for CouponServiceImpl {
             user_id,
             coupon_id,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.pool())
         .await
         .map_err(|e| {
             AppError::DatabaseQuery(format!("Failed to check user coupon usage: {}", e))
@@ -996,7 +1000,7 @@ impl CouponService for CouponServiceImpl {
                         "#,
                         user_id,
                     )
-                    .fetch_optional(self.state.db.pool())
+                    .fetch_optional(self.pool())
                     .await
                     .map_err(|e| {
                         AppError::DatabaseQuery(format!("Failed to check user tier: {}", e))

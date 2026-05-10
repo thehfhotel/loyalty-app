@@ -9,12 +9,11 @@
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::survey::{Survey, SurveyQuestion, SurveyResponse};
-use crate::services::AppState;
 
 // ============================================================================
 // DTOs (Data Transfer Objects)
@@ -184,13 +183,18 @@ pub trait SurveyService: Send + Sync {
 
 /// Implementation of the SurveyService trait
 pub struct SurveyServiceImpl {
-    state: AppState,
+    pool: PgPool,
 }
 
 impl SurveyServiceImpl {
     /// Create a new SurveyServiceImpl instance
-    pub fn new(state: AppState) -> Self {
-        Self { state }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+
+    /// Get a reference to the database pool
+    fn pool(&self) -> &PgPool {
+        &self.pool
     }
 
     /// Normalize question options to ensure consistent sequential values
@@ -251,46 +255,46 @@ impl SurveyService for SurveyServiceImpl {
         let total: i64 = match (&filters.status, &filters.access_type, &filters.created_by) {
             (None, None, None) => {
                 sqlx::query_scalar(&count_query)
-                    .fetch_one(self.state.db.pool())
+                    .fetch_one(self.pool())
                     .await?
             },
             (Some(status), None, None) => {
                 sqlx::query_scalar(&count_query)
                     .bind(status)
-                    .fetch_one(self.state.db.pool())
+                    .fetch_one(self.pool())
                     .await?
             },
             (None, Some(access_type), None) => {
                 sqlx::query_scalar(&count_query)
                     .bind(access_type)
-                    .fetch_one(self.state.db.pool())
+                    .fetch_one(self.pool())
                     .await?
             },
             (None, None, Some(created_by)) => {
                 sqlx::query_scalar(&count_query)
                     .bind(created_by)
-                    .fetch_one(self.state.db.pool())
+                    .fetch_one(self.pool())
                     .await?
             },
             (Some(status), Some(access_type), None) => {
                 sqlx::query_scalar(&count_query)
                     .bind(status)
                     .bind(access_type)
-                    .fetch_one(self.state.db.pool())
+                    .fetch_one(self.pool())
                     .await?
             },
             (Some(status), None, Some(created_by)) => {
                 sqlx::query_scalar(&count_query)
                     .bind(status)
                     .bind(created_by)
-                    .fetch_one(self.state.db.pool())
+                    .fetch_one(self.pool())
                     .await?
             },
             (None, Some(access_type), Some(created_by)) => {
                 sqlx::query_scalar(&count_query)
                     .bind(access_type)
                     .bind(created_by)
-                    .fetch_one(self.state.db.pool())
+                    .fetch_one(self.pool())
                     .await?
             },
             (Some(status), Some(access_type), Some(created_by)) => {
@@ -298,7 +302,7 @@ impl SurveyService for SurveyServiceImpl {
                     .bind(status)
                     .bind(access_type)
                     .bind(created_by)
-                    .fetch_one(self.state.db.pool())
+                    .fetch_one(self.pool())
                     .await?
             },
         };
@@ -325,7 +329,7 @@ impl SurveyService for SurveyServiceImpl {
                     sqlx::query_as(&surveys_query)
                         .bind(limit)
                         .bind(offset)
-                        .fetch_all(self.state.db.pool())
+                        .fetch_all(self.pool())
                         .await?
                 },
                 (Some(status), None, None) => {
@@ -333,7 +337,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(status)
                         .bind(limit)
                         .bind(offset)
-                        .fetch_all(self.state.db.pool())
+                        .fetch_all(self.pool())
                         .await?
                 },
                 (None, Some(access_type), None) => {
@@ -341,7 +345,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(access_type)
                         .bind(limit)
                         .bind(offset)
-                        .fetch_all(self.state.db.pool())
+                        .fetch_all(self.pool())
                         .await?
                 },
                 (None, None, Some(created_by)) => {
@@ -349,7 +353,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(created_by)
                         .bind(limit)
                         .bind(offset)
-                        .fetch_all(self.state.db.pool())
+                        .fetch_all(self.pool())
                         .await?
                 },
                 (Some(status), Some(access_type), None) => {
@@ -358,7 +362,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(access_type)
                         .bind(limit)
                         .bind(offset)
-                        .fetch_all(self.state.db.pool())
+                        .fetch_all(self.pool())
                         .await?
                 },
                 (Some(status), None, Some(created_by)) => {
@@ -367,7 +371,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(created_by)
                         .bind(limit)
                         .bind(offset)
-                        .fetch_all(self.state.db.pool())
+                        .fetch_all(self.pool())
                         .await?
                 },
                 (None, Some(access_type), Some(created_by)) => {
@@ -376,7 +380,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(created_by)
                         .bind(limit)
                         .bind(offset)
-                        .fetch_all(self.state.db.pool())
+                        .fetch_all(self.pool())
                         .await?
                 },
                 (Some(status), Some(access_type), Some(created_by)) => {
@@ -386,7 +390,7 @@ impl SurveyService for SurveyServiceImpl {
                         .bind(created_by)
                         .bind(limit)
                         .bind(offset)
-                        .fetch_all(self.state.db.pool())
+                        .fetch_all(self.pool())
                         .await?
                 },
             };
@@ -414,7 +418,7 @@ impl SurveyService for SurveyServiceImpl {
             "#,
             survey_id,
         )
-        .fetch_optional(self.state.db.pool())
+        .fetch_optional(self.pool())
         .await?;
 
         Ok(survey)
@@ -482,7 +486,7 @@ impl SurveyService for SurveyServiceImpl {
             &status,
             created_by,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.pool())
         .await?;
 
         Ok(survey)
@@ -509,7 +513,7 @@ impl SurveyService for SurveyServiceImpl {
             "#,
             user_id,
         )
-        .fetch_all(self.state.db.pool())
+        .fetch_all(self.pool())
         .await?;
 
         Ok(invitations)
@@ -573,7 +577,7 @@ impl SurveyService for SurveyServiceImpl {
             progress,
             completed_at,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.pool())
         .await?;
 
         // Award survey completion coupons if newly completed
@@ -583,7 +587,7 @@ impl SurveyService for SurveyServiceImpl {
                 r#"SELECT award_survey_completion_coupons($1) as "result""#,
                 response.id,
             )
-            .fetch_optional(self.state.db.pool())
+            .fetch_optional(self.pool())
             .await;
             // Ignore coupon errors - don't fail the survey submission
         }
@@ -606,7 +610,7 @@ impl SurveyService for SurveyServiceImpl {
             r#"SELECT COUNT(*) as "count!" FROM survey_responses WHERE survey_id = $1"#,
             survey_id,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.pool())
         .await?;
 
         // Get responses with user details
@@ -630,7 +634,7 @@ impl SurveyService for SurveyServiceImpl {
             limit as i64,
             offset as i64,
         )
-        .fetch_all(self.state.db.pool())
+        .fetch_all(self.pool())
         .await?;
 
         let total_pages = ((total as f64) / (limit as f64)).ceil() as i32;

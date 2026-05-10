@@ -10,12 +10,11 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::notification::Notification;
-use crate::services::AppState;
 
 /// Filters for listing notifications
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -108,13 +107,18 @@ pub trait NotificationService: Send + Sync {
 
 /// Implementation of the NotificationService trait
 pub struct NotificationServiceImpl {
-    state: AppState,
+    pool: PgPool,
 }
 
 impl NotificationServiceImpl {
     /// Create a new NotificationServiceImpl instance
-    pub fn new(state: AppState) -> Self {
-        Self { state }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+
+    /// Get a reference to the database pool
+    fn pool(&self) -> &PgPool {
+        &self.pool
     }
 }
 
@@ -169,12 +173,12 @@ impl NotificationService for NotificationServiceImpl {
             sqlx::query_as::<_, CountRow>(&count_query)
                 .bind(user_id)
                 .bind(notif_type)
-                .fetch_optional(self.state.db.pool())
+                .fetch_optional(self.pool())
                 .await?
         } else {
             sqlx::query_as::<_, CountRow>(&count_query)
                 .bind(user_id)
-                .fetch_optional(self.state.db.pool())
+                .fetch_optional(self.pool())
                 .await?
         };
 
@@ -212,7 +216,7 @@ impl NotificationService for NotificationServiceImpl {
             .bind(per_page as i64)
             .bind(offset)
             .bind(notif_type)
-            .fetch_all(self.state.db.pool())
+            .fetch_all(self.pool())
             .await?
         } else {
             sqlx::query_as::<_, Notification>(&format!(
@@ -243,7 +247,7 @@ impl NotificationService for NotificationServiceImpl {
             .bind(user_id)
             .bind(per_page as i64)
             .bind(offset)
-            .fetch_all(self.state.db.pool())
+            .fetch_all(self.pool())
             .await?
         };
 
@@ -270,7 +274,7 @@ impl NotificationService for NotificationServiceImpl {
             "#,
             user_id,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.pool())
         .await?;
 
         Ok(count)
@@ -306,7 +310,7 @@ impl NotificationService for NotificationServiceImpl {
             data.data as Option<serde_json::Value>,
             data.expires_at,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.pool())
         .await
         .map_err(|e| {
             tracing::error!("Failed to create notification: {}", e);
@@ -361,7 +365,7 @@ impl NotificationService for NotificationServiceImpl {
             notification_id,
             user_id,
         )
-        .fetch_optional(self.state.db.pool())
+        .fetch_optional(self.pool())
         .await?
         .ok_or_else(|| AppError::NotFound("Notification not found".to_string()))?;
 
@@ -396,7 +400,7 @@ impl NotificationService for NotificationServiceImpl {
             "#,
             user_id,
         )
-        .execute(self.state.db.pool())
+        .execute(self.pool())
         .await?;
 
         let marked_count = result.rows_affected() as i64;
@@ -423,7 +427,7 @@ impl NotificationService for NotificationServiceImpl {
             notification_id,
             user_id,
         )
-        .execute(self.state.db.pool())
+        .execute(self.pool())
         .await?;
 
         if result.rows_affected() == 0 {

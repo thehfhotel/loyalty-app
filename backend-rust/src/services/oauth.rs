@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use crate::config::{GoogleOAuthConfig, LineOAuthConfig};
 use crate::error::AppError;
-use crate::services::AppState;
+use crate::state::AppState;
 
 // =============================================================================
 // Structs for OAuth User Info
@@ -330,7 +330,7 @@ impl OAuthServiceImpl {
         let membership_id: String = sqlx::query_scalar!(
             r#"SELECT 'LYL' || LPAD(nextval('membership_id_sequence')::text, 8, '0') as "id!: String""#,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.state.db())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to generate membership ID: {}", e)))?;
 
@@ -363,8 +363,9 @@ impl OAuthServiceImpl {
         }
 
         let now = Utc::now();
-        let access_expiration = now + Duration::seconds(self.state.jwt_expiration);
-        let refresh_expiration = now + Duration::seconds(self.state.refresh_token_expiration);
+        let access_expiration = now + Duration::seconds(self.state.jwt_expiration());
+        let refresh_expiration =
+            now + Duration::seconds(self.state.config().auth.refresh_token_expiry_secs as i64);
 
         let access_claims = AccessClaims {
             sub: user_id.to_string(),
@@ -380,7 +381,7 @@ impl OAuthServiceImpl {
             token_type: "refresh".to_string(),
         };
 
-        let encoding_key = EncodingKey::from_secret(self.state.jwt_secret.as_bytes());
+        let encoding_key = EncodingKey::from_secret(self.state.jwt_secret().as_bytes());
 
         let access_token = encode(&Header::default(), &access_claims, &encoding_key)
             .map_err(|e| AppError::Internal(format!("Failed to generate access token: {}", e)))?;
@@ -623,7 +624,7 @@ impl OAuthService for OAuthServiceImpl {
             &user_info.provider,
             &user_info.provider_id,
         )
-        .fetch_optional(self.state.db.pool())
+        .fetch_optional(self.state.db())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to find user by OAuth ID: {}", e)))?;
 
@@ -663,7 +664,7 @@ impl OAuthService for OAuthServiceImpl {
                 "#,
                 email,
             )
-            .fetch_optional(self.state.db.pool())
+            .fetch_optional(self.state.db())
             .await
             .map_err(|e| AppError::DatabaseQuery(format!("Failed to find user by email: {}", e)))?;
 
@@ -687,7 +688,7 @@ impl OAuthService for OAuthServiceImpl {
                     user_info.email_verified,
                     user.id,
                 )
-                .execute(self.state.db.pool())
+                .execute(self.state.db())
                 .await
                 .map_err(|e| {
                     AppError::DatabaseQuery(format!("Failed to update OAuth provider: {}", e))
@@ -713,7 +714,7 @@ impl OAuthService for OAuthServiceImpl {
                     "#,
                     user.id,
                 )
-                .fetch_one(self.state.db.pool())
+                .fetch_one(self.state.db())
                 .await
                 .map_err(|e| AppError::DatabaseQuery(format!("Failed to refresh user: {}", e)))?;
 
@@ -744,7 +745,7 @@ impl OAuthService for OAuthServiceImpl {
             &user_info.provider,
             &user_info.provider_id,
         )
-        .fetch_one(self.state.db.pool())
+        .fetch_one(self.state.db())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to create OAuth user: {}", e)))?;
 
@@ -760,7 +761,7 @@ impl OAuthService for OAuthServiceImpl {
             user_info.avatar_url.as_deref(),
             &membership_id,
         )
-        .execute(self.state.db.pool())
+        .execute(self.state.db())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to create user profile: {}", e)))?;
 
@@ -773,7 +774,7 @@ impl OAuthService for OAuthServiceImpl {
             "#,
             new_user.id,
         )
-        .execute(self.state.db.pool())
+        .execute(self.state.db())
         .await;
 
         let email = new_user.email.as_deref().unwrap_or("");
@@ -821,7 +822,7 @@ impl OAuthServiceImpl {
             user_info.last_name.as_deref().unwrap_or(""),
             user_info.avatar_url.as_deref().unwrap_or(""),
         )
-        .execute(self.state.db.pool())
+        .execute(self.state.db())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to update user profile: {}", e)))?;
 
@@ -848,7 +849,7 @@ impl OAuthServiceImpl {
             user_id,
             details,
         )
-        .execute(self.state.db.pool())
+        .execute(self.state.db())
         .await
         .map_err(|e| {
             warn!("Failed to log OAuth login: {}", e);
@@ -865,7 +866,7 @@ impl OAuthServiceImpl {
             r#"SELECT user_id FROM user_loyalty WHERE user_id = $1"#,
             user_id,
         )
-        .fetch_optional(self.state.db.pool())
+        .fetch_optional(self.state.db())
         .await
         .map_err(|e| {
             AppError::DatabaseQuery(format!("Failed to check loyalty enrollment: {}", e))
@@ -878,7 +879,7 @@ impl OAuthServiceImpl {
         // Get default tier (Bronze)
         let tier_id: Option<Uuid> =
             sqlx::query_scalar!(r#"SELECT id FROM tiers WHERE name = 'Bronze' LIMIT 1"#,)
-                .fetch_optional(self.state.db.pool())
+                .fetch_optional(self.state.db())
                 .await
                 .map_err(|e| {
                     AppError::DatabaseQuery(format!("Failed to get default tier: {}", e))
@@ -897,7 +898,7 @@ impl OAuthServiceImpl {
             user_id,
             tier_id,
         )
-        .execute(self.state.db.pool())
+        .execute(self.state.db())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to create loyalty record: {}", e)))?;
 
