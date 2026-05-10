@@ -12,13 +12,15 @@ services:
   postgres:
     container_name: loyalty_postgres_dev
     ports:
-      - "5435:5432"  # Dev port 5435 (prod uses 5434)
+      # Bind to localhost only — backend reaches postgres via the docker network.
+      # Host port mapping exists for ad-hoc DBA access from the host (via SSH tunnel).
+      - "127.0.0.1:5435:5432"  # Dev port 5435 (prod uses 5434)
     environment:
-      POSTGRES_USER: loyalty_dev
-      POSTGRES_PASSWORD: loyalty_dev_pass
-      POSTGRES_DB: loyalty_dev_db
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB required}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U loyalty_dev -d loyalty_dev_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,7 +30,8 @@ services:
   redis:
     container_name: loyalty_redis_dev
     ports:
-      - "6380:6379"  # Dev port 6380 (prod uses 6379)
+      # Bind to localhost only — backend reaches redis via the docker network.
+      - "127.0.0.1:6380:6379"  # Dev port 6380 (prod uses 6379)
 
   backend:
     container_name: loyalty_backend_dev
@@ -67,9 +70,9 @@ services:
 
   frontend:
     container_name: loyalty_frontend_dev
-    environment:
-      NODE_ENV: staging
-      VITE_API_URL: ${VITE_API_URL}
+    # NOTE: VITE_API_URL is build-time only (baked into the image during docker build).
+    # NODE_ENV is not consumed by the alpine nginx serving the built SPA.
+    # Neither belongs in runtime env for the GHCR frontend image.
     # No source code bind mounts - uses GHCR image with built code
     # GHCR frontend uses nginx:alpine with logs at /var/log/nginx
     volumes:
