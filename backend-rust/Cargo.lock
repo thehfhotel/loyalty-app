@@ -2011,6 +2011,8 @@ dependencies = [
  "mime",
  "oauth2",
  "once_cell",
+ "promptpay-rs",
+ "qrcode",
  "rand",
  "redis",
  "regex-lite",
@@ -2629,6 +2631,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "promptpay-rs"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "473c3e89cacd06d75ad94ef189a90a1cab7e172a7c6ce75c91821d63c4913a15"
+
+[[package]]
 name = "psm"
 version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2666,6 +2674,12 @@ checksum = "7186d3822593aa4393561d186d1393b3923e9d6163d3fbfd6e825e3e6cf3e6a8"
 dependencies = [
  "num-traits",
 ]
+
+[[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
 
 [[package]]
 name = "quick-error"

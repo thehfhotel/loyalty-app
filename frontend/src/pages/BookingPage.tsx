@@ -156,7 +156,12 @@ export default function BookingPage() {
 
     setIsUploading(true);
     try {
-      // TODO: Implement actual upload when backend endpoint is ready
+      // TODO: Implement actual upload when backend endpoint is ready.
+      // Slip upload is unrelated to PromptPay QR generation; for the slip
+      // upload flow use bookingService.uploadSlip + bookingService.addSlip.
+      // For dynamic QR generation (replacing the bundled companyQRCode image)
+      // see paymentService.getPromptPayQr in src/services/paymentService.ts —
+      // it returns an SVG payload sized to the booking total.
       // For now, simulate upload success
       await new Promise(resolve => setTimeout(resolve, 1500));
       setSlipStatus('uploaded');

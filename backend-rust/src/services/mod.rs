@@ -11,6 +11,7 @@ pub mod loyalty;
 pub mod membership_id;
 pub mod notification;
 pub mod oauth;
+pub mod promptpay;
 pub mod slipok;
 pub mod sse;
 pub mod storage;

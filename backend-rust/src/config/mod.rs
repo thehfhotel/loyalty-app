@@ -340,6 +340,25 @@ impl SlipokConfig {
     }
 }
 
+/// PromptPay QR code configuration
+///
+/// Holds the merchant Tax ID (or registered phone number) used to generate
+/// EMVCo-compliant PromptPay QR codes. Optional so non-Thailand deployments
+/// can omit it without failing validation; the QR endpoint will return a
+/// configuration error if it is missing when invoked.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PromptPayConfig {
+    /// 13-digit Tax ID (or 10-digit phone number) for PromptPay payments.
+    /// Sourced from the `PROMPTPAY_TAX_ID` environment variable.
+    pub tax_id: Option<String>,
+}
+
+impl PromptPayConfig {
+    pub fn is_configured(&self) -> bool {
+        self.tax_id.is_some()
+    }
+}
+
 /// Server configuration
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
@@ -460,6 +479,10 @@ pub struct Settings {
     #[serde(default)]
     pub slipok: SlipokConfig,
 
+    /// PromptPay QR code configuration
+    #[serde(default)]
+    pub promptpay: PromptPayConfig,
+
     /// Security configuration
     #[serde(default)]
     pub security: SecurityConfig,
@@ -547,6 +570,7 @@ impl Settings {
             .set_override_option("email.imap.pass", env::var("IMAP_PASS").ok())?
             .set_override_option("slipok.branch_id", env::var("SLIPOK_BRANCH_ID").ok())?
             .set_override_option("slipok.api_key", env::var("SLIPOK_API_KEY").ok())?
+            .set_override_option("promptpay.tax_id", env::var("PROMPTPAY_TAX_ID").ok())?
             .set_override_option("security.max_file_size", env::var("MAX_FILE_SIZE").ok())?
             .set_override_option(
                 "security.rate_limit_window_ms",

@@ -13,6 +13,7 @@ pub mod loyalty;
 pub mod membership;
 pub mod notifications;
 pub mod oauth;
+pub mod payments;
 pub mod slips;
 pub mod sse;
 pub mod storage;
@@ -44,6 +45,7 @@ use crate::state::AppState;
 /// - /api/admin -> admin panel routes
 /// - /api/sse -> server-sent events routes
 /// - /api/membership -> membership ID management routes
+/// - /api/payments -> payment QR code generation routes (PromptPay)
 /// - /api/slips -> payment slip upload routes
 /// - /api/analytics -> analytics tracking routes
 /// - /api/translation -> content translation routes
@@ -108,6 +110,7 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/admin", admin::routes())
         .nest("/api/sse", sse::routes())
         .nest("/api/membership", membership::routes())
+        .nest("/api/payments", payments::routes())
         .nest("/api/slips", slips::routes())
         .nest("/api/analytics", analytics::routes())
         .nest("/api/translation", translation::routes())
