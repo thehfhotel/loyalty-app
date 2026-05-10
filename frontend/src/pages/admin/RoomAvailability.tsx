@@ -59,12 +59,14 @@ const RoomAvailability: React.FC = () => {
   const [showReasonModal, setShowReasonModal] = useState(false);
   const [viewedBlockReason, setViewedBlockReason] = useState('');
 
+  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
   // TODO: Replace with REST service when Rust admin booking endpoints are implemented
   const queryClient = useQueryClient();
 
   const { data: roomTypes } = useQuery<RoomType[]>({
     queryKey: ['admin', 'roomTypes', { includeInactive: false }],
     queryFn: async () => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       return [];
     },
@@ -77,6 +79,7 @@ const RoomAvailability: React.FC = () => {
   const { data: rooms } = useQuery<Room[]>({
     queryKey: ['admin', 'rooms', { roomTypeId: roomTypeFilter, includeInactive: false }],
     queryFn: async () => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       return [];
     },
@@ -99,6 +102,7 @@ const RoomAvailability: React.FC = () => {
   const { data: blockedDates, isLoading: blockedLoading } = useQuery<RoomBlockedDates[]>({
     queryKey: ['admin', 'blockedDates', { roomTypeId: roomTypeFilter, startDate, endDate }],
     queryFn: async () => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       return [];
     },
@@ -108,6 +112,7 @@ const RoomAvailability: React.FC = () => {
   const { data: bookings, isLoading: bookingsLoading } = useQuery<Booking[]>({
     queryKey: ['admin', 'roomBookings', { roomTypeId: roomTypeFilter, startDate, endDate }],
     queryFn: async () => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       return [];
     },
@@ -116,6 +121,7 @@ const RoomAvailability: React.FC = () => {
 
   const blockMutation = useMutation({
     mutationFn: async (_data: { roomId: string; dates: Date[]; reason: string }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },
@@ -134,6 +140,7 @@ const RoomAvailability: React.FC = () => {
 
   const unblockMutation = useMutation({
     mutationFn: async (_data: { roomId: string; dates: Date[] }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },

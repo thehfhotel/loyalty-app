@@ -73,12 +73,14 @@ const RoomTypeManagement: React.FC = () => {
   const [imageInput, setImageInput] = useState('');
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
+  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
   // TODO: Replace with REST service when Rust admin booking endpoints are implemented
   const queryClient = useQueryClient();
 
   const { data: roomTypes, isLoading, error } = useQuery<RoomType[], Error>({
     queryKey: ['admin', 'roomTypes', { includeInactive: true }],
     queryFn: async () => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       return [];
     },
@@ -87,6 +89,7 @@ const RoomTypeManagement: React.FC = () => {
 
   const createMutation = useMutation({
     mutationFn: async (_data: Record<string, unknown>) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },
@@ -103,6 +106,7 @@ const RoomTypeManagement: React.FC = () => {
 
   const updateMutation = useMutation({
     mutationFn: async (_data: { id: string; data: Record<string, unknown> }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },
@@ -120,6 +124,7 @@ const RoomTypeManagement: React.FC = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (_data: { id: string }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },

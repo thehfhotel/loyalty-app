@@ -124,10 +124,12 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
   const [currentSlipIndex, setCurrentSlipIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
   // TODO: Replace with REST service when Rust admin booking endpoints are implemented
   // Multi-slip verification mutations
   const verifySlipByIdMutation = useMutation({
     mutationFn: async (_data: { slipId: string }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },
@@ -142,6 +144,7 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
 
   const markSlipNeedsActionMutation = useMutation({
     mutationFn: async (_data: { slipId: string; notes: string }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },
