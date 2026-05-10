@@ -407,7 +407,7 @@ mod tests {
 
     #[test]
     fn test_validate_token_valid() {
-        let secret = "test-secret-key";
+        let secret = "test-secret-for-jsonwebtoken-10-min-32-bytes-hs256-padding-x";
         let claims = Claims {
             id: "user-123".to_string(),
             email: Some("test@example.com".to_string()),
@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn test_validate_token_expired() {
-        let secret = "test-secret-key";
+        let secret = "test-secret-for-jsonwebtoken-10-min-32-bytes-hs256-padding-x";
         let claims = Claims {
             id: "user-123".to_string(),
             email: Some("test@example.com".to_string()),

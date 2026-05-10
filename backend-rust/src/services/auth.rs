@@ -313,7 +313,7 @@ mod tests {
     use super::*;
 
     fn create_test_service() -> AuthServiceImpl {
-        AuthServiceImpl::new("test-secret-key-for-testing-only".to_string())
+        AuthServiceImpl::new("test-secret-for-jsonwebtoken-10-min-32-bytes-hs256-padding-x".to_string())
     }
 
     #[test]
@@ -477,7 +477,7 @@ mod tests {
     #[test]
     fn test_custom_expiration() {
         let service = AuthServiceImpl::with_expiration(
-            "test-secret".to_string(),
+            "test-secret-for-jsonwebtoken-10-min-32-bytes-hs256-padding-x".to_string(),
             3600,  // 1 hour for access
             86400, // 1 day for refresh
         );
@@ -645,7 +645,7 @@ mod tests {
         // This avoids timing-dependent tests
         use jsonwebtoken::{encode, EncodingKey, Header};
 
-        let jwt_secret = "test-secret-key";
+        let jwt_secret = "test-secret-for-jsonwebtoken-10-min-32-bytes-hs256-padding-x";
         let now = chrono::Utc::now();
 
         // Create claims with expiration in the past
