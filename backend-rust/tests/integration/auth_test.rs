@@ -539,7 +539,11 @@ async fn register_and_get_refresh_artifacts(
 }
 
 /// Log a user in and return (refresh_token_from_body, full_set_cookie_header_value).
-async fn login_and_capture_cookie(client: &TestClient, email: &str, password: &str) -> (String, String) {
+async fn login_and_capture_cookie(
+    client: &TestClient,
+    email: &str,
+    password: &str,
+) -> (String, String) {
     let login_payload = json!({ "email": email, "password": password });
     let response = client.post("/api/auth/login", &login_payload).await;
     response.assert_status(200);

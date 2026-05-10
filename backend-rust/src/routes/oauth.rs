@@ -1718,10 +1718,11 @@ mod tests {
     fn test_attach_refresh_cookie_appends_set_cookie_header() {
         // Phase 1: the OAuth callback redirect must carry a Set-Cookie header
         // with the refresh token so the migrated frontend can pick it up.
-        let base_response = Redirect::to("https://app.example.com/oauth/success?token=x")
-            .into_response();
+        let base_response =
+            Redirect::to("https://app.example.com/oauth/success?token=x").into_response();
 
-        let response = attach_refresh_cookie(base_response, "test-refresh-token-value".to_string(), 3600);
+        let response =
+            attach_refresh_cookie(base_response, "test-refresh-token-value".to_string(), 3600);
 
         let cookie_headers: Vec<&str> = response
             .headers()
