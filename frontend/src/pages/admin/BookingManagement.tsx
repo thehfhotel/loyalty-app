@@ -112,6 +112,7 @@ const BookingManagement: React.FC = () => {
   const pageSize = 10;
   const totalPages = Math.ceil(totalBookings / pageSize);
 
+  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
   // TODO: Replace with REST service when Rust admin booking endpoints are implemented
   interface BookingsResponse {
     bookings: Booking[];
@@ -122,6 +123,7 @@ const BookingManagement: React.FC = () => {
   const bookingsQuery = useQuery<BookingsResponse>({
     queryKey: ['admin', 'bookings', { page: currentPage, limit: pageSize, search: debouncedSearchTerm || undefined, status: statusFilter || undefined, sortBy: sortField, sortOrder: sortDirection }],
     queryFn: async () => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       return { bookings: [], total: 0, statusCounts: { all: 0, confirmed: 0, cancelled: 0, completed: 0 } };
     },
@@ -158,6 +160,7 @@ const BookingManagement: React.FC = () => {
 
   const verifySlipMutation = useMutation({
     mutationFn: async (_data: { bookingId: string }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },
@@ -179,6 +182,7 @@ const BookingManagement: React.FC = () => {
 
   const markNeedsActionMutation = useMutation({
     mutationFn: async (_data: { bookingId: string; notes: string }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },

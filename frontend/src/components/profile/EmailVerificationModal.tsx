@@ -25,6 +25,7 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
 
   const verifyMutation = useMutation({
     mutationFn: async (_data: { code: string }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust email verification endpoints are implemented
       throw new Error('Email verification is temporarily unavailable');
     },
@@ -39,6 +40,7 @@ export const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({
 
   const resendMutation = useMutation({
     mutationFn: async () => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust email verification endpoints are implemented
       throw new Error('Email verification is temporarily unavailable');
     },

@@ -7,6 +7,7 @@ import { FiMail, FiCheck, FiX, FiRefreshCw } from 'react-icons/fi';
 export default function EmailServicePage() {
   const { t } = useTranslation();
 
+  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
   // TODO: Replace with REST service when Rust admin email endpoints are implemented
   interface EmailStatus {
     configured: boolean;
@@ -33,6 +34,7 @@ export default function EmailServicePage() {
   const { data: status, isLoading: statusLoading, refetch: refetchStatus } = useQuery<EmailStatus | null>({
     queryKey: ['admin', 'email', 'status'],
     queryFn: async () => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin email endpoints are implemented
       return null;
     },
@@ -41,6 +43,7 @@ export default function EmailServicePage() {
   // Email test mutation
   const testMutation = useMutation<TestResult, Error, void>({
     mutationFn: async () => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin email endpoints are implemented
       throw new Error('Admin email service management is being migrated');
     },

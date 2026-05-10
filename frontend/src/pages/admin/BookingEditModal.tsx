@@ -111,11 +111,13 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
 
+  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
   // TODO: Replace with REST service when Rust admin booking endpoints are implemented
   // Fetch room types for dropdown
   const roomTypesQuery = useQuery<RoomType[]>({
     queryKey: ['booking', 'roomTypes'],
     queryFn: async () => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       return [];
     },
@@ -125,6 +127,7 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   // Update booking mutation
   const updateBookingMutation = useMutation({
     mutationFn: async (_data: { bookingId: string; checkInDate: Date; checkOutDate: Date; numGuests: number; roomTypeId: string; notes?: string; totalPrice: number }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },
@@ -141,6 +144,7 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   // Apply discount mutation
   const applyDiscountMutation = useMutation({
     mutationFn: async (_data: { bookingId: string; discountAmount: number; reason: string }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },
@@ -157,6 +161,7 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   // Cancel booking mutation
   const cancelBookingMutation = useMutation({
     mutationFn: async (_data: { bookingId: string; reason: string }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },

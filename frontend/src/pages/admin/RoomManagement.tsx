@@ -52,12 +52,14 @@ const RoomManagement: React.FC = () => {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [filterRoomTypeId, setFilterRoomTypeId] = useState<string>('');
 
+  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
   // TODO: Replace with REST service when Rust admin booking endpoints are implemented
   const queryClient = useQueryClient();
 
   const { data: roomTypes } = useQuery<RoomType[]>({
     queryKey: ['admin', 'roomTypes', { includeInactive: true }],
     queryFn: async () => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       return [];
     },
@@ -67,6 +69,7 @@ const RoomManagement: React.FC = () => {
   const { data: rooms, isLoading, error } = useQuery<Room[], Error>({
     queryKey: ['admin', 'rooms', { roomTypeId: filterRoomTypeId || undefined, includeInactive: true }],
     queryFn: async () => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       return [];
     },
@@ -75,6 +78,7 @@ const RoomManagement: React.FC = () => {
 
   const createMutation = useMutation({
     mutationFn: async (_data: { roomTypeId: string; roomNumber: string; floor?: number; notes?: string; isActive: boolean }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },
@@ -91,6 +95,7 @@ const RoomManagement: React.FC = () => {
 
   const updateMutation = useMutation({
     mutationFn: async (_data: { id: string; data: { roomTypeId: string; roomNumber: string; floor?: number; notes?: string; isActive: boolean } }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },
@@ -108,6 +113,7 @@ const RoomManagement: React.FC = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (_data: { id: string }) => {
+      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
       // TODO: Replace with REST service when Rust admin booking endpoints are implemented
       throw new Error('Admin booking management is being migrated');
     },
