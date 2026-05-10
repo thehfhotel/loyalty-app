@@ -3,9 +3,13 @@ services:
     image: postgres:15-alpine
     container_name: loyalty_postgres
     environment:
-      POSTGRES_USER: loyalty
-      POSTGRES_PASSWORD: loyalty_pass
-      POSTGRES_DB: loyalty_db
+      # Credentials are required via env vars (no insecure defaults).
+      # Local dev loads them from .env.development; CI/staging/prod inject via the deploy workflow.
+      # NOTE: POSTGRES_USER/PASSWORD only initialize the role on a fresh data volume.
+      # Existing volumes keep their original credentials — the env vars must match.
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Removed old SQL migrations - Prisma handles schema migrations now
@@ -15,7 +19,7 @@ services:
     # PORTS: Defined in environment-specific override files (dev/prod)
     # to prevent port conflicts when both environments run on same machine
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5

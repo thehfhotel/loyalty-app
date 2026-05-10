@@ -131,7 +131,9 @@ jobs:
           LINE_CALLBACK_URL:    ${{ vars.LINE_CALLBACK_URL }}
           FRONTEND_URL:         ${{ vars.FRONTEND_URL }}
           BACKEND_URL:          ${{ vars.BACKEND_URL }}
-          VITE_API_URL:         ${{ vars.VITE_API_URL }}
+          POSTGRES_USER:        ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD:    ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB:          ${{ secrets.POSTGRES_DB }}
         run: |
           set -euo pipefail
           tar -czf /tmp/deploy.tar.gz \
@@ -154,7 +156,9 @@ jobs:
             --arg LINE_CALLBACK_URL    "$LINE_CALLBACK_URL" \
             --arg FRONTEND_URL         "$FRONTEND_URL" \
             --arg BACKEND_URL          "$BACKEND_URL" \
-            --arg VITE_API_URL         "$VITE_API_URL" \
+            --arg POSTGRES_USER        "$POSTGRES_USER" \
+            --arg POSTGRES_PASSWORD    "$POSTGRES_PASSWORD" \
+            --arg POSTGRES_DB          "$POSTGRES_DB" \
             '{
               commit_sha: $commit_sha,
               deploy_payload_b64: $deploy_payload_b64,
@@ -167,11 +171,13 @@ jobs:
                 JWT_SECRET:           $JWT_SECRET,
                 JWT_REFRESH_SECRET:   $JWT_REFRESH_SECRET,
                 SESSION_SECRET:       $SESSION_SECRET,
-                DATABASE_URL:         "postgresql://loyalty_dev:loyalty_dev_pass@postgres:5432/loyalty_dev_db",
+                POSTGRES_USER:        $POSTGRES_USER,
+                POSTGRES_PASSWORD:    $POSTGRES_PASSWORD,
+                POSTGRES_DB:          $POSTGRES_DB,
+                DATABASE_URL:         ("postgresql://" + $POSTGRES_USER + ":" + $POSTGRES_PASSWORD + "@postgres:5432/" + $POSTGRES_DB),
                 REDIS_URL:            "redis://redis:6379",
                 FRONTEND_URL:         $FRONTEND_URL,
                 BACKEND_URL:          $BACKEND_URL,
-                VITE_API_URL:         $VITE_API_URL,
                 GOOGLE_CLIENT_ID:     $GOOGLE_CLIENT_ID,
                 GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET,
                 GOOGLE_CALLBACK_URL:  $GOOGLE_CALLBACK_URL,
@@ -237,6 +243,9 @@ jobs:
           JWT_REFRESH_SECRET:   ${{ secrets.JWT_REFRESH_SECRET }}
           SESSION_SECRET:       ${{ secrets.SESSION_SECRET }}
           DATABASE_URL:         ${{ secrets.DATABASE_URL }}
+          POSTGRES_USER:        ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD:    ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB:          ${{ secrets.POSTGRES_DB }}
           GOOGLE_CLIENT_ID:     ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_CALLBACK_URL:  ${{ vars.GOOGLE_CALLBACK_URL }}
@@ -245,7 +254,6 @@ jobs:
           LINE_CALLBACK_URL:    ${{ vars.LINE_CALLBACK_URL }}
           FRONTEND_URL:         ${{ vars.FRONTEND_URL }}
           BACKEND_URL:          ${{ vars.BACKEND_URL }}
-          VITE_API_URL:         ${{ vars.VITE_API_URL }}
           SMTP_HOST:            ${{ secrets.SMTP_HOST }}
           SMTP_PORT:            ${{ secrets.SMTP_PORT }}
           SMTP_USER:            ${{ secrets.SMTP_USER }}
@@ -269,6 +277,9 @@ jobs:
             --arg JWT_REFRESH_SECRET   "$JWT_REFRESH_SECRET" \
             --arg SESSION_SECRET       "$SESSION_SECRET" \
             --arg DATABASE_URL         "$DATABASE_URL" \
+            --arg POSTGRES_USER        "$POSTGRES_USER" \
+            --arg POSTGRES_PASSWORD    "$POSTGRES_PASSWORD" \
+            --arg POSTGRES_DB          "$POSTGRES_DB" \
             --arg GOOGLE_CLIENT_ID     "$GOOGLE_CLIENT_ID" \
             --arg GOOGLE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET" \
             --arg GOOGLE_CALLBACK_URL  "$GOOGLE_CALLBACK_URL" \
@@ -277,7 +288,6 @@ jobs:
             --arg LINE_CALLBACK_URL    "$LINE_CALLBACK_URL" \
             --arg FRONTEND_URL         "$FRONTEND_URL" \
             --arg BACKEND_URL          "$BACKEND_URL" \
-            --arg VITE_API_URL         "$VITE_API_URL" \
             --arg SMTP_HOST            "${SMTP_HOST:-}" \
             --arg SMTP_PORT            "${SMTP_PORT:-587}" \
             --arg SMTP_USER            "${SMTP_USER:-}" \
@@ -298,11 +308,13 @@ jobs:
                 JWT_SECRET:           $JWT_SECRET,
                 JWT_REFRESH_SECRET:   $JWT_REFRESH_SECRET,
                 SESSION_SECRET:       $SESSION_SECRET,
+                POSTGRES_USER:        $POSTGRES_USER,
+                POSTGRES_PASSWORD:    $POSTGRES_PASSWORD,
+                POSTGRES_DB:          $POSTGRES_DB,
                 DATABASE_URL:         $DATABASE_URL,
                 REDIS_URL:            "redis://redis:6379",
                 FRONTEND_URL:         $FRONTEND_URL,
                 BACKEND_URL:          $BACKEND_URL,
-                VITE_API_URL:         $VITE_API_URL,
                 GOOGLE_CLIENT_ID:     $GOOGLE_CLIENT_ID,
                 GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET,
                 GOOGLE_CALLBACK_URL:  $GOOGLE_CALLBACK_URL,

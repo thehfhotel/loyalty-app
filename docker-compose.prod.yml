@@ -11,13 +11,16 @@ services:
     container_name: loyalty_postgres_production
     restart: unless-stopped
     ports:
-      - "5434:5432"  # Production PostgreSQL port
+      # Bind to localhost only — backend reaches postgres via the docker network.
+      # Host port mapping exists for ad-hoc DBA access from the host (via SSH tunnel).
+      - "127.0.0.1:5434:5432"  # Production PostgreSQL port
 
   redis:
     container_name: loyalty_redis_production
     restart: unless-stopped
     ports:
-      - "6379:6379"  # Production Redis port
+      # Bind to localhost only — backend reaches redis via the docker network.
+      - "127.0.0.1:6379:6379"  # Production Redis port
 
   backend:
     container_name: loyalty_backend_production
@@ -79,9 +82,9 @@ services:
 
   frontend:
     container_name: loyalty_frontend_production
-    environment:
-      NODE_ENV: ${NODE_ENV:-production}
-      VITE_API_URL: ${VITE_API_URL}
+    # NOTE: VITE_API_URL is build-time only (baked into the image during docker build).
+    # NODE_ENV is not consumed by the alpine nginx serving the built SPA.
+    # Neither belongs in runtime env for the GHCR frontend image.
     volumes:
       # GHCR frontend uses nginx:alpine with logs at /var/log/nginx
       - frontend_logs:/var/log/nginx
