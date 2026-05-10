@@ -6,6 +6,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use axum::extract::DefaultBodyLimit;
 use axum::Router;
 use tokio::net::TcpListener;
 use tower_http::compression::CompressionLayer;
@@ -13,6 +14,11 @@ use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::{self, TraceLayer};
 use tracing::{error, info, Level};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+/// Global request body limit. 16 MiB matches `client_max_body_size 15M` in
+/// nginx/nginx.conf with a small headroom for multipart framing overhead;
+/// per-route handlers (e.g. JSON endpoints) can tighten this further.
+const DEFAULT_BODY_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 
 use loyalty_backend::{
     config::{Environment, Settings},
@@ -141,7 +147,7 @@ fn init_tracing() {
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
                 // Default log levels for different modules
-                "loyalty_backend=debug,tower_http=debug,axum=trace,sqlx=warn".into()
+                "loyalty_backend=info,tower_http=info,axum=info,sqlx=warn".into()
             }),
         )
         .with(
@@ -215,6 +221,11 @@ fn create_app(state: AppState, config: &Settings) -> Router {
     app
         // Compression (gzip, deflate, br)
         .layer(CompressionLayer::new())
+        // Cap incoming request bodies. axum's default is 2 MiB which would
+        // reject every legitimate file upload; nginx's 15 MiB limit only
+        // protects requests that pass through the reverse proxy, so we
+        // enforce an equivalent (with a touch of headroom) here too.
+        .layer(DefaultBodyLimit::max(DEFAULT_BODY_LIMIT_BYTES))
         // Request timeout (30 seconds default)
         .layer(TimeoutLayer::new(Duration::from_secs(30)))
         // Request tracing/logging

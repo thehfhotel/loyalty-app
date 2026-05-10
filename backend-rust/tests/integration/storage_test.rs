@@ -10,14 +10,16 @@
 use axum::{
     body::Body,
     http::{header, Request, StatusCode},
-    Router,
+    Extension, Router,
 };
 use bytes::Bytes;
+use jsonwebtoken::{encode, EncodingKey, Header};
 use serde_json::Value;
 use std::sync::Arc;
 use tempfile::tempdir;
 use tower::ServiceExt;
 
+use loyalty_backend::middleware::auth::{Claims, JwtSecret};
 use loyalty_backend::routes::storage::{routes_with_state, StorageState};
 use loyalty_backend::services::storage::{StorageConfig, StorageService};
 
@@ -25,16 +27,49 @@ use loyalty_backend::services::storage::{StorageConfig, StorageService};
 // Test Setup
 // ============================================================================
 
-/// Create a test storage router with a temporary directory
+/// JWT secret used by the test storage router. The auth middleware refuses
+/// to validate when the JwtSecret extension is missing (no env-var fallback
+/// in production code), so tests must inject it explicitly.
+const TEST_JWT_SECRET: &str = "test-jwt-secret-for-integration-tests-minimum-64-characters-long";
+
+/// Create a test storage router with a temporary directory and a JWT secret
+/// extension so the auth middleware on the upload routes can validate Bearer
+/// tokens minted by `mint_test_token`.
 fn create_test_storage_router() -> (Router, tempfile::TempDir) {
     let temp_dir = tempdir().expect("Failed to create temp directory");
     let config = StorageConfig::new(temp_dir.path());
     let service = StorageService::with_config(config);
     let state = StorageState::new(service);
 
-    let router = Router::new().nest("/api/storage", routes_with_state(state));
+    let router = Router::new()
+        .nest("/api/storage", routes_with_state(state))
+        .layer(Extension(JwtSecret(TEST_JWT_SECRET.to_string())));
 
     (router, temp_dir)
+}
+
+/// Mint a JWT for tests, signed with `TEST_JWT_SECRET` and a 1-hour lifetime.
+fn mint_test_token(user_id: &str, role: &str) -> String {
+    let now = chrono::Utc::now().timestamp();
+    let claims = Claims {
+        id: user_id.to_string(),
+        email: Some(format!("{}@test.local", user_id)),
+        role: role.to_string(),
+        iat: Some(now),
+        exp: now + 3600,
+    };
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(TEST_JWT_SECRET.as_bytes()),
+    )
+    .expect("Failed to encode test JWT")
+}
+
+/// Convenience: build the `Authorization: Bearer <token>` header value for a
+/// freshly-minted test token.
+fn bearer_header(user_id: &str, role: &str) -> String {
+    format!("Bearer {}", mint_test_token(user_id, role))
 }
 
 /// Helper struct for test responses
@@ -174,6 +209,7 @@ async fn test_upload_file() {
     let request = Request::builder()
         .method("POST")
         .uri("/api/storage/upload")
+        .header(header::AUTHORIZATION, bearer_header("12345", "customer"))
         .header(
             header::CONTENT_TYPE,
             format!("multipart/form-data; boundary={}", boundary),
@@ -239,18 +275,16 @@ async fn test_upload_avatar() {
         0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     ];
 
+    // user_id is no longer accepted from the multipart body — it's derived
+    // from the authenticated JWT. The test mints a token for "12345" and
+    // expects the saved avatar URL to embed that user ID.
     let user_id = "12345";
-    let (boundary, body) = create_multipart_body_with_fields(
-        "avatar",
-        "my-avatar.png",
-        "image/png",
-        png_data,
-        &[("user_id", user_id)],
-    );
+    let (boundary, body) = create_multipart_body("avatar", "my-avatar.png", "image/png", png_data);
 
     let request = Request::builder()
         .method("POST")
         .uri("/api/storage/avatar")
+        .header(header::AUTHORIZATION, bearer_header(user_id, "customer"))
         .header(
             header::CONTENT_TYPE,
             format!("multipart/form-data; boundary={}", boundary),
@@ -420,6 +454,7 @@ async fn test_upload_invalid_file_type() {
     let request = Request::builder()
         .method("POST")
         .uri("/api/storage/upload")
+        .header(header::AUTHORIZATION, bearer_header("12345", "customer"))
         .header(
             header::CONTENT_TYPE,
             format!("multipart/form-data; boundary={}", boundary),
@@ -478,6 +513,7 @@ async fn test_upload_executable_file_type() {
     let request = Request::builder()
         .method("POST")
         .uri("/api/storage/upload")
+        .header(header::AUTHORIZATION, bearer_header("12345", "customer"))
         .header(
             header::CONTENT_TYPE,
             format!("multipart/form-data; boundary={}", boundary),
@@ -584,6 +620,7 @@ async fn test_upload_missing_file_field() {
     let request = Request::builder()
         .method("POST")
         .uri("/api/storage/upload")
+        .header(header::AUTHORIZATION, bearer_header("12345", "customer"))
         .header(
             header::CONTENT_TYPE,
             format!("multipart/form-data; boundary={}", boundary),
@@ -599,20 +636,21 @@ async fn test_upload_missing_file_field() {
     test_response.assert_status(StatusCode::BAD_REQUEST);
 }
 
-/// Test uploading avatar without user_id
+/// Avatar upload requires a Bearer token. Without one, the route must reject
+/// the request before any multipart parsing happens. (Previously this
+/// endpoint was unauthenticated and trusted a user_id from the form body —
+/// any caller could overwrite any user's avatar.)
 #[tokio::test]
-async fn test_upload_avatar_missing_user_id() {
-    // Arrange
+async fn test_upload_avatar_unauthenticated_returns_401() {
     let (router, _temp_dir) = create_test_storage_router();
 
     let jpeg_data: &[u8] = &[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
-
-    // Create multipart without user_id field
     let (boundary, body) = create_multipart_body("avatar", "test.jpg", "image/jpeg", jpeg_data);
 
     let request = Request::builder()
         .method("POST")
         .uri("/api/storage/avatar")
+        // No Authorization header.
         .header(
             header::CONTENT_TYPE,
             format!("multipart/form-data; boundary={}", boundary),
@@ -620,29 +658,100 @@ async fn test_upload_avatar_missing_user_id() {
         .body(Body::from(body))
         .unwrap();
 
-    // Act
     let response = router.oneshot(request).await.unwrap();
     let test_response = TestResponse::from_response(response).await;
 
-    // Assert - Should return 400 Bad Request
-    test_response.assert_status(StatusCode::BAD_REQUEST);
+    test_response.assert_status(StatusCode::UNAUTHORIZED);
+}
 
-    // Verify error message indicates missing user_id
-    let json_result = test_response.json();
-    if let Ok(json) = json_result {
-        let error_message = json
-            .get("error")
-            .or_else(|| json.get("message"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+/// Same as above but for the general /upload endpoint — also auth-gated.
+#[tokio::test]
+async fn test_upload_file_unauthenticated_returns_401() {
+    let (router, _temp_dir) = create_test_storage_router();
 
-        assert!(
-            error_message.to_lowercase().contains("user_id")
-                || error_message.to_lowercase().contains("missing"),
-            "Error message should indicate missing user_id: {}",
-            error_message
-        );
-    }
+    let png_data: &[u8] = &[0x89, 0x50, 0x4E, 0x47];
+    let (boundary, body) = create_multipart_body("file", "x.png", "image/png", png_data);
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/storage/upload")
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={}", boundary),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let response = router.oneshot(request).await.unwrap();
+    let test_response = TestResponse::from_response(response).await;
+
+    test_response.assert_status(StatusCode::UNAUTHORIZED);
+}
+
+/// Avatar upload uses the JWT subject as the storage key — clients cannot
+/// pass a different user_id via the multipart body. Even if a `user_id`
+/// field is present, it must be ignored and the authenticated user's ID
+/// used instead.
+#[tokio::test]
+async fn test_upload_avatar_ignores_body_user_id() {
+    let (router, _temp_dir) = create_test_storage_router();
+
+    // Valid 1x1 PNG (the image processor will accept it and convert to JPEG).
+    let png_data: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    let authenticated_user = "alice";
+    let attempted_victim = "bob";
+
+    let (boundary, body) = create_multipart_body_with_fields(
+        "avatar",
+        "x.png",
+        "image/png",
+        png_data,
+        &[("user_id", attempted_victim)],
+    );
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/storage/avatar")
+        .header(
+            header::AUTHORIZATION,
+            bearer_header(authenticated_user, "customer"),
+        )
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={}", boundary),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let response = router.oneshot(request).await.unwrap();
+    let test_response = TestResponse::from_response(response).await;
+
+    test_response.assert_status(StatusCode::OK);
+
+    let json: Value = test_response.json().expect("Response should be valid JSON");
+    let avatar_url = json
+        .get("data")
+        .and_then(|d| d.get("avatarUrl"))
+        .and_then(|v| v.as_str())
+        .expect("Response should contain avatarUrl");
+
+    assert!(
+        avatar_url.contains(authenticated_user),
+        "Avatar URL must embed the authenticated user's ID, not the body's: {}",
+        avatar_url
+    );
+    assert!(
+        !avatar_url.contains(attempted_victim),
+        "Avatar URL must NOT embed the spoofed body user_id: {}",
+        avatar_url
+    );
 }
 
 /// Test uploading PDF file (should be allowed for general upload)
@@ -660,6 +769,7 @@ async fn test_upload_pdf_file() {
     let request = Request::builder()
         .method("POST")
         .uri("/api/storage/upload")
+        .header(header::AUTHORIZATION, bearer_header("12345", "customer"))
         .header(
             header::CONTENT_TYPE,
             format!("multipart/form-data; boundary={}", boundary),
@@ -698,17 +808,13 @@ async fn test_upload_avatar_invalid_content_type() {
     // Try to upload non-image data as avatar (image decoder will reject it)
     let fake_data = b"This is not an image file at all";
 
-    let (boundary, body) = create_multipart_body_with_fields(
-        "avatar",
-        "fake-avatar.jpg",
-        "image/jpeg",
-        fake_data,
-        &[("user_id", "123")],
-    );
+    let (boundary, body) =
+        create_multipart_body("avatar", "fake-avatar.jpg", "image/jpeg", fake_data);
 
     let request = Request::builder()
         .method("POST")
         .uri("/api/storage/avatar")
+        .header(header::AUTHORIZATION, bearer_header("123", "customer"))
         .header(
             header::CONTENT_TYPE,
             format!("multipart/form-data; boundary={}", boundary),

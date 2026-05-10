@@ -159,16 +159,20 @@ fn validate_token(token: &str, jwt_secret: &str) -> Result<Claims, AuthError> {
 ///     .layer(middleware::from_fn_with_state(state, auth_middleware));
 /// ```
 pub async fn auth_middleware(mut request: Request, next: Next) -> Result<Response, AuthError> {
-    // Get JWT secret from Extension (injected by create_router from AppState config),
-    // falling back to env var for backwards compatibility
+    // The JwtSecret extension is injected at the top of the router tree by
+    // `create_router`. A missing extension means the auth middleware is being
+    // used outside that router (a routing/test bug). We refuse to validate
+    // tokens in that case rather than silently fall back to an env var or a
+    // hard-coded development secret — both of which previously masked exactly
+    // this kind of misconfiguration in production.
     let jwt_secret = request
         .extensions()
         .get::<JwtSecret>()
         .map(|s| s.0.clone())
-        .unwrap_or_else(|| {
-            std::env::var("JWT_SECRET")
-                .unwrap_or_else(|_| "development-secret-change-in-production".to_string())
-        });
+        .ok_or_else(|| {
+            tracing::error!("auth_middleware reached without JwtSecret extension — routing bug");
+            AuthError::InvalidToken
+        })?;
 
     // Extract Authorization header
     let auth_header = request
@@ -195,14 +199,16 @@ pub async fn auth_middleware(mut request: Request, next: Next) -> Result<Respons
 /// Instead, it simply doesn't add AuthUser to extensions if authentication fails.
 /// Useful for routes that work differently for authenticated vs unauthenticated users.
 pub async fn optional_auth_middleware(mut request: Request, next: Next) -> Response {
-    let jwt_secret = request
-        .extensions()
-        .get::<JwtSecret>()
-        .map(|s| s.0.clone())
-        .unwrap_or_else(|| {
-            std::env::var("JWT_SECRET")
-                .unwrap_or_else(|_| "development-secret-change-in-production".to_string())
-        });
+    // No JwtSecret extension means we cannot validate tokens; treat the
+    // request as anonymous (the same outcome a missing/invalid token would
+    // produce). Falling back to env vars or hard-coded secrets here is
+    // dangerous — see auth_middleware.
+    let Some(jwt_secret) = request.extensions().get::<JwtSecret>().map(|s| s.0.clone()) else {
+        tracing::warn!(
+            "optional_auth_middleware reached without JwtSecret extension — treating request as anonymous"
+        );
+        return next.run(request).await;
+    };
 
     // Try to extract and validate token, but don't fail if not present
     if let Some(auth_header) = request
