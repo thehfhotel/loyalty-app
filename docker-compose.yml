@@ -84,7 +84,11 @@ services:
     container_name: loyalty_frontend
     environment:
       NODE_ENV: ${NODE_ENV:-development}
-      VITE_API_URL: ${VITE_API_URL:?VITE_API_URL is required}
+      # VITE_API_URL is build-time only (baked into the frontend image during
+      # `docker build` via build-args). It is NOT a runtime env var — the
+      # served bundle already has it resolved. The dev override
+      # (docker-compose.dev.yml) sets VITE_API_URL for the Vite dev server,
+      # which is the only place that reads it at runtime.
     # VOLUMES: Source mounts (./frontend:/app) are in docker-compose.dev.yml ONLY
     # Production uses Docker image contents - no source mount needed
     depends_on:
