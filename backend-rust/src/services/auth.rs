@@ -313,7 +313,9 @@ mod tests {
     use super::*;
 
     fn create_test_service() -> AuthServiceImpl {
-        AuthServiceImpl::new("test-secret-for-jsonwebtoken-10-min-32-bytes-hs256-padding-x".to_string())
+        AuthServiceImpl::new(
+            "test-secret-for-jsonwebtoken-10-min-32-bytes-hs256-padding-x".to_string(),
+        )
     }
 
     #[test]
