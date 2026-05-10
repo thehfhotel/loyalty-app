@@ -5,7 +5,7 @@
 
 use axum::{
     extract::{Path, Query, State},
-    http::{header, StatusCode},
+    http::{header, HeaderValue, StatusCode},
     middleware,
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::middleware::auth::{auth_middleware, AuthUser};
+use crate::middleware::auth::{auth_middleware, build_refresh_cookie_header, AuthUser};
 use crate::state::AppState;
 
 // =============================================================================
@@ -605,11 +605,16 @@ async fn google_oauth_callback(
         "[OAuth] Google OAuth success"
     );
 
-    if is_mobile_safari(user_agent) {
+    let response = if is_mobile_safari(user_agent) {
         build_html_redirect(&success_url, "Authentication successful! Redirecting...")
     } else {
         Redirect::to(&success_url).into_response()
-    }
+    };
+
+    // Phase 1: also attach the refresh token as an HttpOnly cookie on the
+    // redirect so the migrated frontend can stop reading from the query string.
+    let refresh_max_age_secs = state.config().auth.refresh_token_expiry_secs as i64;
+    attach_refresh_cookie(response, result.tokens.refresh_token, refresh_max_age_secs)
 }
 
 /// Exchange Google authorization code for tokens
@@ -1075,11 +1080,16 @@ async fn line_oauth_callback(
         "[OAuth] LINE OAuth success"
     );
 
-    if is_mobile_safari(user_agent) {
+    let response = if is_mobile_safari(user_agent) {
         build_html_redirect(&success_url, "Authentication successful! Redirecting...")
     } else {
         Redirect::to(&success_url).into_response()
-    }
+    };
+
+    // Phase 1: also attach the refresh token as an HttpOnly cookie on the
+    // redirect so the migrated frontend can stop reading from the query string.
+    let refresh_max_age_secs = state.config().auth.refresh_token_expiry_secs as i64;
+    attach_refresh_cookie(response, result.tokens.refresh_token, refresh_max_age_secs)
 }
 
 /// Exchange LINE authorization code for tokens
@@ -1507,6 +1517,37 @@ async fn ensure_loyalty_enrollment(db: &sqlx::PgPool, user_id: Uuid) -> Result<(
     Ok(())
 }
 
+/// Append the Phase 1 refresh-token HttpOnly cookie to an OAuth redirect
+/// response.
+///
+/// The OAuth callbacks issue a 302 (or HTML meta-refresh on mobile Safari) to
+/// `<frontend>/oauth/success?token=...&refreshToken=...`. The legacy frontend
+/// reads the refresh token from that query string and writes it to
+/// localStorage. Phase 1 also drops the same refresh token into a `Set-Cookie`
+/// header on this redirect so the migrated frontend (Phase 2) can pick it up
+/// from the cookie store instead.
+///
+/// `max_age_secs` should match the refresh-token expiry so the browser drops
+/// the cookie at the same time the server-side state is invalidated.
+fn attach_refresh_cookie(
+    mut response: Response,
+    refresh_token: String,
+    max_age_secs: i64,
+) -> Response {
+    let cookie_header = build_refresh_cookie_header(&refresh_token, max_age_secs);
+    match HeaderValue::from_str(&cookie_header) {
+        Ok(value) => {
+            response.headers_mut().append(header::SET_COOKIE, value);
+        },
+        Err(e) => {
+            // A refresh token is base64-url-no-pad — guaranteed ASCII — so this
+            // branch should be unreachable. Log defensively rather than panic.
+            tracing::error!(error = %e, "[OAuth] Failed to build refresh cookie header");
+        },
+    }
+    response
+}
+
 /// Build error redirect response
 fn build_error_redirect(base_url: &str, error_code: &str, user_agent: &str) -> Response {
     let error_url = format!("{}/login?error={}", base_url, error_code);
@@ -1671,5 +1712,53 @@ mod tests {
 
         assert_eq!(extract_origin("not-a-url"), None);
         assert_eq!(extract_origin("ftp://example.com"), None);
+    }
+
+    #[test]
+    fn test_attach_refresh_cookie_appends_set_cookie_header() {
+        // Phase 1: the OAuth callback redirect must carry a Set-Cookie header
+        // with the refresh token so the migrated frontend can pick it up.
+        let base_response =
+            Redirect::to("https://app.example.com/oauth/success?token=x").into_response();
+
+        let response =
+            attach_refresh_cookie(base_response, "test-refresh-token-value".to_string(), 3600);
+
+        let cookie_headers: Vec<&str> = response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .collect();
+
+        assert_eq!(
+            cookie_headers.len(),
+            1,
+            "Exactly one Set-Cookie header should be appended"
+        );
+
+        let cookie = cookie_headers[0];
+        assert!(cookie.contains("refresh_token=test-refresh-token-value"));
+        assert!(cookie.contains("HttpOnly"));
+        assert!(cookie.contains("Secure"));
+        assert!(cookie.contains("SameSite=Strict"));
+        assert!(cookie.contains("Path=/api/auth"));
+        assert!(cookie.contains("Max-Age=3600"));
+    }
+
+    #[test]
+    fn test_attach_refresh_cookie_preserves_redirect_status() {
+        // Adding the cookie must not change the HTTP status; the response is
+        // still a 303 redirect (axum's `Redirect::to` default).
+        let base_response = Redirect::to("https://app.example.com/oauth/success").into_response();
+        let original_status = base_response.status();
+
+        let response = attach_refresh_cookie(base_response, "tok".to_string(), 60);
+
+        assert_eq!(
+            response.status(),
+            original_status,
+            "attach_refresh_cookie must not alter the response status"
+        );
     }
 }

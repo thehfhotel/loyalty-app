@@ -13,7 +13,11 @@ pub use admin::{
     admin_middleware, get_admin_config, is_admin, is_super_admin, reload_admin_config,
     super_admin_middleware, AdminAuthError, AdminConfig,
 };
-pub use auth::{auth_middleware, optional_auth_middleware, AuthUser, Claims};
+pub use auth::{
+    auth_middleware, build_clear_refresh_cookie, build_clear_refresh_cookie_header,
+    build_refresh_cookie, build_refresh_cookie_header, optional_auth_middleware, AuthUser, Claims,
+    REFRESH_COOKIE_NAME, REFRESH_COOKIE_PATH,
+};
 pub use cors::{cors_layer, cors_layer_permissive};
 pub use rate_limit::{
     default_rate_limit_layer, rate_limit_middleware, strict_rate_limit_layer, RateLimitConfig,
