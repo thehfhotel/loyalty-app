@@ -2,9 +2,6 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_URL: string
-  readonly VITE_GOOGLE_CLIENT_ID: string
-  readonly VITE_FACEBOOK_APP_ID: string
-  readonly VITE_LINE_CHANNEL_ID: string
   readonly VITE_TRANSLATION_ENABLED?: string
   readonly DEV: boolean
   readonly PROD: boolean

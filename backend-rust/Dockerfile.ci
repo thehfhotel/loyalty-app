@@ -1,7 +1,18 @@
 # ==============================================================================
 # CI Dockerfile - Uses pre-built binary from GitHub Actions
 # This avoids recompiling Rust inside Docker, saving ~15 minutes per build.
-# The full Dockerfile (with cargo-chef) is still used for local development.
+#
+# IMPORTANT - Single-stage runtime image only:
+#   - Used by the build-and-push CI workflow, which compiles the Rust binary
+#     on the runner and copies the artifact (./loyalty-backend) into this image.
+#   - Defines ONLY the `runner` stage - no `development` or `planner` stages.
+#   - INCOMPATIBLE with `target:` selection in compose files. Running e.g.
+#     `docker compose -f docker-compose.yml -f docker-compose.dev.yml up`
+#     against a server that points at this Dockerfile WILL FAIL because the
+#     base compose specifies `target: development`, which does not exist here.
+#   - The canonical multi-stage Dockerfile is `backend-rust/Dockerfile`; that
+#     one is used by `docker-compose.yml`'s default build path and supports
+#     all `target:` overrides (development, planner, runner).
 # ==============================================================================
 FROM debian:bookworm-slim AS runner
 
