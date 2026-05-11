@@ -223,9 +223,14 @@ describe('BookingPage — payment step (PromptPay QR + slip upload)', () => {
     await advanceToPaymentStep(user);
     await user.click(screen.getByText('payment.confirmPaymentType'));
 
-    await waitFor(() => {
-      expect(screen.getByTestId('qr-error')).toBeInTheDocument();
-    });
+    // useQuery has retry: 1, so the error state lands after the second
+    // failed fetch. Bump timeout from 1s default to 4s to cover that.
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('qr-error')).toBeInTheDocument();
+      },
+      { timeout: 4000 },
+    );
 
     const qr = screen.getByTestId('promptpay-qr') as HTMLImageElement;
     expect(qr.src).toContain('company-qr.png');
