@@ -219,9 +219,13 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         .connect(&template_url)
         .await?;
 
-    // Run migrations
-    let migration_sql = include_str!("../../migrations/20240101000000_init.sql");
-    template_pool.execute(migration_sql).await?;
+    // Run migrations in order. Each migration file must be applied separately
+    // so the file order matches `sqlx::migrate!()` at runtime.
+    let init_migration = include_str!("../../migrations/20240101000000_init.sql");
+    template_pool.execute(init_migration).await?;
+
+    let booking_slips_migration = include_str!("../../migrations/20260511000000_booking_slips.sql");
+    template_pool.execute(booking_slips_migration).await?;
 
     // Seed tiers
     template_pool
