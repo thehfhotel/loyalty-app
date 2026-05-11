@@ -7,10 +7,9 @@
 //! ## Endpoints
 //!
 //! - `GET  /api/admin/email/status` — current SMTP probe + IMAP configured
-//!                                    state. Returns `EmailStatus`.
-//! - `POST /api/admin/email/test`   — sends a real test email to the
-//!                                    authenticated admin's own address.
-//!                                    Returns `TestResult`.
+//!   state. Returns `EmailStatus`.
+//! - `POST /api/admin/email/test` — sends a real test email to the
+//!   authenticated admin's own address. Returns `TestResult`.
 //!
 //! ## What we honestly report vs. what we don't
 //!
