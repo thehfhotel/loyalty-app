@@ -12,6 +12,8 @@ services:
       - .env.development
     ports:
       - "5435:5432"  # Dev port 5435 (prod uses 5434)
+    # Dev-only credentials. NOT used in staging or production
+    # (those are env-driven from GitHub Actions secrets).
     environment:
       POSTGRES_USER: loyalty_dev
       POSTGRES_PASSWORD: loyalty_dev_pass
@@ -42,6 +44,8 @@ services:
       RUST_ENV: development
       NODE_ENV: development
       PORT: ${BACKEND_PORT:-4001}
+      # Dev-only credentials. NOT used in staging or production
+      # (those are env-driven from GitHub Actions secrets).
       DATABASE_URL: postgresql://loyalty_dev:loyalty_dev_pass@postgres:5432/loyalty_dev_db
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}

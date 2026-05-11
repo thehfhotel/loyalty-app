@@ -67,16 +67,6 @@ jobs:
   # DEPLOY TO STAGING (no approval needed)
   # =============================================================================
 
-  # ---------------------------------------------------------------------------
-  # Phase-1 deploy pattern (mirrors new-hotel / payroll / host-metrics-pusher):
-  # GH-hosted ubuntu-latest installs cloudflared + the per-env SSH key, then
-  # SSHes to deploy@evergreen.thehfhotel.org through the asgard cloudflared
-  # tunnel. The SSH key in /home/deploy/.ssh/authorized_keys is forced-command
-  # pinned to /srv/run-deploy-loyalty-app-{staging,production}.sh — no other
-  # commands are reachable. The shim takes a JSON payload on stdin (commit_sha,
-  # base64 tarball of compose + nginx.conf, ghcr token, env), writes a 0600
-  # .env, runs `docker compose pull && up -d`, and verifies /api/health.
-  # ---------------------------------------------------------------------------
   deploy-staging:
     name: "Deploy to Staging"
     runs-on: ubuntu-latest
