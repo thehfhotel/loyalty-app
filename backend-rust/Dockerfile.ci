@@ -115,9 +115,11 @@ WORKDIR /app
 
 # Pre-built loyalty-backend binary from the GitHub Actions runner artifact
 # (placed in the build context at ./loyalty-backend by docker/build-push-action).
-COPY --chown=nonroot:nonroot loyalty-backend                  /app/loyalty-backend
+# --chmod=755 because actions/upload-artifact roundtrips lose the executable
+# bit, and Distroless has no shell to chmod after the fact.
+COPY --chown=nonroot:nonroot --chmod=755 loyalty-backend      /app/loyalty-backend
 # Tiny healthcheck binary compiled in stage 1.
-COPY --from=hc-builder --chown=nonroot:nonroot /hc/target/release/healthcheck /app/healthcheck
+COPY --from=hc-builder --chown=nonroot:nonroot --chmod=755 /hc/target/release/healthcheck /app/healthcheck
 
 # Drop privileges. cc-debian12 ships the `nonroot` user as uid/gid 65532.
 # (Previous image used a manually-created `appuser` at uid/gid 1000.
