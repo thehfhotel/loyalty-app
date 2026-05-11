@@ -143,8 +143,10 @@ async function advanceToPaymentStep(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByTestId('confirm-booking'));
 
   // Step 4 should now be visible (payment).
+  // 'payment.title' appears in both the stepper and the section heading;
+  // assert ANY occurrence is rendered rather than requiring a unique match.
   await waitFor(() => {
-    expect(screen.getByText('payment.title')).toBeInTheDocument();
+    expect(screen.getAllByText('payment.title').length).toBeGreaterThan(0);
   });
 }
 
