@@ -1072,6 +1072,218 @@ async fn test_add_booking_slip_rejects_empty_url() {
     app.cleanup().await.ok();
 }
 
+// ============================================================================
+// test_delete_booking_slip - DELETE /api/bookings/slips/:slip_id
+// ============================================================================
+
+/// Insert a slip row directly via SQL and return its id.
+///
+/// We use raw SQL (rather than going through `POST /api/bookings/:id/slips`)
+/// so each test can seed exactly the slip it needs without coupling the
+/// delete-path tests to the upload path.
+async fn insert_test_slip(
+    pool: &sqlx::PgPool,
+    booking_id: Uuid,
+    uploaded_by: Uuid,
+    slip_url: &str,
+) -> Result<Uuid, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"
+        INSERT INTO booking_slips (booking_id, slip_url, uploaded_by)
+        VALUES ($1, $2, $3)
+        RETURNING id
+        "#,
+    )
+    .bind(booking_id)
+    .bind(slip_url)
+    .bind(uploaded_by)
+    .fetch_one(pool)
+    .await
+}
+
+#[tokio::test]
+async fn test_delete_booking_slip_success() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let user = TestUser::new("slip-delete-owner@test.com");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert test user");
+
+    let booking_id = create_test_booking(app.db(), user.id, "confirmed", 7, 10)
+        .await
+        .expect("Failed to create booking");
+
+    let slip_id = insert_test_slip(
+        app.db(),
+        booking_id,
+        user.id,
+        "/storage/slips/owner-delete.jpg",
+    )
+    .await
+    .expect("Failed to insert test slip");
+
+    let client = app.authenticated_client(&user.id, &user.email);
+
+    let response = client
+        .delete(&format!("/api/bookings/slips/{}", slip_id))
+        .await;
+
+    response.assert_status(204);
+
+    // Verify the row is gone.
+    let row_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM booking_slips WHERE id = $1")
+        .bind(slip_id)
+        .fetch_one(app.db())
+        .await
+        .expect("Failed to count slips");
+    assert_eq!(
+        row_count.0, 0,
+        "Slip row should be deleted from the database"
+    );
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn test_delete_booking_slip_requires_authentication() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let client = app.client();
+
+    let fake_slip_id = Uuid::new_v4();
+    let response = client
+        .delete(&format!("/api/bookings/slips/{}", fake_slip_id))
+        .await;
+
+    response.assert_status(401);
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn test_delete_booking_slip_forbidden_for_other_user() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let owner = TestUser::new("slip-delete-owner-other@test.com");
+    owner
+        .insert(app.db())
+        .await
+        .expect("Failed to insert owner");
+
+    let intruder = TestUser::new("slip-delete-intruder@test.com");
+    intruder
+        .insert(app.db())
+        .await
+        .expect("Failed to insert intruder");
+
+    let booking_id = create_test_booking(app.db(), owner.id, "confirmed", 7, 10)
+        .await
+        .expect("Failed to create booking");
+
+    let slip_id = insert_test_slip(
+        app.db(),
+        booking_id,
+        owner.id,
+        "/storage/slips/owner-protected.jpg",
+    )
+    .await
+    .expect("Failed to insert test slip");
+
+    // Authenticated as the OTHER (non-admin) user.
+    let client = app.authenticated_client(&intruder.id, &intruder.email);
+
+    let response = client
+        .delete(&format!("/api/bookings/slips/{}", slip_id))
+        .await;
+
+    response.assert_status(403);
+
+    // Row must still exist — authorization failure must not delete anything.
+    let row_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM booking_slips WHERE id = $1")
+        .bind(slip_id)
+        .fetch_one(app.db())
+        .await
+        .expect("Failed to count slips");
+    assert_eq!(
+        row_count.0, 1,
+        "Slip row should still exist when authorization fails"
+    );
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn test_delete_booking_slip_not_found_for_missing_slip() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let user = TestUser::new("slip-delete-missing@test.com");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert test user");
+
+    let client = app.authenticated_client(&user.id, &user.email);
+
+    let fake_slip_id = Uuid::new_v4();
+    let response = client
+        .delete(&format!("/api/bookings/slips/{}", fake_slip_id))
+        .await;
+
+    response.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn test_delete_booking_slip_admin_can_delete_other_users_slip() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let admin = TestUser::admin("slip-delete-admin@test.com");
+    admin
+        .insert(app.db())
+        .await
+        .expect("Failed to insert admin");
+
+    let owner = TestUser::new("slip-delete-customer@test.com");
+    owner
+        .insert(app.db())
+        .await
+        .expect("Failed to insert customer");
+
+    let booking_id = create_test_booking(app.db(), owner.id, "confirmed", 7, 10)
+        .await
+        .expect("Failed to create booking");
+
+    let slip_id = insert_test_slip(
+        app.db(),
+        booking_id,
+        owner.id,
+        "/storage/slips/admin-removed.jpg",
+    )
+    .await
+    .expect("Failed to insert test slip");
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let response = client
+        .delete(&format!("/api/bookings/slips/{}", slip_id))
+        .await;
+
+    response.assert_status(204);
+
+    // Verify the row is gone.
+    let row_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM booking_slips WHERE id = $1")
+        .bind(slip_id)
+        .fetch_one(app.db())
+        .await
+        .expect("Failed to count slips");
+    assert_eq!(
+        row_count.0, 0,
+        "Admin should be able to delete another user's slip"
+    );
+
+    app.cleanup().await.ok();
+}
+
 #[tokio::test]
 async fn test_admin_can_view_all_bookings() {
     let app = TestApp::new().await.expect("Failed to create test app");
