@@ -96,6 +96,39 @@ pub struct CompleteBookingRequest {
     pub notes: Option<String>,
 }
 
+/// Add slip request — attach a previously-uploaded payment slip URL to a booking.
+///
+/// The frontend uploads the file via `POST /api/slips/upload` first, then sends
+/// the returned URL here so it gets associated with the booking.
+#[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct AddSlipRequest {
+    #[validate(length(
+        min = 1,
+        max = 1024,
+        message = "Slip URL must be between 1 and 1024 characters"
+    ))]
+    pub slip_url: String,
+}
+
+/// Response for an added slip.
+///
+/// Mirrors the `BookingSlip` shape the frontend's `bookingService` expects:
+/// `{ id, slipUrl, uploadedAt, slipokStatus, adminStatus }`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BookingSlipResponse {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub slip_url: String,
+    pub uploaded_by: Uuid,
+    pub uploaded_at: DateTime<Utc>,
+    /// Reserved for future SlipOK verification integration.
+    pub slipok_status: Option<String>,
+    /// Reserved for future admin review workflow.
+    pub admin_status: Option<String>,
+}
+
 /// Paginated booking list response
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -460,6 +493,60 @@ async fn complete_booking(
     );
 
     Ok(Json(completed))
+}
+
+/// POST /api/bookings/:id/slips - Attach a payment slip URL to a booking
+///
+/// Request body:
+/// - slipUrl: The URL returned by `POST /api/slips/upload`
+///
+/// Authentication is required (provided by the router layer). The caller must
+/// either own the booking or be an admin.
+///
+/// Returns 201 with the created `BookingSlipResponse` (camelCase JSON).
+async fn add_booking_slip(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    Path(booking_id): Path<Uuid>,
+    Json(req): Json<AddSlipRequest>,
+) -> AppResult<(StatusCode, Json<BookingSlipResponse>)> {
+    // Validate the request body shape (length bounds on slip_url).
+    req.validate()?;
+
+    // Trim then re-check so payloads that are only whitespace are rejected.
+    let slip_url = req.slip_url.trim().to_string();
+    if slip_url.is_empty() {
+        return Err(AppError::Validation("slipUrl cannot be empty".to_string()));
+    }
+
+    // Look up the booking; surfaces a 404 when it doesn't exist.
+    let booking = query_booking_by_id(state.db(), booking_id).await?;
+
+    // Ownership / admin authorization. We do this AFTER the booking lookup so
+    // that a missing booking returns 404 (not 403), matching the pattern used
+    // by `get_booking`.
+    let auth_user_id = Uuid::parse_str(&auth_user.id)
+        .map_err(|_| AppError::InvalidToken("Invalid user ID in token".to_string()))?;
+
+    let is_admin = has_role(&auth_user, "admin");
+    if booking.user_id != auth_user_id && !is_admin {
+        return Err(AppError::Forbidden(
+            "You can only add slips to your own bookings".to_string(),
+        ));
+    }
+
+    // Insert the slip row. We let the database default the id / uploaded_at so
+    // the row matches what other reads will see.
+    let slip = insert_booking_slip(state.db(), booking_id, &slip_url, auth_user_id).await?;
+
+    tracing::info!(
+        user_id = %auth_user.id,
+        booking_id = %booking_id,
+        slip_id = %slip.id,
+        "Booking slip added"
+    );
+
+    Ok((StatusCode::CREATED, Json(slip)))
 }
 
 /// GET /api/bookings/availability - Check room availability
@@ -1154,6 +1241,55 @@ async fn award_loyalty_points(
     Ok(())
 }
 
+/// Row returned by `insert_booking_slip`.
+#[derive(Debug, FromRow)]
+struct BookingSlipRow {
+    pub id: Uuid,
+    pub booking_id: Uuid,
+    pub slip_url: String,
+    pub uploaded_by: Uuid,
+    pub uploaded_at: DateTime<Utc>,
+}
+
+impl From<BookingSlipRow> for BookingSlipResponse {
+    fn from(row: BookingSlipRow) -> Self {
+        Self {
+            id: row.id,
+            booking_id: row.booking_id,
+            slip_url: row.slip_url,
+            uploaded_by: row.uploaded_by,
+            uploaded_at: row.uploaded_at,
+            // These are nullable placeholders for the SlipOK / admin review
+            // workflows. They aren't wired up yet, so we always return None.
+            slipok_status: None,
+            admin_status: None,
+        }
+    }
+}
+
+/// Insert a slip row and return it as a response DTO.
+async fn insert_booking_slip(
+    db: &PgPool,
+    booking_id: Uuid,
+    slip_url: &str,
+    uploaded_by: Uuid,
+) -> AppResult<BookingSlipResponse> {
+    let row: BookingSlipRow = sqlx::query_as(
+        r#"
+        INSERT INTO booking_slips (booking_id, slip_url, uploaded_by)
+        VALUES ($1, $2, $3)
+        RETURNING id, booking_id, slip_url, uploaded_by, uploaded_at
+        "#,
+    )
+    .bind(booking_id)
+    .bind(slip_url)
+    .bind(uploaded_by)
+    .fetch_one(db)
+    .await?;
+
+    Ok(row.into())
+}
+
 // ==================== HELPER FUNCTIONS ====================
 
 /// Parse room type string to enum
@@ -1189,6 +1325,7 @@ pub fn routes() -> Router<AppState> {
 /// - POST /api/bookings - Create a new booking
 /// - PUT /api/bookings/:id - Update a booking
 /// - POST /api/bookings/:id/cancel - Cancel a booking
+/// - POST /api/bookings/:id/slips - Attach a payment slip URL to a booking
 /// - POST /api/bookings/:id/complete - Mark booking as completed (admin only)
 /// - GET /api/bookings/availability - Check room availability
 ///
@@ -1204,6 +1341,7 @@ pub fn router() -> Router<AppState> {
         .route("/:id", get(get_booking))
         .route("/:id", put(update_booking))
         .route("/:id/cancel", post(cancel_booking))
+        .route("/:id/slips", post(add_booking_slip))
         // Admin routes
         .route("/:id/complete", post(complete_booking))
         // Apply authentication middleware to all routes
@@ -1229,6 +1367,7 @@ pub fn router_without_auth() -> Router<AppState> {
         .route("/:id", get(get_booking))
         .route("/:id", put(update_booking))
         .route("/:id/cancel", post(cancel_booking))
+        .route("/:id/slips", post(add_booking_slip))
         .route("/:id/complete", post(complete_booking))
 }
 

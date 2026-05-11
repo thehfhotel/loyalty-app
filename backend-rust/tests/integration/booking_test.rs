@@ -859,6 +859,219 @@ async fn test_list_bookings_pagination() {
     app.cleanup().await.ok();
 }
 
+// ============================================================================
+// test_add_booking_slip - POST /api/bookings/:id/slips
+// ============================================================================
+
+#[tokio::test]
+async fn test_add_booking_slip_success() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let user = TestUser::new("slip-add-success@test.com");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert test user");
+
+    let booking_id = create_test_booking(app.db(), user.id, "confirmed", 7, 10)
+        .await
+        .expect("Failed to create booking");
+
+    let client = app.authenticated_client(&user.id, &user.email);
+
+    let body = json!({
+        "slipUrl": "/storage/slips/test-slip-1.jpg",
+    });
+
+    let response = client
+        .post(&format!("/api/bookings/{}/slips", booking_id), &body)
+        .await;
+
+    assert!(
+        response.status == 201 || response.status == 200,
+        "Expected 201 or 200, got {}. Body: {}",
+        response.status,
+        response.body
+    );
+
+    let json: Value = response.json().expect("Response should be valid JSON");
+    assert!(json.get("id").is_some(), "Response should include slip id");
+    assert_eq!(
+        json.get("slipUrl").and_then(|v| v.as_str()),
+        Some("/storage/slips/test-slip-1.jpg"),
+        "Response should echo the submitted slip URL"
+    );
+    assert_eq!(
+        json.get("bookingId").and_then(|v| v.as_str()),
+        Some(booking_id.to_string()).as_deref(),
+        "Response should reference the correct booking"
+    );
+    assert!(
+        json.get("uploadedAt").is_some(),
+        "Response should include uploaded_at timestamp"
+    );
+
+    // Verify the row was actually persisted.
+    let row_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM booking_slips WHERE booking_id = $1")
+            .bind(booking_id)
+            .fetch_one(app.db())
+            .await
+            .expect("Failed to count slips");
+    assert_eq!(row_count.0, 1, "Exactly one slip row should be persisted");
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn test_add_booking_slip_requires_authentication() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let client = app.client();
+
+    let fake_booking_id = Uuid::new_v4();
+    let body = json!({ "slipUrl": "/storage/slips/anon.jpg" });
+
+    let response = client
+        .post(&format!("/api/bookings/{}/slips", fake_booking_id), &body)
+        .await;
+
+    response.assert_status(401);
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn test_add_booking_slip_forbidden_for_other_user() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let owner = TestUser::new("slip-owner@test.com");
+    owner
+        .insert(app.db())
+        .await
+        .expect("Failed to insert owner");
+
+    let intruder = TestUser::new("slip-intruder@test.com");
+    intruder
+        .insert(app.db())
+        .await
+        .expect("Failed to insert other user");
+
+    let booking_id = create_test_booking(app.db(), owner.id, "confirmed", 7, 10)
+        .await
+        .expect("Failed to create booking");
+
+    // Authenticated as the OTHER user, not the owner.
+    let client = app.authenticated_client(&intruder.id, &intruder.email);
+
+    let body = json!({ "slipUrl": "/storage/slips/intruder.jpg" });
+    let response = client
+        .post(&format!("/api/bookings/{}/slips", booking_id), &body)
+        .await;
+
+    response.assert_status(403);
+
+    // And nothing should have been written.
+    let row_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM booking_slips WHERE booking_id = $1")
+            .bind(booking_id)
+            .fetch_one(app.db())
+            .await
+            .expect("Failed to count slips");
+    assert_eq!(
+        row_count.0, 0,
+        "No slip should be persisted when authorization fails"
+    );
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn test_add_booking_slip_not_found_for_missing_booking() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let user = TestUser::new("slip-missing-booking@test.com");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert test user");
+
+    let client = app.authenticated_client(&user.id, &user.email);
+
+    let fake_booking_id = Uuid::new_v4();
+    let body = json!({ "slipUrl": "/storage/slips/ghost.jpg" });
+    let response = client
+        .post(&format!("/api/bookings/{}/slips", fake_booking_id), &body)
+        .await;
+
+    response.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn test_add_booking_slip_admin_can_add_for_other_user() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let admin = TestUser::admin("slip-admin@test.com");
+    admin
+        .insert(app.db())
+        .await
+        .expect("Failed to insert admin");
+
+    let user = TestUser::new("slip-customer@test.com");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert customer");
+
+    let booking_id = create_test_booking(app.db(), user.id, "confirmed", 7, 10)
+        .await
+        .expect("Failed to create booking");
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let body = json!({ "slipUrl": "/storage/slips/admin-attached.jpg" });
+    let response = client
+        .post(&format!("/api/bookings/{}/slips", booking_id), &body)
+        .await;
+
+    assert!(
+        response.status == 201 || response.status == 200,
+        "Admin should be allowed to attach slips. Got {}. Body: {}",
+        response.status,
+        response.body
+    );
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn test_add_booking_slip_rejects_empty_url() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let user = TestUser::new("slip-empty-url@test.com");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert test user");
+
+    let booking_id = create_test_booking(app.db(), user.id, "confirmed", 7, 10)
+        .await
+        .expect("Failed to create booking");
+
+    let client = app.authenticated_client(&user.id, &user.email);
+
+    let body = json!({ "slipUrl": "" });
+    let response = client
+        .post(&format!("/api/bookings/{}/slips", booking_id), &body)
+        .await;
+
+    assert!(
+        response.status == 400 || response.status == 422,
+        "Expected 400/422 for empty slipUrl, got {}. Body: {}",
+        response.status,
+        response.body
+    );
+
+    app.cleanup().await.ok();
+}
+
 #[tokio::test]
 async fn test_admin_can_view_all_bookings() {
     let app = TestApp::new().await.expect("Failed to create test app");
