@@ -50,9 +50,11 @@ interface AuthState {
   }) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
-  // Phase 2: only the access token lives in the store; the refresh token
-  // is held by the browser as an HttpOnly cookie (`refresh_token`) set by
-  // the backend (Phase 1, PR #194) and never readable from JavaScript.
+  // Phase 3: only the access token lives in the store. The refresh token
+  // is held exclusively by the browser as an HttpOnly cookie
+  // (`refresh_token`) and is never readable from JavaScript. The Phase 1
+  // body-side contract has been removed from the backend, so any
+  // `response.tokens.refreshToken` field is now `undefined`.
   setTokens: (accessToken: string) => void;
   clearAuth: () => void;
   checkAuthStatus: () => Promise<boolean>;
@@ -71,9 +73,10 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         try {
           const response = await authService.login(email, password, rememberMe);
-          // Phase 2: ignore `response.tokens.refreshToken` — the backend has
-          // also set it as an HttpOnly cookie (Phase 1, PR #194). The cookie
-          // is the source of truth; we never store the refresh token in JS.
+          // Phase 3: the response body carries only the access token. The
+          // refresh token lives exclusively in the HttpOnly cookie set on
+          // the same response (`Set-Cookie: refresh_token=...`). We never
+          // store the refresh token in JS — it is unreadable from here.
           set({
             user: response.user,
             accessToken: response.tokens.accessToken,
@@ -92,7 +95,7 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         try {
           const response = await authService.register(data);
-          // Phase 2: same rationale as login — refresh token is in the
+          // Phase 3: same rationale as login — refresh token is in the
           // HttpOnly cookie set by the backend; we keep only the access
           // token in JS.
           set({
@@ -111,10 +114,10 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         try {
-          // Phase 2: no body argument — `authService.logout()` posts an
-          // empty body and the browser sends the `refresh_token` cookie
-          // automatically (axios `withCredentials: true`). The backend
-          // both deletes the row and clears the cookie via Set-Cookie.
+          // Phase 3: `authService.logout()` posts an empty body. The
+          // browser sends the `refresh_token` cookie automatically (axios
+          // `withCredentials: true`); the backend reads the cookie, deletes
+          // the server-side row, and clears the cookie via Set-Cookie.
           await authService.logout();
         } catch (_error) {
           // Logout error - continue with local logout
@@ -130,15 +133,16 @@ export const useAuthStore = create<AuthState>()(
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-          // Phase 2: no token argument — the refresh token rides as an
-          // HttpOnly cookie. The backend reads `refresh_token` from the
-          // cookie and rotates it (sets a new one in the response).
+          // Phase 3: no token argument — the refresh token rides only as
+          // an HttpOnly cookie. The backend reads `refresh_token` from
+          // the cookie, rotates it via Set-Cookie, and returns only the
+          // new access token in the JSON body.
           const response = await authService.refreshToken();
           clearTimeout(timeoutId);
 
-          // Phase 2: only the access token enters the store. The new
-          // refresh token in the JSON body is ignored — the cookie that
-          // the backend set on this same response is now authoritative.
+          // Phase 3: only the access token enters the store. The body
+          // never contains a refresh token any more — the rotated cookie
+          // is the source of truth.
           set({
             accessToken: response.tokens.accessToken,
           });
@@ -161,7 +165,7 @@ export const useAuthStore = create<AuthState>()(
       },
 
       setTokens: (accessToken: string) => {
-        // Phase 2: only the access token is settable from JS. The refresh
+        // Phase 3: only the access token is settable from JS. The refresh
         // token arrives as an HttpOnly cookie that the browser stores
         // automatically; we don't (and can't) touch it.
         set({ accessToken });
@@ -249,8 +253,8 @@ export const useAuthStore = create<AuthState>()(
           }
 
           // Token is invalid or expired — try to refresh. We can no longer
-          // gate on a JS-visible refresh token (Phase 2: it lives in the
-          // HttpOnly cookie). We just attempt the refresh; the backend
+          // gate on a JS-visible refresh token (Phase 3: it lives only in
+          // the HttpOnly cookie). We just attempt the refresh; the backend
           // returns 401 if the cookie is missing/expired and we fall
           // through to clearAuth() below.
           try {
@@ -298,11 +302,13 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
-      // Phase 2: `refreshToken` is intentionally absent. It lives in the
+      // Phase 3: `refreshToken` is intentionally absent. It lives in the
       // browser's HttpOnly cookie jar (`refresh_token`) so JavaScript —
       // including any XSS payload — cannot read it. The one-time cleanup
-      // of any stale `refreshToken` left over from Phase 1 happens on
-      // app startup via `migrateAuthStorageForCookieRefreshToken()`.
+      // of any stale `refreshToken` left over from earlier builds happens
+      // on app startup via `migrateAuthStorageForCookieRefreshToken()`,
+      // which we retain permanently as cheap defense for offline-built
+      // clients that may upgrade from pre-Phase-2 versions.
       partialize: (state) => ({
         user: state.user,
         accessToken: state.accessToken,

@@ -71,26 +71,10 @@ pub struct LoginRequest {
     pub remember_me: bool,
 }
 
-/// Logout request payload
-#[derive(Debug, Clone, Deserialize)]
-pub struct LogoutRequest {
-    /// The refresh token to invalidate
-    #[serde(rename = "refreshToken")]
-    pub refresh_token: Option<String>,
-}
-
-/// Refresh token request payload.
-///
-/// `refresh_token` is optional because Phase 1 of the cookie migration accepts
-/// the token from EITHER this JSON body field OR the `refresh_token` HttpOnly
-/// cookie. If both are present, the body wins so the frontend can be migrated
-/// gradually without coordinating a flag day.
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct RefreshTokenRequest {
-    /// The refresh token (optional — falls back to the cookie if absent)
-    #[serde(default, rename = "refreshToken")]
-    pub refresh_token: Option<String>,
-}
+// Phase 3 (PR follows #208): the JSON-body refresh-token contract has been
+// removed. Logout and refresh both source the refresh token exclusively from
+// the `refresh_token` HttpOnly cookie. `LogoutRequest` and
+// `RefreshTokenRequest` no longer exist — see `logout` / `refresh` handlers.
 
 /// Forgot password request payload
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -149,13 +133,17 @@ pub struct UserResponse {
     pub membership_id: Option<String>,
 }
 
-/// Authentication tokens
+/// Authentication tokens returned in the JSON body.
+///
+/// Phase 3 of the HttpOnly-cookie migration: only the access token is
+/// returned in the JSON body. The refresh token is delivered exclusively
+/// via the `refresh_token` HttpOnly cookie (`Set-Cookie`) — JavaScript
+/// cannot read it, which removes the XSS exfiltration surface that the
+/// pre-migration localStorage contract was exposed to.
 #[derive(Debug, Clone, Serialize)]
 pub struct AuthTokens {
     #[serde(rename = "accessToken")]
     pub access_token: String,
-    #[serde(rename = "refreshToken")]
-    pub refresh_token: String,
 }
 
 /// Registration/Login response
@@ -404,12 +392,16 @@ async fn get_user_profile(db: &sqlx::PgPool, user_id: &Uuid) -> Result<UserRespo
 // ============================================================================
 
 /// POST /api/auth/register
-/// Creates a new user account
+///
+/// Creates a new user account. Phase 3: the refresh token is delivered
+/// exclusively in the `refresh_token` HttpOnly cookie — it is no longer
+/// returned in the JSON body.
 #[axum::debug_handler]
 async fn register(
     State(state): State<AppState>,
+    jar: CookieJar,
     Json(payload): Json<RegisterRequest>,
-) -> Result<Json<AuthResponse>, AppError> {
+) -> Result<(CookieJar, Json<AuthResponse>), AppError> {
     // Validate request
     payload
         .validate()
@@ -548,24 +540,30 @@ async fn register(
 
     tracing::info!("User registered: {}", user_response.id);
 
+    // Phase 3: deliver the refresh token via HttpOnly cookie only.
+    // Max-Age aligns with the DB row's expiry so the browser drops the
+    // cookie when the server-side token expires.
+    let refresh_max_age_secs = (refresh_expires_at - Utc::now()).num_seconds().max(0);
+    let jar = jar.add(build_refresh_cookie(refresh_token, refresh_max_age_secs));
+
     // Note: Returns 200 OK instead of 201 CREATED for compatibility
-    Ok(Json(AuthResponse {
-        user: user_response,
-        tokens: AuthTokens {
-            access_token,
-            refresh_token,
-        },
-    }))
+    Ok((
+        jar,
+        Json(AuthResponse {
+            user: user_response,
+            tokens: AuthTokens { access_token },
+        }),
+    ))
 }
 
 /// POST /api/auth/login
 /// Authenticates a user with email and password.
 ///
-/// Phase 1 of the HttpOnly-cookie migration: returns the refresh token in BOTH
-/// the JSON body (for backward compatibility with the localStorage frontend)
-/// AND a `refresh_token` HttpOnly cookie (for the migrated frontend in later
-/// phases). See `crate::middleware::auth::build_refresh_cookie` for the cookie
-/// attributes and rationale.
+/// Phase 3 of the HttpOnly-cookie migration: the refresh token is delivered
+/// EXCLUSIVELY via the `refresh_token` HttpOnly cookie. It is no longer
+/// returned in the JSON body — JavaScript (including any XSS payload)
+/// cannot read it. See `crate::middleware::auth::build_refresh_cookie` for
+/// the cookie attributes and rationale.
 async fn login(
     State(state): State<AppState>,
     jar: CookieJar,
@@ -669,23 +667,17 @@ async fn login(
 
     tracing::info!("User logged in: {}", user_response.id);
 
-    // Phase 1: also set the refresh token as an HttpOnly cookie. Cookie's
-    // Max-Age aligns with the DB row expiry so the browser drops the cookie
-    // when the server-side token expires.
+    // Phase 3: the refresh token is delivered only via the HttpOnly cookie.
+    // Cookie's Max-Age aligns with the DB row expiry so the browser drops
+    // the cookie when the server-side token expires.
     let refresh_max_age_secs = (refresh_expires_at - Utc::now()).num_seconds().max(0);
-    let jar = jar.add(build_refresh_cookie(
-        refresh_token.clone(),
-        refresh_max_age_secs,
-    ));
+    let jar = jar.add(build_refresh_cookie(refresh_token, refresh_max_age_secs));
 
     Ok((
         jar,
         Json(AuthResponse {
             user: user_response,
-            tokens: AuthTokens {
-                access_token,
-                refresh_token,
-            },
+            tokens: AuthTokens { access_token },
         }),
     ))
 }
@@ -693,13 +685,14 @@ async fn login(
 /// POST /api/auth/logout
 /// Invalidates the user's refresh token and clears the refresh-token cookie.
 ///
-/// Phase 1: in addition to the existing DB cleanup, emits a `Set-Cookie`
-/// header with `Max-Age=0` so the browser drops any cookie set during login.
+/// Phase 3: takes no JSON body — the refresh token to invalidate is read
+/// exclusively from the `refresh_token` HttpOnly cookie. The response
+/// always emits a `Set-Cookie: refresh_token=; Max-Age=0` so the browser
+/// drops the cookie even if it was already expired/missing.
 async fn logout(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     jar: CookieJar,
-    Json(payload): Json<LogoutRequest>,
 ) -> Result<(CookieJar, Json<MessageResponse>), AppError> {
     let db = state.db();
 
@@ -707,19 +700,11 @@ async fn logout(
     let user_id = Uuid::parse_str(&auth_user.id)
         .map_err(|_| AppError::Unauthorized("Invalid user ID".to_string()))?;
 
-    // Delete refresh token if provided in the body. (Cookie-only logout falls
-    // back to relying on the cookie clear below; the server-side row will be
-    // garbage-collected on its `expires_at`.)
-    if let Some(refresh_token) = &payload.refresh_token {
-        sqlx::query("DELETE FROM refresh_tokens WHERE user_id = $1 AND token = $2")
-            .bind(&user_id)
-            .bind(refresh_token)
-            .execute(db)
-            .await
-            .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
-    } else if let Some(cookie_token) = jar.get(REFRESH_COOKIE_NAME).map(|c| c.value().to_string()) {
-        // If the body didn't carry the token but the cookie did, also delete
-        // the row so the server-side state matches the cleared cookie.
+    // Delete the server-side refresh-token row if the cookie carried one.
+    // If the cookie is missing we still proceed — the user's authenticated
+    // session is being torn down regardless, and the row (if any) will be
+    // garbage-collected on its `expires_at`.
+    if let Some(cookie_token) = jar.get(REFRESH_COOKIE_NAME).map(|c| c.value().to_string()) {
         sqlx::query("DELETE FROM refresh_tokens WHERE user_id = $1 AND token = $2")
             .bind(&user_id)
             .bind(&cookie_token)
@@ -756,34 +741,25 @@ async fn logout(
 /// POST /api/auth/refresh
 /// Issues a new access token using a refresh token.
 ///
-/// Phase 1: accepts the refresh token from EITHER (a) the JSON body
-/// `refreshToken` field OR (b) the `refresh_token` HttpOnly cookie. If both
-/// are present, the body wins so the frontend can switch over gradually.
-/// Both paths produce the same response and rotate the refresh-token cookie.
-///
-/// The body is itself optional — a cookie-only client can `POST /api/auth/refresh`
-/// with no body at all.
+/// Phase 3: the refresh token is read EXCLUSIVELY from the `refresh_token`
+/// HttpOnly cookie. The JSON-body `refreshToken` field accepted in Phase 1
+/// is no longer supported — clients that previously sent it must rely on
+/// the browser-managed cookie (axios `withCredentials: true`). Missing or
+/// empty cookies return 401.
 async fn refresh(
     State(state): State<AppState>,
     jar: CookieJar,
-    payload: Option<Json<RefreshTokenRequest>>,
 ) -> Result<(CookieJar, Json<TokenRefreshResponse>), AppError> {
     let db = state.db();
 
-    // Body precedence: if the body carries a non-empty refreshToken, use it;
-    // otherwise fall back to the cookie. Empty body strings are treated as
-    // absent so a buggy frontend sending {"refreshToken": ""} still works.
-    let body_token = payload
-        .and_then(|Json(req)| req.refresh_token)
-        .filter(|t| !t.is_empty());
-    let cookie_token = jar
+    // Phase 3: cookie-only. An empty cookie value is treated as missing so
+    // a stale `Set-Cookie: refresh_token=` (e.g., from a prior logout race)
+    // still produces a clean 401.
+    let supplied_token = jar
         .get(REFRESH_COOKIE_NAME)
         .map(|c| c.value().to_string())
-        .filter(|t| !t.is_empty());
-
-    let supplied_token = body_token.or(cookie_token).ok_or_else(|| {
-        AppError::Unauthorized("Missing refresh token (body or cookie required)".to_string())
-    })?;
+        .filter(|t| !t.is_empty())
+        .ok_or_else(|| AppError::Unauthorized("Missing refresh token cookie".to_string()))?;
 
     // Find valid refresh token
     let token_row: Option<(Uuid,)> = sqlx::query_as(
@@ -853,21 +829,19 @@ async fn refresh(
 
     tracing::debug!("Token refreshed for user: {}", user_row.id);
 
-    // Rotate the cookie too so cookie-using clients stay in sync with the new
-    // server-side token. Max-Age matches the new DB row's expiry.
+    // Phase 3: the rotated refresh token is delivered solely via the
+    // Set-Cookie header — never in the JSON body. Max-Age matches the new
+    // DB row's expiry.
     let refresh_max_age_secs = (refresh_expires_at - Utc::now()).num_seconds().max(0);
     let jar = jar.add(build_refresh_cookie(
-        new_refresh_token.clone(),
+        new_refresh_token,
         refresh_max_age_secs,
     ));
 
     Ok((
         jar,
         Json(TokenRefreshResponse {
-            tokens: AuthTokens {
-                access_token,
-                refresh_token: new_refresh_token,
-            },
+            tokens: AuthTokens { access_token },
         }),
     ))
 }
@@ -1174,6 +1148,29 @@ mod tests {
 
         // Tokens should be unique
         assert_ne!(token1, token2);
+    }
+
+    #[test]
+    fn test_auth_tokens_serialization_omits_refresh_token() {
+        // Phase 3 contract: the AuthTokens body struct must only contain
+        // `accessToken`. A regression that re-adds `refreshToken` here
+        // would leak the token into JSON responses again.
+        let tokens = AuthTokens {
+            access_token: "header.payload.signature".to_string(),
+        };
+        let json = serde_json::to_string(&tokens).unwrap();
+        assert!(
+            json.contains("\"accessToken\":\"header.payload.signature\""),
+            "Serialized AuthTokens must carry accessToken: {json}"
+        );
+        assert!(
+            !json.contains("refreshToken"),
+            "Phase 3: AuthTokens JSON MUST NOT contain a refreshToken field: {json}"
+        );
+        assert!(
+            !json.contains("refresh_token"),
+            "Phase 3: AuthTokens JSON MUST NOT contain a refresh_token field: {json}"
+        );
     }
 
     #[test]

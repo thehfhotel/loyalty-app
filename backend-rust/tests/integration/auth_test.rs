@@ -3,12 +3,20 @@
 //! Tests for the authentication API endpoints including:
 //! - User registration
 //! - User login
-//! - Token refresh
-//! - Logout
+//! - Token refresh (Phase 3: cookie-only)
+//! - Logout (Phase 3: cookie-only)
+//!
+//! # Phase 3 cookie-only contract
+//!
+//! The JSON-body refresh-token contract has been removed. The refresh token
+//! is delivered exclusively via the `refresh_token` HttpOnly cookie. Tests
+//! that previously POSTed `{"refreshToken": "..."}` to `/auth/refresh` or
+//! `/auth/logout` no longer exist — see `test_refresh_with_body_only_is_rejected`
+//! and the cookie-only variants for the new contract.
 
 use serde_json::{json, Value};
 
-use crate::common::{TestApp, TestClient};
+use crate::common::{TestApp, TestClient, TestResponse};
 
 // ============================================================================
 // Test Helpers
@@ -76,9 +84,11 @@ async fn test_register_user_success() {
         tokens["accessToken"].is_string(),
         "Should have access token"
     );
+    // Phase 3: refresh token is delivered ONLY via the HttpOnly cookie.
     assert!(
-        tokens["refreshToken"].is_string(),
-        "Should have refresh token"
+        tokens.get("refreshToken").is_none(),
+        "Phase 3: response MUST NOT contain a refreshToken in the JSON body. \
+         Got tokens: {tokens}"
     );
 
     let access_token = tokens["accessToken"].as_str().unwrap();
@@ -86,6 +96,13 @@ async fn test_register_user_success() {
         access_token.split('.').count(),
         3,
         "Access token should be a valid JWT"
+    );
+
+    // Phase 3: registration must also emit the refresh_token cookie so the
+    // client has a session immediately without a follow-up login call.
+    assert!(
+        response.set_cookie_for("refresh_token").is_some(),
+        "Registration MUST emit a refresh_token Set-Cookie header (Phase 3)"
     );
 
     // Verify user was actually created in database
@@ -201,9 +218,11 @@ async fn test_login_success() {
         tokens["accessToken"].is_string(),
         "Should have access token"
     );
+    // Phase 3: refresh token is delivered ONLY via the HttpOnly cookie.
     assert!(
-        tokens["refreshToken"].is_string(),
-        "Should have refresh token"
+        tokens.get("refreshToken").is_none(),
+        "Phase 3: response MUST NOT contain a refreshToken in the JSON body. \
+         Got tokens: {tokens}"
     );
 
     let access_token = tokens["accessToken"].as_str().unwrap();
@@ -211,6 +230,13 @@ async fn test_login_success() {
         access_token.split('.').count(),
         3,
         "Access token should be a valid JWT"
+    );
+
+    // Phase 3: login MUST set the refresh_token cookie — that is the sole
+    // delivery channel now.
+    assert!(
+        login_response.set_cookie_for("refresh_token").is_some(),
+        "Login MUST emit a refresh_token Set-Cookie header (Phase 3)"
     );
 
     app.cleanup().await.ok();
@@ -271,6 +297,9 @@ async fn test_login_invalid_password() {
 
 #[tokio::test]
 async fn test_refresh_token() {
+    // Phase 3: refresh is cookie-only. We register to get the Set-Cookie,
+    // capture the cookie value, then POST /auth/refresh with the cookie
+    // attached and NO JSON body fields naming the token.
     let app = TestApp::new().await.expect("Failed to create test app");
 
     let client = app.client();
@@ -288,22 +317,17 @@ async fn test_refresh_token() {
     let register_response = client.post("/api/auth/register", &register_payload).await;
     register_response.assert_status(200);
 
-    let register_body: Value = register_response
-        .json()
-        .expect("Response should be valid JSON");
-    let original_refresh_token = register_body["tokens"]["refreshToken"]
-        .as_str()
-        .expect("Should have refresh token");
-    let _original_access_token = register_body["tokens"]["accessToken"]
-        .as_str()
-        .expect("Should have access token");
+    let original_cookie = register_response
+        .set_cookie_for("refresh_token")
+        .expect("Register must emit a refresh_token cookie (Phase 3)");
+    let original_cookie_value = parse_cookie_value(&original_cookie).to_string();
 
-    // Use refresh token to get new tokens
-    let refresh_payload = json!({
-        "refreshToken": original_refresh_token
-    });
-
-    let refresh_response = client.post("/api/auth/refresh", &refresh_payload).await;
+    // POST /auth/refresh with the cookie attached. Empty JSON body —
+    // there is no longer a body-side path.
+    let cookie_client = app
+        .client()
+        .with_cookie(&format!("refresh_token={original_cookie_value}"));
+    let refresh_response = cookie_client.post("/api/auth/refresh", &json!({})).await;
 
     refresh_response.assert_status(200);
 
@@ -320,18 +344,31 @@ async fn test_refresh_token() {
     let new_access_token = tokens["accessToken"]
         .as_str()
         .expect("Should have new access token");
-    let new_refresh_token = tokens["refreshToken"]
-        .as_str()
-        .expect("Should have new refresh token");
+    // Phase 3: NO refreshToken in body.
+    assert!(
+        tokens.get("refreshToken").is_none(),
+        "Phase 3: refresh response MUST NOT contain a refreshToken in the body"
+    );
 
     assert_eq!(
         new_access_token.split('.').count(),
         3,
         "New access token should be a valid JWT"
     );
+
+    // Phase 3: the rotated refresh token is delivered exclusively via
+    // Set-Cookie. The new cookie value must differ from the old one.
+    let rotated_cookie = refresh_response
+        .set_cookie_for("refresh_token")
+        .expect("Refresh must rotate the refresh_token cookie (Phase 3)");
+    let rotated_value = parse_cookie_value(&rotated_cookie);
     assert!(
-        !new_refresh_token.is_empty(),
-        "New refresh token should not be empty"
+        !rotated_value.is_empty(),
+        "Rotated cookie value must not be empty"
+    );
+    assert_ne!(
+        rotated_value, original_cookie_value,
+        "Refresh MUST rotate the refresh token (new cookie != old cookie)"
     );
 
     app.cleanup().await.ok();
@@ -343,6 +380,10 @@ async fn test_refresh_token() {
 
 #[tokio::test]
 async fn test_logout() {
+    // Phase 3: logout reads the refresh token from the HttpOnly cookie and
+    // accepts no JSON body. The handler always emits a clearing Set-Cookie,
+    // and after logout the underlying server-side row is gone so a refresh
+    // attempt with the (now-stale) cookie value must fail.
     let app = TestApp::new().await.expect("Failed to create test app");
 
     let client = app.client();
@@ -366,18 +407,18 @@ async fn test_logout() {
     let access_token = register_body["tokens"]["accessToken"]
         .as_str()
         .expect("Should have access token");
-    let refresh_token = register_body["tokens"]["refreshToken"]
-        .as_str()
-        .expect("Should have refresh token");
 
-    // Logout with the access token
-    let auth_client = TestClient::new(app.router()).with_auth(access_token);
+    let refresh_cookie = register_response
+        .set_cookie_for("refresh_token")
+        .expect("Register must emit a refresh_token cookie (Phase 3)");
+    let refresh_cookie_value = parse_cookie_value(&refresh_cookie).to_string();
 
-    let logout_payload = json!({
-        "refreshToken": refresh_token
-    });
+    // Logout with the access token AND the refresh cookie. Empty body.
+    let auth_client = TestClient::new(app.router())
+        .with_auth(access_token)
+        .with_cookie(&format!("refresh_token={refresh_cookie_value}"));
 
-    let logout_response = auth_client.post("/api/auth/logout", &logout_payload).await;
+    let logout_response = auth_client.post("/api/auth/logout", &json!({})).await;
 
     logout_response.assert_status(200);
 
@@ -397,17 +438,30 @@ async fn test_logout() {
         message
     );
 
-    // Try to use the refresh token - should fail
-    let refresh_payload = json!({
-        "refreshToken": refresh_token
-    });
+    // Logout must clear the cookie.
+    let clear_cookie = logout_response
+        .set_cookie_for("refresh_token")
+        .expect("Logout MUST emit a clearing refresh_token Set-Cookie");
+    assert!(
+        clear_cookie.contains("Max-Age=0"),
+        "Logout's clearing cookie must use Max-Age=0: {clear_cookie}"
+    );
 
-    let refresh_response = client.post("/api/auth/refresh", &refresh_payload).await;
+    // Try to refresh with the now-revoked cookie value — the server-side
+    // row was deleted during logout, so the cookie no longer maps to any
+    // user and the refresh must fail.
+    let stale_cookie_client = app
+        .client()
+        .with_cookie(&format!("refresh_token={refresh_cookie_value}"));
+    let refresh_response = stale_cookie_client
+        .post("/api/auth/refresh", &json!({}))
+        .await;
 
     assert!(
         refresh_response.status == 401 || refresh_response.status == 400,
-        "Refresh with invalidated token should fail with 401 or 400, got {}",
-        refresh_response.status
+        "Refresh with invalidated cookie should fail with 401 or 400, got {}: {}",
+        refresh_response.status,
+        refresh_response.body
     );
 
     app.cleanup().await.ok();
@@ -485,15 +539,14 @@ async fn test_login_nonexistent_email() {
 
 #[tokio::test]
 async fn test_refresh_invalid_token() {
+    // Phase 3: invalid cookie value must be rejected.
     let app = TestApp::new().await.expect("Failed to create test app");
 
-    let client = app.client();
+    let client = app
+        .client()
+        .with_cookie("refresh_token=invalid-refresh-token-that-does-not-exist");
 
-    let refresh_payload = json!({
-        "refreshToken": "invalid-refresh-token-that-does-not-exist"
-    });
-
-    let response = client.post("/api/auth/refresh", &refresh_payload).await;
+    let response = client.post("/api/auth/refresh", &json!({})).await;
 
     assert!(
         response.status == 401 || response.status == 400,
@@ -505,18 +558,31 @@ async fn test_refresh_invalid_token() {
 }
 
 // ============================================================================
-// Phase 1: HttpOnly refresh-token cookie tests
+// Phase 3: HttpOnly refresh-token cookie is the ONLY delivery channel
 // ============================================================================
 //
-// These tests cover the additive Phase 1 of the cookie migration:
-// - login also returns a `refresh_token` HttpOnly cookie
-// - /refresh works with body-only, cookie-only, or both (body wins)
-// - /logout clears the cookie
+// These tests pin the Phase 3 contract:
+// - login, register, and /refresh all emit `Set-Cookie: refresh_token=...`
+// - none of them include a `refreshToken` field in the JSON body
+// - /refresh and /logout ignore any JSON-body `refreshToken` field — the
+//   cookie is the sole source of truth
+// - /logout clears the cookie via Max-Age=0
+// - missing cookie → 401
 
-/// Register a user and return (email, refresh_token_from_body, set_cookie_header).
-async fn register_and_get_refresh_artifacts(
-    client: &TestClient,
-) -> (String, String, Option<String>) {
+/// Extract the cookie value (the part after `name=` and before `;`).
+///
+/// Named `parse_cookie_value` rather than `cookie_value` so tests can bind a
+/// `cookie_value` local without shadowing the helper.
+fn parse_cookie_value(set_cookie_header: &str) -> &str {
+    let after_eq = set_cookie_header
+        .split_once('=')
+        .map(|(_, rest)| rest)
+        .expect("Set-Cookie header must contain '='");
+    after_eq.split(';').next().unwrap_or(after_eq)
+}
+
+/// Register a user and return (email, login_response, refresh_cookie_value).
+async fn register_user(client: &TestClient) -> (String, TestResponse, String) {
     let email = unique_email();
     let register_payload = json!({
         "email": email,
@@ -527,47 +593,104 @@ async fn register_and_get_refresh_artifacts(
     let response = client.post("/api/auth/register", &register_payload).await;
     response.assert_status(200);
 
-    let body: Value = response.json().expect("Response should be valid JSON");
-    let refresh_token = body["tokens"]["refreshToken"]
-        .as_str()
-        .expect("Should have refresh token")
-        .to_string();
-    // Registration doesn't currently set the cookie (Phase 1 only modifies
-    // login/refresh/logout), but capture whatever Set-Cookie is present.
-    let set_cookie = response.set_cookie_for("refresh_token");
-    (email, refresh_token, set_cookie)
+    let cookie = response
+        .set_cookie_for("refresh_token")
+        .expect("Register MUST emit a refresh_token Set-Cookie header (Phase 3)");
+    let value = parse_cookie_value(&cookie).to_string();
+    (email, response, value)
 }
 
-/// Log a user in and return (refresh_token_from_body, full_set_cookie_header_value).
-async fn login_and_capture_cookie(
-    client: &TestClient,
-    email: &str,
-    password: &str,
-) -> (String, String) {
+/// Log a user in and return (login_response, refresh_cookie_value).
+async fn login_user(client: &TestClient, email: &str, password: &str) -> (TestResponse, String) {
     let login_payload = json!({ "email": email, "password": password });
     let response = client.post("/api/auth/login", &login_payload).await;
     response.assert_status(200);
 
-    let body: Value = response.json().expect("Response should be valid JSON");
-    let refresh_token = body["tokens"]["refreshToken"]
-        .as_str()
-        .expect("Login should return refresh token in body")
-        .to_string();
-
-    let set_cookie = response
+    let cookie = response
         .set_cookie_for("refresh_token")
-        .expect("Login MUST emit a refresh_token Set-Cookie header (Phase 1)");
-
-    (refresh_token, set_cookie)
+        .expect("Login MUST emit a refresh_token Set-Cookie header (Phase 3)");
+    let value = parse_cookie_value(&cookie).to_string();
+    (response, value)
 }
 
-/// Extract the cookie value (the part after `name=` and before `;`).
-fn cookie_value(set_cookie_header: &str) -> &str {
-    let after_eq = set_cookie_header
-        .split_once('=')
-        .map(|(_, rest)| rest)
-        .expect("Set-Cookie header must contain '='");
-    after_eq.split(';').next().unwrap_or(after_eq)
+#[tokio::test]
+async fn test_login_does_not_return_refresh_token_in_body() {
+    // Phase 3 contract: the JSON body carries only the access token.
+    // Any client still reading `data.tokens.refreshToken` will get `undefined`.
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let client = app.client();
+
+    let (email, _register_response, _) = register_user(&client).await;
+    let (login_response, _cookie_value) = login_user(&client, &email, "SecurePass123!").await;
+
+    let body: Value = login_response
+        .json()
+        .expect("Login response should be valid JSON");
+
+    assert!(
+        body["tokens"]["accessToken"].is_string(),
+        "Body must still carry accessToken"
+    );
+    assert!(
+        body["tokens"].get("refreshToken").is_none(),
+        "Phase 3: login response MUST NOT contain a refreshToken in the body. \
+         tokens={}",
+        body["tokens"]
+    );
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn test_register_does_not_return_refresh_token_in_body() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let client = app.client();
+
+    let (_email, register_response, _) = register_user(&client).await;
+    let body: Value = register_response
+        .json()
+        .expect("Register response should be valid JSON");
+
+    assert!(
+        body["tokens"]["accessToken"].is_string(),
+        "Body must still carry accessToken"
+    );
+    assert!(
+        body["tokens"].get("refreshToken").is_none(),
+        "Phase 3: register response MUST NOT contain a refreshToken in the body. \
+         tokens={}",
+        body["tokens"]
+    );
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn test_refresh_does_not_return_refresh_token_in_body() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let client = app.client();
+
+    let (_email, _register_response, cookie_value) = register_user(&client).await;
+
+    let cookie_client = app
+        .client()
+        .with_cookie(&format!("refresh_token={cookie_value}"));
+    let response = cookie_client.post("/api/auth/refresh", &json!({})).await;
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("Response should be valid JSON");
+    assert!(
+        body["tokens"]["accessToken"].is_string(),
+        "Refresh body must carry accessToken"
+    );
+    assert!(
+        body["tokens"].get("refreshToken").is_none(),
+        "Phase 3: refresh response MUST NOT contain a refreshToken in the body. \
+         tokens={}",
+        body["tokens"]
+    );
+
+    app.cleanup().await.ok();
 }
 
 #[tokio::test]
@@ -575,22 +698,13 @@ async fn test_login_sets_refresh_token_cookie_with_security_attributes() {
     let app = TestApp::new().await.expect("Failed to create test app");
     let client = app.client();
 
-    // Register a user (registration doesn't set the cookie in Phase 1).
-    let (email, _initial_refresh, _) = register_and_get_refresh_artifacts(&client).await;
+    let (email, _register_response, _) = register_user(&client).await;
+    let (login_response, _cookie_value) = login_user(&client, &email, "SecurePass123!").await;
+    let set_cookie = login_response
+        .set_cookie_for("refresh_token")
+        .expect("Login MUST emit a refresh_token Set-Cookie header (Phase 3)");
 
-    // Log in — login MUST emit the refresh_token cookie.
-    let (body_refresh_token, set_cookie) =
-        login_and_capture_cookie(&client, &email, "SecurePass123!").await;
-
-    // The cookie value matches the refresh token returned in the JSON body.
-    assert_eq!(
-        cookie_value(&set_cookie),
-        body_refresh_token,
-        "Cookie value must match the refreshToken in the JSON response so both \
-         storage paths reference the same server-side row"
-    );
-
-    // Defense-in-depth attributes per Phase 1 spec.
+    // Defense-in-depth attributes.
     assert!(
         set_cookie.contains("HttpOnly"),
         "Cookie must be HttpOnly to prevent XSS exfiltration: {set_cookie}"
@@ -612,36 +726,39 @@ async fn test_login_sets_refresh_token_cookie_with_security_attributes() {
         "Cookie must carry an explicit Max-Age: {set_cookie}"
     );
 
+    // The cookie value is the actual refresh token: non-empty, opaque, and
+    // distinct from the access token in the body so a header logger can't
+    // be tricked into emitting it.
+    let value = parse_cookie_value(&set_cookie);
+    assert!(
+        !value.is_empty(),
+        "Refresh cookie value must not be empty: {set_cookie}"
+    );
+
     app.cleanup().await.ok();
 }
 
 #[tokio::test]
-async fn test_refresh_with_body_only_still_works() {
-    // Backwards-compatibility: existing localStorage frontend POSTs the token
-    // in the body. This must keep working unchanged.
+async fn test_refresh_with_body_only_is_rejected() {
+    // Phase 3 broke the body-side contract. A client that POSTs
+    // `{"refreshToken": "..."}` WITHOUT the cookie must get 401 — the body
+    // field is silently ignored.
     let app = TestApp::new().await.expect("Failed to create test app");
     let client = app.client();
 
-    let (email, _, _) = register_and_get_refresh_artifacts(&client).await;
-    let (body_refresh_token, _set_cookie) =
-        login_and_capture_cookie(&client, &email, "SecurePass123!").await;
+    let (_email, _register_response, cookie_value) = register_user(&client).await;
 
-    let refresh_payload = json!({ "refreshToken": body_refresh_token });
-    let response = client.post("/api/auth/refresh", &refresh_payload).await;
+    // Same client (no cookie attached) sends the (otherwise-valid) refresh
+    // token in the JSON body. The handler must NOT honour it.
+    let body_payload = json!({ "refreshToken": cookie_value });
+    let response = client.post("/api/auth/refresh", &body_payload).await;
 
-    response.assert_status(200);
-    let body: Value = response.json().expect("Response should be valid JSON");
-    assert!(body["tokens"]["accessToken"].is_string());
-    assert!(body["tokens"]["refreshToken"].is_string());
-
-    // Refresh should also rotate the cookie.
-    let new_set_cookie = response
-        .set_cookie_for("refresh_token")
-        .expect("Refresh must rotate the cookie too");
-    assert_eq!(
-        cookie_value(&new_set_cookie),
-        body["tokens"]["refreshToken"].as_str().unwrap(),
-        "Rotated cookie value must match the new refresh token in the body"
+    assert!(
+        response.status == 401 || response.status == 400,
+        "Phase 3: body-side refreshToken MUST be ignored. Expected 401/400, \
+         got {}: {}",
+        response.status,
+        response.body
     );
 
     app.cleanup().await.ok();
@@ -649,21 +766,15 @@ async fn test_refresh_with_body_only_still_works() {
 
 #[tokio::test]
 async fn test_refresh_with_cookie_only_works() {
-    // The Phase 2 frontend will stop sending the body and rely on the cookie.
-    // Verify that path right now so Phase 2 can ship without a backend change.
     let app = TestApp::new().await.expect("Failed to create test app");
     let client = app.client();
 
-    let (email, _, _) = register_and_get_refresh_artifacts(&client).await;
-    let (body_refresh_token, _set_cookie) =
-        login_and_capture_cookie(&client, &email, "SecurePass123!").await;
+    let (_email, _register_response, cookie_value) = register_user(&client).await;
 
-    // Build a client that sends the refresh-token cookie but no body.
     let cookie_client = app
         .client()
-        .with_cookie(&format!("refresh_token={body_refresh_token}"));
+        .with_cookie(&format!("refresh_token={cookie_value}"));
 
-    // Empty JSON object body — handler should fall back to the cookie.
     let response = cookie_client.post("/api/auth/refresh", &json!({})).await;
     response.assert_status(200);
 
@@ -676,37 +787,43 @@ async fn test_refresh_with_cookie_only_works() {
         3,
         "New access token should be a valid JWT"
     );
-    assert!(body["tokens"]["refreshToken"].is_string());
+
+    // Refresh rotates the cookie.
+    let rotated = response
+        .set_cookie_for("refresh_token")
+        .expect("Refresh must rotate the cookie");
+    let rotated_value = parse_cookie_value(&rotated);
+    assert_ne!(
+        rotated_value, cookie_value,
+        "Refresh MUST rotate the refresh-token value"
+    );
 
     app.cleanup().await.ok();
 }
 
 #[tokio::test]
-async fn test_refresh_with_both_body_and_cookie_uses_body() {
-    // Spec: "Body takes precedence if both present (so the frontend can switch
-    // over gradually)." Verify by sending a VALID body token and an INVALID
-    // cookie token — the request must succeed (proving the body was used).
+async fn test_refresh_with_body_and_invalid_cookie_fails() {
+    // Phase 3 inverts the Phase 1 precedence rule. Even if a (valid)
+    // refresh token is in the body, an INVALID cookie value must cause
+    // the request to fail — the cookie is now authoritative.
     let app = TestApp::new().await.expect("Failed to create test app");
     let client = app.client();
 
-    let (email, _, _) = register_and_get_refresh_artifacts(&client).await;
-    let (body_refresh_token, _set_cookie) =
-        login_and_capture_cookie(&client, &email, "SecurePass123!").await;
+    let (_email, _register_response, cookie_value) = register_user(&client).await;
 
     let cookie_client = app
         .client()
         .with_cookie("refresh_token=this-cookie-token-is-not-valid");
 
-    let refresh_payload = json!({ "refreshToken": body_refresh_token });
-    let response = cookie_client
-        .post("/api/auth/refresh", &refresh_payload)
-        .await;
+    let body_payload = json!({ "refreshToken": cookie_value });
+    let response = cookie_client.post("/api/auth/refresh", &body_payload).await;
 
-    response.assert_status(200);
-    let body: Value = response.json().expect("Response should be valid JSON");
     assert!(
-        body["tokens"]["accessToken"].is_string(),
-        "Body token must take precedence over the (invalid) cookie token"
+        response.status == 401 || response.status == 400,
+        "Phase 3: an invalid cookie must fail even if a valid token is in \
+         the body. Expected 401/400, got {}: {}",
+        response.status,
+        response.body
     );
 
     app.cleanup().await.ok();
@@ -734,21 +851,19 @@ async fn test_logout_clears_refresh_token_cookie() {
     let app = TestApp::new().await.expect("Failed to create test app");
     let client = app.client();
 
-    let (email, _, _) = register_and_get_refresh_artifacts(&client).await;
-    let (body_refresh_token, _set_cookie) =
-        login_and_capture_cookie(&client, &email, "SecurePass123!").await;
+    let (email, _register_response, _) = register_user(&client).await;
 
-    // Log in again to get an access token (we have body_refresh_token but
-    // need an access token for the logout endpoint).
-    let login_payload = json!({ "email": email, "password": "SecurePass123!" });
-    let login_response = client.post("/api/auth/login", &login_payload).await;
-    login_response.assert_status(200);
+    // Log in to get an access token paired with a fresh cookie.
+    let (login_response, cookie_value) = login_user(&client, &email, "SecurePass123!").await;
     let login_body: Value = login_response.json().unwrap();
     let access_token = login_body["tokens"]["accessToken"].as_str().unwrap();
 
-    let auth_client = TestClient::new(app.router()).with_auth(access_token);
-    let logout_payload = json!({ "refreshToken": body_refresh_token });
-    let logout_response = auth_client.post("/api/auth/logout", &logout_payload).await;
+    // Phase 3: logout reads the refresh token from the cookie, not the body.
+    let auth_client = TestClient::new(app.router())
+        .with_auth(access_token)
+        .with_cookie(&format!("refresh_token={cookie_value}"));
+
+    let logout_response = auth_client.post("/api/auth/logout", &json!({})).await;
     logout_response.assert_status(200);
 
     let clear_cookie = logout_response
@@ -756,7 +871,7 @@ async fn test_logout_clears_refresh_token_cookie() {
         .expect("Logout MUST emit a refresh_token Set-Cookie header to clear it");
 
     assert_eq!(
-        cookie_value(&clear_cookie),
+        parse_cookie_value(&clear_cookie),
         "",
         "Cleared cookie value must be empty"
     );

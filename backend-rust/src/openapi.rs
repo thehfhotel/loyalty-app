@@ -133,8 +133,9 @@ impl Modify for SecurityAddon {
             // Auth schemas
             schemas::RegisterRequest,
             schemas::LoginRequest,
-            schemas::LogoutRequest,
-            schemas::RefreshTokenRequest,
+            // LogoutRequest / RefreshTokenRequest removed in Phase 3 —
+            // both endpoints now take an empty body and read the refresh
+            // token from the HttpOnly cookie.
             schemas::ForgotPasswordRequest,
             schemas::ResetPasswordRequest,
             schemas::AuthResponse,
@@ -329,21 +330,10 @@ pub mod schemas {
         pub remember_me: bool,
     }
 
-    /// Logout request
-    #[derive(Debug, Serialize, Deserialize, ToSchema)]
-    pub struct LogoutRequest {
-        /// Optional refresh token to invalidate
-        #[serde(rename = "refreshToken")]
-        pub refresh_token: Option<String>,
-    }
-
-    /// Token refresh request
-    #[derive(Debug, Serialize, Deserialize, ToSchema)]
-    pub struct RefreshTokenRequest {
-        /// Refresh token
-        #[serde(rename = "refreshToken")]
-        pub refresh_token: String,
-    }
+    // Phase 3: `LogoutRequest` and `RefreshTokenRequest` are gone. Both
+    // endpoints take an empty JSON body and read the refresh token from
+    // the `refresh_token` HttpOnly cookie. See `routes::auth` for the
+    // handler signatures.
 
     /// Forgot password request
     #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -372,15 +362,17 @@ pub mod schemas {
         pub tokens: AuthTokens,
     }
 
-    /// Authentication tokens
+    /// Authentication tokens returned in the JSON body.
+    ///
+    /// Phase 3: only the access token is returned in the body. The refresh
+    /// token is delivered exclusively via the `refresh_token` HttpOnly
+    /// cookie (see the `Set-Cookie` response header on /auth/login,
+    /// /auth/register, /auth/refresh, and the OAuth callbacks).
     #[derive(Debug, Serialize, Deserialize, ToSchema)]
     pub struct AuthTokens {
         /// JWT access token
         #[serde(rename = "accessToken")]
         pub access_token: String,
-        /// Refresh token for obtaining new access tokens
-        #[serde(rename = "refreshToken")]
-        pub refresh_token: String,
     }
 
     /// Current user response
@@ -1491,12 +1483,16 @@ pub mod paths {
     )]
     pub async fn auth_login() {}
 
-    /// Logout and invalidate refresh token
+    /// Logout and invalidate refresh token.
+    ///
+    /// Phase 3: takes no JSON body. The refresh token to invalidate is
+    /// read from the `refresh_token` HttpOnly cookie that the browser
+    /// sends automatically. The response includes a `Set-Cookie:
+    /// refresh_token=; Max-Age=0` header that clears the cookie.
     #[utoipa::path(
         post,
         path = "/auth/logout",
         tag = "auth",
-        request_body = LogoutRequest,
         security(("bearer_auth" = [])),
         responses(
             (status = 200, description = "Logged out successfully", body = MessageResponse),
@@ -1505,15 +1501,19 @@ pub mod paths {
     )]
     pub async fn auth_logout() {}
 
-    /// Refresh access token
+    /// Refresh access token.
+    ///
+    /// Phase 3: takes no JSON body. The refresh token is read exclusively
+    /// from the `refresh_token` HttpOnly cookie. The response carries a
+    /// rotated cookie via `Set-Cookie` and returns the new access token
+    /// in the JSON body — never the refresh token.
     #[utoipa::path(
         post,
         path = "/auth/refresh",
         tag = "auth",
-        request_body = RefreshTokenRequest,
         responses(
             (status = 200, description = "Token refreshed successfully", body = TokenRefreshResponse),
-            (status = 401, description = "Invalid or expired refresh token", body = ErrorResponse)
+            (status = 401, description = "Missing, invalid, or expired refresh-token cookie", body = ErrorResponse)
         )
     )]
     pub async fn auth_refresh() {}

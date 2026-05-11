@@ -28,13 +28,12 @@ export default function OAuthSuccessPage() {
       const error = searchParams.get('error');
       const isPWARedirect = searchParams.get('pwa_redirect') === 'true';
 
-      // Phase 2: the backend still appends `refreshToken=…` to the OAuth
-      // success redirect URL for the PWA deep-link handoff (Phase 3 will
-      // drop it from the URL too). For the in-browser path we ignore the
-      // URL param entirely — the same response carries `Set-Cookie:
-      // refresh_token=…; HttpOnly; Path=/api/auth`, and that cookie is
-      // the source of truth for refreshes from now on.
-      const pwaRedirectRefreshToken = searchParams.get('refreshToken');
+      // Phase 3: the backend no longer appends `refreshToken=…` to the
+      // OAuth success redirect URL. The refresh token rides exclusively
+      // on the `Set-Cookie: refresh_token=…; HttpOnly; Path=/api/auth`
+      // header attached to the same redirect — JavaScript can't read it
+      // and it never appears in browser history, server logs, or
+      // Referer headers.
 
       if (error) {
         notify.error('Social login failed. Please try again.');
@@ -42,9 +41,8 @@ export default function OAuthSuccessPage() {
         return;
       }
 
-      // Phase 2: only `token` (the access token) is required. The
-      // refresh token is no longer sourced from the URL — it lives in
-      // the HttpOnly cookie.
+      // Only `token` (the access token) is required. The refresh token
+      // lives in the HttpOnly cookie set on this same redirect response.
       if (!token) {
         notify.error('Invalid authentication response. Please try again.');
         navigate('/login');
@@ -54,17 +52,16 @@ export default function OAuthSuccessPage() {
       try {
         const pwaInfo = detectPWA();
 
-        // PWA deep-link handoff: an iOS PWA opens OAuth in Safari (a
-        // separate cookie jar from the standalone PWA). The round-trip
-        // back to the standalone window can't carry Safari's cookie, so
-        // until Phase 3 removes the URL param we still pass the
-        // URL-param refresh token through `handlePWAOAuthSuccess` to
-        // bridge the gap. If the param isn't present (e.g. Phase 3 has
-        // shipped or this isn't actually a PWA round-trip) we pass an
-        // empty string and the helper degrades gracefully.
+        // PWA deep-link handoff. The legacy URL-param refresh-token
+        // bridge was removed in Phase 3 — the cookie set by the backend
+        // is now the only delivery channel. `handlePWAOAuthSuccess`
+        // still receives the access token so it can fire the deep-link
+        // redirect, but the refresh-token field is intentionally empty;
+        // the standalone PWA picks the refresh token up from the
+        // browser's cookie jar on the next `/api/auth/refresh` call.
         const pwaTokens = {
           accessToken: token,
-          refreshToken: pwaRedirectRefreshToken ?? '',
+          refreshToken: '',
           isNewUser,
         };
 
@@ -90,7 +87,7 @@ export default function OAuthSuccessPage() {
           restoreIOSPWAManifest();
         }
 
-        // Phase 2: store the access token only. The refresh token is in
+        // Phase 3: store the access token only. The refresh token is in
         // the HttpOnly cookie set by the backend on the OAuth callback
         // redirect — the browser will send it automatically on the next
         // /api/auth/refresh call.
@@ -113,7 +110,7 @@ export default function OAuthSuccessPage() {
         const { user } = await response.json();
 
         // Update auth store with user data. (No `refreshToken` field —
-        // that lives in the HttpOnly cookie now.)
+        // that lives in the HttpOnly cookie now, Phase 3.)
         useAuthStore.setState({
           user,
           accessToken: token,
