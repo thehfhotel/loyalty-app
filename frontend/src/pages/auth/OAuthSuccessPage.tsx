@@ -22,12 +22,19 @@ export default function OAuthSuccessPage() {
     const handleOAuthSuccess = async () => {
       // Debug PWA OAuth flow in development
       debugPWAOAuth();
-      
+
       const token = searchParams.get('token');
-      const refreshToken = searchParams.get('refreshToken');
       const isNewUser = searchParams.get('isNewUser') === 'true';
       const error = searchParams.get('error');
       const isPWARedirect = searchParams.get('pwa_redirect') === 'true';
+
+      // Phase 2: the backend still appends `refreshToken=…` to the OAuth
+      // success redirect URL for the PWA deep-link handoff (Phase 3 will
+      // drop it from the URL too). For the in-browser path we ignore the
+      // URL param entirely — the same response carries `Set-Cookie:
+      // refresh_token=…; HttpOnly; Path=/api/auth`, and that cookie is
+      // the source of truth for refreshes from now on.
+      const pwaRedirectRefreshToken = searchParams.get('refreshToken');
 
       if (error) {
         notify.error('Social login failed. Please try again.');
@@ -35,7 +42,10 @@ export default function OAuthSuccessPage() {
         return;
       }
 
-      if (!token || !refreshToken) {
+      // Phase 2: only `token` (the access token) is required. The
+      // refresh token is no longer sourced from the URL — it lives in
+      // the HttpOnly cookie.
+      if (!token) {
         notify.error('Invalid authentication response. Please try again.');
         navigate('/login');
         return;
@@ -43,14 +53,27 @@ export default function OAuthSuccessPage() {
 
       try {
         const pwaInfo = detectPWA();
-        const tokens = { accessToken: token, refreshToken, isNewUser };
-        
+
+        // PWA deep-link handoff: an iOS PWA opens OAuth in Safari (a
+        // separate cookie jar from the standalone PWA). The round-trip
+        // back to the standalone window can't carry Safari's cookie, so
+        // until Phase 3 removes the URL param we still pass the
+        // URL-param refresh token through `handlePWAOAuthSuccess` to
+        // bridge the gap. If the param isn't present (e.g. Phase 3 has
+        // shipped or this isn't actually a PWA round-trip) we pass an
+        // empty string and the helper degrades gracefully.
+        const pwaTokens = {
+          accessToken: token,
+          refreshToken: pwaRedirectRefreshToken ?? '',
+          isNewUser,
+        };
+
         // Enhanced PWA-specific OAuth flow handling
         if (isPWARedirect || !pwaInfo.isPWA) {
           // Check if we need to redirect back to PWA
-          handlePWAOAuthSuccess(tokens);
-          
-          // If we're in a browser window and have PWA state, 
+          handlePWAOAuthSuccess(pwaTokens);
+
+          // If we're in a browser window and have PWA state,
           // the handlePWAOAuthSuccess will redirect to PWA
           const pwaState = recoverPWAOAuthState();
           if (pwaState && !pwaInfo.isStandalone) {
@@ -60,15 +83,18 @@ export default function OAuthSuccessPage() {
             return;
           }
         }
-        
+
         // iOS PWA specific: Handle context restoration after OAuth redirect
         if (pwaInfo.isIOS && pwaInfo.isStandalone) {
           // Restore iOS PWA manifest settings after OAuth success
           restoreIOSPWAManifest();
         }
 
-        // Set tokens in auth store
-        setTokens(token, refreshToken);
+        // Phase 2: store the access token only. The refresh token is in
+        // the HttpOnly cookie set by the backend on the OAuth callback
+        // redirect — the browser will send it automatically on the next
+        // /api/auth/refresh call.
+        setTokens(token);
 
         // Get user data using the token
         const meUrl = `${API_BASE_URL}/oauth/me`;
@@ -86,11 +112,11 @@ export default function OAuthSuccessPage() {
 
         const { user } = await response.json();
 
-        // Update auth store with user data
+        // Update auth store with user data. (No `refreshToken` field —
+        // that lives in the HttpOnly cookie now.)
         useAuthStore.setState({
           user,
           accessToken: token,
-          refreshToken,
           isAuthenticated: true,
           isLoading: false
         });

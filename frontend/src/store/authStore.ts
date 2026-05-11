@@ -37,10 +37,9 @@ function getErrorMessage(error: unknown): string {
 interface AuthState {
   user: User | null;
   accessToken: string | null;
-  refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  
+
   login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
   register: (data: {
     email: string;
@@ -51,7 +50,10 @@ interface AuthState {
   }) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
-  setTokens: (accessToken: string, refreshToken: string) => void;
+  // Phase 2: only the access token lives in the store; the refresh token
+  // is held by the browser as an HttpOnly cookie (`refresh_token`) set by
+  // the backend (Phase 1, PR #194) and never readable from JavaScript.
+  setTokens: (accessToken: string) => void;
   clearAuth: () => void;
   checkAuthStatus: () => Promise<boolean>;
   updateUser: (updates: Partial<User>) => void;
@@ -62,7 +64,6 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       accessToken: null,
-      refreshToken: null,
       isAuthenticated: false,
       isLoading: false,
 
@@ -70,10 +71,12 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         try {
           const response = await authService.login(email, password, rememberMe);
+          // Phase 2: ignore `response.tokens.refreshToken` — the backend has
+          // also set it as an HttpOnly cookie (Phase 1, PR #194). The cookie
+          // is the source of truth; we never store the refresh token in JS.
           set({
             user: response.user,
             accessToken: response.tokens.accessToken,
-            refreshToken: response.tokens.refreshToken,
             isAuthenticated: true,
             isLoading: false,
           });
@@ -89,10 +92,12 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         try {
           const response = await authService.register(data);
+          // Phase 2: same rationale as login — refresh token is in the
+          // HttpOnly cookie set by the backend; we keep only the access
+          // token in JS.
           set({
             user: response.user,
             accessToken: response.tokens.accessToken,
-            refreshToken: response.tokens.refreshToken,
             isAuthenticated: true,
             isLoading: false,
           });
@@ -105,11 +110,12 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: async () => {
-        const { refreshToken } = get();
         try {
-          if (refreshToken) {
-            await authService.logout(refreshToken);
-          }
+          // Phase 2: no body argument — `authService.logout()` posts an
+          // empty body and the browser sends the `refresh_token` cookie
+          // automatically (axios `withCredentials: true`). The backend
+          // both deletes the row and clears the cookie via Set-Cookie.
+          await authService.logout();
         } catch (_error) {
           // Logout error - continue with local logout
         } finally {
@@ -119,24 +125,22 @@ export const useAuthStore = create<AuthState>()(
       },
 
       refreshAuth: async () => {
-        const { refreshToken } = get();
-        if (!refreshToken) {
-          logger.warn('No refresh token available for refresh');
-          get().clearAuth();
-          return;
-        }
-
         try {
           // Add timeout to refresh request
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-          
-          const response = await authService.refreshToken(refreshToken);
+
+          // Phase 2: no token argument — the refresh token rides as an
+          // HttpOnly cookie. The backend reads `refresh_token` from the
+          // cookie and rotates it (sets a new one in the response).
+          const response = await authService.refreshToken();
           clearTimeout(timeoutId);
-          
+
+          // Phase 2: only the access token enters the store. The new
+          // refresh token in the JSON body is ignored — the cookie that
+          // the backend set on this same response is now authoritative.
           set({
             accessToken: response.tokens.accessToken,
-            refreshToken: response.tokens.refreshToken,
           });
 
           if (import.meta.env?.DEV) {
@@ -144,27 +148,29 @@ export const useAuthStore = create<AuthState>()(
           }
         } catch (error: unknown) {
           logger.warn('Token refresh failed:', error instanceof Error ? error.message : String(error));
-          
+
           // Only clear auth on explicit auth failures, not network issues
           if ((error as HttpError)?.response?.status === 401 || (error as HttpError)?.response?.status === 403 ||
               (error instanceof Error && error.message.includes('Invalid refresh token'))) {
             logger.warn('Refresh token is invalid, clearing auth state');
             get().clearAuth();
           }
-          
+
           throw error;
         }
       },
 
-      setTokens: (accessToken: string, refreshToken: string) => {
-        set({ accessToken, refreshToken });
+      setTokens: (accessToken: string) => {
+        // Phase 2: only the access token is settable from JS. The refresh
+        // token arrives as an HttpOnly cookie that the browser stores
+        // automatically; we don't (and can't) touch it.
+        set({ accessToken });
       },
 
       clearAuth: () => {
         set({
           user: null,
           accessToken: null,
-          refreshToken: null,
           isAuthenticated: false,
         });
       },
@@ -242,42 +248,39 @@ export const useAuthStore = create<AuthState>()(
             return true;
           }
 
-          // Token is invalid or expired, try to refresh
-          if (state.refreshToken) {
-            try {
-              await get().refreshAuth();
-              // After successful refresh, ensure isAuthenticated is true
-              if (!get().isAuthenticated) {
+          // Token is invalid or expired — try to refresh. We can no longer
+          // gate on a JS-visible refresh token (Phase 2: it lives in the
+          // HttpOnly cookie). We just attempt the refresh; the backend
+          // returns 401 if the cookie is missing/expired and we fall
+          // through to clearAuth() below.
+          try {
+            await get().refreshAuth();
+            // After successful refresh, ensure isAuthenticated is true
+            if (!get().isAuthenticated) {
+              set({ isAuthenticated: true });
+            }
+            return true;
+          } catch (refreshError: unknown) {
+            logger.warn('Refresh token failed:', refreshError instanceof Error ? refreshError.message : String(refreshError));
+
+            // Handle rate limiting on refresh - don't logout
+            if ((refreshError as HttpError)?.response?.status === 429) {
+              logger.warn('Rate limit hit during token refresh, keeping auth state');
+              // Ensure isAuthenticated is set if we have tokens
+              if (!state.isAuthenticated && state.accessToken) {
                 set({ isAuthenticated: true });
               }
               return true;
-            } catch (refreshError: unknown) {
-              logger.warn('Refresh token failed:', refreshError instanceof Error ? refreshError.message : String(refreshError));
+            }
 
-              // Handle rate limiting on refresh - don't logout
-              if ((refreshError as HttpError)?.response?.status === 429) {
-                logger.warn('Rate limit hit during token refresh, keeping auth state');
-                // Ensure isAuthenticated is set if we have tokens
-                if (!state.isAuthenticated && state.accessToken) {
-                  set({ isAuthenticated: true });
-                }
-                return true;
-              }
-
-              // Only clear auth on explicit 401/403 errors, not network issues
-              if ((refreshError as HttpError)?.response?.status === 401 || (refreshError as HttpError)?.response?.status === 403) {
-                get().clearAuth();
-                return false;
-              }
-              // For other errors (network, etc), keep auth state but return false
+            // Only clear auth on explicit 401/403 errors, not network issues
+            if ((refreshError as HttpError)?.response?.status === 401 || (refreshError as HttpError)?.response?.status === 403) {
+              get().clearAuth();
               return false;
             }
+            // For other errors (network, etc), keep auth state but return false
+            return false;
           }
-
-          // No refresh token available
-          logger.warn('No refresh token available, clearing auth');
-          get().clearAuth();
-          return false;
         }
       },
 
@@ -295,10 +298,14 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
+      // Phase 2: `refreshToken` is intentionally absent. It lives in the
+      // browser's HttpOnly cookie jar (`refresh_token`) so JavaScript —
+      // including any XSS payload — cannot read it. The one-time cleanup
+      // of any stale `refreshToken` left over from Phase 1 happens on
+      // app startup via `migrateAuthStorageForCookieRefreshToken()`.
       partialize: (state) => ({
         user: state.user,
         accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }
