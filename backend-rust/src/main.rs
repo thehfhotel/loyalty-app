@@ -282,10 +282,7 @@ const FORBIDDEN_DB_CREDENTIAL_PATTERNS: &[&str] = &[
 /// - The `CHANGE_ME_*` placeholders shipped in `.env.production.example`.
 /// - Trivial `password` user/secret choices (`password@` and `:password:`).
 /// - An empty password segment (e.g. `postgres://user:@host/db`).
-fn enforce_safe_database_url(
-    database_url: &str,
-    environment: &Environment,
-) -> anyhow::Result<()> {
+fn enforce_safe_database_url(database_url: &str, environment: &Environment) -> anyhow::Result<()> {
     let matched_pattern = forbidden_pattern_match(database_url);
 
     let Some(pattern) = matched_pattern else {
@@ -404,8 +401,7 @@ mod tests {
 
     #[test]
     fn enforce_safe_database_url_accepts_strong_creds_in_production() {
-        let url =
-            "postgresql://prod_user_28a:F8q!7vXr2sH9pZdL3kN@db.internal:5432/loyalty_prod_db";
+        let url = "postgresql://prod_user_28a:F8q!7vXr2sH9pZdL3kN@db.internal:5432/loyalty_prod_db";
         assert!(enforce_safe_database_url(url, &Environment::Production).is_ok());
     }
 
