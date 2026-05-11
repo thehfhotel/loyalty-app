@@ -1,7 +1,7 @@
 # ==============================================================================
 # Stage 1: Chef - Install cargo-chef for dependency caching
 # ==============================================================================
-FROM rust:1.95-bookworm AS chef
+FROM rust:1.95-trixie AS chef
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
@@ -45,7 +45,7 @@ RUN cargo build --release --bin loyalty-backend
 # ==============================================================================
 # Stage 4: Development - Full development environment with hot reload
 # ==============================================================================
-FROM rust:1.95-bookworm AS development
+FROM rust:1.95-trixie AS development
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
@@ -74,12 +74,26 @@ CMD ["cargo", "watch", "-x", "run"]
 # ==============================================================================
 # Stage 5: Runner - Minimal production image
 # ==============================================================================
-FROM debian:bookworm-slim AS runner
+# Base: debian:trixie-slim (Debian 13, current stable as of 2026)
+# - Newer libssl3 / libpq5 / libgcc / libstdc++ vs bookworm — closes ~150
+#   unfixed-in-bookworm Trivy OS CVEs (libssh2, libgnutls, zlib, etc.)
+# - Still apt-based + ships curl, so the existing in-container healthcheck
+#   in docker-compose.prod.yml continues to work without any compose change.
+# - Distroless (gcr.io/distroless/cc-debian12) was evaluated but deferred:
+#   the prod compose healthcheck shells out to `curl` inside the container,
+#   and removing curl requires a coordinated edit to docker-compose.prod.yml
+#   that lives outside this PR's scope. See follow-up issue.
+FROM debian:trixie-slim AS runner
 
-# Install only required runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install only required runtime dependencies. apt-get upgrade pulls any
+# newer security patches available in the trixie security repos at build
+# time (image freshness without requiring a base-image bump).
+# NOTE: trixie renamed libssl3 -> libssl3t64 (64-bit time_t transition).
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libssl3 \
+    libssl3t64 \
     libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/* \
