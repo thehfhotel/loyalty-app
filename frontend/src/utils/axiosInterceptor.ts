@@ -59,29 +59,30 @@ export function setupAxiosInterceptors() {
           return Promise.reject(createApiError(error));
         }
 
-        // Try to refresh token first - but only if we have a refresh token
-        const refreshToken = authStore.refreshToken;
-        if (refreshToken) {
-          try {
-            await authStore.refreshAuth();
+        // Phase 2: always attempt the refresh — the refresh token is now
+        // an HttpOnly cookie that JS cannot see. The browser sends it
+        // automatically (axios `withCredentials: true` on the auth axios
+        // instance). The backend returns 401 if the cookie is absent or
+        // expired, which falls through to clearAuth + redirect below.
+        try {
+          await authStore.refreshAuth();
 
-            // If refresh successful, retry the original request
-            const originalRequest = error.config as RetryableRequestConfig;
-            if (originalRequest && !originalRequest._retry) {
-              originalRequest._retry = true; // Prevent infinite retry loops
-              // Update the Authorization header with the new token
-              const newToken = useAuthStore.getState().accessToken;
-              if (newToken) {
-                originalRequest.headers.Authorization = `Bearer ${newToken}`;
-                return axios.request(originalRequest);
-              }
+          // If refresh successful, retry the original request
+          const originalRequest = error.config as RetryableRequestConfig;
+          if (originalRequest && !originalRequest._retry) {
+            originalRequest._retry = true; // Prevent infinite retry loops
+            // Update the Authorization header with the new token
+            const newToken = useAuthStore.getState().accessToken;
+            if (newToken) {
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+              return axios.request(originalRequest);
             }
-          } catch (refreshError) {
-            logger.error('Token refresh failed:', refreshError);
           }
+        } catch (refreshError) {
+          logger.error('Token refresh failed:', refreshError);
         }
 
-        // Clear auth state and redirect (whether refresh failed or no refresh token)
+        // Clear auth state and redirect (refresh failed, or no cookie)
         authStore.clearAuth();
 
         // Show session expired message only once
@@ -183,24 +184,23 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
           return Promise.reject(createApiError(error));
         }
 
-        // Try to refresh token first - but only if we have a refresh token
-        const refreshToken = authStore.refreshToken;
-        if (refreshToken) {
-          try {
-            await authStore.refreshAuth();
+        // Phase 2: always attempt the refresh — see the global interceptor
+        // for the full rationale. The HttpOnly cookie is the source of
+        // truth; we cannot read it from JS, so we just try.
+        try {
+          await authStore.refreshAuth();
 
-            // If refresh successful, retry the original request
-            const newToken = useAuthStore.getState().accessToken;
-            if (newToken) {
-              originalRequest.headers.Authorization = `Bearer ${newToken}`;
-              return axiosInstance.request(originalRequest);
-            }
-          } catch (refreshError) {
-            logger.error('Token refresh failed:', refreshError);
+          // If refresh successful, retry the original request
+          const newToken = useAuthStore.getState().accessToken;
+          if (newToken) {
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            return axiosInstance.request(originalRequest);
           }
+        } catch (refreshError) {
+          logger.error('Token refresh failed:', refreshError);
         }
 
-        // Clear auth state and redirect (whether refresh failed or no refresh token)
+        // Clear auth state and redirect (refresh failed, or no cookie)
         authStore.clearAuth();
 
         // Show session expired message only once

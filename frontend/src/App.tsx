@@ -40,6 +40,7 @@ import { useEffect, useState, useRef } from 'react';
 import { checkPWAInstallPrompt } from './utils/pwaUtils';
 import { notificationService } from './services/notificationService';
 import { logger } from './utils/logger';
+import { migrateAuthStorageForCookieRefreshToken } from './utils/authStorageMigration';
 
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -71,10 +72,17 @@ function App() {
       try {
         // Give Zustand persist time to rehydrate state from localStorage
         await new Promise(resolve => setTimeout(resolve, 200));
-        
+
+        // Phase 2 one-time migration: scrub any stale `refreshToken` left
+        // over from before the HttpOnly-cookie cutover (PR #194 + this
+        // PR). The helper is idempotent and safe to call on every
+        // startup. See `utils/authStorageMigration.ts` for the full
+        // rationale and the in-flight-session risk note.
+        migrateAuthStorageForCookieRefreshToken();
+
         // Get current auth state after rehydration
         const authStore = useAuthStore.getState();
-        
+
         // Check for corrupted localStorage data and clear if needed
         try {
           const storedAuth = localStorage.getItem('auth-storage');
@@ -98,18 +106,23 @@ function App() {
           setIsInitialized(true);
           return;
         }
-        
-        // Quick consistency check - if inconsistent state, clear immediately
-        if (authStore.isAuthenticated && (!authStore.accessToken || !authStore.refreshToken)) {
-          logger.warn('Auth state inconsistent (authenticated but missing tokens), clearing');
+
+        // Quick consistency check — if marked authenticated but no access
+        // token, clear. (Phase 2: we no longer require `refreshToken` in
+        // JS — that moved to the HttpOnly cookie set by Phase 1 backend.)
+        if (authStore.isAuthenticated && !authStore.accessToken) {
+          logger.warn('Auth state inconsistent (authenticated but missing access token), clearing');
           authStore.clearAuth();
           clearTimeout(initTimeout);
           setIsInitialized(true);
           return;
         }
-        
-        // If we have stored auth data, validate it with timeout
-        if (authStore.accessToken && authStore.refreshToken) {
+
+        // If we have a stored access token, validate it with timeout. We
+        // no longer key on `refreshToken` here — the cookie isn't visible
+        // to JS, so we trust the access token's presence and let
+        // `checkAuthStatus` do the network check.
+        if (authStore.accessToken) {
           try {
             // Add timeout to auth validation to prevent hanging
             // Use 5s timeout - generous enough for slow networks
@@ -154,7 +167,7 @@ function App() {
             isAuthenticated: finalState.isAuthenticated,
             user: finalState.user?.email,
             hasAccessToken: !!finalState.accessToken,
-            hasRefreshToken: !!finalState.refreshToken
+            // Phase 2: refresh token is in an HttpOnly cookie, not JS-visible.
           });
         }
       } catch (error) {
