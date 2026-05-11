@@ -1688,6 +1688,7 @@
     "invalidFileType": "Please upload a valid image file (JPG or PNG)",
     "fileTooLarge": "File size must be less than 10MB",
     "uploadError": "Failed to upload slip. Please try again.",
+    "qrFallback": "Showing fallback QR code. Please confirm the amount before paying.",
     "slipok": {
       "pending": "Pending",
       "verified": "Verified",
