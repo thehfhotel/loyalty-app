@@ -135,7 +135,16 @@ jobs:
 
       - name: Run database migrations
         run: |
-          PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db -f backend-rust/migrations/20240101000000_init.sql
+          # Apply every migration in lexical (timestamp-ordered) order so the
+          # sqlx prepare --check step below sees the same schema the app
+          # expects. Hard-coding a single filename silently rotted as new
+          # migrations were added — see PR #215's booking_slips reconciliation.
+          set -euo pipefail
+          for f in backend-rust/migrations/*.sql; do
+            echo "Applying $f"
+            PGPASSWORD=loyalty_test_pass psql -h localhost -p 5438 -U loyalty_test -d loyalty_test_db \
+              -v ON_ERROR_STOP=1 -f "$f"
+          done
         env:
           PGPASSWORD: loyalty_test_pass
 
