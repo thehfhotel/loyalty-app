@@ -27,15 +27,20 @@ GHCR_REGISTRY="ghcr.io"
 GHCR_USER="thehfhotel"
 
 # Environment-specific settings
+# DEPLOY_ROOT may be overridden via env var; defaults to a per-environment
+# directory under /srv. The legacy /home/nut/loyalty-app-* paths used on the
+# original deploy host can still be selected by exporting DEPLOY_ROOT.
+DEPLOY_ROOT="${DEPLOY_ROOT:-/srv/loyalty-app-${ENVIRONMENT}}"
+
 if [ "$ENVIRONMENT" = "development" ]; then
-  DEPLOY_PATH="/home/nut/loyalty-app-develop"
+  DEPLOY_PATH="$DEPLOY_ROOT"
   COMPOSE_OVERRIDE="docker-compose.dev.yml"
-  HEALTH_PORT="5001"
+  HEALTH_PORT="${HEALTH_PORT:-5001}"
   ENV_SUFFIX="_dev"
 else
-  DEPLOY_PATH="/home/nut/loyalty-app-production"
+  DEPLOY_PATH="$DEPLOY_ROOT"
   COMPOSE_OVERRIDE="docker-compose.prod.yml"
-  HEALTH_PORT="4001"
+  HEALTH_PORT="${HEALTH_PORT:-4001}"
   ENV_SUFFIX="_production"
 fi
 

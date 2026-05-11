@@ -24,9 +24,10 @@ Or manually add secrets in GitHub:
 SSH to your server and run:
 
 ```bash
-# 1. Clone/pull the repository
-git clone <your-repo-url> /home/nut/loyalty-app
-cd /home/nut/loyalty-app
+# 1. Clone the repository to your chosen deploy root (e.g. /srv/loyalty-app)
+DEPLOY_ROOT="${DEPLOY_ROOT:-/srv/loyalty-app}"
+git clone <your-repo-url> "$DEPLOY_ROOT"
+cd "$DEPLOY_ROOT"
 
 # 2. Run the setup script
 bash scripts/setup-github-runner.sh

@@ -114,7 +114,7 @@ main() {
     echo "  □ Run: bash scripts/setup-github-runner.sh"
     echo "  □ Verify runner appears in GitHub settings"
     echo "  □ Ensure Docker and Docker Compose installed"
-    echo "  □ Create /home/nut/loyalty-app directory"
+    echo "  □ Create the deployment directory (default: /srv/loyalty-app-<env>; override via DEPLOY_ROOT)"
     echo ""
     echo "Testing:"
     echo "  □ Push to main branch"
