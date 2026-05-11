@@ -1,11 +1,36 @@
+# syntax=docker/dockerfile:1.7
 # ==============================================================================
-# CI Dockerfile - Uses pre-built binary from GitHub Actions
-# This avoids recompiling Rust inside Docker, saving ~15 minutes per build.
+# CI Dockerfile - Pairs a pre-built loyalty-backend binary with a tiny
+#                 in-Dockerfile-compiled healthcheck binary on Distroless.
 #
-# IMPORTANT - Single-stage runtime image only:
-#   - Used by the build-and-push CI workflow, which compiles the Rust binary
-#     on the runner and copies the artifact (./loyalty-backend) into this image.
-#   - Defines ONLY the `runner` stage - no `development` or `planner` stages.
+# Why two binaries:
+#   - `loyalty-backend` is built on the GitHub runner (saves ~15 min vs
+#     compiling inside Docker) and copied in as a build-context artifact.
+#   - `healthcheck` is a small pure-Rust binary (~1MB) compiled HERE in
+#     stage 1 because the CI workflow only uploads one artifact path
+#     (`backend-rust/target/release/loyalty-backend`). A focused build of
+#     one tiny bin with one transitive dep (ureq, no TLS) finishes in
+#     well under a minute, so this doesn't reintroduce the ~15-minute
+#     full-backend penalty.
+#
+#   Why not change the workflow to upload both?
+#     This Dockerfile lives in the same PR as the Distroless flip and the
+#     compose healthcheck change. Touching the workflow expands the blast
+#     radius. A follow-up PR can move the healthcheck build back to the
+#     runner once this lands cleanly.
+#
+# Why Distroless:
+#   - gcr.io/distroless/cc-debian12 has no shell, no apt, no curl — just
+#     glibc, libgcc, libstdc++, libssl3, ca-certificates, and a `nonroot`
+#     user (uid/gid 65532). That eliminates ~50 OS-level CVEs Trivy
+#     reports against debian:bookworm-slim.
+#   - The standard `curl`-based HEALTHCHECK is replaced by /app/healthcheck.
+#
+# IMPORTANT - Two-stage build:
+#   - Stage 1 ("hc-builder") compiles src/bin/healthcheck.rs, vendored
+#     inline below to keep the build context unchanged (./backend-binary).
+#   - Stage 2 ("runner") is the Distroless runtime that ships only the
+#     two binaries.
 #   - INCOMPATIBLE with `target:` selection in compose files. Running e.g.
 #     `docker compose -f docker-compose.yml -f docker-compose.dev.yml up`
 #     against a server that points at this Dockerfile WILL FAIL because the
@@ -14,43 +39,99 @@
 #     one is used by `docker-compose.yml`'s default build path and supports
 #     all `target:` overrides (development, planner, runner).
 # ==============================================================================
-FROM debian:bookworm-slim AS runner
 
-# Install only required runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    libssl3 \
-    libpq5 \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean \
-    && rm -rf /var/cache/apt/archives/*
+# -----------------------------------------------------------------------------
+# Stage 1: hc-builder — compile the Distroless-friendly healthcheck binary.
+# -----------------------------------------------------------------------------
+# Source is vendored inline (not COPY'd from context) because the workflow
+# build context is `./backend-binary`, which contains only the pre-built
+# loyalty-backend binary. Keep this in sync with src/bin/healthcheck.rs.
+FROM rust:1.95-slim AS hc-builder
 
-# Create non-root user for security
-RUN groupadd --gid 1000 appgroup \
-    && useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser
+WORKDIR /hc
+
+RUN cat <<'EOF' > Cargo.toml
+[package]
+name = "healthcheck"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ureq = { version = "2", default-features = false }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+EOF
+
+RUN mkdir -p src && cat <<'EOF' > src/main.rs
+//! KEEP IN SYNC with backend-rust/src/bin/healthcheck.rs.
+//! Vendored inline because the CI build context (./backend-binary) does
+//! not include workspace sources. The canonical copy lives in the Rust
+//! workspace and is what local builds (Dockerfile, target=runner) ship.
+use std::process::ExitCode;
+use std::time::Duration;
+
+const DEFAULT_PORT: &str = "4001";
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn main() -> ExitCode {
+    let port = std::env::var("PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());
+    let url = format!("http://127.0.0.1:{port}/api/health");
+
+    let agent = ureq::AgentBuilder::new().timeout(REQUEST_TIMEOUT).build();
+
+    match agent.get(&url).call() {
+        Ok(response) if (200..300).contains(&response.status()) => ExitCode::SUCCESS,
+        Ok(response) => {
+            eprintln!("healthcheck: unexpected status {} from {url}", response.status());
+            ExitCode::FAILURE
+        },
+        Err(ureq::Error::Status(code, _)) => {
+            eprintln!("healthcheck: HTTP {code} from {url}");
+            ExitCode::FAILURE
+        },
+        Err(err) => {
+            eprintln!("healthcheck: request to {url} failed: {err}");
+            ExitCode::FAILURE
+        },
+    }
+}
+EOF
+
+RUN cargo build --release --target-dir /hc/target
+
+# -----------------------------------------------------------------------------
+# Stage 2: runner — Distroless runtime.
+# -----------------------------------------------------------------------------
+# See the long comment in backend-rust/Dockerfile (Stage 5) for the full
+# rationale on what cc-debian12 ships and why it's safe for this binary.
+FROM gcr.io/distroless/cc-debian12 AS runner
 
 WORKDIR /app
 
-# Copy the pre-built binary from CI artifact
-COPY loyalty-backend /app/loyalty-backend
-RUN chmod +x /app/loyalty-backend
+# Pre-built loyalty-backend binary from the GitHub Actions runner artifact
+# (placed in the build context at ./loyalty-backend by docker/build-push-action).
+COPY --chown=nonroot:nonroot loyalty-backend                  /app/loyalty-backend
+# Tiny healthcheck binary compiled in stage 1.
+COPY --from=hc-builder --chown=nonroot:nonroot /hc/target/release/healthcheck /app/healthcheck
 
-# Set ownership to non-root user
-RUN chown -R appuser:appgroup /app
+# Drop privileges. cc-debian12 ships the `nonroot` user as uid/gid 65532.
+# (Previous image used a manually-created `appuser` at uid/gid 1000.
+# This is a BREAKING CHANGE for any host bind mount that relied on uid 1000;
+# the production deployment uses named docker volumes only, so no impact.)
+USER nonroot:nonroot
 
-# Switch to non-root user
-USER appuser
-
-# Set environment variables
 ENV RUST_LOG=info
 ENV RUST_BACKTRACE=0
 
 EXPOSE 4001
 
-# Health check using curl to hit the health endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:4001/api/health || exit 1
+# No HEALTHCHECK directive: the docker-compose.prod.yml `healthcheck:` block
+# overrides anything set here at runtime, so we keep the contract in one
+# place (the compose file) instead of duplicating it.
 
-# Run the binary
 CMD ["/app/loyalty-backend"]
