@@ -1242,13 +1242,19 @@ async fn award_loyalty_points(
 }
 
 /// Row returned by `insert_booking_slip`.
+///
+/// `uploaded_at` is nullable in the schema (the column carries a
+/// `DEFAULT CURRENT_TIMESTAMP` but no `NOT NULL`); the response substitutes
+/// "now" if it is somehow NULL on read.
 #[derive(Debug, FromRow)]
 struct BookingSlipRow {
     pub id: Uuid,
     pub booking_id: Uuid,
     pub slip_url: String,
     pub uploaded_by: Uuid,
-    pub uploaded_at: DateTime<Utc>,
+    pub uploaded_at: Option<DateTime<Utc>>,
+    pub slipok_status: Option<String>,
+    pub admin_status: Option<String>,
 }
 
 impl From<BookingSlipRow> for BookingSlipResponse {
@@ -1258,32 +1264,37 @@ impl From<BookingSlipRow> for BookingSlipResponse {
             booking_id: row.booking_id,
             slip_url: row.slip_url,
             uploaded_by: row.uploaded_by,
-            uploaded_at: row.uploaded_at,
-            // These are nullable placeholders for the SlipOK / admin review
-            // workflows. They aren't wired up yet, so we always return None.
-            slipok_status: None,
-            admin_status: None,
+            uploaded_at: row.uploaded_at.unwrap_or_else(Utc::now),
+            slipok_status: row.slipok_status,
+            admin_status: row.admin_status,
         }
     }
 }
 
 /// Insert a slip row and return it as a response DTO.
+///
+/// The `slipok_status` and `admin_status` columns default to `'pending'` in
+/// the schema, so they are returned in the response immediately — clients
+/// don't have to wait for the SlipOK / admin review workflows to fire
+/// before seeing a status value.
 async fn insert_booking_slip(
     db: &PgPool,
     booking_id: Uuid,
     slip_url: &str,
     uploaded_by: Uuid,
 ) -> AppResult<BookingSlipResponse> {
-    let row: BookingSlipRow = sqlx::query_as(
+    let row = sqlx::query_as!(
+        BookingSlipRow,
         r#"
         INSERT INTO booking_slips (booking_id, slip_url, uploaded_by)
         VALUES ($1, $2, $3)
-        RETURNING id, booking_id, slip_url, uploaded_by, uploaded_at
+        RETURNING id, booking_id, slip_url, uploaded_by, uploaded_at,
+                  slipok_status, admin_status
         "#,
+        booking_id,
+        slip_url,
+        uploaded_by,
     )
-    .bind(booking_id)
-    .bind(slip_url)
-    .bind(uploaded_by)
     .fetch_one(db)
     .await?;
 

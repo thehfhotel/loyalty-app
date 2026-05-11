@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO room_blocked_dates (room_id, blocked_date, reason)\n        SELECT $1, d, $3\n          FROM UNNEST($2::date[]) AS d\n        ON CONFLICT (room_id, blocked_date) DO NOTHING\n        RETURNING id, blocked_date, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "blocked_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "DateArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "f8ccc323d0da07b3c742b62ddd625cd9589c5c487a1ddec444844de00ad26acd"
+}

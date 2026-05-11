@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM room_blocked_dates\n         WHERE room_id = $1\n           AND blocked_date = ANY($2::date[])\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "DateArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1cd49cdfb0d301cefaa231e1b7b627bdf66897975a81f57ea6c47509abdd4a10"
+}

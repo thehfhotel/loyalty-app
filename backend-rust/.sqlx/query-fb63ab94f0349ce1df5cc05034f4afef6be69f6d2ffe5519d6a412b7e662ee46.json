@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT bd.id,\n               bd.room_id,\n               r.room_number AS \"room_number!\",\n               bd.blocked_date,\n               bd.reason,\n               bd.created_at\n          FROM room_blocked_dates bd\n          JOIN rooms r ON r.id = bd.room_id\n         WHERE bd.blocked_date >= $1\n           AND bd.blocked_date <= $2\n           AND ($3::uuid IS NULL OR r.room_type_id = $3)\n         ORDER BY r.room_number ASC, bd.blocked_date ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "room_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "room_number!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "blocked_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "fb63ab94f0349ce1df5cc05034f4afef6be69f6d2ffe5519d6a412b7e662ee46"
+}
