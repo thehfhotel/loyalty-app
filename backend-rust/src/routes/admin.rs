@@ -1268,6 +1268,13 @@ pub fn router() -> Router<AppState> {
         // discount / cancel + the room-types dropdown source) likewise
         // live in their own sibling module.
         .merge(crate::routes::admin_bookings::router())
+        // Email-service status/test endpoints — sibling module for the
+        // same reason (separates concerns, keeps admin.rs from bloating).
+        .merge(crate::routes::admin_email::router())
+        // Slip moderation (verify / needs-action) for the booking slip
+        // viewer sidebar. Conceptually unrelated to room inventory, so
+        // it lives in its own module.
+        .merge(crate::routes::admin_slips::router())
         // Apply auth middleware to all routes
         .layer(middleware::from_fn(auth_middleware))
 }
