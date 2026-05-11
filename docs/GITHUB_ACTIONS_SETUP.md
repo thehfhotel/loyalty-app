@@ -1,83 +1,70 @@
 # GitHub Actions Deployment Setup Guide
 
-This guide will help you set up automated deployment using GitHub Actions with a self-hosted runner on your server.
+This guide describes how to wire up automated deployment for this repo using
+GitHub Actions and a self-hosted runner on your deploy host.
 
-## 📋 Overview
+## Overview
 
-Instead of manually SSHing to your server and pulling code, GitHub Actions will automatically deploy your app whenever you push to the main branch.
+Pushes to `main` trigger the workflow in `.github/workflows/deploy.yml`. The
+workflow runs tests, builds Docker images, pushes them to GHCR, deploys to
+staging automatically, and deploys to production after a manual approval.
 
-## 🚀 Quick Start
+## Quick Start
 
-### Step 1: Configure GitHub Secrets (On Dev Machine)
+### Step 1: Configure GitHub secrets
+
+Set the secrets the workflow needs (database URLs, JWT secrets, OAuth
+credentials, deploy URLs, etc.) under **Settings → Secrets and variables →
+Actions** for the repository. The exact list is enumerated in
+`.github/workflows/deploy.yml` — search the workflow for `secrets.`.
+
+### Step 2: Install a self-hosted runner
+
+Follow GitHub's official instructions:
+
+1. Open **Settings → Actions → Runners → New self-hosted runner** in your
+   repo on github.com.
+2. Pick the OS that matches your deploy host (typically Linux x64).
+3. Run the displayed `mkdir`, `curl`, `tar`, `./config.sh`, and `./run.sh`
+   commands on the host.
+
+Recommended labels: `self-hosted,Linux,X64,production`. The deploy workflow
+targets self-hosted runners.
+
+To install the runner as a service so it starts on boot:
 
 ```bash
-# Run the configuration helper
-bash scripts/deploy-config.sh
+cd "$RUNNER_DIR"          # the directory you ran ./config.sh in
+sudo ./svc.sh install
+sudo ./svc.sh start
+sudo ./svc.sh status
 ```
 
-Or manually add secrets in GitHub:
-1. Go to Settings → Secrets and variables → Actions
-2. Add required secrets (see script output for list)
+### Step 3: Verify the runner is registered
 
-### Step 2: Install Runner on Server
+In GitHub: **Settings → Actions → Runners** — your runner should appear
+with status "Idle".
 
-SSH to your server and run:
+### Step 4: Trigger a deployment
 
-```bash
-# 1. Clone the repository to your chosen deploy root (e.g. /srv/loyalty-app)
-DEPLOY_ROOT="${DEPLOY_ROOT:-/srv/loyalty-app}"
-git clone <your-repo-url> "$DEPLOY_ROOT"
-cd "$DEPLOY_ROOT"
+Push to `main` and watch the **Actions** tab. Staging deploys automatically;
+production requires you to approve the deployment in the GitHub UI.
 
-# 2. Run the setup script
-bash scripts/setup-github-runner.sh
-```
+## How it works
 
-Follow the prompts:
-- Enter your GitHub username/org
-- Enter repository name  
-- Get token from GitHub settings
-- Script will install and start the runner
+1. You push to `main`.
+2. GitHub triggers the workflow.
+3. The self-hosted runner on your deploy host runs the workflow.
+4. The workflow:
+   - Runs tests
+   - Builds Docker images
+   - Pushes images to GHCR
+   - Backs up the database
+   - Deploys via `docker compose pull` + `up -d`
+   - Runs health checks
+   - Cleans up dangling images
 
-### Step 3: Verify Setup
-
-1. Check runner status on server:
-   ```bash
-   sudo ${HOME}/actions-runner/svc.sh status
-   ```
-
-2. Check GitHub:
-   - Go to Settings → Actions → Runners
-   - Your runner should appear as "Idle"
-
-### Step 4: Test Deployment
-
-Push to main branch:
-```bash
-git add .
-git commit -m "feat: Add GitHub Actions deployment"
-git push origin main
-```
-
-Monitor deployment:
-- Go to Actions tab in GitHub
-- Watch the deployment workflow
-- Check your server after completion
-
-## 🔧 How It Works
-
-1. **You push code** to main branch from dev machine
-2. **GitHub triggers** the workflow
-3. **Self-hosted runner** on your server executes the workflow
-4. **Workflow steps**:
-   - Pulls latest code
-   - Backs up database
-   - Builds Docker containers
-   - Runs migrations
-   - Performs health checks
-   - Cleans up old images
-
-## 📁 File Structure
+## File structure
 
 ```
 .github/
@@ -85,30 +72,32 @@ Monitor deployment:
     └── deploy.yml          # Deployment workflow
 
 scripts/
-├── setup-github-runner.sh  # Runner installation (run on server)
-├── deploy-config.sh        # GitHub secrets setup (run on dev)
+├── deploy-from-ghcr.sh     # Pull GHCR images and bring up the stack
+├── deploy-config.sh        # GitHub secrets setup helper (run on dev)
 └── ...
-
-docs/
-└── GITHUB_ACTIONS_SETUP.md # This file
 ```
 
-## 🛠️ Maintenance
+## Maintenance
 
-### Start/Stop Runner
-```bash
-# On server
-${HOME}/start-runner.sh  # Start runner
-${HOME}/stop-runner.sh   # Stop runner
-${HOME}/runner-logs.sh   # View logs
-```
+### Start, stop, and inspect the runner
 
-### Update Runner
 ```bash
-cd ${HOME}/actions-runner
+cd "$RUNNER_DIR"
+sudo ./svc.sh start
 sudo ./svc.sh stop
-# Download new version and extract
-./config.sh ...  # Reconfigure
+sudo ./svc.sh status
+tail -f _diag/Runner_*.log
+```
+
+### Update the runner
+
+GitHub will prompt when a new runner version is required. The standard
+upgrade path is:
+
+```bash
+cd "$RUNNER_DIR"
+sudo ./svc.sh stop
+# Download and extract the new tarball per GitHub's instructions
 sudo ./svc.sh install
 sudo ./svc.sh start
 ```
@@ -116,49 +105,31 @@ sudo ./svc.sh start
 ### Troubleshooting
 
 **Runner not appearing in GitHub:**
-- Check runner service: `sudo ${HOME}/actions-runner/svc.sh status`
-- Check logs: `${HOME}/runner-logs.sh`
-- Ensure token is valid (tokens expire after 1 hour if unused)
+- Check the service status: `sudo "$RUNNER_DIR"/svc.sh status`
+- Tail the logs in `"$RUNNER_DIR"/_diag/`
+- Registration tokens expire after one hour if unused — request a fresh one.
 
 **Deployment fails:**
-- Check Actions tab in GitHub for error details
-- SSH to server and check Docker logs: `docker compose logs`
-- Verify all secrets are set correctly
+- Inspect the failed job in the **Actions** tab.
+- SSH to the host and check container logs: `docker compose logs`
+- Verify every required secret is set.
 
 **Permission issues:**
-- Ensure runner user has Docker permissions
-- Add to docker group: `sudo usermod -aG docker $USER`
+- The runner user must be in the `docker` group:
+  `sudo usermod -aG docker "$USER"` (then re-login).
 
-## 🔒 Security Notes
+## Security notes
 
-- Runner uses outbound connections only (no inbound ports needed)
-- Secrets are stored in GitHub, not in code
-- Database is backed up before each deployment
-- Failed deployments don't affect running services
+- The runner uses outbound connections only — no inbound ports are required.
+- Secrets live in GitHub, not in the repo.
+- The database is backed up before each deployment.
+- A failed deployment does not affect the currently running services.
 
-## 📊 Benefits
+## Next steps
 
-✅ **No manual deployment** - Push and forget
-✅ **Consistent deployments** - Same process every time  
-✅ **Automatic backups** - Database backed up before changes
-✅ **Health checks** - Ensures app is running after deployment
-✅ **Rollback capability** - Can revert if issues detected
-✅ **Audit trail** - All deployments logged in GitHub
+Possible enhancements:
 
-## 🚦 Next Steps
-
-After basic deployment is working, you can enhance with:
-
-1. **Staging environment** - Deploy to staging first
-2. **Automated tests** - Run tests before deployment
-3. **Notifications** - Slack/Discord alerts on deployment
-4. **Blue-green deployment** - Zero-downtime deployments
-5. **Monitoring** - Add application monitoring
-
-## 📞 Support
-
-If you encounter issues:
-1. Check the troubleshooting section above
-2. Review GitHub Actions logs
-3. Check server logs with `docker compose logs`
-4. Verify all prerequisites are installed
+1. Run a richer test suite before deployment.
+2. Slack/Discord notifications on deployment events.
+3. Blue/green deployment for zero downtime.
+4. Application monitoring and alerting.
