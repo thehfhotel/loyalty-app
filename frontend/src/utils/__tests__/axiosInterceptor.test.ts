@@ -399,7 +399,9 @@ describe('Phase 2 — HttpOnly cookie refresh contract', () => {
     await authService.refreshToken();
 
     expect(postSpy).toHaveBeenCalledTimes(1);
-    const [url, body] = postSpy.mock.calls[0];
+    const firstCall = postSpy.mock.calls[0];
+    if (!firstCall) throw new Error('expected /auth/refresh post call');
+    const [url, body] = firstCall;
     expect(url).toBe('/auth/refresh');
     // Empty body — no `refreshToken` field. If a regression adds one,
     // the backend will *prefer* it over the cookie (body wins) and any
@@ -422,7 +424,9 @@ describe('Phase 2 — HttpOnly cookie refresh contract', () => {
     await authService.logout();
 
     expect(postSpy).toHaveBeenCalledTimes(1);
-    const [url, body] = postSpy.mock.calls[0];
+    const firstCall = postSpy.mock.calls[0];
+    if (!firstCall) throw new Error('expected /auth/logout post call');
+    const [url, body] = firstCall;
     expect(url).toBe('/auth/logout');
     expect(body).toEqual({});
     expect(body).not.toHaveProperty('refreshToken');
