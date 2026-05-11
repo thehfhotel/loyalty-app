@@ -1137,7 +1137,10 @@ async fn test_delete_booking_slip_success() {
         .fetch_one(app.db())
         .await
         .expect("Failed to count slips");
-    assert_eq!(row_count.0, 0, "Slip row should be deleted from the database");
+    assert_eq!(
+        row_count.0, 0,
+        "Slip row should be deleted from the database"
+    );
 
     app.cleanup().await.ok();
 }
