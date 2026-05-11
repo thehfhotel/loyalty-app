@@ -34,7 +34,7 @@
 //! that already exist in the cache — it does not require new ones.
 
 use axum::{
-    extract::{Extension, Path, Query, State},
+    extract::{Extension, Query, State},
     routing::{delete, get, post},
     Json, Router,
 };
