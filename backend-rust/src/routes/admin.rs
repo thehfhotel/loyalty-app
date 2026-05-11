@@ -1260,6 +1260,10 @@ pub fn router() -> Router<AppState> {
         .route("/new-member-coupon-settings", get(get_new_member_coupon_settings))
         .route("/new-member-coupon-settings", put(update_new_member_coupon_settings))
         .route("/coupon-status/:couponId", get(get_coupon_status))
+        // Room/room-type/blocked-dates admin endpoints live in a sibling
+        // module to keep this file from growing further. Merge before the
+        // auth layer so `auth_middleware` covers the merged routes too.
+        .merge(crate::routes::admin_rooms::router())
         // Apply auth middleware to all routes
         .layer(middleware::from_fn(auth_middleware))
 }

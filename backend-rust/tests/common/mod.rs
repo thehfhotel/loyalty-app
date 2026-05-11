@@ -1047,6 +1047,27 @@ impl TestClient {
 
         TestResponse::from_response(response).await
     }
+
+    /// Make a DELETE request with a JSON body.
+    ///
+    /// Most DELETEs are body-less, but a few admin endpoints
+    /// (e.g. unblock-dates) accept a JSON payload describing what to remove.
+    /// HTTP allows DELETE with a body; axum extracts the body via `Json<…>`
+    /// the same way it does for POST/PUT.
+    pub async fn delete_with_body<T: Serialize>(&self, uri: &str, body: &T) -> TestResponse {
+        let body_json = serde_json::to_string(body).unwrap();
+
+        let builder = Request::builder()
+            .method("DELETE")
+            .uri(uri)
+            .header("Content-Type", "application/json");
+        let builder = self.apply_common_headers(builder);
+
+        let request = builder.body(Body::from(body_json)).unwrap();
+        let response = self.router.clone().oneshot(request).await.unwrap();
+
+        TestResponse::from_response(response).await
+    }
 }
 
 /// Test response wrapper with helper methods

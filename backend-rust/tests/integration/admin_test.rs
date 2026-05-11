@@ -663,3 +663,250 @@ async fn test_list_users_search() {
 
     app.cleanup().await.ok();
 }
+
+// ============================================================================
+// Room / Room-Type / Blocked-Date Endpoints
+// ----------------------------------------------------------------------------
+// These cover the new admin endpoints in src/routes/admin_rooms.rs.
+// They use raw SQL to seed inventory so the tests stay self-contained — there
+// are no dedicated TestRoom / TestRoomType fixtures yet.
+// ============================================================================
+
+/// Insert a room type and return its id. Names must be unique
+/// (case-insensitively) so callers should append a uuid suffix.
+async fn insert_room_type(pool: &sqlx::PgPool, name: &str, price: f64) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO room_types (id, name, description, price_per_night, max_guests, is_active)
+        VALUES ($1, $2, 'integration-test fixture', $3::numeric, 2, TRUE)
+        "#,
+    )
+    .bind(id)
+    .bind(name)
+    .bind(price)
+    .execute(pool)
+    .await
+    .expect("Failed to insert room type");
+    id
+}
+
+/// Insert a room belonging to `room_type_id` and return its id.
+async fn insert_room(pool: &sqlx::PgPool, room_type_id: Uuid, room_number: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO rooms (id, room_type_id, room_number, floor, is_active)
+        VALUES ($1, $2, $3, 1, TRUE)
+        "#,
+    )
+    .bind(id)
+    .bind(room_type_id)
+    .bind(room_number)
+    .execute(pool)
+    .await
+    .expect("Failed to insert room");
+    id
+}
+
+/// Test that admin can list room types (happy path).
+/// `GET /api/admin/room-types`
+#[tokio::test]
+async fn test_list_room_types_admin() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+
+    let suffix = Uuid::new_v4();
+    insert_room_type(app.db(), &format!("Deluxe-{}", suffix), 1500.00).await;
+    insert_room_type(app.db(), &format!("Suite-{}", suffix), 3000.00).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let response = client.get("/api/admin/room-types").await;
+
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("Response should be valid JSON");
+    let arr = body
+        .as_array()
+        .expect("response should be a JSON array");
+    assert!(arr.len() >= 2, "should return both inserted room types");
+
+    // Verify each row has the camelCase shape the frontend expects.
+    for row in arr {
+        assert!(row.get("id").is_some(), "row missing id: {:?}", row);
+        assert!(row.get("name").is_some(), "row missing name: {:?}", row);
+        assert!(
+            row.get("pricePerNight").is_some(),
+            "row missing pricePerNight: {:?}",
+            row
+        );
+        assert!(
+            row.get("maxGuests").is_some(),
+            "row missing maxGuests: {:?}",
+            row
+        );
+        assert!(
+            row.get("isActive").is_some(),
+            "row missing isActive: {:?}",
+            row
+        );
+    }
+
+    app.cleanup().await.ok();
+}
+
+/// Test that a non-admin user is rejected from `GET /api/admin/room-types`.
+/// Confirms the auth_middleware + require_admin layers fire on the merged
+/// sub-router.
+#[tokio::test]
+async fn test_list_room_types_non_admin_fails() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let user = create_regular_user(app.db()).await;
+
+    let client = app.authenticated_client(&user.id, &user.email);
+    let response = client.get("/api/admin/room-types").await;
+
+    response.assert_status(403);
+    app.cleanup().await.ok();
+}
+
+/// Test that admin can list rooms with the embedded room-type summary.
+/// `GET /api/admin/rooms`
+#[tokio::test]
+async fn test_list_rooms_admin() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+
+    let suffix = Uuid::new_v4();
+    let rt_id = insert_room_type(app.db(), &format!("StdRoom-{}", suffix), 1000.00).await;
+    insert_room(app.db(), rt_id, &format!("R-{}-101", &suffix.simple().to_string()[..6])).await;
+    insert_room(app.db(), rt_id, &format!("R-{}-102", &suffix.simple().to_string()[..6])).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let response = client.get("/api/admin/rooms").await;
+
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("Response should be valid JSON");
+    let arr = body.as_array().expect("response should be a JSON array");
+    assert!(arr.len() >= 2, "should include the two inserted rooms");
+
+    // Find one of our rooms and verify the embedded roomType payload is
+    // populated (proves the join landed correctly).
+    let our = arr
+        .iter()
+        .find(|row| row.get("roomTypeId").and_then(|v| v.as_str()) == Some(&rt_id.to_string()))
+        .expect("should find at least one row from our seeded room type");
+    let rt_summary = our
+        .get("roomType")
+        .expect("roomType summary should be embedded");
+    assert_eq!(rt_summary.get("id").and_then(|v| v.as_str()), Some(rt_id.to_string().as_str()));
+    assert!(rt_summary.get("name").is_some(), "embedded roomType missing name");
+
+    app.cleanup().await.ok();
+}
+
+/// Test the full block → list → unblock cycle for blocked-dates.
+/// Covers `POST`, `GET`, and `DELETE /api/admin/blocked-dates` in one
+/// realistic flow (the same flow the calendar page uses).
+#[tokio::test]
+async fn test_blocked_dates_full_cycle() {
+    use chrono::NaiveDate;
+
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+
+    let suffix = Uuid::new_v4();
+    let rt_id = insert_room_type(app.db(), &format!("BlockRT-{}", suffix), 800.00).await;
+    let room_id = insert_room(
+        app.db(),
+        rt_id,
+        &format!("B-{}-201", &suffix.simple().to_string()[..6]),
+    )
+    .await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    // Block two dates ----------------------------------------------------
+    let block_payload = json!({
+        "roomId": room_id,
+        "dates": ["2030-01-10", "2030-01-11"],
+        "reason": "deep clean"
+    });
+    let response = client.post("/api/admin/blocked-dates", &block_payload).await;
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("response should be JSON");
+    let inserted = body
+        .as_array()
+        .expect("POST should return an array of inserted blocks");
+    assert_eq!(inserted.len(), 2, "should insert exactly 2 dates");
+
+    // Idempotency: blocking the same dates again returns 0 inserts.
+    let response = client.post("/api/admin/blocked-dates", &block_payload).await;
+    response.assert_status(200);
+    let body: Value = response.json().expect("response should be JSON");
+    assert_eq!(
+        body.as_array().map(|a| a.len()).unwrap_or(0),
+        0,
+        "re-blocking same dates should be a no-op"
+    );
+
+    // List the blocks, scoped to the date window we wrote into ----------
+    let response = client
+        .get("/api/admin/blocked-dates?startDate=2030-01-01&endDate=2030-01-31")
+        .await;
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("response should be JSON");
+    let groups = body.as_array().expect("response should be a JSON array");
+    let our_group = groups
+        .iter()
+        .find(|g| g.get("roomId").and_then(|v| v.as_str()) == Some(&room_id.to_string()))
+        .expect("should find a group for our seeded room");
+    let dates = our_group
+        .get("dates")
+        .and_then(|v| v.as_array())
+        .expect("group missing dates array");
+    assert_eq!(dates.len(), 2, "should list both blocked dates");
+
+    // Unblock one of the two dates --------------------------------------
+    let unblock_payload = json!({
+        "roomId": room_id,
+        "dates": ["2030-01-10"]
+    });
+    let response = client
+        .delete_with_body("/api/admin/blocked-dates", &unblock_payload)
+        .await;
+    response.assert_status(200);
+    let body: Value = response.json().expect("response should be JSON");
+    assert_eq!(
+        body.get("deleted").and_then(|v| v.as_u64()),
+        Some(1),
+        "should report exactly 1 row deleted"
+    );
+
+    // Verify the second date is still blocked ---------------------------
+    let response = client
+        .get("/api/admin/blocked-dates?startDate=2030-01-01&endDate=2030-01-31")
+        .await;
+    response.assert_status(200);
+    let body: Value = response.json().expect("response should be JSON");
+    let groups = body.as_array().expect("array");
+    let our_group = groups
+        .iter()
+        .find(|g| g.get("roomId").and_then(|v| v.as_str()) == Some(&room_id.to_string()))
+        .expect("our room should still appear");
+    let dates = our_group.get("dates").and_then(|v| v.as_array()).unwrap();
+    assert_eq!(dates.len(), 1, "one date should remain blocked");
+    assert_eq!(
+        dates[0].get("blockedDate").and_then(|v| v.as_str()),
+        Some("2030-01-11")
+    );
+
+    // Sanity check: the silent extra constants did parse as real dates
+    let _: NaiveDate = "2030-01-11".parse().unwrap();
+
+    app.cleanup().await.ok();
+}
+
