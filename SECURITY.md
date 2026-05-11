@@ -2,8 +2,10 @@
 
 ## Reporting a vulnerability
 
-If you discover a vulnerability, please email **security@thehfhotel.com**.
-<!-- TODO: confirm this is the correct disclosure address; replace if a dedicated security@ inbox does not yet exist. -->
+If you discover a vulnerability, please use one of the following private channels:
+
+- **GitHub Security Advisories** (preferred): open a private report at <https://github.com/thehfhotel/loyalty-app/security/advisories/new>. This requires a GitHub account but is the most reliable channel — reports are visible only to maintainers and you can collaborate on the fix in a private fork.
+- **Email**: <winut.hf@gmail.com>. Slower, but works without a GitHub account.
 
 Do **not** file a public issue, pull request, or discussion thread.
 
