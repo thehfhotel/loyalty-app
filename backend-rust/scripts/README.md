@@ -15,11 +15,11 @@ The `generate-client.sh` script generates a type-safe TypeScript client from the
 
 ```bash
 # Make sure the Rust backend is running first
-cd /home/nut/loyalty-app/backend-rust
+cd <repo-root>/backend-rust
 cargo run
 
 # In another terminal, run the generator
-cd /home/nut/loyalty-app/backend-rust/scripts
+cd <repo-root>/backend-rust/scripts
 ./generate-client.sh
 ```
 

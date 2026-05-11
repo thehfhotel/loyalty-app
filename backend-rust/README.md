@@ -44,7 +44,7 @@ This is a complete Rust rewrite of the Node.js/Express backend, designed to prov
 
 ## Prerequisites
 
-- **Rust 1.75+** (specified in `rust-toolchain.toml`)
+- **Rust** — toolchain version is pinned in `rust-toolchain.toml` (currently 1.93). `rustup` will install it automatically when you `cd` into this directory.
 - **PostgreSQL 15+**
 - **Redis 7+**
 - **Docker** (optional, for containerized development)

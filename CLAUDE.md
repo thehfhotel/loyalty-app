@@ -1,200 +1,132 @@
-# 🔒 CLAUDE.md - Critical Project Rules
+# CLAUDE.md - Project Conventions
 
-## ⚠️ MANDATORY RULES - NEVER VIOLATE
+This file documents conventions and rules for contributors (human and AI).
+Operational specifics (port maps, deploy paths, container names) live in the
+relevant `docker-compose.*.yml` files and the GitHub Actions workflow, not here.
+
+## Mandatory Rules
 
 ### 1. Docker Compose Syntax
-**Use:** `docker compose` (space) **Never:** `docker-compose` (hyphen)
+Use `docker compose` (with a space). Never `docker-compose` (with a hyphen).
 
 ```bash
-# ✅ CORRECT
+# Correct
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
-# ❌ WRONG
+# Wrong
 docker-compose up -d
 ```
 
-### 2. Git Hooks are MANDATORY
+### 2. Git Hooks Are Mandatory
 ```bash
-# ❌ FORBIDDEN
+# Forbidden
 git commit --no-verify
 git push --no-verify
 
-# ✅ CORRECT - Let hooks run
+# Correct — let the hooks run
 git commit -m "feat: description"
 git push
 ```
 
-### 3. NEVER Merge PRs Automatically
-**Human review is REQUIRED for all pull requests**
+### 3. Never Merge PRs Automatically
+Human review is required for every pull request.
 
 ```bash
-# ❌ FORBIDDEN - Auto-merge or self-merge
+# Forbidden
 gh pr merge --auto
-gh pr merge <PR_NUMBER>  # Without human review
+gh pr merge <PR_NUMBER>   # without human review
 
-# ✅ CORRECT - Create PR and wait for human review
+# Correct — open the PR and stop
 gh pr create --title "feat: description" --body "..."
-# Then STOP - let human review and merge
 ```
 
-**Why:**
-- Code review catches bugs, security issues, and design problems
-- Auto-merge bypasses the safety net of peer review
-- Even "simple" changes can have unintended consequences
+Code review catches bugs, security issues, and design problems that
+"obvious" changes can still introduce. Auto-merge bypasses that safety net.
 
-### 4. Testing Integrity is ABSOLUTE
-```bash
-# ❌ FORBIDDEN
+### 4. Testing Integrity Is Absolute
+```typescript
+// Forbidden
 test.skip('test')
-expect(true).toBe(true)  # Meaningless
-if (process.env.SKIP_TESTS) return;
+expect(true).toBe(true)             // meaningless
+if (process.env.SKIP_TESTS) return  // bypass
 
-# ✅ CORRECT
+// Correct
 expect(actualResult).toBe(expectedResult)
 ```
 
 ### 5. Path Handling
-- **Prefer absolute paths** in CI/CD
-- **Validate relative paths** (especially `../` and `../../`)
-- Test paths work in both local and CI/CD environments
+- Prefer absolute paths in CI/CD.
+- Validate relative paths (especially `../` traversal).
+- Test paths in both local and CI environments.
 
 ### 6. Database Access
-**NEVER direct database access - ALWAYS use backend APIs**
+Never touch the database directly. Always go through the backend API.
 
 ```bash
-# ❌ FORBIDDEN
+# Forbidden
 psql -c "UPDATE user_loyalty..."
 
-# ✅ CORRECT
-curl -X POST http://localhost:4001/api/loyalty/award-points
+# Correct
+curl -X POST http://<host>/api/loyalty/award-points
 ```
 
-**If API doesn't exist, CREATE IT first.**
+If the API doesn't exist yet, create it first.
 
-## 📋 Project Architecture
+## Project Architecture
 
-### Structure
+### Repository Structure
 ```
 loyalty-app/
-├── backend-rust/     # Rust/Axum API (production backend)
-├── frontend/         # React/TypeScript SPA
-├── scripts/          # Production scripts
-├── tests/            # E2E tests
-└── docker-compose.*  # Environment configs
+├── backend-rust/    # Rust/Axum API (production backend)
+├── frontend/        # React/TypeScript SPA
+├── scripts/         # Deployment and ops scripts
+├── tests/           # End-to-end tests
+└── docker-compose.* # Environment-specific compose overrides
 ```
 
-### Branching Model: Trunk-Based Development
-
-**Single branch workflow:**
-- `main` is the only long-lived branch
-- Feature branches merge directly to `main` via PR
-- All pushes to `main` trigger: Tests → Build → Staging → Production
-
-**Deployment flow:**
-```
-Feature Branch → PR → main → Tests → Build GHCR → Staging → Production (approval)
-```
-
-### Environment Configuration
-
-**Two deployment environments (plus local):**
-
-| Component | Local Dev | Staging | Production |
-|-----------|-----------|---------|------------|
-| **Compose File** | `docker-compose.yml` | `+ docker-compose.staging.yml` | `+ docker-compose.prod.yml` |
-| **Container Suffix** | (none) | `_dev` | `_production` |
-| **Nginx Port** | - | 5001 | 4001 |
-| **PostgreSQL Port** | - | 5435 | 5434 |
-| **Redis Port** | - | 6380 | 6379 |
-| **Database Name** | `loyalty_db` | `loyalty_dev_db` | `loyalty_db` |
-| **Docker Target** | `development` | `runner` | `runner` |
-| **Deploy Path** | `/home/nut/loyalty-app` | `/home/nut/loyalty-app-develop` | `/home/nut/loyalty-app-production` |
-| **GitHub Environment** | - | `development` | `production` |
-
-**Why 2 deployment environments?**
-- Staging validates changes before production
-- Production requires manual approval
-- Both use GHCR images (no source code on server)
-- Port isolation prevents conflicts
-
-### CI/CD Test Port Isolation
-
-**CRITICAL: All test environments use UNIQUE ports to prevent conflicts**
-
-| Test Type | PostgreSQL | Redis | Backend | Frontend |
-|-----------|------------|-------|---------|----------|
-| **Unit Tests** | 5438 | 6383 | - | - |
-| **Integration Tests** | 5437 | 6382 | - | - |
-| **E2E Tests** | 5436 | 6381 | 4202 | 3201 |
-
-**Why isolation matters:**
-- Tests run in parallel with dev/prod environments
-- Port conflicts cause test failures and deployment issues
-- Each test type has its own isolated database and services
-
-```bash
-# Local development (base only, for IDE/testing)
-docker compose up -d
-
-# Staging server (deployed automatically from main)
-# Uses GHCR images, deployed via GitHub Actions
-cd /home/nut/loyalty-app-develop
-docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.staging.yml up -d
-
-# Production (deployed from main with approval)
-# Uses GHCR images, deployed via GitHub Actions
-cd /home/nut/loyalty-app-production
-docker compose -f docker-compose.yml -f docker-compose.ghcr.yml -f docker-compose.prod.yml up -d
-```
-
-**Key Points:**
-- **Trunk-based**: Only `main` branch, no `develop` branch
-- Staging/Production use GHCR images (no source code on server)
-- Deployment directories contain only: compose files, nginx config, .env
-- Environment variables loaded from `.env` file created by GitHub Actions
-- Production deployment requires manual approval in GitHub
+### Branching Model
+Trunk-based development. `main` is the only long-lived branch.
+Feature branches merge to `main` via PR. Pushes to `main` trigger
+the CI/CD pipeline (tests, image build, staging deploy, then
+production with manual approval).
 
 ### Database Operations
 
-**Migration:**
-- Single file: `backend-rust/migrations/20240101000000_init.sql`
-- Rust backend loads migration via `include_str!()` in tests; CI runs via `psql`
-- Migration creates 25+ tables, stored procedures, triggers, and indexes
+- **Migrations** live under `backend-rust/migrations/` and are applied
+  automatically when the backend starts.
+- The Rust backend uses `sqlx` with **compile-time** query macros validated
+  against the offline cache in `.sqlx/`. Regenerate with
+  `DATABASE_URL=... cargo sqlx prepare` against a live database; CI
+  verifies the cache with `cargo sqlx prepare --check`.
+- Use stored procedures (e.g., `award_points`, `recalculate_user_tier_by_nights`)
+  rather than raw `UPDATE` statements for tier-affecting operations.
 
-**Rust Backend Database (sqlx):**
-- Uses **compile-time query macros**: `sqlx::query!()` / `sqlx::query_as!()` / `sqlx::query_scalar!()`
-- SQL validated at compile time against `.sqlx/` offline cache (committed to git)
-- `SQLX_OFFLINE=true` in `.cargo/config.toml` — compilation works without a live DB
-- Dynamic SQL queries (format!-based WHERE) use runtime `sqlx::query()` / `sqlx::query_as()`
-- Regenerate cache: `DATABASE_URL=... cargo sqlx prepare` (requires live DB)
-- CI runs `cargo sqlx prepare --check` to verify cache is up-to-date
-- Connection pool accessed via `state.db()` method
-- Integration tests use real migration schema via `include_str!()`
-- CI pipeline verifies schema (25+ tables, 5+ stored procedures) after migration
-
-**Automatic Seeding:**
-- **Essential data** (runs in ALL environments on startup):
-  - `membership_id_sequence` - Required for user registration
-  - `tiers` - Required for loyalty system (Bronze/Silver/Gold/Platinum)
-- **Sample data** (development only):
-  - `surveys` - Test survey data
-- Seeding is **automatic** on backend startup, no manual steps needed
-
-**Tier System (Nights-Based):**
+**Tier system (nights-based):**
 ```
-Bronze: 0+, Silver: 1+, Gold: 10+, Platinum: 20+ nights
+Bronze: 0+   Silver: 1+   Gold: 10+   Platinum: 20+ nights
 ```
 
-**Key Functions:**
-- `recalculate_user_tier_by_nights(user_id)` - Auto tier updates
-- `award_points(...)` - Awards points/nights, triggers tier recalc
+### Rust Backend
+The Rust toolchain version is pinned in `backend-rust/rust-toolchain.toml`.
+Rustup will pick it up automatically when you `cd backend-rust`.
 
-**Use stored procedures, never direct UPDATE queries.**
+```bash
+cd backend-rust
+cargo build              # debug build
+cargo build --release    # release build
+cargo run                # run locally
+cargo test               # run all tests
+RUST_LOG=debug cargo run # run with debug logging
+```
 
-### TypeScript Error Handling (Frontend)
+Key patterns:
+- `AppState::new(pool, redis, config)` constructs the application state.
+- Use the `.db()` accessor on `AppState`, not direct field access.
+- Routes follow the `routes().with_state(state)` pattern.
 
+### Frontend
+TypeScript error handling pattern:
 ```typescript
-// ✅ CORRECT
 catch (error) {
   if (error instanceof Error) {
     console.log(error.message);
@@ -204,150 +136,64 @@ catch (error) {
 }
 ```
 
-### Rust Backend Development
-
-**Build & Run:**
-```bash
-cd backend-rust
-cargo build           # Debug build
-cargo build --release # Release build (~21MB binary)
-cargo run             # Run locally
-cargo test            # Run all tests
-```
-
-**Rust Version:** 1.93 (latest stable, no dependency pins needed)
-
-**Architecture Patterns:**
-- `AppState::new(pool, redis, config)` - main state constructor
-- Use `.pool()` accessor method, not direct field access
-- Routes use `routes().with_state(state)` pattern
-- Logging controlled via `RUST_LOG` env var (e.g., `RUST_LOG=debug`)
-
-**Test Infrastructure:**
-- Integration tests in `tests/integration/`
-- Common utilities in `tests/common/mod.rs`
-- Tests use `TestApp`, `TestUser`, `TestCoupon` fixtures
-- Test ports: DB=5438, Redis=6383 (for isolation)
-
-### Frontend Dependencies
-
-```dockerfile
-# ✅ CORRECT - Install deps directly in target stage
-FROM base AS development
-RUN npm ci && npm cache clean --force
-
-# ❌ FORBIDDEN - Multi-stage node_modules copying
-COPY --from=dev-deps /app/node_modules ./node_modules
-```
-
-**CSS Framework:** Tailwind plugins in correct package.json section, validate before build.
+Tailwind plugins must be in the correct `package.json` section and validated
+before build.
 
 ### API Routes
+Before wiring a new frontend call:
+1. Find the handler in `backend-rust/src/routes/`.
+2. Check the mount path in `backend-rust/src/routes/mod.rs`.
+3. Construct the full path: `/api/{mount}/{route}`.
+4. Hit it with `curl` first to confirm.
 
-Before creating frontend API calls:
-1. Find backend route in router file
-2. Check router mount path in `index.ts`
-3. Construct full path: `/api/{mount-path}/{route-path}`
-4. Test with curl
-
-```typescript
-// Example: router.get('/admin/settings') in user.ts
-// Mounted: app.use('/api/users', userRoutes)
-// Frontend: api.get('/users/admin/settings')
-```
-
-### E2E Testing
-
-**E2E tests run in CI only.** The GitHub Actions workflow manages Docker containers.
-
-**Ports:** Frontend: 3201, Backend: 4202, DB: 5436, Redis: 6381
-
-**Docker Compose (CI):**
-- Generated inline in `.github/workflows/deploy.yml`
-- Services: postgres, redis, backend, frontend (all containerized)
-- Uses host network mode for Docker-in-Docker compatibility
-- Admin config is mounted for test admin privileges
-
-**Network Configuration:**
-```yaml
-# Required for Docker-in-Docker (GitHub self-hosted runners)
-services:
-  postgres:
-    network_mode: host
-    environment:
-      PGPORT: 5436
-  redis:
-    network_mode: host
-    command: redis-server --port 6381
-  backend:
-    network_mode: host
-    volumes:
-      # Admin config mounted for E2E tests
-    environment:
-      PORT: 4202
-      DATABASE_URL: postgresql://...@localhost:5436/...
-      REDIS_URL: redis://localhost:6381
-```
-
-**Concurrency Control:**
-- E2E tests run sequentially (one at a time) to prevent port conflicts
-- Configured via `concurrency: { group: e2e-tests, cancel-in-progress: false }`
-- Other jobs (unit, integration, security) still run in parallel
-
-## 🔧 Development Standards
+## Development Standards
 
 ### Security
-- Never log sensitive data (passwords, tokens, keys)
-- Validate input (Zod schemas)
-- Sanitize user content (prevent XSS)
-- Parameterized queries (prevent SQL injection)
-- Use stored procedures for complex operations
-- **Log injection prevention**: Sanitize user-controlled values in log output
+- Never log sensitive data (passwords, tokens, API keys).
+- Validate input on every boundary.
+- Sanitize user-controlled content (XSS).
+- Use parameterized queries (SQL injection).
+- Use stored procedures for complex DB operations.
+- Sanitize user-controlled values before embedding them in log output
+  (log injection).
 
 ### Git Commits
+Conventional commit prefixes:
 ```
-feat: Add feature
-fix: Fix bug
-improve: Enhance functionality
-refactor: Restructure code
-test: Add/update tests
-docs: Update documentation
-chore: Maintenance
+feat:     a new feature
+fix:      a bug fix
+improve:  enhancement to existing functionality
+refactor: code restructuring without behavior change
+test:     add or update tests
+docs:     documentation changes
+chore:    maintenance, tooling, deps
 ```
 
 ### Testing Requirements
-- Pass TypeScript compilation (frontend)
-- Pass Rust compilation (`cargo build`)
-- Pass ESLint (warnings OK, errors NOT OK)
-- Pass ALL tests without bypassing (`cargo test`, `npm test`)
-- Maintain code coverage
-- Meaningful assertions only
+- Frontend: TypeScript compiles, ESLint passes (warnings OK, errors not).
+- Backend: `cargo build` and `cargo test` pass.
+- All tests pass — no skips, no fakes, no bypasses.
+- Maintain coverage; meaningful assertions only.
 
 ### Environment Variables
-- **Production:** `.env.production`
-- **Development:** `.env` or `.env.development`
-- **Never commit secrets**
+- Templates: `.env.example`, `.env.production.example`.
+- Real values: `.env`, `.env.production` (never committed).
+- Production secrets live in GitHub Actions secrets.
 
-## 📝 Quick Reference
+## Quick Reference
 
 ```bash
 # Local development
 docker compose up -d
 
-# Staging (auto-deployed from main)
-# Managed by GitHub Actions - no manual deployment needed
-
-# Production (deployed from main with approval)
-# Managed by GitHub Actions - approve in GitHub UI
-
 # Backend development
 cd backend-rust
-cargo build                    # Build
-cargo test                     # Run tests
-cargo run                      # Run locally
-RUST_LOG=debug cargo run       # Run with debug logging
-cargo sqlx prepare             # Regenerate .sqlx/ cache (needs DATABASE_URL)
-cargo sqlx prepare --check     # Verify .sqlx/ cache is up-to-date
+cargo build
+cargo test
+cargo run
+RUST_LOG=debug cargo run
+cargo sqlx prepare           # regenerate .sqlx/ cache (needs DATABASE_URL)
+cargo sqlx prepare --check   # verify cache is up-to-date
 
 # Frontend quality checks
 cd frontend && npm run lint && npm run typecheck && npm run test
@@ -355,35 +201,26 @@ cd frontend && npm run lint && npm run typecheck && npm run test
 # Git workflow (trunk-based)
 git checkout -b feature/my-feature
 # ... make changes ...
-git commit -m "feat: description"  # Hooks run automatically
+git commit -m "feat: description"   # hooks run automatically
 git push -u origin feature/my-feature
-gh pr create --base main  # Create PR to main
-# After merge: auto-deploy to staging, then approve for production
+gh pr create --base main
 ```
 
-## ⚠️ NON-NEGOTIABLE
+## Non-Negotiables
 
-1. Use `docker compose` (never `docker-compose`)
-2. Never bypass git hooks
-3. Never bypass, skip, or fake tests
-4. Prefer absolute paths, validate relative paths
-5. Never direct database access - use APIs
-6. Use environment-specific compose files
-7. Use stored procedures for complex DB ops
-8. Maintain code quality standards
-9. Follow security best practices
-10. Write meaningful tests
+1. Use `docker compose` (never `docker-compose`).
+2. Never bypass git hooks.
+3. Never bypass, skip, or fake tests.
+4. Prefer absolute paths; validate relative paths.
+5. No direct database access — always go through APIs.
+6. Use environment-specific compose overrides.
+7. Use stored procedures for complex DB operations.
+8. Maintain code quality standards.
+9. Follow security best practices.
+10. Write meaningful tests.
 
-**Critical Facts:**
-- Tiers based on `total_nights` NOT `current_points`
-- **Trunk-based development**: Only `main` branch, no `develop`
-- Both staging and production use `runner` Docker stage (GHCR images)
-- Container names: Local has no suffix, staging has `_dev`, prod has `_production`
-- Deployment directories have NO source code, only config files
-- Staging deploys automatically, production requires approval
-
----
-
-**Last Updated**: February 20, 2026
-**Enforced By**: Git hooks, CI/CD pipeline, project conventions
-**Compliance**: MANDATORY for all contributors
+**Critical facts:**
+- Tiers are computed from `total_nights`, not `current_points`.
+- Trunk-based development: only `main` exists; no `develop`.
+- Staging and production both run from GHCR images via the same Docker stage.
+- Production deployment requires manual approval in GitHub.
