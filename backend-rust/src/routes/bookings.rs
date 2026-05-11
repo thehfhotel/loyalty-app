@@ -7,7 +7,7 @@ use axum::{
     extract::{Extension, Path, Query, State},
     http::StatusCode,
     middleware,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use chrono::{DateTime, NaiveDate, Utc};
@@ -547,6 +547,52 @@ async fn add_booking_slip(
     );
 
     Ok((StatusCode::CREATED, Json(slip)))
+}
+
+/// DELETE /api/bookings/slips/:slip_id - Remove a payment slip
+///
+/// Path parameter:
+/// - `slip_id`: The UUID of the slip row to delete.
+///
+/// Authentication is required (provided by the router layer). The caller must
+/// either be the user that originally uploaded the slip OR an admin; everyone
+/// else gets 403.
+///
+/// Returns 204 No Content on success. Returns 404 if the slip does not exist,
+/// matching the lookup-then-authorize ordering used by `add_booking_slip` and
+/// `get_booking`.
+async fn delete_booking_slip(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    Path(slip_id): Path<Uuid>,
+) -> AppResult<StatusCode> {
+    // Look up the slip first; surfaces a 404 when it doesn't exist so callers
+    // can distinguish "you're not allowed" from "it isn't there".
+    let slip = query_booking_slip_by_id(state.db(), slip_id).await?;
+
+    // Ownership / admin authorization. Done AFTER the lookup so a missing slip
+    // returns 404 rather than 403 (matches `get_booking` / `add_booking_slip`).
+    let auth_user_id = Uuid::parse_str(&auth_user.id)
+        .map_err(|_| AppError::InvalidToken("Invalid user ID in token".to_string()))?;
+
+    let is_admin = has_role(&auth_user, "admin");
+    if slip.uploaded_by != auth_user_id && !is_admin {
+        return Err(AppError::Forbidden(
+            "You can only delete slips you uploaded".to_string(),
+        ));
+    }
+
+    delete_booking_slip_by_id(state.db(), slip_id).await?;
+
+    tracing::info!(
+        user_id = %auth_user.id,
+        slip_id = %slip_id,
+        booking_id = %slip.booking_id,
+        admin_delete = is_admin && slip.uploaded_by != auth_user_id,
+        "Booking slip deleted"
+    );
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// GET /api/bookings/availability - Check room availability
@@ -1241,11 +1287,14 @@ async fn award_loyalty_points(
     Ok(())
 }
 
-/// Row returned by `insert_booking_slip`.
+/// Raw `booking_slips` row used by slip insert/query/delete helpers.
 ///
 /// `uploaded_at` is nullable in the schema (the column carries a
 /// `DEFAULT CURRENT_TIMESTAMP` but no `NOT NULL`); the response substitutes
-/// "now" if it is somehow NULL on read.
+/// "now" if it is somehow NULL on read. Kept private to this module —
+/// handlers convert it to `BookingSlipResponse` via the `From` impl below
+/// before serialising, and the delete handler inspects `uploaded_by`
+/// directly to authorize the caller.
 #[derive(Debug, FromRow)]
 struct BookingSlipRow {
     pub id: Uuid,
@@ -1301,6 +1350,44 @@ async fn insert_booking_slip(
     Ok(row.into())
 }
 
+/// Fetch a slip row by id, surfacing a 404 when it doesn't exist.
+///
+/// We need the raw row (not the response DTO) because the delete handler has
+/// to authorize against `uploaded_by`, which the response DTO carries but is
+/// also used for logging the originating `booking_id`.
+async fn query_booking_slip_by_id(db: &PgPool, slip_id: Uuid) -> AppResult<BookingSlipRow> {
+    sqlx::query_as::<_, BookingSlipRow>(
+        r#"
+        SELECT id, booking_id, slip_url, uploaded_by, uploaded_at
+        FROM booking_slips
+        WHERE id = $1
+        "#,
+    )
+    .bind(slip_id)
+    .fetch_optional(db)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Slip {}", slip_id)))
+}
+
+/// Delete a slip row by id.
+///
+/// The caller is responsible for authorization; this function unconditionally
+/// removes the row. Returns an error if the row is missing — the handler
+/// should have already verified existence via `query_booking_slip_by_id`, so
+/// hitting that branch here means the row was deleted concurrently.
+async fn delete_booking_slip_by_id(db: &PgPool, slip_id: Uuid) -> AppResult<()> {
+    let result = sqlx::query("DELETE FROM booking_slips WHERE id = $1")
+        .bind(slip_id)
+        .execute(db)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!("Slip {}", slip_id)));
+    }
+
+    Ok(())
+}
+
 // ==================== HELPER FUNCTIONS ====================
 
 /// Parse room type string to enum
@@ -1337,6 +1424,7 @@ pub fn routes() -> Router<AppState> {
 /// - PUT /api/bookings/:id - Update a booking
 /// - POST /api/bookings/:id/cancel - Cancel a booking
 /// - POST /api/bookings/:id/slips - Attach a payment slip URL to a booking
+/// - DELETE /api/bookings/slips/:slip_id - Remove a payment slip
 /// - POST /api/bookings/:id/complete - Mark booking as completed (admin only)
 /// - GET /api/bookings/availability - Check room availability
 ///
@@ -1353,6 +1441,9 @@ pub fn router() -> Router<AppState> {
         .route("/:id", put(update_booking))
         .route("/:id/cancel", post(cancel_booking))
         .route("/:id/slips", post(add_booking_slip))
+        // Slip routes are flat (not nested under booking id) to match the
+        // contract the frontend already calls: `DELETE /api/bookings/slips/:id`.
+        .route("/slips/:slip_id", delete(delete_booking_slip))
         // Admin routes
         .route("/:id/complete", post(complete_booking))
         // Apply authentication middleware to all routes
@@ -1379,6 +1470,7 @@ pub fn router_without_auth() -> Router<AppState> {
         .route("/:id", put(update_booking))
         .route("/:id/cancel", post(cancel_booking))
         .route("/:id/slips", post(add_booking_slip))
+        .route("/slips/:slip_id", delete(delete_booking_slip))
         .route("/:id/complete", post(complete_booking))
 }
 
