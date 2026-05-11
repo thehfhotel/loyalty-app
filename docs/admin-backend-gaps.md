@@ -19,6 +19,15 @@ PR, alongside the route handlers and integration tests.
 - **Missing** — no Rust handler exists; frontend renders a stub.
 - **Partial** — a related public/booking endpoint exists but no
   admin-scoped variant.
+- **Implemented** — handler shipped; frontend will pick it up the next
+  time the page mounts.
+
+## Progress
+
+- Batch 1 (`feat/admin-endpoints-batch-1`): 5 of 35 endpoints implemented
+  (room types list, rooms list, blocked-dates list/create/delete). All
+  five are pure reads/writes against tables that already exist in the
+  schema. Remaining: 30 endpoints.
 
 ---
 
@@ -55,10 +64,10 @@ Used by `RoomTypeManagement.tsx`. The current backend models room type as a
 hard-coded enum; implementing CRUD requires a `room_types` table and
 migrating bookings to reference a UUID rather than the enum.
 
-- `GET /api/admin/room-types` — list room types.
+- [x] `GET /api/admin/room-types` — list room types.
   Frontend: `frontend/src/pages/admin/RoomTypeManagement.tsx:82`,
   `frontend/src/pages/admin/RoomAvailability.tsx:68`,
-  `frontend/src/pages/admin/RoomManagement.tsx:61`. Status: Missing.
+  `frontend/src/pages/admin/RoomManagement.tsx:61`. Status: Implemented (batch 1).
 - `POST /api/admin/room-types` — create.
   Frontend: `frontend/src/pages/admin/RoomTypeManagement.tsx:90`. Status: Missing.
 - `PUT /api/admin/room-types/:id` — update.
@@ -74,9 +83,9 @@ migrating bookings to reference a UUID rather than the enum.
 
 Used by `RoomManagement.tsx`. Requires a `rooms` table.
 
-- `GET /api/admin/rooms` — list.
+- [x] `GET /api/admin/rooms` — list.
   Frontend: `frontend/src/pages/admin/RoomManagement.tsx:70`,
-  `frontend/src/pages/admin/RoomAvailability.tsx:80`. Status: Missing.
+  `frontend/src/pages/admin/RoomAvailability.tsx:80`. Status: Implemented (batch 1).
 - `POST /api/admin/rooms` — create.
   Frontend: `frontend/src/pages/admin/RoomManagement.tsx:78`. Status: Missing.
 - `PUT /api/admin/rooms/:id` — update.
@@ -94,14 +103,14 @@ Used by `RoomAvailability.tsx` to block specific room/date combinations.
 The booking module already reads from `room_blocked_dates`, but no
 admin-write endpoints exist.
 
-- `GET /api/admin/blocked-dates` — list blocks for a date range.
-  Frontend: `frontend/src/pages/admin/RoomAvailability.tsx:102`. Status: Missing.
+- [x] `GET /api/admin/blocked-dates` — list blocks for a date range.
+  Frontend: `frontend/src/pages/admin/RoomAvailability.tsx:102`. Status: Implemented (batch 1).
 - `GET /api/admin/bookings/calendar` — room-level booking grid.
   Frontend: `frontend/src/pages/admin/RoomAvailability.tsx:111`. Status: Missing.
-- `POST /api/admin/blocked-dates` — block dates.
-  Frontend: `frontend/src/pages/admin/RoomAvailability.tsx:119`. Status: Missing.
-- `DELETE /api/admin/blocked-dates` — unblock dates.
-  Frontend: `frontend/src/pages/admin/RoomAvailability.tsx:137`. Status: Missing.
+- [x] `POST /api/admin/blocked-dates` — block dates.
+  Frontend: `frontend/src/pages/admin/RoomAvailability.tsx:119`. Status: Implemented (batch 1).
+- [x] `DELETE /api/admin/blocked-dates` — unblock dates.
+  Frontend: `frontend/src/pages/admin/RoomAvailability.tsx:137`. Status: Implemented (batch 1).
 
 // shape TBD during implementation
 
