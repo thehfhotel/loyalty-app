@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE bookings\n           SET discount_amount = $2,\n               discount_reason = $3,\n               updated_at      = NOW()\n         WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Numeric",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eaffd9c5728a98c8f8b6801ffadf35cbd3c8897c9fce740bd1a1ff5faacf8161"
+}
