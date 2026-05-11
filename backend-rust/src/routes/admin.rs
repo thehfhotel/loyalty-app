@@ -1264,6 +1264,10 @@ pub fn router() -> Router<AppState> {
         // module to keep this file from growing further. Merge before the
         // auth layer so `auth_middleware` covers the merged routes too.
         .merge(crate::routes::admin_rooms::router())
+        // Admin booking management endpoints (list / detail / PUT /
+        // discount / cancel + the room-types dropdown source) likewise
+        // live in their own sibling module.
+        .merge(crate::routes::admin_bookings::router())
         // Apply auth middleware to all routes
         .layer(middleware::from_fn(auth_middleware))
 }

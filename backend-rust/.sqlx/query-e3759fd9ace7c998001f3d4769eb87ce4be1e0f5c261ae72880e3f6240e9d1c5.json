@@ -1,0 +1,202 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            b.id                            AS \"id!\",\n            b.user_id                       AS \"user_id!\",\n            b.room_type_id                  AS \"room_type_id!\",\n            b.check_in_date                 AS \"check_in_date!\",\n            b.check_out_date                AS \"check_out_date!\",\n            b.num_guests                    AS \"num_guests!\",\n            b.total_price                   AS \"total_price!\",\n            b.payment_type                  AS \"payment_type?\",\n            b.payment_amount                AS \"payment_amount?\",\n            b.discount_amount               AS \"discount_amount?\",\n            b.discount_reason               AS \"discount_reason?\",\n            b.status                        AS \"status!\",\n            b.notes                         AS \"notes?\",\n            b.admin_notes                   AS \"admin_notes?\",\n            b.created_at                    AS \"created_at?\",\n            b.updated_at                    AS \"updated_at?\",\n            u.email                         AS \"user_email?\",\n            up.first_name                   AS \"first_name?\",\n            up.last_name                    AS \"last_name?\",\n            up.membership_id                AS \"membership_id?\",\n            up.phone                        AS \"phone?\",\n            rt.name                         AS \"rt_name!\",\n            s.id                            AS \"slip_id?\",\n            s.slip_url                      AS \"slip_url?\",\n            s.uploaded_at                   AS \"slip_uploaded_at?\",\n            s.slipok_status                 AS \"slip_slipok_status?\",\n            s.slipok_verified_at            AS \"slip_slipok_verified_at?\",\n            s.admin_status                  AS \"slip_admin_status?\",\n            s.admin_verified_at             AS \"slip_admin_verified_at?\",\n            s.admin_verified_by             AS \"slip_admin_verified_by?\",\n            (vup.first_name || ' ' || vup.last_name) AS \"slip_admin_verified_by_name?\"\n          FROM bookings b\n          JOIN room_types rt              ON rt.id = b.room_type_id\n          LEFT JOIN users u               ON u.id = b.user_id\n          LEFT JOIN user_profiles up      ON up.user_id = b.user_id\n          LEFT JOIN LATERAL (\n              SELECT *\n                FROM booking_slips bs\n               WHERE bs.booking_id = b.id\n               ORDER BY bs.uploaded_at DESC NULLS LAST, bs.created_at DESC NULLS LAST\n               LIMIT 1\n          ) s ON TRUE\n          LEFT JOIN user_profiles vup     ON vup.user_id = s.admin_verified_by\n         WHERE b.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "room_type_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "check_in_date!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "check_out_date!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "num_guests!",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "total_price!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "payment_type?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "payment_amount?",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "discount_amount?",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 10,
+        "name": "discount_reason?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "status!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "notes?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "admin_notes?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "created_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "updated_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "user_email?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 17,
+        "name": "first_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 18,
+        "name": "last_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 19,
+        "name": "membership_id?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 20,
+        "name": "phone?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 21,
+        "name": "rt_name!",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 22,
+        "name": "slip_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 23,
+        "name": "slip_url?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 24,
+        "name": "slip_uploaded_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 25,
+        "name": "slip_slipok_status?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 26,
+        "name": "slip_slipok_verified_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 27,
+        "name": "slip_admin_status?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 28,
+        "name": "slip_admin_verified_at?",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 29,
+        "name": "slip_admin_verified_by?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 30,
+        "name": "slip_admin_verified_by_name?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "e3759fd9ace7c998001f3d4769eb87ce4be1e0f5c261ae72880e3f6240e9d1c5"
+}

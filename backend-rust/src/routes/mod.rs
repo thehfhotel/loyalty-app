@@ -4,6 +4,7 @@
 //! All routes are nested under /api prefix via the create_router function.
 
 pub mod admin;
+pub mod admin_bookings;
 pub mod admin_rooms;
 pub mod analytics;
 pub mod auth;

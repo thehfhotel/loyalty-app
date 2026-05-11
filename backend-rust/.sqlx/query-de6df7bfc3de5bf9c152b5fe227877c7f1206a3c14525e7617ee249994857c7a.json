@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) AS \"count!: i64\"\n          FROM bookings b\n          LEFT JOIN users u           ON u.id = b.user_id\n          LEFT JOIN user_profiles up  ON up.user_id = b.user_id\n         WHERE ($1::text[] IS NULL OR b.status = ANY($1))\n           AND (\n             $2::text IS NULL\n             OR LOWER(COALESCE(u.email, ''))         LIKE $2\n             OR LOWER(COALESCE(up.first_name, ''))   LIKE $2\n             OR LOWER(COALESCE(up.last_name, ''))    LIKE $2\n             OR LOWER(COALESCE(up.membership_id, '')) LIKE $2\n             OR LOWER(b.id::text)                    LIKE $2\n           )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!: i64",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "de6df7bfc3de5bf9c152b5fe227877c7f1206a3c14525e7617ee249994857c7a"
+}

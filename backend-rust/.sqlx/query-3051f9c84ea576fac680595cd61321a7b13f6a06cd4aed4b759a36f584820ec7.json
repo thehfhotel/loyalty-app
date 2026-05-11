@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            al.id          AS \"id!\",\n            al.action      AS \"action!\",\n            al.admin_id    AS \"admin_id!\",\n            al.before_data AS \"before_data?\",\n            al.after_data  AS \"after_data?\",\n            al.reason      AS \"reason?\",\n            al.occurred_at AS \"occurred_at!\",\n            COALESCE(NULLIF(TRIM(COALESCE(up.first_name, '') || ' ' || COALESCE(up.last_name, '')), ''),\n                     u.email)\n                AS \"admin_name?\"\n          FROM booking_audit_log al\n          LEFT JOIN users u            ON u.id = al.admin_id\n          LEFT JOIN user_profiles up   ON up.user_id = al.admin_id\n         WHERE al.booking_id = $1\n         ORDER BY al.occurred_at DESC, al.id DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "action!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "admin_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "before_data?",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "after_data?",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "reason?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "occurred_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "admin_name?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "3051f9c84ea576fac680595cd61321a7b13f6a06cd4aed4b759a36f584820ec7"
+}

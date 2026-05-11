@@ -28,6 +28,13 @@ PR, alongside the route handlers and integration tests.
   (room types list, rooms list, blocked-dates list/create/delete). All
   five are pure reads/writes against tables that already exist in the
   schema. Remaining: 30 endpoints.
+- Batch 2 (`feat/admin-booking-management`): 6 of 35 endpoints
+  implemented (admin bookings list/detail/edit/discount/cancel +
+  room-types dropdown). Required a schema migration that added
+  `discount_amount`, `discount_reason`, `admin_notes`, `payment_type`,
+  `payment_amount` columns to `bookings` and introduced a new
+  `booking_audit_log` table — every state change writes an audit row in
+  the same transaction. Remaining: 24 endpoints.
 
 ---
 
@@ -35,8 +42,8 @@ PR, alongside the route handlers and integration tests.
 
 Used by the booking management table, slip viewer, and edit modal.
 
-- `GET /api/admin/bookings` — list with filters and counts.
-  Frontend: `frontend/src/pages/admin/BookingManagement.tsx:125`. Status: Missing.
+- [x] `GET /api/admin/bookings` — list with filters and counts.
+  Frontend: `frontend/src/pages/admin/BookingManagement.tsx:125`. Status: Implemented (batch 2).
 - `POST /api/admin/bookings/:id/verify-slip` — legacy single-slip verification.
   Frontend: `frontend/src/pages/admin/BookingManagement.tsx:161`. Status: Missing.
 - `POST /api/admin/bookings/:id/needs-action` — mark primary slip as needing action.
@@ -45,14 +52,29 @@ Used by the booking management table, slip viewer, and edit modal.
   Frontend: `frontend/src/components/admin/SlipViewerSidebar.tsx:131`. Status: Missing.
 - `POST /api/admin/bookings/slips/:slipId/needs-action` — multi-slip per-slip "needs action".
   Frontend: `frontend/src/components/admin/SlipViewerSidebar.tsx:145`. Status: Missing.
-- `PUT /api/admin/bookings/:id` — edit a booking.
-  Frontend: `frontend/src/pages/admin/BookingEditModal.tsx:128`. Status: Missing.
-- `POST /api/admin/bookings/:id/discount` — apply a discount.
-  Frontend: `frontend/src/pages/admin/BookingEditModal.tsx:144`. Status: Missing.
-- `POST /api/admin/bookings/:id/cancel` — admin cancel.
-  Frontend: `frontend/src/pages/admin/BookingEditModal.tsx:160`. Status: Partial.
-- `GET /api/admin/bookings/room-types` — dropdown source for the edit modal.
-  Frontend: `frontend/src/pages/admin/BookingEditModal.tsx:119`. Status: Missing.
+- [x] `PUT /api/admin/bookings/:id` — edit a booking.
+  Frontend: `frontend/src/pages/admin/BookingEditModal.tsx:128`. Status: Implemented (batch 2).
+- [x] `POST /api/admin/bookings/:id/discount` — apply a discount.
+  Frontend: `frontend/src/pages/admin/BookingEditModal.tsx:144`. Status: Implemented (batch 2).
+- [x] `POST /api/admin/bookings/:id/cancel` — admin cancel.
+  Frontend: `frontend/src/pages/admin/BookingEditModal.tsx:160`. Status: Implemented (batch 2).
+- [x] `GET /api/admin/bookings/room-types` — dropdown source for the edit modal.
+  Frontend: `frontend/src/pages/admin/BookingEditModal.tsx:119`. Status: Implemented (batch 2).
+- [x] `GET /api/admin/bookings/:id` — full booking detail + audit history.
+  Frontend: paired with `PUT /:id` for the edit modal refresh. Status: Implemented (batch 2).
+
+### Follow-ups surfaced by batch 2
+
+- The frontend's `BookingEditModal.tsx` can in principle send fields the
+  schema doesn't model (e.g. a `roomChanges: [...]` array for moving rooms
+  mid-stay). The PUT handler ignores any field that isn't in its allow-list
+  (`checkInDate`, `checkOutDate`, `numberOfGuests`, `roomTypeId`, `notes`,
+  `adminNotes`, `totalPrice`); the modal currently doesn't expose those
+  unsupported fields, so this is latent rather than user-visible.
+- The slip-verification endpoints (`verify-slip`, `needs-action`, the two
+  `/slips/:slipId/...` variants) are still missing. They share a workflow
+  shape and should be implemented in the next batch alongside the
+  multi-slip flow.
 
 // shape TBD during implementation
 

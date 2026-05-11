@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT discount_amount, discount_reason, total_price, status\n          FROM bookings\n         WHERE id = $1\n         FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "discount_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 1,
+        "name": "discount_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "total_price",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "e9865e3f88ad774709bd846cc0f7e885e1b7e892e8200476a66e6f54c65a3895"
+}

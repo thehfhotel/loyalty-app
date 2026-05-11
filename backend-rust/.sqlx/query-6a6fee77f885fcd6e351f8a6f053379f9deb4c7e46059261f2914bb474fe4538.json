@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE bookings\n           SET check_in_date  = $2,\n               check_out_date = $3,\n               num_guests     = $4,\n               room_type_id   = $5,\n               notes          = $6,\n               admin_notes    = $7,\n               total_price    = $8,\n               updated_at     = NOW()\n         WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date",
+        "Int4",
+        "Uuid",
+        "Text",
+        "Text",
+        "Numeric"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6a6fee77f885fcd6e351f8a6f053379f9deb4c7e46059261f2914bb474fe4538"
+}
