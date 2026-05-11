@@ -97,7 +97,12 @@ production with manual approval).
 - The Rust backend uses `sqlx` with **compile-time** query macros validated
   against the offline cache in `.sqlx/`. Regenerate with
   `DATABASE_URL=... cargo sqlx prepare` against a live database; CI
-  verifies the cache with `cargo sqlx prepare --check`.
+  verifies the cache with `cargo sqlx prepare --check`. The helper
+  `backend-rust/scripts/regen-sqlx-cache.sh` automates the workflow: it
+  boots a throwaway Postgres container, applies every migration, runs
+  `cargo sqlx prepare --workspace -- --tests`, and tears the container
+  down. After adding or modifying any `sqlx::query!` / `sqlx::query_as!`
+  call, run that script and commit the resulting `.sqlx/*.json` files.
 - Use stored procedures (e.g., `award_points`, `recalculate_user_tier_by_nights`)
   rather than raw `UPDATE` statements for tier-affecting operations.
 

@@ -26,12 +26,12 @@
 //!
 //! ## sqlx note
 //!
-//! These handlers use **runtime** `sqlx::query()` / `sqlx::query_as()` rather
-//! than the compile-time `query!()` macros. The macros require regenerating
-//! `.sqlx/` against a live database (`cargo sqlx prepare`), which is not
-//! available in this worktree. Runtime queries are still parameterised, so
-//! injection-safe. CI's `cargo sqlx prepare --check` only validates entries
-//! that already exist in the cache — it does not require new ones.
+//! These handlers use compile-time `sqlx::query_as!` / `sqlx::query!`
+//! macros, validated against the offline cache in `backend-rust/.sqlx/`. To
+//! regenerate that cache after adding or changing a query, run
+//! `backend-rust/scripts/regen-sqlx-cache.sh` and commit the resulting
+//! `.sqlx/*.json` files. CI verifies the cache with `cargo sqlx prepare
+//! --check`.
 
 use axum::{
     extract::{Extension, Query, State},
@@ -295,24 +295,23 @@ async fn list_room_types(
 ) -> AppResult<Json<Vec<RoomTypeResponse>>> {
     require_admin(&user)?;
 
-    let sql = if query.include_inactive {
+    // The `is_active` filter is expressed as `$1::bool OR is_active`, so
+    // passing `true` includes every row (the predicate is short-circuited)
+    // and passing `false` keeps only the active ones. Doing it this way
+    // keeps the SQL static, which is what `sqlx::query_as!` requires.
+    let rows = sqlx::query_as!(
+        RoomTypeRow,
         r#"
         SELECT id, name, description, price_per_night, max_guests, is_active,
                created_at, updated_at
           FROM room_types
+         WHERE $1::bool OR is_active
          ORDER BY LOWER(name) ASC
-        "#
-    } else {
-        r#"
-        SELECT id, name, description, price_per_night, max_guests, is_active,
-               created_at, updated_at
-          FROM room_types
-         WHERE is_active = TRUE
-         ORDER BY LOWER(name) ASC
-        "#
-    };
-
-    let rows: Vec<RoomTypeRow> = sqlx::query_as(sql).fetch_all(state.db()).await?;
+        "#,
+        query.include_inactive
+    )
+    .fetch_all(state.db())
+    .await?;
 
     Ok(Json(rows.into_iter().map(RoomTypeResponse::from).collect()))
 }
@@ -333,46 +332,37 @@ async fn list_rooms(
 ) -> AppResult<Json<Vec<RoomResponse>>> {
     require_admin(&user)?;
 
-    // We build the SQL once with two optional WHERE clauses. Using runtime
-    // `query_as` lets us conditionally bind only the args that are present.
-    let mut sql = String::from(
+    // Optional filters expressed inline so the SQL stays static (a
+    // requirement for `sqlx::query_as!`). When `room_type_id` is None the
+    // first clause is always true; when `include_inactive` is true the
+    // second clause is always true. ORDER BY LENGTH() then the string
+    // itself handles natural numeric ordering ("9" before "10").
+    // `rt_name?` forces the joined `room_types.name` column to be modelled
+    // as Option<String> in the macro output, matching the `RoomRow` field
+    // (the INNER JOIN guarantees a value, but the macro can't tell).
+    let rows = sqlx::query_as!(
+        RoomRow,
         r#"
-        SELECT r.id, r.room_type_id, r.room_number, r.floor, r.is_active,
-               r.created_at, r.updated_at,
-               rt.name AS rt_name
+        SELECT r.id,
+               r.room_type_id,
+               r.room_number,
+               r.floor,
+               r.is_active,
+               r.created_at,
+               r.updated_at,
+               rt.name AS "rt_name?"
           FROM rooms r
           JOIN room_types rt ON rt.id = r.room_type_id
-         WHERE 1 = 1
+         WHERE ($1::uuid IS NULL OR r.room_type_id = $1)
+           AND ($2::bool OR r.is_active)
+         ORDER BY LENGTH(r.room_number), r.room_number ASC
         "#,
-    );
+        query.room_type_id,
+        query.include_inactive,
+    )
+    .fetch_all(state.db())
+    .await?;
 
-    let mut next_param: usize = 1;
-    if query.room_type_id.is_some() {
-        sql.push_str(&format!(" AND r.room_type_id = ${}", next_param));
-        next_param += 1;
-    }
-    if !query.include_inactive {
-        sql.push_str(&format!(" AND r.is_active = ${}", next_param));
-        next_param += 1;
-    }
-    // Order by numeric prefix when possible (so "10" sorts after "9"), then
-    // the raw string. Postgres' natural string sort would put "10" before
-    // "2"; using a substring cast handles common pure-numeric room numbers.
-    sql.push_str(" ORDER BY LENGTH(r.room_number), r.room_number ASC");
-    // Silence the "value assigned but never read" lint on the final
-    // increment — the counter is structural so future filter additions are
-    // a one-line change.
-    let _ = next_param;
-
-    let mut q = sqlx::query_as::<_, RoomRow>(&sql);
-    if let Some(rt_id) = query.room_type_id {
-        q = q.bind(rt_id);
-    }
-    if !query.include_inactive {
-        q = q.bind(true);
-    }
-
-    let rows: Vec<RoomRow> = q.fetch_all(state.db()).await?;
     Ok(Json(rows.into_iter().map(RoomResponse::from).collect()))
 }
 
@@ -406,29 +396,31 @@ async fn list_blocked_dates(
         ));
     }
 
-    let mut sql = String::from(
+    // Optional room-type filter expressed inline so the SQL is static
+    // (compile-time `query_as!` requirement). `room_number?` forces the
+    // joined column to Option<String> to match the row struct.
+    let rows = sqlx::query_as!(
+        BlockedDateRow,
         r#"
-        SELECT bd.id, bd.room_id, r.room_number, bd.blocked_date,
-               bd.reason, bd.created_at
+        SELECT bd.id,
+               bd.room_id,
+               r.room_number AS "room_number!",
+               bd.blocked_date,
+               bd.reason,
+               bd.created_at
           FROM room_blocked_dates bd
           JOIN rooms r ON r.id = bd.room_id
-         WHERE bd.blocked_date >= $1 AND bd.blocked_date <= $2
+         WHERE bd.blocked_date >= $1
+           AND bd.blocked_date <= $2
+           AND ($3::uuid IS NULL OR r.room_type_id = $3)
+         ORDER BY r.room_number ASC, bd.blocked_date ASC
         "#,
-    );
-
-    if query.room_type_id.is_some() {
-        sql.push_str(" AND r.room_type_id = $3");
-    }
-    sql.push_str(" ORDER BY r.room_number ASC, bd.blocked_date ASC");
-
-    let mut q = sqlx::query_as::<_, BlockedDateRow>(&sql)
-        .bind(start)
-        .bind(end);
-    if let Some(rt_id) = query.room_type_id {
-        q = q.bind(rt_id);
-    }
-
-    let rows: Vec<BlockedDateRow> = q.fetch_all(state.db()).await?;
+        start,
+        end,
+        query.room_type_id,
+    )
+    .fetch_all(state.db())
+    .await?;
 
     // Group rows by room so the frontend can iterate roomId → dates[]
     // directly. We use a Vec rather than a HashMap to preserve the
@@ -477,10 +469,10 @@ async fn block_dates(
         ));
     }
 
-    // Verify the room exists. A missing room would also fail the FK
-    // constraint, but explicit-then-friendly is nicer for the admin UI.
-    let room_exists: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM rooms WHERE id = $1")
-        .bind(payload.room_id)
+    // Verify the room exists. A missing row would also fail the FK
+    // constraint at insert time, but the explicit lookup gives the admin
+    // UI a clean 404 instead of a generic 500.
+    let room_exists = sqlx::query_scalar!("SELECT id FROM rooms WHERE id = $1", payload.room_id)
         .fetch_optional(state.db())
         .await?;
     if room_exists.is_none() {
@@ -490,7 +482,13 @@ async fn block_dates(
     // Bulk insert via UNNEST so a single round-trip handles N dates.
     // ON CONFLICT collapses duplicates; RETURNING gives us back only the
     // rows we actually created.
-    let inserted: Vec<(Uuid, NaiveDate, Option<DateTime<Utc>>)> = sqlx::query_as(
+    struct InsertedRow {
+        id: Uuid,
+        blocked_date: NaiveDate,
+        created_at: Option<DateTime<Utc>>,
+    }
+    let inserted = sqlx::query_as!(
+        InsertedRow,
         r#"
         INSERT INTO room_blocked_dates (room_id, blocked_date, reason)
         SELECT $1, d, $3
@@ -498,21 +496,21 @@ async fn block_dates(
         ON CONFLICT (room_id, blocked_date) DO NOTHING
         RETURNING id, blocked_date, created_at
         "#,
+        payload.room_id,
+        &payload.dates,
+        payload.reason.as_deref(),
     )
-    .bind(payload.room_id)
-    .bind(&payload.dates)
-    .bind(&payload.reason)
     .fetch_all(state.db())
     .await?;
 
     let response: Vec<BlockedDateItem> = inserted
         .into_iter()
-        .map(|(id, blocked_date, created_at)| BlockedDateItem {
-            id,
+        .map(|row| BlockedDateItem {
+            id: row.id,
             room_id: payload.room_id,
-            blocked_date,
+            blocked_date: row.blocked_date,
             reason: payload.reason.clone(),
-            created_at: created_at.unwrap_or_else(Utc::now),
+            created_at: row.created_at.unwrap_or_else(Utc::now),
             created_by: None,
         })
         .collect();
@@ -545,15 +543,15 @@ async fn unblock_dates(
         ));
     }
 
-    let result = sqlx::query(
+    let result = sqlx::query!(
         r#"
         DELETE FROM room_blocked_dates
          WHERE room_id = $1
            AND blocked_date = ANY($2::date[])
         "#,
+        payload.room_id,
+        &payload.dates,
     )
-    .bind(payload.room_id)
-    .bind(&payload.dates)
     .execute(state.db())
     .await?;
 
