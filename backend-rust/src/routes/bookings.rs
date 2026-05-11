@@ -1356,14 +1356,16 @@ async fn insert_booking_slip(
 /// to authorize against `uploaded_by`, which the response DTO carries but is
 /// also used for logging the originating `booking_id`.
 async fn query_booking_slip_by_id(db: &PgPool, slip_id: Uuid) -> AppResult<BookingSlipRow> {
-    sqlx::query_as::<_, BookingSlipRow>(
+    sqlx::query_as!(
+        BookingSlipRow,
         r#"
-        SELECT id, booking_id, slip_url, uploaded_by, uploaded_at
+        SELECT id, booking_id, slip_url, uploaded_by, uploaded_at,
+               slipok_status, admin_status
         FROM booking_slips
         WHERE id = $1
         "#,
+        slip_id,
     )
-    .bind(slip_id)
     .fetch_optional(db)
     .await?
     .ok_or_else(|| AppError::NotFound(format!("Slip {}", slip_id)))
@@ -1376,8 +1378,7 @@ async fn query_booking_slip_by_id(db: &PgPool, slip_id: Uuid) -> AppResult<Booki
 /// should have already verified existence via `query_booking_slip_by_id`, so
 /// hitting that branch here means the row was deleted concurrently.
 async fn delete_booking_slip_by_id(db: &PgPool, slip_id: Uuid) -> AppResult<()> {
-    let result = sqlx::query("DELETE FROM booking_slips WHERE id = $1")
-        .bind(slip_id)
+    let result = sqlx::query!("DELETE FROM booking_slips WHERE id = $1", slip_id)
         .execute(db)
         .await?;
 
