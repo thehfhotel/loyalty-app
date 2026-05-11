@@ -726,9 +726,7 @@ async fn test_list_room_types_admin() {
     response.assert_status(200);
 
     let body: Value = response.json().expect("Response should be valid JSON");
-    let arr = body
-        .as_array()
-        .expect("response should be a JSON array");
+    let arr = body.as_array().expect("response should be a JSON array");
     assert!(arr.len() >= 2, "should return both inserted room types");
 
     // Verify each row has the camelCase shape the frontend expects.
@@ -779,8 +777,18 @@ async fn test_list_rooms_admin() {
 
     let suffix = Uuid::new_v4();
     let rt_id = insert_room_type(app.db(), &format!("StdRoom-{}", suffix), 1000.00).await;
-    insert_room(app.db(), rt_id, &format!("R-{}-101", &suffix.simple().to_string()[..6])).await;
-    insert_room(app.db(), rt_id, &format!("R-{}-102", &suffix.simple().to_string()[..6])).await;
+    insert_room(
+        app.db(),
+        rt_id,
+        &format!("R-{}-101", &suffix.simple().to_string()[..6]),
+    )
+    .await;
+    insert_room(
+        app.db(),
+        rt_id,
+        &format!("R-{}-102", &suffix.simple().to_string()[..6]),
+    )
+    .await;
 
     let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
     let response = client.get("/api/admin/rooms").await;
@@ -800,8 +808,14 @@ async fn test_list_rooms_admin() {
     let rt_summary = our
         .get("roomType")
         .expect("roomType summary should be embedded");
-    assert_eq!(rt_summary.get("id").and_then(|v| v.as_str()), Some(rt_id.to_string().as_str()));
-    assert!(rt_summary.get("name").is_some(), "embedded roomType missing name");
+    assert_eq!(
+        rt_summary.get("id").and_then(|v| v.as_str()),
+        Some(rt_id.to_string().as_str())
+    );
+    assert!(
+        rt_summary.get("name").is_some(),
+        "embedded roomType missing name"
+    );
 
     app.cleanup().await.ok();
 }
@@ -833,7 +847,9 @@ async fn test_blocked_dates_full_cycle() {
         "dates": ["2030-01-10", "2030-01-11"],
         "reason": "deep clean"
     });
-    let response = client.post("/api/admin/blocked-dates", &block_payload).await;
+    let response = client
+        .post("/api/admin/blocked-dates", &block_payload)
+        .await;
     response.assert_status(200);
 
     let body: Value = response.json().expect("response should be JSON");
@@ -843,7 +859,9 @@ async fn test_blocked_dates_full_cycle() {
     assert_eq!(inserted.len(), 2, "should insert exactly 2 dates");
 
     // Idempotency: blocking the same dates again returns 0 inserts.
-    let response = client.post("/api/admin/blocked-dates", &block_payload).await;
+    let response = client
+        .post("/api/admin/blocked-dates", &block_payload)
+        .await;
     response.assert_status(200);
     let body: Value = response.json().expect("response should be JSON");
     assert_eq!(
@@ -909,4 +927,3 @@ async fn test_blocked_dates_full_cycle() {
 
     app.cleanup().await.ok();
 }
-
