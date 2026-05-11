@@ -927,3 +927,570 @@ async fn test_blocked_dates_full_cycle() {
 
     app.cleanup().await.ok();
 }
+
+// ============================================================================
+// Admin Booking Management Endpoints
+// ----------------------------------------------------------------------------
+// Covers the routes in src/routes/admin_bookings.rs:
+//   GET  /api/admin/bookings                 — list + filters + counts
+//   GET  /api/admin/bookings/room-types      — dropdown source
+//   GET  /api/admin/bookings/:id             — detail + audit history
+//   PUT  /api/admin/bookings/:id             — partial update + audit
+//   POST /api/admin/bookings/:id/discount    — apply discount + audit
+//   POST /api/admin/bookings/:id/cancel      — admin cancel + audit
+// ============================================================================
+
+/// Seed a booking row directly via SQL so tests aren't coupled to the public
+/// `POST /api/bookings` flow. Returns the new booking id. The room type and
+/// room are created on the fly with a uuid suffix to avoid clashing across
+/// parallel tests sharing the same per-test database template seeds.
+async fn seed_booking(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    status: &str,
+) -> (Uuid, Uuid /* room_type_id */) {
+    use chrono::{Duration, Utc};
+
+    let suffix = Uuid::new_v4();
+    let room_type_id = insert_room_type(pool, &format!("AdminBookRT-{}", suffix), 2000.00).await;
+    let room_id = insert_room(
+        pool,
+        room_type_id,
+        &format!("AB-{}-101", &suffix.simple().to_string()[..6]),
+    )
+    .await;
+
+    let today = Utc::now().date_naive();
+    let check_in = today + Duration::days(7);
+    let check_out = today + Duration::days(10);
+    let booking_id = Uuid::new_v4();
+
+    sqlx::query(
+        r#"
+        INSERT INTO bookings (id, user_id, room_id, room_type_id, check_in_date,
+                              check_out_date, num_guests, total_price, status, notes)
+        VALUES ($1, $2, $3, $4, $5, $6, 2, 6000.00, $7, 'guest notes')
+        "#,
+    )
+    .bind(booking_id)
+    .bind(user_id)
+    .bind(room_id)
+    .bind(room_type_id)
+    .bind(check_in)
+    .bind(check_out)
+    .bind(status)
+    .execute(pool)
+    .await
+    .expect("Failed to insert booking");
+
+    (booking_id, room_type_id)
+}
+
+/// `GET /api/admin/bookings` — happy path. Asserts the shape the frontend
+/// destructures (`bookings`, `total`, `page`, `limit`, `statusCounts`) and
+/// that the row's embedded user / room-type summaries are populated.
+#[tokio::test]
+async fn test_admin_list_bookings_happy_path() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let (booking_id, _) = seed_booking(app.db(), guest.id, "confirmed").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let response = client.get("/api/admin/bookings").await;
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("response should be JSON");
+
+    // top-level pagination shape
+    assert!(body.get("bookings").and_then(|v| v.as_array()).is_some());
+    assert!(body.get("total").and_then(|v| v.as_i64()).is_some());
+    assert_eq!(body.get("page").and_then(|v| v.as_i64()), Some(1));
+    assert_eq!(body.get("limit").and_then(|v| v.as_i64()), Some(10));
+
+    let counts = body
+        .get("statusCounts")
+        .expect("response must include statusCounts");
+    assert!(counts.get("all").and_then(|v| v.as_i64()).is_some());
+    assert!(counts.get("confirmed").and_then(|v| v.as_i64()).is_some());
+    assert!(counts.get("cancelled").and_then(|v| v.as_i64()).is_some());
+    assert!(counts.get("completed").and_then(|v| v.as_i64()).is_some());
+
+    // the row we seeded should appear with status 'confirmed' (normalised)
+    let row = body
+        .get("bookings")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| {
+            arr.iter()
+                .find(|r| r.get("id").and_then(|v| v.as_str()) == Some(&booking_id.to_string()))
+        })
+        .expect("seeded booking should appear in the list");
+    assert_eq!(
+        row.get("status").and_then(|v| v.as_str()),
+        Some("confirmed")
+    );
+    assert!(row.get("user").is_some(), "row should embed user");
+    assert!(row.get("roomType").is_some(), "row should embed roomType");
+
+    app.cleanup().await.ok();
+}
+
+/// `GET /api/admin/bookings` rejects an unauthenticated request.
+#[tokio::test]
+async fn test_admin_list_bookings_unauthenticated() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let response = app.client().get("/api/admin/bookings").await;
+    response.assert_status(401);
+    app.cleanup().await.ok();
+}
+
+/// `GET /api/admin/bookings` rejects a non-admin authenticated user.
+#[tokio::test]
+async fn test_admin_list_bookings_forbidden_for_non_admin() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let user = create_regular_user(app.db()).await;
+    let client = app.authenticated_client(&user.id, &user.email);
+    let response = client.get("/api/admin/bookings").await;
+    response.assert_status(403);
+    app.cleanup().await.ok();
+}
+
+/// `GET /api/admin/bookings?status=...&limit=...` — filter + pagination.
+/// Seeds three bookings (two confirmed, one cancelled) and asserts each
+/// tab filter returns the right rows + the right counts.
+#[tokio::test]
+async fn test_admin_list_bookings_filters_and_counts() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let _ = seed_booking(app.db(), guest.id, "confirmed").await;
+    let _ = seed_booking(app.db(), guest.id, "confirmed").await;
+    let (cancelled_id, _) = seed_booking(app.db(), guest.id, "cancelled").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    // Filter to cancelled — only the cancelled booking should appear.
+    let response = client
+        .get("/api/admin/bookings?status=cancelled&limit=50")
+        .await;
+    response.assert_status(200);
+    let body: Value = response.json().unwrap();
+    let bookings = body.get("bookings").and_then(|v| v.as_array()).unwrap();
+    assert!(
+        bookings
+            .iter()
+            .all(|b| b.get("status").and_then(|v| v.as_str()) == Some("cancelled")),
+        "every row under status=cancelled must have status=cancelled"
+    );
+    assert!(
+        bookings
+            .iter()
+            .any(|b| b.get("id").and_then(|v| v.as_str()) == Some(&cancelled_id.to_string())),
+        "the cancelled booking we seeded must appear"
+    );
+
+    // Counts are independent of the active tab filter.
+    let counts = body.get("statusCounts").unwrap();
+    assert_eq!(counts.get("confirmed").and_then(|v| v.as_i64()), Some(2));
+    assert_eq!(counts.get("cancelled").and_then(|v| v.as_i64()), Some(1));
+    assert_eq!(counts.get("completed").and_then(|v| v.as_i64()), Some(0));
+    assert_eq!(counts.get("all").and_then(|v| v.as_i64()), Some(3));
+
+    // Pagination: limit=1 should yield exactly one row but total=3.
+    let response = client.get("/api/admin/bookings?limit=1").await;
+    response.assert_status(200);
+    let body: Value = response.json().unwrap();
+    assert_eq!(
+        body.get("bookings")
+            .and_then(|v| v.as_array())
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(body.get("total").and_then(|v| v.as_i64()), Some(3));
+
+    app.cleanup().await.ok();
+}
+
+/// `GET /api/admin/bookings/room-types` returns only active room types in
+/// the `{ id, name }` shape the edit modal expects.
+#[tokio::test]
+async fn test_admin_bookings_room_types_dropdown() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+
+    let suffix = Uuid::new_v4();
+    let active_id = insert_room_type(app.db(), &format!("Active-{}", suffix), 1500.00).await;
+    let inactive_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO room_types (id, name, description, price_per_night, max_guests, is_active)
+        VALUES ($1, $2, 'inactive fixture', 1500.00, 2, FALSE)
+        "#,
+    )
+    .bind(inactive_id)
+    .bind(format!("Inactive-{}", suffix))
+    .execute(app.db())
+    .await
+    .unwrap();
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let response = client.get("/api/admin/bookings/room-types").await;
+    response.assert_status(200);
+
+    let arr = response
+        .json::<Value>()
+        .unwrap()
+        .as_array()
+        .cloned()
+        .expect("response should be an array");
+
+    assert!(arr
+        .iter()
+        .any(|r| r.get("id").and_then(|v| v.as_str()) == Some(&active_id.to_string())));
+    assert!(
+        arr.iter()
+            .all(|r| r.get("id").and_then(|v| v.as_str()) != Some(&inactive_id.to_string())),
+        "inactive room type must not appear in the dropdown"
+    );
+
+    // shape sanity
+    for row in &arr {
+        assert!(row.get("id").is_some(), "row missing id: {:?}", row);
+        assert!(row.get("name").is_some(), "row missing name: {:?}", row);
+    }
+
+    app.cleanup().await.ok();
+}
+
+/// `GET /api/admin/bookings/:id` returns the booking + an (initially
+/// empty) audit history. Also checks 404 on a non-existent id.
+#[tokio::test]
+async fn test_admin_get_booking_detail_and_404() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let (booking_id, _) = seed_booking(app.db(), guest.id, "confirmed").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let response = client
+        .get(&format!("/api/admin/bookings/{}", booking_id))
+        .await;
+    response.assert_status(200);
+    let body: Value = response.json().unwrap();
+    assert_eq!(
+        body.get("id").and_then(|v| v.as_str()),
+        Some(&*booking_id.to_string())
+    );
+    assert!(
+        body.get("auditHistory")
+            .and_then(|v| v.as_array())
+            .map(|a| a.is_empty())
+            .unwrap_or(false),
+        "fresh booking should have an empty audit history"
+    );
+
+    // 404 on bogus uuid
+    let missing = Uuid::new_v4();
+    let response = client
+        .get(&format!("/api/admin/bookings/{}", missing))
+        .await;
+    response.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
+/// `PUT /api/admin/bookings/:id` does a partial update, writes an audit row
+/// describing what changed, and returns the updated detail.
+#[tokio::test]
+async fn test_admin_update_booking_writes_audit_and_returns_updated() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let (booking_id, _) = seed_booking(app.db(), guest.id, "confirmed").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({
+        "numberOfGuests": 4,
+        "adminNotes": "VIP guest — comp the welcome drinks",
+    });
+    let response = client
+        .put(&format!("/api/admin/bookings/{}", booking_id), &payload)
+        .await;
+    response.assert_status(200);
+    let body: Value = response.json().unwrap();
+
+    // Returned detail reflects the change.
+    assert_eq!(body.get("numberOfGuests").and_then(|v| v.as_i64()), Some(4));
+    assert_eq!(
+        body.get("adminNotes").and_then(|v| v.as_str()),
+        Some("VIP guest — comp the welcome drinks")
+    );
+
+    // Untouched fields stayed put.
+    assert!(body.get("checkInDate").and_then(|v| v.as_str()).is_some());
+
+    // Audit log row landed: action=booking_updated, before/after carry the
+    // two fields that actually changed.
+    let history = body
+        .get("auditHistory")
+        .and_then(|v| v.as_array())
+        .expect("auditHistory must be present");
+    assert_eq!(history.len(), 1, "expected exactly one audit row");
+    let entry = &history[0];
+    assert_eq!(
+        entry.get("action").and_then(|v| v.as_str()),
+        Some("booking_updated")
+    );
+    // old_value / new_value are JSON-encoded strings.
+    let new_value: Value = serde_json::from_str(
+        entry
+            .get("newValue")
+            .and_then(|v| v.as_str())
+            .expect("newValue should be present"),
+    )
+    .expect("newValue should be valid JSON");
+    assert_eq!(
+        new_value.get("numberOfGuests").and_then(|v| v.as_i64()),
+        Some(4)
+    );
+    assert!(new_value.get("adminNotes").is_some());
+
+    app.cleanup().await.ok();
+}
+
+/// `PUT /api/admin/bookings/:id` rejects updates to a cancelled booking.
+#[tokio::test]
+async fn test_admin_update_booking_rejects_terminal_state() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let (booking_id, _) = seed_booking(app.db(), guest.id, "cancelled").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({"numberOfGuests": 3});
+    let response = client
+        .put(&format!("/api/admin/bookings/{}", booking_id), &payload)
+        .await;
+    response.assert_status(400);
+
+    app.cleanup().await.ok();
+}
+
+/// `POST /api/admin/bookings/:id/discount` applies the discount, persists
+/// the reason, and writes an audit row.
+#[tokio::test]
+async fn test_admin_apply_discount_persists_and_audits() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let (booking_id, _) = seed_booking(app.db(), guest.id, "confirmed").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({
+        "discountAmount": 250.0,
+        "reason": "loyalty tier promotion"
+    });
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/{}/discount", booking_id),
+            &payload,
+        )
+        .await;
+    response.assert_status(200);
+    let body: Value = response.json().unwrap();
+
+    // discount_amount is a `Decimal` — `rust_decimal`'s default serde impl
+    // emits it as a JSON string ("250.00"), not a number. Accept either
+    // shape so future changes to the Decimal serializer don't tank this
+    // test silently.
+    let discount_field = body
+        .get("discountAmount")
+        .expect("discountAmount must be present");
+    let discount_value: f64 = discount_field
+        .as_f64()
+        .or_else(|| discount_field.as_str().and_then(|s| s.parse().ok()))
+        .expect("discountAmount must parse as a number");
+    assert!(
+        (discount_value - 250.0).abs() < 1e-6,
+        "expected ~250.0, got {} ({:?})",
+        discount_value,
+        discount_field
+    );
+    assert_eq!(
+        body.get("discountReason").and_then(|v| v.as_str()),
+        Some("loyalty tier promotion")
+    );
+
+    // Audit row landed.
+    let history = body.get("auditHistory").and_then(|v| v.as_array()).unwrap();
+    assert!(
+        history
+            .iter()
+            .any(|e| e.get("action").and_then(|v| v.as_str()) == Some("discount_applied")),
+        "expected a discount_applied audit row"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// `POST /api/admin/bookings/:id/discount` rejects amounts greater than
+/// the booking total.
+#[tokio::test]
+async fn test_admin_apply_discount_rejects_excessive_amount() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let (booking_id, _) = seed_booking(app.db(), guest.id, "confirmed").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    // booking total_price is 6000.00 (per seed_booking); 10_000 must fail.
+    let payload = json!({"discountAmount": 10_000.0, "reason": "test"});
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/{}/discount", booking_id),
+            &payload,
+        )
+        .await;
+    assert!(
+        response.status == 400 || response.status == 422,
+        "expected 400/422, got {}",
+        response.status
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// `POST /api/admin/bookings/:id/discount` requires a non-empty reason.
+#[tokio::test]
+async fn test_admin_apply_discount_requires_reason() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let (booking_id, _) = seed_booking(app.db(), guest.id, "confirmed").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({"discountAmount": 100.0, "reason": ""});
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/{}/discount", booking_id),
+            &payload,
+        )
+        .await;
+    assert!(
+        response.status == 400 || response.status == 422,
+        "expected 400/422 for empty reason, got {}",
+        response.status
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// Admin can cancel **another** user's booking (no ownership check), and
+/// the audit row records the action. Verifies the auth-difference vs the
+/// user-side cancel endpoint.
+#[tokio::test]
+async fn test_admin_cancel_anothers_booking_writes_audit() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let (booking_id, _) = seed_booking(app.db(), guest.id, "confirmed").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({"reason": "guest no-showed"});
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/{}/cancel", booking_id),
+            &payload,
+        )
+        .await;
+    response.assert_status(200);
+    let body: Value = response.json().unwrap();
+
+    assert_eq!(
+        body.get("status").and_then(|v| v.as_str()),
+        Some("cancelled")
+    );
+
+    let history = body.get("auditHistory").and_then(|v| v.as_array()).unwrap();
+    let entry = history
+        .iter()
+        .find(|e| e.get("action").and_then(|v| v.as_str()) == Some("booking_cancelled"))
+        .expect("booking_cancelled audit row must exist");
+    assert_eq!(
+        entry.get("notes").and_then(|v| v.as_str()),
+        Some("guest no-showed")
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// Sanity check that the user-side `POST /api/bookings/:id/cancel` still
+/// enforces ownership — proves the auth split between user and admin
+/// cancel routes is intact. A non-owner customer hitting the user-side
+/// route gets 403, while the admin-side route would have succeeded.
+#[tokio::test]
+async fn test_user_cancel_requires_ownership() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let owner = create_regular_user(app.db()).await;
+    let other_user = create_regular_user(app.db()).await;
+    let (booking_id, _) = seed_booking(app.db(), owner.id, "confirmed").await;
+
+    // Non-owner hitting the user-side route: must be rejected.
+    let client = app.authenticated_client(&other_user.id, &other_user.email);
+    let response = client
+        .post(
+            &format!("/api/bookings/{}/cancel", booking_id),
+            &json!({"reason": "intruder"}),
+        )
+        .await;
+    response.assert_status(403);
+
+    app.cleanup().await.ok();
+}
+
+/// `POST /api/admin/bookings/:id/cancel` 404s on an unknown booking id.
+#[tokio::test]
+async fn test_admin_cancel_returns_404_for_missing_booking() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let missing = Uuid::new_v4();
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/{}/cancel", missing),
+            &json!({"reason": "phantom"}),
+        )
+        .await;
+    response.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
+/// `POST /api/admin/bookings/:id/cancel` rejects double-cancels.
+#[tokio::test]
+async fn test_admin_cancel_rejects_already_cancelled() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let (booking_id, _) = seed_booking(app.db(), guest.id, "cancelled").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/{}/cancel", booking_id),
+            &json!({"reason": "duplicate"}),
+        )
+        .await;
+    response.assert_status(400);
+
+    app.cleanup().await.ok();
+}
