@@ -30,7 +30,7 @@ reqwest = { version = "0.12", features = ["json", "multipart"] }
 
 # Email
 lettre = { version = "0.11", features = ["tokio1-native-tls", "builder"] }
-async-imap = "0.9"
+async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
 async-native-tls = "0.5"
 regex-lite = "0.1"
 
@@ -41,7 +41,7 @@ redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 rust_decimal = { version = "1", features = ["serde"] }
-validator = { version = "0.18", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
 thiserror = "1"
 anyhow = "1"
 tracing = "0.1"
