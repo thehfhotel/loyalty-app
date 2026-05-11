@@ -54,20 +54,19 @@ export const authService = {
   },
 
   async logout(): Promise<void> {
-    // Phase 2: refresh token lives in the HttpOnly `refresh_token` cookie
-    // (set by Phase 1 backend, PR #194). The browser sends it automatically
-    // because `api` is configured with `withCredentials: true`. The body is
-    // intentionally empty — the backend reads the token from the cookie and
-    // also clears it via `Set-Cookie: refresh_token=; Max-Age=0`.
+    // Phase 3: refresh token lives ONLY in the HttpOnly `refresh_token`
+    // cookie. The browser sends it automatically because `api` is
+    // configured with `withCredentials: true`. The body is empty and the
+    // backend ignores any body fields — it reads the token from the
+    // cookie and clears it via `Set-Cookie: refresh_token=; Max-Age=0`.
     await api.post<LogoutResponse>('/auth/logout', {});
   },
 
   async refreshToken(): Promise<RefreshTokenResponse> {
     logger.log('[Auth Debug] Token refresh attempt');
-    // Phase 2: empty body — backend reads `refresh_token` from the HttpOnly
-    // cookie (Phase 1 backend supports body OR cookie; sending no body forces
-    // the cookie path). The cookie travels because `api` uses
-    // `withCredentials: true`.
+    // Phase 3: empty body. The backend reads `refresh_token` from the
+    // HttpOnly cookie exclusively — the body-side contract was removed.
+    // The cookie travels because `api` uses `withCredentials: true`.
     const response = await api.post<RefreshTokenResponse>('/auth/refresh', {});
     logger.log('[Auth Debug] Token refresh response', {
       success: !!response.data.tokens,

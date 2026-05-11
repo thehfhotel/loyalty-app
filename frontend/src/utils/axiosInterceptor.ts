@@ -59,11 +59,12 @@ export function setupAxiosInterceptors() {
           return Promise.reject(createApiError(error));
         }
 
-        // Phase 2: always attempt the refresh — the refresh token is now
-        // an HttpOnly cookie that JS cannot see. The browser sends it
-        // automatically (axios `withCredentials: true` on the auth axios
-        // instance). The backend returns 401 if the cookie is absent or
-        // expired, which falls through to clearAuth + redirect below.
+        // Phase 3: always attempt the refresh — the refresh token lives
+        // exclusively in an HttpOnly cookie that JS cannot see. The
+        // browser sends it automatically (axios `withCredentials: true`
+        // on the auth axios instance). The backend returns 401 if the
+        // cookie is absent or expired, which falls through to clearAuth +
+        // redirect below.
         try {
           await authStore.refreshAuth();
 
@@ -184,9 +185,9 @@ export function addAuthTokenInterceptor(axiosInstance: AxiosInstance) {
           return Promise.reject(createApiError(error));
         }
 
-        // Phase 2: always attempt the refresh — see the global interceptor
-        // for the full rationale. The HttpOnly cookie is the source of
-        // truth; we cannot read it from JS, so we just try.
+        // Phase 3: always attempt the refresh — see the global interceptor
+        // for the full rationale. The HttpOnly cookie is the only source
+        // of truth; we cannot read it from JS, so we just try.
         try {
           await authStore.refreshAuth();
 

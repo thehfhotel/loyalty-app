@@ -588,13 +588,15 @@ async fn google_oauth_callback(
         tracing::warn!(error = ?e, "[OAuth] Failed to delete OAuth state");
     }
 
-    // Build success redirect URL
+    // Phase 3: the redirect URL carries only the access token. The refresh
+    // token is delivered exclusively via the `Set-Cookie` header attached
+    // below — never via a URL query parameter, where it would leak into
+    // browser history, server logs, and Referer headers.
     let return_url = validate_return_url(Some(&state_data.return_url), frontend_url);
     let success_url = format!(
-        "{}/oauth/success?token={}&refreshToken={}&isNewUser={}",
+        "{}/oauth/success?token={}&isNewUser={}",
         return_url,
         url_encode(&result.tokens.access_token),
-        url_encode(&result.tokens.refresh_token),
         result.is_new_user
     );
 
@@ -611,8 +613,7 @@ async fn google_oauth_callback(
         Redirect::to(&success_url).into_response()
     };
 
-    // Phase 1: also attach the refresh token as an HttpOnly cookie on the
-    // redirect so the migrated frontend can stop reading from the query string.
+    // Phase 3: the refresh token rides only on the HttpOnly cookie.
     let refresh_max_age_secs = state.config().auth.refresh_token_expiry_secs as i64;
     attach_refresh_cookie(response, result.tokens.refresh_token, refresh_max_age_secs)
 }
@@ -1064,13 +1065,15 @@ async fn line_oauth_callback(
         tracing::warn!(error = ?e, "[OAuth] Failed to delete OAuth state");
     }
 
-    // Build success redirect URL
+    // Phase 3: the redirect URL carries only the access token. The refresh
+    // token is delivered exclusively via the `Set-Cookie` header attached
+    // below — never via a URL query parameter, where it would leak into
+    // browser history, server logs, and Referer headers.
     let return_url = validate_return_url(Some(&state_data.return_url), frontend_url);
     let success_url = format!(
-        "{}/oauth/success?token={}&refreshToken={}&isNewUser={}",
+        "{}/oauth/success?token={}&isNewUser={}",
         return_url,
         url_encode(&result.tokens.access_token),
-        url_encode(&result.tokens.refresh_token),
         result.is_new_user
     );
 
@@ -1086,8 +1089,7 @@ async fn line_oauth_callback(
         Redirect::to(&success_url).into_response()
     };
 
-    // Phase 1: also attach the refresh token as an HttpOnly cookie on the
-    // redirect so the migrated frontend can stop reading from the query string.
+    // Phase 3: the refresh token rides only on the HttpOnly cookie.
     let refresh_max_age_secs = state.config().auth.refresh_token_expiry_secs as i64;
     attach_refresh_cookie(response, result.tokens.refresh_token, refresh_max_age_secs)
 }
@@ -1517,15 +1519,13 @@ async fn ensure_loyalty_enrollment(db: &sqlx::PgPool, user_id: Uuid) -> Result<(
     Ok(())
 }
 
-/// Append the Phase 1 refresh-token HttpOnly cookie to an OAuth redirect
-/// response.
+/// Append the refresh-token HttpOnly cookie to an OAuth redirect response.
 ///
-/// The OAuth callbacks issue a 302 (or HTML meta-refresh on mobile Safari) to
-/// `<frontend>/oauth/success?token=...&refreshToken=...`. The legacy frontend
-/// reads the refresh token from that query string and writes it to
-/// localStorage. Phase 1 also drops the same refresh token into a `Set-Cookie`
-/// header on this redirect so the migrated frontend (Phase 2) can pick it up
-/// from the cookie store instead.
+/// Phase 3: the OAuth callbacks issue a 302 (or HTML meta-refresh on mobile
+/// Safari) to `<frontend>/oauth/success?token=...&isNewUser=...`. The refresh
+/// token is delivered EXCLUSIVELY via the `Set-Cookie` header attached here —
+/// it is no longer emitted as a URL query parameter (Phase 1 contract, now
+/// removed) and never appears anywhere JavaScript can read it.
 ///
 /// `max_age_secs` should match the refresh-token expiry so the browser drops
 /// the cookie at the same time the server-side state is invalidated.

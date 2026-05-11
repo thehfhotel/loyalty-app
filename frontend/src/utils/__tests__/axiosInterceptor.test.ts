@@ -23,14 +23,14 @@ vi.mock('../apiConfig', () => ({
 
 // Mock auth store
 //
-// Phase 2 (HttpOnly-cookie refresh token): the store no longer exposes
-// `refreshToken`. The interceptor must NOT key on a JS-visible refresh
-// token any more — it always attempts the refresh, and the browser
-// supplies the `refresh_token` cookie automatically. The mock therefore
-// exposes only `accessToken`, `clearAuth`, and `refreshAuth`. If a
-// regression re-introduces a `state.refreshToken` read, the interceptor
-// will see `undefined` here and the test that asserts "refresh attempted
-// even without a JS refresh token" will fail.
+// Phase 3 (HttpOnly-cookie refresh token, body-side contract removed):
+// the store no longer exposes `refreshToken`. The interceptor must NOT
+// key on a JS-visible refresh token — it always attempts the refresh,
+// and the browser supplies the `refresh_token` cookie automatically.
+// The mock therefore exposes only `accessToken`, `clearAuth`, and
+// `refreshAuth`. If a regression re-introduces a `state.refreshToken`
+// read, the interceptor will see `undefined` here and the test that
+// asserts "refresh attempted even without a JS refresh token" will fail.
 const mockClearAuth = vi.fn();
 const mockRefreshAuth = vi.fn();
 let mockAccessToken: string | null = 'valid-token';
@@ -52,7 +52,7 @@ describe('axiosInterceptor - Auth Refresh Loop Prevention', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAccessToken = 'valid-token';
-    // Phase 2: no `mockRefreshToken` — see the mock-store comment above.
+    // Phase 3: no `mockRefreshToken` — see the mock-store comment above.
 
     // Mock window.location
     // @ts-expect-error - we're intentionally replacing window.location for testing
@@ -232,7 +232,7 @@ describe('addAuthTokenInterceptor - Instance interceptor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAccessToken = 'valid-token';
-    // Phase 2: no `mockRefreshToken` — see the mock-store comment above.
+    // Phase 3: no `mockRefreshToken` — see the mock-store comment above.
 
     // Create a new axios instance for each test
     axiosInstance = axios.create({
@@ -330,9 +330,9 @@ describe('Refresh loop scenario simulation', () => {
   it('should handle the complete refresh failure flow', async () => {
     // Simulate the scenario:
     // 1. User has expired access token; the HttpOnly refresh-token
-    //    cookie is also expired or missing (Phase 2: refresh token no
-    //    longer lives in JS, so the access token is the only thing the
-    //    interceptor sees up front).
+    //    cookie is also expired or missing (Phase 3: refresh token no
+    //    longer lives in JS at all, so the access token is the only
+    //    thing the interceptor sees up front).
     // 2. API call returns 401
     // 3. Interceptor calls refreshAuth (no longer gated on a JS refresh
     //    token — it always tries).
@@ -356,16 +356,18 @@ describe('Refresh loop scenario simulation', () => {
 });
 
 /**
- * Phase 2 contract: with the refresh token now in an HttpOnly cookie,
- * the interceptor and the auth axios instance must satisfy three
- * properties for the cookie path to actually work end-to-end.
+ * Phase 3 contract: the refresh token lives EXCLUSIVELY in the HttpOnly
+ * cookie. The backend has dropped the body-side `refreshToken` from
+ * /auth/login, /auth/register, and /auth/refresh responses, and ignores
+ * any `refreshToken` field clients try to send on /auth/refresh or
+ * /auth/logout. These tests pin the frontend half of that contract.
  *
- * These tests assert the contract via direct inspection of the modules
- * rather than firing real HTTP, because the existing global/instance
- * 401-handling tests in this file are already structural — full
- * network-level mocking is intentionally out of scope here.
+ * They assert the contract via direct inspection of the modules rather
+ * than firing real HTTP, because the existing global/instance 401-
+ * handling tests in this file are already structural — full network-
+ * level mocking is intentionally out of scope here.
  */
-describe('Phase 2 — HttpOnly cookie refresh contract', () => {
+describe('Phase 3 — HttpOnly cookie refresh contract', () => {
   it('the auth axios instance must send credentials so the refresh_token cookie travels', async () => {
     // The cookie won't ride on a cross-origin request unless
     // `withCredentials: true` is set on the axios instance posting to
@@ -378,36 +380,42 @@ describe('Phase 2 — HttpOnly cookie refresh contract', () => {
     expect(api.defaults.withCredentials).toBe(true);
   });
 
-  it('authService.refreshToken sends an empty body so the backend uses the cookie', async () => {
-    // Phase 1 backend prefers the body when both body and cookie are
-    // present; Phase 2 forces the cookie path by sending an empty body.
-    // We spy on the underlying axios instance to capture the actual
-    // payload that goes over the wire.
+  it('authService.refreshToken sends an empty body — the backend reads the cookie only', async () => {
+    // Phase 3 backend ignores any body-side `refreshToken`. Sending an
+    // empty body keeps the wire format honest and stops a future
+    // regression from accidentally putting a stale value back in JS.
     const apiModule = await import('../../services/authService');
     const api = apiModule.default;
     const { authService } = apiModule;
 
     const postSpy = vi
       .spyOn(api, 'post')
+      // Phase 3 server shape: tokens.accessToken only — NO refreshToken
+      // in the body. The mock matches the server contract so a
+      // regression that starts reading `response.data.tokens.refreshToken`
+      // would see `undefined`.
       .mockResolvedValueOnce({
         data: {
           success: true,
-          tokens: { accessToken: 'new-access', refreshToken: 'unused-by-frontend' },
+          tokens: { accessToken: 'new-access' },
         },
       });
 
-    await authService.refreshToken();
+    const result = await authService.refreshToken();
 
     expect(postSpy).toHaveBeenCalledTimes(1);
     const firstCall = postSpy.mock.calls[0];
     if (!firstCall) throw new Error('expected /auth/refresh post call');
     const [url, body] = firstCall;
     expect(url).toBe('/auth/refresh');
-    // Empty body — no `refreshToken` field. If a regression adds one,
-    // the backend will *prefer* it over the cookie (body wins) and any
-    // stale value will silently take precedence.
+    // Empty body — no `refreshToken` field. Phase 3 backend ignores
+    // body fields, so adding one would be silently dead code.
     expect(body).toEqual({});
     expect(body).not.toHaveProperty('refreshToken');
+
+    // Caller-visible response also has no refreshToken — Phase 3
+    // backend dropped that field.
+    expect(result.tokens).not.toHaveProperty('refreshToken');
 
     postSpy.mockRestore();
   });
@@ -449,5 +457,35 @@ describe('Phase 2 — HttpOnly cookie refresh contract', () => {
       refreshAuth: async () => undefined,
     };
     expect(stateShape).not.toHaveProperty('refreshToken');
+  });
+
+  it('refreshAuth surface does not depend on a body-side refreshToken', async () => {
+    // Phase 3 contract surface: the auth store's `refreshAuth` only
+    // reads `tokens.accessToken` from the response body. A regression
+    // that re-introduces a `tokens.refreshToken` read would not be
+    // satisfied by the Phase 3 server (which omits the field), so the
+    // refresh would silently end up with `undefined` and force a
+    // re-login. We pin the response shape the store consumes so that
+    // regression manifests here instead of at runtime.
+    const apiModule = await import('../../services/authService');
+    const api = apiModule.default;
+    const { authService } = apiModule;
+
+    const postSpy = vi.spyOn(api, 'post').mockResolvedValueOnce({
+      data: {
+        success: true,
+        // Phase 3 server: tokens.accessToken only.
+        tokens: { accessToken: 'rotated-access-token' },
+      },
+    });
+
+    const response = await authService.refreshToken();
+    expect(response.tokens.accessToken).toBe('rotated-access-token');
+    // The field genuinely is not there in Phase 3 responses.
+    expect(
+      (response.tokens as { refreshToken?: string }).refreshToken,
+    ).toBeUndefined();
+
+    postSpy.mockRestore();
   });
 });
