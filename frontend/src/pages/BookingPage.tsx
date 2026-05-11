@@ -1,10 +1,11 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { FiCalendar, FiUsers, FiCheck, FiStar, FiWifi, FiTv, FiCoffee, FiUpload, FiX, FiCheckCircle, FiClock, FiAlertCircle, FiDownload } from 'react-icons/fi';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import MainLayout from '../components/layout/MainLayout';
 import { bookingService } from '../services/bookingService';
+import { paymentService } from '../services/paymentService';
 import toast from 'react-hot-toast';
 import companyQRCode from '../assets/company-promptpay-qr.png';
 import kbankLogo from '../assets/kbank-logo.png';
@@ -54,9 +55,6 @@ export default function BookingPage() {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // QR code URL - use env variable or fallback to bundled image
-  const promptPayQRUrl = import.meta.env.VITE_PROMPTPAY_QR_IMAGE_URL ?? companyQRCode;
-
   // Date validation
   const today = new Date().toISOString().split('T')[0];
   const minCheckOut = checkIn ? new Date(new Date(checkIn).getTime() + 86400000).toISOString().split('T')[0] : today;
@@ -98,6 +96,38 @@ export default function BookingPage() {
   // Calculate payment amounts
   const depositAmount = createdBooking ? Math.round(createdBooking.totalPrice * 0.5) : 0;
   const fullAmount = createdBooking ? createdBooking.totalPrice : 0;
+  const amountToPay = paymentType === 'deposit' ? depositAmount : fullAmount;
+
+  // Fetch dynamic PromptPay QR (SVG) for the chosen amount once the user has
+  // confirmed their payment type. Falls back to the bundled image if the
+  // backend can't produce a QR (e.g. PromptPay Tax ID not configured).
+  const {
+    data: promptPayQr,
+    isLoading: isLoadingQr,
+    isError: isQrError,
+  } = useQuery({
+    queryKey: ['payments', 'promptpay-qr', createdBooking?.id, amountToPay],
+    queryFn: () => paymentService.getPromptPayQr(amountToPay, createdBooking!.id),
+    enabled: Boolean(isPaymentConfirmed && createdBooking?.id && amountToPay > 0),
+    staleTime: 60_000,
+    retry: 1,
+  });
+
+  // Encode the SVG payload as a data URL so the existing <img>/download
+  // markup can render and offer it as a downloadable file without any
+  // additional asset round-trip.
+  const promptPayQrSrc = useMemo(() => {
+    if (promptPayQr?.svg) {
+      return `data:image/svg+xml;utf8,${encodeURIComponent(promptPayQr.svg)}`;
+    }
+    return null;
+  }, [promptPayQr]);
+
+  // Fall back to the bundled company QR image when the dynamic generator is
+  // unavailable. This keeps the page functional during local dev where the
+  // PromptPay Tax ID env var may not be set.
+  const fallbackQrUrl = import.meta.env.VITE_PROMPTPAY_QR_IMAGE_URL ?? companyQRCode;
+  const displayedQrUrl = promptPayQrSrc ?? fallbackQrUrl;
 
   // File handling functions
   const handleFileSelect = useCallback((file: File) => {
@@ -156,22 +186,24 @@ export default function BookingPage() {
 
     setIsUploading(true);
     try {
-      // TODO: Implement actual upload when backend endpoint is ready.
-      // Slip upload is unrelated to PromptPay QR generation; for the slip
-      // upload flow use bookingService.uploadSlip + bookingService.addSlip.
-      // For dynamic QR generation (replacing the bundled companyQRCode image)
-      // see paymentService.getPromptPayQr in src/services/paymentService.ts —
-      // it returns an SVG payload sized to the booking total.
-      // For now, simulate upload success
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Two-step flow (mirrors MyBookingsPage):
+      //   1. POST /api/slips/upload      -> stores the file, returns the URL
+      //   2. POST /api/bookings/:id/slips -> attaches the URL to the booking
+      // The backend `/api/slips/upload` route lives in
+      // `backend-rust/src/routes/slips.rs` and enforces auth + 10MB + JPG/PNG.
+      const { url } = await bookingService.uploadSlip(slipFile);
+      await bookingService.addSlip(createdBooking.id, url);
+
       setSlipStatus('uploaded');
+      await queryClient.invalidateQueries({ queryKey: ['bookings'] });
       toast.success(t('payment.slipUploaded'));
     } catch (_error) {
+      setSlipStatus('failed');
       toast.error(t('payment.uploadError'));
     } finally {
       setIsUploading(false);
     }
-  }, [slipFile, createdBooking, t]);
+  }, [slipFile, createdBooking, t, queryClient]);
 
   const handleSkipPayment = useCallback(() => {
     navigate('/my-bookings');
@@ -688,22 +720,41 @@ export default function BookingPage() {
                   <h3 className="font-semibold text-lg mb-4">{t('payment.scanQRCode')}</h3>
 
                   <div className="p-4 bg-white border-2 border-gray-200 rounded-lg shadow-sm space-y-4">
-                    <img
-                      src={promptPayQRUrl}
-                      alt="PromptPay QR Code"
-                      className="w-full"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192"%3E%3Crect fill="%23f3f4f6" width="192" height="192"/%3E%3Ctext x="96" y="96" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="14"%3EQR Code%3C/text%3E%3C/svg%3E';
-                      }}
-                    />
+                    {isLoadingQr ? (
+                      <div
+                        className="flex items-center justify-center h-48"
+                        data-testid="qr-loading"
+                      >
+                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600" />
+                      </div>
+                    ) : (
+                      <img
+                        src={displayedQrUrl}
+                        alt="PromptPay QR Code"
+                        className="w-full"
+                        data-testid="promptpay-qr"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192"%3E%3Crect fill="%23f3f4f6" width="192" height="192"/%3E%3Ctext x="96" y="96" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="14"%3EQR Code%3C/text%3E%3C/svg%3E';
+                        }}
+                      />
+                    )}
+
+                    {isQrError && (
+                      <p
+                        className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 text-center"
+                        data-testid="qr-error"
+                      >
+                        {t('payment.qrFallback')}
+                      </p>
+                    )}
 
                     <p className="text-sm text-gray-600 text-center">
                       {t('payment.scanInstructions')}
                     </p>
 
                     <a
-                      href={promptPayQRUrl}
-                      download="promptpay-qr.png"
+                      href={displayedQrUrl}
+                      download={promptPayQrSrc ? 'promptpay-qr.svg' : 'promptpay-qr.png'}
                       className="inline-flex items-center justify-center gap-2 w-full py-2 text-sm text-gray-500 hover:text-primary-600 transition-colors border-t pt-3"
                     >
                       <FiDownload className="w-4 h-4" />
