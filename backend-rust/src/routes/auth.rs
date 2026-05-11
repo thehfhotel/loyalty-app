@@ -833,7 +833,10 @@ async fn refresh(
     // Set-Cookie header — never in the JSON body. Max-Age matches the new
     // DB row's expiry.
     let refresh_max_age_secs = (refresh_expires_at - Utc::now()).num_seconds().max(0);
-    let jar = jar.add(build_refresh_cookie(new_refresh_token, refresh_max_age_secs));
+    let jar = jar.add(build_refresh_cookie(
+        new_refresh_token,
+        refresh_max_age_secs,
+    ));
 
     Ok((
         jar,
