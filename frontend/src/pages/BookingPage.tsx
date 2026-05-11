@@ -107,7 +107,12 @@ export default function BookingPage() {
     isError: isQrError,
   } = useQuery({
     queryKey: ['payments', 'promptpay-qr', createdBooking?.id, amountToPay],
-    queryFn: () => paymentService.getPromptPayQr(amountToPay, createdBooking!.id),
+    queryFn: () => {
+      if (!createdBooking?.id) {
+        throw new Error('createdBooking.id is required when QR query is enabled');
+      }
+      return paymentService.getPromptPayQr(amountToPay, createdBooking.id);
+    },
     enabled: Boolean(isPaymentConfirmed && createdBooking?.id && amountToPay > 0),
     staleTime: 60_000,
     retry: 1,
