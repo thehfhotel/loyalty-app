@@ -1,64 +1,86 @@
-# Hotel Loyalty System - Phase 1
+# Hotel Loyalty App
 
-[![Test Reports](https://img.shields.io/badge/Test_Reports-Allure-green?logo=github)](https://thehfhotel.github.io/loyalty-app/test-reports/)
-[![CI/CD Pipeline](https://github.com/thehfhotel/loyalty-app/actions/workflows/deploy-v2.yml/badge.svg)](https://github.com/thehfhotel/loyalty-app/actions/workflows/deploy-v2.yml)
+[![CI](https://github.com/thehfhotel/loyalty-app/actions/workflows/ci-test.yml/badge.svg?branch=main)](https://github.com/thehfhotel/loyalty-app/actions/workflows/ci-test.yml)
+[![Deploy](https://github.com/thehfhotel/loyalty-app/actions/workflows/deploy.yml/badge.svg?branch=main)](https://github.com/thehfhotel/loyalty-app/actions/workflows/deploy.yml)
 
-A modern hotel loyalty program application built with React, Node.js, and PostgreSQL. This is Phase 1 implementation featuring user authentication and profile management.
+A production hotel loyalty platform: members, tier progression, points and coupons, surveys, bookings, admin operations, and Thai PromptPay payment intents.
 
-> **📋 Important**: Please read [CLAUDE.md](./CLAUDE.md) for critical project rules and conventions that must be followed.
+**Stack:** Rust (Axum) backend · React 19 (TypeScript / Vite) frontend · PostgreSQL 15 · Redis 7 · Docker Compose
 
-## Features (Phase 1)
+> See [CLAUDE.md](./CLAUDE.md) for project conventions (trunk-based branching, commit style, port allocation).
 
-### Customer Features
-- ✅ User Registration & Login
-- ✅ JWT Authentication with Refresh Tokens
-- ✅ Password Reset via Email
-- ✅ Profile Management
-- ✅ Responsive PWA Design
+## Features
 
-### Admin Features
-- ✅ Role-based Authentication
-- ✅ User Management Access
+### Customer
+- Email + OAuth (Google, LINE) sign-in with JWT access and refresh tokens
+- Profile management and password reset
+- Loyalty points and tier progression (Bronze / Silver / Gold / Platinum, nights-based)
+- Coupon issuance and redemption
+- Survey participation
+- Booking flow with PromptPay QR payment intents
+- Installable PWA, responsive layout
 
-### Technical Features
-- ✅ PostgreSQL Database with Migrations
-- ✅ Redis for Session Management
-- ✅ Docker Compose Development Environment
-- ✅ TypeScript Frontend & Backend
-- ✅ Input Validation with Zod
-- ✅ Comprehensive Error Handling
-- ✅ Audit Logging
+### Admin
+- Role-based access control
+- User, coupon, survey, and booking administration
+- Tier and points adjustments via stored procedures
+- Audit logging
+
+### Platform
+- Stateless Rust API behind nginx reverse proxy
+- Compile-time verified SQL via `sqlx` (offline cache committed to git)
+- Automatic essential-data seeding on startup (tiers, membership ID sequence)
+- Migrations executed via Prisma at deploy time, schema queried by sqlx at runtime
+- GitHub Actions CI for tests, Trivy vulnerability scanning, and zero-downtime deploys
 
 ## Quick Start
 
 ### Prerequisites
-- Docker & Docker Compose
-- Node.js 18+ (for local development)
-- (Optional) Anthropic Claude Code CLI: run `./claude_code_setup.sh` to install/initialize the pinned CLI and store your Anthropic API key in `~/.claude/settings.json`.
+- Docker and Docker Compose v2 (`docker compose`, with the space)
+- Rust 1.93 (pinned via `backend-rust/rust-toolchain.toml`) for native backend builds
+- Node.js 20+ for the frontend
+- (Optional) Anthropic Claude Code CLI: run `./claude_code_setup.sh` to install/initialize the pinned CLI.
 
-### Installation
+### Clone
 
-1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/thehfhotel/loyalty-app.git
 cd loyalty-app
 ```
 
-2. Start the development environment:
+### Run with Docker Compose (recommended)
+
 ```bash
+cp .env.example .env
+# Edit .env: set LOYALTY_USERNAME, LOYALTY_PASSWORD, JWT_*, OAuth secrets
 docker compose up -d
 ```
 
-3. Access the application:
+Services:
 - Frontend: http://localhost:4001
 - Backend API: http://localhost:4000
 - Database: localhost:5434
 
-### Default Admin Account
-- Email: `admin@hotel.com`
-- Password: `admin123`
+### Build the Rust backend natively
 
-**⚠️ Change this password immediately in production!**
+```bash
+cd backend-rust
+cargo build --release
+cargo run                  # starts the API on the port from .env
+RUST_LOG=debug cargo run   # verbose logging
+```
+
+### Build the frontend natively
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### Admin account provisioning
+
+On first run, an admin account is provisioned from the `LOYALTY_USERNAME` / `LOYALTY_PASSWORD` environment variables (see `.env.example`). The password must be at least 12 characters and must not match any well-known default. There is **no built-in default admin** — the application will refuse to seed an admin if these variables are missing or weak.
 
 ## Project Structure
 
@@ -66,207 +88,73 @@ docker compose up -d
 loyalty-app/
 ├── backend-rust/            # Rust/Axum API server
 │   ├── src/
-│   │   ├── routes/          # API route handlers
+│   │   ├── routes/          # HTTP route handlers (auth, loyalty, coupons, surveys, bookings, payments, admin)
+│   │   ├── services/        # Domain services (incl. PromptPay)
 │   │   ├── models/          # Data models
 │   │   ├── middleware/      # Axum middleware
-│   │   └── config/          # Configuration
+│   │   └── config/          # Configuration loader
 │   ├── migrations/          # SQL migration files
+│   ├── tests/               # Integration tests
 │   └── Dockerfile
-├── frontend/                # React PWA
+├── frontend/                # React 19 + Vite + TypeScript PWA
 │   ├── src/
-│   │   ├── components/      # Reusable components
-│   │   ├── pages/           # Page components
-│   │   ├── services/        # API services
-│   │   ├── store/           # State management
-│   │   └── styles/          # CSS styles
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   ├── store/
+│   │   └── styles/
 │   └── Dockerfile
 ├── nginx/                   # Reverse proxy config
-└── docker-compose.yml       # Development environment
+├── docs/                    # Operational and design docs
+└── docker-compose.*.yml     # Local, staging, and production overlays
 ```
 
-## API Endpoints
+## API Surface (overview)
 
-### Authentication
-- `POST /api/auth/register` - User registration
-- `POST /api/auth/login` - User login
-- `POST /api/auth/refresh` - Refresh access token
-- `POST /api/auth/logout` - User logout
-- `POST /api/auth/reset-password/request` - Request password reset
-- `POST /api/auth/reset-password` - Reset password
-- `GET /api/auth/me` - Get current user
+Routes mounted under `/api/`. Examples:
 
-### User Management
-- `GET /api/users/profile` - Get user profile
-- `PUT /api/users/profile` - Update user profile
-- `POST /api/users/avatar` - Upload avatar (TODO)
-- `DELETE /api/users/avatar` - Delete avatar
+- `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`
+- `GET /api/auth/me`, `POST /api/auth/reset-password/request`, `POST /api/auth/reset-password`
+- `GET /api/users/profile`, `PUT /api/users/profile`
+- `GET /api/loyalty/*`, `GET /api/coupons/*`, `GET /api/surveys/*`
+- `POST /api/bookings`, `GET /api/bookings/:id`
+- `POST /api/payments/*` (PromptPay QR generation)
+- `/api/admin/*` (admin only)
 
-## Development
-
-### Backend Development
-```bash
-cd backend
-npm install
-npm run dev
-```
-
-### Frontend Development
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Database Migrations
-Database migrations run automatically on container startup via Docker.
+For the full list, see route handlers in `backend-rust/src/routes/`.
 
 ## Testing
 
-### Test User Registration
-1. Visit http://localhost:4001
-2. Click "Create a new account"
-3. Fill in the registration form
-4. Verify login works with new account
+```bash
+# Backend
+cd backend-rust && cargo test
 
-### Test Profile Management
-1. Login with any account
-2. Navigate to Profile page
-3. Update profile information
-4. Verify changes are saved
+# Frontend
+cd frontend && npm run lint && npm run typecheck && npm run test
+```
 
-## Phase 2 Planning
+E2E tests (Playwright) run in CI only — see `.github/workflows/ci-build-e2e.yml`. Local E2E is not supported because of port-isolation requirements.
 
-The next phase will include:
-- Loyalty Points System
-- Tier Management (Bronze, Silver, Gold, Platinum)
-- Points Earning & Redemption
-- Transaction History
-- Admin Points Management
+## CI/CD
 
-## Security Notes
+CI runs on every pull request (Rust tests, frontend lint/type/test, Trivy scan). Merges to `main` automatically deploy to staging via the `Deploy` workflow; production deployment requires manual approval in the GitHub UI.
 
-### Production Deployment
-Before deploying to production:
+## Security
 
-1. Change default admin password
-2. Update JWT secrets in environment variables
-3. Enable HTTPS/SSL
-4. Configure proper firewall rules
-5. Set up backup procedures
-6. Enable audit logging review
+If you discover a vulnerability, please follow the disclosure policy in [SECURITY.md](./SECURITY.md). Do **not** open a public issue.
 
-### Environment Variables
-Key environment variables to configure:
-- `JWT_SECRET` - JWT signing secret
-- `JWT_REFRESH_SECRET` - Refresh token secret
-- `DATABASE_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection string
+For day-to-day production hardening:
 
-## CI/CD Pipeline
-
-### Overview
-The project uses an optimized GitHub Actions pipeline with comprehensive validation and automated deployment to production.
-
-### Pipeline Architecture
-**4-Phase Deployment Process** (8-12 minutes total):
-
-#### Phase 1: Parallel Validation & Security (3-4 minutes)
-- **Security Analysis**: ESLint security rules, npm audit, custom security validation, test integrity validation
-- **Unit & Integration Tests**: Backend tests with PostgreSQL test database, TypeScript validation, database schema tests
-- **E2E Tests**: Full application testing with Playwright (main branch only)
-
-#### Phase 2: Build Validation (2-3 minutes, main branch only)
-- **Production Build**: Parallel backend/frontend builds with TypeScript compilation
-- **Docker Validation**: Container build validation with production environment variables
-- **Artifact Verification**: Build output validation and integrity checks
-
-#### Phase 3: Production Deployment (3-5 minutes, main branch only)
-- **Smart Database Backup**: Automated pre-deployment database backups
-- **Zero-Downtime Deployment**: Optimized code deployment with intelligent caching
-- **Environment Configuration**: Secure environment variable management
-- **Database Migration**: Automated migrations with rollback safety checks
-- **Service Deployment**: Docker Compose production deployment
-
-#### Phase 4: Post-Deployment Monitoring (< 1 minute)
-- **Health Checks**: Comprehensive application and service validation
-- **OAuth Validation**: Production OAuth endpoint health verification
-- **Database Validation**: Migration status and rollback safety verification
-- **Smart Cleanup**: Conditional resource cleanup based on disk usage
-
-### Key Features
-
-#### 🔒 Security & Quality Validation
-- **Test Integrity Validation**: Prevents test bypassing patterns that could hide failures
-- **OAuth Health Validation**: Validates OAuth endpoints before and after deployment
-- **Database Migration Validation**: Comprehensive migration testing and rollback safety
-- **Security Auditing**: npm audit, ESLint security rules, custom security scripts
-- **TypeScript Validation**: Full type checking across backend and frontend
-
-#### ⚡ Performance Optimizations
-- **Parallel Execution**: Jobs run simultaneously when possible (40-50% faster)
-- **Intelligent Caching**: Local npm cache, Docker BuildKit, dependency caching
-- **Conditional Jobs**: E2E tests only run on main branch or PRs to main
-- **Smart Deployment**: Updates existing deployments instead of full rebuilds
-
-#### 🛡️ Deployment Safety
-- **Pre-deployment Validation**: All tests must pass before deployment
-- **Automated Backups**: Database backups before each deployment
-- **Health Monitoring**: Post-deployment validation ensures services are operational
-- **Rollback Safety**: Migration rollback procedures validated before deployment
-
-### OAuth & Database Validation
-
-#### OAuth Health Validation
-The pipeline validates OAuth functionality at multiple stages:
-- **Pre-deployment**: Validates OAuth endpoints during testing phase
-- **E2E Testing**: OAuth-specific end-to-end tests using Playwright
-- **Post-deployment**: Production OAuth configuration validation
-
-OAuth validation checks:
-- OAuth provider endpoints (Google, LINE, Facebook)
-- Redirect URL configuration
-- Authentication flow integrity
-- Rate limiting functionality
-
-#### Database Migration Validation
-Comprehensive database validation includes:
-- **Migration Status**: Verifies all migrations are properly applied
-- **Rollback Safety**: Validates rollback procedures and backup availability
-- **Schema Integrity**: Tests database schema after migrations
-- **Connection Validation**: Ensures database connectivity in production
-
-### Rate Limit Management
-The pipeline includes OAuth rate limit reset functionality:
-- **Reset Script**: `./scripts/reset-rate-limits.sh` with multiple reset strategies
-- **Integration**: Available via `./manage.sh` (Deployment Menu → Reset OAuth Rate Limits)
-- **CI Integration**: Rate limits automatically managed during testing
-
-### Pipeline Triggers
-- **Push to main**: Full pipeline with deployment
-- **Push to develop**: Validation and testing only
-- **Pull Request to main**: Full validation including E2E tests
-- **Manual Trigger**: `workflow_dispatch` for manual deployments
-
-### Environment Requirements
-- **Self-hosted Runner**: Optimized for dedicated build environment
-- **Docker & Docker Compose**: Container orchestration
-- **PostgreSQL & Redis**: Database and caching services
-- **GitHub Secrets**: Production environment variables and OAuth credentials
-
-### Monitoring & Observability
-- **Deployment Summaries**: Comprehensive reporting of all pipeline stages
-- **Enhanced Logging**: Detailed diagnostics for troubleshooting
-- **Health Dashboards**: Post-deployment service monitoring
-- **Performance Metrics**: Build times, test coverage, deployment success rates
+- Rotate `JWT_SECRET`, `JWT_REFRESH_SECRET`, and `SESSION_SECRET` periodically
+- Keep `LOYALTY_PASSWORD` strong and rotate after staff changes
+- Configure HTTPS at the edge (nginx / Cloudflare)
+- Restrict admin IP ranges where feasible
+- Review audit logs regularly
 
 ## Contributing
 
-1. Create feature branch from main
-2. Implement changes with tests
-3. Ensure all linting passes
-4. Run `npm run oauth:health` and `npm run db:validate` for validation features
-5. Submit pull request
+See [CONTRIBUTING.md](./CONTRIBUTING.md). All contributors must follow the [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## License
 
-This project is proprietary software for hotel loyalty program implementation.
+Released under the MIT License — see [LICENSE](./LICENSE).
