@@ -224,8 +224,7 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
     let init_migration = include_str!("../../migrations/20240101000000_init.sql");
     template_pool.execute(init_migration).await?;
 
-    let booking_slips_migration =
-        include_str!("../../migrations/20260511000000_booking_slips.sql");
+    let booking_slips_migration = include_str!("../../migrations/20260511000000_booking_slips.sql");
     template_pool.execute(booking_slips_migration).await?;
 
     // Seed tiers
