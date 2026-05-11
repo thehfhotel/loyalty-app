@@ -108,6 +108,20 @@ pids/
 claudedocs/
 **/claudedocs/
 
+# Serena project metadata (IDE-specific, not for git)
+.serena/
+**/.serena/
+
+# Claude subagent prompts (IDE-specific, not for git)
+.claude/agents/
+
+# Internal planning docs (not for public repo)
+docs/plans/
+docs/INTERNAL-DEPLOYMENT.md
+
+# Duplicate playwright config (the .ts version is canonical)
+playwright.config.js
+
 # Allure reports (generated, not committed)
 allure-results/
 allure-report/
