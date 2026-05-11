@@ -23,11 +23,23 @@ CREATE TABLE IF NOT EXISTS "public"."booking_slips" (
     CONSTRAINT "booking_slips_pkey" PRIMARY KEY ("id")
 );
 
-ALTER TABLE "public"."booking_slips" ADD CONSTRAINT "booking_slips_booking_id_fkey"
-    FOREIGN KEY ("booking_id") REFERENCES "public"."bookings"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
+-- ADD CONSTRAINT is not idempotent in Postgres. Staging + production already
+-- have a more-expanded booking_slips table (with slipok/admin columns) from
+-- an earlier migration not represented in this repo's migrations/ dir, and
+-- those FK constraints already exist. Wrap in DO blocks so the migration
+-- is a no-op when constraints exist and additive when they don't (e.g.
+-- e2e tests on a fresh DB).
+DO $$ BEGIN
+    ALTER TABLE "public"."booking_slips" ADD CONSTRAINT "booking_slips_booking_id_fkey"
+        FOREIGN KEY ("booking_id") REFERENCES "public"."bookings"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-ALTER TABLE "public"."booking_slips" ADD CONSTRAINT "booking_slips_uploaded_by_fkey"
-    FOREIGN KEY ("uploaded_by") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
+DO $$ BEGIN
+    ALTER TABLE "public"."booking_slips" ADD CONSTRAINT "booking_slips_uploaded_by_fkey"
+        FOREIGN KEY ("uploaded_by") REFERENCES "public"."users"("id") ON DELETE CASCADE ON UPDATE NO ACTION;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS "idx_booking_slips_booking_id"
     ON "public"."booking_slips" ("booking_id");
