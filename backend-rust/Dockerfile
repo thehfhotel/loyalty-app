@@ -40,7 +40,7 @@ COPY .sqlx ./.sqlx
 COPY src ./src
 COPY migrations ./migrations
 
-RUN cargo build --release --bin loyalty-backend
+RUN cargo build --release --bin loyalty-backend --bin healthcheck
 
 # ==============================================================================
 # Stage 4: Development - Full development environment with hot reload
@@ -72,58 +72,56 @@ EXPOSE 4001
 CMD ["cargo", "watch", "-x", "run"]
 
 # ==============================================================================
-# Stage 5: Runner - Minimal production image
+# Stage 5: Runner - Minimal production image (Distroless)
 # ==============================================================================
-# Base: debian:trixie-slim (Debian 13, current stable as of 2026)
-# - Newer libssl3 / libpq5 / libgcc / libstdc++ vs bookworm — closes ~150
-#   unfixed-in-bookworm Trivy OS CVEs (libssh2, libgnutls, zlib, etc.)
-# - Still apt-based + ships curl, so the existing in-container healthcheck
-#   in docker-compose.prod.yml continues to work without any compose change.
-# - Distroless (gcr.io/distroless/cc-debian12) was evaluated but deferred:
-#   the prod compose healthcheck shells out to `curl` inside the container,
-#   and removing curl requires a coordinated edit to docker-compose.prod.yml
-#   that lives outside this PR's scope. See follow-up issue.
-FROM debian:trixie-slim AS runner
-
-# Install only required runtime dependencies. apt-get upgrade pulls any
-# newer security patches available in the trixie security repos at build
-# time (image freshness without requiring a base-image bump).
-# NOTE: trixie renamed libssl3 -> libssl3t64 (64-bit time_t transition).
-RUN apt-get update \
-    && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    libssl3t64 \
-    libpq5 \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean \
-    && rm -rf /var/cache/apt/archives/*
-
-# Create non-root user for security
-RUN groupadd --gid 1000 appgroup \
-    && useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser
+# Base: gcr.io/distroless/cc-debian12 (the "cc" runtime)
+#
+# What ships in cc-debian12:
+#   - glibc, libgcc_s, libstdc++           (the "cc" C/C++ runtime)
+#   - libssl3, libcrypto3                  (needed by openssl-sys → native-tls
+#                                            → lettre / async-native-tls / reqwest)
+#   - ca-certificates                      (system trust store at /etc/ssl/certs/)
+#   - a built-in `nonroot` user            (uid/gid 65532)
+#
+# What does NOT ship:
+#   - any shell, package manager, or `curl`
+#   - libpq                                (sqlx uses its pure-Rust postgres
+#                                            driver, so this is not a problem)
+#
+# Why Distroless:
+#   - Drops ~50 OS-level Trivy alerts that linger on debian:trixie-slim
+#     (apt, dpkg, perl-base, libssh, libgnutls etc. all gone).
+#   - Smaller attack surface: no shell means no shell injection / no `apt`
+#     compromise vector / no curl/wget exfiltration tools.
+#   - Smaller image (~25MB runtime vs ~80MB for trixie-slim with deps).
+#
+# Healthcheck:
+#   The standard `curl -f /api/health` healthcheck cannot run in Distroless
+#   (no shell, no curl). Replaced by the dedicated `healthcheck` binary
+#   built from `src/bin/healthcheck.rs` in the builder stage above. The
+#   docker-compose.prod.yml healthcheck calls `/app/healthcheck` directly.
+FROM gcr.io/distroless/cc-debian12 AS runner
 
 WORKDIR /app
 
-# Copy only the compiled binary from builder
-COPY --from=builder /app/target/release/loyalty-backend /app/loyalty-backend
+# Copy the compiled binaries from the builder. Both are owned by the
+# built-in `nonroot` user (uid/gid 65532) so we don't need a chown layer.
+COPY --from=builder --chown=nonroot:nonroot /app/target/release/loyalty-backend /app/loyalty-backend
+COPY --from=builder --chown=nonroot:nonroot /app/target/release/healthcheck    /app/healthcheck
 
-# Set ownership to non-root user
-RUN chown -R appuser:appgroup /app
+# Drop privileges. cc-debian12 ships the `nonroot` user as uid/gid 65532.
+# (Previous image used a manually-created `appuser` at uid/gid 1000.
+# This is a BREAKING CHANGE for any host bind mount that relied on uid 1000;
+# the production deployment uses named docker volumes only, so no impact.)
+USER nonroot:nonroot
 
-# Switch to non-root user
-USER appuser
-
-# Set environment variables
 ENV RUST_LOG=info
 ENV RUST_BACKTRACE=0
 
 EXPOSE 4001
 
-# Health check using curl to hit the health endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:4001/api/health || exit 1
+# No HEALTHCHECK directive: the docker-compose.prod.yml `healthcheck:` block
+# overrides anything set here at runtime, so we keep the contract in one
+# place (the compose file) instead of duplicating it.
 
-# Run the binary
 CMD ["/app/loyalty-backend"]
