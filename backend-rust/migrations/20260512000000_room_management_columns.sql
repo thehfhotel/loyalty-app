@@ -24,23 +24,32 @@
 -- sort_order: integer, defaults to 0. Used by the list endpoint to give
 --   admins a stable, deterministic ordering they control without renaming
 --   the room types.
+-- IF NOT EXISTS on each ADD COLUMN so re-running this migration after a
+-- partial application (sqlx doesn't wrap migrations in a transaction by
+-- default — a mid-statement failure leaves earlier columns in place)
+-- succeeds without manual cleanup. The check constraint and index are
+-- guarded the same way.
 ALTER TABLE "public"."room_types"
-    ADD COLUMN "bed_type"   VARCHAR(16),
-    ADD COLUMN "amenities"  TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-    ADD COLUMN "images"     TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-    ADD COLUMN "sort_order" INTEGER NOT NULL DEFAULT 0;
+    ADD COLUMN IF NOT EXISTS "bed_type"   VARCHAR(16),
+    ADD COLUMN IF NOT EXISTS "amenities"  TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    ADD COLUMN IF NOT EXISTS "images"     TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    ADD COLUMN IF NOT EXISTS "sort_order" INTEGER NOT NULL DEFAULT 0;
 
-ALTER TABLE "public"."room_types"
-    ADD CONSTRAINT "chk_room_types_bed_type"
-    CHECK (bed_type IS NULL OR bed_type IN ('single', 'double', 'twin', 'king'));
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'chk_room_types_bed_type'
+    ) THEN
+        ALTER TABLE "public"."room_types"
+            ADD CONSTRAINT "chk_room_types_bed_type"
+            CHECK (bed_type IS NULL OR bed_type IN ('single', 'double', 'twin', 'king'));
+    END IF;
+END $$;
 
--- The list endpoint orders by sort_order then name. An index on the
--- composite makes that ordering cheap even as the table grows.
 CREATE INDEX IF NOT EXISTS "idx_room_types_sort_order"
     ON "public"."room_types" ("sort_order", LOWER("name"));
 
 -- ----- rooms ------------------------------------------------------------
--- notes: free-form admin notes per room (e.g. "out of service until X").
---   Nullable; frontend renders '-' when missing.
 ALTER TABLE "public"."rooms"
-    ADD COLUMN "notes" TEXT;
+    ADD COLUMN IF NOT EXISTS "notes" TEXT;
