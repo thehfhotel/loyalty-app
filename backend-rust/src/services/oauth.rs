@@ -9,10 +9,16 @@
 
 use async_trait::async_trait;
 use oauth2::{
-    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl,
-    Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
+    EndpointNotSet, EndpointSet, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use reqwest::Client as HttpClient;
+
+/// Concrete `BasicClient` typestate for the OAuth flows used here:
+/// authorization endpoint and token endpoint are set; device, introspection,
+/// and revocation endpoints are not.
+type ConfiguredBasicClient =
+    BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use tracing::{debug, error, info, warn};
@@ -257,16 +263,25 @@ impl OAuthServiceImpl {
         google_config: GoogleOAuthConfig,
         line_config: LineOAuthConfig,
     ) -> Self {
+        // oauth2 v5 requires the HTTP client used for token exchange to
+        // reject redirects (SSRF mitigation per the upstream upgrade guide).
+        // The same client is reused for plain userinfo GETs — userinfo
+        // endpoints normally respond 200 directly without redirects.
+        let http_client = HttpClient::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap_or_else(|_| HttpClient::new());
+
         Self {
             state,
-            http_client: HttpClient::new(),
+            http_client,
             google_config,
             line_config,
         }
     }
 
     /// Create Google OAuth2 client
-    fn create_google_client(&self) -> Result<BasicClient, AppError> {
+    fn create_google_client(&self) -> Result<ConfiguredBasicClient, AppError> {
         let client_id = self.google_config.client_id.as_ref().ok_or_else(|| {
             AppError::Configuration("Google OAuth client ID not configured".to_string())
         })?;
@@ -284,19 +299,17 @@ impl OAuthServiceImpl {
         let redirect_url = RedirectUrl::new(self.google_config.callback_url.clone())
             .map_err(|e| AppError::Configuration(format!("Invalid Google redirect URL: {}", e)))?;
 
-        let client = BasicClient::new(
-            ClientId::new(client_id.clone()),
-            Some(ClientSecret::new(client_secret.clone())),
-            auth_url,
-            Some(token_url),
-        )
-        .set_redirect_uri(redirect_url);
+        let client = BasicClient::new(ClientId::new(client_id.clone()))
+            .set_client_secret(ClientSecret::new(client_secret.clone()))
+            .set_auth_uri(auth_url)
+            .set_token_uri(token_url)
+            .set_redirect_uri(redirect_url);
 
         Ok(client)
     }
 
     /// Create LINE OAuth2 client
-    fn create_line_client(&self) -> Result<BasicClient, AppError> {
+    fn create_line_client(&self) -> Result<ConfiguredBasicClient, AppError> {
         let client_id = self.line_config.client_id.as_ref().ok_or_else(|| {
             AppError::Configuration("LINE OAuth client ID not configured".to_string())
         })?;
@@ -314,13 +327,11 @@ impl OAuthServiceImpl {
         let redirect_url = RedirectUrl::new(self.line_config.callback_url.clone())
             .map_err(|e| AppError::Configuration(format!("Invalid LINE redirect URL: {}", e)))?;
 
-        let client = BasicClient::new(
-            ClientId::new(client_id.clone()),
-            Some(ClientSecret::new(client_secret.clone())),
-            auth_url,
-            Some(token_url),
-        )
-        .set_redirect_uri(redirect_url);
+        let client = BasicClient::new(ClientId::new(client_id.clone()))
+            .set_client_secret(ClientSecret::new(client_secret.clone()))
+            .set_auth_uri(auth_url)
+            .set_token_uri(token_url)
+            .set_redirect_uri(redirect_url);
 
         Ok(client)
     }
@@ -435,7 +446,7 @@ impl OAuthService for OAuthServiceImpl {
 
         let token_result = client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request_async(oauth2::reqwest::async_http_client)
+            .request_async(&self.http_client)
             .await
             .map_err(|e| {
                 error!("Google token exchange failed: {:?}", e);
