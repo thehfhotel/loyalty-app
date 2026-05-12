@@ -41,8 +41,12 @@ PR, alongside the route handlers and integration tests.
   was deferred to its own PR because it also needs an initiator
   (`PUT /api/users/email`) plus a schema migration; shipping verify/resend
   alone would be a half-flow.
+- Room writes (`feat/admin-room-writes`): +6 endpoints
+  (POST/PATCH/DELETE on `/room-types` and `/rooms`). Adds the
+  `20260512000000_room_management_columns.sql` migration with
+  `room_types.bed_type/amenities/images/sort_order` and `rooms.notes`.
 
-Total implemented: 15 of 35. Remaining: 20 endpoints.
+Total implemented: 21 of 35. Remaining: 14 endpoints.
 
 ---
 
@@ -97,12 +101,16 @@ migrating bookings to reference a UUID rather than the enum.
   Frontend: `frontend/src/pages/admin/RoomTypeManagement.tsx:82`,
   `frontend/src/pages/admin/RoomAvailability.tsx:68`,
   `frontend/src/pages/admin/RoomManagement.tsx:61`. Status: Implemented (batch 1).
-- `POST /api/admin/room-types` — create.
-  Frontend: `frontend/src/pages/admin/RoomTypeManagement.tsx:90`. Status: Missing.
-- `PUT /api/admin/room-types/:id` — update.
-  Frontend: `frontend/src/pages/admin/RoomTypeManagement.tsx:106`. Status: Missing.
-- `DELETE /api/admin/room-types/:id` — delete.
-  Frontend: `frontend/src/pages/admin/RoomTypeManagement.tsx:123`. Status: Missing.
+- [x] `POST /api/admin/room-types` — create. Returns 201 with the new row;
+  409 when the name (case-insensitive) is already taken.
+  Frontend: `frontend/src/pages/admin/RoomTypeManagement.tsx:90`. Status: Implemented (room writes PR).
+- [x] `PATCH /api/admin/room-types/:id` — partial update; only fields in the
+  body are touched. 404 when the id is unknown.
+  Frontend: `frontend/src/pages/admin/RoomTypeManagement.tsx:106`. Status: Implemented (room writes PR).
+- [x] `DELETE /api/admin/room-types/:id` — delete; returns 409 with
+  `{ roomsAttached: <n> }` when one or more rooms still reference the type,
+  so admins must reassign or delete the rooms first.
+  Frontend: `frontend/src/pages/admin/RoomTypeManagement.tsx:123`. Status: Implemented (room writes PR).
 
 // shape TBD during implementation
 
@@ -115,12 +123,15 @@ Used by `RoomManagement.tsx`. Requires a `rooms` table.
 - [x] `GET /api/admin/rooms` — list.
   Frontend: `frontend/src/pages/admin/RoomManagement.tsx:70`,
   `frontend/src/pages/admin/RoomAvailability.tsx:80`. Status: Implemented (batch 1).
-- `POST /api/admin/rooms` — create.
-  Frontend: `frontend/src/pages/admin/RoomManagement.tsx:78`. Status: Missing.
-- `PUT /api/admin/rooms/:id` — update.
-  Frontend: `frontend/src/pages/admin/RoomManagement.tsx:94`. Status: Missing.
-- `DELETE /api/admin/rooms/:id` — delete.
-  Frontend: `frontend/src/pages/admin/RoomManagement.tsx:111`. Status: Missing.
+- [x] `POST /api/admin/rooms` — create. Returns 201; 404 when `roomTypeId`
+  is unknown; 409 when `roomNumber` is already taken.
+  Frontend: `frontend/src/pages/admin/RoomManagement.tsx:78`. Status: Implemented (room writes PR).
+- [x] `PATCH /api/admin/rooms/:id` — partial update; only fields in the body
+  are touched. 404 when the id is unknown.
+  Frontend: `frontend/src/pages/admin/RoomManagement.tsx:94`. Status: Implemented (room writes PR).
+- [x] `DELETE /api/admin/rooms/:id` — hard delete (cascades to blocked-dates
+  and bookings via FK).
+  Frontend: `frontend/src/pages/admin/RoomManagement.tsx:111`. Status: Implemented (room writes PR).
 
 // shape TBD during implementation
 
