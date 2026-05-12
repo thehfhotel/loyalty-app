@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, name, description, price_per_night, max_guests, is_active,\n               created_at, updated_at\n          FROM room_types\n         WHERE $1::bool OR is_active\n         ORDER BY LOWER(name) ASC\n        ",
+  "query": "\n        INSERT INTO rooms (room_type_id, room_number, floor, notes, is_active)\n        VALUES ($1, $2, $3, $4, $5)\n        RETURNING id, room_type_id, room_number, floor, notes, is_active,\n                  created_at, updated_at\n        ",
   "describe": {
     "columns": [
       {
@@ -10,23 +10,23 @@
       },
       {
         "ordinal": 1,
-        "name": "name",
-        "type_info": "Varchar"
+        "name": "room_type_id",
+        "type_info": "Uuid"
       },
       {
         "ordinal": 2,
-        "name": "description",
-        "type_info": "Text"
+        "name": "room_number",
+        "type_info": "Varchar"
       },
       {
         "ordinal": 3,
-        "name": "price_per_night",
-        "type_info": "Numeric"
+        "name": "floor",
+        "type_info": "Int4"
       },
       {
         "ordinal": 4,
-        "name": "max_guests",
-        "type_info": "Int4"
+        "name": "notes",
+        "type_info": "Text"
       },
       {
         "ordinal": 5,
@@ -46,19 +46,23 @@
     ],
     "parameters": {
       "Left": [
+        "Uuid",
+        "Varchar",
+        "Int4",
+        "Text",
         "Bool"
       ]
     },
     "nullable": [
       false,
       false,
+      false,
       true,
-      false,
-      false,
+      true,
       false,
       true,
       true
     ]
   },
-  "hash": "7edc2d5d0ccf71e93d33a592432f7f4af071c09078e47e07c7e384ba61908d18"
+  "hash": "907940bac26fb86637c285775d16cfcb9a401bac5162f34bab0f451794d93e45"
 }

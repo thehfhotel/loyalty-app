@@ -1893,3 +1893,510 @@ async fn test_admin_verify_slip_unauthenticated() {
 
     app.cleanup().await.ok();
 }
+
+// Room-type write endpoints — POST / PATCH / DELETE
+// ----------------------------------------------------------------------------
+// These cover the write side of room_types admin management. They each go
+// through the real HTTP router so the auth_middleware + require_admin layers
+// are exercised end-to-end (same as the read tests above).
+// ============================================================================
+
+/// Happy path: admin creates a room type, gets 201 with the row, and the
+/// row is queryable from the database afterwards. Verifies camelCase
+/// request/response shapes.
+#[tokio::test]
+async fn test_create_room_type_admin() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let suffix = Uuid::new_v4();
+    let name = format!("Deluxe-{}", suffix);
+    let payload = json!({
+        "name": name,
+        "description": "Sea view",
+        "pricePerNight": 2500.50,
+        "maxGuests": 2,
+        "bedType": "king",
+        "amenities": ["wifi", "minibar"],
+        "images": ["https://example.com/1.jpg"],
+        "isActive": true,
+        "sortOrder": 10
+    });
+
+    let response = client.post("/api/admin/room-types", &payload).await;
+    response.assert_status(201);
+
+    let body: Value = response.json().expect("response should be JSON");
+    let id = body
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("response should have id");
+    assert_eq!(
+        body.get("name").and_then(|v| v.as_str()),
+        Some(name.as_str())
+    );
+    assert_eq!(body.get("maxGuests").and_then(|v| v.as_i64()), Some(2));
+    assert_eq!(body.get("bedType").and_then(|v| v.as_str()), Some("king"));
+    assert_eq!(body.get("sortOrder").and_then(|v| v.as_i64()), Some(10));
+    let amenities = body
+        .get("amenities")
+        .and_then(|v| v.as_array())
+        .expect("amenities should be array");
+    assert_eq!(amenities.len(), 2);
+
+    // Verify the row landed in the database.
+    let row: (String, i32) =
+        sqlx::query_as("SELECT name, max_guests FROM room_types WHERE id = $1")
+            .bind(Uuid::parse_str(id).unwrap())
+            .fetch_one(app.db())
+            .await
+            .expect("row should exist after POST");
+    assert_eq!(row.0, name);
+    assert_eq!(row.1, 2);
+
+    app.cleanup().await.ok();
+}
+
+/// Unauthenticated requests are rejected with 401.
+#[tokio::test]
+async fn test_create_room_type_unauthenticated_fails() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let client = app.client();
+
+    let payload = json!({
+        "name": "Whatever",
+        "pricePerNight": 100,
+        "maxGuests": 2
+    });
+    let response = client.post("/api/admin/room-types", &payload).await;
+    response.assert_status(401);
+
+    app.cleanup().await.ok();
+}
+
+/// Non-admin authenticated users are rejected with 403.
+#[tokio::test]
+async fn test_create_room_type_non_admin_fails() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let user = create_regular_user(app.db()).await;
+    let client = app.authenticated_client(&user.id, &user.email);
+
+    let payload = json!({
+        "name": "Forbidden",
+        "pricePerNight": 100,
+        "maxGuests": 2
+    });
+    let response = client.post("/api/admin/room-types", &payload).await;
+    response.assert_status(403);
+
+    app.cleanup().await.ok();
+}
+
+/// Validation: empty name is rejected with 400.
+#[tokio::test]
+async fn test_create_room_type_empty_name_rejected() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({
+        "name": "",
+        "pricePerNight": 100,
+        "maxGuests": 2
+    });
+    let response = client.post("/api/admin/room-types", &payload).await;
+    // 400 from our AppError or 422 from serde validation — either is acceptable.
+    assert!(
+        response.status == 400 || response.status == 422,
+        "Expected 400/422, got {} body={}",
+        response.status,
+        response.body
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// Validation: negative price is rejected.
+#[tokio::test]
+async fn test_create_room_type_negative_price_rejected() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({
+        "name": format!("Negative-{}", Uuid::new_v4()),
+        "pricePerNight": -10,
+        "maxGuests": 2
+    });
+    let response = client.post("/api/admin/room-types", &payload).await;
+    assert!(
+        response.status == 400 || response.status == 422,
+        "Expected 400/422, got {}",
+        response.status
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// PATCH happy path: only the changed fields move, untouched fields keep
+/// their original values. This is the load-bearing assertion for partial
+/// updates — if it regresses, the frontend's edit modal would clobber
+/// fields the admin didn't touch.
+#[tokio::test]
+async fn test_patch_room_type_partial_update_preserves_untouched() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let suffix = Uuid::new_v4();
+    let rt_id = insert_room_type(app.db(), &format!("Patchable-{}", suffix), 1500.00).await;
+
+    // Mutate just the name; max_guests, price_per_night, sort_order should
+    // remain at their seeded values.
+    let new_name = format!("Renamed-{}", suffix);
+    let payload = json!({ "name": new_name });
+    let response = client
+        .patch(&format!("/api/admin/room-types/{}", rt_id), &payload)
+        .await;
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("response should be JSON");
+    assert_eq!(
+        body.get("name").and_then(|v| v.as_str()),
+        Some(new_name.as_str())
+    );
+    // max_guests was seeded to 2 by insert_room_type; price was 1500.00.
+    assert_eq!(body.get("maxGuests").and_then(|v| v.as_i64()), Some(2));
+    let price = body
+        .get("pricePerNight")
+        .and_then(|v| v.as_str())
+        .expect("pricePerNight should serialise as string");
+    assert!(
+        price.starts_with("1500"),
+        "price should have been preserved, got {}",
+        price
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// PATCH on a non-existent id returns 404.
+#[tokio::test]
+async fn test_patch_room_type_not_found() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let fake_id = Uuid::new_v4();
+    let payload = json!({ "name": "Renamed" });
+    let response = client
+        .patch(&format!("/api/admin/room-types/{}", fake_id), &payload)
+        .await;
+    response.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
+/// DELETE on a room type that has rooms attached returns 409 with the
+/// rooms_attached count. This is the load-bearing guarantee that admins
+/// can't accidentally cascade-delete inventory.
+#[tokio::test]
+async fn test_delete_room_type_with_attached_rooms_returns_409() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let suffix = Uuid::new_v4();
+    let rt_id = insert_room_type(app.db(), &format!("HasRooms-{}", suffix), 1000.00).await;
+    insert_room(
+        app.db(),
+        rt_id,
+        &format!("D-{}-1", &suffix.simple().to_string()[..6]),
+    )
+    .await;
+    insert_room(
+        app.db(),
+        rt_id,
+        &format!("D-{}-2", &suffix.simple().to_string()[..6]),
+    )
+    .await;
+
+    let response = client
+        .delete(&format!("/api/admin/room-types/{}", rt_id))
+        .await;
+    response.assert_status(409);
+
+    let body: Value = response.json().expect("response should be JSON");
+    assert_eq!(
+        body.get("roomsAttached").and_then(|v| v.as_i64()),
+        Some(2),
+        "rooms_attached should match the inserted count, body={:?}",
+        body
+    );
+
+    // Confirm the room type was NOT deleted.
+    let still_there: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM room_types WHERE id = $1")
+        .bind(rt_id)
+        .fetch_optional(app.db())
+        .await
+        .expect("query should succeed");
+    assert!(
+        still_there.is_some(),
+        "room type must still exist after 409"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// DELETE on a room type with no rooms attached succeeds.
+#[tokio::test]
+async fn test_delete_room_type_no_rooms_succeeds() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let rt_id = insert_room_type(app.db(), &format!("Deletable-{}", Uuid::new_v4()), 500.00).await;
+
+    let response = client
+        .delete(&format!("/api/admin/room-types/{}", rt_id))
+        .await;
+    response.assert_status(200);
+
+    let still_there: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM room_types WHERE id = $1")
+        .bind(rt_id)
+        .fetch_optional(app.db())
+        .await
+        .expect("query should succeed");
+    assert!(still_there.is_none(), "room type must be deleted");
+
+    app.cleanup().await.ok();
+}
+
+/// DELETE on a non-existent id returns 404.
+#[tokio::test]
+async fn test_delete_room_type_not_found() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let fake_id = Uuid::new_v4();
+    let response = client
+        .delete(&format!("/api/admin/room-types/{}", fake_id))
+        .await;
+    response.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
+// ============================================================================
+// Room write endpoints — POST / PATCH / DELETE
+// ============================================================================
+
+/// Happy path: admin creates a room, response is 201 with the embedded
+/// room_type summary, and the row lands in the database.
+#[tokio::test]
+async fn test_create_room_admin() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let suffix = Uuid::new_v4();
+    let rt_id = insert_room_type(app.db(), &format!("ParentRT-{}", suffix), 1200.00).await;
+    let room_number = format!("CR-{}", &suffix.simple().to_string()[..6]);
+
+    let payload = json!({
+        "roomTypeId": rt_id,
+        "roomNumber": room_number,
+        "floor": 3,
+        "notes": "facing the pool",
+        "isActive": true
+    });
+    let response = client.post("/api/admin/rooms", &payload).await;
+    response.assert_status(201);
+
+    let body: Value = response.json().expect("response should be JSON");
+    let id = body
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("response should have id");
+    assert_eq!(
+        body.get("roomNumber").and_then(|v| v.as_str()),
+        Some(room_number.as_str())
+    );
+    assert_eq!(body.get("floor").and_then(|v| v.as_i64()), Some(3));
+    let rt_summary = body
+        .get("roomType")
+        .expect("response should embed roomType summary");
+    assert_eq!(
+        rt_summary.get("id").and_then(|v| v.as_str()),
+        Some(rt_id.to_string().as_str())
+    );
+
+    let row: (String, Option<i32>) =
+        sqlx::query_as("SELECT room_number, floor FROM rooms WHERE id = $1")
+            .bind(Uuid::parse_str(id).unwrap())
+            .fetch_one(app.db())
+            .await
+            .expect("row should exist after POST");
+    assert_eq!(row.0, room_number);
+    assert_eq!(row.1, Some(3));
+
+    app.cleanup().await.ok();
+}
+
+/// Creating a room with a non-existent room_type returns 404.
+#[tokio::test]
+async fn test_create_room_unknown_room_type_returns_404() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({
+        "roomTypeId": Uuid::new_v4(),
+        "roomNumber": "X-1",
+        "isActive": true
+    });
+    let response = client.post("/api/admin/rooms", &payload).await;
+    response.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
+/// Creating a room with an empty roomNumber is rejected.
+#[tokio::test]
+async fn test_create_room_empty_number_rejected() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let rt_id = insert_room_type(
+        app.db(),
+        &format!("ValidationRT-{}", Uuid::new_v4()),
+        500.00,
+    )
+    .await;
+    let payload = json!({
+        "roomTypeId": rt_id,
+        "roomNumber": "",
+        "isActive": true
+    });
+    let response = client.post("/api/admin/rooms", &payload).await;
+    assert!(
+        response.status == 400 || response.status == 422,
+        "Expected 400/422, got {}",
+        response.status
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// PATCH partial update: changing only the notes should leave room_number,
+/// floor, and is_active unchanged.
+#[tokio::test]
+async fn test_patch_room_partial_update_preserves_untouched() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let suffix = Uuid::new_v4();
+    let rt_id = insert_room_type(app.db(), &format!("PRT-{}", suffix), 1000.00).await;
+    let original_number = format!("PR-{}", &suffix.simple().to_string()[..6]);
+    let room_id = insert_room(app.db(), rt_id, &original_number).await;
+
+    let payload = json!({ "notes": "new note" });
+    let response = client
+        .patch(&format!("/api/admin/rooms/{}", room_id), &payload)
+        .await;
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("response should be JSON");
+    assert_eq!(body.get("notes").and_then(|v| v.as_str()), Some("new note"));
+    // insert_room seeds floor=1, room_number=original.
+    assert_eq!(body.get("floor").and_then(|v| v.as_i64()), Some(1));
+    assert_eq!(
+        body.get("roomNumber").and_then(|v| v.as_str()),
+        Some(original_number.as_str())
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// PATCH on a non-existent room id returns 404.
+#[tokio::test]
+async fn test_patch_room_not_found() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let fake_id = Uuid::new_v4();
+    let payload = json!({ "notes": "doomed" });
+    let response = client
+        .patch(&format!("/api/admin/rooms/{}", fake_id), &payload)
+        .await;
+    response.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
+/// DELETE happy path: the row is gone after the call.
+#[tokio::test]
+async fn test_delete_room_admin() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let suffix = Uuid::new_v4();
+    let rt_id = insert_room_type(app.db(), &format!("DRT-{}", suffix), 800.00).await;
+    let room_id = insert_room(
+        app.db(),
+        rt_id,
+        &format!("DR-{}", &suffix.simple().to_string()[..6]),
+    )
+    .await;
+
+    let response = client
+        .delete(&format!("/api/admin/rooms/{}", room_id))
+        .await;
+    response.assert_status(200);
+
+    let still_there: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM rooms WHERE id = $1")
+        .bind(room_id)
+        .fetch_optional(app.db())
+        .await
+        .expect("query should succeed");
+    assert!(still_there.is_none(), "room must be deleted");
+
+    app.cleanup().await.ok();
+}
+
+/// DELETE on a non-existent id returns 404.
+#[tokio::test]
+async fn test_delete_room_not_found() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let fake_id = Uuid::new_v4();
+    let response = client
+        .delete(&format!("/api/admin/rooms/{}", fake_id))
+        .await;
+    response.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
+/// DELETE without auth returns 401.
+#[tokio::test]
+async fn test_delete_room_unauthenticated_fails() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let client = app.client();
+
+    let fake_id = Uuid::new_v4();
+    let response = client
+        .delete(&format!("/api/admin/rooms/{}", fake_id))
+        .await;
+    response.assert_status(401);
+
+    app.cleanup().await.ok();
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT r.id,\n               r.room_type_id,\n               r.room_number,\n               r.floor,\n               r.is_active,\n               r.created_at,\n               r.updated_at,\n               rt.name AS \"rt_name?\"\n          FROM rooms r\n          JOIN room_types rt ON rt.id = r.room_type_id\n         WHERE ($1::uuid IS NULL OR r.room_type_id = $1)\n           AND ($2::bool OR r.is_active)\n         ORDER BY LENGTH(r.room_number), r.room_number ASC\n        ",
+  "query": "\n        SELECT r.id, r.room_type_id, r.room_number, r.floor, r.notes,\n               r.is_active, r.created_at, r.updated_at,\n               rt.name AS rt_name\n          FROM rooms r\n          JOIN room_types rt ON rt.id = r.room_type_id\n         WHERE ($1::uuid IS NULL OR r.room_type_id = $1)\n           AND ($2::boolean OR r.is_active = TRUE)\n         ORDER BY LENGTH(r.room_number), r.room_number ASC\n        ",
   "describe": {
     "columns": [
       {
@@ -25,22 +25,27 @@
       },
       {
         "ordinal": 4,
+        "name": "notes",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
         "name": "is_active",
         "type_info": "Bool"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 7,
-        "name": "rt_name?",
+        "ordinal": 8,
+        "name": "rt_name",
         "type_info": "Varchar"
       }
     ],
@@ -55,11 +60,12 @@
       false,
       false,
       true,
+      true,
       false,
       true,
       true,
       false
     ]
   },
-  "hash": "3e49ed4a6039ca2cf1db58a880b82af045d791fe38fbfefae1e1ae22c3758692"
+  "hash": "ecb918309c27964ae0678bffe3dff381594e28ed3051919c27911f5a21b3bf56"
 }

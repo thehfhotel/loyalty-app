@@ -1,0 +1,69 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE rooms\n           SET room_type_id = COALESCE($2, room_type_id),\n               room_number  = COALESCE($3, room_number),\n               floor        = COALESCE($4, floor),\n               notes        = COALESCE($5, notes),\n               is_active    = COALESCE($6, is_active),\n               updated_at   = NOW()\n         WHERE id = $1\n         RETURNING id, room_type_id, room_number, floor, notes, is_active,\n                   created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "room_type_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "room_number",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "floor",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "notes",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Int4",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "c9bf1ce1d96fb550274b774c97e3bf4627edd46437eb934cb2c9a033125b8dd1"
+}

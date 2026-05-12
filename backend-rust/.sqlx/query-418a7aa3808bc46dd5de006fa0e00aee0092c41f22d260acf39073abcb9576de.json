@@ -1,0 +1,97 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE room_types\n           SET name            = COALESCE($2, name),\n               description     = COALESCE($3, description),\n               price_per_night = COALESCE($4, price_per_night),\n               max_guests      = COALESCE($5, max_guests),\n               bed_type        = COALESCE($6, bed_type),\n               amenities       = COALESCE($7, amenities),\n               images           = COALESCE($8, images),\n               is_active       = COALESCE($9, is_active),\n               sort_order      = COALESCE($10, sort_order),\n               updated_at      = NOW()\n         WHERE id = $1\n         RETURNING id, name, description, price_per_night, max_guests,\n                   bed_type, amenities, images, is_active, sort_order,\n                   created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "price_per_night",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "max_guests",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "bed_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "amenities",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 7,
+        "name": "images",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 8,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "sort_order",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Text",
+        "Numeric",
+        "Int4",
+        "Varchar",
+        "TextArray",
+        "TextArray",
+        "Bool",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "418a7aa3808bc46dd5de006fa0e00aee0092c41f22d260acf39073abcb9576de"
+}

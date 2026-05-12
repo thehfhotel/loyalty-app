@@ -2,7 +2,13 @@
 //!
 //! Provides admin-only endpoints for room inventory and calendar availability:
 //! - `GET    /api/admin/room-types`            — list room types
+//! - `POST   /api/admin/room-types`            — create a room type
+//! - `PATCH  /api/admin/room-types/:id`        — partial update of a room type
+//! - `DELETE /api/admin/room-types/:id`        — delete a room type (409 when rooms attached)
 //! - `GET    /api/admin/rooms`                 — list physical rooms (filterable by room type)
+//! - `POST   /api/admin/rooms`                 — create a room
+//! - `PATCH  /api/admin/rooms/:id`             — partial update of a room
+//! - `DELETE /api/admin/rooms/:id`             — delete a room
 //! - `GET    /api/admin/blocked-dates`         — list blocked dates in a date range
 //! - `POST   /api/admin/blocked-dates`         — block one or more dates for a room
 //! - `DELETE /api/admin/blocked-dates`         — unblock one or more dates for a room
@@ -12,36 +18,25 @@
 //! defined in [`crate::routes::admin`], which applies `auth_middleware` once
 //! to the merged result.
 //!
-//! ## Schema notes
-//!
-//! These handlers operate on the existing `room_types`, `rooms`, and
-//! `room_blocked_dates` tables. The frontend's TypeScript interfaces include
-//! a few fields that are not present in the current schema (e.g.
-//! `room_types.bedType / amenities / images / sortOrder`,
-//! `rooms.notes`, `room_blocked_dates.created_by`). We omit those from the
-//! response rather than adding columns; the frontend already treats them as
-//! optional and renders gracefully when they are absent. Adding those
-//! columns is a separate, schema-bearing change tracked in
-//! `docs/admin-backend-gaps.md`.
-//!
 //! ## sqlx note
 //!
-//! These handlers use compile-time `sqlx::query_as!` / `sqlx::query!`
-//! macros, validated against the offline cache in `backend-rust/.sqlx/`. To
-//! regenerate that cache after adding or changing a query, run
-//! `backend-rust/scripts/regen-sqlx-cache.sh` and commit the resulting
-//! `.sqlx/*.json` files. CI verifies the cache with `cargo sqlx prepare
-//! --check`.
+//! All database queries use **compile-time** macros (`sqlx::query!`,
+//! `sqlx::query_as!`). The `.sqlx/` offline cache must be regenerated whenever
+//! the queries here change — run `backend-rust/scripts/regen-sqlx-cache.sh`
+//! and commit the resulting `.sqlx/*.json` files.
 
 use axum::{
-    extract::{Extension, Query, State},
-    routing::{delete, get, post},
+    extract::{Extension, Path, Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use validator::Validate;
 
 use crate::error::{AppError, AppResult};
 use crate::middleware::auth::{has_role, AuthUser};
@@ -52,12 +47,31 @@ use crate::state::AppState;
 // ============================================================================
 
 /// Reject the request unless the caller has the `admin` role (or higher).
-///
-/// Mirrors `routes::admin::require_admin`; duplicated here so this module is
-/// independent and the parent file does not need to re-export private helpers.
 fn require_admin(user: &AuthUser) -> AppResult<()> {
     if !has_role(user, "admin") {
         return Err(AppError::Forbidden("Admin access required".to_string()));
+    }
+    Ok(())
+}
+
+/// Allowed values for `room_types.bed_type`. Mirrors the CHECK constraint
+/// and the frontend's BED_TYPE_OPTIONS list.
+const BED_TYPES: &[&str] = &["single", "double", "twin", "king"];
+
+fn validate_bed_type(value: &str) -> Result<(), validator::ValidationError> {
+    if BED_TYPES.contains(&value) {
+        Ok(())
+    } else {
+        Err(validator::ValidationError::new("bed_type"))
+    }
+}
+
+/// `rust_decimal::Decimal` does not implement the numeric traits
+/// `validator`'s built-in `range(min = ..)` macro requires. We do the
+/// non-negative check by hand instead — the only constraint we need.
+fn validate_non_negative_price(value: &Decimal) -> Result<(), validator::ValidationError> {
+    if *value < Decimal::ZERO {
+        return Err(validator::ValidationError::new("pricePerNight"));
     }
     Ok(())
 }
@@ -92,43 +106,74 @@ pub struct RoomTypeResponse {
     pub price_per_night: Decimal,
     #[serde(rename = "maxGuests")]
     pub max_guests: i32,
+    #[serde(rename = "bedType")]
+    pub bed_type: Option<String>,
+    pub amenities: Vec<String>,
+    pub images: Vec<String>,
     #[serde(rename = "isActive")]
     pub is_active: bool,
+    #[serde(rename = "sortOrder")]
+    pub sort_order: i32,
     #[serde(rename = "createdAt")]
     pub created_at: DateTime<Utc>,
     #[serde(rename = "updatedAt")]
     pub updated_at: DateTime<Utc>,
 }
 
-/// Row representation matching the `room_types` schema.
-#[derive(Debug, sqlx::FromRow)]
-struct RoomTypeRow {
-    id: Uuid,
-    name: String,
-    description: Option<String>,
-    price_per_night: Decimal,
-    max_guests: i32,
-    is_active: bool,
-    // The schema defines these with `DEFAULT NOW()` but no `NOT NULL`, so
-    // sqlx infers them as nullable. Fall back to `Utc::now()` in the
-    // response if a row somehow has NULLs.
-    created_at: Option<DateTime<Utc>>,
-    updated_at: Option<DateTime<Utc>>,
+/// Body for `POST /room-types`. Field names mirror the frontend payload
+/// in `RoomTypeManagement.tsx::handleCreate`.
+#[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRoomTypeRequest {
+    #[validate(length(min = 1, max = 100, message = "name must be 1-100 characters"))]
+    pub name: String,
+    pub description: Option<String>,
+    /// Frontend sends a number. We accept any non-negative decimal.
+    #[validate(custom(function = "validate_non_negative_price"))]
+    pub price_per_night: Decimal,
+    #[validate(range(min = 1, max = 20, message = "maxGuests must be 1-20"))]
+    pub max_guests: i32,
+    /// Optional; must be one of the BED_TYPES values when present.
+    #[validate(custom(function = "validate_bed_type"))]
+    pub bed_type: Option<String>,
+    #[serde(default)]
+    pub amenities: Vec<String>,
+    #[serde(default)]
+    pub images: Vec<String>,
+    #[serde(default = "default_true")]
+    pub is_active: bool,
+    /// Frontend defaults to 0 when the admin doesn't set it.
+    #[serde(default)]
+    #[validate(range(min = 0, message = "sortOrder must be >= 0"))]
+    pub sort_order: i32,
 }
 
-impl From<RoomTypeRow> for RoomTypeResponse {
-    fn from(row: RoomTypeRow) -> Self {
-        Self {
-            id: row.id,
-            name: row.name,
-            description: row.description,
-            price_per_night: row.price_per_night,
-            max_guests: row.max_guests,
-            is_active: row.is_active,
-            created_at: row.created_at.unwrap_or_else(Utc::now),
-            updated_at: row.updated_at.unwrap_or_else(Utc::now),
-        }
-    }
+/// Body for `PATCH /room-types/:id`. Every field is optional; only those
+/// present in the body are touched. Implemented with `COALESCE($n, current)`
+/// so absent fields are preserved without reading the row first.
+///
+/// NOTE: Because `Option<Option<T>>` is awkward to consume from JSON, we
+/// treat `Option<T> == None` as "do not change" for every field. Today's
+/// frontend always sends a full record on PATCH (it loads the row into the
+/// edit form first), so the "clear a nullable field" case is academic and
+/// can be addressed in a follow-up if needed.
+#[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRoomTypeRequest {
+    #[validate(length(min = 1, max = 100, message = "name must be 1-100 characters"))]
+    pub name: Option<String>,
+    pub description: Option<String>,
+    #[validate(custom(function = "validate_non_negative_price"))]
+    pub price_per_night: Option<Decimal>,
+    #[validate(range(min = 1, max = 20, message = "maxGuests must be 1-20"))]
+    pub max_guests: Option<i32>,
+    #[validate(custom(function = "validate_bed_type"))]
+    pub bed_type: Option<String>,
+    pub amenities: Option<Vec<String>>,
+    pub images: Option<Vec<String>>,
+    pub is_active: Option<bool>,
+    #[validate(range(min = 0, message = "sortOrder must be >= 0"))]
+    pub sort_order: Option<i32>,
 }
 
 // ============================================================================
@@ -155,6 +200,7 @@ pub struct RoomResponse {
     #[serde(rename = "roomNumber")]
     pub room_number: String,
     pub floor: Option<i32>,
+    pub notes: Option<String>,
     #[serde(rename = "isActive")]
     pub is_active: bool,
     #[serde(rename = "createdAt")]
@@ -174,35 +220,27 @@ pub struct RoomTypeSummary {
     pub name: String,
 }
 
-#[derive(Debug, sqlx::FromRow)]
-struct RoomRow {
-    id: Uuid,
-    room_type_id: Uuid,
-    room_number: String,
-    floor: Option<i32>,
-    is_active: bool,
-    created_at: Option<DateTime<Utc>>,
-    updated_at: Option<DateTime<Utc>>,
-    rt_name: Option<String>,
+#[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRoomRequest {
+    pub room_type_id: Uuid,
+    #[validate(length(min = 1, max = 20, message = "roomNumber must be 1-20 characters"))]
+    pub room_number: String,
+    pub floor: Option<i32>,
+    pub notes: Option<String>,
+    #[serde(default = "default_true")]
+    pub is_active: bool,
 }
 
-impl From<RoomRow> for RoomResponse {
-    fn from(row: RoomRow) -> Self {
-        let room_type = row.rt_name.map(|name| RoomTypeSummary {
-            id: row.room_type_id,
-            name,
-        });
-        Self {
-            id: row.id,
-            room_type_id: row.room_type_id,
-            room_number: row.room_number,
-            floor: row.floor,
-            is_active: row.is_active,
-            created_at: row.created_at.unwrap_or_else(Utc::now),
-            updated_at: row.updated_at.unwrap_or_else(Utc::now),
-            room_type,
-        }
-    }
+#[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRoomRequest {
+    pub room_type_id: Option<Uuid>,
+    #[validate(length(min = 1, max = 20, message = "roomNumber must be 1-20 characters"))]
+    pub room_number: Option<String>,
+    pub floor: Option<i32>,
+    pub notes: Option<String>,
+    pub is_active: Option<bool>,
 }
 
 // ============================================================================
@@ -253,16 +291,6 @@ pub struct RoomBlockedDatesGroup {
     pub dates: Vec<BlockedDateItem>,
 }
 
-#[derive(Debug, sqlx::FromRow)]
-struct BlockedDateRow {
-    id: Uuid,
-    room_id: Uuid,
-    room_number: String,
-    blocked_date: NaiveDate,
-    reason: Option<String>,
-    created_at: Option<DateTime<Utc>>,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct BlockDatesRequest {
     #[serde(rename = "roomId")]
@@ -286,8 +314,8 @@ pub struct UnblockDatesRequest {
 
 /// `GET /api/admin/room-types`
 ///
-/// Returns all room types ordered by name. When `include_inactive=false`
-/// only `is_active=true` rows are returned.
+/// Returns all room types ordered by sort_order then name. When
+/// `include_inactive=false` only `is_active=true` rows are returned.
 async fn list_room_types(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -295,25 +323,224 @@ async fn list_room_types(
 ) -> AppResult<Json<Vec<RoomTypeResponse>>> {
     require_admin(&user)?;
 
-    // The `is_active` filter is expressed as `$1::bool OR is_active`, so
-    // passing `true` includes every row (the predicate is short-circuited)
-    // and passing `false` keeps only the active ones. Doing it this way
-    // keeps the SQL static, which is what `sqlx::query_as!` requires.
-    let rows = sqlx::query_as!(
-        RoomTypeRow,
+    // One query with a NULL-tolerant predicate so the macro can compile-time
+    // check it. `$1` is the include-inactive flag — when true, the second
+    // half of the OR short-circuits to keep every row; when false, only
+    // `is_active = TRUE` rows survive.
+    let rows = sqlx::query!(
         r#"
-        SELECT id, name, description, price_per_night, max_guests, is_active,
+        SELECT id, name, description, price_per_night, max_guests,
+               bed_type, amenities, images, is_active, sort_order,
                created_at, updated_at
           FROM room_types
-         WHERE $1::bool OR is_active
-         ORDER BY LOWER(name) ASC
+         WHERE ($1::boolean OR is_active = TRUE)
+         ORDER BY sort_order ASC, LOWER(name) ASC
         "#,
-        query.include_inactive
+        query.include_inactive,
     )
     .fetch_all(state.db())
     .await?;
 
-    Ok(Json(rows.into_iter().map(RoomTypeResponse::from).collect()))
+    let response = rows
+        .into_iter()
+        .map(|r| RoomTypeResponse {
+            id: r.id,
+            name: r.name,
+            description: r.description,
+            price_per_night: r.price_per_night,
+            max_guests: r.max_guests,
+            bed_type: r.bed_type,
+            amenities: r.amenities,
+            images: r.images,
+            is_active: r.is_active,
+            sort_order: r.sort_order,
+            created_at: r.created_at.unwrap_or_else(Utc::now),
+            updated_at: r.updated_at.unwrap_or_else(Utc::now),
+        })
+        .collect();
+
+    Ok(Json(response))
+}
+
+/// `POST /api/admin/room-types`
+///
+/// Creates a room type. Returns 201 with the created row.
+/// 409 if the name (case-insensitively) is already taken — the
+/// `idx_room_types_name` unique index enforces this.
+async fn create_room_type(
+    Extension(user): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Json(payload): Json<CreateRoomTypeRequest>,
+) -> AppResult<(StatusCode, Json<RoomTypeResponse>)> {
+    require_admin(&user)?;
+    payload.validate()?;
+
+    let row = sqlx::query!(
+        r#"
+        INSERT INTO room_types (
+            name, description, price_per_night, max_guests,
+            bed_type, amenities, images, is_active, sort_order
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id, name, description, price_per_night, max_guests,
+                  bed_type, amenities, images, is_active, sort_order,
+                  created_at, updated_at
+        "#,
+        payload.name,
+        payload.description,
+        payload.price_per_night,
+        payload.max_guests,
+        payload.bed_type,
+        &payload.amenities,
+        &payload.images,
+        payload.is_active,
+        payload.sort_order,
+    )
+    .fetch_one(state.db())
+    .await
+    .map_err(map_room_type_conflict)?;
+
+    let response = RoomTypeResponse {
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        price_per_night: row.price_per_night,
+        max_guests: row.max_guests,
+        bed_type: row.bed_type,
+        amenities: row.amenities,
+        images: row.images,
+        is_active: row.is_active,
+        sort_order: row.sort_order,
+        created_at: row.created_at.unwrap_or_else(Utc::now),
+        updated_at: row.updated_at.unwrap_or_else(Utc::now),
+    };
+
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+/// `PATCH /api/admin/room-types/:id`
+///
+/// Partial update: only the fields present in the body are touched. Uses
+/// `COALESCE($n, current_value)` so absent fields are preserved without
+/// reading the row first.
+///
+/// 404 if the id doesn't exist; 409 if a name change collides with another
+/// existing room type.
+async fn update_room_type(
+    Extension(user): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateRoomTypeRequest>,
+) -> AppResult<Json<RoomTypeResponse>> {
+    require_admin(&user)?;
+    payload.validate()?;
+
+    let row = sqlx::query!(
+        r#"
+        UPDATE room_types
+           SET name            = COALESCE($2, name),
+               description     = COALESCE($3, description),
+               price_per_night = COALESCE($4, price_per_night),
+               max_guests      = COALESCE($5, max_guests),
+               bed_type        = COALESCE($6, bed_type),
+               amenities       = COALESCE($7, amenities),
+               images           = COALESCE($8, images),
+               is_active       = COALESCE($9, is_active),
+               sort_order      = COALESCE($10, sort_order),
+               updated_at      = NOW()
+         WHERE id = $1
+         RETURNING id, name, description, price_per_night, max_guests,
+                   bed_type, amenities, images, is_active, sort_order,
+                   created_at, updated_at
+        "#,
+        id,
+        payload.name,
+        payload.description,
+        payload.price_per_night,
+        payload.max_guests,
+        payload.bed_type,
+        payload.amenities.as_deref(),
+        payload.images.as_deref(),
+        payload.is_active,
+        payload.sort_order,
+    )
+    .fetch_optional(state.db())
+    .await
+    .map_err(map_room_type_conflict)?
+    .ok_or_else(|| AppError::NotFound("Room type".to_string()))?;
+
+    Ok(Json(RoomTypeResponse {
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        price_per_night: row.price_per_night,
+        max_guests: row.max_guests,
+        bed_type: row.bed_type,
+        amenities: row.amenities,
+        images: row.images,
+        is_active: row.is_active,
+        sort_order: row.sort_order,
+        created_at: row.created_at.unwrap_or_else(Utc::now),
+        updated_at: row.updated_at.unwrap_or_else(Utc::now),
+    }))
+}
+
+#[derive(Debug, Serialize)]
+struct RoomsAttachedConflict {
+    /// Number of rooms currently referencing this room type. The frontend
+    /// surfaces this so the admin knows how many rooms need to be removed
+    /// or reassigned first.
+    #[serde(rename = "roomsAttached")]
+    rooms_attached: i64,
+}
+
+/// `DELETE /api/admin/room-types/:id`
+///
+/// Rejects with 409 Conflict when one or more rooms still reference the
+/// room type. The FK declares `ON DELETE CASCADE`, which would silently
+/// nuke those rooms — almost certainly never what an admin wants. We
+/// instead force the admin to delete or reassign the rooms first.
+async fn delete_room_type(
+    Extension(user): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> AppResult<axum::response::Response> {
+    require_admin(&user)?;
+
+    // Check for attached rooms first so we can return a structured 409 body.
+    // Run inside a transaction so the count + delete are consistent if
+    // another writer is racing us.
+    let mut tx = state.db().begin().await?;
+
+    let attached: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!" FROM rooms WHERE room_type_id = $1"#,
+        id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if attached > 0 {
+        tx.rollback().await?;
+        return Ok((
+            StatusCode::CONFLICT,
+            Json(RoomsAttachedConflict {
+                rooms_attached: attached,
+            }),
+        )
+            .into_response());
+    }
+
+    let deleted = sqlx::query!("DELETE FROM room_types WHERE id = $1", id)
+        .execute(&mut *tx)
+        .await?;
+
+    if deleted.rows_affected() == 0 {
+        tx.rollback().await?;
+        return Err(AppError::NotFound("Room type".to_string()));
+    }
+
+    tx.commit().await?;
+    Ok((StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response())
 }
 
 // ============================================================================
@@ -332,29 +559,18 @@ async fn list_rooms(
 ) -> AppResult<Json<Vec<RoomResponse>>> {
     require_admin(&user)?;
 
-    // Optional filters expressed inline so the SQL stays static (a
-    // requirement for `sqlx::query_as!`). When `room_type_id` is None the
-    // first clause is always true; when `include_inactive` is true the
-    // second clause is always true. ORDER BY LENGTH() then the string
-    // itself handles natural numeric ordering ("9" before "10").
-    // `rt_name?` forces the joined `room_types.name` column to be modelled
-    // as Option<String> in the macro output, matching the `RoomRow` field
-    // (the INNER JOIN guarantees a value, but the macro can't tell).
-    let rows = sqlx::query_as!(
-        RoomRow,
+    // Single compile-time-checked query. `$1::uuid IS NULL` collapses the
+    // room-type filter when no id is provided; `$2::boolean` short-circuits
+    // the include-inactive flag.
+    let rows = sqlx::query!(
         r#"
-        SELECT r.id,
-               r.room_type_id,
-               r.room_number,
-               r.floor,
-               r.is_active,
-               r.created_at,
-               r.updated_at,
-               rt.name AS "rt_name?"
+        SELECT r.id, r.room_type_id, r.room_number, r.floor, r.notes,
+               r.is_active, r.created_at, r.updated_at,
+               rt.name AS rt_name
           FROM rooms r
           JOIN room_types rt ON rt.id = r.room_type_id
          WHERE ($1::uuid IS NULL OR r.room_type_id = $1)
-           AND ($2::bool OR r.is_active)
+           AND ($2::boolean OR r.is_active = TRUE)
          ORDER BY LENGTH(r.room_number), r.room_number ASC
         "#,
         query.room_type_id,
@@ -363,7 +579,178 @@ async fn list_rooms(
     .fetch_all(state.db())
     .await?;
 
-    Ok(Json(rows.into_iter().map(RoomResponse::from).collect()))
+    let response = rows
+        .into_iter()
+        .map(|r| RoomResponse {
+            id: r.id,
+            room_type_id: r.room_type_id,
+            room_number: r.room_number,
+            floor: r.floor,
+            notes: r.notes,
+            is_active: r.is_active,
+            created_at: r.created_at.unwrap_or_else(Utc::now),
+            updated_at: r.updated_at.unwrap_or_else(Utc::now),
+            room_type: Some(RoomTypeSummary {
+                id: r.room_type_id,
+                name: r.rt_name,
+            }),
+        })
+        .collect();
+
+    Ok(Json(response))
+}
+
+/// `POST /api/admin/rooms`
+///
+/// Creates a physical room. Returns 201 with the row. 404 if the
+/// `room_type_id` does not exist; 409 if the `room_number` is already
+/// taken (UNIQUE constraint on `rooms.room_number`).
+async fn create_room(
+    Extension(user): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Json(payload): Json<CreateRoomRequest>,
+) -> AppResult<(StatusCode, Json<RoomResponse>)> {
+    require_admin(&user)?;
+    payload.validate()?;
+
+    // Verify the room type exists. The FK would also catch this, but the
+    // explicit check returns a friendlier 404 with a clear resource name.
+    let room_type = sqlx::query!(
+        r#"SELECT id, name FROM room_types WHERE id = $1"#,
+        payload.room_type_id
+    )
+    .fetch_optional(state.db())
+    .await?;
+    let room_type = room_type.ok_or_else(|| AppError::NotFound("Room type".to_string()))?;
+
+    let row = sqlx::query!(
+        r#"
+        INSERT INTO rooms (room_type_id, room_number, floor, notes, is_active)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, room_type_id, room_number, floor, notes, is_active,
+                  created_at, updated_at
+        "#,
+        payload.room_type_id,
+        payload.room_number,
+        payload.floor,
+        payload.notes,
+        payload.is_active,
+    )
+    .fetch_one(state.db())
+    .await
+    .map_err(map_room_conflict)?;
+
+    let response = RoomResponse {
+        id: row.id,
+        room_type_id: row.room_type_id,
+        room_number: row.room_number,
+        floor: row.floor,
+        notes: row.notes,
+        is_active: row.is_active,
+        created_at: row.created_at.unwrap_or_else(Utc::now),
+        updated_at: row.updated_at.unwrap_or_else(Utc::now),
+        room_type: Some(RoomTypeSummary {
+            id: room_type.id,
+            name: room_type.name,
+        }),
+    };
+
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+/// `PATCH /api/admin/rooms/:id`
+///
+/// Partial update: only the fields present in the body are touched.
+/// 404 when the id doesn't exist; 409 when room_number collides.
+async fn update_room(
+    Extension(user): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateRoomRequest>,
+) -> AppResult<Json<RoomResponse>> {
+    require_admin(&user)?;
+    payload.validate()?;
+
+    // If a room_type_id is being changed, verify it exists first (FK would
+    // throw a 500-shaped error otherwise).
+    if let Some(rt_id) = payload.room_type_id {
+        let exists = sqlx::query_scalar!(r#"SELECT id FROM room_types WHERE id = $1"#, rt_id)
+            .fetch_optional(state.db())
+            .await?;
+        if exists.is_none() {
+            return Err(AppError::NotFound("Room type".to_string()));
+        }
+    }
+
+    let row = sqlx::query!(
+        r#"
+        UPDATE rooms
+           SET room_type_id = COALESCE($2, room_type_id),
+               room_number  = COALESCE($3, room_number),
+               floor        = COALESCE($4, floor),
+               notes        = COALESCE($5, notes),
+               is_active    = COALESCE($6, is_active),
+               updated_at   = NOW()
+         WHERE id = $1
+         RETURNING id, room_type_id, room_number, floor, notes, is_active,
+                   created_at, updated_at
+        "#,
+        id,
+        payload.room_type_id,
+        payload.room_number,
+        payload.floor,
+        payload.notes,
+        payload.is_active,
+    )
+    .fetch_optional(state.db())
+    .await
+    .map_err(map_room_conflict)?
+    .ok_or_else(|| AppError::NotFound("Room".to_string()))?;
+
+    let rt = sqlx::query!(
+        r#"SELECT id, name FROM room_types WHERE id = $1"#,
+        row.room_type_id
+    )
+    .fetch_optional(state.db())
+    .await?;
+
+    Ok(Json(RoomResponse {
+        id: row.id,
+        room_type_id: row.room_type_id,
+        room_number: row.room_number,
+        floor: row.floor,
+        notes: row.notes,
+        is_active: row.is_active,
+        created_at: row.created_at.unwrap_or_else(Utc::now),
+        updated_at: row.updated_at.unwrap_or_else(Utc::now),
+        room_type: rt.map(|r| RoomTypeSummary {
+            id: r.id,
+            name: r.name,
+        }),
+    }))
+}
+
+/// `DELETE /api/admin/rooms/:id`
+///
+/// Hard delete. Cascading FK on `room_blocked_dates` and `bookings` means
+/// any related rows go with it — the admin UI surfaces a separate
+/// confirmation flow before invoking this, so we trust the request.
+async fn delete_room(
+    Extension(user): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> AppResult<Json<serde_json::Value>> {
+    require_admin(&user)?;
+
+    let result = sqlx::query!("DELETE FROM rooms WHERE id = $1", id)
+        .execute(state.db())
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Room".to_string()));
+    }
+
+    Ok(Json(serde_json::json!({ "success": true })))
 }
 
 // ============================================================================
@@ -375,9 +762,6 @@ async fn list_rooms(
 /// Returns blocked dates for the requested range (default: today + 31
 /// days), grouped by room. The frontend's `RoomAvailability.tsx` consumes
 /// this exact shape (`Array<{ roomId, roomNumber, dates: [...] }>`).
-///
-/// When `roomTypeId` is supplied, only blocks for rooms of that type are
-/// returned.
 async fn list_blocked_dates(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -396,18 +780,10 @@ async fn list_blocked_dates(
         ));
     }
 
-    // Optional room-type filter expressed inline so the SQL is static
-    // (compile-time `query_as!` requirement). `room_number?` forces the
-    // joined column to Option<String> to match the row struct.
-    let rows = sqlx::query_as!(
-        BlockedDateRow,
+    let rows = sqlx::query!(
         r#"
-        SELECT bd.id,
-               bd.room_id,
-               r.room_number AS "room_number!",
-               bd.blocked_date,
-               bd.reason,
-               bd.created_at
+        SELECT bd.id, bd.room_id, r.room_number, bd.blocked_date,
+               bd.reason, bd.created_at
           FROM room_blocked_dates bd
           JOIN rooms r ON r.id = bd.room_id
          WHERE bd.blocked_date >= $1
@@ -422,9 +798,6 @@ async fn list_blocked_dates(
     .fetch_all(state.db())
     .await?;
 
-    // Group rows by room so the frontend can iterate roomId → dates[]
-    // directly. We use a Vec rather than a HashMap to preserve the
-    // ORDER BY room_number ordering.
     let mut groups: Vec<RoomBlockedDatesGroup> = Vec::new();
     for row in rows {
         let item = BlockedDateItem {
@@ -453,9 +826,6 @@ async fn list_blocked_dates(
 /// Block one or more dates for a room. Idempotent: re-blocking an already
 /// blocked date is a no-op (`ON CONFLICT DO NOTHING` against the
 /// `(room_id, blocked_date)` unique key).
-///
-/// Returns the rows that were actually inserted (existing blocks are
-/// excluded, mirroring INSERT...RETURNING semantics with ON CONFLICT).
 async fn block_dates(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -469,26 +839,14 @@ async fn block_dates(
         ));
     }
 
-    // Verify the room exists. A missing row would also fail the FK
-    // constraint at insert time, but the explicit lookup gives the admin
-    // UI a clean 404 instead of a generic 500.
-    let room_exists = sqlx::query_scalar!("SELECT id FROM rooms WHERE id = $1", payload.room_id)
+    let room_exists = sqlx::query_scalar!(r#"SELECT id FROM rooms WHERE id = $1"#, payload.room_id)
         .fetch_optional(state.db())
         .await?;
     if room_exists.is_none() {
         return Err(AppError::NotFound("Room".to_string()));
     }
 
-    // Bulk insert via UNNEST so a single round-trip handles N dates.
-    // ON CONFLICT collapses duplicates; RETURNING gives us back only the
-    // rows we actually created.
-    struct InsertedRow {
-        id: Uuid,
-        blocked_date: NaiveDate,
-        created_at: Option<DateTime<Utc>>,
-    }
-    let inserted = sqlx::query_as!(
-        InsertedRow,
+    let inserted = sqlx::query!(
         r#"
         INSERT INTO room_blocked_dates (room_id, blocked_date, reason)
         SELECT $1, d, $3
@@ -498,19 +856,19 @@ async fn block_dates(
         "#,
         payload.room_id,
         &payload.dates,
-        payload.reason.as_deref(),
+        payload.reason,
     )
     .fetch_all(state.db())
     .await?;
 
     let response: Vec<BlockedDateItem> = inserted
         .into_iter()
-        .map(|row| BlockedDateItem {
-            id: row.id,
+        .map(|r| BlockedDateItem {
+            id: r.id,
             room_id: payload.room_id,
-            blocked_date: row.blocked_date,
+            blocked_date: r.blocked_date,
             reason: payload.reason.clone(),
-            created_at: row.created_at.unwrap_or_else(Utc::now),
+            created_at: r.created_at.unwrap_or_else(Utc::now),
             created_by: None,
         })
         .collect();
@@ -526,10 +884,7 @@ pub struct UnblockDatesResponse {
 
 /// `DELETE /api/admin/blocked-dates`
 ///
-/// Unblock one or more dates for a room. The body shape matches
-/// `unblockMutation` in `RoomAvailability.tsx` (`{ roomId, dates: Date[] }`).
-/// Returns the count of rows actually removed (0 is fine — date was
-/// already unblocked).
+/// Unblock one or more dates for a room.
 async fn unblock_dates(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -562,18 +917,49 @@ async fn unblock_dates(
 }
 
 // ============================================================================
+// Error helpers
+// ============================================================================
+
+/// Detect the room_types name unique-violation (`idx_room_types_name`) and
+/// rewrite it as a 409 Conflict. Other sqlx errors pass through unchanged
+/// so they surface as 500s with the original message.
+fn map_room_type_conflict(err: sqlx::Error) -> AppError {
+    if let sqlx::Error::Database(ref db_err) = err {
+        if db_err.code().as_deref() == Some("23505") {
+            return AppError::Conflict("A room type with this name already exists".to_string());
+        }
+    }
+    AppError::from(err)
+}
+
+/// Detect the rooms.room_number unique-violation and rewrite as 409.
+fn map_room_conflict(err: sqlx::Error) -> AppError {
+    if let sqlx::Error::Database(ref db_err) = err {
+        if db_err.code().as_deref() == Some("23505") {
+            return AppError::Conflict("A room with this number already exists".to_string());
+        }
+    }
+    AppError::from(err)
+}
+
+// ============================================================================
 // Router
 // ============================================================================
 
 /// Build the room/room-type/blocked-dates sub-router.
-///
-/// Intended to be `.merge`d into the parent admin router so the existing
-/// `auth_middleware` layer covers these routes too. Mounted at
-/// `/api/admin/...` by the top-level router in `routes::mod`.
 pub fn router() -> Router<AppState> {
     Router::new()
+        // Room types
         .route("/room-types", get(list_room_types))
+        .route("/room-types", post(create_room_type))
+        .route("/room-types/:id", patch(update_room_type))
+        .route("/room-types/:id", delete(delete_room_type))
+        // Rooms
         .route("/rooms", get(list_rooms))
+        .route("/rooms", post(create_room))
+        .route("/rooms/:id", patch(update_room))
+        .route("/rooms/:id", delete(delete_room))
+        // Blocked dates
         .route("/blocked-dates", get(list_blocked_dates))
         .route("/blocked-dates", post(block_dates))
         .route("/blocked-dates", delete(unblock_dates))
@@ -602,5 +988,80 @@ mod tests {
         let req: BlockDatesRequest = serde_json::from_str(json).unwrap();
         assert_eq!(req.dates.len(), 2);
         assert_eq!(req.reason.as_deref(), Some("maintenance"));
+    }
+
+    #[test]
+    fn create_room_type_request_round_trips_camel_case() {
+        let json = r#"{
+            "name": "Deluxe",
+            "description": "Sea view",
+            "pricePerNight": "2500.00",
+            "maxGuests": 2,
+            "bedType": "king",
+            "amenities": ["wifi", "minibar"],
+            "images": ["https://example.com/1.jpg"],
+            "isActive": true,
+            "sortOrder": 10
+        }"#;
+        let req: CreateRoomTypeRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.name, "Deluxe");
+        assert_eq!(req.max_guests, 2);
+        assert_eq!(req.bed_type.as_deref(), Some("king"));
+        assert_eq!(req.amenities, vec!["wifi", "minibar"]);
+        assert_eq!(req.sort_order, 10);
+    }
+
+    #[test]
+    fn create_room_type_request_validates_bed_type() {
+        let req = CreateRoomTypeRequest {
+            name: "Deluxe".into(),
+            description: None,
+            price_per_night: Decimal::new(100, 0),
+            max_guests: 2,
+            bed_type: Some("waterbed".into()),
+            amenities: vec![],
+            images: vec![],
+            is_active: true,
+            sort_order: 0,
+        };
+        assert!(req.validate().is_err(), "waterbed must fail validation");
+    }
+
+    #[test]
+    fn create_room_type_request_rejects_negative_price() {
+        let req = CreateRoomTypeRequest {
+            name: "Deluxe".into(),
+            description: None,
+            price_per_night: Decimal::new(-1, 0),
+            max_guests: 2,
+            bed_type: None,
+            amenities: vec![],
+            images: vec![],
+            is_active: true,
+            sort_order: 0,
+        };
+        assert!(req.validate().is_err());
+    }
+
+    #[test]
+    fn create_room_request_round_trips_camel_case() {
+        let json = r#"{
+            "roomTypeId": "00000000-0000-0000-0000-000000000001",
+            "roomNumber": "101",
+            "floor": 1,
+            "notes": "near elevator",
+            "isActive": true
+        }"#;
+        let req: CreateRoomRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.room_number, "101");
+        assert_eq!(req.floor, Some(1));
+    }
+
+    #[test]
+    fn update_room_type_request_all_fields_optional() {
+        let req: UpdateRoomTypeRequest = serde_json::from_str("{}").unwrap();
+        assert!(req.name.is_none());
+        assert!(req.price_per_night.is_none());
+        assert!(req.amenities.is_none());
     }
 }

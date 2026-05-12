@@ -227,6 +227,12 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
     let booking_slips_migration = include_str!("../../migrations/20260511000000_booking_slips.sql");
     template_pool.execute(booking_slips_migration).await?;
 
+    let room_management_columns_migration =
+        include_str!("../../migrations/20260512000000_room_management_columns.sql");
+    template_pool
+        .execute(room_management_columns_migration)
+        .await?;
+
     let booking_admin_fields_migration =
         include_str!("../../migrations/20260512020000_booking_admin_fields.sql");
     template_pool
