@@ -9,7 +9,15 @@ description = "Rust backend for the Loyalty App"
 # Web framework
 axum = { version = "0.7", features = ["macros", "multipart"] }
 axum-extra = { version = "0.9", features = ["typed-header", "cookie"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = [
+    "rt-multi-thread",   # #[tokio::main] uses the multi-threaded runtime
+    "macros",            # #[tokio::main] / #[tokio::test]
+    "net",               # tokio::net::TcpListener (Axum bind)
+    "fs",                # tokio::fs in routes::slips / services::storage
+    "io-util",           # tokio::io::AsyncWriteExt for streaming writes
+    "sync",              # broadcast + RwLock in services::sse
+    "time",              # tokio::time::sleep + tower-http timeout layer
+] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace", "fs", "limit", "timeout", "compression-gzip"] }
 
