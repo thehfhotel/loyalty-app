@@ -1,42 +1,70 @@
 # Trivy Container Security Scanner
-# Scans Docker images for vulnerabilities in OS packages and dependencies
+# Scans Docker images for vulnerabilities in OS packages and dependencies.
+#
+# Image scans run AFTER "CI Build & E2E" succeeds, reusing the GHCR images it
+# pushed (~30s pull) instead of rebuilding from Dockerfiles (~6 minutes).
+# Filesystem scan still runs on PRs/pushes/cron for source-level CVE coverage.
 
 name: Trivy Container Scan
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_run:
+    workflows: ["CI Build & E2E"]
+    types: [completed]
+    branches: [main]
   schedule:
     - cron: '28 5 * * 6'  # Weekly on Saturday
 
 permissions:
   contents: read
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: thehfhotel
+  IMAGE_REPO: loyalty-app
+
 jobs:
   scan-backend:
+    # Skip if the upstream "CI Build & E2E" run did not succeed; cron runs
+    # always proceed (workflow_run context is absent there).
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
       security-events: write
       actions: read
+      packages: read
     name: Scan Backend Image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
 
-      - name: Build backend image
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve backend image reference
+        id: image
         run: |
-          docker build -t loyalty-backend:${{ github.sha }} \
-            --target runner \
-            -f backend-rust/Dockerfile \
-            backend-rust/
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            TAG="latest"
+          else
+            TAG="${{ github.event.workflow_run.head_sha || github.sha }}"
+          fi
+          REF="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/backend:${TAG}"
+          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+          echo "Scanning backend image: ${REF}"
+
+      - name: Pull backend image
+        run: docker pull "${{ steps.image.outputs.ref }}"
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # 0.33.1
         with:
-          image-ref: 'loyalty-backend:${{ github.sha }}'
+          image-ref: ${{ steps.image.outputs.ref }}
           format: 'sarif'
           output: 'trivy-backend-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -48,27 +76,44 @@ jobs:
           category: 'trivy-backend'
 
   scan-frontend:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
       security-events: write
       actions: read
+      packages: read
     name: Scan Frontend Image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
 
-      - name: Build frontend image
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve frontend image reference
+        id: image
         run: |
-          docker build -t loyalty-frontend:${{ github.sha }} \
-            --target production \
-            -f frontend/Dockerfile \
-            frontend/
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            TAG="latest"
+          else
+            TAG="${{ github.event.workflow_run.head_sha || github.sha }}"
+          fi
+          REF="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/frontend:${TAG}"
+          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+          echo "Scanning frontend image: ${REF}"
+
+      - name: Pull frontend image
+        run: docker pull "${{ steps.image.outputs.ref }}"
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # 0.33.1
         with:
-          image-ref: 'loyalty-frontend:${{ github.sha }}'
+          image-ref: ${{ steps.image.outputs.ref }}
           format: 'sarif'
           output: 'trivy-frontend-results.sarif'
           severity: 'CRITICAL,HIGH'
