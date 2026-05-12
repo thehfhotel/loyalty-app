@@ -39,35 +39,50 @@
 -- audit actions (e.g. 'slip_verified') in a future PR doesn't require
 -- a schema migration.
 --
--- No `IF NOT EXISTS` / DO blocks: this is the first time these columns
--- and the audit table appear in any environment, so a plain `ADD COLUMN`
--- / `CREATE TABLE` is correct and any "already exists" outcome here
--- would indicate a deploy-order bug worth surfacing.
+-- Originally written without idempotency on the assumption that the
+-- migration runs exactly once. In practice, sqlx does not wrap a
+-- migration in a transaction by default, so a partial application
+-- (mid-file failure) leaves earlier statements in place and the next
+-- deploy attempt sees "column already exists" errors. Make the
+-- column adds and table creation idempotent.
 -- =====================================================
 
 -- ----- Add admin-only columns to bookings ------------------------------
 
 ALTER TABLE "public"."bookings"
-    ADD COLUMN "discount_amount" DECIMAL(10, 2),
-    ADD COLUMN "discount_reason" TEXT,
-    ADD COLUMN "admin_notes"     TEXT,
-    ADD COLUMN "payment_type"    VARCHAR(20),
-    ADD COLUMN "payment_amount"  DECIMAL(10, 2);
+    ADD COLUMN IF NOT EXISTS "discount_amount" DECIMAL(10, 2),
+    ADD COLUMN IF NOT EXISTS "discount_reason" TEXT,
+    ADD COLUMN IF NOT EXISTS "admin_notes"     TEXT,
+    ADD COLUMN IF NOT EXISTS "payment_type"    VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS "payment_amount"  DECIMAL(10, 2);
 
--- Constrain payment_type to known values. NULL allowed (legacy rows /
--- bookings that haven't gone through the new payment flow yet).
-ALTER TABLE "public"."bookings"
-    ADD CONSTRAINT "chk_bookings_payment_type"
-    CHECK (payment_type IS NULL OR payment_type IN ('full', 'deposit'));
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'chk_bookings_payment_type'
+    ) THEN
+        ALTER TABLE "public"."bookings"
+            ADD CONSTRAINT "chk_bookings_payment_type"
+            CHECK (payment_type IS NULL OR payment_type IN ('full', 'deposit'));
+    END IF;
+END $$;
 
--- Constrain discount to non-negative. NULL = "no discount applied".
-ALTER TABLE "public"."bookings"
-    ADD CONSTRAINT "chk_bookings_discount_amount_nonneg"
-    CHECK (discount_amount IS NULL OR discount_amount >= 0);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'chk_bookings_discount_amount_nonneg'
+    ) THEN
+        ALTER TABLE "public"."bookings"
+            ADD CONSTRAINT "chk_bookings_discount_amount_nonneg"
+            CHECK (discount_amount IS NULL OR discount_amount >= 0);
+    END IF;
+END $$;
 
 -- ----- booking_audit_log table -----------------------------------------
 
-CREATE TABLE "public"."booking_audit_log" (
+CREATE TABLE IF NOT EXISTS "public"."booking_audit_log" (
     "id"          UUID                     NOT NULL DEFAULT gen_random_uuid(),
     "booking_id"  UUID                     NOT NULL,
     "admin_id"    UUID                     NOT NULL,
@@ -80,17 +95,33 @@ CREATE TABLE "public"."booking_audit_log" (
     CONSTRAINT "booking_audit_log_pkey" PRIMARY KEY ("id")
 );
 
-ALTER TABLE "public"."booking_audit_log"
-    ADD CONSTRAINT "booking_audit_log_booking_id_fkey"
-    FOREIGN KEY ("booking_id") REFERENCES "public"."bookings"("id")
-    ON DELETE CASCADE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'booking_audit_log_booking_id_fkey'
+    ) THEN
+        ALTER TABLE "public"."booking_audit_log"
+            ADD CONSTRAINT "booking_audit_log_booking_id_fkey"
+            FOREIGN KEY ("booking_id") REFERENCES "public"."bookings"("id")
+            ON DELETE CASCADE;
+    END IF;
+END $$;
 
-ALTER TABLE "public"."booking_audit_log"
-    ADD CONSTRAINT "booking_audit_log_admin_id_fkey"
-    FOREIGN KEY ("admin_id") REFERENCES "public"."users"("id");
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'booking_audit_log_admin_id_fkey'
+    ) THEN
+        ALTER TABLE "public"."booking_audit_log"
+            ADD CONSTRAINT "booking_audit_log_admin_id_fkey"
+            FOREIGN KEY ("admin_id") REFERENCES "public"."users"("id");
+    END IF;
+END $$;
 
-CREATE INDEX "idx_booking_audit_log_booking_id"
+CREATE INDEX IF NOT EXISTS "idx_booking_audit_log_booking_id"
     ON "public"."booking_audit_log" ("booking_id");
 
-CREATE INDEX "idx_booking_audit_log_occurred_at"
+CREATE INDEX IF NOT EXISTS "idx_booking_audit_log_occurred_at"
     ON "public"."booking_audit_log" ("occurred_at" DESC);
