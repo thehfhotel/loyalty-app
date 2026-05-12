@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   workflow_run:
-    workflows: ["CI Tests", "CI Build & E2E"]
+    workflows: ["CI Tests", "CI Build & Deploy"]
     types: [completed]
     branches: [main]
 
@@ -19,10 +19,18 @@ env:
   REGISTRY: ghcr.io
   IMAGE_OWNER: thehfhotel
   IMAGE_REPO: loyalty-app
+  # Pin cloudflared so the cache key is stable across deploys. Bump this
+  # version (and the cache will repopulate on the next run) when the
+  # cloudflared release we want changes.
+  CLOUDFLARED_VERSION: "2024.10.0"
 
 jobs:
   # =============================================================================
   # CHECK THAT BOTH CI WORKFLOWS PASSED FOR THIS COMMIT
+  #
+  # Staging deploy moved into ci-build-e2e.yml (no workflow_run hop needed) —
+  # this workflow now exists solely to gate the manual-approval production
+  # deploy on both CI workflows succeeding for the same commit.
   # =============================================================================
 
   check-prerequisites:
@@ -49,11 +57,11 @@ jobs:
             --json conclusion --jq '.[0].conclusion // "pending"')
           echo "CI Tests status: $TEST_STATUS"
 
-          # Check CI Build & E2E workflow
+          # Check CI Build & Deploy workflow
           BUILD_STATUS=$(gh run list -R ${{ github.repository }} \
             --workflow=ci-build-e2e.yml --branch=main --commit=$SHA \
             --json conclusion --jq '.[0].conclusion // "pending"')
-          echo "CI Build & E2E status: $BUILD_STATUS"
+          echo "CI Build & Deploy status: $BUILD_STATUS"
 
           if [ "$TEST_STATUS" = "success" ] && [ "$BUILD_STATUS" = "success" ]; then
             echo "Both workflows passed - proceeding with deployment"
@@ -64,132 +72,13 @@ jobs:
           fi
 
   # =============================================================================
-  # DEPLOY TO STAGING (no approval needed)
-  # =============================================================================
-
-  deploy-staging:
-    name: "Deploy to Staging"
-    runs-on: ubuntu-latest
-    needs: [check-prerequisites]
-    if: needs.check-prerequisites.outputs.should-deploy == 'true'
-    timeout-minutes: 10
-    environment:
-      name: development
-      url: http://loyalty-dev.saichon.com
-
-    steps:
-      - name: Checkout config files
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.check-prerequisites.outputs.commit-sha }}
-          sparse-checkout: |
-            docker-compose.yml
-            docker-compose.ghcr.yml
-            docker-compose.staging.yml
-            nginx/nginx.conf
-          sparse-checkout-cone-mode: false
-
-      - name: Install cloudflared
-        run: |
-          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
-            -o /tmp/cloudflared
-          sudo install -m 755 /tmp/cloudflared /usr/local/bin/cloudflared
-          cloudflared --version
-
-      - name: Install SSH key + known_hosts
-        env:
-          SSH_KEY:  ${{ secrets.EVERGREEN_DEPLOY_SSH_KEY }}
-          HOST_KEY: ${{ secrets.EVERGREEN_HOST_KEY }}
-        run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY"  > ~/.ssh/deploy_key  && chmod 600 ~/.ssh/deploy_key
-          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
-
-      - name: Deploy via SSH to evergreen
-        env:
-          COMMIT_SHA:           ${{ needs.check-prerequisites.outputs.commit-sha }}
-          GHCR_USER:            ${{ github.actor }}
-          GHCR_TOKEN:           ${{ secrets.GITHUB_TOKEN }}
-          JWT_SECRET:           ${{ secrets.DEV_JWT_SECRET }}
-          JWT_REFRESH_SECRET:   ${{ secrets.DEV_JWT_REFRESH_SECRET }}
-          SESSION_SECRET:       ${{ secrets.DEV_SESSION_SECRET }}
-          GOOGLE_CLIENT_ID:     ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_CALLBACK_URL:  ${{ vars.GOOGLE_CALLBACK_URL }}
-          LINE_CHANNEL_ID:      ${{ secrets.LINE_CHANNEL_ID }}
-          LINE_CHANNEL_SECRET:  ${{ secrets.LINE_CHANNEL_SECRET }}
-          LINE_CALLBACK_URL:    ${{ vars.LINE_CALLBACK_URL }}
-          FRONTEND_URL:         ${{ vars.FRONTEND_URL }}
-          BACKEND_URL:          ${{ vars.BACKEND_URL }}
-          POSTGRES_USER:        ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD:    ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB:          ${{ secrets.POSTGRES_DB }}
-        run: |
-          set -euo pipefail
-          tar -czf /tmp/deploy.tar.gz \
-            docker-compose.yml docker-compose.ghcr.yml docker-compose.staging.yml \
-            nginx/nginx.conf
-
-          jq -n \
-            --arg commit_sha           "$COMMIT_SHA" \
-            --arg deploy_payload_b64   "$(base64 -w0 < /tmp/deploy.tar.gz)" \
-            --arg ghcr_user            "$GHCR_USER" \
-            --arg ghcr_token           "$GHCR_TOKEN" \
-            --arg JWT_SECRET           "$JWT_SECRET" \
-            --arg JWT_REFRESH_SECRET   "$JWT_REFRESH_SECRET" \
-            --arg SESSION_SECRET       "$SESSION_SECRET" \
-            --arg GOOGLE_CLIENT_ID     "$GOOGLE_CLIENT_ID" \
-            --arg GOOGLE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET" \
-            --arg GOOGLE_CALLBACK_URL  "$GOOGLE_CALLBACK_URL" \
-            --arg LINE_CHANNEL_ID      "$LINE_CHANNEL_ID" \
-            --arg LINE_CHANNEL_SECRET  "$LINE_CHANNEL_SECRET" \
-            --arg LINE_CALLBACK_URL    "$LINE_CALLBACK_URL" \
-            --arg FRONTEND_URL         "$FRONTEND_URL" \
-            --arg BACKEND_URL          "$BACKEND_URL" \
-            --arg POSTGRES_USER        "$POSTGRES_USER" \
-            --arg POSTGRES_PASSWORD    "$POSTGRES_PASSWORD" \
-            --arg POSTGRES_DB          "$POSTGRES_DB" \
-            '{
-              commit_sha: $commit_sha,
-              deploy_payload_b64: $deploy_payload_b64,
-              ghcr: { user: $ghcr_user, token: $ghcr_token },
-              env: {
-                RUST_ENV:             "staging",
-                NODE_ENV:             "staging",
-                RUST_LOG:             "info",
-                LOG_LEVEL:            "info",
-                JWT_SECRET:           $JWT_SECRET,
-                JWT_REFRESH_SECRET:   $JWT_REFRESH_SECRET,
-                SESSION_SECRET:       $SESSION_SECRET,
-                POSTGRES_USER:        $POSTGRES_USER,
-                POSTGRES_PASSWORD:    $POSTGRES_PASSWORD,
-                POSTGRES_DB:          $POSTGRES_DB,
-                DATABASE_URL:         ("postgresql://" + $POSTGRES_USER + ":" + $POSTGRES_PASSWORD + "@postgres:5432/" + $POSTGRES_DB),
-                REDIS_URL:            "redis://redis:6379",
-                FRONTEND_URL:         $FRONTEND_URL,
-                BACKEND_URL:          $BACKEND_URL,
-                GOOGLE_CLIENT_ID:     $GOOGLE_CLIENT_ID,
-                GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET,
-                GOOGLE_CALLBACK_URL:  $GOOGLE_CALLBACK_URL,
-                LINE_CHANNEL_ID:      $LINE_CHANNEL_ID,
-                LINE_CHANNEL_SECRET:  $LINE_CHANNEL_SECRET,
-                LINE_CALLBACK_URL:    $LINE_CALLBACK_URL
-              }
-            }' \
-          | ssh -i ~/.ssh/deploy_key \
-              -o StrictHostKeyChecking=yes \
-              -o UserKnownHostsFile=~/.ssh/known_hosts \
-              -o ProxyCommand="cloudflared --edge-ip-version 4 access ssh --hostname %h" \
-              deploy@evergreen.thehfhotel.org
-
-  # =============================================================================
   # DEPLOY TO PRODUCTION (requires approval)
   # =============================================================================
 
   deploy-production:
     name: "Deploy to Production"
     runs-on: ubuntu-latest
-    needs: [check-prerequisites, deploy-staging]
+    needs: [check-prerequisites]
     if: needs.check-prerequisites.outputs.should-deploy == 'true'
     timeout-minutes: 10
     environment:
@@ -208,11 +97,25 @@ jobs:
             nginx/nginx.conf
           sparse-checkout-cone-mode: false
 
-      - name: Install cloudflared
+      - name: Cache cloudflared binary
+        id: cache-cloudflared
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/cloudflared
+          key: cloudflared-${{ runner.os }}-${{ env.CLOUDFLARED_VERSION }}
+
+      - name: Download cloudflared (cache miss)
+        if: steps.cache-cloudflared.outputs.cache-hit != 'true'
         run: |
-          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
-            -o /tmp/cloudflared
-          sudo install -m 755 /tmp/cloudflared /usr/local/bin/cloudflared
+          mkdir -p ~/.cache/cloudflared
+          curl -fsSL \
+            "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64" \
+            -o ~/.cache/cloudflared/cloudflared
+          chmod +x ~/.cache/cloudflared/cloudflared
+
+      - name: Install cloudflared to /usr/local/bin
+        run: |
+          sudo install -m 755 ~/.cache/cloudflared/cloudflared /usr/local/bin/cloudflared
           cloudflared --version
 
       - name: Install SSH key + known_hosts

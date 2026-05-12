@@ -1,7 +1,9 @@
-name: CI Build & E2E
+name: CI Build & Deploy
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -31,20 +33,109 @@ env:
 
 jobs:
   # =============================================================================
-  # BUILD RUST BINARY
+  # LINT BACKEND (Rust) - fail-fast fmt + clippy on bare ubuntu, separate cache
   # =============================================================================
 
-  build-backend-binary:
-    name: "Build Backend Binary"
+  lint-backend:
+    name: "Lint Backend (Rust)"
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy, rustfmt
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache Rust dependencies (lint)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "backend-rust -> target"
+          cache-on-failure: true
+          prefix-key: "v0-rust-lint"
+
+      - name: Check formatting
+        working-directory: ./backend-rust
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy (lints)
+        working-directory: ./backend-rust
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # =============================================================================
+  # VALIDATE & BUILD BACKEND (Rust)
+  #
+  # Single Rust toolchain pass that:
+  #   1. Unit tests (debug)
+  #   2. Applies migrations to a service Postgres, verifies schema
+  #   3. Runs sqlx prepare --check against the live test DB
+  #   4. Runs integration tests against the live DB + Redis
+  #   5. Builds the release binary and uploads it as an artifact for the
+  #      build-and-push job to consume.
+  #
+  # Runs inside rust:1.93-bookworm so the same target/ cache (Swatinem rust-cache
+  # workspace key) is shared between tests and the release build. The previous
+  # two-job split used different OS environments + different cache prefixes,
+  # which made it impossible to share artifacts. See PR consolidating CI.
+  # =============================================================================
+
+  validate-and-build-backend:
+    name: "Validate & Build Backend (Rust)"
+    runs-on: ubuntu-latest
+    needs: [lint-backend]
+    timeout-minutes: 30
     container:
       image: rust:1.93-bookworm
-    timeout-minutes: 25
+
+    # Force bash as the default shell for all `run:` steps in this job.
+    # Without this, the rust:1.93-bookworm container's default shell is dash
+    # (Debian's /bin/sh), which does not support `set -o pipefail` or several
+    # other bashisms used below for migration scripts and schema checks.
+    defaults:
+      run:
+        shell: bash
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: loyalty_test
+          POSTGRES_PASSWORD: loyalty_test_pass
+          POSTGRES_DB: loyalty_test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Inside the job container, services are reachable by their service name
+      # on their original ports — no host port mapping required.
+      DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@postgres:5432/loyalty_test_db
+      TEST_DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@postgres:5432/loyalty_test_db
+      TEST_REDIS_URL: redis://redis:6379
+      PGPASSWORD: loyalty_test_pass
 
     steps:
       - name: Install system dependencies
         run: |
-          apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev libpq-dev
+          apt-get update && apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev libpq-dev postgresql-client
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -58,6 +149,113 @@ jobs:
           workspaces: "backend-rust -> target"
           cache-on-failure: true
           prefix-key: "v0-rust-container"
+
+      - name: Run unit tests
+        working-directory: ./backend-rust
+        run: cargo test --lib --bins
+        env:
+          RUST_BACKTRACE: 1
+          RUST_LOG: debug
+
+      - name: Grant CREATEDB for per-test database isolation
+        run: |
+          psql -h postgres -p 5432 -U loyalty_test -d loyalty_test_db \
+            -c "ALTER USER loyalty_test CREATEDB;"
+
+      - name: Run database migrations
+        run: |
+          # Apply every migration in lexical (timestamp-ordered) order so the
+          # sqlx prepare --check step below sees the same schema the app
+          # expects. Hard-coding a single filename silently rotted as new
+          # migrations were added — see PR #215's booking_slips reconciliation.
+          set -euo pipefail
+          for f in backend-rust/migrations/*.sql; do
+            echo "Applying $f"
+            psql -h postgres -p 5432 -U loyalty_test -d loyalty_test_db \
+              -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Verify database schema
+        run: |
+          TABLE_COUNT=$(psql -h postgres -p 5432 -U loyalty_test -d loyalty_test_db -t -c \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';")
+          TABLE_COUNT=$(echo "$TABLE_COUNT" | tr -d ' ')
+          echo "Tables created: $TABLE_COUNT"
+          if [ "$TABLE_COUNT" -lt 25 ]; then
+            echo "::error::Expected 25+ tables, found $TABLE_COUNT. Migration may have failed."
+            psql -h postgres -p 5432 -U loyalty_test -d loyalty_test_db -c \
+              "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name;"
+            exit 1
+          fi
+
+          # Verify stored procedures exist
+          FUNC_COUNT=$(psql -h postgres -p 5432 -U loyalty_test -d loyalty_test_db -t -c \
+            "SELECT count(*) FROM information_schema.routines WHERE routine_schema = 'public' AND routine_type = 'FUNCTION';")
+          FUNC_COUNT=$(echo "$FUNC_COUNT" | tr -d ' ')
+          echo "Stored procedures/functions: $FUNC_COUNT"
+          if [ "$FUNC_COUNT" -lt 5 ]; then
+            echo "::error::Expected 5+ stored procedures, found $FUNC_COUNT."
+            exit 1
+          fi
+
+          echo "Database schema verification passed"
+
+      - name: Seed test data
+        run: |
+          psql -h postgres -p 5432 -U loyalty_test -d loyalty_test_db -c "
+            INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
+            VALUES
+              ('Bronze', 0, 0, '{\"discount\": 0}', '#CD7F32', 1, true),
+              ('Silver', 0, 1, '{\"discount\": 5}', '#C0C0C0', 2, true),
+              ('Gold', 0, 10, '{\"discount\": 10}', '#FFD700', 3, true),
+              ('Platinum', 0, 20, '{\"discount\": 15}', '#E5E4E2', 4, true)
+            ON CONFLICT (name) DO NOTHING;
+
+            INSERT INTO membership_id_sequence (id, current_user_count)
+            VALUES (1, 0)
+            ON CONFLICT (id) DO NOTHING;
+          "
+          echo "Test data seeded successfully"
+
+      - name: Cache sqlx-cli
+        id: cache-sqlx
+        uses: actions/cache@v5
+        with:
+          path: /usr/local/cargo/bin/sqlx
+          key: sqlx-cli-container-${{ env.RUST_VERSION }}
+
+      - name: Install sqlx-cli
+        if: steps.cache-sqlx.outputs.cache-hit != 'true'
+        run: cargo install sqlx-cli --no-default-features --features postgres --locked
+
+      - name: Verify SQLx query cache
+        working-directory: ./backend-rust
+        run: cargo sqlx prepare --check
+
+      - name: Run integration tests
+        working-directory: ./backend-rust
+        run: cargo test --test '*'
+        env:
+          RUST_BACKTRACE: short
+          RUST_LOG: warn
+          JWT_SECRET: test-jwt-secret-key-for-testing-only-minimum-32-chars
+          JWT_REFRESH_SECRET: test-refresh-secret-key-for-testing-only-minimum-32-chars
+          SESSION_SECRET: test-session-secret-key-for-testing-only-minimum-32-chars
+          GOOGLE_CLIENT_ID: test-google-client-id
+          GOOGLE_CLIENT_SECRET: test-google-client-secret
+          GOOGLE_CALLBACK_URL: http://localhost:4001/api/oauth/google/callback
+          LINE_CLIENT_ID: test-line-channel-id
+          LINE_CLIENT_SECRET: test-line-channel-secret
+          LINE_CALLBACK_URL: http://localhost:4001/api/oauth/line/callback
+          FRONTEND_URL: http://localhost:3000
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Check for security vulnerabilities
+        working-directory: ./backend-rust
+        run: cargo audit || echo "Some vulnerabilities found - review output"
+        continue-on-error: true
 
       - name: Build release binary
         working-directory: ./backend-rust
@@ -81,7 +279,7 @@ jobs:
   build-and-push:
     name: "Build & Push to GHCR"
     runs-on: ubuntu-latest
-    needs: [build-backend-binary]
+    needs: [validate-and-build-backend]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -107,7 +305,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # -------------------------------------------------------------------------
-      # Backend Image (Rust) - uses pre-built binary from build-backend-binary
+      # Backend Image (Rust) - uses pre-built binary from
+      # validate-and-build-backend
       # -------------------------------------------------------------------------
       - name: Download backend binary
         uses: actions/download-artifact@v4
@@ -230,8 +429,30 @@ jobs:
       - name: Install root dependencies (Playwright)
         run: npm ci
 
-      - name: Install Playwright browsers
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: |
+          # Read the resolved version from package-lock.json (semver-pinned),
+          # not the ^-prefixed range in package.json, so the cache key changes
+          # only when the lockfile changes.
+          PLAYWRIGHT_VERSION=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
+          echo "version=$PLAYWRIGHT_VERSION" >> $GITHUB_OUTPUT
+          echo "Playwright version: $PLAYWRIGHT_VERSION"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright browsers (with system deps)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright OS deps (cache hit, browsers already present)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -352,3 +573,178 @@ jobs:
         run: |
           docker stop backend frontend 2>/dev/null || true
           docker rm backend frontend 2>/dev/null || true
+
+  # =============================================================================
+  # WAIT FOR CI Tests WORKFLOW (frontend jobs) BEFORE STAGING DEPLOY
+  #
+  # ci-test.yml runs the frontend lint and unit-test jobs for the same commit.
+  # We poll the gh API instead of using workflow_run (which adds 30-120s of
+  # orchestration latency and has a documented "skipped" race when two
+  # upstream workflows complete out of order).
+  # =============================================================================
+
+  wait-for-frontend-checks:
+    name: "Wait for Frontend Checks"
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    timeout-minutes: 15
+
+    steps:
+      - name: Poll ci-test.yml for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          echo "Polling ci-test.yml for commit $COMMIT_SHA"
+
+          # Poll for up to ~12 minutes (72 attempts x 10s). Fail closed if the
+          # frontend checks haven't succeeded by then.
+          for attempt in $(seq 1 72); do
+            CONCLUSION=$(gh run list -R ${{ github.repository }} \
+              --workflow=ci-test.yml --branch=main --commit="$COMMIT_SHA" \
+              --json conclusion,status --jq '.[0] | "\(.status):\(.conclusion // "pending")"')
+
+            echo "Attempt $attempt: ci-test.yml = ${CONCLUSION:-no-run-yet}"
+
+            case "$CONCLUSION" in
+              completed:success)
+                echo "ci-test.yml completed successfully"
+                exit 0
+                ;;
+              completed:failure|completed:cancelled|completed:timed_out|completed:action_required|completed:startup_failure)
+                echo "::error::ci-test.yml did not succeed (status=$CONCLUSION) — aborting staging deploy"
+                exit 1
+                ;;
+              *)
+                sleep 10
+                ;;
+            esac
+          done
+
+          echo "::error::Timed out waiting for ci-test.yml to complete for $COMMIT_SHA"
+          exit 1
+
+  # =============================================================================
+  # DEPLOY TO STAGING (no approval needed)
+  #
+  # Inlined here so the deploy starts the moment its prerequisites are green,
+  # instead of going through a workflow_run hop that adds 30-120s of latency
+  # and can race itself into "skipped" purgatory when two upstream workflows
+  # finish in the wrong order.
+  # =============================================================================
+
+  deploy-staging:
+    name: "Deploy to Staging"
+    runs-on: ubuntu-latest
+    needs: [build-and-push, e2e-tests, wait-for-frontend-checks]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    timeout-minutes: 10
+    environment:
+      name: development
+      url: http://loyalty-dev.saichon.com
+
+    steps:
+      - name: Checkout config files
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            docker-compose.yml
+            docker-compose.ghcr.yml
+            docker-compose.staging.yml
+            nginx/nginx.conf
+          sparse-checkout-cone-mode: false
+
+      - name: Install cloudflared
+        run: |
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+            -o /tmp/cloudflared
+          sudo install -m 755 /tmp/cloudflared /usr/local/bin/cloudflared
+          cloudflared --version
+
+      - name: Install SSH key + known_hosts
+        env:
+          SSH_KEY:  ${{ secrets.EVERGREEN_DEPLOY_SSH_KEY }}
+          HOST_KEY: ${{ secrets.EVERGREEN_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY"  > ~/.ssh/deploy_key  && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy via SSH to evergreen
+        env:
+          COMMIT_SHA:           ${{ github.sha }}
+          GHCR_USER:            ${{ github.actor }}
+          GHCR_TOKEN:           ${{ secrets.GITHUB_TOKEN }}
+          JWT_SECRET:           ${{ secrets.DEV_JWT_SECRET }}
+          JWT_REFRESH_SECRET:   ${{ secrets.DEV_JWT_REFRESH_SECRET }}
+          SESSION_SECRET:       ${{ secrets.DEV_SESSION_SECRET }}
+          GOOGLE_CLIENT_ID:     ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_CALLBACK_URL:  ${{ vars.GOOGLE_CALLBACK_URL }}
+          LINE_CHANNEL_ID:      ${{ secrets.LINE_CHANNEL_ID }}
+          LINE_CHANNEL_SECRET:  ${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_CALLBACK_URL:    ${{ vars.LINE_CALLBACK_URL }}
+          FRONTEND_URL:         ${{ vars.FRONTEND_URL }}
+          BACKEND_URL:          ${{ vars.BACKEND_URL }}
+          POSTGRES_USER:        ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD:    ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB:          ${{ secrets.POSTGRES_DB }}
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/deploy.tar.gz \
+            docker-compose.yml docker-compose.ghcr.yml docker-compose.staging.yml \
+            nginx/nginx.conf
+
+          jq -n \
+            --arg commit_sha           "$COMMIT_SHA" \
+            --arg deploy_payload_b64   "$(base64 -w0 < /tmp/deploy.tar.gz)" \
+            --arg ghcr_user            "$GHCR_USER" \
+            --arg ghcr_token           "$GHCR_TOKEN" \
+            --arg JWT_SECRET           "$JWT_SECRET" \
+            --arg JWT_REFRESH_SECRET   "$JWT_REFRESH_SECRET" \
+            --arg SESSION_SECRET       "$SESSION_SECRET" \
+            --arg GOOGLE_CLIENT_ID     "$GOOGLE_CLIENT_ID" \
+            --arg GOOGLE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET" \
+            --arg GOOGLE_CALLBACK_URL  "$GOOGLE_CALLBACK_URL" \
+            --arg LINE_CHANNEL_ID      "$LINE_CHANNEL_ID" \
+            --arg LINE_CHANNEL_SECRET  "$LINE_CHANNEL_SECRET" \
+            --arg LINE_CALLBACK_URL    "$LINE_CALLBACK_URL" \
+            --arg FRONTEND_URL         "$FRONTEND_URL" \
+            --arg BACKEND_URL          "$BACKEND_URL" \
+            --arg POSTGRES_USER        "$POSTGRES_USER" \
+            --arg POSTGRES_PASSWORD    "$POSTGRES_PASSWORD" \
+            --arg POSTGRES_DB          "$POSTGRES_DB" \
+            '{
+              commit_sha: $commit_sha,
+              deploy_payload_b64: $deploy_payload_b64,
+              ghcr: { user: $ghcr_user, token: $ghcr_token },
+              env: {
+                RUST_ENV:             "staging",
+                NODE_ENV:             "staging",
+                RUST_LOG:             "info",
+                LOG_LEVEL:            "info",
+                JWT_SECRET:           $JWT_SECRET,
+                JWT_REFRESH_SECRET:   $JWT_REFRESH_SECRET,
+                SESSION_SECRET:       $SESSION_SECRET,
+                POSTGRES_USER:        $POSTGRES_USER,
+                POSTGRES_PASSWORD:    $POSTGRES_PASSWORD,
+                POSTGRES_DB:          $POSTGRES_DB,
+                DATABASE_URL:         ("postgresql://" + $POSTGRES_USER + ":" + $POSTGRES_PASSWORD + "@postgres:5432/" + $POSTGRES_DB),
+                REDIS_URL:            "redis://redis:6379",
+                FRONTEND_URL:         $FRONTEND_URL,
+                BACKEND_URL:          $BACKEND_URL,
+                GOOGLE_CLIENT_ID:     $GOOGLE_CLIENT_ID,
+                GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET,
+                GOOGLE_CALLBACK_URL:  $GOOGLE_CALLBACK_URL,
+                LINE_CHANNEL_ID:      $LINE_CHANNEL_ID,
+                LINE_CHANNEL_SECRET:  $LINE_CHANNEL_SECRET,
+                LINE_CALLBACK_URL:    $LINE_CALLBACK_URL
+              }
+            }' \
+          | ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o ProxyCommand="cloudflared --edge-ip-version 4 access ssh --hostname %h" \
+              deploy@evergreen.thehfhotel.org
