@@ -90,8 +90,12 @@ async fn main() -> anyhow::Result<()> {
     // Run database migrations
     info!("Running database migrations...");
     if let Err(e) = db::migrations::run_migrations(db.pool()).await {
-        error!("Failed to run database migrations: {}", e);
-        return Err(anyhow::anyhow!("Database migration error: {}", e));
+        // `{:#}` walks the anyhow cause chain so the underlying sqlx /
+        // Postgres error is visible in container logs. Without it the
+        // chain stops at run_migrations()'s `.context(...)` wrapper and
+        // every staging failure looks identical regardless of root cause.
+        error!("Failed to run database migrations: {:#}", e);
+        return Err(anyhow::anyhow!("Database migration error: {:#}", e));
     }
 
     // Seed essential data (runs in all environments)
