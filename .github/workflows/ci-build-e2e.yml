@@ -54,15 +54,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install mold linker
+      - name: Install mold linker + clang
         # backend-rust/.cargo/config.toml selects `linker = "clang"` +
-        # `-fuse-ld=mold` for x86_64-unknown-linux-gnu. clang is already
-        # on ubuntu-latest; mold is not, so install it here. Without
-        # this, clippy --all-targets fails to link the test/bin targets.
+        # `-fuse-ld=mold` for x86_64-unknown-linux-gnu. clang is *not*
+        # on ubuntu-latest by default (only versioned `clang-N`
+        # packages), so install both binaries explicitly. Without clang
+        # on PATH the rustc linker invocation wedges past the 5-min
+        # job timeout during `cargo clippy --all-targets`.
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mold
+          sudo apt-get install -y --no-install-recommends mold clang
           mold --version
+          clang --version | head -n1
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
