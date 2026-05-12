@@ -94,6 +94,14 @@ jobs:
     container:
       image: rust:1.93-bookworm
 
+    # Force bash as the default shell for all `run:` steps in this job.
+    # Without this, the rust:1.93-bookworm container's default shell is dash
+    # (Debian's /bin/sh), which does not support `set -o pipefail` or several
+    # other bashisms used below for migration scripts and schema checks.
+    defaults:
+      run:
+        shell: bash
+
     services:
       postgres:
         image: postgres:15-alpine
