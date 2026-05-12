@@ -86,18 +86,22 @@ jobs:
   # which made it impossible to share artifacts. See PR consolidating CI.
   # =============================================================================
 
-  validate-and-build-backend:
-    name: "Validate & Build Backend (Rust)"
+  # Test and release-build run in parallel: dependency compilation is the
+  # heavyweight phase (both share a single rust-cache via the
+  # `v0-rust-container` prefix), but the workloads are independent —
+  # debug-mode tests don't need the release binary, and the release binary
+  # doesn't need to wait for integration tests to pass before being built.
+  # `build-and-push` consumes only the binary artifact; `e2e-tests` gates on
+  # both jobs so tests must pass before we burn time on the e2e suite.
+
+  test-backend:
+    name: "Test Backend (Rust)"
     runs-on: ubuntu-latest
     needs: [lint-backend]
     timeout-minutes: 30
     container:
       image: rust:1.93-bookworm
 
-    # Force bash as the default shell for all `run:` steps in this job.
-    # Without this, the rust:1.93-bookworm container's default shell is dash
-    # (Debian's /bin/sh), which does not support `set -o pipefail` or several
-    # other bashisms used below for migration scripts and schema checks.
     defaults:
       run:
         shell: bash
@@ -124,8 +128,6 @@ jobs:
           --health-retries 5
 
     env:
-      # Inside the job container, services are reachable by their service name
-      # on their original ports — no host port mapping required.
       DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@postgres:5432/loyalty_test_db
       TEST_DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@postgres:5432/loyalty_test_db
       TEST_REDIS_URL: redis://redis:6379
@@ -164,10 +166,6 @@ jobs:
 
       - name: Run database migrations
         run: |
-          # Apply every migration in lexical (timestamp-ordered) order so the
-          # sqlx prepare --check step below sees the same schema the app
-          # expects. Hard-coding a single filename silently rotted as new
-          # migrations were added — see PR #215's booking_slips reconciliation.
           set -euo pipefail
           for f in backend-rust/migrations/*.sql; do
             echo "Applying $f"
@@ -188,7 +186,6 @@ jobs:
             exit 1
           fi
 
-          # Verify stored procedures exist
           FUNC_COUNT=$(psql -h postgres -p 5432 -U loyalty_test -d loyalty_test_db -t -c \
             "SELECT count(*) FROM information_schema.routines WHERE routine_schema = 'public' AND routine_type = 'FUNCTION';")
           FUNC_COUNT=$(echo "$FUNC_COUNT" | tr -d ' ')
@@ -257,6 +254,41 @@ jobs:
         run: cargo audit || echo "Some vulnerabilities found - review output"
         continue-on-error: true
 
+      - name: Show sccache stats
+        if: always()
+        run: sccache --show-stats || true
+
+  build-backend-release:
+    name: "Build Backend Release"
+    runs-on: ubuntu-latest
+    needs: [lint-backend]
+    timeout-minutes: 25
+    container:
+      image: rust:1.93-bookworm
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Install system dependencies
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev libpq-dev
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "backend-rust -> target"
+          cache-on-failure: true
+          prefix-key: "v0-rust-container"
+
       - name: Build release binary
         working-directory: ./backend-rust
         run: cargo build --release --bin loyalty-backend
@@ -279,7 +311,10 @@ jobs:
   build-and-push:
     name: "Build & Push to GHCR"
     runs-on: ubuntu-latest
-    needs: [validate-and-build-backend]
+    # Only the binary artifact is required; release build runs in parallel
+    # with test-backend, so build-and-push can start as soon as the binary
+    # is ready without waiting for the test suite.
+    needs: [build-backend-release]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -305,8 +340,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # -------------------------------------------------------------------------
-      # Backend Image (Rust) - uses pre-built binary from
-      # validate-and-build-backend
+      # Backend Image (Rust) - uses pre-built binary from build-backend-release
       # -------------------------------------------------------------------------
       - name: Download backend binary
         uses: actions/download-artifact@v4
@@ -384,7 +418,9 @@ jobs:
   e2e-tests:
     name: "E2E Tests"
     runs-on: ubuntu-latest
-    needs: build-and-push
+    # Wait for test-backend so we don't burn 2+ minutes of e2e runtime
+    # against a backend whose unit/integration tests are red.
+    needs: [build-and-push, test-backend]
     if: github.event.inputs.skip_e2e != 'true'
     timeout-minutes: 20
     # E2E tests run sequentially to prevent port conflicts
@@ -638,7 +674,7 @@ jobs:
   deploy-staging:
     name: "Deploy to Staging"
     runs-on: ubuntu-latest
-    needs: [build-and-push, e2e-tests, wait-for-frontend-checks]
+    needs: [test-backend, build-and-push, e2e-tests, wait-for-frontend-checks]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     timeout-minutes: 10
     environment:
