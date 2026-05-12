@@ -218,8 +218,15 @@ jobs:
         id: cache-sqlx
         uses: actions/cache@v5
         with:
-          path: /usr/local/cargo/bin/sqlx
-          key: sqlx-cli-container-${{ env.RUST_VERSION }}
+          # sqlx-cli installs TWO binaries; `cargo sqlx ...` invocations
+          # below need `cargo-sqlx` in PATH. Caching only `sqlx` (as a prior
+          # version of this step did) silently produced cache hits that
+          # restored only half the install — the next run then failed with
+          # "no such command: `sqlx`".
+          path: |
+            /usr/local/cargo/bin/sqlx
+            /usr/local/cargo/bin/cargo-sqlx
+          key: sqlx-cli-container-${{ env.RUST_VERSION }}-v2
 
       - name: Install sqlx-cli
         if: steps.cache-sqlx.outputs.cache-hit != 'true'
