@@ -45,6 +45,17 @@ pub async fn run_migrations(pool: &PgPool) -> Result<()> {
     // the init migration as already applied so sqlx skips it.
     bridge_prisma_migration(pool).await?;
 
+    // Bridge: re-record checksums for migrations that have been
+    // legitimately rewritten in source after they were already applied
+    // to long-running environments. PR #215 rewrote
+    // 20260511000000_booking_slips to be a canonical reconciliation of
+    // the divergence between staging/production schemas — the schema
+    // is already correct on both, but sqlx tracks a checksum of the
+    // source file and refuses to proceed when it changes ("migration X
+    // was previously applied but has been modified"). This bridge
+    // updates the recorded checksum without re-running the SQL.
+    bridge_modified_migration_checksums(pool).await?;
+
     // Get information about pending migrations before running
     let applied = get_applied_migrations(pool).await?;
     let total_migrations = MIGRATOR.migrations.len();
@@ -157,6 +168,87 @@ async fn bridge_prisma_migration(pool: &PgPool) -> Result<()> {
     .context("Failed to mark init migration as applied")?;
 
     info!("Init migration marked as applied (Prisma bridge)");
+    Ok(())
+}
+
+/// Bridge for migrations that have been intentionally rewritten in source
+/// after being applied to long-running environments.
+///
+/// sqlx-migrate records a SHA-384 checksum of each migration's source
+/// when it's applied. If we later edit that migration file — even for a
+/// no-op canonical reconciliation like PR #215 did for booking_slips —
+/// sqlx refuses to run any migrations on that database: "migration X
+/// was previously applied but has been modified".
+///
+/// For each migration in `REBRIDGED_MIGRATIONS` we update the stored
+/// checksum to match the current embedded migration, *without* re-running
+/// the SQL. This is safe only when we know the rewrite produced a
+/// schema-equivalent file (i.e., the rewrite was a reconciliation, not
+/// a behavior change). Add entries here when you knowingly do that.
+async fn bridge_modified_migration_checksums(pool: &PgPool) -> Result<()> {
+    // (version, reason) — keep the reason for future operators reading logs.
+    const REBRIDGED_MIGRATIONS: &[(i64, &str)] = &[(
+        20260511000000,
+        "PR #215 canonical booking_slips reconciliation",
+    )];
+
+    // If _sqlx_migrations doesn't exist yet (truly fresh DB), nothing to do.
+    let sqlx_table_exists: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS (
+            SELECT FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = '_sqlx_migrations'
+        )"#,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !sqlx_table_exists {
+        return Ok(());
+    }
+
+    for (version, reason) in REBRIDGED_MIGRATIONS {
+        let embedded = MIGRATOR.migrations.iter().find(|m| m.version == *version);
+        let Some(embedded) = embedded else {
+            // Migration not in source anymore — skip silently.
+            continue;
+        };
+
+        let recorded_checksum: Option<Vec<u8>> =
+            sqlx::query_scalar("SELECT checksum FROM _sqlx_migrations WHERE version = $1")
+                .bind(*version)
+                .fetch_optional(pool)
+                .await
+                .context("Failed to query recorded migration checksum")?;
+
+        let Some(recorded) = recorded_checksum else {
+            // Not yet applied on this DB — sqlx will apply it normally.
+            continue;
+        };
+
+        if recorded.as_slice() == embedded.checksum.as_ref() {
+            // Already matches; nothing to do.
+            continue;
+        }
+
+        info!(
+            version,
+            reason,
+            "Rebridging modified migration checksum (schema unchanged, source edited)"
+        );
+
+        sqlx::query(
+            r#"UPDATE _sqlx_migrations
+               SET checksum = $1
+               WHERE version = $2"#,
+        )
+        .bind(&embedded.checksum as &[u8])
+        .bind(*version)
+        .execute(pool)
+        .await
+        .context("Failed to update migration checksum")?;
+    }
+
     Ok(())
 }
 
