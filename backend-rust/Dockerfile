@@ -3,10 +3,17 @@
 # ==============================================================================
 FROM rust:1.95-trixie AS chef
 
+# mold + clang are required because backend-rust/.cargo/config.toml
+# selects `linker = "clang"` + `-fuse-ld=mold` for
+# x86_64-unknown-linux-gnu. Without them, `cargo build` fails to spawn
+# the linker. They're cheap to install and substantially speed up the
+# final link step.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     libpq-dev \
+    mold \
+    clang \
     && rm -rf /var/lib/apt/lists/* \
     && cargo install cargo-chef --locked
 
@@ -47,11 +54,17 @@ RUN cargo build --release --bin loyalty-backend --bin healthcheck
 # ==============================================================================
 FROM rust:1.95-trixie AS development
 
+# mold + clang match the linker config in .cargo/config.toml. The
+# development stage runs cargo-watch against the bind-mounted source,
+# so cargo will follow the same x86_64-unknown-linux-gnu linker stanza
+# the builder uses.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     libpq-dev \
     ca-certificates \
+    mold \
+    clang \
     && rm -rf /var/lib/apt/lists/* \
     && cargo install cargo-watch --locked
 

@@ -30,6 +30,15 @@ env:
   IMAGE_REPO: loyalty-app
   SCCACHE_GHA_ENABLED: "true"
   RUSTC_WRAPPER: "sccache"
+  # Disable incremental compilation in CI. Every build starts from a
+  # Swatinem/rust-cache restore, so incremental data adds cache bloat
+  # without providing any speedup, and it interferes with sccache's
+  # ability to cache rustc invocations. This matches the explicit
+  # recommendation in mozilla-actions/sccache-action's README.
+  # (Swatinem/rust-cache also sets this internally; declaring it at the
+  # workflow level makes the intent visible to lint-backend and any
+  # future Rust jobs that don't go through rust-cache.)
+  CARGO_INCREMENTAL: "0"
 
 jobs:
   # =============================================================================
@@ -44,6 +53,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install mold linker
+        # backend-rust/.cargo/config.toml selects `linker = "clang"` +
+        # `-fuse-ld=mold` for x86_64-unknown-linux-gnu. clang is already
+        # on ubuntu-latest; mold is not, so install it here. Without
+        # this, clippy --all-targets fails to link the test/bin targets.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mold
+          mold --version
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -137,7 +156,13 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update && apt-get install -y --no-install-recommends \
-            pkg-config libssl-dev libpq-dev postgresql-client
+            pkg-config libssl-dev libpq-dev postgresql-client \
+            mold clang
+          # The .cargo/config.toml stanza for x86_64-unknown-linux-gnu
+          # wires `linker = "clang"` + `-fuse-ld=mold`; both binaries
+          # must be on PATH before cargo invokes rustc.
+          mold --version
+          clang --version | head -n1
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -281,7 +306,13 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update && apt-get install -y --no-install-recommends \
-            pkg-config libssl-dev libpq-dev
+            pkg-config libssl-dev libpq-dev \
+            mold clang
+          # The .cargo/config.toml stanza for x86_64-unknown-linux-gnu
+          # wires `linker = "clang"` + `-fuse-ld=mold`; both binaries
+          # must be on PATH before cargo invokes rustc.
+          mold --version
+          clang --version | head -n1
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -298,7 +329,11 @@ jobs:
 
       - name: Build release binary
         working-directory: ./backend-rust
-        run: cargo build --release --bin loyalty-backend
+        # `-v` so the log captures the rustc invocations that include
+        # `-C link-arg=-fuse-ld=mold`, confirming mold is actually
+        # selected at link time rather than silently falling back to
+        # the default linker.
+        run: cargo build --release --bin loyalty-backend -v
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v6
