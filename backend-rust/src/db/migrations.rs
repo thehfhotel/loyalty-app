@@ -233,8 +233,7 @@ async fn bridge_modified_migration_checksums(pool: &PgPool) -> Result<()> {
 
         info!(
             version,
-            reason,
-            "Rebridging modified migration checksum (schema unchanged, source edited)"
+            reason, "Rebridging modified migration checksum (schema unchanged, source edited)"
         );
 
         sqlx::query(
