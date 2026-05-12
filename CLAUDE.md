@@ -1,231 +1,150 @@
-# CLAUDE.md - Project Conventions
+# CLAUDE.md — Project Conventions
 
-This file documents conventions and rules for contributors (human and AI).
-Operational specifics (port maps, deploy paths, container names) live in the
-relevant `docker-compose.*.yml` files and the GitHub Actions workflow, not here.
+Rules for contributors (human and AI). Operational details (ports, deploy
+paths, container names) live in `docker-compose.*.yml` and the GitHub
+Actions workflows, not here.
 
-## Mandatory Rules
+## Hard rules
 
-### 1. Docker Compose Syntax
-Use `docker compose` (with a space). Never `docker-compose` (with a hyphen).
+1. **`docker compose` with a space** — never `docker-compose`.
+2. **Never bypass git hooks** — no `--no-verify` on commit or push.
+3. **Never auto-merge PRs** — human review is mandatory. `gh pr merge`
+   only after explicit approval; no `--auto`.
+4. **Never bypass, skip, or fake tests** — no `test.skip`, no
+   `expect(true).toBe(true)`, no `if (env.SKIP) return`. If a test is
+   genuinely broken, fix or delete it; don't fake green.
+5. **Never touch the database directly** — go through the backend API.
+   If the endpoint doesn't exist yet, create it first.
 
-```bash
-# Correct
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+## Architecture
 
-# Wrong
-docker-compose up -d
-```
-
-### 2. Git Hooks Are Mandatory
-```bash
-# Forbidden
-git commit --no-verify
-git push --no-verify
-
-# Correct — let the hooks run
-git commit -m "feat: description"
-git push
-```
-
-### 3. Never Merge PRs Automatically
-Human review is required for every pull request.
-
-```bash
-# Forbidden
-gh pr merge --auto
-gh pr merge <PR_NUMBER>   # without human review
-
-# Correct — open the PR and stop
-gh pr create --title "feat: description" --body "..."
-```
-
-Code review catches bugs, security issues, and design problems that
-"obvious" changes can still introduce. Auto-merge bypasses that safety net.
-
-### 4. Testing Integrity Is Absolute
-```typescript
-// Forbidden
-test.skip('test')
-expect(true).toBe(true)             // meaningless
-if (process.env.SKIP_TESTS) return  // bypass
-
-// Correct
-expect(actualResult).toBe(expectedResult)
-```
-
-### 5. Path Handling
-- Prefer absolute paths in CI/CD.
-- Validate relative paths (especially `../` traversal).
-- Test paths in both local and CI environments.
-
-### 6. Database Access
-Never touch the database directly. Always go through the backend API.
-
-```bash
-# Forbidden
-psql -c "UPDATE user_loyalty..."
-
-# Correct
-curl -X POST http://<host>/api/loyalty/award-points
-```
-
-If the API doesn't exist yet, create it first.
-
-## Project Architecture
-
-### Repository Structure
 ```
 loyalty-app/
-├── backend-rust/    # Rust/Axum API (production backend)
-├── frontend/        # React/TypeScript SPA
-├── scripts/         # Deployment and ops scripts
-├── tests/           # End-to-end tests
-└── docker-compose.* # Environment-specific compose overrides
+├── backend-rust/    # Rust 1.93 / Axum API (production backend)
+├── frontend/        # React / TypeScript SPA
+├── scripts/         # Ops and metrics helpers
+├── tests/           # Playwright E2E
+└── docker-compose.* # Environment-specific overrides
 ```
 
-### Branching Model
-Trunk-based development. `main` is the only long-lived branch.
-Feature branches merge to `main` via PR. Pushes to `main` trigger
-the CI/CD pipeline (tests, image build, staging deploy, then
-production with manual approval).
+**Trunk-based.** `main` is the only long-lived branch. Feature branches
+→ PR → squash-merge to `main` → CI builds GHCR images → staging deploys
+automatically → production deploys after manual approval.
 
-### Database Operations
+**Tier system (nights-based):** Bronze 0+ · Silver 1+ · Gold 10+ ·
+Platinum 20+ nights. Tiers are computed from `total_nights`, not
+`current_points`.
 
-- **Migrations** live under `backend-rust/migrations/` and are applied
-  automatically when the backend starts.
-- The Rust backend uses `sqlx` with **compile-time** query macros validated
-  against the offline cache in `.sqlx/`. Regenerate with
-  `DATABASE_URL=... cargo sqlx prepare` against a live database; CI
-  verifies the cache with `cargo sqlx prepare --check`. The helper
-  `backend-rust/scripts/regen-sqlx-cache.sh` automates the workflow: it
-  boots a throwaway Postgres container, applies every migration, runs
-  `cargo sqlx prepare --workspace -- --tests`, and tears the container
-  down. After adding or modifying any `sqlx::query!` / `sqlx::query_as!`
-  call, run that script and commit the resulting `.sqlx/*.json` files.
-- Use stored procedures (e.g., `award_points`, `recalculate_user_tier_by_nights`)
-  rather than raw `UPDATE` statements for tier-affecting operations.
+## Database
 
-**Tier system (nights-based):**
-```
-Bronze: 0+   Silver: 1+   Gold: 10+   Platinum: 20+ nights
-```
+- Migrations live in `backend-rust/migrations/` and are applied
+  automatically at backend startup via `sqlx::migrate!()`. Backed by
+  the embedded migrator (no Prisma).
+- Compile-time `sqlx::query!()` / `sqlx::query_as!()` macros, validated
+  in CI against the offline cache in `backend-rust/.sqlx/`. Regenerate
+  with `backend-rust/scripts/regen-sqlx-cache.sh` (boots a throwaway
+  Postgres, applies all migrations, runs `cargo sqlx prepare --workspace
+  -- --tests`, tears the container down). Commit the resulting
+  `.sqlx/*.json` files.
+- Migrations are idempotent by convention (`ADD COLUMN IF NOT EXISTS`,
+  `DO`-block constraint guards, `CREATE INDEX IF NOT EXISTS`) so a
+  partial application during a failed deploy doesn't wedge the next
+  attempt.
+- Migration *rewrites* (e.g., canonical reconciliations) need an entry
+  in `REBRIDGED_MIGRATIONS` (`backend-rust/src/db/migrations.rs`)
+  because sqlx tracks a source checksum and refuses to proceed when
+  the file changes.
+- Use stored procedures (e.g., `award_points`,
+  `recalculate_user_tier_by_nights`) instead of raw `UPDATE`s for
+  tier-affecting operations.
 
-### Rust Backend
-The Rust toolchain version is pinned in `backend-rust/rust-toolchain.toml`.
-Rustup will pick it up automatically when you `cd backend-rust`.
+## Backend (Rust)
+
+Toolchain pinned in `backend-rust/rust-toolchain.toml`. `cd backend-rust`
+picks it up via rustup.
 
 ```bash
 cd backend-rust
-cargo build              # debug build
-cargo build --release    # release build
-cargo run                # run locally
-cargo test               # run all tests
-RUST_LOG=debug cargo run # run with debug logging
+cargo build              # debug
+cargo build --release    # release
+cargo test               # all tests
+cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --all -- --check
+cargo sqlx prepare --check
 ```
 
-Key patterns:
-- `AppState::new(pool, redis, config)` constructs the application state.
-- Use the `.db()` accessor on `AppState`, not direct field access.
-- Routes follow the `routes().with_state(state)` pattern.
+Patterns:
+- `AppState::new(pool, redis, config)` constructs application state;
+  use the `.db()` / `.redis()` / `.config()` accessors, not direct
+  field access.
+- Routes follow `routes().with_state(state)` and mount under `/api/...`
+  in `src/routes/mod.rs`.
+- Auth via JWT in HttpOnly refresh cookie (Phase 3 — JSON-body refresh
+  has been removed).
 
-### Frontend
-TypeScript error handling pattern:
-```typescript
+## Frontend
+
+TypeScript error pattern at boundaries:
+
+```ts
 catch (error) {
-  if (error instanceof Error) {
-    console.log(error.message);
-  } else {
-    console.log('Unknown error:', String(error));
-  }
+  if (error instanceof Error) console.log(error.message);
+  else console.log('Unknown error:', String(error));
 }
 ```
 
-Tailwind plugins must be in the correct `package.json` section and validated
-before build.
+```bash
+cd frontend
+npm run lint && npm run typecheck && npm run test
+```
 
-### API Routes
+## API routes
+
 Before wiring a new frontend call:
 1. Find the handler in `backend-rust/src/routes/`.
-2. Check the mount path in `backend-rust/src/routes/mod.rs`.
-3. Construct the full path: `/api/{mount}/{route}`.
-4. Hit it with `curl` first to confirm.
+2. Check its mount path in `backend-rust/src/routes/mod.rs`.
+3. Construct `/api/{mount}/{route}`.
+4. Hit it with `curl` first to confirm shape.
 
-## Development Standards
+## CI/CD
 
-### Security
+Three workflows fire on push to `main`:
+- `ci-test.yml` — frontend lint + frontend unit tests (Prepare Workspace
+  + Lint Frontend + Frontend Unit Tests).
+- `ci-build-e2e.yml` — Lint Backend (Rust) → parallel
+  Test Backend / Build Backend Release → Build & Push to GHCR → E2E
+  Tests → Deploy to Staging (inline, on push to `main` only).
+- `trivy.yml` — Filesystem scan on push; backend/frontend image scans
+  triggered by `workflow_run` from `ci-build-e2e.yml` (pulls images from
+  GHCR instead of rebuilding).
+
+Production deploys live in `deploy.yml`, still `workflow_run`-triggered,
+gated by a manual approval on the `production` GitHub environment.
+
+Conventional commit prefixes: `feat:`, `fix:`, `improve:`, `refactor:`,
+`test:`, `docs:`, `chore:`.
+
+## Security
+
 - Never log sensitive data (passwords, tokens, API keys).
-- Validate input on every boundary.
-- Sanitize user-controlled content (XSS).
-- Use parameterized queries (SQL injection).
-- Use stored procedures for complex DB operations.
-- Sanitize user-controlled values before embedding them in log output
-  (log injection).
+- Validate input on every boundary; sanitize user-controlled content
+  (XSS); parameterized queries / sqlx macros (SQL injection); sanitize
+  user-controlled values before embedding in log output (log injection).
+- Production secrets in GitHub Actions secrets. Templates live in
+  `.env.example` / `.env.production.example`. Real `.env*` files are
+  never committed.
 
-### Git Commits
-Conventional commit prefixes:
-```
-feat:     a new feature
-fix:      a bug fix
-improve:  enhancement to existing functionality
-refactor: code restructuring without behavior change
-test:     add or update tests
-docs:     documentation changes
-chore:    maintenance, tooling, deps
-```
-
-### Testing Requirements
-- Frontend: TypeScript compiles, ESLint passes (warnings OK, errors not).
-- Backend: `cargo build` and `cargo test` pass.
-- All tests pass — no skips, no fakes, no bypasses.
-- Maintain coverage; meaningful assertions only.
-
-### Environment Variables
-- Templates: `.env.example`, `.env.production.example`.
-- Real values: `.env`, `.env.production` (never committed).
-- Production secrets live in GitHub Actions secrets.
-
-## Quick Reference
+## Quick reference
 
 ```bash
-# Local development
+# Local dev
 docker compose up -d
 
-# Backend development
-cd backend-rust
-cargo build
-cargo test
-cargo run
-RUST_LOG=debug cargo run
-cargo sqlx prepare           # regenerate .sqlx/ cache (needs DATABASE_URL)
-cargo sqlx prepare --check   # verify cache is up-to-date
-
-# Frontend quality checks
-cd frontend && npm run lint && npm run typecheck && npm run test
-
-# Git workflow (trunk-based)
-git checkout -b feature/my-feature
-# ... make changes ...
+# Git workflow
+git checkout -b feat/my-feature
 git commit -m "feat: description"   # hooks run automatically
-git push -u origin feature/my-feature
+git push -u origin feat/my-feature
 gh pr create --base main
+# ...human reviews...
+gh pr merge <PR> --squash --delete-branch   # only after explicit approval
 ```
-
-## Non-Negotiables
-
-1. Use `docker compose` (never `docker-compose`).
-2. Never bypass git hooks.
-3. Never bypass, skip, or fake tests.
-4. Prefer absolute paths; validate relative paths.
-5. No direct database access — always go through APIs.
-6. Use environment-specific compose overrides.
-7. Use stored procedures for complex DB operations.
-8. Maintain code quality standards.
-9. Follow security best practices.
-10. Write meaningful tests.
-
-**Critical facts:**
-- Tiers are computed from `total_nights`, not `current_points`.
-- Trunk-based development: only `main` exists; no `develop`.
-- Staging and production both run from GHCR images via the same Docker stage.
-- Production deployment requires manual approval in GitHub.
