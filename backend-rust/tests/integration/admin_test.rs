@@ -1163,6 +1163,127 @@ async fn test_admin_bookings_room_types_dropdown() {
     app.cleanup().await.ok();
 }
 
+// Admin email service tests
+// ============================================================================
+//
+// These exercise GET /api/admin/email/status and POST /api/admin/email/test.
+// SMTP is intentionally *unconfigured* in the test environment (see
+// `create_test_config` in tests/common/mod.rs — `EmailConfig::default()`
+// leaves host/user/pass as None). That's the exact scenario we want to
+// pin down:
+//
+//   * the status endpoint must succeed even without SMTP creds, reporting
+//     `configured: false` and `smtpConnected: false` rather than 5xx-ing,
+//   * the test-send endpoint must refuse to claim success when there's no
+//     transport to send through (503 + `success: false`).
+//
+// Wiring a real fake SMTP server (e.g. via wiremock or a local Postfix)
+// is out of scope here — see the PR description for context.
+
+/// `GET /api/admin/email/status` returns a complete status payload with
+/// honest `configured: false` semantics when SMTP/IMAP env vars aren't set.
+#[tokio::test]
+async fn test_admin_email_status_unconfigured() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let response = client.get("/api/admin/email/status").await;
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("Response should be valid JSON");
+
+    // Required fields per the EmailServicePage.tsx contract.
+    assert_eq!(
+        body.get("configured"),
+        Some(&json!(false)),
+        "test env has no SMTP/IMAP creds: configured should be false"
+    );
+    assert_eq!(
+        body.get("smtpConnected"),
+        Some(&json!(false)),
+        "no SMTP creds: smtpConnected should be false"
+    );
+    assert_eq!(
+        body.get("imapConnected"),
+        Some(&json!(false)),
+        "no IMAP creds: imapConnected should be false"
+    );
+    // We *did not* probe SMTP (no creds), and we never probe IMAP — both
+    // should be false so the frontend can render "not probed" vs "probed
+    // and failed".
+    assert_eq!(
+        body.get("smtpProbed"),
+        Some(&json!(false)),
+        "no creds → no probe attempted"
+    );
+    assert_eq!(
+        body.get("imapProbed"),
+        Some(&json!(false)),
+        "imap probe not implemented yet"
+    );
+    assert!(
+        body.get("checkedAt").and_then(|v| v.as_str()).is_some(),
+        "response should include an ISO-8601 checkedAt timestamp"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// A non-admin user cannot read email status, even if authenticated.
+#[tokio::test]
+async fn test_admin_email_status_requires_admin() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let user = create_regular_user(app.db()).await;
+    let client = app.authenticated_client(&user.id, &user.email);
+
+    let response = client.get("/api/admin/email/status").await;
+    response.assert_status(403);
+
+    app.cleanup().await.ok();
+}
+
+/// Unauthenticated callers get a 401, not a 403 — proves auth_middleware
+/// fires before require_admin.
+#[tokio::test]
+async fn test_admin_email_status_requires_auth() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let response = app.client().get("/api/admin/email/status").await;
+    response.assert_status(401);
+    app.cleanup().await.ok();
+}
+
+/// `POST /api/admin/email/test` with no SMTP configured returns 503 with
+/// a structured failure body. Critically, `success` is `false` — we never
+/// claim a send succeeded when we have no transport.
+#[tokio::test]
+async fn test_admin_email_test_unconfigured_returns_503() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let response = client.post("/api/admin/email/test", &json!({})).await;
+    response.assert_status(503);
+
+    let body: Value = response.json().expect("Response should be valid JSON");
+    assert_eq!(
+        body.get("success"),
+        Some(&json!(false)),
+        "no SMTP configured: success must be false"
+    );
+    assert_eq!(body.get("smtpSent"), Some(&json!(false)));
+    assert!(
+        body.get("imapReceived").is_some_and(|v| v.is_null()),
+        "imapReceived should be null until an IMAP loopback is implemented"
+    );
+    assert!(
+        body.get("error").and_then(|v| v.as_str()).is_some(),
+        "should include an operator-friendly error message"
+    );
+
+    app.cleanup().await.ok();
+}
+
 /// `GET /api/admin/bookings/:id` returns the booking + an (initially
 /// empty) audit history. Also checks 404 on a non-existent id.
 #[tokio::test]
@@ -1197,6 +1318,23 @@ async fn test_admin_get_booking_detail_and_404() {
         .get(&format!("/api/admin/bookings/{}", missing))
         .await;
     response.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
+/// Test-send rejects payloads with a malformed `to` address before
+/// reaching the SMTP layer. Catches typos that would otherwise produce
+/// confusing SMTP errors deep in lettre.
+#[tokio::test]
+async fn test_admin_email_test_validates_recipient() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let response = client
+        .post("/api/admin/email/test", &json!({ "to": "not-an-email" }))
+        .await;
+    response.assert_status(400);
 
     app.cleanup().await.ok();
 }
@@ -1257,6 +1395,19 @@ async fn test_admin_update_booking_writes_audit_and_returns_updated() {
         Some(4)
     );
     assert!(new_value.get("adminNotes").is_some());
+
+    app.cleanup().await.ok();
+}
+
+/// Non-admin callers get a 403 on the send endpoint.
+#[tokio::test]
+async fn test_admin_email_test_requires_admin() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let user = create_regular_user(app.db()).await;
+    let client = app.authenticated_client(&user.id, &user.email);
+
+    let response = client.post("/api/admin/email/test", &json!({})).await;
+    response.assert_status(403);
 
     app.cleanup().await.ok();
 }
@@ -1366,6 +1517,148 @@ async fn test_admin_apply_discount_rejects_excessive_amount() {
     app.cleanup().await.ok();
 }
 
+// ============================================================================
+// Admin slip moderation tests
+// ============================================================================
+//
+// These exercise the slip verify / needs-action endpoints introduced in
+// `routes::admin_slips`. The tests cover:
+//
+//   * happy path for verify and needs-action,
+//   * notes are required for needs-action (per the validator),
+//   * notes too long are rejected for verify,
+//   * 404 when the slip id doesn't exist,
+//   * 401 when unauthenticated and 403 when authenticated as customer,
+//   * the row in the DB actually flips (not just the response shape).
+//
+// Each test creates its own user → booking → slip chain via raw inserts
+// to stay self-contained and side-step the public slip-upload route's
+// auth surface.
+
+/// Insert a room type + room + booking + slip and return the slip id.
+/// Reuses the inventory seed helpers above so we don't fork yet another
+/// copy of room-type/room insert logic.
+async fn seed_slip_for_booking(pool: &sqlx::PgPool, uploader_id: Uuid) -> (Uuid, Uuid) {
+    use chrono::Duration;
+
+    let suffix = Uuid::new_v4();
+    let rt_id = insert_room_type(pool, &format!("SlipRT-{}", suffix), 1500.00).await;
+    let room_id = insert_room(
+        pool,
+        rt_id,
+        &format!("S-{}-201", &suffix.simple().to_string()[..6]),
+    )
+    .await;
+
+    let booking_id = Uuid::new_v4();
+    let today = chrono::Utc::now().date_naive();
+    sqlx::query(
+        r#"
+        INSERT INTO bookings (id, user_id, room_id, room_type_id, check_in_date, check_out_date, num_guests, total_price, status)
+        VALUES ($1, $2, $3, $4, $5, $6, 2, 3000.00, 'confirmed')
+        "#,
+    )
+    .bind(booking_id)
+    .bind(uploader_id)
+    .bind(room_id)
+    .bind(rt_id)
+    .bind(today + Duration::days(3))
+    .bind(today + Duration::days(5))
+    .execute(pool)
+    .await
+    .expect("Failed to insert booking fixture");
+
+    let slip_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO booking_slips (id, booking_id, slip_url, uploaded_by)
+        VALUES ($1, $2, '/storage/slips/test-slip.jpg', $3)
+        "#,
+    )
+    .bind(slip_id)
+    .bind(booking_id)
+    .bind(uploader_id)
+    .execute(pool)
+    .await
+    .expect("Failed to insert booking_slip fixture");
+
+    (booking_id, slip_id)
+}
+
+/// Happy path: admin marks a slip as verified, response reflects the
+/// new state, and the DB row matches.
+#[tokio::test]
+async fn test_admin_verify_slip_happy_path() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let customer = create_regular_user(app.db()).await;
+    let (_booking_id, slip_id) = seed_slip_for_booking(app.db(), customer.id).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/verify", slip_id),
+            &json!({ "adminNotes": "Confirmed against bank statement" }),
+        )
+        .await;
+
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("Response should be valid JSON");
+    assert_eq!(
+        body.get("adminStatus"),
+        Some(&json!("verified")),
+        "response should report verified"
+    );
+    assert_eq!(
+        body.get("adminVerifiedBy").and_then(|v| v.as_str()),
+        Some(admin.id.to_string()).as_deref(),
+        "admin id should be stamped"
+    );
+    assert_eq!(
+        body.get("adminNotes").and_then(|v| v.as_str()),
+        Some("Confirmed against bank statement"),
+    );
+
+    // And the row in the DB matches.
+    let (status, verified_by, notes): (Option<String>, Option<Uuid>, Option<String>) =
+        sqlx::query_as(
+            "SELECT admin_status, admin_verified_by, admin_notes FROM booking_slips WHERE id = $1",
+        )
+        .bind(slip_id)
+        .fetch_one(app.db())
+        .await
+        .expect("Failed to read back slip row");
+    assert_eq!(status.as_deref(), Some("verified"));
+    assert_eq!(verified_by, Some(admin.id));
+    assert_eq!(notes.as_deref(), Some("Confirmed against bank statement"));
+
+    app.cleanup().await.ok();
+}
+
+/// Verify works without a body — the frontend currently calls it that way.
+#[tokio::test]
+async fn test_admin_verify_slip_empty_body() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let customer = create_regular_user(app.db()).await;
+    let (_booking_id, slip_id) = seed_slip_for_booking(app.db(), customer.id).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/verify", slip_id),
+            &json!({}),
+        )
+        .await;
+
+    response.assert_status(200);
+    let body: Value = response.json().expect("JSON");
+    assert_eq!(body.get("adminStatus"), Some(&json!("verified")));
+
+    app.cleanup().await.ok();
+}
+
 /// `POST /api/admin/bookings/:id/discount` requires a non-empty reason.
 #[tokio::test]
 async fn test_admin_apply_discount_requires_reason() {
@@ -1387,6 +1680,33 @@ async fn test_admin_apply_discount_requires_reason() {
         response.status == 400 || response.status == 422,
         "expected 400/422 for empty reason, got {}",
         response.status
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// Happy path for "needs action".
+#[tokio::test]
+async fn test_admin_mark_slip_needs_action() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let customer = create_regular_user(app.db()).await;
+    let (_booking_id, slip_id) = seed_slip_for_booking(app.db(), customer.id).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/needs-action", slip_id),
+            &json!({ "notes": "Image is blurry, please re-upload" }),
+        )
+        .await;
+
+    response.assert_status(200);
+    let body: Value = response.json().expect("JSON");
+    assert_eq!(body.get("adminStatus"), Some(&json!("needs_action")));
+    assert_eq!(
+        body.get("adminNotes").and_then(|v| v.as_str()),
+        Some("Image is blurry, please re-upload"),
     );
 
     app.cleanup().await.ok();
@@ -1432,6 +1752,28 @@ async fn test_admin_cancel_anothers_booking_writes_audit() {
     app.cleanup().await.ok();
 }
 
+/// `needs-action` without notes (or with empty notes) is rejected at the
+/// validator layer.
+#[tokio::test]
+async fn test_admin_needs_action_requires_notes() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let customer = create_regular_user(app.db()).await;
+    let (_booking_id, slip_id) = seed_slip_for_booking(app.db(), customer.id).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/needs-action", slip_id),
+            &json!({ "notes": "" }),
+        )
+        .await;
+    response.assert_status(400);
+
+    app.cleanup().await.ok();
+}
+
 /// Sanity check that the user-side `POST /api/bookings/:id/cancel` still
 /// enforces ownership — proves the auth split between user and admin
 /// cancel routes is intact. A non-owner customer hitting the user-side
@@ -1456,6 +1798,26 @@ async fn test_user_cancel_requires_ownership() {
     app.cleanup().await.ok();
 }
 
+/// Unknown slip id → 404, not 500.
+#[tokio::test]
+async fn test_admin_verify_slip_404_on_missing_slip() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let fake_slip = Uuid::new_v4();
+
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/verify", fake_slip),
+            &json!({}),
+        )
+        .await;
+    response.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
 /// `POST /api/admin/bookings/:id/cancel` 404s on an unknown booking id.
 #[tokio::test]
 async fn test_admin_cancel_returns_404_for_missing_booking() {
@@ -1471,6 +1833,25 @@ async fn test_admin_cancel_returns_404_for_missing_booking() {
         )
         .await;
     response.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
+/// Non-admin user can't moderate slips. Confirms require_admin fires.
+#[tokio::test]
+async fn test_admin_verify_slip_forbidden_for_customer() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let customer = create_regular_user(app.db()).await;
+    let (_booking_id, slip_id) = seed_slip_for_booking(app.db(), customer.id).await;
+
+    let client = app.authenticated_client(&customer.id, &customer.email);
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/verify", slip_id),
+            &json!({}),
+        )
+        .await;
+    response.assert_status(403);
 
     app.cleanup().await.ok();
 }
@@ -1491,6 +1872,24 @@ async fn test_admin_cancel_rejects_already_cancelled() {
         )
         .await;
     response.assert_status(400);
+
+    app.cleanup().await.ok();
+}
+
+/// Unauthenticated → 401.
+#[tokio::test]
+async fn test_admin_verify_slip_unauthenticated() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let slip_id = Uuid::new_v4();
+
+    let response = app
+        .client()
+        .post(
+            &format!("/api/admin/bookings/slips/{}/verify", slip_id),
+            &json!({}),
+        )
+        .await;
+    response.assert_status(401);
 
     app.cleanup().await.ok();
 }

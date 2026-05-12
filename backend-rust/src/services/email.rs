@@ -303,6 +303,21 @@ pub trait EmailService: Send + Sync {
     /// Check if email service is configured
     fn is_configured(&self) -> bool;
 
+    /// Probe the SMTP transport to verify it can actually connect, authenticate,
+    /// and accept a session. This is *not* a "send" — it opens a TCP/TLS
+    /// connection to the configured host, completes the SMTP handshake
+    /// (EHLO/STARTTLS/AUTH), and tears it down.
+    ///
+    /// Returns:
+    /// * `Ok(true)` — the server accepted the connection and credentials.
+    /// * `Ok(false)` — the service isn't configured at all (no SMTP host).
+    ///   Distinct from `Err` because "unconfigured" is a normal state, not
+    ///   a failure.
+    /// * `Err(_)` — network error, TLS error, bad credentials, etc. The
+    ///   admin health endpoint surfaces the error message so operators
+    ///   can diagnose without shelling into the box.
+    async fn verify_connection(&self) -> Result<bool, AppError>;
+
     /// Generate a verification code
     fn generate_verification_code(&self) -> String;
 }
@@ -468,6 +483,25 @@ impl EmailService for EmailServiceImpl {
         self.config.is_some() && self.mailer.is_some()
     }
 
+    async fn verify_connection(&self) -> Result<bool, AppError> {
+        let mailer = match &self.mailer {
+            Some(m) => m,
+            // Distinct from "Err": being unconfigured isn't a connectivity
+            // failure, it's just a state. The admin endpoint reports this
+            // as `configured: false, smtp: null` rather than an error.
+            None => return Ok(false),
+        };
+
+        // `test_connection` opens a connection, runs EHLO/STARTTLS/AUTH, then
+        // closes — exactly the probe the admin endpoint wants. Returns `true`
+        // if the server stayed connected through the handshake; `false` if
+        // it closed early (which lettre treats as "unhealthy but reachable").
+        mailer
+            .test_connection()
+            .await
+            .map_err(|e| AppError::EmailService(format!("SMTP connection failed: {}", e)))
+    }
+
     fn generate_verification_code(&self) -> String {
         // Use uppercase only - frontend normalizes input to uppercase for user convenience
         const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -542,6 +576,13 @@ impl EmailService for NoOpEmailService {
 
     fn is_configured(&self) -> bool {
         false
+    }
+
+    async fn verify_connection(&self) -> Result<bool, AppError> {
+        // No transport to probe; report unconfigured rather than faking a
+        // healthy result. The admin endpoint distinguishes Ok(false) from
+        // Err to render "not configured" instead of "unhealthy".
+        Ok(false)
     }
 
     fn generate_verification_code(&self) -> String {

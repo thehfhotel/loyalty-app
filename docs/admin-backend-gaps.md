@@ -27,14 +27,22 @@ PR, alongside the route handlers and integration tests.
 - Batch 1 (`feat/admin-endpoints-batch-1`): 5 of 35 endpoints implemented
   (room types list, rooms list, blocked-dates list/create/delete). All
   five are pure reads/writes against tables that already exist in the
-  schema. Remaining: 30 endpoints.
-- Batch 2 (`feat/admin-booking-management`): 6 of 35 endpoints
-  implemented (admin bookings list/detail/edit/discount/cancel +
-  room-types dropdown). Required a schema migration that added
-  `discount_amount`, `discount_reason`, `admin_notes`, `payment_type`,
-  `payment_amount` columns to `bookings` and introduced a new
-  `booking_audit_log` table — every state change writes an audit row in
-  the same transaction. Remaining: 24 endpoints.
+  schema.
+- Batch 2 (`feat/admin-booking-management`): 6 endpoints implemented
+  (admin bookings list/detail/edit/discount/cancel + room-types
+  dropdown). Required a schema migration that added `discount_amount`,
+  `discount_reason`, `admin_notes`, `payment_type`, `payment_amount`
+  columns to `bookings` and introduced a new `booking_audit_log` table —
+  every state change writes an audit row in the same transaction.
+- Misc batch (`feat/admin-misc-endpoints`): 4 more endpoints implemented
+  (email status, email test-send, slip verify, slip needs-action). Email
+  test does not loop back through IMAP — see the email-service section
+  below for the deliberate scope reduction. Email-change verification
+  was deferred to its own PR because it also needs an initiator
+  (`PUT /api/users/email`) plus a schema migration; shipping verify/resend
+  alone would be a half-flow.
+
+Total implemented: 15 of 35. Remaining: 20 endpoints.
 
 ---
 
@@ -48,10 +56,10 @@ Used by the booking management table, slip viewer, and edit modal.
   Frontend: `frontend/src/pages/admin/BookingManagement.tsx:161`. Status: Missing.
 - `POST /api/admin/bookings/:id/needs-action` — mark primary slip as needing action.
   Frontend: `frontend/src/pages/admin/BookingManagement.tsx:182`. Status: Missing.
-- `POST /api/admin/bookings/slips/:slipId/verify` — multi-slip per-slip verification.
-  Frontend: `frontend/src/components/admin/SlipViewerSidebar.tsx:131`. Status: Missing.
-- `POST /api/admin/bookings/slips/:slipId/needs-action` — multi-slip per-slip "needs action".
-  Frontend: `frontend/src/components/admin/SlipViewerSidebar.tsx:145`. Status: Missing.
+- [x] `POST /api/admin/bookings/slips/:slipId/verify` — multi-slip per-slip verification.
+  Frontend: `frontend/src/components/admin/SlipViewerSidebar.tsx:131`. Status: Implemented (misc batch).
+- [x] `POST /api/admin/bookings/slips/:slipId/needs-action` — multi-slip per-slip "needs action".
+  Frontend: `frontend/src/components/admin/SlipViewerSidebar.tsx:145`. Status: Implemented (misc batch).
 - [x] `PUT /api/admin/bookings/:id` — edit a booking.
   Frontend: `frontend/src/pages/admin/BookingEditModal.tsx:128`. Status: Implemented (batch 2).
 - [x] `POST /api/admin/bookings/:id/discount` — apply a discount.
@@ -71,10 +79,9 @@ Used by the booking management table, slip viewer, and edit modal.
   (`checkInDate`, `checkOutDate`, `numberOfGuests`, `roomTypeId`, `notes`,
   `adminNotes`, `totalPrice`); the modal currently doesn't expose those
   unsupported fields, so this is latent rather than user-visible.
-- The slip-verification endpoints (`verify-slip`, `needs-action`, the two
-  `/slips/:slipId/...` variants) are still missing. They share a workflow
-  shape and should be implemented in the next batch alongside the
-  multi-slip flow.
+- The single-slip `verify-slip` / `needs-action` endpoints on
+  `/api/admin/bookings/:id/...` are still missing; the multi-slip
+  per-slip variants are covered by the misc batch.
 
 // shape TBD during implementation
 
@@ -142,12 +149,32 @@ admin-write endpoints exist.
 
 Used by `EmailServicePage.tsx` (Settings → Email Service).
 
-- `GET /api/admin/email/status` — current SMTP/IMAP status.
-  Frontend: `frontend/src/pages/admin/EmailServicePage.tsx:36`. Status: Missing.
-- `POST /api/admin/email/test` — end-to-end SMTP→IMAP loopback test.
-  Frontend: `frontend/src/pages/admin/EmailServicePage.tsx:44`. Status: Missing.
+- [x] `GET /api/admin/email/status` — current SMTP/IMAP status.
+  Frontend: `frontend/src/pages/admin/EmailServicePage.tsx:36`. Status: Implemented (misc batch).
+  Returns real SMTP probe (`lettre::test_connection`). IMAP is reported
+  as configured-state only — see note below.
+- [x] `POST /api/admin/email/test` — SMTP send test.
+  Frontend: `frontend/src/pages/admin/EmailServicePage.tsx:44`. Status: Implemented (misc batch).
+  **Reduced scope:** sends a real test email via SMTP and reports
+  `smtpSent`/`messageId`/`deliveryTimeMs`. Does **not** loop back through
+  IMAP to verify receipt — see "Skipped" below. `imapReceived` is always
+  `null` in the response. The frontend's `TestResult` interface already
+  tolerates this.
 
-// shape TBD during implementation
+### Skipped in misc batch
+
+- **IMAP live probe** for `GET /email/status` — the `async-imap` crate
+  is already in `Cargo.toml` but unused; building a probe needs a new
+  `ImapService` trait + impl (parallel to `EmailService`) and live
+  IMAP test infrastructure to exercise it. Kept out of this PR to
+  bound scope. The endpoint reports `imapConnected` based on whether
+  `IMAP_HOST/USER/PASS` are set, and exposes `imapProbed: false` so
+  the frontend can distinguish "configured-but-unprobed" from
+  "probed-and-healthy".
+- **SMTP→IMAP loopback** for `POST /email/test` — same blocker. The
+  loopback would queue a known-token message, poll the IMAP inbox for
+  it (with a timeout + cleanup), then mark `imapReceived: true`. Worth
+  doing in the IMAP-service PR alongside the probe.
 
 ---
 
@@ -159,6 +186,14 @@ Used by `EmailVerificationModal.tsx` (Profile page → change email flow).
   Frontend: `frontend/src/components/profile/EmailVerificationModal.tsx:28`. Status: Missing.
 - `POST /api/users/me/email/verify/resend` — resend the verification email.
   Frontend: `frontend/src/components/profile/EmailVerificationModal.tsx:42`. Status: Missing.
+
+**Note (misc batch):** deliberately not landed in this PR. The full flow
+also requires a new `PUT /api/users/email` initiator (currently 404s in
+the Rust backend — the frontend service calls it but the modal is not
+reachable, per priority 6 in the rollout order below). Implementing
+verify/resend without the initiator would be a half-flow. Tracked for a
+dedicated user-routes PR that owns the schema migration
+(`email_verification_tokens`) plus all three endpoints together.
 
 // shape TBD during implementation
 

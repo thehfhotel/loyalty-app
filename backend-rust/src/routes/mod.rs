@@ -5,7 +5,9 @@
 
 pub mod admin;
 pub mod admin_bookings;
+pub mod admin_email;
 pub mod admin_rooms;
+pub mod admin_slips;
 pub mod analytics;
 pub mod auth;
 pub mod bookings;
