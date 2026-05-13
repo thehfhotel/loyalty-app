@@ -95,6 +95,31 @@ fn get_extension_from_mime(mime_type: &str) -> &'static str {
     }
 }
 
+/// MED-4 (security-2026-05-13.md): verify the file's first bytes match
+/// the declared MIME type.
+///
+/// The multipart `content_type` header is set by the client and can lie.
+/// Without this check, an HTML file labelled `image/jpeg` would land at
+/// `/storage/slips/<uuid>.jpg` and be served back with
+/// `Content-Type: image/jpeg`. Direct XSS is blocked today by
+/// `X-Content-Type-Options: nosniff`, but the polyglot remains an
+/// HTML-smuggling / phishing primitive against anyone who downloads the
+/// file. Cheaper to reject the upload outright than rely on a single
+/// browser header forever.
+///
+/// We hand-check the two image magic-byte sequences we accept; pulling
+/// in the `infer` crate would be a larger surface for a two-signature
+/// problem.
+fn matches_image_magic_bytes(declared_mime: &str, data: &[u8]) -> bool {
+    match declared_mime.to_lowercase().as_str() {
+        // JPEG: starts with FF D8 FF
+        "image/jpeg" | "image/jpg" => data.starts_with(&[0xFF, 0xD8, 0xFF]),
+        // PNG: 89 50 4E 47 0D 0A 1A 0A
+        "image/png" => data.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+        _ => false,
+    }
+}
+
 // ============================================================================
 // Handlers
 // ============================================================================
@@ -144,6 +169,17 @@ async fn upload_slip(
     if !is_allowed_mime_type(&mime_type) {
         return Err(AppError::BadRequest(
             "Invalid file type. Only JPEG and PNG images are allowed.".to_string(),
+        ));
+    }
+
+    // MED-4: magic-byte sanity check. The multipart Content-Type header
+    // is client-controlled — without this, an HTML file labelled as a
+    // JPEG would be stored and served back as an image. Reject anything
+    // whose first bytes don't match the declared MIME.
+    if !matches_image_magic_bytes(&mime_type, &data) {
+        return Err(AppError::BadRequest(
+            "File contents do not match the declared image type (JPEG/PNG magic bytes missing)"
+                .to_string(),
         ));
     }
 
@@ -231,5 +267,56 @@ mod tests {
         let config = SlipStorageConfig::default();
         assert_eq!(config.slips_dir, "slips");
         assert_eq!(config.max_slip_file_size, 10 * 1024 * 1024);
+    }
+
+    // ------------------------------------------------------------------
+    // MED-4 magic-byte check regression guards.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn matches_jpeg_magic_bytes_accepts_real_jpeg() {
+        // Minimum bytes of a real JPEG SOI marker + first segment header.
+        let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+        assert!(matches_image_magic_bytes("image/jpeg", &jpeg));
+        assert!(matches_image_magic_bytes("image/jpg", &jpeg));
+        assert!(matches_image_magic_bytes("IMAGE/JPEG", &jpeg));
+    }
+
+    #[test]
+    fn matches_png_magic_bytes_accepts_real_png() {
+        // Standard PNG signature.
+        let png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00];
+        assert!(matches_image_magic_bytes("image/png", &png));
+    }
+
+    #[test]
+    fn matches_image_magic_bytes_rejects_html_labelled_as_jpeg() {
+        // The smuggled-HTML case the audit calls out: a `<html>` doc
+        // labelled `image/jpeg`. Magic bytes start with `<` (0x3C), not
+        // 0xFF 0xD8 0xFF, so the check must reject it.
+        let html = b"<html><body>polyglot</body></html>";
+        assert!(!matches_image_magic_bytes("image/jpeg", html));
+        assert!(!matches_image_magic_bytes("image/png", html));
+    }
+
+    #[test]
+    fn matches_image_magic_bytes_rejects_truncated_inputs() {
+        // Two bytes is not enough for a JPEG SOI marker (needs three);
+        // it must NOT be accepted just because the first two match.
+        let half = [0xFF, 0xD8];
+        assert!(!matches_image_magic_bytes("image/jpeg", &half));
+
+        // Empty.
+        assert!(!matches_image_magic_bytes("image/png", &[]));
+    }
+
+    #[test]
+    fn matches_image_magic_bytes_rejects_unknown_declared_mime() {
+        let png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        // Even with valid PNG bytes, if the declared MIME isn't an
+        // accepted one we don't validate it — the upstream MIME
+        // allowlist check will reject the upload first.
+        assert!(!matches_image_magic_bytes("image/gif", &png));
+        assert!(!matches_image_magic_bytes("application/pdf", &png));
     }
 }
