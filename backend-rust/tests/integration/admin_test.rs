@@ -1322,19 +1322,85 @@ async fn test_admin_get_booking_detail_and_404() {
     app.cleanup().await.ok();
 }
 
-/// Test-send rejects payloads with a malformed `to` address before
-/// reaching the SMTP layer. Catches typos that would otherwise produce
-/// confusing SMTP errors deep in lettre.
+/// HIGH-4 (security-2026-05-13.md): the `to` field is no longer
+/// honoured. The handler always sends to the authenticated admin's
+/// own JWT email. A stale client that still includes `"to": "..."`
+/// in the body must succeed (the field is silently ignored), NOT
+/// 400.
 #[tokio::test]
-async fn test_admin_email_test_validates_recipient() {
+async fn test_admin_email_test_ignores_legacy_to_field() {
     let app = TestApp::new().await.expect("Failed to create test app");
     let admin = create_admin_user(app.db()).await;
     let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
+    // SMTP is not configured in tests so the handler resolves the
+    // recipient (admin.email) and bails with 503. The important
+    // assertion is that we do NOT get a 400 — that would mean the
+    // handler was still validating `to`, leaving a relay path.
     let response = client
-        .post("/api/admin/email/test", &json!({ "to": "not-an-email" }))
+        .post(
+            "/api/admin/email/test",
+            &json!({ "to": "attacker@example.com" }),
+        )
         .await;
-    response.assert_status(400);
+    assert!(
+        response.status == 503 || response.status == 200 || response.status == 202,
+        "Expected 503/200/202 (no SMTP configured in tests); got {}. Body: {}",
+        response.status,
+        response.body
+    );
+
+    // Response.recipient must be the admin's own email, never the
+    // attacker-supplied `to` value.
+    let body: Value = response.json().expect("Response should be valid JSON");
+    assert_eq!(
+        body.get("recipient").and_then(|v| v.as_str()),
+        Some(admin.email.as_str()),
+        "recipient must always be the admin's own JWT email — the legacy `to` \
+         field is ignored, never forwarded to SMTP"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// HIGH-4: per-admin daily quota enforcement. After
+/// `TEST_EMAIL_DAILY_QUOTA` accepted sends in a single UTC day the
+/// (N+1)th request returns 429. Other admins keep their own quota
+/// in parallel (bucket key includes the admin UUID).
+#[tokio::test]
+async fn test_admin_email_test_quota_enforced_per_admin_per_day() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let admin = create_admin_user(app.db()).await;
+    let other_admin = create_admin_user(app.db()).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    // 10 sends are allowed per UTC day. The eleventh must 429.
+    for i in 0..10 {
+        let response = client.post("/api/admin/email/test", &json!({})).await;
+        assert_ne!(
+            response.status,
+            429,
+            "Send #{} should NOT have hit the quota yet; got 429. Body: {}",
+            i + 1,
+            response.body,
+        );
+    }
+    let response = client.post("/api/admin/email/test", &json!({})).await;
+    response.assert_status(429);
+
+    // A different admin still has their own quota — buckets are keyed
+    // by admin UUID, not shared. One send should succeed (or 503 from
+    // SMTP-unconfigured), never 429.
+    let other_client =
+        app.authenticated_client_with_role(&other_admin.id, &other_admin.email, "admin");
+    let other_response = other_client.post("/api/admin/email/test", &json!({})).await;
+    assert_ne!(
+        other_response.status, 429,
+        "Different admin must not share the quota bucket. Got 429. Body: {}",
+        other_response.body
+    );
 
     app.cleanup().await.ok();
 }

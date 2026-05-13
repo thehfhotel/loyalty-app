@@ -44,14 +44,24 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Utc};
+use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
-use validator::Validate;
 
 use crate::error::{AppError, AppResult};
 use crate::middleware::auth::{has_role, AuthUser};
 use crate::services::email::{EmailService, EmailServiceImpl};
 use crate::state::AppState;
+
+/// Max test-email sends per admin per UTC day.
+///
+/// The endpoint exists for operators verifying SMTP config; ten attempts
+/// per day is enough for a credential rotation + retry cycle while
+/// keeping the relay's daily reputation footprint small if a token
+/// leaks (HIGH-4 in security-2026-05-13.md). Bucket is keyed by admin
+/// UUID + UTC date, so the count resets at 00:00 UTC.
+const TEST_EMAIL_DAILY_QUOTA: u32 = 10;
 
 // ============================================================================
 // DTOs
@@ -93,20 +103,22 @@ pub struct EmailStatusResponse {
 
 /// Request body for `POST /api/admin/email/test`.
 ///
-/// The frontend currently calls this with no body (`testMutation` in
-/// `EmailServicePage.tsx`). We accept an optional recipient override for
-/// future use; default behaviour sends to the calling admin's own email
-/// (taken from the JWT) so an operator never accidentally spams a customer
-/// while testing.
-#[derive(Debug, Clone, Deserialize, Validate, Default)]
+/// HIGH-4 (security-2026-05-13.md): this used to accept an optional `to`
+/// field that defaulted to the admin's own email when absent. Validated
+/// only as a well-formed address, it turned the endpoint into a free
+/// SMTP relay through the production mail account — a compromised
+/// admin token (or a misconfigured frontend) could send arbitrary
+/// content to arbitrary addresses, burning sender reputation and the
+/// relay's quota.
+///
+/// The field is now gone. The handler always sends to `user.email`
+/// (the authenticated admin's own address from the JWT). The frontend
+/// already calls this endpoint with no body, so no client change is
+/// needed; any client that still sends a `to` value simply has it
+/// ignored by serde (no `deny_unknown_fields`).
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default, rename_all = "camelCase")]
-pub struct SendTestEmailRequest {
-    /// Optional override. If omitted, we send to the authenticated admin's
-    /// own email address. Validated as an email so a typo doesn't end up
-    /// triggering an SMTP error deep in lettre.
-    #[validate(email(message = "Invalid email address"))]
-    pub to: Option<String>,
-}
+pub struct SendTestEmailRequest {}
 
 /// Response for `POST /api/admin/email/test`.
 ///
@@ -171,6 +183,113 @@ fn build_email_service(state: &AppState) -> EmailServiceImpl {
     )
 }
 
+/// SHA-256(recipient) -> first 12 hex chars, for log correlation.
+///
+/// Logged in place of (or alongside) the raw recipient so support can
+/// match an admin's test-send report to log lines without persisting
+/// the PII email value in plaintext logs. Twelve hex chars = 48 bits
+/// of entropy — overkill for correlation but cheap, and matches the
+/// pattern used elsewhere when we need a stable token-of-an-email.
+fn hash_recipient(recipient: &str) -> String {
+    let normalized = recipient.trim().to_lowercase();
+    let digest = Sha256::digest(normalized.as_bytes());
+    let mut out = String::with_capacity(12);
+    for byte in digest.iter().take(6) {
+        use std::fmt::Write as _;
+        let _ = write!(&mut out, "{:02x}", byte);
+    }
+    out
+}
+
+/// Atomically increment the admin's daily test-email counter in Redis
+/// and return the new count.
+///
+/// Key shape: `email_test_quota:{admin_id}:{YYYY-MM-DD}`. EXPIRE is set
+/// only on the first increment (via the Lua script below) so the TTL
+/// doesn't keep getting pushed back. Lifespan is ~36h to comfortably
+/// outlive the UTC day rollover regardless of clock skew between the
+/// backend and the Redis server.
+///
+/// Fail-open on Redis errors: returning 0 here means the quota check
+/// won't reject a legitimate operator request because Redis blipped.
+/// The send is still rate-limited by SMTP itself and audit-logged via
+/// `tracing::info!`. This mirrors the existing pattern in
+/// `middleware::rate_limit::RedisRateLimiter::check`.
+async fn increment_test_email_quota(state: &AppState, admin_id: &str) -> u32 {
+    let today = Utc::now().format("%Y-%m-%d").to_string();
+    let key = format!("email_test_quota:{}:{}", admin_id, today);
+    let mut conn = state.redis();
+
+    let script = redis::Script::new(
+        r#"
+        local count = redis.call('INCR', KEYS[1])
+        if count == 1 then
+            redis.call('EXPIRE', KEYS[1], ARGV[1])
+        end
+        return count
+        "#,
+    );
+
+    // 36 hours = 129_600 s, covers any reasonable UTC-rollover skew.
+    match script
+        .key(&key)
+        .arg(129_600_i64)
+        .invoke_async::<_, i64>(&mut conn)
+        .await
+    {
+        Ok(count) => count.max(0) as u32,
+        Err(e) => {
+            tracing::warn!(
+                admin_id = %admin_id,
+                error = %e,
+                "Redis quota INCR failed — failing open"
+            );
+            0
+        },
+    }
+}
+
+/// Seconds remaining until the next UTC-day rollover. Used as the
+/// `retry-after` hint when an admin hits the daily quota.
+fn seconds_until_next_utc_day() -> u64 {
+    let now = Utc::now();
+    let tomorrow = (now + chrono::Duration::days(1))
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .and_then(|naive| naive.and_local_timezone(Utc).single());
+    match tomorrow {
+        Some(t) => (t - now).num_seconds().max(0) as u64,
+        // Theoretically unreachable (date_naive + ms 0 is always valid).
+        // Fall through to a safe small retry interval.
+        None => 3600,
+    }
+}
+
+/// Read the current count without incrementing. Used to enforce the
+/// quota on a hit at TEST_EMAIL_DAILY_QUOTA + 1 (i.e. after the bump
+/// in `increment_test_email_quota`). Kept separate so the handler
+/// can also support a "what's my remaining quota?" probe in the
+/// future without double-incrementing.
+#[allow(dead_code)]
+async fn get_test_email_quota(state: &AppState, admin_id: &str) -> u32 {
+    let today = Utc::now().format("%Y-%m-%d").to_string();
+    let key = format!("email_test_quota:{}:{}", admin_id, today);
+    let mut conn = state.redis();
+
+    match conn.get::<_, Option<u32>>(&key).await {
+        Ok(Some(count)) => count,
+        Ok(None) => 0,
+        Err(e) => {
+            tracing::warn!(
+                admin_id = %admin_id,
+                error = %e,
+                "Redis quota GET failed — assuming 0"
+            );
+            0
+        },
+    }
+}
+
 // ============================================================================
 // Handlers
 // ============================================================================
@@ -220,44 +339,65 @@ async fn get_email_status(
 
 /// `POST /api/admin/email/test`
 ///
-/// Sends a real test email and reports the SMTP-side outcome. Returns
-/// HTTP 202 (Accepted) on success — semantically "we handed it to the
-/// relay", because we can't actually verify delivery without an IMAP
-/// loopback (see module docs).
+/// Sends a real test email to the AUTHENTICATED ADMIN's OWN address
+/// (taken from the JWT email claim) and reports the SMTP-side outcome.
+///
+/// Returns HTTP 202 (Accepted) on success — semantically "we handed it
+/// to the relay", because we can't actually verify delivery without an
+/// IMAP loopback (see module docs).
 ///
 /// Failure returns HTTP 200 with `success: false` and an error message,
 /// rather than a 5xx — the request was processed correctly; only the
 /// downstream send failed. The frontend reads the `success` field to
 /// decide which banner to render.
+///
+/// HIGH-4 hardening (security-2026-05-13.md):
+/// - The recipient is hard-coded to `user.email`. The request body has
+///   no field for picking an alternate destination, so a compromised
+///   admin token can no longer use this as a free SMTP relay.
+/// - Per-admin daily quota in Redis (`TEST_EMAIL_DAILY_QUOTA` sends per
+///   UTC day). Exceeding it returns 429.
+/// - Logs include the resolved recipient AND a 12-hex-char hash of it,
+///   so support can correlate by hash without persisting the raw PII
+///   email value in long-term log retention.
 async fn send_test_email(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
-    payload: Option<Json<SendTestEmailRequest>>,
+    _payload: Option<Json<SendTestEmailRequest>>,
 ) -> AppResult<impl IntoResponse> {
     require_admin(&user)?;
 
-    // Validate body if present. Empty body is fine — the frontend currently
-    // sends no body and we default to the admin's own email.
-    let req = payload.map(|Json(p)| p).unwrap_or_default();
-    req.validate().map_err(AppError::from)?;
-
-    // Resolve recipient: explicit `to` wins; otherwise the JWT's email.
-    // JWT is required for admin endpoints, so `user.email` should always
-    // be present — but defend against the edge case anyway.
-    let recipient = req
-        .to
-        .clone()
-        .or_else(|| user.email.clone())
-        .ok_or_else(|| {
-            AppError::BadRequest(
-            "No recipient available: provide `to` in the request body or ensure the admin token \
-             carries an email claim"
-                .to_string(),
+    // Recipient is the authenticated admin's own email — never anything
+    // a client can override. JWT is required to reach this handler, so
+    // `user.email` should always be present; we surface a 400 if it
+    // isn't rather than silently dropping the send.
+    let recipient = user.email.clone().ok_or_else(|| {
+        AppError::BadRequest(
+            "Admin token missing email claim; cannot resolve recipient".to_string(),
         )
-        })?;
+    })?;
+
+    // Quota check — Redis-backed daily counter, fail-open on Redis errors.
+    let count = increment_test_email_quota(&state, &user.id).await;
+    if count > TEST_EMAIL_DAILY_QUOTA {
+        let recipient_hash = hash_recipient(&recipient);
+        tracing::warn!(
+            admin_id = %user.id,
+            recipient_hash = %recipient_hash,
+            count = count,
+            quota = TEST_EMAIL_DAILY_QUOTA,
+            "Admin test email quota exceeded"
+        );
+        // Retry-after = seconds until the next UTC day rollover. Clamped to a
+        // sensible floor (60s) so callers always see a forward-looking value
+        // even right before midnight.
+        let retry_after = seconds_until_next_utc_day().max(60);
+        return Err(AppError::TooManyRequests(retry_after));
+    }
 
     let test_id = Uuid::new_v4().to_string();
     let started = std::time::Instant::now();
+    let recipient_hash = hash_recipient(&recipient);
 
     let svc = build_email_service(&state);
     if !svc.is_configured() {
@@ -296,7 +436,10 @@ async fn send_test_email(
         Ok(()) => {
             tracing::info!(
                 test_id = %test_id,
+                admin_id = %user.id,
                 recipient = %recipient,
+                recipient_hash = %recipient_hash,
+                quota_count = count,
                 "Admin sent test email"
             );
             Ok((
@@ -316,7 +459,9 @@ async fn send_test_email(
         Err(e) => {
             tracing::error!(
                 test_id = %test_id,
+                admin_id = %user.id,
                 recipient = %recipient,
+                recipient_hash = %recipient_hash,
                 error = %e,
                 "Admin test email failed"
             );
@@ -378,21 +523,46 @@ mod tests {
     }
 
     #[test]
-    fn send_test_email_request_validates_address() {
-        let bad = SendTestEmailRequest {
-            to: Some("not-an-email".to_string()),
-        };
-        assert!(bad.validate().is_err());
+    fn send_test_email_request_default_is_empty() {
+        // HIGH-4: the `to` field has been removed from the request DTO.
+        // Constructing the default request must continue to work because
+        // the frontend calls this endpoint with no body.
+        let _empty = SendTestEmailRequest::default();
+    }
 
-        let good = SendTestEmailRequest {
-            to: Some("ops@example.com".to_string()),
-        };
-        assert!(good.validate().is_ok());
+    #[test]
+    fn send_test_email_request_ignores_unknown_to_field() {
+        // Defensive: a stale client that still includes `"to": "..."` in
+        // the body must NOT be able to redirect the test email anywhere.
+        // serde's default (`deny_unknown_fields` is OFF) drops the field
+        // silently, so deserialisation succeeds and the handler ends up
+        // sending to the admin's own address.
+        let raw = r#"{"to":"attacker@example.com"}"#;
+        let _req: SendTestEmailRequest = serde_json::from_str(raw)
+            .expect("legacy clients sending `to` must still deserialise (field is ignored)");
+    }
 
-        // Empty / default request is valid (handler will fall back to
-        // the authenticated admin's own address).
-        let empty = SendTestEmailRequest::default();
-        assert!(empty.validate().is_ok());
+    #[test]
+    fn hash_recipient_is_stable_and_normalises_case() {
+        let a = hash_recipient("ops@example.com");
+        let b = hash_recipient("OPS@example.com");
+        let c = hash_recipient("  ops@example.com  ");
+        let d = hash_recipient("other@example.com");
+
+        assert_eq!(a.len(), 12, "hash should be 12 hex chars (48 bits)");
+        assert_eq!(a, b, "hash must be case-insensitive");
+        assert_eq!(a, c, "hash must trim surrounding whitespace");
+        assert_ne!(a, d, "different inputs must hash to different values");
+    }
+
+    #[test]
+    fn seconds_until_next_utc_day_is_positive_and_bounded() {
+        let s = seconds_until_next_utc_day();
+        assert!(
+            s > 0,
+            "must always be positive (clock has moved past today)"
+        );
+        assert!(s <= 24 * 60 * 60, "at most one full day's worth of seconds");
     }
 
     #[test]
