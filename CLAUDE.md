@@ -112,8 +112,15 @@ Three workflows fire on push to `main`:
 - `ci-test.yml` — frontend lint + frontend unit tests (Prepare Workspace
   + Lint Frontend + Frontend Unit Tests).
 - `ci-build-e2e.yml` — Lint Backend (Rust) → parallel
-  Test Backend / Build Backend Release → Build & Push to GHCR → E2E
-  Tests → Deploy to Staging (inline, on push to `main` only).
+  (Test Backend Unit, Test Backend Integration, Build Backend Release) →
+  Build & Push to GHCR → Deploy to Staging (inline, on push to `main`
+  only) → Verify Staging health check. **E2E Tests run in parallel with
+  Deploy to Staging**, not as a gate: every PR runs full E2E before
+  merge (which is the meaningful gate), production deploys require
+  manual human approval, and the staging health-check catches
+  deploy-itself-broken cases. A red E2E on `main` still fails the
+  workflow and surfaces in the GitHub Environments panel before a human
+  approves prod.
 - `trivy.yml` — Filesystem scan on push; backend/frontend image scans
   triggered by `workflow_run` from `ci-build-e2e.yml` (pulls images from
   GHCR instead of rebuilding).

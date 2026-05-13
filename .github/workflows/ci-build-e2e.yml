@@ -117,7 +117,19 @@ jobs:
           # would surface as link-time / runtime ABI failures.
           prefix-key: "v0-rust-unit"
 
+      - name: Cache cargo-nextest
+        id: cache-nextest
+        uses: actions/cache@v5
+        with:
+          # `taiki-e/install-action@nextest` installs a single binary;
+          # `cargo nextest ...` is dispatched through `cargo-nextest`.
+          # On bare ubuntu, dtolnay/rust-toolchain installs cargo under
+          # ~/.cargo, so cargo-installed binaries land there too.
+          path: ~/.cargo/bin/cargo-nextest
+          key: cargo-nextest-${{ env.RUST_VERSION }}-${{ runner.os }}-native
+
       - name: Install cargo-nextest
+        if: steps.cache-nextest.outputs.cache-hit != 'true'
         uses: taiki-e/install-action@nextest
 
       - name: Run unit tests
@@ -189,7 +201,20 @@ jobs:
           cache-on-failure: true
           prefix-key: "v0-rust-container"
 
+      - name: Cache cargo-nextest
+        id: cache-nextest
+        uses: actions/cache@v5
+        with:
+          # In the rust:1.93-bookworm container, cargo lives at
+          # /usr/local/cargo, so cargo-installed binaries land in
+          # /usr/local/cargo/bin. Distinct key from the unit-job cache
+          # because the container glibc (2.36) differs from native
+          # ubuntu (2.39) and the binary is glibc-linked.
+          path: /usr/local/cargo/bin/cargo-nextest
+          key: cargo-nextest-${{ env.RUST_VERSION }}-${{ runner.os }}-container
+
       - name: Install cargo-nextest
+        if: steps.cache-nextest.outputs.cache-hit != 'true'
         uses: taiki-e/install-action@nextest
 
       - name: Grant CREATEDB for per-test database isolation
@@ -701,12 +726,19 @@ jobs:
   # instead of going through a workflow_run hop that adds 30-120s of latency
   # and can race itself into "skipped" purgatory when two upstream workflows
   # finish in the wrong order.
+  #
+  # E2E intentionally NOT in `needs:` — every PR runs full E2E before merge
+  # (the meaningful gate), production deploys require manual human approval,
+  # and `verify-staging` below catches deploy-itself-broken cases. On main,
+  # E2E still runs in parallel: a red E2E fails the overall workflow status
+  # and surfaces in the GitHub Environments panel before a human approves
+  # prod.
   # =============================================================================
 
   deploy-staging:
     name: "Deploy to Staging"
     runs-on: ubuntu-latest
-    needs: [test-backend-unit, test-backend-integration, build-and-push, e2e-tests, wait-for-frontend-checks]
+    needs: [test-backend-unit, test-backend-integration, build-and-push, wait-for-frontend-checks]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     timeout-minutes: 10
     environment:
@@ -816,3 +848,35 @@ jobs:
               -o UserKnownHostsFile=~/.ssh/known_hosts \
               -o ProxyCommand="cloudflared --edge-ip-version 4 access ssh --hostname %h" \
               deploy@evergreen.thehfhotel.org
+
+  # =============================================================================
+  # VERIFY STAGING HEALTH
+  #
+  # Catches deploy-itself-broken cases (image won't start, migration crashes
+  # at runtime, env var missing) that pre-merge tests can't see. Polls the
+  # staging /api/health endpoint until it returns HTTP 200 or 90s elapses.
+  # The matching environment URL is set on `deploy-staging` above.
+  # =============================================================================
+
+  verify-staging:
+    name: "Verify Staging"
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    timeout-minutes: 5
+
+    steps:
+      - name: Poll staging /api/health
+        env:
+          STAGING_HEALTH_URL: http://loyalty-dev.saichon.com/api/health
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if curl -fsS --max-time 5 "$STAGING_HEALTH_URL" >/dev/null; then
+              echo "Staging healthy after ${attempt} attempts"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::Staging /api/health not responding after 90s"
+          exit 1
