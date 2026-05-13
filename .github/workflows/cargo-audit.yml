@@ -1,0 +1,45 @@
+name: Cargo Audit
+
+# Runs `cargo audit` on a schedule rather than on every PR.
+#
+# Previously this lived in the `test-backend` job as a
+# `continue-on-error: true` step, so a vulnerable dep would not block
+# a PR — it provided no per-push signal, just ~10-15s of install +
+# scan time on every run. Pulling it into a daily workflow keeps the
+# advisory database fresh in the Actions tab without the per-push tax.
+#
+# A future enhancement could file a GitHub issue on red audit
+# (hence the `issues: write` permission); for now we just rely on
+# the workflow appearing red on the Actions tab.
+
+on:
+  schedule:
+    # Daily at 09:00 UTC (16:00 ICT). Picks a quiet hour outside the
+    # typical PR push window so cron contention is minimal.
+    - cron: '0 9 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.93'
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Run cargo audit
+        working-directory: ./backend-rust
+        run: cargo audit
