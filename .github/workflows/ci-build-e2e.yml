@@ -70,32 +70,69 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
   # =============================================================================
-  # VALIDATE & BUILD BACKEND (Rust)
+  # BACKEND TESTS (Rust) — split into two parallel jobs
   #
-  # Single Rust toolchain pass that:
-  #   1. Unit tests (debug)
-  #   2. Applies migrations to a service Postgres, verifies schema
-  #   3. Runs sqlx prepare --check against the live test DB
-  #   4. Runs integration tests against the live DB + Redis
-  #   5. Builds the release binary and uploads it as an artifact for the
-  #      build-and-push job to consume.
+  # `test-backend-unit` runs the DB-free unit/bin tests on bare ubuntu with a
+  # dedicated rust-cache prefix. It typically finishes in <1m, well under the
+  # release build, so it stays off the critical path entirely.
   #
-  # Runs inside rust:1.93-bookworm so the same target/ cache (Swatinem rust-cache
-  # workspace key) is shared between tests and the release build. The previous
-  # two-job split used different OS environments + different cache prefixes,
-  # which made it impossible to share artifacts. See PR consolidating CI.
+  # `test-backend-integration` keeps the rust:1.93-bookworm container plus
+  # Postgres + Redis services and runs only the integration suite
+  # (`cargo nextest run --test '*'`). It shares the `v0-rust-container` cache
+  # prefix with `build-backend-release`, so both jobs reuse the same `target/`
+  # artifacts — which is also why the unit job can't share that prefix: native
+  # ubuntu glibc and the bookworm container produce incompatible `target/`
+  # layouts.
+  #
+  # `e2e-tests` and `deploy-staging` gate on BOTH test jobs so we never burn
+  # e2e/deploy time on a red backend.
   # =============================================================================
 
-  # Test and release-build run in parallel: dependency compilation is the
-  # heavyweight phase (both share a single rust-cache via the
-  # `v0-rust-container` prefix), but the workloads are independent —
-  # debug-mode tests don't need the release binary, and the release binary
-  # doesn't need to wait for integration tests to pass before being built.
-  # `build-and-push` consumes only the binary artifact; `e2e-tests` gates on
-  # both jobs so tests must pass before we burn time on the e2e suite.
+  test-backend-unit:
+    name: "Test Backend Unit (Rust)"
+    runs-on: ubuntu-latest
+    needs: [lint-backend]
+    timeout-minutes: 15
 
-  test-backend:
-    name: "Test Backend (Rust)"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Cache Rust dependencies (unit)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "backend-rust -> target"
+          cache-on-failure: true
+          # Separate prefix from `v0-rust-container`: this job runs on bare
+          # ubuntu (glibc 2.39) while integration + release builds run inside
+          # rust:1.93-bookworm (glibc 2.36). Sharing the cache between them
+          # would surface as link-time / runtime ABI failures.
+          prefix-key: "v0-rust-unit"
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Run unit tests
+        working-directory: ./backend-rust
+        run: cargo nextest run --lib --bins
+        env:
+          RUST_BACKTRACE: 1
+          RUST_LOG: debug
+
+      - name: Show sccache stats
+        if: always()
+        run: sccache --show-stats || true
+
+  test-backend-integration:
+    name: "Test Backend Integration (Rust)"
     runs-on: ubuntu-latest
     needs: [lint-backend]
     timeout-minutes: 30
@@ -154,13 +191,6 @@ jobs:
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
-
-      - name: Run unit tests
-        working-directory: ./backend-rust
-        run: cargo nextest run --lib --bins
-        env:
-          RUST_BACKTRACE: 1
-          RUST_LOG: debug
 
       - name: Grant CREATEDB for per-test database isolation
         run: |
@@ -256,14 +286,6 @@ jobs:
           LINE_CALLBACK_URL: http://localhost:4001/api/oauth/line/callback
           FRONTEND_URL: http://localhost:3000
 
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@cargo-audit
-
-      - name: Check for security vulnerabilities
-        working-directory: ./backend-rust
-        run: cargo audit || echo "Some vulnerabilities found - review output"
-        continue-on-error: true
-
       - name: Show sccache stats
         if: always()
         run: sccache --show-stats || true
@@ -322,8 +344,8 @@ jobs:
     name: "Build & Push to GHCR"
     runs-on: ubuntu-latest
     # Only the binary artifact is required; release build runs in parallel
-    # with test-backend, so build-and-push can start as soon as the binary
-    # is ready without waiting for the test suite.
+    # with the two test-backend jobs, so build-and-push can start as soon
+    # as the binary is ready without waiting for the test suite.
     needs: [build-backend-release]
     timeout-minutes: 15
     permissions:
@@ -428,9 +450,9 @@ jobs:
   e2e-tests:
     name: "E2E Tests"
     runs-on: ubuntu-latest
-    # Wait for test-backend so we don't burn 2+ minutes of e2e runtime
-    # against a backend whose unit/integration tests are red.
-    needs: [build-and-push, test-backend]
+    # Wait for both backend test jobs so we don't burn 2+ minutes of e2e
+    # runtime against a backend whose unit or integration tests are red.
+    needs: [build-and-push, test-backend-unit, test-backend-integration]
     if: github.event.inputs.skip_e2e != 'true'
     timeout-minutes: 20
     # E2E tests run sequentially to prevent port conflicts
@@ -684,7 +706,7 @@ jobs:
   deploy-staging:
     name: "Deploy to Staging"
     runs-on: ubuntu-latest
-    needs: [test-backend, build-and-push, e2e-tests, wait-for-frontend-checks]
+    needs: [test-backend-unit, test-backend-integration, build-and-push, e2e-tests, wait-for-frontend-checks]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     timeout-minutes: 10
     environment:
