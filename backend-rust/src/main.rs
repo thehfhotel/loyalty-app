@@ -6,14 +6,22 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Request};
+use axum::http::HeaderName;
 use axum::Router;
 use tokio::net::TcpListener;
 use tower_http::compression::CompressionLayer;
+use tower_http::request_id::{
+    MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer,
+};
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::{self, TraceLayer};
 use tracing::{error, info, warn, Level};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+/// HTTP header used to carry a request's correlation ID into and out of
+/// the backend. Lowercase per HTTP/2.
+const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 
 /// Maximum time the server waits for in-flight requests to finish after a
 /// shutdown signal before forcing exit. Picked just under docker compose's
@@ -344,7 +352,19 @@ fn create_app(state: AppState, config: &Settings) -> Router {
     // The routes::create_router function handles setting up all API endpoints
     let app = routes::create_router(state);
 
-    // Apply middleware layers (order matters - applied bottom to top)
+    // Apply middleware layers.
+    //
+    // Layer ordering note (axum / tower): `.layer(X)` wraps the inner
+    // service in X, so the LAST `.layer` call is the OUTERMOST layer the
+    // request hits. Conversely, layers earlier in the source see the
+    // response after later ones. Order matters for request-id propagation:
+    //
+    //   request flow:    set_request_id → trace → ... → handler
+    //   response flow:   handler → ... → trace → propagate_request_id
+    //
+    // so we add set_request_id LAST (outermost) and propagate_request_id
+    // SECOND-LAST so it wraps everything below trace but is wrapped by
+    // set_request_id.
     app
         // Compression (gzip, deflate, br)
         .layer(CompressionLayer::new())
@@ -355,15 +375,45 @@ fn create_app(state: AppState, config: &Settings) -> Router {
         .layer(DefaultBodyLimit::max(DEFAULT_BODY_LIMIT_BYTES))
         // Request timeout (30 seconds default)
         .layer(TimeoutLayer::new(Duration::from_secs(30)))
-        // Request tracing/logging
+        // Request tracing/logging — `make_span_with` injects the
+        // request_id (set by SetRequestIdLayer above us in the request
+        // flow) into the span so every log line for the request carries
+        // the same correlation field.
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+                .make_span_with(make_http_span)
                 .on_response(trace::DefaultOnResponse::new().level(Level::INFO))
                 .on_failure(trace::DefaultOnFailure::new().level(Level::ERROR)),
         )
         // CORS configuration based on environment
         .layer(build_cors_layer(config))
+        // Echo the request_id back to the caller as `x-request-id`. Must
+        // wrap the trace layer (request flow) so the response header is
+        // set after the handler has returned but before the response
+        // leaves the trace span.
+        .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER))
+        // Generate (or accept and pass through) `x-request-id`. v4 UUID.
+        // Must be the outermost layer so every downstream layer sees the
+        // ID and the trace span can include it.
+        .layer(SetRequestIdLayer::new(REQUEST_ID_HEADER, MakeRequestUuid))
+}
+
+/// Build the per-request tracing span. Threads the `x-request-id` header
+/// (set by `SetRequestIdLayer`) onto the span so every log line emitted
+/// while handling the request carries the same correlation field.
+fn make_http_span(request: &Request) -> tracing::Span {
+    let request_id = request
+        .extensions()
+        .get::<RequestId>()
+        .and_then(|id| id.header_value().to_str().ok())
+        .unwrap_or("");
+
+    tracing::info_span!(
+        "http_request",
+        method = %request.method(),
+        uri = %request.uri().path(),
+        request_id = %request_id,
+    )
 }
 
 /// Build CORS layer based on configuration
