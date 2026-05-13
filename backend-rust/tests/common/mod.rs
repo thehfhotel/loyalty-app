@@ -251,8 +251,12 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
     // built it earlier in this CI run" from "fresh service container".
     let admin_pool = get_admin_pool().await?;
     if template_db_has_users(&admin_pool).await.unwrap_or(false) {
-        let mut ready = TEMPLATE_READY.lock().unwrap_or_else(|e| e.into_inner());
-        *ready = true;
+        // Scope the std::sync::Mutex guard so it doesn't get held across
+        // the `.await` below (`clippy::await_holding_lock`).
+        {
+            let mut ready = TEMPLATE_READY.lock().unwrap_or_else(|e| e.into_inner());
+            *ready = true;
+        }
         let _ = sqlx::query("SELECT pg_advisory_unlock(hashtext($1)::bigint)")
             .bind(TEMPLATE_DB_NAME)
             .execute(&mut lock_conn)
