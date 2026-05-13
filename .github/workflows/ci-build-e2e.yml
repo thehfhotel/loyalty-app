@@ -152,9 +152,12 @@ jobs:
           cache-on-failure: true
           prefix-key: "v0-rust-container"
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Run unit tests
         working-directory: ./backend-rust
-        run: cargo test --lib --bins
+        run: cargo nextest run --lib --bins
         env:
           RUST_BACKTRACE: 1
           RUST_LOG: debug
@@ -238,7 +241,7 @@ jobs:
 
       - name: Run integration tests
         working-directory: ./backend-rust
-        run: cargo test --test '*'
+        run: cargo nextest run --test '*'
         env:
           RUST_BACKTRACE: short
           RUST_LOG: warn
