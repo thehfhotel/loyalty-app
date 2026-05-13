@@ -17,6 +17,7 @@ tokio = { version = "1", features = [
     "io-util",           # tokio::io::AsyncWriteExt for streaming writes
     "sync",              # broadcast + RwLock in services::sse
     "time",              # tokio::time::sleep + tower-http timeout layer
+    "signal",            # SIGTERM/SIGINT handlers for graceful shutdown
 ] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace", "fs", "limit", "timeout", "compression-gzip"] }

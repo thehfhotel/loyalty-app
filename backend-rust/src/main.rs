@@ -15,6 +15,12 @@ use tower_http::trace::{self, TraceLayer};
 use tracing::{error, info, warn, Level};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+/// Maximum time the server waits for in-flight requests to finish after a
+/// shutdown signal before forcing exit. Picked just under docker compose's
+/// default `--timeout 30` so the runtime returns control to the OS before
+/// the container is killed.
+const SHUTDOWN_GRACE_PERIOD_SECS: u64 = 25;
+
 /// Global request body limit. 16 MiB matches `client_max_body_size 15M` in
 /// nginx/nginx.conf with a small headroom for multipart framing overhead;
 /// per-route handlers (e.g. JSON endpoints) can tighten this further.
@@ -147,9 +153,65 @@ async fn main() -> anyhow::Result<()> {
     // Log configured features
     log_startup_info(&config);
 
-    axum::serve(listener, app).await?;
+    // Serve with a graceful shutdown signal. Without this, every container
+    // rotation (docker compose up / restart) drops in-flight slip uploads,
+    // SSE long-poll connections, and any other request that the runtime
+    // happens to be holding when SIGTERM lands.
+    let serve_result = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await;
 
+    // Close the db pool after the server has stopped accepting / completing
+    // requests. Bound the close itself so a pathologically stuck connection
+    // can't block container exit past the docker-compose stop timeout.
+    if let Err(close_err) =
+        tokio::time::timeout(Duration::from_secs(SHUTDOWN_GRACE_PERIOD_SECS), db.close()).await
+    {
+        warn!(
+            "Database pool close did not complete within {}s grace period: {}",
+            SHUTDOWN_GRACE_PERIOD_SECS, close_err
+        );
+    }
+
+    serve_result?;
+
+    info!("Server shutdown complete");
     Ok(())
+}
+
+/// Resolve when the process should begin graceful shutdown.
+///
+/// SIGINT (`Ctrl-C`) covers interactive use; SIGTERM is what `docker stop` /
+/// `docker compose` / `kubectl rollout` send before SIGKILL. We race both
+/// and resolve on whichever fires first.
+///
+/// On non-Unix targets only the Ctrl-C branch is active.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl-C signal handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            info!("Received SIGINT (Ctrl-C); beginning graceful shutdown");
+        },
+        _ = terminate => {
+            info!("Received SIGTERM; beginning graceful shutdown");
+        },
+    }
 }
 
 /// Initialize tracing/logging subscriber
