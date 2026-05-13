@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT admin_status, admin_verified_at, admin_verified_by, admin_notes\n        FROM booking_slips\n        WHERE id = $1\n        FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "admin_status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "admin_verified_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "admin_verified_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "admin_notes",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "85496ee650a22f14209ba9385ba3cdad3473bb8ef49de964ab37fc6fbce66051"
+}

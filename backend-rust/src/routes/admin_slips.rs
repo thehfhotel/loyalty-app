@@ -44,6 +44,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -133,6 +134,12 @@ fn admin_user_id(user: &AuthUser) -> AppResult<Uuid> {
 /// reflect the most recent reviewer (matches operator intuition — "I
 /// re-checked this just now").
 ///
+/// The slip update and the matching `booking_audit_log` row are written
+/// inside one `sqlx::Transaction` so the audit trail can't drift from
+/// the slip state — same shape as `routes/admin_bookings.rs`. See
+/// `docs/audits/correctness-2026-05-13.md` (MED #3) for the audit
+/// write-up.
+///
 /// Returns 200 with the updated slip row; 404 if the slip doesn't exist.
 async fn verify_slip(
     Extension(user): Extension<AuthUser>,
@@ -146,9 +153,26 @@ async fn verify_slip(
     let body = payload.map(|Json(p)| p).unwrap_or_default();
     body.validate().map_err(AppError::from)?;
 
-    // `RETURNING` lets us update + read in a single round-trip, so the
-    // response is always consistent with what's now in the DB (no risk of
-    // showing stale data from a separate SELECT).
+    let mut tx = state.db().begin().await?;
+
+    // Capture the previous state *before* the UPDATE so the audit row
+    // can describe what changed. `FOR UPDATE` serialises concurrent
+    // admins racing to verify the same slip — under contention exactly
+    // one admin "wins" the row and the other reads the post-write state
+    // when it acquires the lock.
+    let before = sqlx::query!(
+        r#"
+        SELECT admin_status, admin_verified_at, admin_verified_by, admin_notes
+        FROM booking_slips
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+        slip_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Slip".to_string()))?;
+
     let row = sqlx::query!(
         r#"
         UPDATE booking_slips
@@ -173,9 +197,35 @@ async fn verify_slip(
         body.admin_notes,
         slip_id,
     )
-    .fetch_optional(state.db())
-    .await?
-    .ok_or_else(|| AppError::NotFound("Slip".to_string()))?;
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let before_json = json!({
+        "adminStatus": before.admin_status,
+        "adminVerifiedBy": before.admin_verified_by,
+        "adminVerifiedAt": before.admin_verified_at,
+        "adminNotes": before.admin_notes,
+    });
+    let after_json = json!({
+        "adminStatus": row.admin_status,
+        "adminVerifiedBy": row.admin_verified_by,
+        "adminVerifiedAt": row.admin_verified_at,
+        "adminNotes": row.admin_notes,
+        "slipId": row.id,
+    });
+
+    insert_slip_audit_row(
+        &mut *tx,
+        row.booking_id,
+        admin_id,
+        "slip_verified",
+        Some(before_json),
+        Some(after_json),
+        body.admin_notes.clone(),
+    )
+    .await?;
+
+    tx.commit().await?;
 
     tracing::info!(
         slip_id = %slip_id,
@@ -212,6 +262,9 @@ async fn verify_slip(
 /// last touched this slip"; treating them as verify-only loses the
 /// who/when for rejections. The `admin_status` field already
 /// disambiguates the *kind* of action.
+///
+/// As with `verify_slip`, the slip update and the corresponding
+/// `booking_audit_log` row are written inside one `sqlx::Transaction`.
 async fn mark_slip_needs_action(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -222,6 +275,21 @@ async fn mark_slip_needs_action(
     let admin_id = admin_user_id(&user)?;
 
     payload.validate().map_err(AppError::from)?;
+
+    let mut tx = state.db().begin().await?;
+
+    let before = sqlx::query!(
+        r#"
+        SELECT admin_status, admin_verified_at, admin_verified_by, admin_notes
+        FROM booking_slips
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+        slip_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Slip".to_string()))?;
 
     let row = sqlx::query!(
         r#"
@@ -247,9 +315,35 @@ async fn mark_slip_needs_action(
         payload.notes,
         slip_id,
     )
-    .fetch_optional(state.db())
-    .await?
-    .ok_or_else(|| AppError::NotFound("Slip".to_string()))?;
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let before_json = json!({
+        "adminStatus": before.admin_status,
+        "adminVerifiedBy": before.admin_verified_by,
+        "adminVerifiedAt": before.admin_verified_at,
+        "adminNotes": before.admin_notes,
+    });
+    let after_json = json!({
+        "adminStatus": row.admin_status,
+        "adminVerifiedBy": row.admin_verified_by,
+        "adminVerifiedAt": row.admin_verified_at,
+        "adminNotes": row.admin_notes,
+        "slipId": row.id,
+    });
+
+    insert_slip_audit_row(
+        &mut *tx,
+        row.booking_id,
+        admin_id,
+        "slip_needs_action",
+        Some(before_json),
+        Some(after_json),
+        Some(payload.notes.clone()),
+    )
+    .await?;
+
+    tx.commit().await?;
 
     tracing::info!(
         slip_id = %slip_id,
@@ -272,6 +366,42 @@ async fn mark_slip_needs_action(
         slipok_status: row.slipok_status,
         slipok_verified_at: row.slipok_verified_at,
     }))
+}
+
+/// Insert a single `booking_audit_log` row from inside the caller's
+/// transaction. Mirrors `routes::admin_bookings::insert_audit_row`
+/// (kept local rather than `pub`-ing the original to avoid coupling
+/// admin_slips to admin_bookings's internals — both files are part of
+/// the admin surface and share the audit-row contract by convention,
+/// not by import).
+async fn insert_slip_audit_row<'c, E>(
+    executor: E,
+    booking_id: Uuid,
+    admin_id: Uuid,
+    action: &str,
+    before_data: Option<serde_json::Value>,
+    after_data: Option<serde_json::Value>,
+    reason: Option<String>,
+) -> AppResult<()>
+where
+    E: sqlx::Executor<'c, Database = sqlx::Postgres>,
+{
+    sqlx::query!(
+        r#"
+        INSERT INTO booking_audit_log
+            (booking_id, admin_id, action, before_data, after_data, reason)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        "#,
+        booking_id,
+        admin_id,
+        action,
+        before_data,
+        after_data,
+        reason,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
 }
 
 // ============================================================================

@@ -1636,6 +1636,72 @@ async fn test_admin_verify_slip_happy_path() {
     app.cleanup().await.ok();
 }
 
+/// `verify_slip` and `mark_slip_needs_action` must write a
+/// `booking_audit_log` row inside the same transaction as the slip
+/// update so the moderation history can be reconstructed for the
+/// SlipViewerSidebar. Before this fix (Correctness audit 2026-05-13
+/// MED #3) re-verifying a slip silently overwrote the previous
+/// decision with no forensic trail.
+#[tokio::test]
+async fn test_admin_verify_slip_writes_audit_log_row() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let customer = create_regular_user(app.db()).await;
+    let (booking_id, slip_id) = seed_slip_for_booking(app.db(), customer.id).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    // Verify the slip.
+    client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/verify", slip_id),
+            &json!({ "adminNotes": "Confirmed via bank statement" }),
+        )
+        .await
+        .assert_status(200);
+
+    // Mark the same slip needs_action so we cover both audit actions
+    // and demonstrate that re-moderation leaves a forensic trail.
+    client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/needs-action", slip_id),
+            &json!({ "notes": "Amount mismatched on second pass" }),
+        )
+        .await
+        .assert_status(200);
+
+    // Two audit rows should now exist for this booking: one
+    // `slip_verified` and one `slip_needs_action`.
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT action FROM booking_audit_log WHERE booking_id = $1 ORDER BY occurred_at ASC",
+    )
+    .bind(booking_id)
+    .fetch_all(app.db())
+    .await
+    .expect("Failed to query audit rows");
+
+    let actions: Vec<&str> = rows.iter().map(|(a,)| a.as_str()).collect();
+    assert_eq!(
+        actions,
+        vec!["slip_verified", "slip_needs_action"],
+        "Audit log should record both moderation actions in order"
+    );
+
+    // Audit rows must reference the acting admin.
+    let admin_id_rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT admin_id FROM booking_audit_log WHERE booking_id = $1",
+    )
+    .bind(booking_id)
+    .fetch_all(app.db())
+    .await
+    .expect("Failed to query audit admin ids");
+    for (recorded_admin_id,) in admin_id_rows {
+        assert_eq!(recorded_admin_id, admin.id, "Audit row should record the acting admin");
+    }
+
+    app.cleanup().await.ok();
+}
+
 /// Verify works without a body — the frontend currently calls it that way.
 #[tokio::test]
 async fn test_admin_verify_slip_empty_body() {
