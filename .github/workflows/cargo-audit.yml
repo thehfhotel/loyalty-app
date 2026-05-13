@@ -8,9 +8,9 @@ name: Cargo Audit
 # scan time on every run. Pulling it into a daily workflow keeps the
 # advisory database fresh in the Actions tab without the per-push tax.
 #
-# A future enhancement could file a GitHub issue on red audit
-# (hence the `issues: write` permission); for now we just rely on
-# the workflow appearing red on the Actions tab.
+# On a red audit run, a GitHub issue is filed (or the existing open
+# audit issue is touched) so the failure surfaces somewhere a human
+# actually looks. See the `notify-on-failure` job below.
 
 on:
   schedule:
@@ -41,5 +41,55 @@ jobs:
         uses: taiki-e/install-action@cargo-audit
 
       - name: Run cargo audit
+        id: audit
         working-directory: ./backend-rust
         run: cargo audit
+
+  # File a GitHub issue on audit failure so the red workflow doesn't just
+  # sit unseen in the Actions tab. Reuses an open issue when one already
+  # exists for the same workflow to avoid noise on multi-day-red windows.
+  notify-on-failure:
+    name: "Notify on audit failure"
+    runs-on: ubuntu-latest
+    needs: [audit]
+    if: failure()
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: File or update audit-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL:  ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TITLE="cargo audit failing on main"
+          EXISTING=$(gh issue list -R "${{ github.repository }}" \
+            --search "$TITLE in:title is:open" \
+            --json number --jq '.[0].number // empty')
+
+          BODY=$(cat <<EOF
+          The scheduled \`Cargo Audit\` workflow failed.
+
+          - Run: $RUN_URL
+          - Commit: \`${{ github.sha }}\`
+          - Triggered: \`${{ github.event_name }}\`
+
+          Inspect the run log for the advisory ID and the affected dependency.
+          A red audit on \`main\` is a security signal — do not close this issue
+          until \`cargo audit\` is green again.
+          EOF
+          )
+
+          if [ -n "${EXISTING:-}" ]; then
+            gh issue comment "$EXISTING" -R "${{ github.repository }}" --body "$BODY"
+            echo "Updated existing issue #$EXISTING"
+          else
+            # No --label: keep this dependency-free on label config. Label
+            # the issue manually after triage so we don't depend on a label
+            # that may not exist in the repo.
+            gh issue create -R "${{ github.repository }}" \
+              --title "$TITLE" \
+              --body "$BODY"
+            echo "Filed new audit-failure issue"
+          fi

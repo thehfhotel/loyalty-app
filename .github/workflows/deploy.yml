@@ -14,6 +14,9 @@ permissions:
   contents: read
   actions: read
   packages: read
+  # Needed by `notify-on-failure` so a red prod deploy surfaces as a
+  # GitHub issue. The Actions tab is not a paging channel.
+  issues: write
 
 env:
   REGISTRY: ghcr.io
@@ -238,3 +241,54 @@ jobs:
           echo "- **Image Tag**: \`${{ needs.check-prerequisites.outputs.commit-sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **URL**: https://loyalty.saichon.com" >> $GITHUB_STEP_SUMMARY
           echo "- **Backend**: Rust (loyalty-backend)" >> $GITHUB_STEP_SUMMARY
+
+  # =============================================================================
+  # NOTIFY ON PRODUCTION DEPLOY FAILURE
+  #
+  # Files (or comments on) a GitHub issue if the prod deploy job fails so the
+  # operator who approved the deploy isn't the only person with the failure
+  # signal. Slack / email channels can be added later by adding a step here
+  # that consumes an `OPS_ALERT_SLACK_WEBHOOK` secret — no other change.
+  # =============================================================================
+
+  notify-on-failure:
+    name: "Notify on production deploy failure"
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: failure()
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: File or update prod-deploy-failure issue
+        env:
+          GH_TOKEN:   ${{ github.token }}
+          RUN_URL:    ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ needs.check-prerequisites.outputs.commit-sha }}
+        run: |
+          set -euo pipefail
+          TITLE="Production deploy failed"
+          EXISTING=$(gh issue list -R "${{ github.repository }}" \
+            --search "$TITLE in:title is:open" \
+            --json number --jq '.[0].number // empty')
+
+          BODY=$(cat <<EOF
+          The production deploy job failed.
+
+          - Run: $RUN_URL
+          - Commit: \`$COMMIT_SHA\`
+          - Approver: @${{ github.actor }}
+
+          Production is now in an undefined state. See
+          \`docs/rollback-runbook.md\` for the redeploy-previous-SHA path.
+          EOF
+          )
+
+          if [ -n "${EXISTING:-}" ]; then
+            gh issue comment "$EXISTING" -R "${{ github.repository }}" --body "$BODY"
+          else
+            gh issue create -R "${{ github.repository }}" \
+              --title "$TITLE" \
+              --body "$BODY"
+          fi
