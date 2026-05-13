@@ -6,6 +6,51 @@ because the project ships from `main` without semver tags.
 
 ## 2026-05-13
 
+### Pre-launch audit + fixes
+Three read-only audit lenses landed (#232 operational, #233 security,
+#234 correctness) surfacing 46 findings total (6 critical, 14 high, 17
+medium, 9 low). Followed by three implementation bundles, each scoped
+to a domain:
+
+- **`fix(audit)`: schema + data-integrity** (#237) — `users.email`
+  UNIQUE constraint with `ON CONFLICT` registration + OAuth
+  provisioning paths; closed booking-creation TOCTOU on overlapping
+  room dates via `EXCLUDE USING gist` constraint + transaction;
+  `Idempotency-Key` support for `POST /api/loyalty/award` and
+  `POST /api/bookings/:id/slips` via a new `idempotency_keys` table;
+  delegate admin loyalty awards to `award_points` stored procedure
+  (CLAUDE.md rule #7); write `booking_audit_log` rows from admin
+  slip mutations; scope test orphan-DB cleanup so sibling nextest
+  processes don't drop each other's databases.
+- **`fix(audit)`: auth/authz hardening** (#236) — block admin →
+  super_admin role escalation (and demotion of existing super_admins)
+  in `update_user` and `update_user_role`; switch rate-limiter to
+  bucket by the actual TCP peer via `ConnectInfo` and harden
+  `nginx.conf` to replace (not append) `X-Forwarded-For`; lock down
+  `POST /api/admin/email/test` to the caller's own address with a
+  daily Redis-backed quota; restrict `slipUrl` to `/storage/slips/`
+  prefix and verify image magic bytes; per-route 10 MiB body limit
+  on slip upload; authn-gate slip-serving with per-slip ownership
+  check; allowlist `RUSTSEC-2023-0071` in `.cargo/audit.toml` with
+  rationale (HS256-only build, RSA path unreachable).
+- **`fix(audit)`: ops infra** (#235) — graceful shutdown on
+  SIGTERM/SIGINT in the Axum server; `error!("...: {:#}", e)` on
+  startup paths so anyhow cause chains surface; daily encrypted
+  Postgres backups workflow (guarded behind secrets until wired);
+  GitHub issue filed on `cargo-audit` / `Verify Staging` /
+  `Deploy` failure (silent-CI tab gap closed); staging backend
+  log capture on `Verify Staging` failure with 14-day artifact;
+  conservative resource limits in `docker-compose.prod.yml`;
+  three new operational runbooks (rollback, cloudflared tunnel,
+  migration rewrite); JSON-line logging in non-development
+  environments; `x-request-id` propagation through Axum's
+  TraceLayer.
+
+Bundles A + B together close all 6 critical and most high-severity
+findings. Bundle C closes the operational criticals plus most highs.
+Remaining audit follow-ups (Bundle B/C mediums + lows) are tracked
+in the three audit docs under `docs/audits/`.
+
 ### E2E off the deploy critical path
 - `perf(ci)`: Moved E2E to run in parallel with `deploy-staging` instead
   of gating it. Every PR still runs full E2E before merge (the meaningful
