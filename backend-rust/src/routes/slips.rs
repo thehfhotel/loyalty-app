@@ -7,7 +7,7 @@
 //! - `POST /upload` - Upload a payment slip image (authenticated)
 
 use axum::{
-    extract::{Extension, Multipart, State},
+    extract::{DefaultBodyLimit, Extension, Multipart, State},
     middleware,
     routing::post,
     Json, Router,
@@ -224,6 +224,19 @@ async fn upload_slip(
 // Router
 // ============================================================================
 
+/// Per-route body size cap for slip uploads.
+///
+/// MED-3 (security-2026-05-13.md): without this, the global
+/// `DefaultBodyLimit::max(16 MiB)` in `main.rs` would let an attacker
+/// pin 16 MiB per concurrent upload before the handler-local 10 MiB
+/// check fires inside `upload_slip`. Applying a per-route limit makes
+/// axum reject the request at the body-extraction layer (HTTP 413
+/// before `field.bytes().await` ever buffers a full multipart field).
+///
+/// Kept in sync with `SlipStorageConfig::max_slip_file_size` so the
+/// handler-side check stays as a belt-and-braces safeguard.
+const SLIP_UPLOAD_BODY_LIMIT_BYTES: usize = 10 * 1024 * 1024;
+
 /// Create slips routes
 ///
 /// These routes are intended to be nested under /api/slips via the main router.
@@ -235,6 +248,10 @@ async fn upload_slip(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/upload", post(upload_slip))
+        // Per-route body cap. Layered before the auth middleware so we
+        // reject oversize bodies cheaply, without spending any work on
+        // JWT validation for requests that wouldn't be accepted anyway.
+        .layer(DefaultBodyLimit::max(SLIP_UPLOAD_BODY_LIMIT_BYTES))
         .layer(middleware::from_fn(auth_middleware))
 }
 

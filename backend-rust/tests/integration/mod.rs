@@ -38,6 +38,7 @@ pub mod health_test;
 pub mod loyalty_test;
 pub mod notification_test;
 pub mod oauth_test;
+pub mod slips_test;
 pub mod sse_test;
 pub mod storage_test;
 pub mod survey_test;
