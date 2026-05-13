@@ -115,7 +115,12 @@ pub struct AddSlipRequest {
 ///
 /// Mirrors the `BookingSlip` shape the frontend's `bookingService` expects:
 /// `{ id, slipUrl, uploadedAt, slipokStatus, adminStatus }`.
-#[derive(Debug, Serialize)]
+///
+/// `Deserialize` is needed for replaying the cached idempotency
+/// response: the bytes stored in `idempotency_keys.response_body` have
+/// to be parsed back into this type before being returned to the
+/// client.
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BookingSlipResponse {
     pub id: Uuid,
@@ -500,6 +505,12 @@ async fn complete_booking(
 /// Request body:
 /// - slipUrl: The URL returned by `POST /api/slips/upload`
 ///
+/// Optional headers:
+/// - `Idempotency-Key`: client-generated string. A retry with the same key
+///   replays the original response instead of creating a duplicate slip row.
+///   See `docs/audits/correctness-2026-05-13.md` (HIGH #5) for the audit
+///   write-up that motivated this.
+///
 /// Authentication is required (provided by the router layer). The caller must
 /// either own the booking or be an admin.
 ///
@@ -508,6 +519,7 @@ async fn add_booking_slip(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     Path(booking_id): Path<Uuid>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<AddSlipRequest>,
 ) -> AppResult<(StatusCode, Json<BookingSlipResponse>)> {
     // Validate the request body shape (length bounds on slip_url).
@@ -535,9 +547,81 @@ async fn add_booking_slip(
         ));
     }
 
-    // Insert the slip row. We let the database default the id / uploaded_at so
-    // the row matches what other reads will see.
-    let slip = insert_booking_slip(state.db(), booking_id, &slip_url, auth_user_id).await?;
+    // Parse the optional `Idempotency-Key` header. When present, a retry
+    // with the same key replays the original response payload byte-for-byte
+    // rather than inserting a second slip row. See
+    // `services/idempotency.rs` for the contract.
+    let idempotency_key = headers
+        .get("idempotency-key")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    // Pre-check the pool for a previously-cached response. The cached
+    // row was committed in a *different* transaction so we have to
+    // read it before opening our own.
+    if let Some(key) = idempotency_key.as_deref() {
+        if let Some(cached) =
+            crate::services::idempotency::load_cached_response(state.db(), auth_user_id, key)
+                .await?
+        {
+            // An empty body means the original handler errored before it
+            // could record a response — fall through and retry.
+            if !cached.body.is_empty() {
+                if let Ok(slip) = serde_json::from_slice::<BookingSlipResponse>(&cached.body) {
+                    let status =
+                        StatusCode::from_u16(cached.status as u16).unwrap_or(StatusCode::CREATED);
+                    return Ok((status, Json(slip)));
+                }
+            }
+        }
+    }
+
+    // Open one transaction for the placeholder + insert + cache so a
+    // rollback removes the placeholder, letting a retry re-run cleanly.
+    let mut tx = state.db().begin().await?;
+
+    if let Some(key) = idempotency_key.as_deref() {
+        let outcome = crate::services::idempotency::take_or_replay(
+            &mut *tx,
+            auth_user_id,
+            key,
+            "/api/bookings/:id/slips",
+        )
+        .await?;
+
+        if matches!(
+            outcome,
+            crate::services::idempotency::IdempotencyOutcome::Replay(_)
+        ) {
+            // Another concurrent retry holds the placeholder. Surface a
+            // 409 so the client knows to back off; the first request
+            // will record the response shortly.
+            tx.rollback().await?;
+            return Err(AppError::Conflict(
+                "A concurrent request with the same Idempotency-Key is in flight".to_string(),
+            ));
+        }
+    }
+
+    let slip = insert_booking_slip_tx(&mut tx, booking_id, &slip_url, auth_user_id).await?;
+
+    let response_body = serde_json::to_vec(&slip).map_err(|e| {
+        AppError::Internal(format!("Failed to serialize booking slip response: {e}"))
+    })?;
+
+    if let Some(key) = idempotency_key.as_deref() {
+        crate::services::idempotency::record_response(
+            &mut *tx,
+            auth_user_id,
+            key,
+            StatusCode::CREATED.as_u16() as i32,
+            &response_body,
+        )
+        .await?;
+    }
+
+    tx.commit().await?;
 
     tracing::info!(
         user_id = %auth_user.id,
@@ -873,6 +957,17 @@ async fn query_booking_by_id(db: &PgPool, booking_id: Uuid) -> AppResult<Booking
     Ok(row.into_response())
 }
 
+/// Insert a booking, holding a row-level lock on the candidate room for
+/// the full SELECT→INSERT window so two concurrent overlapping requests
+/// can't both observe the room as free.
+///
+/// The defensive `bookings_no_overlap` EXCLUDE constraint (migration
+/// `20260513020000`) is the canonical fix — Postgres rejects the INSERT
+/// atomically if any other transaction commits an overlapping row first.
+/// This function still wraps the read+insert in a single transaction and
+/// takes `SELECT ... FOR UPDATE` on the room row, so the *common* case
+/// hands the loser a clean 409 Conflict rather than relying on the
+/// constraint violation to bubble up.
 async fn insert_booking(
     db: &PgPool,
     user_id: Uuid,
@@ -887,7 +982,7 @@ async fn insert_booking(
         .map(|rt| format!("{:?}", rt))
         .unwrap_or_else(|| "Standard".to_string());
 
-    // Find the room type
+    // Find the room type (read-only, safe to do outside the transaction)
     let room_type_row: RoomTypeRow = sqlx::query_as(
         r#"
         SELECT id, name, price_per_night
@@ -900,7 +995,16 @@ async fn insert_booking(
     .await?
     .ok_or_else(|| AppError::BadRequest(format!("Room type '{}' not found", room_type_name)))?;
 
-    // Find an available room of this type
+    let mut tx = db.begin().await?;
+
+    // Find and lock an available room of this type. The `FOR UPDATE` on
+    // `r.id` serialises overlapping inserts for the same room: the
+    // second transaction blocks until the first commits, then re-runs
+    // the availability check under the lock and either finds no rooms
+    // (= 400) or — if a different room is available — proceeds. The
+    // EXCLUDE constraint added in `20260513020000_bookings_no_overlap.sql`
+    // is the absolute fallback: even if a future caller forgets the
+    // transaction, the DB enforces non-overlap.
     let room_id: Option<(Uuid,)> = sqlx::query_as(
         r#"
         SELECT r.id
@@ -911,7 +1015,7 @@ async fn insert_booking(
             -- Exclude rooms with existing bookings that overlap
             SELECT DISTINCT b.room_id
             FROM bookings b
-            WHERE b.status NOT IN ('cancelled')
+            WHERE b.status NOT IN ('cancelled', 'no_show')
               AND b.check_in_date < $3
               AND b.check_out_date > $2
           )
@@ -921,13 +1025,15 @@ async fn insert_booking(
             FROM room_blocked_dates rbd
             WHERE rbd.blocked_date >= $2 AND rbd.blocked_date < $3
           )
+        ORDER BY r.id
         LIMIT 1
+        FOR UPDATE OF r
         "#,
     )
     .bind(room_type_row.id)
     .bind(check_in)
     .bind(check_out)
-    .fetch_optional(db)
+    .fetch_optional(&mut *tx)
     .await?;
 
     let room_id = room_id
@@ -938,8 +1044,13 @@ async fn insert_booking(
     let nights = (check_out - check_in).num_days() as i32;
     let total_price = room_type_row.price_per_night * Decimal::from(nights);
 
-    // Insert booking
-    let row: BookingRow = sqlx::query_as(
+    // Insert booking. If a concurrent transaction managed to commit an
+    // overlapping booking between our `FOR UPDATE` lock acquisition and
+    // this INSERT (which shouldn't be possible while we hold the row
+    // lock, but the EXCLUDE constraint is here as belt-and-braces),
+    // the DB raises `exclusion_violation` (SQLSTATE 23P01) and we map
+    // it to a 409 Conflict so the client can retry.
+    let row: Result<BookingRow, sqlx::Error> = sqlx::query_as(
         r#"
         INSERT INTO bookings (user_id, room_id, room_type_id, check_in_date, check_out_date, num_guests, total_price, notes, status)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'confirmed')
@@ -958,8 +1069,26 @@ async fn insert_booking(
     .bind(guests)
     .bind(total_price)
     .bind(&special_requests)
-    .fetch_one(db)
-    .await?;
+    .fetch_one(&mut *tx)
+    .await;
+
+    let row = match row {
+        Ok(row) => row,
+        Err(sqlx::Error::Database(db_err)) if db_err.code().as_deref() == Some("23P01") => {
+            // EXCLUDE constraint violation — another transaction
+            // committed an overlapping booking for this room before
+            // we could insert. Roll back implicitly (tx dropped via
+            // `?` below would normally do the same, but we want to
+            // explicitly surface a 409 to the caller).
+            tx.rollback().await?;
+            return Err(AppError::Conflict(
+                "Room is no longer available for the selected dates".to_string(),
+            ));
+        },
+        Err(other) => return Err(AppError::from(other)),
+    };
+
+    tx.commit().await?;
 
     // Fetch full booking with joins
     query_booking_by_id(db, row.id).await
@@ -1326,8 +1455,12 @@ impl From<BookingSlipRow> for BookingSlipResponse {
 /// the schema, so they are returned in the response immediately — clients
 /// don't have to wait for the SlipOK / admin review workflows to fire
 /// before seeing a status value.
-async fn insert_booking_slip(
-    db: &PgPool,
+/// Transaction-scoped slip insert used by the idempotency-aware
+/// `add_booking_slip` handler — the placeholder reservation, slip
+/// insert, and response cache live in one transaction so a rollback
+/// removes all three.
+async fn insert_booking_slip_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     booking_id: Uuid,
     slip_url: &str,
     uploaded_by: Uuid,
@@ -1344,7 +1477,7 @@ async fn insert_booking_slip(
         slip_url,
         uploaded_by,
     )
-    .fetch_one(db)
+    .fetch_one(&mut **tx)
     .await?;
 
     Ok(row.into())

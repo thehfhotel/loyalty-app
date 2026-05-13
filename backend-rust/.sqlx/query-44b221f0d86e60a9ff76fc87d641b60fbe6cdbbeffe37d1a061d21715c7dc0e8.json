@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO idempotency_keys (user_id, key, request_path, response_status)\n        VALUES ($1, $2, $3, 0)\n        ON CONFLICT (user_id, key) DO NOTHING\n        RETURNING user_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "44b221f0d86e60a9ff76fc87d641b60fbe6cdbbeffe37d1a061d21715c7dc0e8"
+}

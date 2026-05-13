@@ -409,18 +409,8 @@ async fn register(
 
     let db = state.db();
 
-    // Check if email already exists
-    let existing: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE email = $1")
-        .bind(&payload.email)
-        .fetch_optional(db)
-        .await
-        .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
-
-    if existing.is_some() {
-        return Err(AppError::BadRequest("Email already registered".to_string()));
-    }
-
-    // Hash password
+    // Hash password before opening the transaction so we don't hold a
+    // transaction open for the duration of bcrypt.
     let password_hash = hash_password(&payload.password).await?;
 
     // Generate membership ID
@@ -432,19 +422,32 @@ async fn register(
         .await
         .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
-    // Create user
-    let user_row: UserRow = sqlx::query_as(
+    // Create user. We use `ON CONFLICT (email) DO NOTHING RETURNING ...`
+    // so two concurrent registrations for the same email can't both
+    // succeed even if they pass an earlier existence check; the UNIQUE
+    // constraint on `users.email` (migration `20260513000000`) is the
+    // single source of truth. The loser of the race gets `None` from
+    // `fetch_optional` and we surface a 409 Conflict — matching the
+    // behaviour the previous read-then-insert was trying (and failing
+    // under concurrency) to produce.
+    let user_row: Option<UserRow> = sqlx::query_as(
         r#"
         INSERT INTO users (email, password_hash)
         VALUES ($1, $2)
+        ON CONFLICT (email) DO NOTHING
         RETURNING id, email, password_hash, role, is_active, email_verified, created_at, updated_at
         "#,
     )
     .bind(&payload.email)
     .bind(&password_hash)
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
+
+    let user_row = match user_row {
+        Some(row) => row,
+        None => return Err(AppError::Conflict("Email already registered".to_string())),
+    };
 
     // Create user profile
     sqlx::query(

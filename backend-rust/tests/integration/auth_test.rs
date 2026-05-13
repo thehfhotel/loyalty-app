@@ -117,6 +117,67 @@ async fn test_register_user_success() {
     app.cleanup().await.ok();
 }
 
+/// Concurrent registrations for the same email must result in exactly one
+/// `users` row, with the loser receiving a 4xx (409 Conflict per the new
+/// `ON CONFLICT (email)` handling, or 400 to remain compatible with the
+/// pre-fix behaviour). Demonstrates that the read-then-insert race
+/// described in `docs/audits/correctness-2026-05-13.md` (Correctness
+/// CRITICAL #1) is gone.
+#[tokio::test]
+async fn test_register_concurrent_same_email_leaves_one_row() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let email = unique_email();
+    let payload = json!({
+        "email": email,
+        "password": "SecurePass123!",
+        "firstName": "Race",
+        "lastName": "Winner",
+    });
+
+    // Spawn two parallel POSTs that target the same email. The UNIQUE
+    // constraint plus `ON CONFLICT (email) DO NOTHING` in the handler is
+    // what makes this safe — the test would have raced and produced two
+    // rows on the previous implementation.
+    let client_a = app.client();
+    let client_b = app.client();
+    let payload_a = payload.clone();
+    let payload_b = payload.clone();
+
+    let (response_a, response_b) = tokio::join!(
+        client_a.post("/api/auth/register", &payload_a),
+        client_b.post("/api/auth/register", &payload_b),
+    );
+
+    let statuses = [response_a.status, response_b.status];
+    let successes = statuses.iter().filter(|s| **s == 200 || **s == 201).count();
+    let conflicts = statuses.iter().filter(|s| **s == 400 || **s == 409).count();
+
+    assert_eq!(
+        successes, 1,
+        "Exactly one concurrent registration should succeed. statuses: {:?}",
+        statuses
+    );
+    assert_eq!(
+        conflicts, 1,
+        "Exactly one concurrent registration should be rejected as a duplicate. statuses: {:?}",
+        statuses
+    );
+
+    // The database must hold exactly one row for this email.
+    let row_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE email = $1")
+        .bind(&email)
+        .fetch_one(app.db())
+        .await
+        .expect("Failed to count users");
+    assert_eq!(
+        row_count.0, 1,
+        "Exactly one users row should exist for the contested email"
+    );
+
+    app.cleanup().await.ok();
+}
+
 #[tokio::test]
 async fn test_register_duplicate_email_fails() {
     let app = TestApp::new().await.expect("Failed to create test app");

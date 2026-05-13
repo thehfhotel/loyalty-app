@@ -738,16 +738,28 @@ impl OAuthService for OAuthServiceImpl {
             }
         }
 
-        // Create new user
+        // Create new user.
+        //
+        // Use `ON CONFLICT (email) DO NOTHING RETURNING ...` so a concurrent
+        // password-registration (or sibling OAuth callback) that has already
+        // inserted a row for the same email can't be silently duplicated.
+        // The UNIQUE constraint on `users.email` (migration
+        // `20260513000000`) is the source of truth; the earlier find-by-email
+        // probe at the top of this function only narrows the *common* case.
+        //
+        // If we lose the race, `fetch_optional` returns `None`; re-fetch the
+        // winner by email and link the OAuth provider to it via the same
+        // path as the "user already exists by email" branch above.
         info!("[OAuth Service] Creating new {} user", user_info.provider);
 
         let membership_id = self.generate_membership_id().await?;
 
-        let new_user: OAuthUser = sqlx::query_as!(
+        let new_user_opt: Option<OAuthUser> = sqlx::query_as!(
             OAuthUser,
             r#"
             INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id)
             VALUES ($1, '', $2, $3, $4)
+            ON CONFLICT (email) DO NOTHING
             RETURNING id, email, role::text as role, is_active, email_verified,
                       oauth_provider, oauth_provider_id
             "#,
@@ -756,9 +768,84 @@ impl OAuthService for OAuthServiceImpl {
             &user_info.provider,
             &user_info.provider_id,
         )
-        .fetch_one(self.state.db())
+        .fetch_optional(self.state.db())
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to create OAuth user: {}", e)))?;
+
+        let new_user = match new_user_opt {
+            Some(row) => row,
+            None => {
+                // Lost the race: another concurrent flow already inserted a
+                // users row for this email between the find-by-email probe
+                // and this insert. Re-fetch and link the OAuth provider to
+                // the existing row so the caller sees a consistent
+                // "this email is now linked to this provider" result.
+                info!(
+                    "[OAuth Service] Race lost on email insert; linking {} to existing row",
+                    user_info.provider
+                );
+
+                let email_for_lookup = user_info.email.as_deref().ok_or_else(|| {
+                    AppError::Internal(
+                        "ON CONFLICT (email) fired with no email payload".to_string(),
+                    )
+                })?;
+
+                let winner: OAuthUser = sqlx::query_as!(
+                    OAuthUser,
+                    r#"
+                    SELECT id, email, role::text as role, is_active, email_verified,
+                           oauth_provider, oauth_provider_id
+                    FROM users
+                    WHERE email = $1
+                    "#,
+                    email_for_lookup,
+                )
+                .fetch_one(self.state.db())
+                .await
+                .map_err(|e| {
+                    AppError::DatabaseQuery(format!(
+                        "Failed to re-fetch user after ON CONFLICT: {}",
+                        e
+                    ))
+                })?;
+
+                sqlx::query!(
+                    r#"
+                    UPDATE users
+                    SET oauth_provider = $1, oauth_provider_id = $2,
+                        email_verified = CASE WHEN $3 THEN true ELSE email_verified END,
+                        updated_at = NOW()
+                    WHERE id = $4
+                    "#,
+                    &user_info.provider,
+                    &user_info.provider_id,
+                    user_info.email_verified,
+                    winner.id,
+                )
+                .execute(self.state.db())
+                .await
+                .map_err(|e| {
+                    AppError::DatabaseQuery(format!("Failed to link OAuth provider: {}", e))
+                })?;
+
+                self.update_oauth_user_profile(&winner.id, &user_info)
+                    .await?;
+
+                let email = winner.email.as_deref().unwrap_or("");
+                let (access_token, refresh_token) = self.generate_tokens(winner.id, email)?;
+
+                self.log_oauth_login(&winner.id, &user_info.provider, false)
+                    .await?;
+
+                return Ok(OAuthAuthResult {
+                    user: winner,
+                    access_token,
+                    refresh_token,
+                    is_new_user: false,
+                });
+            },
+        };
 
         // Create user profile
         sqlx::query!(

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id)\n            VALUES ($1, '', $2, $3, $4)\n            RETURNING id, email, role::text as role, is_active, email_verified,\n                      oauth_provider, oauth_provider_id\n            ",
+  "query": "\n            INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id)\n            VALUES ($1, '', $2, $3, $4)\n            ON CONFLICT (email) DO NOTHING\n            RETURNING id, email, role::text as role, is_active, email_verified,\n                      oauth_provider, oauth_provider_id\n            ",
   "describe": {
     "columns": [
       {
@@ -57,5 +57,5 @@
       true
     ]
   },
-  "hash": "39277a73161162a0d3fb746bc56bdafbf0949906705cda5489772a829378a77c"
+  "hash": "d3f3cd4bdeccd46907af7f5546bf440c20304f94574bc91ed7558e7daa45704d"
 }

@@ -257,6 +257,113 @@ async fn test_create_booking_success() {
     app.cleanup().await.ok();
 }
 
+/// Two concurrent booking requests for overlapping dates against the
+/// same single-room inventory must result in exactly one success and
+/// one conflict. This demonstrates the fix for the TOCTOU race in
+/// `insert_booking` described in `docs/audits/correctness-2026-05-13.md`
+/// (Correctness CRITICAL #2): on the pre-fix code both POSTs would
+/// observe the room as free and both INSERT, producing two confirmed
+/// bookings on the same room for the same dates.
+#[tokio::test]
+async fn test_create_booking_concurrent_overlap_yields_one_conflict() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let user_a = TestUser::new("booking-race-a@test.com");
+    user_a
+        .insert(app.db())
+        .await
+        .expect("Failed to insert user a");
+    let user_b = TestUser::new("booking-race-b@test.com");
+    user_b
+        .insert(app.db())
+        .await
+        .expect("Failed to insert user b");
+
+    // Seed exactly one room of the requested type so two overlapping
+    // requests cannot both succeed for legitimate inventory reasons.
+    let room_type_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO room_types (id, name, price_per_night, max_guests, is_active)
+        VALUES ($1, 'Deluxe', 2000.00, 2, true)
+        "#,
+    )
+    .bind(room_type_id)
+    .execute(app.db())
+    .await
+    .expect("Failed to insert room type");
+
+    sqlx::query(
+        r#"
+        INSERT INTO rooms (id, room_type_id, room_number, floor, is_active)
+        VALUES ($1, $2, '777', 7, true)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(room_type_id)
+    .execute(app.db())
+    .await
+    .expect("Failed to insert room");
+
+    let today = chrono::Utc::now().date_naive();
+    let check_in = today + chrono::Duration::days(14);
+    let check_out = today + chrono::Duration::days(17);
+
+    let body = json!({
+        "checkIn": check_in.format("%Y-%m-%d").to_string(),
+        "checkOut": check_out.format("%Y-%m-%d").to_string(),
+        "roomType": "deluxe",
+        "guests": 2,
+    });
+
+    let client_a = app.authenticated_client(&user_a.id, &user_a.email);
+    let client_b = app.authenticated_client(&user_b.id, &user_b.email);
+
+    let body_a = body.clone();
+    let body_b = body.clone();
+    let (response_a, response_b) = tokio::join!(
+        client_a.post("/api/bookings", &body_a),
+        client_b.post("/api/bookings", &body_b),
+    );
+
+    let statuses = [response_a.status, response_b.status];
+    let successes = statuses.iter().filter(|s| **s == 200 || **s == 201).count();
+    let conflicts = statuses.iter().filter(|s| **s == 400 || **s == 409).count();
+
+    assert_eq!(
+        successes, 1,
+        "Exactly one concurrent booking should succeed. statuses: {:?}, bodies: [{}, {}]",
+        statuses, response_a.body, response_b.body
+    );
+    assert_eq!(
+        conflicts, 1,
+        "Exactly one concurrent booking should fail with 4xx. statuses: {:?}",
+        statuses
+    );
+
+    // The database must hold exactly one confirmed booking row for this room/date.
+    let row_count: (i64,) = sqlx::query_as(
+        r#"
+        SELECT COUNT(*)
+        FROM bookings
+        WHERE check_in_date = $1
+          AND check_out_date = $2
+          AND status = 'confirmed'
+        "#,
+    )
+    .bind(check_in)
+    .bind(check_out)
+    .fetch_one(app.db())
+    .await
+    .expect("Failed to count bookings");
+    assert_eq!(
+        row_count.0, 1,
+        "Exactly one confirmed booking row should exist for the contested dates"
+    );
+
+    app.cleanup().await.ok();
+}
+
 #[tokio::test]
 async fn test_create_booking_invalid_dates() {
     let app = TestApp::new().await.expect("Failed to create test app");
@@ -862,6 +969,81 @@ async fn test_list_bookings_pagination() {
 // ============================================================================
 // test_add_booking_slip - POST /api/bookings/:id/slips
 // ============================================================================
+
+/// Two POSTs with the same `Idempotency-Key` must produce only one
+/// `booking_slips` row. Demonstrates the fix for the audit's
+/// HIGH-#5 finding: prior to this commit a network retry would
+/// attach the same slip twice and burn through SlipOK verification
+/// quota for nothing.
+#[tokio::test]
+async fn test_add_booking_slip_idempotent_on_same_key() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let user = TestUser::new("slip-idem@test.com");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert test user");
+
+    let booking_id = create_test_booking(app.db(), user.id, "confirmed", 7, 10)
+        .await
+        .expect("Failed to create booking");
+
+    let client = app.authenticated_client(&user.id, &user.email);
+    let key = Uuid::new_v4().to_string();
+    let body = json!({ "slipUrl": "/storage/slips/idem-1.jpg" });
+
+    let response_a = client
+        .post_with_headers(
+            &format!("/api/bookings/{}/slips", booking_id),
+            &body,
+            &[("Idempotency-Key", key.as_str())],
+        )
+        .await;
+    assert!(
+        response_a.status == 201 || response_a.status == 200,
+        "First call should succeed. status: {}, body: {}",
+        response_a.status,
+        response_a.body
+    );
+
+    let response_b = client
+        .post_with_headers(
+            &format!("/api/bookings/{}/slips", booking_id),
+            &body,
+            &[("Idempotency-Key", key.as_str())],
+        )
+        .await;
+    assert!(
+        response_b.status == 201 || response_b.status == 200,
+        "Retry with same key should replay successfully. status: {}, body: {}",
+        response_b.status,
+        response_b.body
+    );
+
+    // Both responses must reference the same slip id — the second one
+    // is a replay of the first, not a new insert.
+    let json_a: Value = response_a.json().expect("Response A should be valid JSON");
+    let json_b: Value = response_b.json().expect("Response B should be valid JSON");
+    assert_eq!(
+        json_a.get("id"),
+        json_b.get("id"),
+        "Replayed response must reference the original slip id"
+    );
+
+    // Confirm at the DB level that we wrote exactly one row.
+    let row_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM booking_slips WHERE booking_id = $1")
+            .bind(booking_id)
+            .fetch_one(app.db())
+            .await
+            .expect("Failed to count slips");
+    assert_eq!(
+        row_count.0, 1,
+        "Exactly one slip row should exist; the second request must be a replay"
+    );
+
+    app.cleanup().await.ok();
+}
 
 #[tokio::test]
 async fn test_add_booking_slip_success() {

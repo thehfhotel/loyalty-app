@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE idempotency_keys\n        SET response_status = $3, response_body = $4\n        WHERE user_id = $1 AND key = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "42664d06df3f7c2c137488635fcade7d4c02fb11cf03dd7f7b8dcd815e792baa"
+}

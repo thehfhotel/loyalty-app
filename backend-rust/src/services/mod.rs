@@ -7,6 +7,7 @@ pub mod auth;
 pub mod booking;
 pub mod coupon;
 pub mod email;
+pub mod idempotency;
 pub mod loyalty;
 pub mod membership_id;
 pub mod notification;
