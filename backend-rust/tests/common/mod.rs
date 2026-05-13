@@ -316,6 +316,12 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         .execute(booking_admin_fields_migration)
         .await?;
 
+    let users_email_unique_migration =
+        include_str!("../../migrations/20260513000000_users_email_unique.sql");
+    template_pool
+        .execute(users_email_unique_migration)
+        .await?;
+
     // Seed tiers
     template_pool
         .execute(
