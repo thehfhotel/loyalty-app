@@ -1,0 +1,26 @@
+# cargo-audit allowlist for the loyalty-app backend.
+#
+# Each entry is the minimum context needed to re-evaluate the call when
+# upstream moves: the advisory ID, why it's unreachable in our build,
+# and the trigger to revisit.
+
+[advisories]
+# RUSTSEC-2023-0071 — Marvin-attack timing sidechannel in `rsa` 0.9.10.
+# Pulled in transitively by `jsonwebtoken` 10.x (and, at compile time
+# only, by `sqlx-mysql` proc-macros, which we never link at runtime).
+#
+# Why it doesn't apply here: this codebase uses HS256 (HMAC-SHA256) for
+# all JWT signing and verification — see
+# `backend-rust/src/middleware/auth.rs` (validation: HS256) and the
+# token-mint paths in `routes/auth.rs` / `routes/sse.rs`. We never
+# instantiate `jsonwebtoken`'s RS256/RS384/RS512/PS* algorithms, so the
+# `rsa` crate's sidechannel is unreachable from any runtime code path.
+#
+# Revisit when: jsonwebtoken upstream drops the `rsa` transitive
+# (planned for the 11.x line) or pins a fixed version. Tracked at
+# https://github.com/Keats/jsonwebtoken/issues/410.
+#
+# Until then, keep this entry; do NOT delete it without confirming the
+# above paths still hold. Removing it makes the daily cargo-audit job
+# permanently red and drowns out future real advisories.
+ignore = ["RUSTSEC-2023-0071"]
