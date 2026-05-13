@@ -154,19 +154,75 @@ async fn create_db_fresh_connection(
     }
 }
 
-/// Ensure the template database exists with migrations and seed data.
-/// This is called once per test run (idempotent via TEMPLATE_READY flag).
+/// Probe whether the template database has already been built and is
+/// usable. We check for the presence of the `users` table specifically
+/// because the init migration creates it — if it's there, the template
+/// build either completed or crashed *after* the init migration, which is
+/// the common case for "another nextest worker just finished building it
+/// while I was waiting for the advisory lock".
 ///
-/// Uses a tokio::sync::Mutex internally for the one-time initialization (since
-/// we need to hold a lock across async operations), but the fast-path check uses
-/// std::sync::Mutex to avoid runtime dependency.
+/// Returns `false` if the template DB doesn't exist, doesn't have a
+/// `users` table, or can't be connected to for any reason. Caller treats
+/// `false` as "rebuild needed".
+async fn template_db_has_users(admin_pool: &PgPool) -> Result<bool, sqlx::Error> {
+    let exists: bool = sqlx::query_scalar(&format!(
+        "SELECT EXISTS (SELECT FROM pg_database WHERE datname = '{}')",
+        TEMPLATE_DB_NAME
+    ))
+    .fetch_one(admin_pool)
+    .await?;
+    if !exists {
+        return Ok(false);
+    }
+
+    // Connect to the template DB directly to check for the marker table.
+    let template_url = {
+        let url = test_database_url();
+        if let Some(pos) = url.rfind('/') {
+            format!("{}{}", &url[..pos + 1], TEMPLATE_DB_NAME)
+        } else {
+            url
+        }
+    };
+    let template_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&template_url)
+        .await?;
+    let has_users: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'users'
+        )",
+    )
+    .fetch_one(&template_pool)
+    .await
+    .unwrap_or(false);
+    template_pool.close().await;
+    Ok(has_users)
+}
+
+/// Ensure the template database exists with migrations and seed data.
+///
+/// Two layers of serialization, because there are two ways concurrent
+/// callers can show up:
+///
+/// 1. **Within a single process** (tokio tasks racing on the first call):
+///    `TEMPLATE_READY` (`std::sync::Mutex<bool>`) is the process-local
+///    fast-path flag.
+/// 2. **Across processes** (nextest spawns each integration test in its
+///    own OS process by default — every process starts with
+///    `TEMPLATE_READY == false`): we acquire a **Postgres advisory lock**
+///    on a dedicated connection. Postgres advisory locks are session-
+///    scoped, so dropping the lock connection releases the lock even on
+///    panic or early return; and they're visible across processes and
+///    machines, which is what we need.
+///
+/// Without (2), nextest's process model used to race every nextest worker
+/// into the same `DROP DATABASE / CREATE DATABASE` sequence and the
+/// losers panicked with `duplicate key value violates unique constraint
+/// "pg_database_datname_index"`.
 async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    /// Tokio mutex for serializing template creation (held across await points).
-    /// Only used during the one-time initialization; after that, the fast path
-    /// in TEMPLATE_READY (std::sync::Mutex) skips this entirely.
-    static TEMPLATE_INIT: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
-
-    // Fast path: check if already ready (std::sync::Mutex, no runtime dependency)
+    // Fast path: process-local check.
     {
         let ready = TEMPLATE_READY.lock().unwrap_or_else(|e| e.into_inner());
         if *ready {
@@ -174,18 +230,35 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         }
     }
 
-    // Slow path: acquire tokio mutex to serialize template creation
-    let _init_guard = TEMPLATE_INIT.lock().await;
+    // Slow path: take a Postgres advisory lock on a dedicated connection
+    // so the rebuild is serialized across every nextest worker process.
+    // The key is a hash of the template name so it can't collide with
+    // unrelated tooling that might also use advisory locks on the same
+    // server.
+    let mut lock_conn = sqlx::PgConnection::connect(&admin_database_url()).await?;
+    sqlx::query("SELECT pg_advisory_lock(hashtext($1)::bigint)")
+        .bind(TEMPLATE_DB_NAME)
+        .execute(&mut lock_conn)
+        .await?;
+    // `lock_conn` stays in scope for the rest of the function; dropping it
+    // (normal return or `?`-bail) closes the session and releases the lock.
 
-    // Double-check after acquiring the init lock
-    {
-        let ready = TEMPLATE_READY.lock().unwrap_or_else(|e| e.into_inner());
-        if *ready {
-            return Ok(());
-        }
-    }
-
+    // Inside the lock now. Re-check whether some other worker already built
+    // the template while we were waiting. Process-local `TEMPLATE_READY`
+    // can't see other processes' work, so probe Postgres instead: the
+    // template DB needs to (a) exist and (b) contain the `users` table
+    // that the init migration creates. This is enough to distinguish "we
+    // built it earlier in this CI run" from "fresh service container".
     let admin_pool = get_admin_pool().await?;
+    if template_db_has_users(&admin_pool).await.unwrap_or(false) {
+        let mut ready = TEMPLATE_READY.lock().unwrap_or_else(|e| e.into_inner());
+        *ready = true;
+        let _ = sqlx::query("SELECT pg_advisory_unlock(hashtext($1)::bigint)")
+            .bind(TEMPLATE_DB_NAME)
+            .execute(&mut lock_conn)
+            .await;
+        return Ok(());
+    }
 
     // Terminate any connections to the template database
     let _ = sqlx::query(&format!(
@@ -292,6 +365,16 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         let mut ready = TEMPLATE_READY.lock().unwrap_or_else(|e| e.into_inner());
         *ready = true;
     }
+
+    // Explicitly release the advisory lock before dropping the connection.
+    // Dropping the connection would release it anyway via session
+    // termination, but the explicit call closes the window where another
+    // waiting worker would briefly retry-and-back-off before the kernel
+    // tears the connection down.
+    let _ = sqlx::query("SELECT pg_advisory_unlock(hashtext($1)::bigint)")
+        .bind(TEMPLATE_DB_NAME)
+        .execute(&mut lock_conn)
+        .await;
     Ok(())
 }
 
