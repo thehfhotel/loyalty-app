@@ -4,6 +4,25 @@ All notable changes to this project are tracked here. Format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are dated
 because the project ships from `main` without semver tags.
 
+## 2026-05-13
+
+### Build-graph trim
+- `perf(deps)`: Bumped `oauth2` v4→v5 (single-file migration in
+  `services/oauth.rs` to the typestate builder API + SSRF-safe
+  redirect policy) and trimmed `tokio = { features = ["full"] }` to
+  the in-use subset. Collapsed an entire parallel HTTP/TLS stack
+  (`reqwest 0.11`, `hyper 0.14`, `http 0.2`, `h2 0.3`, `base64 0.13`,
+  `rustls 0.21`, `hyper-rustls 0.24`, `tokio-rustls 0.24` and matching
+  sys crates). Duplicate transitive dep entries dropped from 71 → 53
+  (−25%). Warm-cache CI:
+  Build Backend Release 3m15s → 1m54s (−42%),
+  Test Backend 3m16s → 2m55s (−11%),
+  E2E 2m22s → 2m8s (−10%) (#226).
+- `perf(ci)`: Spiked `mold` linker + clang and closed unmerged (#225) —
+  the linker swap invalidated `target/` artifacts compiled with the
+  default linker, blew up compile time, and timed out Test Backend at
+  the 30-min job limit. Not worth pursuing for this codebase.
+
 ## 2026-05-12
 
 ### CI/CD speed sweep
