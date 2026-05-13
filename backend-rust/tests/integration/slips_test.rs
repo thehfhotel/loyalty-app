@@ -171,6 +171,209 @@ async fn slip_upload_rejects_html_labelled_as_jpeg() {
     app.cleanup().await.ok();
 }
 
+/// MED-6 (security-2026-05-13.md): unauthenticated access to
+/// `GET /api/storage/slips/:filename` is rejected with 401.
+#[tokio::test]
+async fn slip_serving_requires_authentication() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    // Plain client with no Authorization header.
+    let resp = app.client().get("/api/storage/slips/whatever.jpg").await;
+
+    resp.assert_status(401);
+
+    app.cleanup().await.ok();
+}
+
+/// MED-6: a non-admin caller who doesn't own the slip's booking
+/// gets 403. We seed the slip row in `booking_slips` directly so
+/// the test exercises the lookup-then-deny path.
+#[tokio::test]
+async fn slip_serving_denies_non_owner_non_admin() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let owner = crate::common::TestUser::new("slip-serve-owner@test.com");
+    owner
+        .insert(app.db())
+        .await
+        .expect("Failed to insert owner");
+
+    let intruder = crate::common::TestUser::new("slip-serve-intruder@test.com");
+    intruder
+        .insert(app.db())
+        .await
+        .expect("Failed to insert intruder");
+
+    let booking_id = seed_booking_for(app.db(), owner.id).await;
+
+    // Seed the slip row so lookup_slip_owner finds it.
+    let filename = format!("served-deny-{}.jpg", Uuid::new_v4().simple());
+    let slip_url = format!("/storage/slips/{}", filename);
+    sqlx::query(
+        r#"
+        INSERT INTO booking_slips (booking_id, slip_url, uploaded_by)
+        VALUES ($1, $2, $3)
+        "#,
+    )
+    .bind(booking_id)
+    .bind(&slip_url)
+    .bind(owner.id)
+    .execute(app.db())
+    .await
+    .expect("Failed to insert slip row");
+
+    let resp = app
+        .authenticated_client(&intruder.id, &intruder.email)
+        .get(&format!("/api/storage/slips/{}", filename))
+        .await;
+
+    resp.assert_status(403);
+
+    app.cleanup().await.ok();
+}
+
+/// MED-6: when there's no booking_slips row referencing the URL,
+/// the handler returns 404. Notably it does NOT leak any info about
+/// whether the underlying file is present on disk.
+#[tokio::test]
+async fn slip_serving_returns_404_for_unreferenced_slip() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let user = crate::common::TestUser::new("slip-serve-404@test.com");
+    user.insert(app.db()).await.expect("Failed to insert user");
+
+    // No slip row inserted — just a UUID we made up.
+    let resp = app
+        .authenticated_client(&user.id, &user.email)
+        .get(&format!(
+            "/api/storage/slips/orphan-{}.jpg",
+            Uuid::new_v4().simple()
+        ))
+        .await;
+
+    resp.assert_status(404);
+
+    app.cleanup().await.ok();
+}
+
+/// MED-6: admin bypass — an admin can fetch any slip without
+/// passing the per-slip ownership check. Confirmed by exercising
+/// the lookup path: the response is NOT 401/403 (auth + authz both
+/// pass). The file itself is absent from disk in tests, so we
+/// accept 404 as the legitimate "auth/authz fine, file missing"
+/// outcome — what we MUST NOT see is 403, which would mean the
+/// admin bypass was missing.
+#[tokio::test]
+async fn slip_serving_admin_bypass_skips_ownership_check() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let admin = crate::common::TestUser::admin("slip-serve-admin@test.com");
+    admin
+        .insert(app.db())
+        .await
+        .expect("Failed to insert admin");
+
+    // The slip belongs to a totally different user. The admin must
+    // still be allowed past the authorization gate.
+    let owner = crate::common::TestUser::new("slip-serve-owner-of-admin-test@test.com");
+    owner
+        .insert(app.db())
+        .await
+        .expect("Failed to insert owner");
+
+    let resp = app
+        .authenticated_client_with_role(&admin.id, &admin.email, "admin")
+        .get("/api/storage/slips/some-admin-can-see-this.jpg")
+        .await;
+
+    assert_ne!(
+        resp.status, 403,
+        "Admin must NOT be blocked by ownership check. Body: {}",
+        resp.body
+    );
+    assert_ne!(
+        resp.status, 401,
+        "Admin token was valid; should not be 401. Body: {}",
+        resp.body
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// Helper: seed a confirmed booking against (or-create) the shared
+/// test room/room_type rows. Mirrors `booking_test::create_test_booking`
+/// — duplicated here so this module stays standalone.
+async fn seed_booking_for(pool: &sqlx::PgPool, user_id: Uuid) -> Uuid {
+    let booking_id = Uuid::new_v4();
+    let check_in = chrono::Utc::now().date_naive() + chrono::Duration::days(1);
+    let check_out = check_in + chrono::Duration::days(2);
+
+    // Get or create the test room type.
+    let room_type_id: Uuid = match sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM room_types WHERE LOWER(name) = LOWER('Slip Test Room')",
+    )
+    .fetch_optional(pool)
+    .await
+    .expect("Failed to query room_types")
+    {
+        Some(id) => id,
+        None => sqlx::query_scalar::<_, Uuid>(
+            r#"
+            INSERT INTO room_types (id, name, price_per_night, max_guests)
+            VALUES ($1, 'Slip Test Room', 1500.00, 2)
+            RETURNING id
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .fetch_one(pool)
+        .await
+        .expect("Failed to insert room_type"),
+    };
+
+    // Get or create a room of that type.
+    let room_id: Uuid =
+        match sqlx::query_scalar::<_, Uuid>("SELECT id FROM rooms WHERE room_number = 'SLIP-201'")
+            .fetch_optional(pool)
+            .await
+            .expect("Failed to query rooms")
+        {
+            Some(id) => id,
+            None => sqlx::query_scalar::<_, Uuid>(
+                r#"
+                INSERT INTO rooms (id, room_type_id, room_number, floor)
+                VALUES ($1, $2, 'SLIP-201', 2)
+                RETURNING id
+                "#,
+            )
+            .bind(Uuid::new_v4())
+            .bind(room_type_id)
+            .fetch_one(pool)
+            .await
+            .expect("Failed to insert room"),
+        };
+
+    sqlx::query(
+        r#"
+        INSERT INTO bookings (
+            id, user_id, room_id, room_type_id,
+            check_in_date, check_out_date, num_guests,
+            total_price, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, 1, 1500.00, 'confirmed')
+        "#,
+    )
+    .bind(booking_id)
+    .bind(user_id)
+    .bind(room_id)
+    .bind(room_type_id)
+    .bind(check_in)
+    .bind(check_out)
+    .execute(pool)
+    .await
+    .expect("Failed to insert booking");
+
+    booking_id
+}
+
 /// Sanity-check companion to the rejection tests above: a tiny valid
 /// PNG passes both the magic-byte and per-route body checks. Without
 /// this we can't tell whether 400/413 above are because we broke the

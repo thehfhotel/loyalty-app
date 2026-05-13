@@ -85,8 +85,15 @@ pub fn create_router(state: AppState) -> Router {
         None
     };
 
-    // Storage routes use a different state type, so mount separately
-    let storage_state = storage::StorageState::new(crate::services::storage::StorageService::new());
+    // Storage routes use a different state type, so mount separately.
+    //
+    // MED-6 (security-2026-05-13.md): the slip-serving handler needs DB
+    // and Redis access to authorize per-slip access. We attach the
+    // shared AppState onto the storage state so the slip handler can
+    // run the `booking_slips → bookings → users` lookup + Redis cache
+    // without forcing a global state-type unification.
+    let storage_state = storage::StorageState::new(crate::services::storage::StorageService::new())
+        .with_app_state(state.clone());
     let storage_router =
         Router::new().nest("/api/storage", storage::routes().with_state(storage_state));
 

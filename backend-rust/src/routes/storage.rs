@@ -23,27 +23,49 @@ use axum::{
     Extension, Json, Router,
 };
 use bytes::Bytes;
+use redis::AsyncCommands;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 use tracing::{debug, error, info};
+use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::middleware::auth::{auth_middleware, require_role, AuthUser};
+use crate::middleware::auth::{auth_middleware, has_role, require_role, AuthUser};
 use crate::services::storage::{StorageReport, StorageService};
+use crate::state::AppState;
 
 /// State for storage routes
+///
+/// MED-6 (security-2026-05-13.md): `serve_slip` needs to look up the
+/// slip → booking → owner to authorize access. `StorageState` now
+/// carries an optional `AppState` so the slip-serving handler has
+/// access to DB and Redis without forcing other storage handlers
+/// (avatars, general files) to take on a new dep. When `app_state` is
+/// `None` (legacy test wiring), slip authorization conservatively
+/// denies the request.
 #[derive(Clone)]
 pub struct StorageState {
     pub storage: Arc<StorageService>,
+    pub app_state: Option<AppState>,
 }
 
 impl StorageState {
     pub fn new(storage: StorageService) -> Self {
         Self {
             storage: Arc::new(storage),
+            app_state: None,
         }
+    }
+
+    /// Attach an `AppState` so the slip-serving handler can authorize
+    /// against the booking ownership table. Used by `create_router`;
+    /// optional so tests that only exercise the file-serving paths
+    /// can still build a `StorageState` without an attached AppState.
+    pub fn with_app_state(mut self, app_state: AppState) -> Self {
+        self.app_state = Some(app_state);
+        self
     }
 }
 
@@ -281,11 +303,109 @@ async fn serve_avatar(
 /// Serve slip images
 ///
 /// GET /storage/slips/:filename
+///
+/// MED-6 (security-2026-05-13.md): slip files contain banking info
+/// (account number, name, amount, transaction ID). The URLs were
+/// historically public — anyone with the UUID could fetch the slip
+/// forever (Cache-Control: public, max-age=31536000). URLs leak via
+/// logs, referrer headers, browser history, and screen-shares.
+///
+/// Now requires authentication via the `auth_middleware` layer and
+/// authorizes inside the handler: the caller must be either the
+/// booking owner or an admin. Avatars stay public — they're less
+/// sensitive and used as profile pictures.
 async fn serve_slip(
     State(state): State<StorageState>,
+    Extension(auth_user): Extension<AuthUser>,
     Path(filename): Path<String>,
 ) -> Result<Response, AppError> {
+    // Authorization needs DB lookup — bail if AppState wasn't attached
+    // at router-build time. This is a routing/test misconfiguration,
+    // not user input, so 500 is the right answer.
+    let app_state = state.app_state.as_ref().ok_or_else(|| {
+        error!("serve_slip reached without AppState attached — routing bug");
+        AppError::Internal("Storage authorization unavailable".to_string())
+    })?;
+
+    // Admin bypass — any admin (regular or super) can fetch any slip
+    // for moderation, refund / chargeback investigation, etc.
+    if has_role(&auth_user, "admin") {
+        return serve_static_file(&state.storage.get_slip_path(&filename), &filename).await;
+    }
+
+    // Non-admin: the caller must own the booking the slip is attached
+    // to. We treat "slip file not referenced by any booking" as 404
+    // rather than 403 to avoid leaking which UUIDs exist on disk to
+    // callers who shouldn't even know about them. Caching the
+    // slip→booking→owner lookup in Redis with a short TTL keeps the
+    // hot path fast.
+    let caller_id = Uuid::parse_str(&auth_user.id)
+        .map_err(|_| AppError::InvalidToken("Invalid user ID in token".to_string()))?;
+    let slip_url = format!("/storage/slips/{}", filename);
+
+    let owner_id = lookup_slip_owner(app_state, &slip_url).await?;
+
+    if owner_id != caller_id {
+        debug!(
+            slip = %filename,
+            caller = %caller_id,
+            "Slip access denied — caller is not the booking owner"
+        );
+        return Err(AppError::Forbidden(
+            "You do not have permission to view this slip".to_string(),
+        ));
+    }
+
     serve_static_file(&state.storage.get_slip_path(&filename), &filename).await
+}
+
+/// Resolve a slip URL to the user ID that owns the booking it's
+/// attached to.
+///
+/// Cached in Redis under `slip_owner:{url}` with a 5-minute TTL so the
+/// hot path doesn't hit Postgres on every fetch. The mapping is
+/// immutable for the life of the slip row (slips don't get reassigned
+/// to other bookings), so a short TTL is purely a stampede-protection
+/// measure, not a correctness one.
+///
+/// Returns 404 if the slip URL isn't referenced by any booking_slips
+/// row — the file may exist on disk (e.g. orphaned by a failed
+/// booking) but the URL→booking→user chain is what authorizes access.
+async fn lookup_slip_owner(state: &AppState, slip_url: &str) -> Result<Uuid, AppError> {
+    let cache_key = format!("slip_owner:{}", slip_url);
+    let mut conn = state.redis();
+
+    // Cache hit fast path. Fail-open on Redis errors — a slow Redis
+    // shouldn't prevent legitimate slip access.
+    if let Ok(Some(cached)) = conn.get::<_, Option<String>>(&cache_key).await {
+        if let Ok(id) = Uuid::parse_str(&cached) {
+            return Ok(id);
+        }
+    }
+
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        r#"
+        SELECT b.user_id
+        FROM booking_slips bs
+        JOIN bookings b ON b.id = bs.booking_id
+        WHERE bs.slip_url = $1
+        LIMIT 1
+        "#,
+    )
+    .bind(slip_url)
+    .fetch_optional(state.db())
+    .await?;
+
+    let owner_id = row
+        .map(|(uid,)| uid)
+        .ok_or_else(|| AppError::NotFound(format!("Slip {}", slip_url)))?;
+
+    // Best-effort cache write. SET EX is safe to skip on Redis error.
+    let _ = conn
+        .set_ex::<_, _, ()>(&cache_key, owner_id.to_string(), 300)
+        .await;
+
+    Ok(owner_id)
 }
 
 /// Helper function to serve static files
@@ -397,13 +517,23 @@ async fn delete_file(
 ///
 /// These routes are nested under /api/storage in the main router
 pub fn routes() -> Router<StorageState> {
-    // File-serving routes are intentionally public (any client can fetch a
-    // saved avatar/slip/file by URL — the URLs themselves are unguessable
-    // because they include UUIDs).
+    // Avatars and general files stay public — they're not sensitive
+    // (avatars surface as profile pictures, files are app assets) and
+    // the UUID-as-secret model is the same model the SPA already
+    // relies on.
     let public_get_routes = Router::new()
         .route("/files/:filename", get(serve_file))
-        .route("/avatars/:filename", get(serve_avatar))
-        .route("/slips/:filename", get(serve_slip));
+        .route("/avatars/:filename", get(serve_avatar));
+
+    // MED-6 (security-2026-05-13.md): slip files contain banking
+    // info, so the URL alone is no longer enough — the caller must
+    // also be the booking owner OR an admin. The auth_middleware
+    // layer rejects unauthenticated requests with 401; the handler
+    // does the per-slip authorization (looking up
+    // booking_slips → bookings → users).
+    let authenticated_slip_get = Router::new()
+        .route("/slips/:filename", get(serve_slip))
+        .layer(middleware::from_fn(auth_middleware));
 
     // POST upload routes require authentication. The avatar route always
     // saves to the authenticated user's slot — clients CANNOT specify a
@@ -426,6 +556,7 @@ pub fn routes() -> Router<StorageState> {
         .layer(middleware::from_fn(auth_middleware));
 
     public_get_routes
+        .merge(authenticated_slip_get)
         .merge(authenticated_upload_routes)
         .merge(admin_routes)
 }
