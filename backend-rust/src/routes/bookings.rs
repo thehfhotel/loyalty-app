@@ -873,6 +873,17 @@ async fn query_booking_by_id(db: &PgPool, booking_id: Uuid) -> AppResult<Booking
     Ok(row.into_response())
 }
 
+/// Insert a booking, holding a row-level lock on the candidate room for
+/// the full SELECT→INSERT window so two concurrent overlapping requests
+/// can't both observe the room as free.
+///
+/// The defensive `bookings_no_overlap` EXCLUDE constraint (migration
+/// `20260513020000`) is the canonical fix — Postgres rejects the INSERT
+/// atomically if any other transaction commits an overlapping row first.
+/// This function still wraps the read+insert in a single transaction and
+/// takes `SELECT ... FOR UPDATE` on the room row, so the *common* case
+/// hands the loser a clean 409 Conflict rather than relying on the
+/// constraint violation to bubble up.
 async fn insert_booking(
     db: &PgPool,
     user_id: Uuid,
@@ -887,7 +898,7 @@ async fn insert_booking(
         .map(|rt| format!("{:?}", rt))
         .unwrap_or_else(|| "Standard".to_string());
 
-    // Find the room type
+    // Find the room type (read-only, safe to do outside the transaction)
     let room_type_row: RoomTypeRow = sqlx::query_as(
         r#"
         SELECT id, name, price_per_night
@@ -900,7 +911,16 @@ async fn insert_booking(
     .await?
     .ok_or_else(|| AppError::BadRequest(format!("Room type '{}' not found", room_type_name)))?;
 
-    // Find an available room of this type
+    let mut tx = db.begin().await?;
+
+    // Find and lock an available room of this type. The `FOR UPDATE` on
+    // `r.id` serialises overlapping inserts for the same room: the
+    // second transaction blocks until the first commits, then re-runs
+    // the availability check under the lock and either finds no rooms
+    // (= 400) or — if a different room is available — proceeds. The
+    // EXCLUDE constraint added in `20260513020000_bookings_no_overlap.sql`
+    // is the absolute fallback: even if a future caller forgets the
+    // transaction, the DB enforces non-overlap.
     let room_id: Option<(Uuid,)> = sqlx::query_as(
         r#"
         SELECT r.id
@@ -911,7 +931,7 @@ async fn insert_booking(
             -- Exclude rooms with existing bookings that overlap
             SELECT DISTINCT b.room_id
             FROM bookings b
-            WHERE b.status NOT IN ('cancelled')
+            WHERE b.status NOT IN ('cancelled', 'no_show')
               AND b.check_in_date < $3
               AND b.check_out_date > $2
           )
@@ -921,13 +941,15 @@ async fn insert_booking(
             FROM room_blocked_dates rbd
             WHERE rbd.blocked_date >= $2 AND rbd.blocked_date < $3
           )
+        ORDER BY r.id
         LIMIT 1
+        FOR UPDATE OF r
         "#,
     )
     .bind(room_type_row.id)
     .bind(check_in)
     .bind(check_out)
-    .fetch_optional(db)
+    .fetch_optional(&mut *tx)
     .await?;
 
     let room_id = room_id
@@ -938,8 +960,13 @@ async fn insert_booking(
     let nights = (check_out - check_in).num_days() as i32;
     let total_price = room_type_row.price_per_night * Decimal::from(nights);
 
-    // Insert booking
-    let row: BookingRow = sqlx::query_as(
+    // Insert booking. If a concurrent transaction managed to commit an
+    // overlapping booking between our `FOR UPDATE` lock acquisition and
+    // this INSERT (which shouldn't be possible while we hold the row
+    // lock, but the EXCLUDE constraint is here as belt-and-braces),
+    // the DB raises `exclusion_violation` (SQLSTATE 23P01) and we map
+    // it to a 409 Conflict so the client can retry.
+    let row: Result<BookingRow, sqlx::Error> = sqlx::query_as(
         r#"
         INSERT INTO bookings (user_id, room_id, room_type_id, check_in_date, check_out_date, num_guests, total_price, notes, status)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'confirmed')
@@ -958,8 +985,26 @@ async fn insert_booking(
     .bind(guests)
     .bind(total_price)
     .bind(&special_requests)
-    .fetch_one(db)
-    .await?;
+    .fetch_one(&mut *tx)
+    .await;
+
+    let row = match row {
+        Ok(row) => row,
+        Err(sqlx::Error::Database(db_err)) if db_err.code().as_deref() == Some("23P01") => {
+            // EXCLUDE constraint violation — another transaction
+            // committed an overlapping booking for this room before
+            // we could insert. Roll back implicitly (tx dropped via
+            // `?` below would normally do the same, but we want to
+            // explicitly surface a 409 to the caller).
+            tx.rollback().await?;
+            return Err(AppError::Conflict(
+                "Room is no longer available for the selected dates".to_string(),
+            ));
+        },
+        Err(other) => return Err(AppError::from(other)),
+    };
+
+    tx.commit().await?;
 
     // Fetch full booking with joins
     query_booking_by_id(db, row.id).await

@@ -322,6 +322,12 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         .execute(users_email_unique_migration)
         .await?;
 
+    let bookings_no_overlap_migration =
+        include_str!("../../migrations/20260513020000_bookings_no_overlap.sql");
+    template_pool
+        .execute(bookings_no_overlap_migration)
+        .await?;
+
     // Seed tiers
     template_pool
         .execute(
