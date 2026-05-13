@@ -368,8 +368,12 @@ async fn test_get_file() {
         .next()
         .expect("URL should have filename");
 
+    // MED-6: StorageState now also carries an optional AppState; this
+    // test only exercises the public /files path, so leaving app_state
+    // as None is fine.
     let state = StorageState {
         storage: Arc::new(service),
+        app_state: None,
     };
     let router = Router::new().nest("/api/storage", routes_with_state(state));
 

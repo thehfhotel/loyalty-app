@@ -1254,6 +1254,71 @@ async fn test_add_booking_slip_rejects_empty_url() {
     app.cleanup().await.ok();
 }
 
+/// MED-1 (security-2026-05-13.md): the handler must reject slipUrl
+/// values that don't live under `/storage/slips/`. Without this guard
+/// a malicious customer could attach `https://attacker.com/...` to
+/// their own booking and bait an admin into clicking it.
+#[tokio::test]
+async fn test_add_booking_slip_rejects_external_url() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let user = TestUser::new("slip-external-url@test.com");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert test user");
+
+    let booking_id = create_test_booking(app.db(), user.id, "confirmed", 7, 10)
+        .await
+        .expect("Failed to create booking");
+
+    let client = app.authenticated_client(&user.id, &user.email);
+
+    // External URL — outright attacker-hosted.
+    let body = json!({ "slipUrl": "https://attacker.com/fake-paid-slip.png" });
+    let response = client
+        .post(&format!("/api/bookings/{}/slips", booking_id), &body)
+        .await;
+    response.assert_status(400);
+
+    // Nothing should have been persisted.
+    let row_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM booking_slips WHERE booking_id = $1")
+            .bind(booking_id)
+            .fetch_one(app.db())
+            .await
+            .expect("Failed to count slips");
+    assert_eq!(row_count.0, 0, "Rejected slip URL must not insert a row");
+
+    app.cleanup().await.ok();
+}
+
+/// MED-1: a same-origin path that isn't `/storage/slips/` (e.g. an
+/// `/storage/avatars/...` URL) is also rejected. The guard is an
+/// exact-prefix check, not a "starts-with-/storage" hand-wave.
+#[tokio::test]
+async fn test_add_booking_slip_rejects_other_storage_paths() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let user = TestUser::new("slip-wrong-prefix@test.com");
+    user.insert(app.db())
+        .await
+        .expect("Failed to insert test user");
+
+    let booking_id = create_test_booking(app.db(), user.id, "confirmed", 7, 10)
+        .await
+        .expect("Failed to create booking");
+
+    let client = app.authenticated_client(&user.id, &user.email);
+
+    let body = json!({ "slipUrl": "/storage/avatars/spoofed.png" });
+    let response = client
+        .post(&format!("/api/bookings/{}/slips", booking_id), &body)
+        .await;
+    response.assert_status(400);
+
+    app.cleanup().await.ok();
+}
+
 // ============================================================================
 // test_delete_booking_slip - DELETE /api/bookings/slips/:slip_id
 // ============================================================================

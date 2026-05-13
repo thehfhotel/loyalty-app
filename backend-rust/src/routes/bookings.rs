@@ -531,6 +531,21 @@ async fn add_booking_slip(
         return Err(AppError::Validation("slipUrl cannot be empty".to_string()));
     }
 
+    // MED-1 (security-2026-05-13.md): only accept slip URLs that point
+    // at our own slip storage. The endpoint previously accepted any
+    // string; a malicious customer could attach
+    // `https://attacker.com/fake-paid-slip.png` to their booking and
+    // an admin clicking through would land on a credential-harvest page.
+    //
+    // The legitimate path is `/storage/slips/<uuid>.<ext>`, which is
+    // what `POST /api/slips/upload` returns. Anything else is rejected
+    // up-front with 400.
+    if !slip_url.starts_with("/storage/slips/") {
+        return Err(AppError::BadRequest(
+            "slipUrl must be a server-hosted /storage/slips/ path".to_string(),
+        ));
+    }
+
     // Look up the booking; surfaces a 404 when it doesn't exist.
     let booking = query_booking_by_id(state.db(), booking_id).await?;
 

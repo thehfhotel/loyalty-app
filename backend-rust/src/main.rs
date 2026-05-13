@@ -171,13 +171,24 @@ async fn main() -> anyhow::Result<()> {
     // Log configured features
     log_startup_info(&config);
 
-    // Serve with a graceful shutdown signal. Without this, every container
+    // Serve with a graceful shutdown signal AND ConnectInfo wiring.
+    //
+    // `with_graceful_shutdown` (from #235): without it, every container
     // rotation (docker compose up / restart) drops in-flight slip uploads,
-    // SSE long-poll connections, and any other request that the runtime
-    // happens to be holding when SIGTERM lands.
-    let serve_result = axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await;
+    // SSE long-poll connections, and any other request held when SIGTERM
+    // lands.
+    //
+    // `into_make_service_with_connect_info::<SocketAddr>()` (from #236):
+    // makes the peer's `SocketAddr` available to handlers and middleware
+    // via `axum::extract::ConnectInfo<SocketAddr>`. The rate limiter
+    // relies on this to bucket by the actual TCP peer instead of
+    // client-supplied X-Forwarded-For headers (security HIGH-2).
+    let serve_result = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await;
 
     // Close the db pool after the server has stopped accepting / completing
     // requests. Bound the close itself so a pathologically stuck connection
