@@ -53,7 +53,9 @@ Platinum 20+ nights. Tiers are computed from `total_nights`, not
 - Migration *rewrites* (e.g., canonical reconciliations) need an entry
   in `REBRIDGED_MIGRATIONS` (`backend-rust/src/db/migrations.rs`)
   because sqlx tracks a source checksum and refuses to proceed when
-  the file changes.
+  the file changes. Full procedure (when it's safe, schema-diff
+  pre-flight, two-piece review, staging verification) lives in
+  [`docs/migration-rewrite-runbook.md`](docs/migration-rewrite-runbook.md).
 - Use stored procedures (e.g., `award_points`,
   `recalculate_user_tier_by_nights`) instead of raw `UPDATE`s for
   tier-affecting operations.

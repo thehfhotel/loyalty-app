@@ -6,10 +6,31 @@
 # GitHub Actions workflow sets environment variables in .env file
 # This file does NOT hardcode any secrets - all loaded from .env at runtime
 
+#
+# Resource limits (see Operational HIGH-2):
+#
+# `docker compose` (non-swarm) honours the top-level `mem_limit:` and
+# `cpus:` keys, NOT `deploy.resources.limits` (which is swarm-only and
+# silently ignored here). The starting numbers below are conservative
+# anchors for a single-host evergreen deploy — tune from `docker stats`
+# under real traffic once production has a few weeks of usage.
+#
+# Floor reasoning:
+# - backend:  1 CPU / 512 MiB   — Rust binary, small steady state; spikes
+#                                 on multipart slip uploads.
+# - frontend: 0.5 CPU / 128 MiB — nginx serving static SPA bundle.
+# - postgres: 2 CPU / 2 GiB     — primary memory pressure source under
+#                                 audit-log growth; largest allocation.
+# - redis:    0.5 CPU / 256 MiB — small cache, currently single-instance.
+# - nginx:    0.25 CPU / 64 MiB — reverse proxy, no heavy lifting.
+#
+
 services:
   postgres:
     container_name: loyalty_postgres_production
     restart: unless-stopped
+    cpus: 2.0
+    mem_limit: 2g
     ports:
       # Bind to localhost only — backend reaches postgres via the docker network.
       # Host port mapping exists for ad-hoc DBA access from the host (via SSH tunnel).
@@ -18,12 +39,16 @@ services:
   redis:
     container_name: loyalty_redis_production
     restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
     ports:
       # Bind to localhost only — backend reaches redis via the docker network.
       - "127.0.0.1:6379:6379"  # Production Redis port
 
   backend:
     container_name: loyalty_backend_production
+    cpus: 1.0
+    mem_limit: 512m
     build:
       target: runner  # Use production-optimized runner stage with Rust binary
     environment:
@@ -89,6 +114,8 @@ services:
     # NOTE: VITE_API_URL is build-time only (baked into the image during docker build).
     # NODE_ENV is not consumed by the alpine nginx serving the built SPA.
     # Neither belongs in runtime env for the GHCR frontend image.
+    cpus: 0.5
+    mem_limit: 128m
     volumes:
       # GHCR frontend uses nginx:alpine with logs at /var/log/nginx
       - frontend_logs:/var/log/nginx
@@ -99,6 +126,8 @@ services:
   nginx:
     container_name: loyalty_nginx_production
     restart: unless-stopped
+    cpus: 0.25
+    mem_limit: 64m
     ports:
       - "4001:80"  # Production Nginx port
     volumes:

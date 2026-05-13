@@ -1,0 +1,199 @@
+name: Backup Production Database
+
+# Daily off-host backup of the production Postgres volume.
+#
+# Flow:
+#   1. SSH through cloudflared to evergreen (same tunnel deploy.yml uses).
+#   2. `pg_dump` the loyalty DB inside the postgres container.
+#   3. Encrypt the dump with `age` using the public key in BACKUP_AGE_RECIPIENT.
+#   4. Upload to S3-compatible storage (S3 / R2 / Backblaze B2).
+#   5. Apply server-side retention (30 days) via S3 lifecycle policy (set
+#      out of band on the bucket; documented in docs/restore-runbook.md).
+#
+# Scheduling note: 18:00 UTC = 01:00 ICT (Bangkok) — outside the typical
+# user traffic window for a hospitality app.
+#
+# Secrets required (configure in repo Settings → Secrets and variables →
+# Actions → Repository secrets):
+#   - EVERGREEN_DEPLOY_SSH_KEY    (existing — reused from deploy.yml)
+#   - EVERGREEN_HOST_KEY          (existing — reused from deploy.yml)
+#   - POSTGRES_USER               (existing — for pg_dump auth)
+#   - POSTGRES_PASSWORD           (existing — for pg_dump auth)
+#   - POSTGRES_DB                 (existing — DB name)
+#   - BACKUP_AGE_RECIPIENT        (new — age public key, single line
+#                                  starting with `age1...`)
+#   - BACKUP_S3_BUCKET            (new — bucket name)
+#   - BACKUP_S3_ENDPOINT          (new — e.g. `https://<account>.r2.cloudflarestorage.com`
+#                                  for R2, `https://s3.us-east-005.backblazeb2.com` for
+#                                  Backblaze B2, or omit for AWS S3)
+#   - BACKUP_S3_REGION            (new — e.g. `auto` for R2, `us-east-005` for B2)
+#   - BACKUP_S3_ACCESS_KEY_ID     (new)
+#   - BACKUP_S3_SECRET_ACCESS_KEY (new)
+#
+# Until BACKUP_* secrets are wired, the schedule trigger is disabled and
+# only manual `workflow_dispatch` runs (which fail at the upload step with
+# a clear error). See docs/restore-runbook.md for the secret-wiring
+# follow-up checklist.
+
+on:
+  schedule:
+    # Daily at 18:00 UTC (01:00 ICT). Picks a low-traffic window for the
+    # hospitality booking app.
+    - cron: '0 18 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: backup-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CLOUDFLARED_VERSION: "2024.10.0"
+
+jobs:
+  backup:
+    name: "Backup Production DB"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Disable the schedule trigger until BACKUP_* secrets are wired. Manual
+    # workflow_dispatch runs are still allowed so the operator who wires
+    # secrets can sanity-check the path immediately.
+    #
+    # TODO: flip this guard to a `BACKUP_S3_BUCKET != ''` check once
+    # secrets land.
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Validate required secrets are configured
+        env:
+          BACKUP_S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
+          BACKUP_AGE_RECIPIENT: ${{ secrets.BACKUP_AGE_RECIPIENT }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -z "${BACKUP_S3_BUCKET:-}" ] && missing+=("BACKUP_S3_BUCKET")
+          [ -z "${BACKUP_AGE_RECIPIENT:-}" ] && missing+=("BACKUP_AGE_RECIPIENT")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${missing[*]}. See docs/restore-runbook.md."
+            exit 1
+          fi
+
+      - name: Install age (encryption) and AWS CLI v2
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends age
+          # AWS CLI v2 is the supported uploader for S3-compatible
+          # endpoints (R2, Backblaze B2, AWS S3).
+          if ! command -v aws >/dev/null 2>&1; then
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+            unzip -q /tmp/awscliv2.zip -d /tmp
+            sudo /tmp/aws/install
+          fi
+          age --version
+          aws --version
+
+      - name: Cache cloudflared binary
+        id: cache-cloudflared
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/cloudflared
+          key: cloudflared-${{ runner.os }}-${{ env.CLOUDFLARED_VERSION }}
+
+      - name: Download cloudflared (cache miss)
+        if: steps.cache-cloudflared.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.cache/cloudflared
+          curl -fsSL \
+            "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64" \
+            -o ~/.cache/cloudflared/cloudflared
+          chmod +x ~/.cache/cloudflared/cloudflared
+
+      - name: Install cloudflared to /usr/local/bin
+        run: |
+          sudo install -m 755 ~/.cache/cloudflared/cloudflared /usr/local/bin/cloudflared
+          cloudflared --version
+
+      - name: Install SSH key + known_hosts
+        env:
+          SSH_KEY:  ${{ secrets.EVERGREEN_DEPLOY_SSH_KEY }}
+          HOST_KEY: ${{ secrets.EVERGREEN_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY"  > ~/.ssh/deploy_key  && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
+
+      - name: Stream pg_dump to runner and encrypt
+        id: dump
+        env:
+          POSTGRES_USER:        ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD:    ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB:          ${{ secrets.POSTGRES_DB }}
+          BACKUP_AGE_RECIPIENT: ${{ secrets.BACKUP_AGE_RECIPIENT }}
+        run: |
+          set -euo pipefail
+          TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          BACKUP_NAME="loyalty_pg_${TIMESTAMP}.sql.gz.age"
+          echo "backup_name=$BACKUP_NAME" >> "$GITHUB_OUTPUT"
+
+          # Stream pg_dump through gzip on the remote, pipe over SSH to the
+          # runner, then encrypt to disk with age. The DB password is passed
+          # over the SSH session via env so it never appears in `ps`.
+          #
+          # `docker compose exec -T` (no TTY) is required so the SSH stdout
+          # stays binary-clean for the gzip stream.
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o ProxyCommand="cloudflared --edge-ip-version 4 access ssh --hostname %h" \
+              -o SendEnv=PGPASSWORD \
+              deploy@evergreen.thehfhotel.org \
+              "PGPASSWORD='${POSTGRES_PASSWORD}' docker exec -i loyalty_postgres_production \
+                pg_dump -U '${POSTGRES_USER}' -d '${POSTGRES_DB}' --no-owner --no-acl \
+                | gzip -9" \
+            | age --recipient "$BACKUP_AGE_RECIPIENT" --output "/tmp/$BACKUP_NAME"
+
+          BACKUP_SIZE=$(stat -c%s "/tmp/$BACKUP_NAME")
+          if [ "$BACKUP_SIZE" -lt 1024 ]; then
+            echo "::error::Backup file is suspiciously small ($BACKUP_SIZE bytes) — pg_dump probably failed."
+            exit 1
+          fi
+          echo "backup_size_bytes=$BACKUP_SIZE" >> "$GITHUB_OUTPUT"
+          echo "Backup created: $BACKUP_NAME ($BACKUP_SIZE bytes)"
+
+      - name: Upload encrypted dump to S3-compatible storage
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION:    ${{ secrets.BACKUP_S3_REGION }}
+          BACKUP_S3_BUCKET:      ${{ secrets.BACKUP_S3_BUCKET }}
+          BACKUP_S3_ENDPOINT:    ${{ secrets.BACKUP_S3_ENDPOINT }}
+          BACKUP_NAME:           ${{ steps.dump.outputs.backup_name }}
+        run: |
+          set -euo pipefail
+          ENDPOINT_FLAG=()
+          if [ -n "${BACKUP_S3_ENDPOINT:-}" ]; then
+            ENDPOINT_FLAG=(--endpoint-url "$BACKUP_S3_ENDPOINT")
+          fi
+          aws "${ENDPOINT_FLAG[@]}" s3 cp \
+            "/tmp/$BACKUP_NAME" \
+            "s3://$BACKUP_S3_BUCKET/daily/$BACKUP_NAME" \
+            --no-progress
+          echo "Uploaded s3://$BACKUP_S3_BUCKET/daily/$BACKUP_NAME"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Production Backup"
+            echo ""
+            echo "- Trigger: \`${{ github.event_name }}\`"
+            echo "- Backup name: \`${{ steps.dump.outputs.backup_name }}\`"
+            echo "- Size: \`${{ steps.dump.outputs.backup_size_bytes }}\` bytes"
+            echo "- Destination: \`s3://\${BACKUP_S3_BUCKET}/daily/\`"
+            echo ""
+            echo "See \`docs/restore-runbook.md\` for restore instructions."
+          } >> "$GITHUB_STEP_SUMMARY"

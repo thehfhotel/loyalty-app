@@ -28,6 +28,22 @@ The following GitHub Actions secrets are expected to be configured under
 
 > Translation services are currently disabled. Azure translator secrets are not required unless that feature is re-enabled.
 
+### Backup secrets (workflow: `.github/workflows/backup-production.yml`)
+
+These are required to enable the daily Postgres backup workflow. Until
+they are wired, the scheduled trigger is inert (guarded by an `if:`
+condition in the workflow). See [`restore-runbook.md`](./restore-runbook.md)
+for end-to-end setup, retention policy, and the restore drill.
+
+| Secret                          | Description                                          |
+| ------------------------------- | ---------------------------------------------------- |
+| `BACKUP_AGE_RECIPIENT`          | `age1...` public key for dump encryption             |
+| `BACKUP_S3_BUCKET`              | S3-compatible bucket name                            |
+| `BACKUP_S3_ENDPOINT`            | Endpoint URL (empty for AWS S3, set for R2 / B2)     |
+| `BACKUP_S3_REGION`              | Region string (`auto` for R2, `us-east-005` for B2)  |
+| `BACKUP_S3_ACCESS_KEY_ID`       | Access key with `PutObject` on the bucket            |
+| `BACKUP_S3_SECRET_ACCESS_KEY`   | Secret access key                                    |
+
 ### Inspecting and updating secrets
 
 ```bash

@@ -6,14 +6,28 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Request};
+use axum::http::HeaderName;
 use axum::Router;
 use tokio::net::TcpListener;
 use tower_http::compression::CompressionLayer;
+use tower_http::request_id::{
+    MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer,
+};
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::{self, TraceLayer};
 use tracing::{error, info, warn, Level};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+/// HTTP header used to carry a request's correlation ID into and out of
+/// the backend. Lowercase per HTTP/2.
+const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
+
+/// Maximum time the server waits for in-flight requests to finish after a
+/// shutdown signal before forcing exit. Picked just under docker compose's
+/// default `--timeout 30` so the runtime returns control to the OS before
+/// the container is killed.
+const SHUTDOWN_GRACE_PERIOD_SECS: u64 = 25;
 
 /// Global request body limit. 16 MiB matches `client_max_body_size 15M` in
 /// nginx/nginx.conf with a small headroom for multipart framing overhead;
@@ -49,8 +63,10 @@ async fn main() -> anyhow::Result<()> {
     let config = match Settings::new() {
         Ok(cfg) => cfg,
         Err(e) => {
-            error!("Failed to load configuration: {}", e);
-            return Err(anyhow::anyhow!("Configuration error: {}", e));
+            // `{:#}` walks the anyhow cause chain so the underlying config /
+            // dotenvy / env-var error is visible, not just the top frame.
+            error!("Failed to load configuration: {:#}", e);
+            return Err(anyhow::anyhow!("Configuration error: {:#}", e));
         },
     };
 
@@ -64,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
     // Refuse to boot in production with well-known development credentials.
     // In dev/staging this only emits a warning so iteration is unblocked.
     if let Err(e) = enforce_safe_database_url(&config.database.url, &config.environment) {
-        error!("Refusing to start: {}", e);
+        error!("Refusing to start: {:#}", e);
         return Err(e);
     }
 
@@ -82,8 +98,12 @@ async fn main() -> anyhow::Result<()> {
             db
         },
         Err(e) => {
-            error!("Failed to connect to PostgreSQL: {}", e);
-            return Err(anyhow::anyhow!("Database connection error: {}", e));
+            // `{:#}` walks the anyhow cause chain so the underlying sqlx /
+            // io error (TLS handshake, DNS, auth, pool-acquire timeout) is
+            // visible. The top frame alone is a generic "Database connection
+            // error" that hides the root cause.
+            error!("Failed to connect to PostgreSQL: {:#}", e);
+            return Err(anyhow::anyhow!("Database connection error: {:#}", e));
         },
     };
 
@@ -101,7 +121,9 @@ async fn main() -> anyhow::Result<()> {
     // Seed essential data (runs in all environments)
     info!("Seeding essential data...");
     if let Err(e) = db::seed::seed_essential_data(db.pool()).await {
-        error!("Failed to seed essential data: {}", e);
+        // `{:#}` walks the anyhow cause chain — seed failures are non-fatal
+        // here, so we want all the context the underlying sqlx error has.
+        error!("Failed to seed essential data: {:#}", e);
         // Continue startup even if seeding fails - data may already exist
     }
 
@@ -109,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
     if config.environment == Environment::Development {
         info!("Seeding sample data (development mode)...");
         if let Err(e) = db::seed::seed_sample_data(db.pool()).await {
-            error!("Failed to seed sample data: {}", e);
+            error!("Failed to seed sample data: {:#}", e);
             // Continue startup even if sample seeding fails
         }
     }
@@ -122,8 +144,10 @@ async fn main() -> anyhow::Result<()> {
             r
         },
         Err(e) => {
-            error!("Failed to connect to Redis: {}", e);
-            return Err(anyhow::anyhow!("Redis connection error: {}", e));
+            // `{:#}` walks the anyhow cause chain to surface the underlying
+            // redis crate / io error, not just the wrapper message.
+            error!("Failed to connect to Redis: {:#}", e);
+            return Err(anyhow::anyhow!("Redis connection error: {:#}", e));
         },
     };
 
@@ -147,28 +171,128 @@ async fn main() -> anyhow::Result<()> {
     // Log configured features
     log_startup_info(&config);
 
-    axum::serve(listener, app).await?;
+    // Serve with a graceful shutdown signal. Without this, every container
+    // rotation (docker compose up / restart) drops in-flight slip uploads,
+    // SSE long-poll connections, and any other request that the runtime
+    // happens to be holding when SIGTERM lands.
+    let serve_result = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await;
 
+    // Close the db pool after the server has stopped accepting / completing
+    // requests. Bound the close itself so a pathologically stuck connection
+    // can't block container exit past the docker-compose stop timeout.
+    if let Err(close_err) =
+        tokio::time::timeout(Duration::from_secs(SHUTDOWN_GRACE_PERIOD_SECS), db.close()).await
+    {
+        warn!(
+            "Database pool close did not complete within {}s grace period: {}",
+            SHUTDOWN_GRACE_PERIOD_SECS, close_err
+        );
+    }
+
+    serve_result?;
+
+    info!("Server shutdown complete");
     Ok(())
 }
 
-/// Initialize tracing/logging subscriber
+/// Resolve when the process should begin graceful shutdown.
+///
+/// SIGINT (`Ctrl-C`) covers interactive use; SIGTERM is what `docker stop` /
+/// `docker compose` / `kubectl rollout` send before SIGKILL. We race both
+/// and resolve on whichever fires first.
+///
+/// On non-Unix targets only the Ctrl-C branch is active.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl-C signal handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            info!("Received SIGINT (Ctrl-C); beginning graceful shutdown");
+        },
+        _ = terminate => {
+            info!("Received SIGTERM; beginning graceful shutdown");
+        },
+    }
+}
+
+/// Initialize tracing/logging subscriber.
+///
+/// In non-development environments (staging / production / anything other
+/// than `RUST_ENV=development`) the subscriber emits JSON-line output so
+/// downstream log aggregators (Loki, ELK, Cloudflare Logs, etc.) can
+/// parse structured fields out of the box. In development it emits
+/// human-readable text, which is far easier to scan in a terminal.
+///
+/// Settings::new() runs *after* init_tracing, so we can't lean on the
+/// parsed `Environment` enum here — we read the same env vars
+/// (`RUST_ENV`, fallback `NODE_ENV`) that the config layer does.
 fn init_tracing() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                // Default log levels for different modules
-                "loyalty_backend=info,tower_http=info,axum=info,sqlx=warn".into()
-            }),
-        )
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(true)
-                .with_thread_ids(false)
-                .with_file(false)
-                .with_line_number(false),
-        )
-        .init();
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        // Default log levels for different modules
+        "loyalty_backend=info,tower_http=info,axum=info,sqlx=warn".into()
+    });
+
+    let registry = tracing_subscriber::registry().with(env_filter);
+
+    if is_development_env() {
+        // Pretty / human-readable for dev.
+        registry
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_target(true)
+                    .with_thread_ids(false)
+                    .with_file(false)
+                    .with_line_number(false),
+            )
+            .init();
+    } else {
+        // JSON-line output for staging / production. `with_current_span` +
+        // `with_span_list` carry the http_request span and any nested
+        // spans onto every log line so a single request's logs are easy
+        // to correlate even before request IDs land.
+        registry
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_current_span(true)
+                    .with_span_list(true)
+                    .with_target(true)
+                    .with_thread_ids(false)
+                    .with_file(false)
+                    .with_line_number(false),
+            )
+            .init();
+    }
+}
+
+/// Read `RUST_ENV` (falling back to `NODE_ENV`) and report whether we're
+/// in development. Matches `Settings::new()`'s parsing rule so logging
+/// and config agree about which environment they're in.
+fn is_development_env() -> bool {
+    let env_str = std::env::var("RUST_ENV")
+        .or_else(|_| std::env::var("NODE_ENV"))
+        .unwrap_or_else(|_| "development".to_string());
+    matches!(
+        env_str.to_lowercase().as_str(),
+        "development" | "dev" | "local"
+    )
 }
 
 /// Log startup information about configured features
@@ -228,7 +352,19 @@ fn create_app(state: AppState, config: &Settings) -> Router {
     // The routes::create_router function handles setting up all API endpoints
     let app = routes::create_router(state);
 
-    // Apply middleware layers (order matters - applied bottom to top)
+    // Apply middleware layers.
+    //
+    // Layer ordering note (axum / tower): `.layer(X)` wraps the inner
+    // service in X, so the LAST `.layer` call is the OUTERMOST layer the
+    // request hits. Conversely, layers earlier in the source see the
+    // response after later ones. Order matters for request-id propagation:
+    //
+    //   request flow:    set_request_id → trace → ... → handler
+    //   response flow:   handler → ... → trace → propagate_request_id
+    //
+    // so we add set_request_id LAST (outermost) and propagate_request_id
+    // SECOND-LAST so it wraps everything below trace but is wrapped by
+    // set_request_id.
     app
         // Compression (gzip, deflate, br)
         .layer(CompressionLayer::new())
@@ -239,15 +375,45 @@ fn create_app(state: AppState, config: &Settings) -> Router {
         .layer(DefaultBodyLimit::max(DEFAULT_BODY_LIMIT_BYTES))
         // Request timeout (30 seconds default)
         .layer(TimeoutLayer::new(Duration::from_secs(30)))
-        // Request tracing/logging
+        // Request tracing/logging — `make_span_with` injects the
+        // request_id (set by SetRequestIdLayer above us in the request
+        // flow) into the span so every log line for the request carries
+        // the same correlation field.
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+                .make_span_with(make_http_span)
                 .on_response(trace::DefaultOnResponse::new().level(Level::INFO))
                 .on_failure(trace::DefaultOnFailure::new().level(Level::ERROR)),
         )
         // CORS configuration based on environment
         .layer(build_cors_layer(config))
+        // Echo the request_id back to the caller as `x-request-id`. Must
+        // wrap the trace layer (request flow) so the response header is
+        // set after the handler has returned but before the response
+        // leaves the trace span.
+        .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER))
+        // Generate (or accept and pass through) `x-request-id`. v4 UUID.
+        // Must be the outermost layer so every downstream layer sees the
+        // ID and the trace span can include it.
+        .layer(SetRequestIdLayer::new(REQUEST_ID_HEADER, MakeRequestUuid))
+}
+
+/// Build the per-request tracing span. Threads the `x-request-id` header
+/// (set by `SetRequestIdLayer`) onto the span so every log line emitted
+/// while handling the request carries the same correlation field.
+fn make_http_span(request: &Request) -> tracing::Span {
+    let request_id = request
+        .extensions()
+        .get::<RequestId>()
+        .and_then(|id| id.header_value().to_str().ok())
+        .unwrap_or("");
+
+    tracing::info_span!(
+        "http_request",
+        method = %request.method(),
+        uri = %request.uri().path(),
+        request_id = %request_id,
+    )
 }
 
 /// Build CORS layer based on configuration

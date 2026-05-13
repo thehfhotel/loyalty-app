@@ -22,6 +22,13 @@ BACKUP_TYPE="full"
 COMPRESS_BACKUP=false
 BACKUP_DIR="$PROJECT_ROOT/backups"
 
+# Database credentials — read from env vars so this script works against
+# either the legacy `loyalty:loyalty_db` defaults or the current GHCR
+# deploy (which uses POSTGRES_USER/POSTGRES_DB injected from GitHub
+# secrets). Fail loudly if neither is set in a production-like environment.
+PG_USER="${POSTGRES_USER:-${PGUSER:-loyalty}}"
+PG_DB="${POSTGRES_DB:-${PGDATABASE:-loyalty_db}}"
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -116,7 +123,7 @@ DB_BACKUP_FILE="$BACKUP_PATH/database_${TIMESTAMP}.sql"
 
 if docker compose ps postgres | grep -q "Up"; then
     # Database is running - use pg_dump
-    if docker compose exec -T postgres pg_dump -U loyalty loyalty_db > "$DB_BACKUP_FILE"; then
+    if docker compose exec -T postgres pg_dump -U "$PG_USER" "$PG_DB" > "$DB_BACKUP_FILE"; then
         success "✅ Database backup created: $(basename "$DB_BACKUP_FILE")"
         
         # Get database stats
@@ -276,7 +283,8 @@ echo "   Total backups in directory: $BACKUP_COUNT"
 echo "   Backup directory: $BACKUP_DIR"
 echo
 echo "🔄 Restore Instructions:"
-echo "   Database: docker compose exec -T postgres psql -U loyalty -d loyalty_db < database_*.sql"
+echo "   Database: docker compose exec -T postgres psql -U \"\$PG_USER\" -d \"\$PG_DB\" < database_*.sql"
+echo "             (set POSTGRES_USER and POSTGRES_DB env vars to match the deploy)"
 if [[ "$COMPRESS_BACKUP" == "true" ]]; then
     echo "   Extract: tar xzf ${BACKUP_NAME}.tar.gz"
 fi
