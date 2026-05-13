@@ -55,8 +55,10 @@ async fn main() -> anyhow::Result<()> {
     let config = match Settings::new() {
         Ok(cfg) => cfg,
         Err(e) => {
-            error!("Failed to load configuration: {}", e);
-            return Err(anyhow::anyhow!("Configuration error: {}", e));
+            // `{:#}` walks the anyhow cause chain so the underlying config /
+            // dotenvy / env-var error is visible, not just the top frame.
+            error!("Failed to load configuration: {:#}", e);
+            return Err(anyhow::anyhow!("Configuration error: {:#}", e));
         },
     };
 
@@ -70,7 +72,7 @@ async fn main() -> anyhow::Result<()> {
     // Refuse to boot in production with well-known development credentials.
     // In dev/staging this only emits a warning so iteration is unblocked.
     if let Err(e) = enforce_safe_database_url(&config.database.url, &config.environment) {
-        error!("Refusing to start: {}", e);
+        error!("Refusing to start: {:#}", e);
         return Err(e);
     }
 
@@ -88,8 +90,12 @@ async fn main() -> anyhow::Result<()> {
             db
         },
         Err(e) => {
-            error!("Failed to connect to PostgreSQL: {}", e);
-            return Err(anyhow::anyhow!("Database connection error: {}", e));
+            // `{:#}` walks the anyhow cause chain so the underlying sqlx /
+            // io error (TLS handshake, DNS, auth, pool-acquire timeout) is
+            // visible. The top frame alone is a generic "Database connection
+            // error" that hides the root cause.
+            error!("Failed to connect to PostgreSQL: {:#}", e);
+            return Err(anyhow::anyhow!("Database connection error: {:#}", e));
         },
     };
 
@@ -107,7 +113,9 @@ async fn main() -> anyhow::Result<()> {
     // Seed essential data (runs in all environments)
     info!("Seeding essential data...");
     if let Err(e) = db::seed::seed_essential_data(db.pool()).await {
-        error!("Failed to seed essential data: {}", e);
+        // `{:#}` walks the anyhow cause chain — seed failures are non-fatal
+        // here, so we want all the context the underlying sqlx error has.
+        error!("Failed to seed essential data: {:#}", e);
         // Continue startup even if seeding fails - data may already exist
     }
 
@@ -115,7 +123,7 @@ async fn main() -> anyhow::Result<()> {
     if config.environment == Environment::Development {
         info!("Seeding sample data (development mode)...");
         if let Err(e) = db::seed::seed_sample_data(db.pool()).await {
-            error!("Failed to seed sample data: {}", e);
+            error!("Failed to seed sample data: {:#}", e);
             // Continue startup even if sample seeding fails
         }
     }
@@ -128,8 +136,10 @@ async fn main() -> anyhow::Result<()> {
             r
         },
         Err(e) => {
-            error!("Failed to connect to Redis: {}", e);
-            return Err(anyhow::anyhow!("Redis connection error: {}", e));
+            // `{:#}` walks the anyhow cause chain to surface the underlying
+            // redis crate / io error, not just the wrapper message.
+            error!("Failed to connect to Redis: {:#}", e);
+            return Err(anyhow::anyhow!("Redis connection error: {:#}", e));
         },
     };
 
