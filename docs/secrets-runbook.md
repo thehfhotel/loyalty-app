@@ -163,6 +163,51 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 - API keys: **every 180 days**
 - After any security incident: **immediately**
 
+### Impact on active sessions
+
+Rotating an auth-family secret invalidates anything signed/encrypted
+with the old value. The backend currently runs a single validator with
+one key per secret — there is **no dual-key validator** that accepts
+both the old and new keys during a grace window. That means rotation
+is a single sharp event, not a gradual swap. Plan accordingly.
+
+| Secret | What it signs/protects | What happens on rotation |
+|---|---|---|
+| `JWT_SECRET` | Access tokens (`jwt_secret` in `config::AuthConfig`; encoded/decoded via `EncodingKey::from_secret(...)` in `routes/auth.rs` and `routes/oauth.rs`; verified by `middleware/auth.rs` from the `JwtSecret` extension). | Every active access token becomes invalid immediately. With the default `access_token_expiry_secs = 3600` (1h) — and a more typical 15-min TTL in tighter configs — users see a single 401 on their next request, the frontend's existing `/api/auth/refresh` round-trip then mints a fresh access token from the still-valid `refresh_token` cookie, and they continue. **UX impact: usually invisible.** Worst case is one extra request per active user at rotation time. |
+| `JWT_REFRESH_SECRET` | Refresh tokens (`jwt_refresh_secret` in `config::AuthConfig`; signs the contents of the HttpOnly `refresh_token` cookie — Phase 3 cookie-only refresh, per `feat(auth)` #212). | Every active refresh cookie becomes invalid immediately. Once a user's access token expires (≤ 1h) the refresh round-trip fails with 401 and the user is forced back to the login screen. **UX impact: significant** — every logged-in user has to log in again. Rotate during a low-traffic hour and announce on the status page if one exists. |
+| `SESSION_SECRET` | Currently **declared in `config::AuthConfig::session_secret` and validated at boot** (length + placeholder + weak-default checks in `config/mod.rs`), but **not referenced by any runtime handler** as of 2026-05-13. OAuth state for Google / LINE uses a Redis-stored token, not a signed cookie (see `routes/oauth.rs::create_oauth_state` / `get_oauth_state`). The constant is reserved for a future signed-cookie or stateless-OAuth-state path. | **No active-session impact today** — nothing decrypts against this secret at runtime. Rotation is effectively free until a future commit wires it into a code path; this row will need updating then. The value is still expected to be non-default in production because the boot-time validator will refuse to start with a placeholder. |
+
+### Recommended rotation window
+
+Rotate `JWT_REFRESH_SECRET` during a **low-traffic hour** for your
+audience (for `loyalty.saichon.com` that's the local Asia/Bangkok
+overnight window, roughly 02:00–06:00 ICT). Avoid rotating it
+mid-promotion, near a campaign launch, or during a known-busy admin
+push. `JWT_SECRET` is safe to rotate any time given the silent-refresh
+behaviour above, but pairing both rotations into the same low-traffic
+window is the simplest cadence.
+
+If a security incident forces an immediate rotation outside that
+window, accept the temporary support load — rotation latency is more
+important than rotation timing when a key is suspected of being
+exposed.
+
+### Future work: dual-key rotation
+
+A zero-downtime rotation would require a dual-key validator (accept
+both old and new keys for one TTL window, then drop the old). That is
+**not implemented today**. The shape would be:
+
+1. Promote `JWT_SECRET_NEXT` / `JWT_REFRESH_SECRET_NEXT` to the
+   config struct.
+2. Auth middleware verifies against `*_SECRET`; if that fails, retry
+   against `*_SECRET_NEXT`. Token issuance always uses `*_SECRET`.
+3. After one refresh TTL, swap: copy `*_SECRET_NEXT` to `*_SECRET`,
+   clear `*_SECRET_NEXT`. Deploy.
+
+Until that lands, the single-sharp-event procedure above is the
+supported path.
+
 ## Incident response: accidentally committed secret
 
 If a secret is accidentally committed:

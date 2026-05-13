@@ -129,6 +129,14 @@ Three workflows fire on push to `main`:
 
 Production deploys live in `deploy.yml`, still `workflow_run`-triggered,
 gated by a manual approval on the `production` GitHub environment.
+Approvers should walk through
+[`docs/production-approval-checklist.md`](docs/production-approval-checklist.md)
+before clicking approve — E2E can be red on `main` without blocking
+`deploy.yml`, so the human check is the last meaningful gate.
+
+Public-launch readiness — the state of every audit follow-up tied to
+flipping the public switch — is tracked in
+[`docs/public-launch-readiness.md`](docs/public-launch-readiness.md).
 
 Conventional commit prefixes: `feat:`, `fix:`, `improve:`, `refactor:`,
 `test:`, `docs:`, `chore:`.
