@@ -690,7 +690,12 @@ async fn get_transactions(
 }
 
 /// POST /loyalty/award
-/// Award points to a user (admin only)
+///
+/// Award points to a user (admin only). Legacy `LoyaltyState`-backed
+/// handler kept for backwards compatibility with `routes_with_state`;
+/// the `AppState`-backed `award_points_full` is the canonical
+/// implementation. Both now delegate to the `award_points` stored
+/// procedure (CLAUDE.md rule + Correctness HIGH #4).
 async fn award_points(
     State(state): State<LoyaltyState>,
     Extension(auth_user): Extension<AuthUser>,
@@ -711,98 +716,67 @@ async fn award_points(
         ));
     }
 
-    // Start transaction
+    // Start transaction. The SP itself wraps the inserts/updates in
+    // the same transaction once invoked.
     let mut tx = state.db.pool().begin().await?;
 
-    // Get current user loyalty
     let current_loyalty = sqlx::query!(
-        "SELECT current_points, total_nights, tier_id FROM user_loyalty WHERE user_id = $1",
+        "SELECT tier_id FROM user_loyalty WHERE user_id = $1 FOR UPDATE",
         payload.user_id,
     )
     .fetch_optional(&mut *tx)
-    .await?;
+    .await?
+    .ok_or_else(|| AppError::NotFound("User loyalty record not found".to_string()))?;
 
-    let current_loyalty = current_loyalty
-        .ok_or_else(|| AppError::NotFound("User loyalty record not found".to_string()))?;
-
-    let old_points = current_loyalty.current_points.unwrap_or(0);
-    let old_nights = current_loyalty.total_nights.unwrap_or(0);
     let old_tier_id = current_loyalty.tier_id;
 
-    // Create points transaction
     let transaction_type = payload.source.as_deref().unwrap_or("admin_award");
     let description = payload
         .description
         .clone()
         .unwrap_or_else(|| "Points awarded by admin".to_string());
+    let admin_reason = description.clone();
 
-    let transaction_id = sqlx::query_scalar!(
+    let sp_result: JsonValue = sqlx::query_scalar!(
         r#"
-        INSERT INTO points_transactions (user_id, points, type, description, admin_user_id, admin_reason, nights_stayed)
-        VALUES ($1, $2, $3::text::points_transaction_type, $4, $5, $6, $7)
-        RETURNING id
+        SELECT award_points($1, $2, $3::varchar, $4, $5, $6, $7, $8) AS "result!"
         "#,
         payload.user_id,
         payload.points,
         transaction_type,
         &description,
+        None::<String>,
         admin_user_id,
-        &description,
+        &admin_reason,
         payload.nights,
     )
     .fetch_one(&mut *tx)
     .await?;
 
-    // Update user loyalty
-    let new_points = old_points + payload.points;
-    let new_nights = old_nights + payload.nights;
+    let transaction_id = sp_result
+        .get("transaction_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(|| {
+            AppError::Internal("award_points SP did not return a transaction_id".to_string())
+        })?;
 
-    sqlx::query!(
+    let updated = sqlx::query!(
         r#"
-        UPDATE user_loyalty
-        SET current_points = $1,
-            total_nights = $2,
-            points_updated_at = NOW(),
-            updated_at = NOW()
-        WHERE user_id = $3
+        SELECT ul.current_points, ul.total_nights, ul.tier_id, t.name AS "tier_name?"
+        FROM user_loyalty ul
+        LEFT JOIN tiers t ON ul.tier_id = t.id
+        WHERE ul.user_id = $1
         "#,
-        new_points,
-        new_nights,
         payload.user_id,
     )
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
 
-    // Recalculate tier based on nights
-    let new_tier: Option<TierRow> = sqlx::query_as!(
-        TierRow,
-        r#"
-        SELECT id, name, min_points, min_nights, benefits, color, sort_order, is_active, created_at, updated_at
-        FROM tiers
-        WHERE min_nights <= $1 AND is_active = true
-        ORDER BY min_nights DESC
-        LIMIT 1
-        "#,
-        new_nights,
-    )
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    let (_new_tier_id, new_tier_name, tier_changed) = if let Some(tier) = new_tier {
-        let changed = old_tier_id != Some(tier.id);
-        if changed {
-            sqlx::query!(
-                "UPDATE user_loyalty SET tier_id = $1, tier_updated_at = NOW() WHERE user_id = $2",
-                tier.id,
-                payload.user_id,
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
-        (Some(tier.id), Some(tier.name), changed)
-    } else {
-        (old_tier_id, None, false)
-    };
+    let new_points = updated.current_points.unwrap_or(0);
+    let new_nights = updated.total_nights.unwrap_or(0);
+    let tier_changed = old_tier_id != updated.tier_id;
+    let new_tier_name = updated.tier_name;
 
     tx.commit().await?;
 
@@ -1626,6 +1600,12 @@ async fn admin_get_users(
 }
 
 /// POST /loyalty/admin/award-points - Award points to a user (admin only)
+///
+/// Delegates to the `award_points` stored procedure rather than
+/// hand-rolling the points_transactions insert + user_loyalty update
+/// (CLAUDE.md rule + Correctness HIGH #4). Nights default to 0 — this
+/// endpoint is points-only; nights-aware admin awards go through
+/// `admin_award_nights` or `admin_award_spending_with_nights`.
 async fn admin_award_points(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
@@ -1651,13 +1631,9 @@ async fn admin_award_points(
 
     let admin_reason = format!("Points awarded by admin user {}", admin_user_id);
 
-    // Create points transaction using award_points stored procedure if available,
-    // or direct insert
-    let transaction_id = sqlx::query_scalar!(
+    let sp_result: JsonValue = sqlx::query_scalar!(
         r#"
-        INSERT INTO points_transactions (user_id, points, type, description, reference_id, admin_user_id, admin_reason)
-        VALUES ($1, $2, 'admin_award'::points_transaction_type, $3, $4, $5, $6)
-        RETURNING id
+        SELECT award_points($1, $2, 'admin_award'::varchar, $3, $4, $5, $6, 0) AS "result!"
         "#,
         payload.user_id,
         payload.points,
@@ -1669,20 +1645,13 @@ async fn admin_award_points(
     .fetch_one(state.db())
     .await?;
 
-    // Update user loyalty points
-    sqlx::query!(
-        r#"
-        UPDATE user_loyalty
-        SET current_points = current_points + $1,
-            points_updated_at = NOW(),
-            updated_at = NOW()
-        WHERE user_id = $2
-        "#,
-        payload.points,
-        payload.user_id,
-    )
-    .execute(state.db())
-    .await?;
+    let transaction_id = sp_result
+        .get("transaction_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(|| {
+            AppError::Internal("award_points SP did not return a transaction_id".to_string())
+        })?;
 
     // Get updated loyalty status
     let loyalty_status = get_user_loyalty_status_internal(state.db(), payload.user_id).await?;
@@ -2026,7 +1995,9 @@ async fn admin_award_spending_with_nights(
 
     let mut tx = state.db().begin().await?;
 
-    // Ensure user has loyalty status
+    // Ensure user has loyalty status before invoking the SP (the SP
+    // assumes the row exists; we keep this seed insert because legacy
+    // accounts may pre-date the loyalty enrollment hook).
     sqlx::query!(
         r#"
         INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights)
@@ -2040,81 +2011,50 @@ async fn admin_award_spending_with_nights(
     .execute(&mut *tx)
     .await?;
 
-    // Create points transaction
-    let transaction_id = sqlx::query_scalar!(
+    // Delegate to `award_points` SP — it inserts the
+    // points_transactions row, bumps current_points + total_nights,
+    // and (when nights > 0) recalculates the tier and writes a
+    // tier-change audit row. CLAUDE.md rule + Correctness HIGH #4.
+    let sp_result: JsonValue = sqlx::query_scalar!(
         r#"
-        INSERT INTO points_transactions (
-            user_id, points, type, description, reference_id, nights_stayed,
-            admin_user_id, admin_reason, created_at, expires_at
-        ) VALUES ($1, $2, $3::text::points_transaction_type, $4, $5, $6, $7, $8, NOW(), NOW() + INTERVAL '1 year')
-        RETURNING id
+        SELECT award_points($1, $2, $3::varchar, $4, $5, $6, $7, $8) AS "result!"
         "#,
         payload.user_id,
         points_earned,
         transaction_type,
         &description,
-        &reference_id,
-        payload.nights_stayed,
+        Some(&reference_id),
         admin_user_id,
         &admin_reason,
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-
-    // Update user_loyalty: add points and nights
-    sqlx::query!(
-        r#"
-        UPDATE user_loyalty
-        SET current_points = current_points + $2,
-            total_nights = total_nights + $3,
-            updated_at = NOW()
-        WHERE user_id = $1
-        "#,
-        payload.user_id,
-        points_earned,
         payload.nights_stayed,
     )
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
 
-    // Get updated total nights
-    let new_total_nights = sqlx::query!(
-        "SELECT total_nights FROM user_loyalty WHERE user_id = $1",
+    let transaction_id = sp_result
+        .get("transaction_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(|| {
+            AppError::Internal("award_points SP did not return a transaction_id".to_string())
+        })?;
+
+    // Re-read total nights + tier for the response. Both were just
+    // written by the SP — this is a confirmation read.
+    let updated = sqlx::query!(
+        r#"
+        SELECT ul.total_nights, t.name AS "tier_name?"
+        FROM user_loyalty ul
+        LEFT JOIN tiers t ON ul.tier_id = t.id
+        WHERE ul.user_id = $1
+        "#,
         payload.user_id,
     )
     .fetch_one(&mut *tx)
-    .await?
-    .total_nights
-    .unwrap_or(0);
-
-    // Recalculate tier based on nights
-    let new_tier: Option<TierRow> = sqlx::query_as!(
-        TierRow,
-        r#"
-        SELECT id, name, min_points, min_nights, benefits, color, sort_order, is_active, created_at, updated_at
-        FROM tiers
-        WHERE min_nights <= $1 AND is_active = true
-        ORDER BY min_nights DESC
-        LIMIT 1
-        "#,
-        new_total_nights,
-    )
-    .fetch_optional(&mut *tx)
     .await?;
 
-    let new_tier_name = if let Some(tier) = &new_tier {
-        // Update tier
-        sqlx::query!(
-            "UPDATE user_loyalty SET tier_id = $1, tier_updated_at = NOW() WHERE user_id = $2",
-            tier.id,
-            payload.user_id,
-        )
-        .execute(&mut *tx)
-        .await?;
-        tier.name.clone()
-    } else {
-        "Bronze".to_string()
-    };
+    let new_total_nights = updated.total_nights.unwrap_or(0);
+    let new_tier_name = updated.tier_name.unwrap_or_else(|| "Bronze".to_string());
 
     tx.commit().await?;
 
@@ -2158,7 +2098,7 @@ async fn admin_award_nights(
 
     let mut tx = state.db().begin().await?;
 
-    // Ensure user has loyalty status
+    // Ensure user has loyalty status before invoking the SP.
     sqlx::query!(
         r#"
         INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights)
@@ -2172,76 +2112,44 @@ async fn admin_award_nights(
     .execute(&mut *tx)
     .await?;
 
-    // Create points transaction (0 points, only nights)
-    let transaction_id = sqlx::query_scalar!(
+    // Delegate to the SP. Points = 0; nights = payload.nights triggers
+    // the tier recalculation hook inside the SP.
+    let sp_result: JsonValue = sqlx::query_scalar!(
         r#"
-        INSERT INTO points_transactions (
-            user_id, points, type, description, reference_id, nights_stayed,
-            admin_user_id, admin_reason, created_at
-        ) VALUES ($1, 0, 'earned_stay'::points_transaction_type, $2, $3, $4, $5, $6, NOW())
-        RETURNING id
+        SELECT award_points($1, 0, 'earned_stay'::varchar, $2, $3, $4, $5, $6) AS "result!"
         "#,
         payload.user_id,
         &description,
         payload.reference_id.as_deref(),
-        payload.nights,
         admin_user_id,
         &payload.reason,
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-
-    // Update user_loyalty: add nights only
-    sqlx::query!(
-        r#"
-        UPDATE user_loyalty
-        SET total_nights = total_nights + $2,
-            updated_at = NOW()
-        WHERE user_id = $1
-        "#,
-        payload.user_id,
         payload.nights,
     )
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
 
-    // Get updated total nights
-    let new_total_nights = sqlx::query!(
-        "SELECT total_nights FROM user_loyalty WHERE user_id = $1",
+    let transaction_id = sp_result
+        .get("transaction_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(|| {
+            AppError::Internal("award_points SP did not return a transaction_id".to_string())
+        })?;
+
+    let updated = sqlx::query!(
+        r#"
+        SELECT ul.total_nights, t.name AS "tier_name?"
+        FROM user_loyalty ul
+        LEFT JOIN tiers t ON ul.tier_id = t.id
+        WHERE ul.user_id = $1
+        "#,
         payload.user_id,
     )
     .fetch_one(&mut *tx)
-    .await?
-    .total_nights
-    .unwrap_or(0);
-
-    // Recalculate tier based on nights
-    let new_tier: Option<TierRow> = sqlx::query_as!(
-        TierRow,
-        r#"
-        SELECT id, name, min_points, min_nights, benefits, color, sort_order, is_active, created_at, updated_at
-        FROM tiers
-        WHERE min_nights <= $1 AND is_active = true
-        ORDER BY min_nights DESC
-        LIMIT 1
-        "#,
-        new_total_nights,
-    )
-    .fetch_optional(&mut *tx)
     .await?;
 
-    let new_tier_name = if let Some(tier) = &new_tier {
-        sqlx::query!(
-            "UPDATE user_loyalty SET tier_id = $1, tier_updated_at = NOW() WHERE user_id = $2",
-            tier.id,
-            payload.user_id,
-        )
-        .execute(&mut *tx)
-        .await?;
-        tier.name.clone()
-    } else {
-        "Bronze".to_string()
-    };
+    let new_total_nights = updated.total_nights.unwrap_or(0);
+    let new_tier_name = updated.tier_name.unwrap_or_else(|| "Bronze".to_string());
 
     tx.commit().await?;
 
@@ -2303,77 +2211,46 @@ async fn admin_deduct_nights(
 
     let mut tx = state.db().begin().await?;
 
-    // Create points transaction with negative nights
+    // Delegate to `award_points` SP with negative nights so the SP
+    // handles the points_transactions insert, balance update, and tier
+    // recalculation in one place. CLAUDE.md rule + Correctness HIGH #4.
     let neg_nights = -payload.nights;
-    let transaction_id = sqlx::query_scalar!(
+    let sp_result: JsonValue = sqlx::query_scalar!(
         r#"
-        INSERT INTO points_transactions (
-            user_id, points, type, description, reference_id, nights_stayed,
-            admin_user_id, admin_reason, created_at
-        ) VALUES ($1, 0, 'admin_deduction'::points_transaction_type, $2, $3, $4, $5, $6, NOW())
-        RETURNING id
+        SELECT award_points($1, 0, 'admin_deduction'::varchar, $2, $3, $4, $5, $6) AS "result!"
         "#,
         payload.user_id,
         &description,
         payload.reference_id.as_deref(),
-        neg_nights,
         admin_user_id,
         &payload.reason,
+        neg_nights,
     )
     .fetch_one(&mut *tx)
     .await?;
 
-    // Update user_loyalty: deduct nights
-    sqlx::query!(
-        r#"
-        UPDATE user_loyalty
-        SET total_nights = total_nights - $2,
-            updated_at = NOW()
-        WHERE user_id = $1
-        "#,
-        payload.user_id,
-        payload.nights,
-    )
-    .execute(&mut *tx)
-    .await?;
+    let transaction_id = sp_result
+        .get("transaction_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(|| {
+            AppError::Internal("award_points SP did not return a transaction_id".to_string())
+        })?;
 
-    // Get updated total nights
-    let new_total_nights = sqlx::query!(
-        "SELECT total_nights FROM user_loyalty WHERE user_id = $1",
+    let updated = sqlx::query!(
+        r#"
+        SELECT ul.total_nights, t.name AS "tier_name?"
+        FROM user_loyalty ul
+        LEFT JOIN tiers t ON ul.tier_id = t.id
+        WHERE ul.user_id = $1
+        "#,
         payload.user_id,
     )
     .fetch_one(&mut *tx)
-    .await?
-    .total_nights
-    .unwrap_or(0);
-
-    // Recalculate tier based on nights
-    let new_tier: Option<TierRow> = sqlx::query_as!(
-        TierRow,
-        r#"
-        SELECT id, name, min_points, min_nights, benefits, color, sort_order, is_active, created_at, updated_at
-        FROM tiers
-        WHERE min_nights <= $1 AND is_active = true
-        ORDER BY min_nights DESC
-        LIMIT 1
-        "#,
-        new_total_nights,
-    )
-    .fetch_optional(&mut *tx)
     .await?;
 
-    let new_tier_name = if let Some(tier) = &new_tier {
-        sqlx::query!(
-            "UPDATE user_loyalty SET tier_id = $1, tier_updated_at = NOW() WHERE user_id = $2",
-            tier.id,
-            payload.user_id,
-        )
-        .execute(&mut *tx)
-        .await?;
-        tier.name.clone()
-    } else {
-        "Bronze".to_string()
-    };
+    let new_total_nights = updated.total_nights.unwrap_or(0);
+    let new_tier_name = updated.tier_name.unwrap_or_else(|| "Bronze".to_string());
 
     tx.commit().await?;
 
