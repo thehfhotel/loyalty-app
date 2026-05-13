@@ -5,14 +5,14 @@
 //! distributed rate limiting.
 
 use axum::{
-    extract::Request,
+    extract::{ConnectInfo, Request},
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
     Json,
 };
 use std::collections::HashMap;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -159,39 +159,33 @@ impl IntoResponse for RateLimitError {
     }
 }
 
-/// Extract client IP from request
+/// Extract client IP from the request's underlying TCP peer.
 ///
-/// Checks X-Forwarded-For and X-Real-IP headers first (for reverse proxy setups),
-/// then falls back to the connection IP.
+/// HIGH-2 (security-2026-05-13.md): `X-Forwarded-For` and `X-Real-IP` are
+/// supplied by the client. nginx's `proxy_add_x_forwarded_for` previously
+/// *appended* whatever the client sent, leaving the leftmost (read first)
+/// value attacker-controlled — every rotated header value got its own
+/// rate-limit bucket, defeating the strict 5/min auth limit and the
+/// global 100/min limit. nginx is now configured to *replace* the header
+/// with `$remote_addr`, but the limiter no longer trusts those headers
+/// at all: it reads `axum::extract::ConnectInfo<SocketAddr>` which is the
+/// actual TCP peer that opened the connection.
+///
+/// `ConnectInfo` is wired up in `main.rs` via
+/// `into_make_service_with_connect_info::<SocketAddr>()`. If for some
+/// reason the extension is missing (test harnesses, misconfiguration),
+/// we fall back to `127.0.0.1` — that places every such request in a
+/// single shared bucket, which is the safe-by-default behaviour.
 fn get_client_ip(request: &Request) -> IpAddr {
-    // Try X-Forwarded-For header first
-    if let Some(forwarded) = request
-        .headers()
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-    {
-        // X-Forwarded-For can contain multiple IPs, take the first one
-        if let Some(ip_str) = forwarded.split(',').next() {
-            if let Ok(ip) = ip_str.trim().parse() {
-                return ip;
-            }
-        }
-    }
-
-    // Try X-Real-IP header
-    if let Some(real_ip) = request
-        .headers()
-        .get("x-real-ip")
-        .and_then(|v| v.to_str().ok())
-    {
-        if let Ok(ip) = real_ip.trim().parse() {
-            return ip;
-        }
-    }
-
-    // Fallback to loopback (in production, this should be the actual connection IP)
-    // Note: Axum's ConnectInfo extractor should be used for production
-    "127.0.0.1".parse().unwrap()
+    request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(addr)| addr.ip())
+        .unwrap_or_else(|| {
+            "127.0.0.1"
+                .parse()
+                .expect("127.0.0.1 is a valid IPv4 literal")
+        })
 }
 
 /// Rate limiting middleware
@@ -498,6 +492,67 @@ mod tests {
 
         let relaxed = RateLimitConfig::relaxed();
         assert_eq!(relaxed.max_requests, 1000);
+    }
+
+    // ----------------------------------------------------------------
+    // get_client_ip — HIGH-2 regression guard
+    //
+    // The limiter must read the actual TCP peer from
+    // `ConnectInfo<SocketAddr>` and IGNORE attacker-controlled
+    // `X-Forwarded-For` / `X-Real-IP` headers. These tests assemble a
+    // synthetic `Request` with both a `ConnectInfo` extension and
+    // spoofed headers, then assert the chosen IP comes from
+    // `ConnectInfo`.
+    // ----------------------------------------------------------------
+
+    use axum::body::Body;
+
+    #[test]
+    fn get_client_ip_reads_connect_info_extension() {
+        let peer: SocketAddr = "203.0.113.42:54321".parse().unwrap();
+        let mut req = axum::http::Request::builder()
+            .uri("/api/health")
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(ConnectInfo(peer));
+
+        let ip = get_client_ip(&req);
+
+        assert_eq!(ip, "203.0.113.42".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn get_client_ip_ignores_spoofed_x_forwarded_for() {
+        let peer: SocketAddr = "203.0.113.42:54321".parse().unwrap();
+        let mut req = axum::http::Request::builder()
+            .uri("/api/auth/login")
+            .header("x-forwarded-for", "1.1.1.1, 2.2.2.2")
+            .header("x-real-ip", "9.9.9.9")
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(ConnectInfo(peer));
+
+        // Even with attacker-supplied forwarding headers present, the
+        // chosen IP must be the TCP peer from ConnectInfo, not 1.1.1.1
+        // or 9.9.9.9 — otherwise an attacker could rotate header values
+        // and get a fresh rate-limit bucket per request.
+        let ip = get_client_ip(&req);
+        assert_eq!(ip, "203.0.113.42".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn get_client_ip_falls_back_to_loopback_without_connect_info() {
+        // No ConnectInfo extension (would be a routing/test bug in real
+        // code). The function must not panic and should return a stable
+        // value so all such requests share a single bucket.
+        let req = axum::http::Request::builder()
+            .uri("/")
+            .header("x-forwarded-for", "8.8.8.8")
+            .body(Body::empty())
+            .unwrap();
+
+        let ip = get_client_ip(&req);
+        assert_eq!(ip, "127.0.0.1".parse::<IpAddr>().unwrap());
     }
 
     // Redis rate limiter tests require a running Redis instance
