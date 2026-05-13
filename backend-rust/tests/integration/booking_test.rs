@@ -328,10 +328,7 @@ async fn test_create_booking_concurrent_overlap_yields_one_conflict() {
 
     let statuses = [response_a.status, response_b.status];
     let successes = statuses.iter().filter(|s| **s == 200 || **s == 201).count();
-    let conflicts = statuses
-        .iter()
-        .filter(|s| **s == 400 || **s == 409)
-        .count();
+    let conflicts = statuses.iter().filter(|s| **s == 400 || **s == 409).count();
 
     assert_eq!(
         successes, 1,

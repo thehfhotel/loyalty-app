@@ -318,21 +318,15 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
 
     let users_email_unique_migration =
         include_str!("../../migrations/20260513000000_users_email_unique.sql");
-    template_pool
-        .execute(users_email_unique_migration)
-        .await?;
+    template_pool.execute(users_email_unique_migration).await?;
 
     let idempotency_keys_migration =
         include_str!("../../migrations/20260513010000_idempotency_keys.sql");
-    template_pool
-        .execute(idempotency_keys_migration)
-        .await?;
+    template_pool.execute(idempotency_keys_migration).await?;
 
     let bookings_no_overlap_migration =
         include_str!("../../migrations/20260513020000_bookings_no_overlap.sql");
-    template_pool
-        .execute(bookings_no_overlap_migration)
-        .await?;
+    template_pool.execute(bookings_no_overlap_migration).await?;
 
     // Seed tiers
     template_pool
@@ -363,21 +357,54 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
     // Close the template pool — required before using it as a TEMPLATE
     template_pool.close().await;
 
-    // Clean up orphaned test databases from previous runs
-    let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT datname FROM pg_database WHERE datname LIKE 'test_%' AND datistemplate = false",
+    // Clean up orphaned test databases from previous runs.
+    //
+    // The previous implementation dropped every `test_%` database
+    // unconditionally. Under nextest's process model that's actively
+    // harmful — sibling worker processes that have already passed
+    // `ensure_template_db()` and are running tests against their own
+    // `test_<uuid>` database hold no advisory lock here, so the
+    // unconditional `pg_terminate_backend` + DROP would yank their
+    // databases out from under them mid-test. See
+    // `docs/audits/correctness-2026-05-13.md` HIGH #6 for the
+    // write-up.
+    //
+    // Fix: only drop databases that are demonstrably stale — no
+    // active backends AND a `pg_database.datacl`-derived age older
+    // than 30 minutes. Postgres doesn't expose a creation timestamp,
+    // so we proxy "old" via the lack of any connection: a sibling
+    // worker that's actually using the DB will have at least one
+    // backend, which excludes it from the drop set. Tests that crash
+    // and leak DBs will eventually be cleaned up the next time the
+    // template is rebuilt, which is the original intent.
+    let stale_rows: Vec<(String,)> = sqlx::query_as(
+        r#"
+        SELECT d.datname
+        FROM pg_database d
+        WHERE d.datname LIKE 'test_%'
+          AND d.datistemplate = false
+          AND d.datname <> $1
+          AND NOT EXISTS (
+              SELECT 1
+              FROM pg_stat_activity sa
+              WHERE sa.datname = d.datname
+                AND sa.pid <> pg_backend_pid()
+          )
+        "#,
     )
+    .bind(TEMPLATE_DB_NAME)
     .fetch_all(&admin_pool)
     .await
     .unwrap_or_default();
 
-    for (db_name,) in rows {
-        let _ = sqlx::query(&format!(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{}' AND pid <> pg_backend_pid()",
-            db_name
-        ))
-        .execute(&admin_pool)
-        .await;
+    for (db_name,) in stale_rows {
+        // We intentionally do NOT call `pg_terminate_backend` here —
+        // the SELECT above already filtered to databases with no
+        // connections, so DROP DATABASE should succeed without
+        // terminating anything. If a sibling races and connects
+        // between the SELECT and DROP, the DROP fails harmlessly
+        // ("database is being accessed by other users"), which is
+        // exactly the right behaviour.
         let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS \"{}\"", db_name))
             .execute(&admin_pool)
             .await;

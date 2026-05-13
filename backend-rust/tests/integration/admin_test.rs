@@ -1688,15 +1688,17 @@ async fn test_admin_verify_slip_writes_audit_log_row() {
     );
 
     // Audit rows must reference the acting admin.
-    let admin_id_rows: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT admin_id FROM booking_audit_log WHERE booking_id = $1",
-    )
-    .bind(booking_id)
-    .fetch_all(app.db())
-    .await
-    .expect("Failed to query audit admin ids");
+    let admin_id_rows: Vec<(Uuid,)> =
+        sqlx::query_as("SELECT admin_id FROM booking_audit_log WHERE booking_id = $1")
+            .bind(booking_id)
+            .fetch_all(app.db())
+            .await
+            .expect("Failed to query audit admin ids");
     for (recorded_admin_id,) in admin_id_rows {
-        assert_eq!(recorded_admin_id, admin.id, "Audit row should record the acting admin");
+        assert_eq!(
+            recorded_admin_id, admin.id,
+            "Audit row should record the acting admin"
+        );
     }
 
     app.cleanup().await.ok();

@@ -151,10 +151,7 @@ async fn test_register_concurrent_same_email_leaves_one_row() {
 
     let statuses = [response_a.status, response_b.status];
     let successes = statuses.iter().filter(|s| **s == 200 || **s == 201).count();
-    let conflicts = statuses
-        .iter()
-        .filter(|s| **s == 400 || **s == 409)
-        .count();
+    let conflicts = statuses.iter().filter(|s| **s == 400 || **s == 409).count();
 
     assert_eq!(
         successes, 1,

@@ -829,7 +829,8 @@ impl OAuthService for OAuthServiceImpl {
                     AppError::DatabaseQuery(format!("Failed to link OAuth provider: {}", e))
                 })?;
 
-                self.update_oauth_user_profile(&winner.id, &user_info).await?;
+                self.update_oauth_user_profile(&winner.id, &user_info)
+                    .await?;
 
                 let email = winner.email.as_deref().unwrap_or("");
                 let (access_token, refresh_token) = self.generate_tokens(winner.id, email)?;
