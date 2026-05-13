@@ -224,23 +224,67 @@ async fn shutdown_signal() {
     }
 }
 
-/// Initialize tracing/logging subscriber
+/// Initialize tracing/logging subscriber.
+///
+/// In non-development environments (staging / production / anything other
+/// than `RUST_ENV=development`) the subscriber emits JSON-line output so
+/// downstream log aggregators (Loki, ELK, Cloudflare Logs, etc.) can
+/// parse structured fields out of the box. In development it emits
+/// human-readable text, which is far easier to scan in a terminal.
+///
+/// Settings::new() runs *after* init_tracing, so we can't lean on the
+/// parsed `Environment` enum here — we read the same env vars
+/// (`RUST_ENV`, fallback `NODE_ENV`) that the config layer does.
 fn init_tracing() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                // Default log levels for different modules
-                "loyalty_backend=info,tower_http=info,axum=info,sqlx=warn".into()
-            }),
-        )
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(true)
-                .with_thread_ids(false)
-                .with_file(false)
-                .with_line_number(false),
-        )
-        .init();
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        // Default log levels for different modules
+        "loyalty_backend=info,tower_http=info,axum=info,sqlx=warn".into()
+    });
+
+    let registry = tracing_subscriber::registry().with(env_filter);
+
+    if is_development_env() {
+        // Pretty / human-readable for dev.
+        registry
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_target(true)
+                    .with_thread_ids(false)
+                    .with_file(false)
+                    .with_line_number(false),
+            )
+            .init();
+    } else {
+        // JSON-line output for staging / production. `with_current_span` +
+        // `with_span_list` carry the http_request span and any nested
+        // spans onto every log line so a single request's logs are easy
+        // to correlate even before request IDs land.
+        registry
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_current_span(true)
+                    .with_span_list(true)
+                    .with_target(true)
+                    .with_thread_ids(false)
+                    .with_file(false)
+                    .with_line_number(false),
+            )
+            .init();
+    }
+}
+
+/// Read `RUST_ENV` (falling back to `NODE_ENV`) and report whether we're
+/// in development. Matches `Settings::new()`'s parsing rule so logging
+/// and config agree about which environment they're in.
+fn is_development_env() -> bool {
+    let env_str = std::env::var("RUST_ENV")
+        .or_else(|_| std::env::var("NODE_ENV"))
+        .unwrap_or_else(|_| "development".to_string());
+    matches!(
+        env_str.to_lowercase().as_str(),
+        "development" | "dev" | "local"
+    )
 }
 
 /// Log startup information about configured features
