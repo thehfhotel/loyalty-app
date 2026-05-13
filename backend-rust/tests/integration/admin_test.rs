@@ -1478,6 +1478,100 @@ async fn test_admin_email_test_requires_admin() {
     app.cleanup().await.ok();
 }
 
+/// `PUT /api/admin/bookings/:id` persists `paymentType` and
+/// `paymentAmount` end-to-end, and a follow-up `GET` reflects the values
+/// the admin set. MED-2 (correctness-2026-05-13.md): these columns were
+/// added by `20260512020000_booking_admin_fields.sql` but the PUT path
+/// silently dropped them.
+#[tokio::test]
+async fn test_admin_update_booking_round_trips_payment_fields() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let (booking_id, _) = seed_booking(app.db(), guest.id, "confirmed").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({
+        "paymentType": "deposit",
+        "paymentAmount": 1234.56,
+    });
+    let response = client
+        .put(&format!("/api/admin/bookings/{}", booking_id), &payload)
+        .await;
+    response.assert_status(200);
+
+    // The handler returns the updated detail directly — confirm the
+    // payment fields round-trip on the synchronous response.
+    let body: Value = response.json().unwrap();
+    assert_eq!(
+        body.get("paymentType").and_then(|v| v.as_str()),
+        Some("deposit"),
+        "PUT response should reflect the new paymentType"
+    );
+
+    // ...and a subsequent GET sees the same values, proving they were
+    // persisted (not just bounced back from the handler).
+    let get = client
+        .get(&format!("/api/admin/bookings/{}", booking_id))
+        .await;
+    get.assert_status(200);
+    let get_body: Value = get.json().unwrap();
+    assert_eq!(
+        get_body.get("paymentType").and_then(|v| v.as_str()),
+        Some("deposit"),
+        "GET after PUT should reflect the persisted paymentType"
+    );
+    // paymentAmount is a Decimal; serde emits it as a JSON string in
+    // this project to preserve precision. Assert it's present and equals
+    // the value we sent (string compare avoids float-equality fuzz).
+    let amount_value = get_body
+        .get("paymentAmount")
+        .expect("paymentAmount should be present");
+    let amount_str = if let Some(s) = amount_value.as_str() {
+        s.to_string()
+    } else if let Some(n) = amount_value.as_f64() {
+        format!("{:.2}", n)
+    } else {
+        panic!("paymentAmount has unexpected type: {:?}", amount_value);
+    };
+    assert!(
+        amount_str.starts_with("1234.56"),
+        "expected paymentAmount=1234.56, got {}",
+        amount_str
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// `PUT /api/admin/bookings/:id` rejects a `paymentType` outside the
+/// CHECK-constraint allowlist with a 400 instead of leaking a 500 from
+/// the database constraint failure. MED-2 — handler-side validation
+/// guard.
+#[tokio::test]
+async fn test_admin_update_booking_rejects_invalid_payment_type() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let (booking_id, _) = seed_booking(app.db(), guest.id, "confirmed").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({"paymentType": "later"});
+    let response = client
+        .put(&format!("/api/admin/bookings/{}", booking_id), &payload)
+        .await;
+    // 400 (Validation) — not 500 from the constraint violation.
+    assert!(
+        response.status >= 400 && response.status < 500,
+        "expected 4xx for invalid paymentType, got {}. Body: {}",
+        response.status,
+        response.body,
+    );
+
+    app.cleanup().await.ok();
+}
+
 /// `PUT /api/admin/bookings/:id` rejects updates to a cancelled booking.
 #[tokio::test]
 async fn test_admin_update_booking_rejects_terminal_state() {

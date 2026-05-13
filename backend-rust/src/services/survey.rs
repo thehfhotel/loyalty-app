@@ -580,16 +580,27 @@ impl SurveyService for SurveyServiceImpl {
         .fetch_one(self.pool())
         .await?;
 
-        // Award survey completion coupons if newly completed
+        // Award survey completion coupons if newly completed.
+        //
+        // LOW-2 (correctness-2026-05-13.md): keep the non-fatal semantics
+        // (a coupon-award failure must not roll back the survey response),
+        // but log the error so an enum-mismatch or stored-procedure
+        // regression post-deploy actually surfaces in container logs
+        // instead of disappearing.
         if is_completed {
-            // Call the stored procedure to award coupons
-            let _ = sqlx::query_scalar!(
+            if let Err(e) = sqlx::query_scalar!(
                 r#"SELECT award_survey_completion_coupons($1) as "result""#,
                 response.id,
             )
             .fetch_optional(self.pool())
-            .await;
-            // Ignore coupon errors - don't fail the survey submission
+            .await
+            {
+                tracing::warn!(
+                    error = ?e,
+                    response_id = %response.id,
+                    "Failed to award survey completion coupons; non-fatal",
+                );
+            }
         }
 
         Ok(response)

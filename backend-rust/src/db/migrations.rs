@@ -63,23 +63,63 @@ pub async fn run_migrations(pool: &PgPool) -> Result<()> {
 
     if pending == 0 {
         info!("No pending migrations to apply");
-        return Ok(());
+    } else {
+        info!(
+            total = total_migrations,
+            applied = applied.len(),
+            pending = pending,
+            "Found pending migrations"
+        );
+
+        // Run the migrations
+        MIGRATOR
+            .run(pool)
+            .await
+            .context("Failed to run database migrations")?;
+
+        info!("Database migrations completed successfully");
     }
 
-    info!(
-        total = total_migrations,
-        applied = applied.len(),
-        pending = pending,
-        "Found pending migrations"
-    );
-
-    // Run the migrations
-    MIGRATOR
-        .run(pool)
+    // MED-4 (correctness-2026-05-13.md): post-run sanity check.
+    //
+    // After `MIGRATOR.run` returns, every embedded migration MUST be
+    // applied with a matching checksum. Without this check, a bridge
+    // entry with a wrong `(version, reason)` tuple or a corrupted
+    // embedded migration would proceed without complaint until a query
+    // hit a missing column at runtime. Same risk-profile as the
+    // recently-fixed startup-log issue: bricks every deploy.
+    //
+    // Anything in `REBRIDGED_MIGRATIONS` is expected to match after the
+    // checksum-rebridge step above, so a remaining mismatch on those
+    // versions is also a hard error here.
+    let validation = validate_migrations(pool)
         .await
-        .context("Failed to run database migrations")?;
-
-    info!("Database migrations completed successfully");
+        .context("post-migration validation failed to run")?;
+    if !validation.is_valid {
+        for mismatch in &validation.mismatches {
+            tracing::error!(
+                version = mismatch.version,
+                description = %mismatch.description,
+                expected = %mismatch.expected_checksum,
+                actual = %mismatch.actual_checksum,
+                "Migration checksum mismatch detected after MIGRATOR.run",
+            );
+        }
+        if !validation.pending_versions.is_empty() {
+            tracing::error!(
+                pending = ?validation.pending_versions,
+                "Embedded migrations missing from _sqlx_migrations after MIGRATOR.run",
+            );
+        }
+        return Err(anyhow::anyhow!(
+            "Migration validation failed: {} checksum mismatch(es), {} pending after run. \
+             See preceding logs for details. This usually means a migration source was \
+             edited without a `REBRIDGED_MIGRATIONS` entry, or a bridge wrote the wrong \
+             checksum.",
+            validation.mismatches.len(),
+            validation.pending_versions.len(),
+        ));
+    }
 
     Ok(())
 }

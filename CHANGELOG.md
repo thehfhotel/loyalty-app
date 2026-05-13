@@ -6,6 +6,58 @@ because the project ships from `main` without semver tags.
 
 ## 2026-05-13
 
+### `fix(audit)`: correctness mediums + lows
+Closes Bundle B + C of `docs/audits/correctness-2026-05-13.md` in a single
+PR. No new schema; only existing call sites + a handful of validation
+guards.
+
+- **MED-1 OAuth state replay window**: switch the Google and LINE
+  callback paths to consume the Redis state value with `GETDEL` instead
+  of `GET`-then-`DEL`-after-exchange. Removed the now-dead
+  `delete_oauth_state` helper. New integration tests assert the state
+  key is gone after a single callback for both providers.
+- **MED-2 `payment_type` / `payment_amount` read-only**: wire both
+  columns into `UpdateBookingRequest`, the `UPDATE bookings` SET clause,
+  and the `BeforeRow` snapshot/audit diff. Handler-side validation
+  rejects `payment_type` values outside `{full, deposit}` with 400
+  instead of leaking a 500 from the CHECK constraint. New integration
+  tests round-trip both fields via PUT → GET and assert a 4xx on an
+  invalid `paymentType`.
+- **MED-3 `get_stats` swallowed errors**: replaced the two
+  `.unwrap_or(0)` sites on `total_points_issued` and `total_bookings`
+  with `?` so query failures surface instead of being coerced to a
+  misleading zero. The decoding-time `.unwrap_or(0)` defaults on
+  optional columns elsewhere in `routes/admin.rs` are intentional and
+  remain untouched.
+- **MED-4 `validate_migrations` never called**: invoke it from
+  `run_migrations` after `MIGRATOR.run` and refuse to boot on any
+  checksum mismatch or missing version outside the `REBRIDGED_MIGRATIONS`
+  allowlist. Bridge bugs now fail the deploy explicitly with a logged
+  per-mismatch error and an `anyhow!` summary, same risk-profile fix as
+  the recent startup-log `{:#}` change.
+- **MED-5 OAuth provisioning not transactional**: wrap the new-user
+  inserts (`users`, `user_profiles`, `notification_preferences`,
+  `user_audit_log`, `user_loyalty`) in a single `sqlx::Transaction` and
+  commit at the end. Race-loss branch rolls back the empty transaction
+  before linking the existing row. The `notification_preferences`
+  insert no longer uses `let _ = …` (LOW-2 covered en passant). New
+  integration test confirms no half-provisioned user remains when the
+  loyalty insert fails mid-flow.
+- **LOW-1 password reset cooldown**: 1-minute per-user cooldown on the
+  `password_reset_tokens` insert via `WHERE NOT EXISTS (...)`. The HTTP
+  rate limiter is already wired through `redis_rate_limit_middleware`
+  with the strict 5/min preset on `/api/auth/forgot-password`
+  (`routes/mod.rs`); the new guard caps per-victim token churn even
+  inside that budget.
+- **LOW-2 `let _ = sqlx::query!(…)`**: the survey
+  `award_survey_completion_coupons` call now logs failures at
+  `warn!` while keeping the non-fatal semantics (the survey response
+  must not roll back). The OAuth notification_preferences variant was
+  cleaned up as part of MED-5 above.
+
+Bundles A + B (the criticals + highs) shipped in #235/#236/#237; this PR
+closes the remaining audit items from `correctness-2026-05-13.md`.
+
 ### Pre-launch audit + fixes
 Three read-only audit lenses landed (#232 operational, #233 security,
 #234 correctness) surfacing 46 findings total (6 critical, 14 high, 17

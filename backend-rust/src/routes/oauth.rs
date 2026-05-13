@@ -272,7 +272,16 @@ async fn create_oauth_state(state: &AppState, data: OAuthStateData) -> AppResult
     Ok(state_key)
 }
 
-/// Retrieve and validate OAuth state from Redis
+/// Atomically retrieve and consume OAuth state from Redis.
+///
+/// MED-1 (correctness-2026-05-13.md): the previous implementation did a
+/// `GET` here and a `DEL` only after the Google/LINE token exchange
+/// returned. The window between fetch and delete is one network round-trip
+/// to the provider plus a DB write — wide enough that an attacker who
+/// stole the state value (leaky logging proxy, Referer leak) could race
+/// a parallel callback and have it accepted. Redis 6.2's `GETDEL`
+/// consumes the key in a single atomic operation, so a state value is
+/// usable exactly once regardless of caller.
 async fn get_oauth_state(
     state: &AppState,
     state_key: &str,
@@ -281,7 +290,13 @@ async fn get_oauth_state(
     let redis_key = format!("oauth_state:{}:{}", provider, state_key);
 
     let mut redis = state.redis();
-    let data: Option<String> = redis.get(&redis_key).await.map_err(AppError::Redis)?;
+    // GETDEL returns the value and removes the key in one atomic round-trip.
+    // Falls through to None if the key doesn't exist or already expired.
+    let data: Option<String> = redis::cmd("GETDEL")
+        .arg(&redis_key)
+        .query_async(&mut redis)
+        .await
+        .map_err(AppError::Redis)?;
 
     match data {
         Some(json_data) => {
@@ -293,18 +308,8 @@ async fn get_oauth_state(
     }
 }
 
-/// Delete OAuth state from Redis
-async fn delete_oauth_state(state: &AppState, state_key: &str, provider: &str) -> AppResult<()> {
-    let redis_key = format!("oauth_state:{}:{}", provider, state_key);
-
-    let mut redis = state.redis();
-    redis
-        .del::<_, ()>(&redis_key)
-        .await
-        .map_err(AppError::Redis)?;
-
-    Ok(())
-}
+// `delete_oauth_state` removed: state is now consumed atomically by
+// `get_oauth_state` via Redis `GETDEL`. MED-1 (correctness-2026-05-13.md).
 
 /// Build mobile-friendly HTML redirect response
 fn build_html_redirect(url: &str, message: &str) -> Response {
@@ -583,10 +588,8 @@ async fn google_oauth_callback(
         },
     };
 
-    // Clean up state
-    if let Err(e) = delete_oauth_state(&state, state_key, "google").await {
-        tracing::warn!(error = ?e, "[OAuth] Failed to delete OAuth state");
-    }
+    // State was already consumed atomically by `get_oauth_state` (GETDEL).
+    // No post-callback delete needed — MED-1 (correctness-2026-05-13.md).
 
     // Phase 3: the redirect URL carries only the access token. The refresh
     // token is delivered exclusively via the `Set-Cookie` header attached
@@ -1060,10 +1063,8 @@ async fn line_oauth_callback(
         },
     };
 
-    // Clean up state
-    if let Err(e) = delete_oauth_state(&state, state_key, "line").await {
-        tracing::warn!(error = ?e, "[OAuth] Failed to delete OAuth state");
-    }
+    // State was already consumed atomically by `get_oauth_state` (GETDEL).
+    // No post-callback delete needed — MED-1 (correctness-2026-05-13.md).
 
     // Phase 3: the redirect URL carries only the access token. The refresh
     // token is delivered exclusively via the `Set-Cookie` header attached

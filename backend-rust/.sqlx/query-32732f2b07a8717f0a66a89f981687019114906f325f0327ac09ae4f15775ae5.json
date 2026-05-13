@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            check_in_date  AS \"check_in_date!\",\n            check_out_date AS \"check_out_date!\",\n            num_guests     AS \"num_guests!\",\n            room_type_id   AS \"room_type_id!\",\n            notes          AS \"notes?\",\n            admin_notes    AS \"admin_notes?\",\n            total_price    AS \"total_price!\",\n            status         AS \"status!\"\n          FROM bookings\n         WHERE id = $1\n         FOR UPDATE\n        ",
+  "query": "\n        SELECT\n            check_in_date  AS \"check_in_date!\",\n            check_out_date AS \"check_out_date!\",\n            num_guests     AS \"num_guests!\",\n            room_type_id   AS \"room_type_id!\",\n            notes          AS \"notes?\",\n            admin_notes    AS \"admin_notes?\",\n            total_price    AS \"total_price!\",\n            status         AS \"status!\",\n            payment_type   AS \"payment_type?\",\n            payment_amount AS \"payment_amount?\"\n          FROM bookings\n         WHERE id = $1\n         FOR UPDATE\n        ",
   "describe": {
     "columns": [
       {
@@ -42,6 +42,16 @@
         "ordinal": 7,
         "name": "status!",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "payment_type?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "payment_amount?",
+        "type_info": "Numeric"
       }
     ],
     "parameters": {
@@ -57,8 +67,10 @@
       true,
       true,
       false,
-      false
+      false,
+      true,
+      true
     ]
   },
-  "hash": "13ef7efd4b47af36ad85af7c5430ff386d6a07aebd8ddefc90848484e03f5395"
+  "hash": "32732f2b07a8717f0a66a89f981687019114906f325f0327ac09ae4f15775ae5"
 }
