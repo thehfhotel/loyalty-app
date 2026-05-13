@@ -2468,3 +2468,222 @@ async fn test_delete_room_unauthenticated_fails() {
 
     app.cleanup().await.ok();
 }
+
+// ============================================================================
+// Role-escalation gate tests (HIGH-1, security-2026-05-13.md)
+//
+// These tests cover the gate in admin.rs::update_user and
+// admin.rs::update_user_role that blocks regular admins from promoting any
+// user to super_admin (or demoting an existing super_admin).
+// ============================================================================
+
+/// Build a super_admin fixture. The TestUser helper only exposes
+/// admin/customer roles; for these tests we need a third level.
+fn build_super_admin_user(email: &str) -> TestUser {
+    let mut user = TestUser::new(email);
+    user.role = "super_admin".to_string();
+    user
+}
+
+/// Regular admin must NOT be able to promote any user to super_admin via
+/// PUT /api/admin/users/:id. The handler must respond 403 and leave the
+/// target user's role untouched in the database.
+#[tokio::test]
+async fn admin_cannot_promote_to_super_admin_via_update_user() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let admin = create_admin_user(app.db()).await;
+    let target = create_regular_user(app.db()).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({ "role": "super_admin" });
+    let response = client
+        .put(&format!("/api/admin/users/{}", target.id), &payload)
+        .await;
+
+    response.assert_status(403);
+
+    let role_after: (String,) = sqlx::query_as("SELECT role::text FROM users WHERE id = $1")
+        .bind(target.id)
+        .fetch_one(app.db())
+        .await
+        .expect("Failed to read role");
+    assert_eq!(
+        role_after.0, "customer",
+        "Forbidden role escalation must not mutate target role"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// Same guard via the PATCH /api/admin/users/:id/role endpoint.
+#[tokio::test]
+async fn admin_cannot_promote_to_super_admin_via_patch_role() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let admin = create_admin_user(app.db()).await;
+    let target = create_regular_user(app.db()).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({ "role": "super_admin" });
+    let response = client
+        .patch(&format!("/api/admin/users/{}/role", target.id), &payload)
+        .await;
+
+    response.assert_status(403);
+
+    let role_after: (String,) = sqlx::query_as("SELECT role::text FROM users WHERE id = $1")
+        .bind(target.id)
+        .fetch_one(app.db())
+        .await
+        .expect("Failed to read role");
+    assert_eq!(role_after.0, "customer");
+
+    app.cleanup().await.ok();
+}
+
+/// Regular admin must NOT be able to demote an existing super_admin via
+/// PUT /api/admin/users/:id.
+#[tokio::test]
+async fn admin_cannot_demote_super_admin_via_update_user() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let admin = create_admin_user(app.db()).await;
+    let super_admin = build_super_admin_user(&unique_email("victim_super"));
+    super_admin
+        .insert_with_profile(app.db(), "Sudo", "Target")
+        .await
+        .expect("Failed to insert super_admin");
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({ "role": "admin" });
+    let response = client
+        .put(&format!("/api/admin/users/{}", super_admin.id), &payload)
+        .await;
+
+    response.assert_status(403);
+
+    let role_after: (String,) = sqlx::query_as("SELECT role::text FROM users WHERE id = $1")
+        .bind(super_admin.id)
+        .fetch_one(app.db())
+        .await
+        .expect("Failed to read role");
+    assert_eq!(
+        role_after.0, "super_admin",
+        "Forbidden demotion must not mutate target role"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// Regular admin must NOT be able to demote an existing super_admin via
+/// PATCH /api/admin/users/:id/role.
+#[tokio::test]
+async fn admin_cannot_demote_super_admin_via_patch_role() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let admin = create_admin_user(app.db()).await;
+    let super_admin = build_super_admin_user(&unique_email("victim_super_patch"));
+    super_admin
+        .insert_with_profile(app.db(), "Sudo", "Patch")
+        .await
+        .expect("Failed to insert super_admin");
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let payload = json!({ "role": "customer" });
+    let response = client
+        .patch(
+            &format!("/api/admin/users/{}/role", super_admin.id),
+            &payload,
+        )
+        .await;
+
+    response.assert_status(403);
+
+    let role_after: (String,) = sqlx::query_as("SELECT role::text FROM users WHERE id = $1")
+        .bind(super_admin.id)
+        .fetch_one(app.db())
+        .await
+        .expect("Failed to read role");
+    assert_eq!(role_after.0, "super_admin");
+
+    app.cleanup().await.ok();
+}
+
+/// Super_admin CAN promote and demote across the super_admin boundary —
+/// the gate is role-specific, not blanket.
+#[tokio::test]
+async fn super_admin_can_promote_and_demote_super_admin() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let caller = build_super_admin_user(&unique_email("super_caller"));
+    caller
+        .insert_with_profile(app.db(), "Super", "Caller")
+        .await
+        .expect("Failed to insert super_admin caller");
+
+    let target = create_regular_user(app.db()).await;
+
+    let client = app.authenticated_client_with_role(&caller.id, &caller.email, "super_admin");
+
+    // Promote customer -> super_admin (allowed).
+    let payload = json!({ "role": "super_admin" });
+    let response = client
+        .put(&format!("/api/admin/users/{}", target.id), &payload)
+        .await;
+    response.assert_status(200);
+
+    let role_after: (String,) = sqlx::query_as("SELECT role::text FROM users WHERE id = $1")
+        .bind(target.id)
+        .fetch_one(app.db())
+        .await
+        .expect("Failed to read role");
+    assert_eq!(role_after.0, "super_admin");
+
+    // Demote super_admin -> admin via PATCH (also allowed for super_admin).
+    let payload = json!({ "role": "admin" });
+    let response = client
+        .patch(&format!("/api/admin/users/{}/role", target.id), &payload)
+        .await;
+    response.assert_status(200);
+
+    let role_after: (String,) = sqlx::query_as("SELECT role::text FROM users WHERE id = $1")
+        .bind(target.id)
+        .fetch_one(app.db())
+        .await
+        .expect("Failed to read role");
+    assert_eq!(role_after.0, "admin");
+
+    app.cleanup().await.ok();
+}
+
+/// A non-role update against a super_admin target must still work — the
+/// gate only fires on role transitions, not on incidental field updates.
+#[tokio::test]
+async fn admin_can_update_non_role_fields_on_super_admin_target() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let admin = create_admin_user(app.db()).await;
+    let super_admin = build_super_admin_user(&unique_email("super_email_update"));
+    super_admin
+        .insert_with_profile(app.db(), "Super", "EmailUpdate")
+        .await
+        .expect("Failed to insert super_admin");
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    // Update email only — no `role` field.
+    let new_email = unique_email("renamed_super");
+    let payload = json!({ "email": new_email });
+    let response = client
+        .put(&format!("/api/admin/users/{}", super_admin.id), &payload)
+        .await;
+
+    response.assert_status(200);
+
+    app.cleanup().await.ok();
+}

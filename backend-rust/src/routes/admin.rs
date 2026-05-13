@@ -467,12 +467,32 @@ async fn update_user(
     // Validate the request
     payload.validate().map_err(AppError::from)?;
 
-    // Check if user exists
-    let _existing: Uuid =
-        sqlx::query_scalar!(r#"SELECT id as "id!" FROM users WHERE id = $1"#, user_id,)
+    // Check if user exists and fetch current role so we can gate role
+    // transitions that touch the super_admin tier (see super_admin gate
+    // below). Runtime sqlx::query_scalar avoids forcing an .sqlx/ cache
+    // regen for this one read; UserRole derives sqlx::Type so the enum
+    // round-trips through the wire format safely.
+    let existing_role: UserRole =
+        sqlx::query_scalar::<_, UserRole>(r#"SELECT role FROM users WHERE id = $1"#)
+            .bind(user_id)
             .fetch_optional(state.db())
             .await?
             .ok_or_else(|| AppError::NotFound("User".to_string()))?;
+
+    // Role-escalation gate (HIGH-1).
+    //
+    // Without this guard, any admin could:
+    //   (a) promote any user (including themselves) to super_admin, OR
+    //   (b) demote an existing super_admin to a lower role,
+    // both bypassing the require_super_admin gate that protects
+    // delete_user. Require super_admin for either transition.
+    if let Some(new_role) = &payload.role {
+        let touches_super_admin =
+            *new_role == UserRole::SuperAdmin || existing_role == UserRole::SuperAdmin;
+        if touches_super_admin {
+            require_super_admin(&user)?;
+        }
+    }
 
     // Prevent admin from changing their own role to a lower level
     if user_id == Uuid::parse_str(&user.id).unwrap_or_default() {
@@ -1014,6 +1034,31 @@ async fn update_user_role(
     Json(payload): Json<UpdateUserRoleRequest>,
 ) -> AppResult<Json<serde_json::Value>> {
     require_admin(&user)?;
+
+    // Fetch the target user's current role to gate transitions that touch
+    // super_admin (see HIGH-1 in security-2026-05-13.md). A 404 here matches
+    // the pattern used by update_user above. Runtime sqlx::query_scalar
+    // keeps this off the compile-time cache (no .sqlx/ regen needed).
+    let existing_role: UserRole =
+        sqlx::query_scalar::<_, UserRole>(r#"SELECT role FROM users WHERE id = $1"#)
+            .bind(user_id)
+            .fetch_optional(state.db())
+            .await?
+            .ok_or_else(|| AppError::NotFound("User".to_string()))?;
+
+    // Role-escalation gate (HIGH-1).
+    //
+    // Block any role transition that either targets super_admin (promotion)
+    // or starts from super_admin (demotion of an existing super_admin)
+    // unless the caller is themselves a super_admin. Without this gate, a
+    // regular admin could promote any user — including themselves — to
+    // super_admin, then exercise super_admin-gated handlers like
+    // delete_user.
+    let touches_super_admin =
+        payload.role == UserRole::SuperAdmin || existing_role == UserRole::SuperAdmin;
+    if touches_super_admin {
+        require_super_admin(&user)?;
+    }
 
     if user_id == Uuid::parse_str(&user.id).unwrap_or_default()
         && payload.role == UserRole::Customer
