@@ -2567,6 +2567,58 @@ async fn test_patch_room_not_found() {
     app.cleanup().await.ok();
 }
 
+/// LOW-3 (security-2026-05-13.md): DELETE /api/admin/rooms/:id with at
+/// least one attached booking must return 409 Conflict with the
+/// `bookingsAttached` count rather than silently cascading. Mirrors the
+/// `delete_room_type` test above. The intent is to force the operator
+/// to soft-delete (`PATCH /rooms/:id` with `is_active = false`) or
+/// reassign the bookings explicitly — protecting historical booking
+/// data and loyalty-points accrual from a single mis-click.
+#[tokio::test]
+async fn test_delete_room_with_attached_bookings_returns_409() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+    let admin = create_admin_user(app.db()).await;
+    let guest = create_regular_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    // Seed a room + booking that references it. seed_booking builds its
+    // own room/room_type pair with a unique suffix, so we read the
+    // resulting room id back out of the booking row.
+    let (booking_id, _room_type_id) = seed_booking(app.db(), guest.id, "confirmed").await;
+    let room_id: (Uuid,) = sqlx::query_as("SELECT room_id FROM bookings WHERE id = $1")
+        .bind(booking_id)
+        .fetch_one(app.db())
+        .await
+        .expect("seed booking should expose room_id");
+
+    let response = client
+        .delete(&format!("/api/admin/rooms/{}", room_id.0))
+        .await;
+    response.assert_status(409);
+
+    let body: Value = response.json().expect("response should be JSON");
+    assert!(
+        body.get("bookingsAttached")
+            .and_then(|v| v.as_i64())
+            .map(|n| n >= 1)
+            .unwrap_or(false),
+        "bookingsAttached should be >= 1, body={:?}",
+        body
+    );
+
+    // Critical defence-in-depth: confirm the room was NOT deleted by
+    // the 409 path. If the preflight transaction is ever refactored to
+    // delete before checking, this assertion catches the regression.
+    let still_there: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM rooms WHERE id = $1")
+        .bind(room_id.0)
+        .fetch_optional(app.db())
+        .await
+        .expect("query should succeed");
+    assert!(still_there.is_some(), "room must still exist after 409");
+
+    app.cleanup().await.ok();
+}
+
 /// DELETE happy path: the row is gone after the call.
 #[tokio::test]
 async fn test_delete_room_admin() {

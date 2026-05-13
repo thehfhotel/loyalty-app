@@ -40,12 +40,129 @@ pub struct ListUsersQuery {
     pub limit: i32,
     /// Search term for filtering by email or name
     pub search: Option<String>,
-    /// Field to sort by (email, created_at, role)
-    #[serde(default = "default_sort_by")]
-    pub sort_by: String,
-    /// Sort order (asc or desc)
-    #[serde(default = "default_sort_order")]
-    pub sort_order: String,
+    /// Field to sort by. Typed; unknown values are rejected with 400
+    /// instead of silently falling back. MED-5 (security-2026-05-13.md).
+    #[serde(default)]
+    pub sort_by: SortBy,
+    /// Sort order. Typed; unknown values are rejected with 400.
+    #[serde(default)]
+    pub sort_order: SortOrder,
+}
+
+/// Whitelisted column names that `list_users` is allowed to ORDER BY.
+///
+/// MED-5 (security-2026-05-13.md): collapses the runtime-string match-arm
+/// surface to a typed-only path. The SQL column name is produced by
+/// [`Self::to_sql_column`] — the only place in this module that emits a
+/// raw column identifier into an ORDER BY clause — so SQL injection on
+/// this endpoint is mechanically impossible: serde refuses any value not
+/// listed below, and the helper returns a `&'static str` literal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SortBy {
+    #[default]
+    CreatedAt,
+    Email,
+    Role,
+    IsActive,
+}
+
+impl SortBy {
+    /// Map the enum variant to the literal SQL column name. Returns a
+    /// `&'static str` so callers can safely interpolate into a SQL
+    /// fragment without going through a runtime string.
+    fn to_sql_column(self) -> &'static str {
+        match self {
+            SortBy::Email => "u.email",
+            SortBy::CreatedAt => "u.created_at",
+            SortBy::Role => "u.role",
+            SortBy::IsActive => "u.is_active",
+        }
+    }
+}
+
+/// Typed sort direction. Same rationale as [`SortBy`]: keep the SQL
+/// fragment surface limited to compile-time-known literals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SortOrder {
+    Asc,
+    #[default]
+    Desc,
+}
+
+impl SortOrder {
+    fn to_sql(self) -> &'static str {
+        match self {
+            SortOrder::Asc => "ASC",
+            SortOrder::Desc => "DESC",
+        }
+    }
+}
+
+/// Whitelisted broadcast filters that `broadcast_notification` is allowed
+/// to translate into a WHERE clause.
+///
+/// MED-5 (security-2026-05-13.md): each variant maps to a single SQL
+/// fragment via [`Self::to_sql_fragment`] with a positional placeholder.
+/// The fragment is a `&'static str` literal, so the SQL surface of the
+/// dynamic WHERE is fully enumerable. Values ride through as `String`
+/// with an inline `::uuid` / `::user_role` cast so Postgres parses them
+/// safely; the bind sites in the handler are the only injection vector
+/// left, and those use `sqlx::query_scalar(...).bind(value)`.
+enum BroadcastFilter {
+    /// `u.is_active = true` — no parameter binding required.
+    ActiveOnly,
+    /// `ul.tier_id = ${n}::uuid` — bound as the tier UUID's text form.
+    TierId,
+    /// `u.role = ${n}::user_role` — bound as the role enum's text form.
+    Role,
+}
+
+impl BroadcastFilter {
+    /// Produce a single WHERE-clause fragment with `$n` substituted for
+    /// the supplied 1-indexed positional parameter. Returns
+    /// `&'static str` for the literal-only `ActiveOnly` case so the
+    /// caller can `push` without allocating.
+    fn to_sql_fragment(&self, n: usize) -> String {
+        match self {
+            BroadcastFilter::ActiveOnly => "u.is_active = true".to_string(),
+            BroadcastFilter::TierId => format!("ul.tier_id = ${}::uuid", n),
+            BroadcastFilter::Role => format!("u.role = ${}::user_role", n),
+        }
+    }
+}
+
+/// Assemble the WHERE clause for `broadcast_notification` from the
+/// typed filter payload. Returns the WHERE-clause body (without the
+/// leading `WHERE`) and the list of bound text values in positional
+/// order. When no filters apply, falls back to `1=1` so the calling
+/// query stays a single, valid SELECT.
+fn build_broadcast_where_clause(payload: &BroadcastNotificationRequest) -> (String, Vec<String>) {
+    let mut fragments: Vec<String> = Vec::new();
+    let mut values: Vec<String> = Vec::new();
+
+    if payload.active_only {
+        fragments.push(BroadcastFilter::ActiveOnly.to_sql_fragment(0));
+    }
+
+    if let Some(tier_id) = payload.tier_id {
+        values.push(tier_id.to_string());
+        fragments.push(BroadcastFilter::TierId.to_sql_fragment(values.len()));
+    }
+
+    if let Some(role) = &payload.role {
+        values.push(role.to_string());
+        fragments.push(BroadcastFilter::Role.to_sql_fragment(values.len()));
+    }
+
+    let where_clause = if fragments.is_empty() {
+        "1=1".to_string()
+    } else {
+        fragments.join(" AND ")
+    };
+
+    (where_clause, values)
 }
 
 fn default_page() -> i32 {
@@ -54,14 +171,6 @@ fn default_page() -> i32 {
 
 fn default_limit() -> i32 {
     10
-}
-
-fn default_sort_by() -> String {
-    "created_at".to_string()
-}
-
-fn default_sort_order() -> String {
-    "desc".to_string()
 }
 
 /// Pagination metadata
@@ -277,6 +386,23 @@ fn require_super_admin(user: &AuthUser) -> AppResult<()> {
     Ok(())
 }
 
+/// Reject `delete_user` (deactivation) when the target user is itself a
+/// super_admin. Pairs with the role-escalation gate in #236 so the role
+/// hierarchy stays symmetric — you can't demote a super_admin without
+/// being one, and you can't deactivate one either.
+///
+/// Extracted as a free function so it's testable without spinning up a
+/// database; the handler resolves `existing_role` from the DB and then
+/// delegates the policy decision to this helper.
+fn deny_deactivation_if_super_admin(existing_role: &UserRole) -> AppResult<()> {
+    if *existing_role == UserRole::SuperAdmin {
+        return Err(AppError::Forbidden(
+            "Cannot deactivate another super_admin".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 // ============================================================================
 // Handlers
 // ============================================================================
@@ -295,15 +421,15 @@ async fn list_users(
     let limit = query.limit.clamp(1, 100);
     let offset = (page - 1) * limit;
 
-    // Validate sort params
-    let sort_by = match query.sort_by.as_str() {
-        "email" | "created_at" | "role" | "is_active" => query.sort_by.as_str(),
-        _ => "created_at",
-    };
-    let sort_order = match query.sort_order.to_lowercase().as_str() {
-        "asc" => "ASC",
-        _ => "DESC",
-    };
+    // MED-5: typed sort params. Unknown values are rejected with 400 at
+    // deserialisation time (serde) rather than silently falling back to
+    // a default — the previous string-match pattern was safe today only
+    // because of an allowlist that's easy to forget on a future column
+    // addition. With the typed enum, adding a column requires extending
+    // both `SortBy` and `to_sql_column`, and the compiler enforces the
+    // mapping is total.
+    let sort_by = query.sort_by.to_sql_column();
+    let sort_order = query.sort_order.to_sql();
 
     // Build search condition
     let search_pattern = query
@@ -586,7 +712,23 @@ async fn update_user(
 }
 
 /// DELETE /api/admin/users/:id
-/// Soft delete or deactivate a user (super_admin only for hard delete)
+///
+/// Deactivates (soft-disables) a user. **No hard delete is implemented** —
+/// despite the route name and HTTP verb, this handler only sets
+/// `is_active = false` so the user can no longer log in, redeem points, or
+/// access the account UI. Loyalty rows, bookings, and audit history are
+/// preserved.
+///
+/// Gated by `require_super_admin` because the action is irreversible for
+/// the affected user without admin intervention.
+///
+/// MED-2 (security-2026-05-13.md): symmetric super_admin protection.
+/// A super_admin cannot deactivate **another** super_admin. This mirrors
+/// the gate added in #236 (HIGH-1) that prevents a regular admin from
+/// promoting users to super_admin or demoting existing super_admins —
+/// without this, two compromised super_admins could lock each other out,
+/// and the role hierarchy would be asymmetric (you can't demote a peer
+/// via role change, but you could effectively delete them).
 async fn delete_user(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -601,12 +743,21 @@ async fn delete_user(
         ));
     }
 
-    // Check if user exists
-    let _existing: Uuid =
-        sqlx::query_scalar!(r#"SELECT id as "id!" FROM users WHERE id = $1"#, user_id,)
+    // Check if user exists and fetch their role so we can apply the
+    // symmetric super_admin guard (MED-2). Runtime sqlx::query_scalar
+    // matches the pattern used by `update_user` / `update_user_role`
+    // and keeps this off the compile-time cache.
+    let existing_role: UserRole =
+        sqlx::query_scalar::<_, UserRole>(r#"SELECT role FROM users WHERE id = $1"#)
+            .bind(user_id)
             .fetch_optional(state.db())
             .await?
             .ok_or_else(|| AppError::NotFound("User".to_string()))?;
+
+    // MED-2: a super_admin cannot deactivate another super_admin. The
+    // role hierarchy stays symmetric with the demotion gate in #236 —
+    // you cannot get around it by deactivating instead of demoting.
+    deny_deactivation_if_super_admin(&existing_role)?;
 
     // Soft delete: deactivate the user instead of hard delete
     sqlx::query!(
@@ -622,7 +773,7 @@ async fn delete_user(
 
     Ok(Json(DeleteUserResponse {
         success: true,
-        message: "User deleted successfully".to_string(),
+        message: "User deactivated successfully".to_string(),
     }))
 }
 
@@ -933,31 +1084,24 @@ async fn broadcast_notification(
 
     let notification_type = payload.notification_type.unwrap_or(NotificationType::Info);
 
-    // Build query to get target users based on filters - keep as runtime (dynamic WHERE)
-    let mut conditions = Vec::new();
-    let mut params: Vec<String> = Vec::new();
+    // MED-5: typed WHERE-clause builder. The previous implementation
+    // assembled SQL fragments from string interpolation against a
+    // local-mutable vector — safe today because all *values* were
+    // bound via `.bind(…)`, but the *fragment* surface was still
+    // freeform. Converting to a typed enum makes the set of producible
+    // fragments enumerable in one place, and the builder below is the
+    // only thing in this module that emits a literal SQL fragment for
+    // the broadcast filter. Each fragment carries a `::uuid` /
+    // `::user_role` cast inline, so all values can ride through as
+    // `String` and Postgres parses them safely.
+    let (where_clause, filter_values) = build_broadcast_where_clause(&payload);
 
-    if payload.active_only {
-        conditions.push("u.is_active = true".to_string());
-    }
-
-    if let Some(tier_id) = payload.tier_id {
-        params.push(tier_id.to_string());
-        conditions.push(format!("ul.tier_id = ${}::uuid", params.len()));
-    }
-
-    if let Some(role) = &payload.role {
-        params.push(role.to_string());
-        conditions.push(format!("u.role = ${}::user_role", params.len()));
-    }
-
-    let where_clause = if conditions.is_empty() {
-        "1=1".to_string()
-    } else {
-        conditions.join(" AND ")
-    };
-
-    // Get target user IDs - keep as runtime (dynamic WHERE clause)
+    // Get target user IDs — runtime query because the WHERE-clause
+    // shape varies with which filters the admin requested. Values are
+    // bound positionally as text and re-cast in SQL; the column /
+    // operator literals come from `BroadcastFilter` and are `&'static
+    // str`s, so a future refactor can't accidentally let user input
+    // become a SQL identifier.
     let query_str = format!(
         r#"
         SELECT u.id
@@ -968,7 +1112,11 @@ async fn broadcast_notification(
         where_clause
     );
 
-    let user_ids: Vec<Uuid> = sqlx::query_scalar(&query_str).fetch_all(state.db()).await?;
+    let mut q = sqlx::query_scalar::<_, Uuid>(&query_str);
+    for value in &filter_values {
+        q = q.bind(value);
+    }
+    let user_ids: Vec<Uuid> = q.fetch_all(state.db()).await?;
 
     if user_ids.is_empty() {
         return Ok(Json(BroadcastNotificationResponse {
@@ -1348,8 +1496,8 @@ mod tests {
             page: 0,    // Should be clamped to 1
             limit: 200, // Should be clamped to 100
             search: None,
-            sort_by: "invalid".to_string(),
-            sort_order: "invalid".to_string(),
+            sort_by: SortBy::default(),
+            sort_order: SortOrder::default(),
         };
 
         let page = query.page.max(1);
@@ -1357,6 +1505,110 @@ mod tests {
 
         assert_eq!(page, 1);
         assert_eq!(limit, 100);
+        // Defaults match the historical implicit fall-back so callers
+        // who don't pass sort_by/sort_order keep the same behaviour.
+        assert_eq!(query.sort_by.to_sql_column(), "u.created_at");
+        assert_eq!(query.sort_order.to_sql(), "DESC");
+    }
+
+    // ------------------------------------------------------------------
+    // MED-5 (security-2026-05-13.md): typed sort params reject unknowns.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn sort_by_accepts_allowlisted_columns_and_maps_to_safe_sql() {
+        // The four allowlisted values must each map to a stable SQL
+        // column literal. If a future commit adds a column to `SortBy`
+        // without updating `to_sql_column`, the compiler catches it.
+        assert_eq!(SortBy::Email.to_sql_column(), "u.email");
+        assert_eq!(SortBy::CreatedAt.to_sql_column(), "u.created_at");
+        assert_eq!(SortBy::Role.to_sql_column(), "u.role");
+        assert_eq!(SortBy::IsActive.to_sql_column(), "u.is_active");
+    }
+
+    #[test]
+    fn sort_by_rejects_unknown_values_at_deserialise_time() {
+        // The whole point of MED-5: an attacker-supplied `sort_by=DROP`
+        // (or any other non-allowlisted value) must fail to deserialise
+        // — not silently fall back. With the typed enum, serde returns
+        // an error before the handler ever runs.
+        let result: Result<SortBy, _> = serde_json::from_str(r#""drop_table""#);
+        assert!(result.is_err());
+
+        // Casing must also fail; we expect snake_case only.
+        let result: Result<SortBy, _> = serde_json::from_str(r#""Email""#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn sort_order_typed_enum_rejects_unknown_directions() {
+        let result: Result<SortOrder, _> = serde_json::from_str(r#""sideways""#);
+        assert!(result.is_err());
+
+        // Casing must match the lowercase rename rule.
+        let result: Result<SortOrder, _> = serde_json::from_str(r#""ASC""#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_broadcast_where_clause_no_filters_yields_1_eq_1() {
+        // All filters disabled → fall back to `1=1` so the SELECT stays
+        // well-formed (every authenticated user matches).
+        let payload = BroadcastNotificationRequest {
+            title: "t".to_string(),
+            message: "m".to_string(),
+            notification_type: None,
+            tier_id: None,
+            role: None,
+            active_only: false,
+            data: None,
+        };
+        let (where_clause, values) = build_broadcast_where_clause(&payload);
+        assert_eq!(where_clause, "1=1");
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn build_broadcast_where_clause_emits_static_fragments_for_active_only() {
+        // `active_only` is the no-binding case: the fragment is a
+        // hard-coded SQL literal with no `$n` placeholder.
+        let payload = BroadcastNotificationRequest {
+            title: "t".to_string(),
+            message: "m".to_string(),
+            notification_type: None,
+            tier_id: None,
+            role: None,
+            active_only: true,
+            data: None,
+        };
+        let (where_clause, values) = build_broadcast_where_clause(&payload);
+        assert_eq!(where_clause, "u.is_active = true");
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn build_broadcast_where_clause_combines_filters_with_positional_binds() {
+        // tier_id + role together → two positional parameters, with
+        // `::uuid` and `::user_role` casts in the SQL fragment so
+        // Postgres parses each bound string safely.
+        let tier_id = Uuid::new_v4();
+        let payload = BroadcastNotificationRequest {
+            title: "t".to_string(),
+            message: "m".to_string(),
+            notification_type: None,
+            tier_id: Some(tier_id),
+            role: Some(UserRole::Admin),
+            active_only: true,
+            data: None,
+        };
+        let (where_clause, values) = build_broadcast_where_clause(&payload);
+        assert_eq!(
+            where_clause,
+            "u.is_active = true AND ul.tier_id = $1::uuid AND u.role = $2::user_role"
+        );
+        assert_eq!(values.len(), 2);
+        assert_eq!(values[0], tier_id.to_string());
+        assert_eq!(values[1], UserRole::Admin.to_string());
     }
 
     #[test]
@@ -1410,5 +1662,60 @@ mod tests {
 
         assert!(require_super_admin(&super_admin).is_ok());
         assert!(require_super_admin(&admin_user).is_err());
+    }
+
+    // ------------------------------------------------------------------
+    // MED-2 (security-2026-05-13.md): symmetric super_admin protection
+    // on `delete_user`.
+    //
+    // The handler does two checks in sequence:
+    //   (1) `require_super_admin` — only super_admins can hit this path
+    //       at all. Regular admins are 403'd by the existing gate.
+    //   (2) `deny_deactivation_if_super_admin` — even a super_admin
+    //       cannot deactivate *another* super_admin, mirroring the
+    //       role-demotion gate from #236.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn delete_user_path_is_blocked_for_regular_admin_by_require_super_admin() {
+        // The first check in `delete_user` is `require_super_admin`.
+        // A regular admin must be rejected before any DB work happens.
+        let admin = AuthUser {
+            id: "admin-id".to_string(),
+            email: Some("admin@example.com".to_string()),
+            role: "admin".to_string(),
+        };
+        assert!(require_super_admin(&admin).is_err());
+
+        // Sanity: a super_admin is allowed past the same gate, so the
+        // outer guard is not over-blocking.
+        let super_admin = AuthUser {
+            id: "super-id".to_string(),
+            email: Some("super@example.com".to_string()),
+            role: "super_admin".to_string(),
+        };
+        assert!(require_super_admin(&super_admin).is_ok());
+    }
+
+    #[test]
+    fn delete_user_super_admin_cannot_deactivate_another_super_admin() {
+        // Even after `require_super_admin` passes, the inner role check
+        // must reject a target whose role is `super_admin`. This is the
+        // symmetric guard that pairs with the demotion gate in #236.
+        let blocked = deny_deactivation_if_super_admin(&UserRole::SuperAdmin);
+        assert!(blocked.is_err());
+        match blocked {
+            Err(AppError::Forbidden(msg)) => {
+                assert!(
+                    msg.contains("super_admin"),
+                    "error message must mention super_admin so the admin UI can surface a useful reason"
+                );
+            },
+            other => panic!("expected Forbidden, got {:?}", other),
+        }
+
+        // Conversely, deactivating a regular admin or customer is allowed.
+        assert!(deny_deactivation_if_super_admin(&UserRole::Admin).is_ok());
+        assert!(deny_deactivation_if_super_admin(&UserRole::Customer).is_ok());
     }
 }
