@@ -6,6 +6,27 @@ because the project ships from `main` without semver tags.
 
 ## 2026-05-13
 
+### E2E off the deploy critical path
+- `perf(ci)`: Moved E2E to run in parallel with `deploy-staging` instead
+  of gating it. Every PR still runs full E2E before merge (the meaningful
+  gate); production still requires manual approval (the user-facing
+  gate); E2E remains a workflow-level status signal on `main` runs so a
+  red E2E surfaces before prod approval, but it no longer blocks the
+  staging deploy itself.
+- `feat(ci)`: New `Verify Staging` job polls `/api/health` for up to 90s
+  after `deploy-staging` completes. Catches deploy-itself-broken cases
+  (image won't start, runtime migration crash, missing env var) that
+  pre-merge tests can't see.
+- `perf(ci)`: Cached `cargo-nextest` binary keyed on the toolchain
+  version so warm-cache runs skip the install step.
+- Critical path on warm cache: `Lint → max(Test, Build) → Push → Deploy
+  → Verify ≈ 3m43s`. E2E (~2m) runs in parallel with `Deploy + Verify`
+  and finishes ~30s after. End-to-end push → staging-live drops from
+  ~6m01s to ~3m43s — about **2m20s** off the critical path, on top of
+  earlier sweep wins (#230).
+- `docs`: CLAUDE.md updated to document the new gating model so future
+  contributors understand why E2E isn't a deploy gate.
+
 ### Test-pipeline parallelism + nextest
 - `perf(ci)`: Switched the backend test runner to `cargo-nextest`. Split
   unit tests into a parallel `Test Backend Unit` job that runs on
