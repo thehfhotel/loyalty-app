@@ -237,8 +237,13 @@ pub struct PaginatedTransactionsResponse {
     pub total_pages: i32,
 }
 
-/// Award points result
-#[derive(Debug, Clone, Serialize)]
+/// Award points result.
+///
+/// `Deserialize` is needed for replaying the cached idempotency
+/// response: the bytes stored in `idempotency_keys.response_body`
+/// have to be parsed back into this type before being returned to
+/// the client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AwardPointsResult {
     pub transaction_id: Uuid,
     pub points_awarded: i32,
@@ -1148,9 +1153,24 @@ async fn get_transactions_full(
 }
 
 /// POST /loyalty/award - using FullAppState
+///
+/// Idempotency: supports the optional `Idempotency-Key` header. A retry
+/// with the same key replays the original response byte-for-byte rather
+/// than double-crediting points. See
+/// `docs/audits/correctness-2026-05-13.md` (CRITICAL #3) for the audit
+/// write-up.
+///
+/// Tier recalculation: delegated to the `award_points` stored procedure,
+/// which also handles the points_transactions insert and the tier
+/// recompute. Calling the SP — rather than hand-rolling the UPDATE +
+/// tier lookup — keeps this handler in sync with the canonical logic
+/// in `services/loyalty.rs::award_points` and the SP-side hooks (audit
+/// row, coupon awards) defined in the init migration. CLAUDE.md rule:
+/// stored procedures for tier-affecting operations.
 async fn award_points_full(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
+    headers: axum::http::HeaderMap,
     Json(payload): Json<AwardPointsRequest>,
 ) -> Result<Json<ApiResponse<AwardPointsResult>>, AppError> {
     if !has_role(&auth_user, "admin") {
@@ -1166,20 +1186,67 @@ async fn award_points_full(
         ));
     }
 
+    // Parse the optional `Idempotency-Key` header. See
+    // `services/idempotency.rs` for the full contract.
+    let idempotency_key = headers
+        .get("idempotency-key")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    // Pre-check for a previously-cached response. Has to happen against
+    // the pool (not our own transaction) because the original write
+    // committed in a different transaction.
+    if let Some(key) = idempotency_key.as_deref() {
+        if let Some(cached) =
+            crate::services::idempotency::load_cached_response(state.db(), admin_user_id, key)
+                .await?
+        {
+            if !cached.body.is_empty() {
+                if let Ok(result) = serde_json::from_slice::<AwardPointsResult>(&cached.body) {
+                    return Ok(Json(ApiResponse::with_message(
+                        result,
+                        "Points awarded successfully (replayed)",
+                    )));
+                }
+            }
+        }
+    }
+
     let mut tx = state.db().begin().await?;
 
+    if let Some(key) = idempotency_key.as_deref() {
+        let outcome = crate::services::idempotency::take_or_replay(
+            &mut *tx,
+            admin_user_id,
+            key,
+            "/api/loyalty/award",
+        )
+        .await?;
+        if matches!(
+            outcome,
+            crate::services::idempotency::IdempotencyOutcome::Replay(_)
+        ) {
+            tx.rollback().await?;
+            return Err(AppError::Conflict(
+                "A concurrent request with the same Idempotency-Key is in flight".to_string(),
+            ));
+        }
+    }
+
+    // Lookup the previous balance so we can compute the deltas the
+    // response advertises. `FOR UPDATE` serializes concurrent awards
+    // against the same user — without it, two parallel awards could
+    // both read the same `old_points` and report stale deltas (even
+    // though the SP would still arrive at a correct total).
     let current_loyalty = sqlx::query!(
-        "SELECT current_points, total_nights, tier_id FROM user_loyalty WHERE user_id = $1",
+        "SELECT current_points, total_nights, tier_id FROM user_loyalty WHERE user_id = $1 FOR UPDATE",
         payload.user_id,
     )
     .fetch_optional(&mut *tx)
-    .await?;
+    .await?
+    .ok_or_else(|| AppError::NotFound("User loyalty record not found".to_string()))?;
 
-    let current_loyalty = current_loyalty
-        .ok_or_else(|| AppError::NotFound("User loyalty record not found".to_string()))?;
-
-    let old_points = current_loyalty.current_points.unwrap_or(0);
-    let old_nights = current_loyalty.total_nights.unwrap_or(0);
     let old_tier_id = current_loyalty.tier_id;
 
     let transaction_type = payload.source.as_deref().unwrap_or("admin_award");
@@ -1187,81 +1254,87 @@ async fn award_points_full(
         .description
         .clone()
         .unwrap_or_else(|| "Points awarded by admin".to_string());
+    let admin_reason = description.clone();
 
-    let transaction_id = sqlx::query_scalar!(
+    // Delegate to the `award_points` stored procedure. The SP inserts
+    // the points_transactions row, updates `user_loyalty.current_points`
+    // and `total_nights`, and (when nights > 0) calls
+    // `recalculate_user_tier_by_nights` to update the tier and emit a
+    // tier-change audit row.
+    let sp_result: JsonValue = sqlx::query_scalar!(
         r#"
-        INSERT INTO points_transactions (user_id, points, type, description, admin_user_id, admin_reason, nights_stayed)
-        VALUES ($1, $2, $3::text::points_transaction_type, $4, $5, $6, $7)
-        RETURNING id
+        SELECT award_points($1, $2, $3::varchar, $4, $5, $6, $7, $8) AS "result!"
         "#,
         payload.user_id,
         payload.points,
         transaction_type,
         &description,
+        None::<String>,
         admin_user_id,
-        &description,
+        &admin_reason,
         payload.nights,
     )
     .fetch_one(&mut *tx)
     .await?;
 
-    let new_points = old_points + payload.points;
-    let new_nights = old_nights + payload.nights;
+    let transaction_id = sp_result
+        .get("transaction_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(|| {
+            AppError::Internal("award_points SP did not return a transaction_id".to_string())
+        })?;
+    let new_total_points = sp_result
+        .get("new_points_balance")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as i32;
 
-    sqlx::query!(
+    // Re-read the post-SP balance + tier name for the response. The SP
+    // already wrote both, so this is a confirmation read, not a recompute.
+    // `tier_name` is nullable in the projection because the LEFT JOIN
+    // can return no tier row (legacy users with `tier_id = NULL`); the
+    // `?` hint tells sqlx to type it as `Option<String>` regardless of
+    // the column's NOT NULL definition on `tiers.name`.
+    let updated = sqlx::query!(
         r#"
-        UPDATE user_loyalty
-        SET current_points = $1, total_nights = $2, points_updated_at = NOW(), updated_at = NOW()
-        WHERE user_id = $3
+        SELECT ul.current_points, ul.total_nights, ul.tier_id, t.name AS "tier_name?"
+        FROM user_loyalty ul
+        LEFT JOIN tiers t ON ul.tier_id = t.id
+        WHERE ul.user_id = $1
         "#,
-        new_points,
-        new_nights,
         payload.user_id,
     )
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
 
-    let new_tier: Option<TierRow> = sqlx::query_as!(
-        TierRow,
-        r#"
-        SELECT id, name, min_points, min_nights, benefits, color, sort_order, is_active, created_at, updated_at
-        FROM tiers
-        WHERE min_nights <= $1 AND is_active = true
-        ORDER BY min_nights DESC
-        LIMIT 1
-        "#,
-        new_nights,
-    )
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    let (_, new_tier_name, tier_changed) = if let Some(tier) = new_tier {
-        let changed = old_tier_id != Some(tier.id);
-        if changed {
-            sqlx::query!(
-                "UPDATE user_loyalty SET tier_id = $1, tier_updated_at = NOW() WHERE user_id = $2",
-                tier.id,
-                payload.user_id,
-            )
-            .execute(&mut *tx)
-            .await?;
-        }
-        (Some(tier.id), Some(tier.name), changed)
-    } else {
-        (old_tier_id, None, false)
-    };
-
-    tx.commit().await?;
+    let new_total_nights = updated.total_nights.unwrap_or(0);
+    let tier_changed = old_tier_id != updated.tier_id;
 
     let result = AwardPointsResult {
         transaction_id,
         points_awarded: payload.points,
         nights_added: payload.nights,
-        new_total_points: new_points,
-        new_total_nights: new_nights,
+        new_total_points: updated.current_points.unwrap_or(new_total_points),
+        new_total_nights,
         tier_changed,
-        new_tier_name,
+        new_tier_name: updated.tier_name,
     };
+
+    if let Some(key) = idempotency_key.as_deref() {
+        let body = serde_json::to_vec(&result).map_err(|e| {
+            AppError::Internal(format!("Failed to serialize award_points response: {e}"))
+        })?;
+        crate::services::idempotency::record_response(
+            &mut *tx,
+            admin_user_id,
+            key,
+            StatusCode::OK.as_u16() as i32,
+            &body,
+        )
+        .await?;
+    }
+
+    tx.commit().await?;
 
     Ok(Json(ApiResponse::with_message(
         result,

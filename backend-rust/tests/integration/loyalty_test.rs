@@ -391,6 +391,104 @@ async fn test_award_points_admin() {
     app.cleanup().await.ok();
 }
 
+/// Two POSTs with the same `Idempotency-Key` against `POST
+/// /api/loyalty/award` must credit points exactly once. Demonstrates
+/// the fix for Correctness audit 2026-05-13 (CRITICAL #3): pre-fix, a
+/// flaky network retry would double-credit the user. Tier promotion
+/// at 1/10/20 nights makes this directly customer-facing.
+#[tokio::test]
+async fn test_award_points_idempotent_on_same_key() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let admin = TestUser::admin("admin_idem@example.com");
+    admin
+        .insert(app.db())
+        .await
+        .expect("Failed to insert admin user");
+
+    let target = TestUser::new("target_idem@example.com");
+    let target_id = insert_user_with_loyalty(app.db(), &target, 100, 2)
+        .await
+        .expect("Failed to insert target user");
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let key = Uuid::new_v4().to_string();
+    let payload = json!({
+        "userId": target_id.to_string(),
+        "points": 500,
+        "nights": 3,
+        "source": "admin_award",
+        "description": "Idempotency test"
+    });
+
+    let response_a = client
+        .post_with_headers(
+            "/api/loyalty/award",
+            &payload,
+            &[("Idempotency-Key", key.as_str())],
+        )
+        .await;
+    response_a.assert_status(200);
+
+    let response_b = client
+        .post_with_headers(
+            "/api/loyalty/award",
+            &payload,
+            &[("Idempotency-Key", key.as_str())],
+        )
+        .await;
+    response_b.assert_status(200);
+
+    // Both responses must reference the same transaction id — the
+    // second one is a replay, not a new SP call.
+    let json_a: Value = response_a.json().expect("Response A should be valid JSON");
+    let json_b: Value = response_b.json().expect("Response B should be valid JSON");
+    let txn_id_a = json_a
+        .pointer("/data/transaction_id")
+        .and_then(|v| v.as_str());
+    let txn_id_b = json_b
+        .pointer("/data/transaction_id")
+        .and_then(|v| v.as_str());
+    assert!(
+        txn_id_a.is_some() && txn_id_a == txn_id_b,
+        "Replayed response must reference the original transaction id. a={:?} b={:?}",
+        txn_id_a,
+        txn_id_b
+    );
+
+    // The user's balance must reflect exactly one award (not two).
+    let loyalty: (i32, i32) =
+        sqlx::query_as("SELECT current_points, total_nights FROM user_loyalty WHERE user_id = $1")
+            .bind(target_id)
+            .fetch_one(app.db())
+            .await
+            .expect("Failed to fetch loyalty");
+    assert_eq!(
+        loyalty.0, 600,
+        "Points should be credited exactly once (100 + 500)"
+    );
+    assert_eq!(
+        loyalty.1, 5,
+        "Nights should be credited exactly once (2 + 3)"
+    );
+
+    // Exactly one points_transactions row.
+    let txn_count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM points_transactions WHERE user_id = $1 AND admin_user_id = $2",
+    )
+    .bind(target_id)
+    .bind(admin.id)
+    .fetch_one(app.db())
+    .await
+    .expect("Failed to count transactions");
+    assert_eq!(
+        txn_count.0, 1,
+        "Exactly one points_transactions row should exist for the retried request"
+    );
+
+    app.cleanup().await.ok();
+}
+
 // ============================================================================
 // Test: POST /api/loyalty/award - Non-Admin Fails
 // ============================================================================

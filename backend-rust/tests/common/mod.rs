@@ -322,6 +322,12 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         .execute(users_email_unique_migration)
         .await?;
 
+    let idempotency_keys_migration =
+        include_str!("../../migrations/20260513010000_idempotency_keys.sql");
+    template_pool
+        .execute(idempotency_keys_migration)
+        .await?;
+
     let bookings_no_overlap_migration =
         include_str!("../../migrations/20260513020000_bookings_no_overlap.sql");
     template_pool
@@ -1094,6 +1100,34 @@ impl TestClient {
             .uri(uri)
             .header("Content-Type", "application/json");
         let builder = self.apply_common_headers(builder);
+
+        let request = builder.body(Body::from(body_json)).unwrap();
+        let response = self.router.clone().oneshot(request).await.unwrap();
+
+        TestResponse::from_response(response).await
+    }
+
+    /// Make a POST request with JSON body and additional headers (e.g.
+    /// `Idempotency-Key`). Each header is appended on top of the
+    /// `Content-Type` + auth headers already applied by
+    /// `apply_common_headers`.
+    #[allow(dead_code)]
+    pub async fn post_with_headers<T: Serialize>(
+        &self,
+        uri: &str,
+        body: &T,
+        extra_headers: &[(&str, &str)],
+    ) -> TestResponse {
+        let body_json = serde_json::to_string(body).unwrap();
+
+        let mut builder = Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("Content-Type", "application/json");
+        builder = self.apply_common_headers(builder);
+        for (name, value) in extra_headers {
+            builder = builder.header(*name, *value);
+        }
 
         let request = builder.body(Body::from(body_json)).unwrap();
         let response = self.router.clone().oneshot(request).await.unwrap();

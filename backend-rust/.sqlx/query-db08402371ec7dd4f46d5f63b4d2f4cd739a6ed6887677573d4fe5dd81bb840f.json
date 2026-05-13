@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT response_status, response_body\n        FROM idempotency_keys\n        WHERE user_id = $1 AND key = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "response_status",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "response_body",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "db08402371ec7dd4f46d5f63b4d2f4cd739a6ed6887677573d4fe5dd81bb840f"
+}

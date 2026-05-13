@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ul.current_points, ul.total_nights, ul.tier_id, t.name AS \"tier_name?\"\n        FROM user_loyalty ul\n        LEFT JOIN tiers t ON ul.tier_id = t.id\n        WHERE ul.user_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "current_points",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "total_nights",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "tier_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "tier_name?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "753ff5ce5bfc2ad5ed2256439c457cc9396f0db9500b9a258983c6109ebbe713"
+}
