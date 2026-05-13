@@ -6,6 +6,26 @@ because the project ships from `main` without semver tags.
 
 ## 2026-05-13
 
+### Test-pipeline parallelism + nextest
+- `perf(ci)`: Switched the backend test runner to `cargo-nextest`. Split
+  unit tests into a parallel `Test Backend Unit` job that runs on
+  `ubuntu-latest` (no DB needed) alongside the renamed
+  `Test Backend Integration` job (in the `rust:1.93-bookworm` container,
+  postgres + redis services). Moved `cargo audit` to a daily scheduled
+  workflow so it stops eating per-PR time when it gives no PR-blocking
+  signal anyway (#228).
+- `fix(tests)`: Replaced the in-process `tokio::sync::Mutex` that
+  serialized `ensure_template_db()` with a Postgres advisory lock held
+  on a dedicated connection. The in-process mutex was invisible across
+  `nextest`'s per-process worker model, so every worker raced through
+  the `DROP DATABASE / CREATE DATABASE` sequence and the losers panicked
+  on `pg_database_datname_index`. Added a `template_db_has_users` probe
+  so workers that acquire the lock after the first one short-circuit
+  instead of redoing the work.
+- Critical path on warm cache: heavy parallel stage dropped from 2m55s
+  to 2m9s (−46s); end-to-end push → staging live now ~6m01s (was
+  ~6m42s after #226, ~8m11s pre-sweep).
+
 ### Build-graph trim
 - `perf(deps)`: Bumped `oauth2` v4→v5 (single-file migration in
   `services/oauth.rs` to the typestate builder API + SSRF-safe
