@@ -734,3 +734,219 @@ async fn test_line_oauth_redirect_standalone_mode() {
 
     teardown_test(&test_db).await;
 }
+
+// ============================================================================
+// OAuth provisioning transactionality (MED-5 — correctness-2026-05-13.md)
+// ============================================================================
+
+/// Regression guard: provisioning a brand-new OAuth user must be
+/// atomic. If any step inside the transaction fails (here we provoke a
+/// failure by deleting the default `Bronze` tier before the call), the
+/// users row, profile, notification_preferences row, and audit-log
+/// entry must all be rolled back so we don't leave a half-provisioned
+/// account behind.
+#[tokio::test]
+async fn test_oauth_provisioning_rolls_back_on_failure() {
+    use loyalty_backend::services::oauth::{OAuthService, OAuthServiceImpl, OAuthUserInfo};
+
+    let (pool, test_db) = setup_test().await;
+
+    // Wipe the default tier rows so the loyalty insert inside the
+    // provisioning transaction fails with NotFound("Default tier not
+    // found"). FK-cascades on user_loyalty mean we delete loyalty rows
+    // first; tiers themselves have no rows referenced by the seed users.
+    sqlx::query("DELETE FROM user_loyalty")
+        .execute(&pool)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM tiers")
+        .execute(&pool)
+        .await
+        .expect("clear tiers");
+
+    let redis = init_test_redis().await.expect("redis");
+    let settings = create_test_settings_with_oauth(None, None);
+    let state = AppState::new(pool.clone(), redis, settings);
+
+    let service = OAuthServiceImpl::new(
+        state.clone(),
+        state.config().oauth.google.clone(),
+        state.config().oauth.line.clone(),
+    );
+
+    // Unique email so we know any users row found afterward is from
+    // this call rather than seed data.
+    let email = format!("rollback_{}@example.com", uuid::Uuid::new_v4().simple());
+    let user_info = OAuthUserInfo {
+        provider: "google".to_string(),
+        provider_id: format!("provider_{}", uuid::Uuid::new_v4().simple()),
+        email: Some(email.clone()),
+        first_name: Some("Roll".to_string()),
+        last_name: Some("Back".to_string()),
+        display_name: Some("Roll Back".to_string()),
+        avatar_url: None,
+        email_verified: true,
+    };
+
+    // The call must fail (no Bronze tier to insert into user_loyalty).
+    let result = service.find_or_create_oauth_user(user_info).await;
+    assert!(
+        result.is_err(),
+        "expected provisioning to fail without a default tier"
+    );
+
+    // Critical: no users row remains for the email. If the transaction
+    // wrap regresses, the users INSERT will have committed before the
+    // loyalty INSERT failed, leaving a half-provisioned account.
+    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE email = $1")
+        .bind(&email)
+        .fetch_one(&pool)
+        .await
+        .expect("count users");
+    assert_eq!(
+        user_count, 0,
+        "users row must be rolled back when OAuth provisioning fails mid-flow"
+    );
+
+    // Likewise no profile, notification_preferences, or loyalty row.
+    let profile_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM user_profiles up JOIN users u ON u.id = up.user_id WHERE u.email = $1",
+    )
+    .bind(&email)
+    .fetch_one(&pool)
+    .await
+    .expect("count profiles");
+    assert_eq!(
+        profile_count, 0,
+        "user_profiles row must also be rolled back"
+    );
+
+    teardown_test(&test_db).await;
+}
+
+// ============================================================================
+// OAuth state consumption (MED-1 — correctness-2026-05-13.md)
+// ============================================================================
+
+/// Regression guard: the OAuth state key MUST be consumed atomically on
+/// the first callback regardless of whether the downstream token exchange
+/// succeeds. The previous implementation did GET then DEL with the
+/// provider round-trip in between, leaving a replay window.
+///
+/// This test seeds a known state value in Redis, invokes the Google
+/// callback (the token exchange itself will fail because we don't mock
+/// it, but the state lookup happens before that), then verifies the
+/// Redis key is gone. A regression that re-introduces the late DEL
+/// would leave the key behind until the post-exchange cleanup, and the
+/// final `KEYS oauth_state:google:*` assertion would fail.
+#[tokio::test]
+async fn test_google_callback_consumes_oauth_state_atomically() {
+    use redis::AsyncCommands;
+
+    let (pool, test_db) = setup_test().await;
+    let settings = create_test_settings_with_oauth(None, None);
+
+    // Build the app + a side-channel Redis connection on the same URL so
+    // we can SET the state and then KEYS-check it after the callback.
+    let mut redis = init_test_redis().await.expect("redis");
+    let state = AppState::new(pool.clone(), redis.clone(), settings.clone());
+    let app = axum::Router::new().nest("/api/oauth", routes().with_state(state));
+    let client = TestClient::new(app);
+
+    // Use a high-entropy key suffix so this test never collides with a
+    // sibling worker's leftover Redis entries.
+    let state_key = format!("test_state_{}", uuid::Uuid::new_v4().simple());
+    let redis_key = format!("oauth_state:google:{}", state_key);
+    let payload = serde_json::json!({
+        "session_id": null,
+        "user_id": null,
+        "user_agent": "test-agent",
+        "timestamp": chrono::Utc::now().timestamp_millis(),
+        "return_url": "http://localhost:3000",
+        "provider": "google",
+        "original_url": "http://localhost:3000/login",
+        "ip": "127.0.0.1",
+    })
+    .to_string();
+
+    redis
+        .set_ex::<_, _, ()>(&redis_key, &payload, 600)
+        .await
+        .expect("seed oauth_state");
+
+    // Sanity: the key exists before the callback.
+    let pre: bool = redis.exists(&redis_key).await.expect("exists check");
+    assert!(pre, "state should exist before callback");
+
+    // Invoke the callback. The token-exchange call will fail (we didn't
+    // mock the Google endpoint), but `get_oauth_state` runs first and
+    // must consume the key with GETDEL.
+    let _ = client
+        .get(&format!(
+            "/api/oauth/google/callback?code=dummy_code&state={}",
+            state_key
+        ))
+        .await;
+
+    // The key must be gone — consumed by GETDEL, not awaiting a
+    // post-exchange delete.
+    let post: bool = redis.exists(&redis_key).await.expect("exists check");
+    assert!(
+        !post,
+        "state must be consumed atomically by the first callback (MED-1)"
+    );
+
+    teardown_test(&test_db).await;
+}
+
+/// Same regression guard for the LINE provider. The fix is symmetric so
+/// the test must be too.
+#[tokio::test]
+async fn test_line_callback_consumes_oauth_state_atomically() {
+    use redis::AsyncCommands;
+
+    let (pool, test_db) = setup_test().await;
+    let settings = create_test_settings_with_oauth(None, None);
+
+    let mut redis = init_test_redis().await.expect("redis");
+    let state = AppState::new(pool.clone(), redis.clone(), settings.clone());
+    let app = axum::Router::new().nest("/api/oauth", routes().with_state(state));
+    let client = TestClient::new(app);
+
+    let state_key = format!("test_state_{}", uuid::Uuid::new_v4().simple());
+    let redis_key = format!("oauth_state:line:{}", state_key);
+    let payload = serde_json::json!({
+        "session_id": null,
+        "user_id": null,
+        "user_agent": "test-agent",
+        "timestamp": chrono::Utc::now().timestamp_millis(),
+        "return_url": "http://localhost:3000",
+        "provider": "line",
+        "original_url": "http://localhost:3000/login",
+        "ip": "127.0.0.1",
+    })
+    .to_string();
+
+    redis
+        .set_ex::<_, _, ()>(&redis_key, &payload, 600)
+        .await
+        .expect("seed oauth_state");
+
+    let pre: bool = redis.exists(&redis_key).await.expect("exists check");
+    assert!(pre, "state should exist before callback");
+
+    let _ = client
+        .get(&format!(
+            "/api/oauth/line/callback?code=dummy_code&state={}",
+            state_key
+        ))
+        .await;
+
+    let post: bool = redis.exists(&redis_key).await.expect("exists check");
+    assert!(
+        !post,
+        "state must be consumed atomically by the first callback (MED-1)"
+    );
+
+    teardown_test(&test_db).await;
+}

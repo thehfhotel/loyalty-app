@@ -740,19 +740,33 @@ impl OAuthService for OAuthServiceImpl {
 
         // Create new user.
         //
-        // Use `ON CONFLICT (email) DO NOTHING RETURNING ...` so a concurrent
-        // password-registration (or sibling OAuth callback) that has already
-        // inserted a row for the same email can't be silently duplicated.
-        // The UNIQUE constraint on `users.email` (migration
-        // `20260513000000`) is the source of truth; the earlier find-by-email
-        // probe at the top of this function only narrows the *common* case.
+        // MED-5 (correctness-2026-05-13.md): wrap the user / profile /
+        // notification_preferences / audit / loyalty inserts in one
+        // transaction so we never leave a half-provisioned user behind
+        // when any one step fails. Matches the pattern already used by
+        // `routes/auth.rs::register`.
         //
-        // If we lose the race, `fetch_optional` returns `None`; re-fetch the
-        // winner by email and link the OAuth provider to it via the same
-        // path as the "user already exists by email" branch above.
+        // The `INSERT INTO users` uses `ON CONFLICT (email) DO NOTHING
+        // RETURNING ...` so a concurrent password-registration (or sibling
+        // OAuth callback) that has already inserted a row for the same
+        // email can't be silently duplicated. The UNIQUE constraint on
+        // `users.email` (migration `20260513000000`) is the source of
+        // truth; the earlier find-by-email probe at the top of this
+        // function only narrows the *common* case.
+        //
+        // If we lose the race, `fetch_optional` returns `None`; re-fetch
+        // the winner by email and link the OAuth provider to it via the
+        // same path as the "user already exists by email" branch above.
+        // The race-loss path doesn't insert a new user so it doesn't need
+        // the multi-statement transaction — it commits its single UPDATE
+        // before returning.
         info!("[OAuth Service] Creating new {} user", user_info.provider);
 
         let membership_id = self.generate_membership_id().await?;
+
+        let mut tx = self.state.db().begin().await.map_err(|e| {
+            AppError::DatabaseQuery(format!("Failed to begin OAuth provisioning tx: {}", e))
+        })?;
 
         let new_user_opt: Option<OAuthUser> = sqlx::query_as!(
             OAuthUser,
@@ -768,7 +782,7 @@ impl OAuthService for OAuthServiceImpl {
             &user_info.provider,
             &user_info.provider_id,
         )
-        .fetch_optional(self.state.db())
+        .fetch_optional(&mut *tx)
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to create OAuth user: {}", e)))?;
 
@@ -777,9 +791,10 @@ impl OAuthService for OAuthServiceImpl {
             None => {
                 // Lost the race: another concurrent flow already inserted a
                 // users row for this email between the find-by-email probe
-                // and this insert. Re-fetch and link the OAuth provider to
-                // the existing row so the caller sees a consistent
-                // "this email is now linked to this provider" result.
+                // and this insert. Roll back the (now-empty) provisioning
+                // transaction, then run the linking path against the pool.
+                tx.rollback().await.ok();
+
                 info!(
                     "[OAuth Service] Race lost on email insert; linking {} to existing row",
                     user_info.provider
@@ -847,7 +862,7 @@ impl OAuthService for OAuthServiceImpl {
             },
         };
 
-        // Create user profile
+        // Create user profile.
         sqlx::query!(
             r#"
             INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id)
@@ -859,12 +874,16 @@ impl OAuthService for OAuthServiceImpl {
             user_info.avatar_url.as_deref(),
             &membership_id,
         )
-        .execute(self.state.db())
+        .execute(&mut *tx)
         .await
         .map_err(|e| AppError::DatabaseQuery(format!("Failed to create user profile: {}", e)))?;
 
-        // Create default notification preferences (using trigger as fallback)
-        let _ = sqlx::query!(
+        // Create default notification preferences. MED-5
+        // (correctness-2026-05-13.md) + LOW-2: this used to be
+        // `let _ = ...` so a transient failure was silently dropped; now
+        // it propagates with `?` (the existing `ON CONFLICT DO NOTHING`
+        // keeps the call idempotent).
+        sqlx::query!(
             r#"
             INSERT INTO notification_preferences (user_id)
             VALUES ($1)
@@ -872,18 +891,66 @@ impl OAuthService for OAuthServiceImpl {
             "#,
             new_user.id,
         )
-        .execute(self.state.db())
-        .await;
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            AppError::DatabaseQuery(format!("Failed to create notification preferences: {}", e))
+        })?;
+
+        // Audit-log the OAuth signup. Same shape as `log_oauth_login`,
+        // inlined here so it runs inside the provisioning transaction.
+        let oauth_login_details = serde_json::json!({
+            "provider": user_info.provider,
+            "isNewUser": true,
+        });
+        sqlx::query!(
+            r#"
+            INSERT INTO user_audit_log (user_id, action, details)
+            VALUES ($1, 'oauth_login', $2)
+            "#,
+            new_user.id,
+            oauth_login_details,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::DatabaseQuery(format!("Failed to log OAuth login: {}", e)))?;
+
+        // Enroll in loyalty program with the default Bronze tier. Same
+        // shape as `ensure_loyalty_enrollment`, inlined to stay inside
+        // the transaction.
+        let tier_id: Option<Uuid> =
+            sqlx::query_scalar!(r#"SELECT id FROM tiers WHERE name = 'Bronze' LIMIT 1"#,)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| {
+                    AppError::DatabaseQuery(format!("Failed to get default tier: {}", e))
+                })?;
+        let tier_id =
+            tier_id.ok_or_else(|| AppError::NotFound("Default tier not found".to_string()))?;
+        sqlx::query!(
+            r#"
+            INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights)
+            VALUES ($1, $2, 0, 0)
+            ON CONFLICT (user_id) DO NOTHING
+            "#,
+            new_user.id,
+            tier_id,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::DatabaseQuery(format!("Failed to create loyalty record: {}", e)))?;
+
+        tx.commit().await.map_err(|e| {
+            AppError::DatabaseQuery(format!("Failed to commit OAuth provisioning tx: {}", e))
+        })?;
+
+        info!(
+            "[OAuth Service] Provisioned new {} user {} with loyalty enrollment",
+            user_info.provider, new_user.id
+        );
 
         let email = new_user.email.as_deref().unwrap_or("");
         let (access_token, refresh_token) = self.generate_tokens(new_user.id, email)?;
-
-        // Log OAuth login
-        self.log_oauth_login(&new_user.id, &user_info.provider, true)
-            .await?;
-
-        // Enroll in loyalty program
-        self.ensure_loyalty_enrollment(&new_user.id).await?;
 
         Ok(OAuthAuthResult {
             user: new_user,
@@ -957,56 +1024,11 @@ impl OAuthServiceImpl {
         Ok(())
     }
 
-    /// Ensure user is enrolled in the loyalty program
-    async fn ensure_loyalty_enrollment(&self, user_id: &Uuid) -> Result<(), AppError> {
-        // Check if user already has loyalty record
-        let existing = sqlx::query_scalar!(
-            r#"SELECT user_id FROM user_loyalty WHERE user_id = $1"#,
-            user_id,
-        )
-        .fetch_optional(self.state.db())
-        .await
-        .map_err(|e| {
-            AppError::DatabaseQuery(format!("Failed to check loyalty enrollment: {}", e))
-        })?;
-
-        if existing.is_some() {
-            return Ok(());
-        }
-
-        // Get default tier (Bronze)
-        let tier_id: Option<Uuid> =
-            sqlx::query_scalar!(r#"SELECT id FROM tiers WHERE name = 'Bronze' LIMIT 1"#,)
-                .fetch_optional(self.state.db())
-                .await
-                .map_err(|e| {
-                    AppError::DatabaseQuery(format!("Failed to get default tier: {}", e))
-                })?;
-
-        let tier_id =
-            tier_id.ok_or_else(|| AppError::NotFound("Default tier not found".to_string()))?;
-
-        // Create loyalty record
-        sqlx::query!(
-            r#"
-            INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights)
-            VALUES ($1, $2, 0, 0)
-            ON CONFLICT (user_id) DO NOTHING
-            "#,
-            user_id,
-            tier_id,
-        )
-        .execute(self.state.db())
-        .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to create loyalty record: {}", e)))?;
-
-        info!(
-            "[OAuth Service] Created loyalty enrollment for user: {}",
-            user_id
-        );
-
-        Ok(())
-    }
+    // `ensure_loyalty_enrollment` was inlined into the provisioning
+    // transaction in MED-5 (correctness-2026-05-13.md) so the loyalty
+    // INSERT shares atomicity with the user/profile/audit inserts.
+    // The race-loss path (which doesn't insert a new user) doesn't need
+    // a loyalty enrollment either — it just links an existing user.
 }
 
 #[cfg(test)]

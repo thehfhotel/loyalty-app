@@ -653,7 +653,14 @@ async fn get_stats(
     .fetch_one(state.db())
     .await?;
 
-    // Total points issued (sum of all positive point transactions)
+    // Total points issued (sum of all positive point transactions).
+    //
+    // MED-3 (correctness-2026-05-13.md): propagate query errors with `?`
+    // instead of `.unwrap_or(0)`. A silently-coerced zero on transient
+    // connection drops / statement timeouts / schema regressions used to
+    // make the admin dashboard read "0 points issued" while the other
+    // tile queries (above and below) failed loudly with `?` — a doubly
+    // confusing UX. Now every tile uses the same error mode.
     let total_points_issued: i64 = sqlx::query_scalar!(
         r#"
         SELECT COALESCE(SUM(points), 0) as "sum!: i64"
@@ -662,11 +669,11 @@ async fn get_stats(
         "#,
     )
     .fetch_one(state.db())
-    .await
-    .unwrap_or(0);
+    .await?;
 
-    // Total bookings (count of point transactions with type 'stay' or similar)
-    // Note: type is a Postgres enum, so we cast to text for comparison
+    // Total bookings (count of point transactions with type 'stay' or similar).
+    // MED-3 (correctness-2026-05-13.md): same `?` propagation as
+    // `total_points_issued` above.
     let total_bookings: i64 = sqlx::query_scalar!(
         r#"
         SELECT COUNT(*) as "count!: i64"
@@ -675,8 +682,7 @@ async fn get_stats(
         "#,
     )
     .fetch_one(state.db())
-    .await
-    .unwrap_or(0);
+    .await?;
 
     // New users today
     let today_start = Utc::now().date_naive().and_hms_opt(0, 0, 0).unwrap();

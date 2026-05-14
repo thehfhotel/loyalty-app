@@ -273,6 +273,14 @@ pub struct AdminBookingDetail {
 /// modal can save just the fields the admin touched. Fields the schema
 /// doesn't currently support (e.g. roomChanges arrays) are documented in
 /// `docs/admin-backend-gaps.md` as a follow-up.
+///
+/// `payment_type` / `payment_amount` were added by migration
+/// `20260512020000_booking_admin_fields.sql` but were initially read-only
+/// (GET surfaced them, PUT silently dropped them). MED-2
+/// (correctness-2026-05-13.md): wire them through so the modal can
+/// persist whatever the admin set. `payment_type` is validated by the
+/// `chk_bookings_payment_type` CHECK constraint (`full` | `deposit`); we
+/// pre-validate at the handler too to fail with 400 instead of 500.
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBookingRequest {
@@ -284,6 +292,11 @@ pub struct UpdateBookingRequest {
     pub notes: Option<String>,
     pub admin_notes: Option<String>,
     pub total_price: Option<Decimal>,
+    /// Persisted payment split type. Must be `"full"` or `"deposit"` per
+    /// the `chk_bookings_payment_type` CHECK constraint.
+    pub payment_type: Option<String>,
+    /// Amount actually paid for the booking. Must be non-negative.
+    pub payment_amount: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -805,7 +818,9 @@ async fn update_booking(
             notes          AS "notes?",
             admin_notes    AS "admin_notes?",
             total_price    AS "total_price!",
-            status         AS "status!"
+            status         AS "status!",
+            payment_type   AS "payment_type?",
+            payment_amount AS "payment_amount?"
           FROM bookings
          WHERE id = $1
          FOR UPDATE
@@ -858,6 +873,33 @@ async fn update_booking(
     };
     let new_total = payload.total_price.unwrap_or(before.total_price);
 
+    // MED-2 (correctness-2026-05-13.md): pre-validate payment_type against
+    // the same set the CHECK constraint accepts, so a bad payload yields
+    // a 400 with a clear message instead of a 500 from the constraint
+    // failure. `None` on the request means "leave current value alone".
+    let new_payment_type: Option<String> = match payload.payment_type.as_ref() {
+        Some(value) => {
+            if !matches!(value.as_str(), "full" | "deposit") {
+                return Err(AppError::Validation(
+                    "paymentType must be one of 'full' or 'deposit'".to_string(),
+                ));
+            }
+            Some(value.clone())
+        },
+        None => before.payment_type.clone(),
+    };
+    let new_payment_amount: Option<Decimal> = match payload.payment_amount {
+        Some(amount) => {
+            if amount.is_sign_negative() {
+                return Err(AppError::Validation(
+                    "paymentAmount must be non-negative".to_string(),
+                ));
+            }
+            Some(amount)
+        },
+        None => before.payment_amount,
+    };
+
     if new_check_out <= new_check_in {
         return Err(AppError::Validation(
             "checkOutDate must be after checkInDate".to_string(),
@@ -876,6 +918,8 @@ async fn update_booking(
                notes          = $6,
                admin_notes    = $7,
                total_price    = $8,
+               payment_type   = $9,
+               payment_amount = $10,
                updated_at     = NOW()
          WHERE id = $1
         "#,
@@ -887,6 +931,8 @@ async fn update_booking(
         new_notes,
         new_admin_notes,
         new_total,
+        new_payment_type,
+        new_payment_amount,
     )
     .execute(&mut *tx)
     .await?;
@@ -903,6 +949,8 @@ async fn update_booking(
         new_notes.as_deref(),
         new_admin_notes.as_deref(),
         new_total,
+        new_payment_type.as_deref(),
+        new_payment_amount,
     );
 
     insert_audit_row(
@@ -1210,6 +1258,8 @@ fn build_update_diff(
     new_notes: Option<&str>,
     new_admin_notes: Option<&str>,
     new_total: Decimal,
+    new_payment_type: Option<&str>,
+    new_payment_amount: Option<Decimal>,
 ) -> (JsonValue, JsonValue) {
     let mut before_map = serde_json::Map::new();
     let mut after_map = serde_json::Map::new();
@@ -1242,6 +1292,14 @@ fn build_update_diff(
         before_map.insert("totalPrice".into(), json!(before.total_price));
         after_map.insert("totalPrice".into(), json!(new_total));
     }
+    if before.payment_type.as_deref() != new_payment_type {
+        before_map.insert("paymentType".into(), json!(before.payment_type));
+        after_map.insert("paymentType".into(), json!(new_payment_type));
+    }
+    if before.payment_amount != new_payment_amount {
+        before_map.insert("paymentAmount".into(), json!(before.payment_amount));
+        after_map.insert("paymentAmount".into(), json!(new_payment_amount));
+    }
 
     (JsonValue::Object(before_map), JsonValue::Object(after_map))
 }
@@ -1257,6 +1315,10 @@ struct BeforeRow {
     admin_notes: Option<String>,
     total_price: Decimal,
     status: String,
+    /// MED-2 (correctness-2026-05-13.md): re-read so the audit diff can
+    /// note before/after payment field changes.
+    payment_type: Option<String>,
+    payment_amount: Option<Decimal>,
 }
 
 // ============================================================================
@@ -1325,6 +1387,8 @@ mod tests {
             admin_notes: Some("old admin note".into()),
             total_price: Decimal::new(1000, 0),
             status: "confirmed".into(),
+            payment_type: None,
+            payment_amount: None,
         };
 
         // Only change `num_guests` and `admin_notes`.
@@ -1337,6 +1401,8 @@ mod tests {
             None,
             Some("new admin note"),
             before.total_price,
+            before.payment_type.as_deref(),
+            before.payment_amount,
         );
 
         let before_obj = before_json.as_object().unwrap();
@@ -1348,5 +1414,47 @@ mod tests {
         assert!(before_obj.contains_key("adminNotes"));
         assert_eq!(after_obj.get("numberOfGuests"), Some(&json!(5)));
         assert_eq!(after_obj.get("adminNotes"), Some(&json!("new admin note")));
+    }
+
+    /// MED-2 (correctness-2026-05-13.md): `paymentType` / `paymentAmount`
+    /// changes must show up in the audit diff so the modal-side audit
+    /// timeline matches the persisted columns.
+    #[test]
+    fn build_update_diff_captures_payment_field_changes() {
+        let before = BeforeRow {
+            check_in_date: NaiveDate::from_ymd_opt(2030, 1, 1).unwrap(),
+            check_out_date: NaiveDate::from_ymd_opt(2030, 1, 5).unwrap(),
+            num_guests: 2,
+            room_type_id: Uuid::nil(),
+            notes: None,
+            admin_notes: None,
+            total_price: Decimal::new(1000, 0),
+            status: "confirmed".into(),
+            payment_type: Some("deposit".into()),
+            payment_amount: Some(Decimal::new(500, 0)),
+        };
+
+        let new_amount = Decimal::new(1000, 0);
+        let (before_json, after_json) = build_update_diff(
+            &before,
+            before.check_in_date,
+            before.check_out_date,
+            before.num_guests,
+            before.room_type_id,
+            None,
+            None,
+            before.total_price,
+            Some("full"),
+            Some(new_amount),
+        );
+
+        let before_obj = before_json.as_object().unwrap();
+        let after_obj = after_json.as_object().unwrap();
+
+        assert_eq!(before_obj.len(), 2);
+        assert_eq!(after_obj.len(), 2);
+        assert_eq!(before_obj.get("paymentType"), Some(&json!("deposit")));
+        assert_eq!(after_obj.get("paymentType"), Some(&json!("full")));
+        assert!(after_obj.contains_key("paymentAmount"));
     }
 }

@@ -871,61 +871,92 @@ async fn forgot_password(
             .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
     if let Some((user_id, _email)) = user_row {
-        // Generate reset token
+        // Generate the reset token + its argon2 hash up front. The plain
+        // token rides into the email; the hash is what we persist.
         let reset_token = Uuid::new_v4().to_string();
         let hashed_token = hash_password(&reset_token).await?;
 
-        // Store reset token (expires in 1 hour)
-        sqlx::query(
+        // LOW-1 (correctness-2026-05-13.md): application-level cooldown
+        // on top of the existing HTTP rate limiter (strict 5/min on
+        // `/api/auth/forgot-password` per routes/mod.rs). Even within the
+        // 5/min budget an attacker can produce up to 5 token rows per
+        // minute per IP for a single victim; the cooldown caps that to
+        // one *useful* token per minute per user_id regardless of caller
+        // IP. The guard inserts only when no unused, unexpired token
+        // exists that's newer than one minute. We detect the cooldown
+        // hit by checking the returned row id — when the guard short-
+        // circuits the INSERT, we silently skip the email send and the
+        // response stays generic (still no email enumeration).
+        let inserted_id: Option<Uuid> = sqlx::query_scalar(
             r#"
             INSERT INTO password_reset_tokens (user_id, token, expires_at)
-            VALUES ($1, $2, NOW() + INTERVAL '1 hour')
+            SELECT $1, $2, NOW() + INTERVAL '1 hour'
+            WHERE NOT EXISTS (
+                SELECT 1
+                  FROM password_reset_tokens
+                 WHERE user_id = $1
+                   AND COALESCE(used, false) = false
+                   AND expires_at > NOW()
+                   AND created_at > NOW() - INTERVAL '1 minute'
+            )
+            RETURNING id
             "#,
         )
         .bind(&user_id)
         .bind(&hashed_token)
-        .execute(db)
+        .fetch_optional(db)
         .await
         .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
-        // Log action
-        sqlx::query(
-            r#"
-            INSERT INTO user_audit_log (user_id, action, details)
-            VALUES ($1, 'password_reset_request', '{}')
-            "#,
-        )
-        .bind(&user_id)
-        .execute(db)
-        .await
-        .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
-
-        // Send email with reset link containing reset_token
-        let email_service = EmailServiceImpl::from_smtp_config(
-            &state.config().email.smtp,
-            &state.config().server.frontend_url,
-        );
-
-        if email_service.is_configured() {
-            if let Err(e) = email_service
-                .send_password_reset_email(&_email, &reset_token)
-                .await
-            {
-                // Log error but don't fail the request - we still want to return success
-                // to prevent email enumeration
-                tracing::error!("Failed to send password reset email: {}", e);
-            } else {
-                tracing::info!("Password reset email sent to user: {}", user_id);
-            }
-        } else {
-            // In development, log that email would have been sent
-            tracing::warn!(
-                "SMTP not configured, skipping password reset email for user: {}",
+        if inserted_id.is_none() {
+            // Cooldown hit — a fresh, unused token already exists. Log
+            // the suppression and skip the email send. Still fall through
+            // to the generic "if the email exists..." response so
+            // attackers can't probe for known emails via timing.
+            tracing::info!(
+                "Password reset cooldown hit for user {} — skipping new token",
                 user_id
             );
-        }
+        } else {
+            // Log action only when a new token was actually issued.
+            sqlx::query(
+                r#"
+                INSERT INTO user_audit_log (user_id, action, details)
+                VALUES ($1, 'password_reset_request', '{}')
+                "#,
+            )
+            .bind(&user_id)
+            .execute(db)
+            .await
+            .map_err(|e| AppError::DatabaseQuery(e.to_string()))?;
 
-        tracing::info!("Password reset requested for user: {}", user_id);
+            // Send email with reset link containing reset_token
+            let email_service = EmailServiceImpl::from_smtp_config(
+                &state.config().email.smtp,
+                &state.config().server.frontend_url,
+            );
+
+            if email_service.is_configured() {
+                if let Err(e) = email_service
+                    .send_password_reset_email(&_email, &reset_token)
+                    .await
+                {
+                    // Log error but don't fail the request - we still want
+                    // to return success to prevent email enumeration.
+                    tracing::error!("Failed to send password reset email: {}", e);
+                } else {
+                    tracing::info!("Password reset email sent to user: {}", user_id);
+                }
+            } else {
+                // In development, log that email would have been sent
+                tracing::warn!(
+                    "SMTP not configured, skipping password reset email for user: {}",
+                    user_id
+                );
+            }
+
+            tracing::info!("Password reset requested for user: {}", user_id);
+        }
     } else {
         // Log attempt for non-existent email (don't reveal to user)
         tracing::info!("Password reset requested for non-existent email");
