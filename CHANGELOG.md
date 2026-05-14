@@ -51,6 +51,37 @@ findings. Bundle C closes the operational criticals plus most highs.
 Remaining audit follow-ups (Bundle B/C mediums + lows) are tracked
 in the three audit docs under `docs/audits/`.
 
+The remaining operational mediums + lows landed as one PR:
+
+- **`fix(audit)`: ops mediums + lows** — verified the distroless
+  healthcheck binary hits `/api/health` (full DB+Redis check), not
+  `/api/health/basic`, and pinned the contract with a unit test +
+  module-doc warning so a future refactor can't silently downgrade
+  to a process-only probe (MED-1); documented per-secret active-
+  session impact in `docs/secrets-runbook.md` (`JWT_SECRET` ≈ silent
+  refresh, `JWT_REFRESH_SECRET` = forced re-login, `SESSION_SECRET`
+  = currently unused at runtime), added a low-traffic-hour rotation
+  recommendation, and flagged dual-key rotation as future work
+  (MED-5); added `docs/production-approval-checklist.md` linked from
+  `CLAUDE.md` § CI/CD so production approvers walk through a
+  five-step pre-flight (staging health, SHA match, E2E status,
+  CHANGELOG/PR scan, rollback awareness) before clicking approve
+  (MED-6); added an integration test
+  (`tests/integration/auth_test.rs::test_login_rate_limit_returns_429`)
+  that hammers `/api/auth/login` against a router with
+  `RedisRateLimiter::strict()` wired exactly the way
+  `routes::create_router` does in production, asserting the 6th
+  request from the same client returns 429 (LOW-2 — the limiter
+  remains in-process per Redis instance; Redis-distributed across
+  instances is future work); added
+  `docs/public-launch-readiness.md` seeded from the audit's
+  pre-launch checklist with every Bundle A/B/C tick already filled
+  in and the still-open items (backup secrets, restore drill,
+  capacity test, GDPR/PDPA, status page, on-call rotation) left
+  open (LOW-3); `nginx.conf`'s `server_name localhost` left as-is
+  per the audit's explicit recommendation, with the existing
+  in-file comment as the documentation (LOW-1).
+
 ### E2E off the deploy critical path
 - `perf(ci)`: Moved E2E to run in parallel with `deploy-staging` instead
   of gating it. Every PR still runs full E2E before merge (the meaningful

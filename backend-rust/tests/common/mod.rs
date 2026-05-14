@@ -626,6 +626,14 @@ impl TestApp {
     }
 }
 
+/// Public re-export of the test config builder so tests outside this
+/// module can construct an isolated `AppState` for narrow-scoped routers
+/// (e.g., the rate-limit regression test in `auth_test.rs`). Mirrors
+/// what `TestApp` uses internally.
+pub fn test_app_state_config() -> loyalty_backend::Settings {
+    create_test_config()
+}
+
 /// Create test configuration settings
 fn create_test_config() -> loyalty_backend::Settings {
     use loyalty_backend::config::*;
