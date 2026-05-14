@@ -46,6 +46,15 @@ const OAUTH_STATE_EXPIRY_SECS: u64 = 600;
 // =============================================================================
 
 /// OAuth state data stored in Redis for CSRF protection
+///
+/// LOW-1 (security-2026-05-13.md): the `ip` field was previously a
+/// hard-coded `"unknown"` placeholder — never populated, never checked,
+/// just dead weight. Removed entirely. Back-compat with in-flight Redis
+/// records is acceptable to break because the state has a 10-minute TTL
+/// (`OAUTH_STATE_EXPIRY_SECS = 600`) and serde tolerates missing fields
+/// only on `Option<…>` / `#[serde(default)]` — older records with an
+/// extra `ip` field still deserialise cleanly because serde ignores
+/// unknown fields by default.
 #[derive(Debug, Serialize, Deserialize)]
 struct OAuthStateData {
     /// Session ID (if available)
@@ -62,8 +71,6 @@ struct OAuthStateData {
     provider: String,
     /// Original request URL
     original_url: String,
-    /// Client IP address
-    ip: String,
     /// Whether the request was secure (HTTPS)
     secure: bool,
     /// Request host
@@ -253,6 +260,29 @@ fn generate_state_key() -> String {
     use rand::Rng;
     let bytes: [u8; 32] = rand::thread_rng().gen();
     base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, bytes)
+}
+
+/// Build the post-OAuth-callback redirect URL that hands the access
+/// token off to the SPA.
+///
+/// LOW-2 (security-2026-05-13.md): the token rides in the URL fragment
+/// (`#token=…`), not the query string (`?token=…`). Browsers don't
+/// include the fragment when issuing the GET for the page, so the token
+/// never lands in upstream HTTP access logs, proxy access logs, or
+/// `Referer` headers. The fragment also doesn't survive `<a href>`
+/// navigation by default, which closes the shoulder-surfing path through
+/// browser address-bar autocomplete.
+///
+/// The refresh token rides exclusively on the `Set-Cookie` header
+/// attached by the caller — never in either the query string or the
+/// fragment.
+fn build_oauth_success_url(return_url: &str, access_token: &str, is_new_user: bool) -> String {
+    format!(
+        "{}/oauth/success#token={}&isNewUser={}",
+        return_url,
+        url_encode(access_token),
+        is_new_user
+    )
 }
 
 /// Create OAuth state and store in Redis
@@ -451,7 +481,6 @@ async fn google_oauth_init(
         return_url: return_url.clone(),
         provider: "google".to_string(),
         original_url: "/api/oauth/google".to_string(),
-        ip: "unknown".to_string(),
         secure: true,
         host: headers
             .get(header::HOST)
@@ -595,17 +624,20 @@ async fn google_oauth_callback(
     // token is delivered exclusively via the `Set-Cookie` header attached
     // below — never via a URL query parameter, where it would leak into
     // browser history, server logs, and Referer headers.
+    //
+    // LOW-2 (security-2026-05-13.md): the access token rides in the URL
+    // *fragment* (after `#`), not the query string. Fragments are never
+    // sent to servers by the browser, so the token cannot land in
+    // upstream access logs, proxy logs, or Referer headers — it stays
+    // confined to the SPA's runtime memory. The frontend handler reads
+    // `window.location.hash` instead of `useSearchParams`.
     let return_url = validate_return_url(Some(&state_data.return_url), frontend_url);
-    let success_url = format!(
-        "{}/oauth/success?token={}&isNewUser={}",
-        return_url,
-        url_encode(&result.tokens.access_token),
-        result.is_new_user
-    );
+    let success_url =
+        build_oauth_success_url(&return_url, &result.tokens.access_token, result.is_new_user);
 
     tracing::info!(
         user_id = %result.user.id,
-        email = result.user.email.as_deref().unwrap_or("none"),
+        email_hash = %crate::utils::hash_email(result.user.email.as_deref().unwrap_or("")),
         is_new_user = result.is_new_user,
         "[OAuth] Google OAuth success"
     );
@@ -693,8 +725,13 @@ async fn process_google_auth(
         .as_ref()
         .ok_or_else(|| AppError::OAuth("No email provided by Google".to_string()))?;
 
+    // LOW-4 (security-2026-05-13.md): log a non-reversible hash of the
+    // email, not the raw address. `crate::utils::hash_email` produces a
+    // 12-hex-char (48-bit) SHA-256 prefix that's stable across log
+    // lines for the same user, so support can still correlate without
+    // persisting PII in long-term log retention.
     tracing::debug!(
-        email = %email,
+        email_hash = %crate::utils::hash_email(email),
         google_id = %user_info.id,
         "[OAuth] Processing Google auth"
     );
@@ -787,7 +824,12 @@ async fn process_google_auth(
         (user, false)
     } else {
         // Create new user
-        tracing::debug!(email = %email, "[OAuth] Creating new Google user");
+        // LOW-4: hashed email only — same rationale as the debug line
+        // in `process_google_auth` above.
+        tracing::debug!(
+            email_hash = %crate::utils::hash_email(email),
+            "[OAuth] Creating new Google user"
+        );
 
         let user_id = Uuid::new_v4();
         let first_name = user_info
@@ -926,7 +968,6 @@ async fn line_oauth_init(
         return_url: return_url.clone(),
         provider: "line".to_string(),
         original_url: "/api/oauth/line".to_string(),
-        ip: "unknown".to_string(),
         secure: true,
         host: headers
             .get(header::HOST)
@@ -1066,17 +1107,12 @@ async fn line_oauth_callback(
     // State was already consumed atomically by `get_oauth_state` (GETDEL).
     // No post-callback delete needed — MED-1 (correctness-2026-05-13.md).
 
-    // Phase 3: the redirect URL carries only the access token. The refresh
-    // token is delivered exclusively via the `Set-Cookie` header attached
-    // below — never via a URL query parameter, where it would leak into
-    // browser history, server logs, and Referer headers.
+    // Phase 3 + LOW-2: same fragment-based handoff as the Google
+    // callback — see the comment in `google_oauth_callback` for the full
+    // rationale. The refresh token lives only in the HttpOnly cookie.
     let return_url = validate_return_url(Some(&state_data.return_url), frontend_url);
-    let success_url = format!(
-        "{}/oauth/success?token={}&isNewUser={}",
-        return_url,
-        url_encode(&result.tokens.access_token),
-        result.is_new_user
-    );
+    let success_url =
+        build_oauth_success_url(&return_url, &result.tokens.access_token, result.is_new_user);
 
     tracing::info!(
         user_id = %result.user.id,
@@ -1745,6 +1781,44 @@ mod tests {
         assert!(cookie.contains("SameSite=Strict"));
         assert!(cookie.contains("Path=/api/auth"));
         assert!(cookie.contains("Max-Age=3600"));
+    }
+
+    #[test]
+    fn build_oauth_success_url_uses_fragment_not_query_string() {
+        // LOW-2 (security-2026-05-13.md): the access token must ride in
+        // the URL fragment, not the query string, so it doesn't leak to
+        // upstream access logs / Referer headers.
+        let url = build_oauth_success_url("https://app.example.com", "abc.def.ghi", false);
+        assert!(
+            url.contains("#token="),
+            "OAuth success URL must use a `#` fragment delimiter; got {}",
+            url
+        );
+        // `?token=…` is the legacy form we explicitly moved away from.
+        assert!(
+            !url.contains("?token="),
+            "OAuth success URL must NOT use `?token=` (query string leaks via logs); got {}",
+            url
+        );
+        assert!(url.ends_with("&isNewUser=false"));
+    }
+
+    #[test]
+    fn build_oauth_success_url_carries_is_new_user_flag() {
+        // Sanity check that the boolean ends up in the fragment too, not
+        // duplicated into the query string by accident.
+        let url = build_oauth_success_url("https://app.example.com", "tok", true);
+        assert!(url.contains("isNewUser=true"));
+        assert!(!url.contains("?"));
+    }
+
+    #[test]
+    fn build_oauth_success_url_percent_encodes_token() {
+        // Tokens are JWTs (a-z A-Z 0-9 . - _) so encoding is mostly a
+        // no-op, but the helper must still pass through `url_encode` so
+        // a future signing-alg change can't break the redirect.
+        let url = build_oauth_success_url("https://app.example.com", "weird value", false);
+        assert!(url.contains("weird%20value"));
     }
 
     #[test]

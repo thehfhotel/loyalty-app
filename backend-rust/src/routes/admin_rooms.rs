@@ -730,27 +730,72 @@ async fn update_room(
     }))
 }
 
+#[derive(Debug, Serialize)]
+struct BookingsAttachedConflict {
+    /// Number of bookings currently referencing this room. The admin UI
+    /// surfaces this so the operator knows how many bookings would be
+    /// destroyed by the cascade — see `delete_room` for the policy.
+    #[serde(rename = "bookingsAttached")]
+    bookings_attached: i64,
+}
+
 /// `DELETE /api/admin/rooms/:id`
 ///
-/// Hard delete. Cascading FK on `room_blocked_dates` and `bookings` means
-/// any related rows go with it — the admin UI surfaces a separate
-/// confirmation flow before invoking this, so we trust the request.
+/// Hard delete with a preflight count of attached bookings. If any
+/// bookings reference the room, the handler returns `409 Conflict` with
+/// `bookingsAttached: <count>` so the admin UI can prompt the operator
+/// to reassign or soft-delete instead.
+///
+/// LOW-3 (security-2026-05-13.md): mirrors `delete_room_type`'s
+/// pattern. The previous implementation did a blind
+/// `DELETE FROM rooms WHERE id = $1`, relying on the `ON DELETE CASCADE`
+/// foreign key from `bookings` to do the right thing. That destroyed
+/// historical booking data — including loyalty-points accrual records
+/// — silently. The new check makes the admin acknowledge the data loss
+/// explicitly. The recommended fallback is soft-delete via
+/// `PATCH /api/admin/rooms/:id` with `is_active = false`, which leaves
+/// historical bookings intact and just removes the room from new
+/// availability queries.
 async fn delete_room(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> AppResult<Json<serde_json::Value>> {
+) -> AppResult<axum::response::Response> {
     require_admin(&user)?;
 
-    let result = sqlx::query!("DELETE FROM rooms WHERE id = $1", id)
-        .execute(state.db())
+    // Run inside a transaction so the count + delete stay consistent
+    // if another writer is racing us. Same pattern as `delete_room_type`.
+    let mut tx = state.db().begin().await?;
+
+    let attached: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!" FROM bookings WHERE room_id = $1"#,
+        id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if attached > 0 {
+        tx.rollback().await?;
+        return Ok((
+            StatusCode::CONFLICT,
+            Json(BookingsAttachedConflict {
+                bookings_attached: attached,
+            }),
+        )
+            .into_response());
+    }
+
+    let deleted = sqlx::query!("DELETE FROM rooms WHERE id = $1", id)
+        .execute(&mut *tx)
         .await?;
 
-    if result.rows_affected() == 0 {
+    if deleted.rows_affected() == 0 {
+        tx.rollback().await?;
         return Err(AppError::NotFound("Room".to_string()));
     }
 
-    Ok(Json(serde_json::json!({ "success": true })))
+    tx.commit().await?;
+    Ok((StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response())
 }
 
 // ============================================================================

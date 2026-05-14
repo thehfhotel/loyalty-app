@@ -133,6 +133,28 @@ The remaining operational mediums + lows landed as one PR:
   open (LOW-3); `nginx.conf`'s `server_name localhost` left as-is
   per the audit's explicit recommendation, with the existing
   in-file comment as the documentation (LOW-1).
+- **`fix(audit)`: security mediums + lows** — closes the remaining
+  Bundle B/C findings from `docs/audits/security-2026-05-13.md`:
+  symmetric super_admin protection on `delete_user` (a super_admin
+  cannot deactivate another super_admin) plus a clearer docstring
+  noting no hard delete is implemented (MED-2); stream slip uploads
+  chunk-by-chunk so the per-field size cap fires before the body is
+  buffered (MED-3); typed `SortBy` / `SortOrder` enums and a typed
+  `BroadcastFilter` builder for `admin.rs::list_users` and
+  `broadcast_notification`, replacing the runtime-string allowlist
+  match arms with serde-enforced rejection of unknown values
+  (MED-5); remove the placeholder `OAuthStateData::ip` field that
+  was never populated or checked (LOW-1); deliver the OAuth access
+  token via URL fragment (`#token=…`) rather than query string so
+  it never reaches HTTP access logs or `Referer` headers — frontend
+  reads `window.location.hash` with a query-string fallback for the
+  PWA deep-link path (LOW-2); preflight `SELECT COUNT(*) FROM
+  bookings WHERE room_id = $1` in `delete_room` and return
+  `409 Conflict` with `bookingsAttached` when bookings exist,
+  mirroring `delete_room_type` (LOW-3); new `utils::hash_email`
+  helper that produces a stable 12-hex-char SHA-256 prefix, used in
+  place of raw email values in OAuth and admin-email log lines so
+  PII no longer persists in long-term log retention (LOW-4).
 
 ### E2E off the deploy critical path
 - `perf(ci)`: Moved E2E to run in parallel with `deploy-staging` instead

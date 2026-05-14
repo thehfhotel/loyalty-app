@@ -2,10 +2,12 @@
 //!
 //! Contains helper functions used across the application.
 
+pub mod email_hash;
 pub mod logging;
 pub mod validation;
 
 // Re-export commonly used items for convenience
+pub use email_hash::hash_email;
 pub use logging::{
     create_trace_layer, init_tracing, sanitize_email, sanitize_ip, sanitize_log_value,
     sanitize_url, sanitize_user_id, Environment, SanitizeOptions,

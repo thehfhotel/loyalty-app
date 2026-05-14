@@ -12,6 +12,7 @@ import {
   debugPWAOAuth,
   restoreIOSPWAManifest
 } from '../../utils/pwaUtils';
+import { readOAuthParams } from './oauthParams';
 
 export default function OAuthSuccessPage() {
   const navigate = useNavigate();
@@ -23,10 +24,14 @@ export default function OAuthSuccessPage() {
       // Debug PWA OAuth flow in development
       debugPWAOAuth();
 
-      const token = searchParams.get('token');
-      const isNewUser = searchParams.get('isNewUser') === 'true';
-      const error = searchParams.get('error');
-      const isPWARedirect = searchParams.get('pwa_redirect') === 'true';
+      // LOW-2: read from URL fragment (window.location.hash). The
+      // legacy query-string form is still accepted as a fallback so
+      // PWA deep-link relaunches and any in-flight redirects from a
+      // pre-deploy backend continue to work.
+      const { token, isNewUser, error, isPWARedirect } = readOAuthParams(
+        window.location.hash,
+        searchParams,
+      );
 
       // Phase 3: the backend no longer appends `refreshToken=…` to the
       // OAuth success redirect URL. The refresh token rides exclusively

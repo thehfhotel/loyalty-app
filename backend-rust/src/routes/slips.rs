@@ -12,7 +12,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use serde::Serialize;
 use std::path::PathBuf;
 use tokio::fs;
@@ -141,7 +141,7 @@ async fn upload_slip(
     let mut content_type: Option<String> = None;
 
     // Extract file from multipart form
-    while let Some(field) = multipart.next_field().await.map_err(|e| {
+    while let Some(mut field) = multipart.next_field().await.map_err(|e| {
         error!("Failed to read multipart field: {}", e);
         AppError::BadRequest(format!("Failed to read multipart data: {}", e))
     })? {
@@ -150,12 +150,39 @@ async fn upload_slip(
         if field_name == "slip" || field_name == "file" {
             content_type = field.content_type().map(|s| s.to_string());
 
-            let data = field.bytes().await.map_err(|e| {
-                error!("Failed to read slip data: {}", e);
-                AppError::BadRequest(format!("Failed to read slip data: {}", e))
-            })?;
+            // MED-3 (security-2026-05-13.md): stream the multipart field
+            // chunk-by-chunk so we can bail as soon as cumulative bytes
+            // exceed `max_slip_file_size`. The prior implementation
+            // called `field.bytes().await`, which buffers the entire
+            // field into RAM *before* any size check fires — letting an
+            // attacker pin 10–16 MiB per concurrent upload before the
+            // handler-local guard runs. Combined with the per-route
+            // `DefaultBodyLimit` layer below, this gives belt-and-braces:
+            // axum rejects oversize requests at the body-extraction
+            // layer (HTTP 413 before the handler runs), and this loop
+            // bails even if a future refactor removes the layer.
+            let mut accumulated = BytesMut::new();
+            loop {
+                match field.chunk().await {
+                    Ok(Some(chunk)) => {
+                        if accumulated.len().saturating_add(chunk.len()) > config.max_slip_file_size
+                        {
+                            return Err(AppError::PayloadTooLarge);
+                        }
+                        accumulated.extend_from_slice(&chunk);
+                    },
+                    Ok(None) => break,
+                    Err(e) => {
+                        error!("Failed to read slip chunk: {}", e);
+                        return Err(AppError::BadRequest(format!(
+                            "Failed to read slip data: {}",
+                            e
+                        )));
+                    },
+                }
+            }
 
-            file_data = Some(data);
+            file_data = Some(accumulated.freeze());
         }
     }
 
@@ -183,7 +210,11 @@ async fn upload_slip(
         ));
     }
 
-    // Validate file size
+    // Validate file size. The streaming loop above already bails as
+    // soon as cumulative bytes exceed `max_slip_file_size`, and the
+    // per-route body limit rejects oversize requests at the axum
+    // body-extraction layer — this final check is a belt-and-braces
+    // safeguard in case the streaming loop is ever refactored away.
     if data.len() > config.max_slip_file_size {
         return Err(AppError::PayloadTooLarge);
     }

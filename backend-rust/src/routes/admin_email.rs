@@ -46,13 +46,13 @@ use axum::{
 use chrono::{DateTime, Utc};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::middleware::auth::{has_role, AuthUser};
 use crate::services::email::{EmailService, EmailServiceImpl};
 use crate::state::AppState;
+use crate::utils::hash_email;
 
 /// Max test-email sends per admin per UTC day.
 ///
@@ -181,24 +181,6 @@ fn build_email_service(state: &AppState) -> EmailServiceImpl {
         &state.config().email.smtp,
         &state.config().server.frontend_url,
     )
-}
-
-/// SHA-256(recipient) -> first 12 hex chars, for log correlation.
-///
-/// Logged in place of (or alongside) the raw recipient so support can
-/// match an admin's test-send report to log lines without persisting
-/// the PII email value in plaintext logs. Twelve hex chars = 48 bits
-/// of entropy — overkill for correlation but cheap, and matches the
-/// pattern used elsewhere when we need a stable token-of-an-email.
-fn hash_recipient(recipient: &str) -> String {
-    let normalized = recipient.trim().to_lowercase();
-    let digest = Sha256::digest(normalized.as_bytes());
-    let mut out = String::with_capacity(12);
-    for byte in digest.iter().take(6) {
-        use std::fmt::Write as _;
-        let _ = write!(&mut out, "{:02x}", byte);
-    }
-    out
 }
 
 /// Atomically increment the admin's daily test-email counter in Redis
@@ -357,9 +339,13 @@ async fn get_email_status(
 ///   admin token can no longer use this as a free SMTP relay.
 /// - Per-admin daily quota in Redis (`TEST_EMAIL_DAILY_QUOTA` sends per
 ///   UTC day). Exceeding it returns 429.
-/// - Logs include the resolved recipient AND a 12-hex-char hash of it,
-///   so support can correlate by hash without persisting the raw PII
-///   email value in long-term log retention.
+///
+/// LOW-4 hardening (security-2026-05-13.md):
+/// - Logs include only a 12-hex-char SHA-256 hash of the recipient
+///   (`email_hash`), not the raw address. Support can still correlate
+///   "the test send my admin made at 12:03" with a log line via the
+///   hash, but the PII email value no longer persists in long-term log
+///   retention. Source of truth for the hash is `utils::hash_email`.
 async fn send_test_email(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -380,10 +366,10 @@ async fn send_test_email(
     // Quota check — Redis-backed daily counter, fail-open on Redis errors.
     let count = increment_test_email_quota(&state, &user.id).await;
     if count > TEST_EMAIL_DAILY_QUOTA {
-        let recipient_hash = hash_recipient(&recipient);
+        let recipient_hash = hash_email(&recipient);
         tracing::warn!(
             admin_id = %user.id,
-            recipient_hash = %recipient_hash,
+            email_hash = %recipient_hash,
             count = count,
             quota = TEST_EMAIL_DAILY_QUOTA,
             "Admin test email quota exceeded"
@@ -397,7 +383,7 @@ async fn send_test_email(
 
     let test_id = Uuid::new_v4().to_string();
     let started = std::time::Instant::now();
-    let recipient_hash = hash_recipient(&recipient);
+    let recipient_hash = hash_email(&recipient);
 
     let svc = build_email_service(&state);
     if !svc.is_configured() {
@@ -434,11 +420,14 @@ async fn send_test_email(
 
     match svc.send_email(&recipient, &subject, &body).await {
         Ok(()) => {
+            // LOW-4: log only the hash, never the raw email. The
+            // response body still echoes `recipient` so the admin UI
+            // can render "sent to <your address>", but server logs
+            // retain only the correlation token.
             tracing::info!(
                 test_id = %test_id,
                 admin_id = %user.id,
-                recipient = %recipient,
-                recipient_hash = %recipient_hash,
+                email_hash = %recipient_hash,
                 quota_count = count,
                 "Admin sent test email"
             );
@@ -457,11 +446,11 @@ async fn send_test_email(
                 .into_response())
         },
         Err(e) => {
+            // LOW-4: same as the success path — log only the hash.
             tracing::error!(
                 test_id = %test_id,
                 admin_id = %user.id,
-                recipient = %recipient,
-                recipient_hash = %recipient_hash,
+                email_hash = %recipient_hash,
                 error = %e,
                 "Admin test email failed"
             );
@@ -543,11 +532,17 @@ mod tests {
     }
 
     #[test]
-    fn hash_recipient_is_stable_and_normalises_case() {
-        let a = hash_recipient("ops@example.com");
-        let b = hash_recipient("OPS@example.com");
-        let c = hash_recipient("  ops@example.com  ");
-        let d = hash_recipient("other@example.com");
+    fn shared_hash_email_helper_is_used_for_recipient_logging() {
+        // LOW-4: the local `hash_recipient` was retired in favour of
+        // the shared `utils::hash_email` so OAuth and admin paths
+        // produce identical hashes for the same email. Keep the
+        // historical case/whitespace properties pinned here so a
+        // future refactor of `hash_email` can't silently regress them
+        // for the admin-email path.
+        let a = hash_email("ops@example.com");
+        let b = hash_email("OPS@example.com");
+        let c = hash_email("  ops@example.com  ");
+        let d = hash_email("other@example.com");
 
         assert_eq!(a.len(), 12, "hash should be 12 hex chars (48 bits)");
         assert_eq!(a, b, "hash must be case-insensitive");
