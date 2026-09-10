@@ -14,104 +14,20 @@ import {
   FiChevronRight
 } from 'react-icons/fi';
 import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { Badge, Button, type BadgeTone } from '../ui';
 import { deskSlipOkStatus, slipOkReasonKey, type SlipOkStatusValue } from '../../types/slipok';
+import { adminBookingService } from '../../services/adminBookingService';
+import type {
+  AdminBooking as Booking,
+  AdminBookingSlip as BookingSlip,
+} from '../../services/adminBookingService';
 
-// Types matching BookingManagement
-interface BookingUser {
-  id: string;
-  firstName: string | null;
-  lastName: string | null;
-  email: string;
-  membershipId: string | null;
-  phone: string | null;
-}
-
-interface RoomType {
-  id: string;
-  name: string;
-}
-
-// Multi-slip support - individual slip from booking_slips table
-interface BookingSlip {
-  id: string;
-  slipUrl: string;
-  uploadedAt: string;
-  uploadedBy?: string;
-  slipokStatus: SlipOkStatusValue;
-  slipokVerifiedAt: string | null;
-  /** Locked `slipok_reason` key; absent on rows checked before the reason
-   *  column existed, and on slips the machine never looked at. */
-  slipokReason?: string | null;
-  /** When the machine last decided. Falls back to `slipokVerifiedAt`. */
-  slipokCheckedAt?: string | null;
-  adminStatus: 'pending' | 'verified' | 'needs_action';
-  adminVerifiedAt: string | null;
-  adminVerifiedBy: string | null;
-  /** Display name of the human who verified. Absent on rows the API has not
-   *  resolved a name for; an auto verify is attributed to SlipOK instead. */
-  adminVerifiedByName?: string | null;
-  /** True when `admin_verified_by` is the SlipOK system actor, i.e. the
-   *  verify was automatic. Missing (older API) is read as false. */
-  autoVerified?: boolean;
-  adminNotes?: string | null;
-  isPrimary?: boolean;
-}
-
-// Legacy single slip interface (for backward compatibility)
-interface LegacySlip {
-  id: string;
-  imageUrl: string;
-  uploadedAt: string;
-  slipokStatus: SlipOkStatusValue;
-  slipokVerifiedAt: string | null;
-  slipokReason?: string | null;
-  slipokCheckedAt?: string | null;
-  adminStatus: 'pending' | 'verified' | 'needs_action';
-  adminVerifiedAt: string | null;
-  adminVerifiedBy: string | null;
-  adminVerifiedByName: string | null;
-  autoVerified?: boolean;
-}
-
-interface BookingAuditEntry {
-  id: string;
-  action: string;
-  adminId: string;
-  adminName: string;
-  oldValue: string | null;
-  newValue: string | null;
-  notes: string | null;
-  createdAt: string;
-}
-
-interface Booking {
-  id: string;
-  userId: string;
-  user: BookingUser;
-  roomTypeId: string;
-  roomType: RoomType;
-  checkInDate: string;
-  checkOutDate: string;
-  numberOfGuests: number;
-  totalPrice: number;
-  paymentType: 'full' | 'deposit';
-  paymentAmount: number | null;
-  discountAmount: number | null;
-  discountReason: string | null;
-  status: 'confirmed' | 'cancelled' | 'completed';
-  notes: string | null;
-  adminNotes: string | null;
-  // Multi-slip support
-  slips?: BookingSlip[];
-  // Legacy single slip (deprecated)
-  slip: LegacySlip | null;
-  auditHistory: BookingAuditEntry[];
-  createdAt: string;
-  updatedAt: string;
-}
+// Booking and slip shapes live in the admin booking service, which mirrors
+// the serde DTOs in `backend-rust/src/routes/admin_bookings.rs` and
+// `admin_slips.rs`. `AdminBookingSlip` is the multi-slip gallery row;
+// `AdminBookingSlipSummary` is the legacy single slip the list carries.
 
 interface SlipViewerSidebarProps {
   booking: Booking | null;
@@ -141,17 +57,17 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [currentSlipIndex, setCurrentSlipIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
 
-  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-  // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-  // Multi-slip verification mutations
+  // Per-slip moderation — `POST /api/admin/bookings/slips/:slipId/verify`
+  // and `.../needs-action` in `backend-rust/src/routes/admin_slips.rs`.
   const verifySlipByIdMutation = useMutation({
-    mutationFn: async (_data: { slipId: string }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
-    },
-    onSuccess: () => {
+    mutationFn: (data: { slipId: string }) => adminBookingService.verifySlip(data.slipId),
+    onSuccess: (slip) => {
+      // Both routes return the updated slip, so seed the per-slip cache with
+      // it: without this the viewer would keep rendering the pre-verify read
+      // (the booking refetch below does not touch that key).
+      queryClient.setQueryData(['admin', 'slip', slip.id], slip);
       toast.success(t('admin.booking.bookingManagement.messages.slipVerified'));
       onRefresh();
     },
@@ -161,12 +77,10 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
   });
 
   const markSlipNeedsActionMutation = useMutation({
-    mutationFn: async (_data: { slipId: string; notes: string }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
-    },
-    onSuccess: () => {
+    mutationFn: (data: { slipId: string; notes: string }) =>
+      adminBookingService.markSlipNeedsAction(data.slipId, { notes: data.notes }),
+    onSuccess: (slip) => {
+      queryClient.setQueryData(['admin', 'slip', slip.id], slip);
       toast.success(t('admin.booking.bookingManagement.messages.needsActionMarked'));
       onRefresh();
     },
@@ -208,7 +122,38 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
 
   const slips = getSlips();
   const hasMultipleSlips = slips.length > 1;
-  const currentSlip = slips[currentSlipIndex];
+  const listSlip = slips[currentSlipIndex];
+
+  // `GET /api/admin/bookings/slips/:slipId`. The booking list projection
+  // carries no `slipokReason` / `slipokCheckedAt` / `autoVerified` — that
+  // decision record only exists on the per-slip route. Reception seeing
+  // *why* the machine stopped is the whole point of the reason panel, so the
+  // viewer reads the slip it is showing rather than rendering a blank.
+  const slipDetailQuery = useQuery({
+    queryKey: ['admin', 'slip', listSlip?.id ?? null],
+    queryFn: () => adminBookingService.getSlip(listSlip?.id as string),
+    enabled: Boolean(listSlip?.id),
+  });
+
+  // Merge, never replace: a failed or in-flight read leaves the badges
+  // exactly as the list rendered them.
+  const currentSlip: BookingSlip | undefined = React.useMemo(() => {
+    if (!listSlip) {return undefined;}
+    const detail = slipDetailQuery.data;
+    if (detail?.id !== listSlip.id) {return listSlip;}
+    return {
+      ...listSlip,
+      slipokStatus: (detail.slipokStatus as SlipOkStatusValue | null) ?? listSlip.slipokStatus,
+      slipokReason: detail.slipokReason ?? listSlip.slipokReason ?? null,
+      slipokCheckedAt: detail.slipokCheckedAt ?? listSlip.slipokCheckedAt ?? null,
+      slipokVerifiedAt: detail.slipokVerifiedAt ?? listSlip.slipokVerifiedAt,
+      adminStatus: detail.adminStatus,
+      adminVerifiedAt: detail.adminVerifiedAt,
+      adminVerifiedBy: detail.adminVerifiedBy,
+      adminNotes: detail.adminNotes,
+      autoVerified: detail.autoVerified,
+    };
+  }, [listSlip, slipDetailQuery.data]);
 
   // Legacy verify handler (for backward compatibility)
   const handleLegacyVerifyClick = async () => {
@@ -600,13 +545,19 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
           </>
         ) : (
           <>
-            {/* Legacy single slip actions */}
+            {/* Legacy booking-scoped actions. `POST /api/admin/bookings/:id/
+                verify-slip` and `.../needs-action` are still missing
+                (docs/admin-backend-gaps.md), and with no slip on the booking
+                there is nothing for the per-slip routes to act on — so these
+                stay disabled and say why, rather than firing a request that
+                cannot succeed. */}
             <Button
               type="button"
               variant="primary"
               className="w-full bg-success-600 hover:bg-success-700"
               onClick={handleLegacyVerifyClick}
               disabled={true}
+              title={t('admin.booking.bookingManagement.actions.legacyMigrating')}
             >
               <FiCheck className="h-4 w-4" aria-hidden="true" />
               {t('admin.booking.bookingManagement.actions.verify')}
@@ -617,18 +568,25 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
               className="w-full bg-warning-600 hover:bg-warning-700"
               onClick={() => handleNeedsActionClick()}
               disabled={true}
+              title={t('admin.booking.bookingManagement.actions.legacyMigrating')}
             >
               <FiAlertTriangle className="h-4 w-4" aria-hidden="true" />
               {t('admin.booking.bookingManagement.actions.needsAction')}
             </Button>
           </>
         )}
+        {/* Slip replacement has no admin upload route yet — no handler in
+            `admin_slips.rs`, and no entry in docs/admin-backend-gaps.md to
+            wire against. Disabled rather than a button that opens a file
+            picker only to report a failure. */}
         <Button
           type="button"
           variant="secondary"
           className="w-full"
           onClick={() => fileInputRef.current?.click()}
           loading={isUploading}
+          disabled={true}
+          title={t('admin.booking.bookingManagement.actions.legacyMigrating')}
         >
           {!isUploading && <FiUpload className="h-4 w-4" aria-hidden="true" />}
           {t('admin.booking.bookingManagement.actions.replaceSlip')}

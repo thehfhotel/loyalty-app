@@ -13,71 +13,11 @@ import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button, Card, FormField, Input, Modal, Select, Textarea, TabNav } from '../../components/ui';
 import type { TabItem } from '../../components/ui';
-import type { SlipOkStatusValue } from '../../types/slipok';
+import { adminBookingService } from '../../services/adminBookingService';
+import type { AdminBooking as Booking } from '../../services/adminBookingService';
 
-// Types matching BookingManagement
-interface BookingUser {
-  id: string;
-  firstName: string | null;
-  lastName: string | null;
-  email: string;
-  membershipId: string | null;
-  phone: string | null;
-}
-
-interface RoomType {
-  id: string;
-  name: string;
-}
-
-interface BookingSlip {
-  id: string;
-  imageUrl: string;
-  uploadedAt: string;
-  slipokStatus: SlipOkStatusValue;
-  slipokVerifiedAt: string | null;
-  slipokReason?: string | null;
-  slipokCheckedAt?: string | null;
-  autoVerified?: boolean;
-  adminStatus: 'pending' | 'verified' | 'needs_action';
-  adminVerifiedAt: string | null;
-  adminVerifiedBy: string | null;
-  adminVerifiedByName: string | null;
-}
-
-interface BookingAuditEntry {
-  id: string;
-  action: string;
-  adminId: string;
-  adminName: string;
-  oldValue: string | null;
-  newValue: string | null;
-  notes: string | null;
-  createdAt: string;
-}
-
-interface Booking {
-  id: string;
-  userId: string;
-  user: BookingUser;
-  roomTypeId: string;
-  roomType: RoomType;
-  checkInDate: string;
-  checkOutDate: string;
-  numberOfGuests: number;
-  totalPrice: number;
-  paymentType: 'full' | 'deposit';
-  paymentAmount: number | null;
-  discountAmount: number | null;
-  discountReason: string | null;
-  status: 'confirmed' | 'cancelled' | 'completed';
-  notes: string | null;
-  adminNotes: string | null;
-  slip: BookingSlip | null;
-  auditHistory: BookingAuditEntry[];
-  createdAt: string;
-  updatedAt: string;
-}
+// Booking shapes come from the admin booking service, which mirrors the
+// serde DTOs in `backend-rust/src/routes/admin_bookings.rs`.
 
 interface BookingEditModalProps {
   booking: Booking;
@@ -87,6 +27,10 @@ interface BookingEditModalProps {
 }
 
 type TabType = 'details' | 'payment' | 'audit' | 'cancel';
+
+/** `<input type="date">` wants `YYYY-MM-DD`. The admin routes serialise a
+ *  `NaiveDate` already, but a legacy row may arrive as a full timestamp. */
+const toDateInputValue = (value: string): string => value.split('T')[0] ?? value;
 
 const BookingEditModal: React.FC<BookingEditModalProps> = ({
   booking,
@@ -100,8 +44,8 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   const headingRef = useRef<HTMLParagraphElement>(null);
 
   // Form state - Details tab
-  const [checkInDate, setCheckInDate] = useState(booking.checkInDate.split('T')[0]);
-  const [checkOutDate, setCheckOutDate] = useState(booking.checkOutDate.split('T')[0]);
+  const [checkInDate, setCheckInDate] = useState(toDateInputValue(booking.checkInDate));
+  const [checkOutDate, setCheckOutDate] = useState(toDateInputValue(booking.checkOutDate));
   const [numberOfGuests, setNumberOfGuests] = useState(booking.numberOfGuests);
   const [roomTypeId, setRoomTypeId] = useState(booking.roomTypeId);
   const [adminNotes, setAdminNotes] = useState(booking.adminNotes ?? '');
@@ -117,25 +61,28 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
 
-  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-  // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-  // Fetch room types for dropdown
-  const roomTypesQuery = useQuery<RoomType[]>({
-    queryKey: ['booking', 'roomTypes'],
-    queryFn: async () => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      return [];
-    },
+  // `GET /api/admin/bookings/room-types` — active types only, so the modal
+  // cannot move a booking onto a hidden one.
+  const roomTypesQuery = useQuery({
+    queryKey: ['admin', 'bookings', 'roomTypes'],
+    queryFn: () => adminBookingService.listRoomTypes(),
   });
   const roomTypes = roomTypesQuery.data ?? [];
 
-  // Update booking mutation
+  // `PUT /api/admin/bookings/:id` — the handler writes only the fields it
+  // is sent, and ignores anything outside its allow-list.
   const updateBookingMutation = useMutation({
-    mutationFn: async (_data: { bookingId: string; checkInDate: Date; checkOutDate: Date; numGuests: number; roomTypeId: string; notes?: string; totalPrice: number }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
+    mutationFn: (data: {
+      bookingId: string;
+      checkInDate: string;
+      checkOutDate: string;
+      numberOfGuests: number;
+      roomTypeId: string;
+      adminNotes?: string;
+      totalPrice: number;
+    }) => {
+      const { bookingId, ...body } = data;
+      return adminBookingService.updateBooking(bookingId, body);
     },
     onSuccess: () => {
       toast.success(t('admin.booking.bookingManagement.messages.bookingUpdated'));
@@ -149,11 +96,11 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
 
   // Apply discount mutation
   const applyDiscountMutation = useMutation({
-    mutationFn: async (_data: { bookingId: string; discountAmount: number; reason: string }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
-    },
+    mutationFn: (data: { bookingId: string; discountAmount: number; reason: string }) =>
+      adminBookingService.applyDiscount(data.bookingId, {
+        discountAmount: data.discountAmount,
+        reason: data.reason,
+      }),
     onSuccess: () => {
       toast.success(t('admin.booking.bookingManagement.messages.discountApplied'));
       setShowDiscountForm(false);
@@ -166,11 +113,8 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
 
   // Cancel booking mutation
   const cancelBookingMutation = useMutation({
-    mutationFn: async (_data: { bookingId: string; reason: string }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
-    },
+    mutationFn: (data: { bookingId: string; reason: string }) =>
+      adminBookingService.cancelBooking(data.bookingId, { reason: data.reason }),
     onSuccess: () => {
       toast.success(t('admin.booking.cancel.success'));
       setIsCancelling(false);
@@ -186,8 +130,8 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       // Reset form state when modal opens
-      setCheckInDate(booking.checkInDate.split('T')[0]);
-      setCheckOutDate(booking.checkOutDate.split('T')[0]);
+      setCheckInDate(toDateInputValue(booking.checkInDate));
+      setCheckOutDate(toDateInputValue(booking.checkOutDate));
       setNumberOfGuests(booking.numberOfGuests);
       setRoomTypeId(booking.roomTypeId);
       setAdminNotes(booking.adminNotes ?? '');
@@ -200,21 +144,26 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
       setConfirmCancel(false);
       setIsCancelling(false);
     }
-  }, [isOpen, booking]);
+    // Keyed on the booking's *id*, not the object: the page re-renders this
+    // modal with a fresher object when the detail read lands, and resetting
+    // on identity would wipe whatever the admin had already typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, booking.id]);
 
   const handleSave = async () => {
     setIsSaving(true);
-    // Create Date objects for the API (which expects Date type via z.coerce.date())
-    const checkIn = new Date(checkInDate + 'T00:00:00');
-    const checkOut = new Date(checkOutDate + 'T00:00:00');
-
+    // The handler parses `NaiveDate`, so send the plain `YYYY-MM-DD` the
+    // date inputs already hold — serialising a `Date` would send an instant
+    // and shift the stay by a day either side of UTC.
     await updateBookingMutation.mutateAsync({
       bookingId: booking.id,
-      checkInDate: checkIn,
-      checkOutDate: checkOut,
-      numGuests: numberOfGuests,
+      checkInDate,
+      checkOutDate,
+      numberOfGuests,
       roomTypeId,
-      notes: adminNotes || undefined,
+      // `notes` is the guest's own note and stays read-only in this modal;
+      // what the admin types here is `adminNotes`.
+      adminNotes: adminNotes || undefined,
       totalPrice
     });
   };

@@ -23,82 +23,18 @@ import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../../utils/date
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAdminBookingSSE } from '../../hooks/useAdminBookingSSE';
 import { deskSlipOkStatus, type SlipOkStatusValue } from '../../types/slipok';
+import { adminBookingService } from '../../services/adminBookingService';
+import type {
+  AdminBooking as Booking,
+  AdminBookingStatusCounts as StatusCounts,
+} from '../../services/adminBookingService';
 
-// Types for booking management
-interface BookingUser {
-  id: string;
-  firstName: string | null;
-  lastName: string | null;
-  email: string;
-  membershipId: string | null;
-  phone: string | null;
-}
-
-interface RoomType {
-  id: string;
-  name: string;
-}
-
-interface BookingSlip {
-  id: string;
-  imageUrl: string;
-  uploadedAt: string;
-  slipokStatus: SlipOkStatusValue;
-  slipokVerifiedAt: string | null;
-  slipokReason?: string | null;
-  slipokCheckedAt?: string | null;
-  adminStatus: 'pending' | 'verified' | 'needs_action';
-  adminVerifiedAt: string | null;
-  adminVerifiedBy: string | null;
-  adminVerifiedByName: string | null;
-  /** True when the verify was the SlipOK system actor's, not a human's. */
-  autoVerified?: boolean;
-}
-
-interface BookingAuditEntry {
-  id: string;
-  action: string;
-  adminId: string;
-  adminName: string;
-  oldValue: string | null;
-  newValue: string | null;
-  notes: string | null;
-  createdAt: string;
-}
-
-interface Booking {
-  id: string;
-  userId: string;
-  user: BookingUser;
-  roomTypeId: string;
-  roomType: RoomType;
-  checkInDate: string;
-  checkOutDate: string;
-  numberOfGuests: number;
-  totalPrice: number;
-  paymentType: 'full' | 'deposit';
-  paymentAmount: number | null;
-  discountAmount: number | null;
-  discountReason: string | null;
-  status: 'confirmed' | 'cancelled' | 'completed';
-  notes: string | null;
-  adminNotes: string | null;
-  slip: BookingSlip | null;
-  auditHistory: BookingAuditEntry[];
-  createdAt: string;
-  updatedAt: string;
-}
-
+// Booking shapes come from the admin booking service, which mirrors the
+// serde DTOs in `backend-rust/src/routes/admin_bookings.rs`. Keeping one
+// definition means the table, the slip viewer and the edit modal cannot
+// drift apart from each other or from the wire.
 type SortField = 'created_at' | 'check_in_date' | 'room_type' | 'status' | 'total_price' | 'user_name';
 type SortDirection = 'asc' | 'desc';
-
-// Type for status counts from the API response
-interface StatusCounts {
-  all: number;
-  confirmed: number;
-  cancelled: number;
-  completed: number;
-}
 
 // Semantic tone lookups — kept in sync with the guest-facing booking page
 // (src/pages/MyBookingsPage.tsx) so the same status reads the same color
@@ -160,21 +96,21 @@ const BookingManagement: React.FC = () => {
   const pageSize = 10;
   const totalPages = Math.ceil(totalBookings / pageSize);
 
-  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-  // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-  interface BookingsResponse {
-    bookings: Booking[];
-    total: number;
-    statusCounts?: StatusCounts;
-  }
+  // `GET /api/admin/bookings` — the page's filters, sort and pagination go
+  // to the handler verbatim; the query key mirrors them so a filter change
+  // is a new cache entry rather than a refetch of the same one.
+  const listParams = {
+    page: currentPage,
+    limit: pageSize,
+    search: debouncedSearchTerm || undefined,
+    status: statusFilter || undefined,
+    sortBy: sortField,
+    sortOrder: sortDirection,
+  } as const;
 
-  const bookingsQuery = useQuery<BookingsResponse>({
-    queryKey: ['admin', 'bookings', { page: currentPage, limit: pageSize, search: debouncedSearchTerm || undefined, status: statusFilter || undefined, sortBy: sortField, sortOrder: sortDirection }],
-    queryFn: async () => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      return { bookings: [], total: 0, statusCounts: { all: 0, confirmed: 0, cancelled: 0, completed: 0 } };
-    },
+  const bookingsQuery = useQuery({
+    queryKey: ['admin', 'bookings', listParams],
+    queryFn: () => adminBookingService.listBookings(listParams),
   });
 
   // Real-time updates via SSE - refetch when slip is uploaded
@@ -185,10 +121,10 @@ const BookingManagement: React.FC = () => {
   // Update state when query data changes
   useEffect(() => {
     if (bookingsQuery.data) {
-      setBookings(bookingsQuery.data.bookings as unknown as Booking[]);
+      setBookings(bookingsQuery.data.bookings);
       setTotalBookings(bookingsQuery.data.total);
       // Set statusCounts from API response, with fallback to default values
-      const apiStatusCounts = bookingsQuery.data.statusCounts as StatusCounts | undefined;
+      const apiStatusCounts: StatusCounts | undefined = bookingsQuery.data.statusCounts;
       if (apiStatusCounts) {
         setStatusCounts(apiStatusCounts);
       }
@@ -206,37 +142,56 @@ const BookingManagement: React.FC = () => {
     }
   }, [bookingsQuery.error, t]);
 
+  // `GET /api/admin/bookings/:id` — the list projection carries no audit
+  // rows, so the slip viewer and the edit modal read the selected booking's
+  // history from the detail route instead of an N+1 on every row.
+  const selectedBookingId = selectedBooking?.id ?? null;
+  const bookingDetailQuery = useQuery({
+    queryKey: ['admin', 'booking', selectedBookingId],
+    queryFn: () => adminBookingService.getBooking(selectedBookingId as string),
+    enabled: selectedBookingId !== null,
+  });
+
+  // Detail wins where it has more to say (audit history, a freshly verified
+  // slip); the row keeps the page rendering while the read is in flight.
+  const selectedBookingDetail = React.useMemo(() => {
+    if (!selectedBooking) {return null;}
+    const detail = bookingDetailQuery.data;
+    if (detail?.id !== selectedBooking.id) {return selectedBooking;}
+    return detail;
+  }, [selectedBooking, bookingDetailQuery.data]);
+
+  const refreshBooking = useCallback(() => {
+    bookingsQuery.refetch();
+    if (selectedBookingId) {bookingDetailQuery.refetch();}
+    // refetch identities are stable per query instance; listing the queries
+    // themselves would re-create this callback on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBookingId]);
+
+  // `POST /api/admin/bookings/slips/:slipId/verify`. The row action verifies
+  // the booking's primary slip, whose id the list response already carries —
+  // the booking-scoped `/:id/verify-slip` route is still missing
+  // (docs/admin-backend-gaps.md), and the button is disabled without a slip,
+  // so the desk never reaches for it.
   const verifySlipMutation = useMutation({
-    mutationFn: async (_data: { bookingId: string }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
-    },
+    mutationFn: (data: { slipId: string }) => adminBookingService.verifySlip(data.slipId),
     onSuccess: () => {
       toast.success(t('admin.booking.bookingManagement.messages.slipVerified'));
-      bookingsQuery.refetch();
-      if (selectedBooking) {
-        // Update selected booking with new data
-        const updatedBooking = bookings.find(b => b.id === selectedBooking.id);
-        if (updatedBooking) {
-          setSelectedBooking(updatedBooking);
-        }
-      }
+      refreshBooking();
     },
     onError: () => {
       toast.error(t('admin.booking.bookingManagement.errors.verifyFailed'));
     }
   });
 
+  // `POST /api/admin/bookings/slips/:slipId/needs-action`.
   const markNeedsActionMutation = useMutation({
-    mutationFn: async (_data: { bookingId: string; notes: string }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
-    },
+    mutationFn: (data: { slipId: string; notes: string }) =>
+      adminBookingService.markSlipNeedsAction(data.slipId, { notes: data.notes }),
     onSuccess: () => {
       toast.success(t('admin.booking.bookingManagement.messages.markedNeedsAction'));
-      bookingsQuery.refetch();
+      refreshBooking();
     },
     onError: () => {
       toast.error(t('admin.booking.bookingManagement.errors.markFailed'));
@@ -282,12 +237,33 @@ const BookingManagement: React.FC = () => {
     }
   };
 
+  // The per-slip routes need a slip id. Resolve it from the row (or from the
+  // detail read, when the sidebar acts on the selected booking). A booking
+  // with no slip has nothing to verify: the booking-scoped fallback route
+  // does not exist yet, so the controls for that case stay disabled.
+  const primarySlipId = (bookingId: string): string | null => {
+    if (selectedBookingDetail?.id === bookingId && selectedBookingDetail.slip) {
+      return selectedBookingDetail.slip.id;
+    }
+    return bookings.find(b => b.id === bookingId)?.slip?.id ?? null;
+  };
+
   const handleVerifySlip = async (bookingId: string) => {
-    await verifySlipMutation.mutateAsync({ bookingId });
+    const slipId = primarySlipId(bookingId);
+    if (!slipId) {
+      toast.error(t('admin.booking.bookingManagement.actions.legacyMigrating'));
+      return;
+    }
+    await verifySlipMutation.mutateAsync({ slipId });
   };
 
   const handleNeedsAction = async (bookingId: string, notes: string) => {
-    await markNeedsActionMutation.mutateAsync({ bookingId, notes });
+    const slipId = primarySlipId(bookingId);
+    if (!slipId) {
+      toast.error(t('admin.booking.bookingManagement.actions.legacyMigrating'));
+      return;
+    }
+    await markNeedsActionMutation.mutateAsync({ slipId, notes });
   };
 
   const handleEditBooking = (booking: Booking) => {
@@ -300,7 +276,7 @@ const BookingManagement: React.FC = () => {
   };
 
   const handleEditSave = () => {
-    bookingsQuery.refetch();
+    refreshBooking();
     setShowEditModal(false);
   };
 
@@ -684,11 +660,11 @@ const BookingManagement: React.FC = () => {
         {/* Right: Slip Viewer Sidebar */}
         <div className="min-w-0 lg:w-[30%]">
           <SlipViewerSidebar
-            booking={selectedBooking}
+            booking={selectedBookingDetail}
             onVerify={handleVerifySlip}
             onNeedsAction={handleNeedsAction}
             onEdit={handleEditBooking}
-            onRefresh={() => bookingsQuery.refetch()}
+            onRefresh={refreshBooking}
           />
         </div>
       </div>
@@ -699,9 +675,9 @@ const BookingManagement: React.FC = () => {
       />
 
       {/* Edit Modal */}
-      {showEditModal && selectedBooking && (
+      {showEditModal && selectedBookingDetail && (
         <BookingEditModal
-          booking={selectedBooking}
+          booking={selectedBookingDetail}
           isOpen={showEditModal}
           onClose={handleEditModalClose}
           onSave={handleEditSave}

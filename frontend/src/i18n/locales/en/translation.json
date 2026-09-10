@@ -807,7 +807,8 @@
           "needsAction": "Needs Action",
           "edit": "Edit Booking",
           "replaceSlip": "Replace Slip",
-          "enterNotes": "Enter notes for this action:"
+          "enterNotes": "Enter notes for this action:",
+          "legacyMigrating": "This action is being migrated to the new backend"
         },
         "slipViewer": {
           "title": "Slip Viewer",
