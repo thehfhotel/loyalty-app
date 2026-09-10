@@ -147,11 +147,22 @@ Workflows fire on push to `main`:
   Workspace" job: both jobs derive the same cache key inline and fall
   back to `npm ci` on a miss, so the serial hop it added to the deploy
   critical path bought nothing.
-- `ci-build-e2e.yml` (named **CI Build & Deploy**) — Lint Backend (Rust) →
-  parallel (Test Backend Unit, Test Backend Integration, Build Backend
-  Release) → Build & Push to GHCR → **Regression & Smoke (API)** +
-  Deploy to Staging (inline, on push to `main` only) → Verify Staging
-  health check. The deploy gate is the **API regression/smoke suite**
+- `ci-build-e2e.yml` (named **CI Build & Deploy**) — five jobs start at
+  T+0 in parallel (Lint Backend, Test Backend Unit, Test Backend
+  Integration, Build Backend Release, Build & Push Frontend to GHCR,
+  plus Wait for Frontend Checks on `main`); Build Backend Release →
+  Build & Push Backend to GHCR; both image jobs + both test jobs →
+  **Regression & Smoke (API)** → Deploy to Staging (inline, on push to
+  `main` only) → Verify Staging health check.
+
+  **Lint Backend gates the deploy directly, not through the test jobs.**
+  `deploy-staging` and `promote-latest` list `lint-backend` in their
+  `needs:` explicitly, so a red clippy/rustfmt still blocks staging,
+  still blocks the `latest` retag and still blocks production — but the
+  test jobs no longer idle behind it, which took ~1 min off the critical
+  path. Don't "tidy" that edge back into the test jobs.
+
+  The deploy gate is the **API regression/smoke suite**
   (`regression-api`, the Playwright `api` project — `*.api.spec.ts`),
   which uses Playwright's request context with **no browser**, so it has
   no `cdn.playwright.dev` dependency and is reliable enough to block
