@@ -189,6 +189,13 @@ impl BookingNotifyEvent {
 /// Not configured is a normal state, not an error: a property with no mailbox
 /// (or a stack with no SMTP at all) logs once at info and returns.
 pub async fn notify(state: &AppState, booking_id: Uuid, event: BookingNotifyEvent) {
+    // Off everywhere: no mailbox is set. The cheapest possible exit — no SMTP
+    // transport built, no row read.
+    if !state.config().booking_notify.is_configured() {
+        count(event.label(), property_label(None), "skipped_unconfigured");
+        return;
+    }
+
     let email = EmailServiceImpl::from_smtp_config(
         &state.config().email.smtp,
         &state.config().server.frontend_url,
