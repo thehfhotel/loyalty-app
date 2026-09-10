@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO bookings (\n            id, user_id, room_id, room_type_id, check_in_date, check_out_date,\n            num_guests, total_price, status, property, guest_name, guest_phone,\n            payment_option, amount_due_now, balance_due, hold_expires_at,\n            booking_source, pms_ref\n        )\n        VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, 'pending', $8, $9, $10,\n                $11, $12, $13, $14, $15, $16)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Date",
+        "Int4",
+        "Numeric",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Numeric",
+        "Numeric",
+        "Timestamptz",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3c988314fde919818e41b87c129b2d7fb68704449491e59b6428c9e0c753369d"
+}

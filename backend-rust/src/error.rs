@@ -171,6 +171,16 @@ pub enum AppError {
     #[error("External service timeout: {0}")]
     ExternalServiceTimeout(String),
 
+    /// This request could not be served right now and the caller should
+    /// simply try again shortly.
+    ///
+    /// The string is **caller-facing copy**, not a description of what
+    /// broke: it is returned verbatim as the response `message`, so it
+    /// must never name the failing dependency. Whatever failed belongs in
+    /// a log line, not in a body an unauthenticated caller can read.
+    #[error("Service unavailable: {0}")]
+    ServiceUnavailable(String),
+
     // HTTP client errors
     #[error("HTTP request error: {0}")]
     HttpRequest(#[from] reqwest::Error),
@@ -251,6 +261,7 @@ impl AppError {
             Self::EmailService(_) => "email_service_error",
             Self::ExternalServiceUnavailable(_) => "external_service_unavailable",
             Self::ExternalServiceTimeout(_) => "external_service_timeout",
+            Self::ServiceUnavailable(_) => "service_unavailable",
 
             // HTTP client errors
             Self::HttpRequest(_) => "http_request_error",
@@ -323,6 +334,7 @@ impl AppError {
             Self::SlipOk(_) => StatusCode::BAD_GATEWAY,
             Self::EmailService(_) => StatusCode::BAD_GATEWAY,
             Self::ExternalServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::ExternalServiceTimeout(_) => StatusCode::GATEWAY_TIMEOUT,
 
             // HTTP client errors
@@ -404,6 +416,8 @@ impl AppError {
             Self::ExternalServiceTimeout(service) => {
                 format!("{} request timed out", service)
             },
+            // Already caller-facing copy — see the variant's doc comment.
+            Self::ServiceUnavailable(msg) => msg.clone(),
 
             // HTTP client errors - hide details
             Self::HttpRequest(_) => "External service error".to_string(),

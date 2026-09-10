@@ -78,10 +78,23 @@ services:
       # From address for outgoing mail. Falls back to SMTP_USER when unset,
       # and must be an address the mailbox genuinely OWNS (issue #352).
       SMTP_FROM: ${SMTP_FROM:-}
+      # Property mailboxes that get one short email per new booking and per
+      # verified deposit (B0). Blank = off for that property; the backend
+      # reads a blank as "unset" so `${VAR:-}` cannot mean "send to nobody".
+      BOOKING_NOTIFY_EMAIL_HF: ${BOOKING_NOTIFY_EMAIL_HF:-}
+      BOOKING_NOTIFY_EMAIL_HFVILLE: ${BOOKING_NOTIFY_EMAIL_HFVILLE:-}
       IMAP_HOST: ${IMAP_HOST:-}
       IMAP_PORT: ${IMAP_PORT:-993}
       IMAP_USER: ${IMAP_USER:-}
       IMAP_PASS: ${IMAP_PASS:-}
+      # SlipOK slip verification + PromptPay receiving ids (PR #399 / #402).
+      # Optional; the backend treats a blank as unset (config::env_present).
+      SLIPOK_API_KEY: ${SLIPOK_API_KEY:-}
+      SLIPOK_BRANCH_ID: ${SLIPOK_BRANCH_ID:-}
+      SLIPOK_AUTO_VERIFY: ${SLIPOK_AUTO_VERIFY:-}
+      PROMPTPAY_TAX_ID: ${PROMPTPAY_TAX_ID:-}
+      PROMPTPAY_HF_ID: ${PROMPTPAY_HF_ID:-}
+      PROMPTPAY_HFVILLE_ID: ${PROMPTPAY_HFVILLE_ID:-}
       # Rust-specific logging
       RUST_LOG: ${RUST_LOG:-info}
     # VOLUMES: Source mounts (./backend-rust:/app) are in docker-compose.dev.yml ONLY

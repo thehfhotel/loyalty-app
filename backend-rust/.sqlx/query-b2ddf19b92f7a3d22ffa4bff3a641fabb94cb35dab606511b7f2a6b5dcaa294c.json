@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE booking_deposit_links SET revoked_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b2ddf19b92f7a3d22ffa4bff3a641fabb94cb35dab606511b7f2a6b5dcaa294c"
+}

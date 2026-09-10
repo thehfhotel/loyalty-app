@@ -127,8 +127,60 @@ fn matches_image_magic_bytes(declared_mime: &str, data: &[u8]) -> bool {
 async fn upload_slip(
     State(_state): State<AppState>,
     Extension(_auth_user): Extension<AuthUser>,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> Result<Json<SlipUploadResponse>, AppError> {
+    let url = store_slip_upload(multipart).await?;
+    Ok(Json(SlipUploadResponse { url }))
+}
+
+/// Validate a multipart slip upload and write it to slip storage,
+/// returning the `/storage/slips/<uuid>.<ext>` URL.
+///
+/// The whole body of what `POST /api/slips/upload` used to do inline. It
+/// is extracted — not duplicated — because the public deposit-link upload
+/// (`routes::deposit_links`) must land in exactly the same place, under
+/// exactly the same size cap and magic-byte checks, so that F2's retention
+/// and access logging cover it with no special case. The two handlers
+/// differ only in who is allowed to call them.
+///
+/// Two steps rather than one, because the unauthenticated caller has a
+/// budget between them: see [`read_slip_upload`] and
+/// [`write_slip_to_storage`].
+pub(crate) async fn store_slip_upload(multipart: Multipart) -> Result<String, AppError> {
+    let slip = read_slip_upload(multipart).await?;
+    write_slip_to_storage(&slip).await
+}
+
+/// A multipart upload that has passed every check except the caller's
+/// budget: the bytes are in memory and nothing has been written to disk.
+pub(crate) struct ValidatedSlip {
+    data: Bytes,
+    mime_type: String,
+}
+
+impl ValidatedSlip {
+    /// Size of the validated image, for logging.
+    pub(crate) fn len(&self) -> usize {
+        self.data.len()
+    }
+}
+
+/// Read and validate a multipart slip upload **without touching storage**.
+///
+/// Split from the write half so an unauthenticated caller's rate-limit
+/// budget can be charged in between. The order matters in both
+/// directions:
+///
+/// - Validation first, so a guest who picks a PDF or a HEIC out of their
+///   gallery learns it *before* the attempt costs them anything.
+/// - Budget next, so a caller over the budget writes no file. Storage is a
+///   shared disk with a retention job over it; a public endpoint that
+///   writes first and counts second lets a token holder fill it.
+///
+/// Takes ownership of the `Multipart` extractor rather than a byte buffer:
+/// the size cap is enforced *while streaming*, which is the point of
+/// MED-3 (see the loop below).
+pub(crate) async fn read_slip_upload(mut multipart: Multipart) -> Result<ValidatedSlip, AppError> {
     let config = SlipStorageConfig::default();
 
     let mut file_data: Option<Bytes> = None;
@@ -219,6 +271,16 @@ async fn upload_slip(
         mime_type
     );
 
+    Ok(ValidatedSlip { data, mime_type })
+}
+
+/// Write an already-validated slip to `STORAGE_PATH/slips/<uuid>.<ext>`
+/// and return its URL. Nothing here re-validates: everything that decides
+/// whether these bytes are acceptable happened in [`read_slip_upload`].
+pub(crate) async fn write_slip_to_storage(slip: &ValidatedSlip) -> Result<String, AppError> {
+    let config = SlipStorageConfig::default();
+    let ValidatedSlip { data, mime_type } = slip;
+
     // Ensure slips directory exists
     let slips_path = config.get_slips_path();
     fs::create_dir_all(&slips_path).await.map_err(|e| {
@@ -227,12 +289,12 @@ async fn upload_slip(
     })?;
 
     // Generate unique filename
-    let extension = get_extension_from_mime(&mime_type);
+    let extension = get_extension_from_mime(mime_type);
     let filename = format!("{}{}", Uuid::new_v4(), extension);
     let file_path = slips_path.join(&filename);
 
     // Save file to disk
-    fs::write(&file_path, &data).await.map_err(|e| {
+    fs::write(&file_path, data).await.map_err(|e| {
         error!("Failed to write slip file: {}", e);
         AppError::Internal("Failed to save file".to_string())
     })?;
@@ -240,9 +302,7 @@ async fn upload_slip(
     info!("Slip upload completed: {}", filename);
 
     // Return URL path (relative to storage)
-    let url = format!("/storage/slips/{}", filename);
-
-    Ok(Json(SlipUploadResponse { url }))
+    Ok(format!("/storage/slips/{}", filename))
 }
 
 // ============================================================================
@@ -260,7 +320,7 @@ async fn upload_slip(
 ///
 /// Kept in sync with `SlipStorageConfig::max_slip_file_size` so the
 /// handler-side check stays as a belt-and-braces safeguard.
-const SLIP_UPLOAD_BODY_LIMIT_BYTES: usize = 10 * 1024 * 1024;
+pub(crate) const SLIP_UPLOAD_BODY_LIMIT_BYTES: usize = 10 * 1024 * 1024;
 
 /// Create slips routes
 ///

@@ -69,6 +69,9 @@ bytes = "1"
 rand = "0.8"
 base64 = "0.22"
 hex = "0.4"
+# Percent-encoding for URL path segments built from stored values
+# (`services::pms_channel` puts a PMS booking id in a path).
+percent-encoding = "2"
 sha2 = "0.10"
 
 # SSE support
@@ -95,13 +98,34 @@ axum-prometheus = "0.7"
 [dev-dependencies]
 tokio-test = "0.4"
 wiremock = "0.6"
-fake = { version = "2.9", features = ["derive"] }
+fake = { version = "5.1", features = ["derive"] }
 once_cell = "1"
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 rust_decimal_macros = "1"
 
+# WARNING: THIS BLOCK IS OVERRIDDEN AND DOES NOT TAKE EFFECT.
+#
+# `backend-rust/.cargo/config.toml` also declares `[profile.release]`, and a
+# cargo CONFIG profile takes precedence over a MANIFEST profile. The settings
+# that actually build the production binary are the ones there:
+#
+#     lto = "thin"        (NOT the `lto = true` below — fat LTO has never shipped)
+#     codegen-units = 1
+#     strip = "symbols"   (NOT the `strip = true` below)
+#     opt-level = 3
+#     panic = "abort"
+#
+# Verified empirically in PR #415: editing `lto` here changed nothing —
+# run 34483352257 produced a byte-identical binary (28,642,752 B) to the run
+# before it and reported a 100% sccache hit rate, because the compile really
+# was identical. Changing `codegen-units` in the config file, by contrast,
+# rebuilt all 315 crates and moved the binary to 31,664,072 B.
+#
+# Left in place rather than deleted because removing it would be a silent
+# behaviour change if the config file is ever dropped. Change the profile in
+# `.cargo/config.toml`, not here.
 [profile.release]
 lto = true
 codegen-units = 1

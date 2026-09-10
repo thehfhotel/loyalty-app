@@ -14,89 +14,20 @@ import {
   FiChevronRight
 } from 'react-icons/fi';
 import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { Badge, Button, type BadgeTone } from '../ui';
+import { deskSlipOkStatus, slipOkReasonKey, type SlipOkStatusValue } from '../../types/slipok';
+import { adminBookingService } from '../../services/adminBookingService';
+import type {
+  AdminBooking as Booking,
+  AdminBookingSlip as BookingSlip,
+} from '../../services/adminBookingService';
 
-// Types matching BookingManagement
-interface BookingUser {
-  id: string;
-  firstName: string | null;
-  lastName: string | null;
-  email: string;
-  membershipId: string | null;
-  phone: string | null;
-}
-
-interface RoomType {
-  id: string;
-  name: string;
-}
-
-// Multi-slip support - individual slip from booking_slips table
-interface BookingSlip {
-  id: string;
-  slipUrl: string;
-  uploadedAt: string;
-  uploadedBy?: string;
-  slipokStatus: 'pending' | 'verified' | 'failed' | 'quota_exceeded';
-  slipokVerifiedAt: string | null;
-  adminStatus: 'pending' | 'verified' | 'needs_action';
-  adminVerifiedAt: string | null;
-  adminVerifiedBy: string | null;
-  adminNotes?: string | null;
-  isPrimary?: boolean;
-}
-
-// Legacy single slip interface (for backward compatibility)
-interface LegacySlip {
-  id: string;
-  imageUrl: string;
-  uploadedAt: string;
-  slipokStatus: 'pending' | 'verified' | 'failed' | 'quota_exceeded';
-  slipokVerifiedAt: string | null;
-  adminStatus: 'pending' | 'verified' | 'needs_action';
-  adminVerifiedAt: string | null;
-  adminVerifiedBy: string | null;
-  adminVerifiedByName: string | null;
-}
-
-interface BookingAuditEntry {
-  id: string;
-  action: string;
-  adminId: string;
-  adminName: string;
-  oldValue: string | null;
-  newValue: string | null;
-  notes: string | null;
-  createdAt: string;
-}
-
-interface Booking {
-  id: string;
-  userId: string;
-  user: BookingUser;
-  roomTypeId: string;
-  roomType: RoomType;
-  checkInDate: string;
-  checkOutDate: string;
-  numberOfGuests: number;
-  totalPrice: number;
-  paymentType: 'full' | 'deposit';
-  paymentAmount: number | null;
-  discountAmount: number | null;
-  discountReason: string | null;
-  status: 'confirmed' | 'cancelled' | 'completed';
-  notes: string | null;
-  adminNotes: string | null;
-  // Multi-slip support
-  slips?: BookingSlip[];
-  // Legacy single slip (deprecated)
-  slip: LegacySlip | null;
-  auditHistory: BookingAuditEntry[];
-  createdAt: string;
-  updatedAt: string;
-}
+// Booking and slip shapes live in the admin booking service, which mirrors
+// the serde DTOs in `backend-rust/src/routes/admin_bookings.rs` and
+// `admin_slips.rs`. `AdminBookingSlip` is the multi-slip gallery row;
+// `AdminBookingSlipSummary` is the legacy single slip the list carries.
 
 interface SlipViewerSidebarProps {
   booking: Booking | null;
@@ -126,17 +57,17 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [currentSlipIndex, setCurrentSlipIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
 
-  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-  // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-  // Multi-slip verification mutations
+  // Per-slip moderation — `POST /api/admin/bookings/slips/:slipId/verify`
+  // and `.../needs-action` in `backend-rust/src/routes/admin_slips.rs`.
   const verifySlipByIdMutation = useMutation({
-    mutationFn: async (_data: { slipId: string }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
-    },
-    onSuccess: () => {
+    mutationFn: (data: { slipId: string }) => adminBookingService.verifySlip(data.slipId),
+    onSuccess: (slip) => {
+      // Both routes return the updated slip, so seed the per-slip cache with
+      // it: without this the viewer would keep rendering the pre-verify read
+      // (the booking refetch below does not touch that key).
+      queryClient.setQueryData(['admin', 'slip', slip.id], slip);
       toast.success(t('admin.booking.bookingManagement.messages.slipVerified'));
       onRefresh();
     },
@@ -146,12 +77,10 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
   });
 
   const markSlipNeedsActionMutation = useMutation({
-    mutationFn: async (_data: { slipId: string; notes: string }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
-    },
-    onSuccess: () => {
+    mutationFn: (data: { slipId: string; notes: string }) =>
+      adminBookingService.markSlipNeedsAction(data.slipId, { notes: data.notes }),
+    onSuccess: (slip) => {
+      queryClient.setQueryData(['admin', 'slip', slip.id], slip);
       toast.success(t('admin.booking.bookingManagement.messages.needsActionMarked'));
       onRefresh();
     },
@@ -177,9 +106,13 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
         uploadedAt: booking.slip.uploadedAt,
         slipokStatus: booking.slip.slipokStatus,
         slipokVerifiedAt: booking.slip.slipokVerifiedAt,
+        slipokReason: booking.slip.slipokReason ?? null,
+        slipokCheckedAt: booking.slip.slipokCheckedAt ?? null,
         adminStatus: booking.slip.adminStatus,
         adminVerifiedAt: booking.slip.adminVerifiedAt,
         adminVerifiedBy: booking.slip.adminVerifiedBy,
+        adminVerifiedByName: booking.slip.adminVerifiedByName,
+        autoVerified: booking.slip.autoVerified ?? false,
         isPrimary: true
       }];
     }
@@ -189,7 +122,38 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
 
   const slips = getSlips();
   const hasMultipleSlips = slips.length > 1;
-  const currentSlip = slips[currentSlipIndex];
+  const listSlip = slips[currentSlipIndex];
+
+  // `GET /api/admin/bookings/slips/:slipId`. The booking list projection
+  // carries no `slipokReason` / `slipokCheckedAt` / `autoVerified` — that
+  // decision record only exists on the per-slip route. Reception seeing
+  // *why* the machine stopped is the whole point of the reason panel, so the
+  // viewer reads the slip it is showing rather than rendering a blank.
+  const slipDetailQuery = useQuery({
+    queryKey: ['admin', 'slip', listSlip?.id ?? null],
+    queryFn: () => adminBookingService.getSlip(listSlip?.id as string),
+    enabled: Boolean(listSlip?.id),
+  });
+
+  // Merge, never replace: a failed or in-flight read leaves the badges
+  // exactly as the list rendered them.
+  const currentSlip: BookingSlip | undefined = React.useMemo(() => {
+    if (!listSlip) {return undefined;}
+    const detail = slipDetailQuery.data;
+    if (detail?.id !== listSlip.id) {return listSlip;}
+    return {
+      ...listSlip,
+      slipokStatus: (detail.slipokStatus as SlipOkStatusValue | null) ?? listSlip.slipokStatus,
+      slipokReason: detail.slipokReason ?? listSlip.slipokReason ?? null,
+      slipokCheckedAt: detail.slipokCheckedAt ?? listSlip.slipokCheckedAt ?? null,
+      slipokVerifiedAt: detail.slipokVerifiedAt ?? listSlip.slipokVerifiedAt,
+      adminStatus: detail.adminStatus,
+      adminVerifiedAt: detail.adminVerifiedAt,
+      adminVerifiedBy: detail.adminVerifiedBy,
+      adminNotes: detail.adminNotes,
+      autoVerified: detail.autoVerified,
+    };
+  }, [listSlip, slipDetailQuery.data]);
 
   // Legacy verify handler (for backward compatibility)
   const handleLegacyVerifyClick = async () => {
@@ -258,25 +222,60 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     setIsFullscreen(true);
   };
 
-  const SlipStatusBadge: React.FC<{ status: string; verifiedAt: string | null }> = ({
-    status,
-    verifiedAt
-  }) => {
-    const badges: Record<string, { tone: BadgeTone; text: string }> = {
+  /**
+   * Desk-facing slip badge: one distinct label per locked `slipok_status`
+   * (unlike the guest badge, which collapses everything but `verified` into
+   * "being checked"), plus the machine's reason and the time it decided.
+   * Reception seeing *why* the machine stopped is the whole point — without
+   * it the desk re-checks every slip by hand and the automation buys
+   * nothing. `failed`/`quota_exceeded` stay for rows written before the
+   * vocabulary lock.
+   */
+  const SlipStatusBadge: React.FC<{
+    status: string | null;
+    verifiedAt: string | null;
+    reason?: string | null;
+    checkedAt?: string | null;
+  }> = ({ status, verifiedAt, reason, checkedAt }) => {
+    // Keyed by the locked vocabulary, not `string`: adding a status to
+    // `SLIPOK_STATUSES` must break this build rather than quietly render the
+    // machine's new verdict as "not yet checked" at the desk.
+    const badges: Record<SlipOkStatusValue, { tone: BadgeTone; text: string }> = {
       verified: { tone: 'success', text: t('admin.booking.bookingManagement.slipStatus.verified') },
-      failed: { tone: 'error', text: t('admin.booking.bookingManagement.slipStatus.failed') },
       pending: { tone: 'warning', text: t('admin.booking.bookingManagement.slipStatus.pending') },
+      shadow_pass: { tone: 'info', text: t('admin.booking.bookingManagement.slipStatus.shadowPass') },
+      manual: { tone: 'warning', text: t('admin.booking.bookingManagement.slipStatus.manual') },
+      unavailable: { tone: 'neutral', text: t('admin.booking.bookingManagement.slipStatus.unavailable') },
+      failed: { tone: 'error', text: t('admin.booking.bookingManagement.slipStatus.failed') },
       quota_exceeded: { tone: 'warning', text: t('admin.booking.bookingManagement.slipStatus.quotaExceeded') }
     };
 
-    const badge = badges[status] ?? badges.pending;
+    // A status this bundle predates still renders — as "pending" — rather
+    // than as a blank badge; `deskSlipOkStatus` is the only place that
+    // decision is made.
+    const badge = badges[deskSlipOkStatus(status)];
+    const reasonKey = slipOkReasonKey(reason);
+    // An unknown reason still reaches the desk verbatim — a raw key beats a
+    // blank space when reception is deciding whether to call the guest.
+    const reasonText = reasonKey ? t(reasonKey) : (reason ?? null);
+    const decidedAt = checkedAt ?? verifiedAt;
 
     return (
       <div className="flex flex-col gap-1">
-        <Badge tone={badge?.tone ?? 'warning'}>{badge?.text ?? ''}</Badge>
-        {verifiedAt && (
+        <Badge tone={badge.tone}>{badge.text}</Badge>
+        {reasonText && (
           <span className="text-fine text-ink-muted">
-            {formatDateTimeToEuropean(verifiedAt)}
+            {t('admin.booking.bookingManagement.slipViewer.slipokReason')}: {reasonText}
+          </span>
+        )}
+        {decidedAt && (
+          // Labelled, because the admin badge beside it prints its own bare
+          // timestamp — an unlabelled pair leaves reception guessing which
+          // one is the machine's check, exactly when they are deciding
+          // whether that verdict is stale.
+          <span className="text-fine text-ink-muted">
+            {t('admin.booking.bookingManagement.slipViewer.slipokCheckedAt')}:{' '}
+            {formatDateTimeToEuropean(decidedAt)}
           </span>
         )}
       </div>
@@ -284,17 +283,26 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
   };
 
   const AdminStatusBadge: React.FC<{
-    status: string;
+    status: string | null;
     verifiedAt: string | null;
     verifiedByName?: string | null;
-  }> = ({ status, verifiedAt, verifiedByName }) => {
+    autoVerified?: boolean;
+  }> = ({ status, verifiedAt, verifiedByName, autoVerified = false }) => {
     const badges: Record<string, { tone: BadgeTone; text: string }> = {
       verified: { tone: 'success', text: t('admin.booking.bookingManagement.adminStatus.verified') },
       needs_action: { tone: 'error', text: t('admin.booking.bookingManagement.adminStatus.needsAction') },
       pending: { tone: 'warning', text: t('admin.booking.bookingManagement.adminStatus.pending') }
     };
 
-    const badge = badges[status] ?? badges.pending;
+    // NULL on a legacy row, or a value this bundle predates: both read as
+    // "pending" rather than as a blank badge.
+    const badge = (status ? badges[status] : undefined) ?? badges.pending;
+    // A machine verify is attributed to the SlipOK system actor, never to a
+    // human admin — that attribution is what makes the human-touch KPI
+    // countable, so it has to be visible at the desk too.
+    const verifier = autoVerified
+      ? t('admin.booking.bookingManagement.slipViewer.autoVerifier')
+      : verifiedByName;
 
     return (
       <div className="flex flex-col gap-1">
@@ -304,9 +312,9 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
             {formatDateTimeToEuropean(verifiedAt)}
           </span>
         )}
-        {verifiedByName && (
+        {verifier && (
           <span className="text-fine text-ink-muted">
-            {t('admin.booking.bookingManagement.by')}: {verifiedByName}
+            {t('admin.booking.bookingManagement.by')}: {verifier}
           </span>
         )}
       </div>
@@ -371,7 +379,12 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
             <p className="mb-1 text-fine text-ink-muted">
               {t('admin.booking.bookingManagement.slipViewer.slipokStatus')}
             </p>
-            <SlipStatusBadge status={currentSlip.slipokStatus} verifiedAt={currentSlip.slipokVerifiedAt} />
+            <SlipStatusBadge
+              status={currentSlip.slipokStatus}
+              verifiedAt={currentSlip.slipokVerifiedAt}
+              reason={currentSlip.slipokReason}
+              checkedAt={currentSlip.slipokCheckedAt}
+            />
           </div>
           <div>
             <p className="mb-1 text-fine text-ink-muted">
@@ -380,7 +393,8 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
             <AdminStatusBadge
               status={currentSlip.adminStatus}
               verifiedAt={currentSlip.adminVerifiedAt}
-              verifiedByName={null}
+              verifiedByName={currentSlip.adminVerifiedByName ?? null}
+              autoVerified={currentSlip.autoVerified ?? false}
             />
           </div>
         </div>
@@ -533,13 +547,19 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
           </>
         ) : (
           <>
-            {/* Legacy single slip actions */}
+            {/* Legacy booking-scoped actions. `POST /api/admin/bookings/:id/
+                verify-slip` and `.../needs-action` are still missing
+                (docs/admin-backend-gaps.md), and with no slip on the booking
+                there is nothing for the per-slip routes to act on — so these
+                stay disabled and say why, rather than firing a request that
+                cannot succeed. */}
             <Button
               type="button"
               variant="primary"
               className="w-full bg-success-600 hover:bg-success-700"
               onClick={handleLegacyVerifyClick}
               disabled={true}
+              title={t('admin.booking.bookingManagement.actions.legacyMigrating')}
             >
               <FiCheck className="h-4 w-4" aria-hidden="true" />
               {t('admin.booking.bookingManagement.actions.verify')}
@@ -550,18 +570,25 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
               className="w-full bg-warning-600 hover:bg-warning-700"
               onClick={() => handleNeedsActionClick()}
               disabled={true}
+              title={t('admin.booking.bookingManagement.actions.legacyMigrating')}
             >
               <FiAlertTriangle className="h-4 w-4" aria-hidden="true" />
               {t('admin.booking.bookingManagement.actions.needsAction')}
             </Button>
           </>
         )}
+        {/* Slip replacement has no admin upload route yet — no handler in
+            `admin_slips.rs`, and no entry in docs/admin-backend-gaps.md to
+            wire against. Disabled rather than a button that opens a file
+            picker only to report a failure. */}
         <Button
           type="button"
           variant="secondary"
           className="w-full"
           onClick={() => fileInputRef.current?.click()}
           loading={isUploading}
+          disabled={true}
+          title={t('admin.booking.bookingManagement.actions.legacyMigrating')}
         >
           {!isUploading && <FiUpload className="h-4 w-4" aria-hidden="true" />}
           {t('admin.booking.bookingManagement.actions.replaceSlip')}

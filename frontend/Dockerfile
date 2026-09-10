@@ -43,6 +43,14 @@ COPY src ./src
 # 2f. Build with production API URL
 ARG VITE_API_URL=https://loyalty.saichon.com/api
 ENV VITE_API_URL=$VITE_API_URL
+# Desk phone numbers shown on the guest deposit page (B16). Build-time: Vite
+# inlines VITE_* at `npm run build`, so these must arrive as build args from
+# CI (repository variables DESK_PHONE_HF / DESK_PHONE_HFVILLE); blank = the
+# page shows the "contact the front desk" line without a number.
+ARG VITE_DESK_PHONE_HF=
+ARG VITE_DESK_PHONE_HFVILLE=
+ENV VITE_DESK_PHONE_HF=$VITE_DESK_PHONE_HF
+ENV VITE_DESK_PHONE_HFVILLE=$VITE_DESK_PHONE_HFVILLE
 RUN npm run build
 
 # 2g. Verify build

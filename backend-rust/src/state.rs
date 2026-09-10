@@ -4,6 +4,7 @@ use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 
 use crate::config::Settings;
+use crate::services::slipok::SlipOkService;
 
 /// Application state shared across all request handlers.
 ///
@@ -17,6 +18,11 @@ pub struct AppState {
     redis: ConnectionManager,
     /// Application configuration
     config: Arc<Settings>,
+    /// SlipOK client, or `None` when the API key / branch id is unset.
+    ///
+    /// The service owns a `reqwest::Client` (connection pool), so it is
+    /// built once here rather than per request.
+    slipok: Option<Arc<SlipOkService>>,
 }
 
 impl AppState {
@@ -28,10 +34,17 @@ impl AppState {
     /// * `redis` - Redis connection manager
     /// * `config` - Application settings
     pub fn new(db: PgPool, redis: ConnectionManager, config: Settings) -> Self {
+        // Built from the settings (which `Settings::new` already fills from
+        // SLIPOK_API_KEY / SLIPOK_BRANCH_ID) rather than straight from the
+        // environment, so an integration test can point the client at a
+        // wiremock server through the same code path production uses.
+        let slipok = SlipOkService::from_settings(&config.slipok).map(Arc::new);
+
         Self {
             db,
             redis,
             config: Arc::new(config),
+            slipok,
         }
     }
 
@@ -61,6 +74,15 @@ impl AppState {
     #[inline]
     pub fn config(&self) -> &Settings {
         &self.config
+    }
+
+    /// Returns the SlipOK client, or `None` when SlipOK is not configured.
+    ///
+    /// `None` means the automatic slip check is skipped entirely and every
+    /// slip stays on the manual admin path.
+    #[inline]
+    pub fn slipok(&self) -> Option<&Arc<SlipOkService>> {
+        self.slipok.as_ref()
     }
 
     /// Returns the JWT secret from configuration.
