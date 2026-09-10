@@ -228,6 +228,15 @@ jobs:
           IMAP_PORT:            ${{ secrets.IMAP_PORT }}
           IMAP_USER:            ${{ secrets.IMAP_USER }}
           IMAP_PASS:            ${{ secrets.IMAP_PASS }}
+          # SlipOK slip verification (PR #399): API key + branch id as secrets.
+          # Leaving them unset keeps every slip on manual verify.
+          SLIPOK_API_KEY:       ${{ secrets.SLIPOK_API_KEY }}
+          SLIPOK_BRANCH_ID:     ${{ secrets.SLIPOK_BRANCH_ID }}
+          # Receiving PromptPay IDs per property (repository *variables*, not
+          # secrets: a tax id is printed on every receipt). The QR endpoint
+          # answers "not configured" for a property whose id is unset.
+          PROMPTPAY_HF_ID:      ${{ vars.PROMPTPAY_HF_ID }}
+          PROMPTPAY_HFVILLE_ID: ${{ vars.PROMPTPAY_HFVILLE_ID }}
         run: |
           set -euo pipefail
 
@@ -280,6 +289,10 @@ jobs:
             --arg IMAP_PORT            "${IMAP_PORT:-993}" \
             --arg IMAP_USER            "${IMAP_USER:-}" \
             --arg IMAP_PASS            "${IMAP_PASS:-}" \
+            --arg SLIPOK_API_KEY       "${SLIPOK_API_KEY:-}" \
+            --arg SLIPOK_BRANCH_ID     "${SLIPOK_BRANCH_ID:-}" \
+            --arg PROMPTPAY_HF_ID      "${PROMPTPAY_HF_ID:-}" \
+            --arg PROMPTPAY_HFVILLE_ID "${PROMPTPAY_HFVILLE_ID:-}" \
             '{
               commit_sha: $commit_sha,
               deploy_payload_b64: $deploy_payload_b64,
@@ -315,7 +328,13 @@ jobs:
                 IMAP_USER:            $IMAP_USER,
                 IMAP_PASS:            $IMAP_PASS
               }
-            }' \
+            }
+            # Optional keys are only written when non-empty: the backend reads an
+            # empty PROMPTPAY_*_ID / SLIPOK_* as "set", which would mint a QR with
+            # no receiving id or call SlipOK with no key.
+            | .env += ({ SLIPOK_API_KEY: $SLIPOK_API_KEY, SLIPOK_BRANCH_ID: $SLIPOK_BRANCH_ID,
+                         PROMPTPAY_HF_ID: $PROMPTPAY_HF_ID, PROMPTPAY_HFVILLE_ID: $PROMPTPAY_HFVILLE_ID }
+                       | with_entries(select(.value != "")))' \
           | ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile=~/.ssh/known_hosts \
