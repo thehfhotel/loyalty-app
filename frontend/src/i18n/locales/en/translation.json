@@ -1974,7 +1974,7 @@
       "retry": "Try again"
     },
     "desk": {
-      "withPhone": "Call the front desk on {{phone}}",
+      "withPhone": "Call the front desk, open 24 hours, on {{phone}}",
       "withoutPhone": "Please contact the front desk of the hotel you booked."
     },
     "privacyNote": "We use the slip image only to check and confirm this deposit payment. A slip may show the name and account number of whoever sent the money, which may not be the guest who booked.",
