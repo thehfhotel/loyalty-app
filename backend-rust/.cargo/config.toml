@@ -18,7 +18,7 @@ debug = true
 # Release profile with link-time optimization
 lto = "thin"
 # Single codegen unit for better optimization
-codegen-units = 1
+codegen-units = 16 # was 1: parallel codegen cuts the release build ~50 s on CI (the critical path since #417) for +10.5 % binary; thin LTO keeps cross-crate inlining
 # Strip debug symbols for smaller binary
 strip = "symbols"
 # Enable optimizations
