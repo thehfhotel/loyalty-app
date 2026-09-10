@@ -8,11 +8,13 @@
 //! The rules run in a fixed order and stop at the first failure:
 //!
 //! 1. SlipOK refused on quota    → [`SlipDecision::Unavailable`] `quota_exceeded`
-//! 2. SlipOK could not read it   → [`SlipDecision::Manual`] `slip_invalid`
-//! 3. Amount differs by a satang → [`SlipDecision::Manual`] `amount_mismatch`
-//! 4. Receiver is not ours       → [`SlipDecision::Manual`] `receiver_mismatch`
-//! 5. `transRef` already stored  → [`SlipDecision::Manual`] `duplicate`
-//! 6. otherwise                  → [`SlipDecision::Confirm`]
+//! 2. SlipOK never answered      → [`SlipDecision::Unavailable`] `api_error`
+//!    or `not_configured`
+//! 3. SlipOK could not read it   → [`SlipDecision::Manual`] `slip_invalid`
+//! 4. Amount differs by a satang → [`SlipDecision::Manual`] `amount_mismatch`
+//! 5. Receiver is not ours       → [`SlipDecision::Manual`] `receiver_mismatch`
+//! 6. `transRef` already stored  → [`SlipDecision::Manual`] `duplicate`
+//! 7. otherwise                  → [`SlipDecision::Confirm`]
 //!
 //! `Manual` and `Unavailable` both leave `admin_status = 'pending'`; they
 //! differ only in whether SlipOK gave us an answer to show the admin.
@@ -29,6 +31,28 @@ pub const REASON_SLIP_INVALID: &str = "slip_invalid";
 pub const REASON_AMOUNT_MISMATCH: &str = "amount_mismatch";
 pub const REASON_RECEIVER_MISMATCH: &str = "receiver_mismatch";
 pub const REASON_DUPLICATE: &str = "duplicate";
+/// SlipOK was reachable but gave no verdict (5xx, 401 on a rotated key).
+pub const REASON_API_ERROR: &str = "api_error";
+/// No SlipOK credentials, or no receiving account to match the payee against.
+pub const REASON_NOT_CONFIGURED: &str = "not_configured";
+/// Every slip check passed, but the booking cannot accept a payment right
+/// now (cancelled, already checked out, or its PMS hold has expired).
+/// Written by the caller, not by [`decide`] — the booking's state is not
+/// this function's input.
+pub const REASON_BOOKING_NOT_PAYABLE: &str = "booking_not_payable";
+/// The slip passed every check but confirming it failed part-way (typically
+/// the PMS refused the payment event). Also written by the caller.
+pub const REASON_CONFIRM_FAILED: &str = "confirm_failed";
+
+/// Minimum number of *visible* digits a masked receiver value must carry
+/// before it can be trusted to identify our account.
+///
+/// Thai bank slips mask a payee but always leave the last few digits; a
+/// value with fewer than this many readable digits does not identify anyone
+/// — and, matched positionally, would match *every* account of that length.
+/// Confirming on one would mean auto-confirming a transfer to a stranger,
+/// so an unreadably-masked payee is a mismatch.
+const MIN_VISIBLE_RECEIVER_DIGITS: usize = 4;
 
 /// What to do with a slip after SlipOK has answered.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,14 +88,25 @@ pub fn decide(
         };
     }
 
-    // 2. SlipOK answered "no". Unreadable image, not a slip, bank refused.
+    // 2. SlipOK never answered. An HTTP failure is our outage, not the
+    //    guest's forgery: it must not land in the `manual` / `slip_invalid`
+    //    bucket that shadow mode calibrates against.
+    if result.status == VerificationStatus::ApiError {
+        let reason = match result.error_code.as_deref() {
+            Some("NOT_CONFIGURED") => REASON_NOT_CONFIGURED,
+            _ => REASON_API_ERROR,
+        };
+        return SlipDecision::Unavailable { reason };
+    }
+
+    // 3. SlipOK answered "no". Unreadable image, not a slip, bank refused.
     if result.status != VerificationStatus::Verified || !result.success {
         return SlipDecision::Manual {
             reason: REASON_SLIP_INVALID,
         };
     }
 
-    // 3. Amount, to the satang. No tolerance: a one-satang difference is a
+    // 4. Amount, to the satang. No tolerance: a one-satang difference is a
     //    human's problem, not a rounding window we quietly absorb.
     match result.amount.and_then(to_satang) {
         Some(satang) if satang == expected_satang => {},
@@ -82,7 +117,7 @@ pub fn decide(
         },
     }
 
-    // 4. Receiver. The slip must have paid *us*.
+    // 5. Receiver. The slip must have paid *us*.
     let received_by = result
         .receiver_proxy_value
         .as_deref()
@@ -93,7 +128,7 @@ pub fn decide(
         };
     }
 
-    // 5. Duplicate: this bank reference already backs another slip.
+    // 6. Duplicate: this bank reference already backs another slip.
     if already_seen {
         return SlipDecision::Manual {
             reason: REASON_DUPLICATE,
@@ -139,10 +174,15 @@ pub fn to_satang(amount: Decimal) -> Option<i64> {
 /// * an unmasked value must equal ours digit for digit;
 /// * a masked value must be the same length as ours and every *visible*
 ///   digit must sit at the same position (aligned right, which for equal
-///   lengths is the same as aligning left, and is the way banks mask).
+///   lengths is the same as aligning left, and is the way banks mask);
+/// * a masked value must still show at least
+///   [`MIN_VISIBLE_RECEIVER_DIGITS`] digits. Without that floor a heavily
+///   masked value — `x-xxxx-xxxxx-xx-x` is a plausible 13-character mask of
+///   a tax id — matches *every* account of that length vacuously, and a
+///   guest who paid a stranger would be auto-confirmed.
 ///
-/// An absent or empty value never matches — we do not confirm money into an
-/// account we cannot see.
+/// An absent, empty or unreadable value never matches — we do not confirm
+/// money into an account we cannot see.
 fn receiver_matches(expected: &str, candidate: Option<&str>) -> bool {
     let expected: Vec<char> = expected.chars().filter(char::is_ascii_digit).collect();
     if expected.is_empty() {
@@ -163,6 +203,12 @@ fn receiver_matches(expected: &str, candidate: Option<&str>) -> bool {
     }
 
     if candidate.len() != expected.len() {
+        return false;
+    }
+
+    // An unreadable payee is a mismatch, not a match. See
+    // `MIN_VISIBLE_RECEIVER_DIGITS`.
+    if candidate.iter().filter(|c| **c != 'x').count() < MIN_VISIBLE_RECEIVER_DIGITS {
         return false;
     }
 
@@ -283,6 +329,46 @@ mod tests {
                 },
             },
             Case {
+                name: "mask characters after the digits, same length as ours",
+                // "xxx-xxx-x3047-x" strips to "xxxxxxx3047x": 12 characters,
+                // one short of the 13-digit tax id, so the *length* rule is
+                // what rejects it. Trailing mask characters are only usable
+                // when the value is the same length as ours.
+                result: verified(dec!(1500.00), Some("xxx-xxx-x3047-x")),
+                expected_satang: 150_000,
+                receiving_id: TAX_ID,
+                already_seen: false,
+                want: SlipDecision::Manual {
+                    reason: REASON_RECEIVER_MISMATCH,
+                },
+            },
+            Case {
+                name: "mask characters after the digits, right length, digits line up",
+                // Strips to "xxxxxxx12304x" — 13 characters, and the visible
+                // 1,2,3,0,4 sit at positions 7..12, where the tax id
+                // 0105556123047 has them.
+                result: verified(dec!(1500.00), Some("xxx-xxxx-12304-x")),
+                expected_satang: 150_000,
+                receiving_id: TAX_ID,
+                already_seen: false,
+                want: SlipDecision::Confirm {
+                    trans_ref: "REF-0001".to_string(),
+                },
+            },
+            Case {
+                name: "too few visible digits to identify anyone",
+                // Three visible digits below the floor: positionally this
+                // would match a large family of accounts, so it is a
+                // mismatch rather than a confirmation.
+                result: verified(dec!(1500.00), Some("xxxxxxxxxx047")),
+                expected_satang: 150_000,
+                receiving_id: TAX_ID,
+                already_seen: false,
+                want: SlipDecision::Manual {
+                    reason: REASON_RECEIVER_MISMATCH,
+                },
+            },
+            Case {
                 name: "unmasked receiver that is not ours",
                 result: verified(dec!(1500.00), Some("0105556999999")),
                 expected_satang: 150_000,
@@ -389,6 +475,32 @@ mod tests {
                 },
             },
             Case {
+                name: "SlipOK returned an HTTP error — our outage, not a bad slip",
+                result: SlipVerificationResult {
+                    error_code: Some("HTTP_500".to_string()),
+                    ..failed_result(VerificationStatus::ApiError)
+                },
+                expected_satang: 150_000,
+                receiving_id: TAX_ID,
+                already_seen: false,
+                want: SlipDecision::Unavailable {
+                    reason: REASON_API_ERROR,
+                },
+            },
+            Case {
+                name: "SlipOK credentials missing",
+                result: SlipVerificationResult {
+                    error_code: Some("NOT_CONFIGURED".to_string()),
+                    ..failed_result(VerificationStatus::ApiError)
+                },
+                expected_satang: 150_000,
+                receiving_id: TAX_ID,
+                already_seen: false,
+                want: SlipDecision::Unavailable {
+                    reason: REASON_NOT_CONFIGURED,
+                },
+            },
+            Case {
                 name: "quota exhausted — not the slip's fault",
                 result: failed_result(VerificationStatus::QuotaExceeded),
                 expected_satang: 150_000,
@@ -458,12 +570,16 @@ mod tests {
     }
 
     #[test]
-    fn fully_masked_value_of_the_right_length_matches() {
-        // Documented consequence of the rule: a value with no visible digit
-        // matches anything of the same length. Section 7 of the plan calls
-        // for shadow mode precisely because we have never seen a real
-        // masked value from our own account.
-        assert!(receiver_matches(TAX_ID, Some("xxxxxxxxxxxxx")));
+    fn an_unreadably_masked_value_never_matches() {
+        // A value with no visible digit would otherwise match *everything*
+        // of the same length — including a transfer to a stranger, which
+        // with auto-verify on would confirm a booking nobody paid for.
+        assert!(!receiver_matches(TAX_ID, Some("xxxxxxxxxxxxx")));
+        // Three visible digits is still below the floor.
+        assert!(!receiver_matches(TAX_ID, Some("xxxxxxxxxx047")));
+        // Four is the floor and is accepted when the digits line up.
+        assert!(receiver_matches(TAX_ID, Some("xxxxxxxxx3047")));
+        assert!(!receiver_matches(TAX_ID, Some("xxxxxxxxx3048")));
     }
 
     #[test]

@@ -13,7 +13,9 @@
 //!   is `UUID NOT NULL` with an FK to `users`, and there is no system user
 //!   row to point it at, so the audit insert is skipped and the confirmation
 //!   is recorded as a `tracing::info!` carrying the slip, the booking and
-//!   the bank reference instead.
+//!   the bank reference instead. It also stands aside for an admin who
+//!   verified the same slip first, rather than overwriting their name with
+//!   nobody's.
 //!
 //! ## sqlx note
 //!
@@ -97,6 +99,24 @@ pub async fn confirm_slip_with_notes(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::NotFound("Slip".to_string()))?;
+
+    // The automatic check runs inline for several seconds after the slip
+    // row becomes visible, so an admin can press Verify inside that window.
+    // If they did, theirs stands: re-running the UPDATE with `actor = None`
+    // would blank `admin_verified_by` (destroying the attribution behind an
+    // audit row that names them) and post a second payment event. An admin
+    // re-verifying keeps its old behaviour — that is a deliberate human
+    // action, and the extraction had to preserve it exactly.
+    if actor.is_none() && before.admin_status.as_deref() == Some("verified") {
+        let outcome = read_outcome(&mut tx, slip_id).await?;
+        tx.commit().await?;
+        tracing::info!(
+            slip_id = %slip_id,
+            booking_id = %booking_id,
+            "Slip was already verified; automatic confirmation is a no-op"
+        );
+        return Ok(outcome);
+    }
 
     let row = sqlx::query!(
         r#"
@@ -241,6 +261,47 @@ pub async fn confirm_slip_with_notes(
         slipok_status: row.slipok_status,
         slipok_verified_at: row.slipok_verified_at,
         booking_confirmed,
+    })
+}
+
+/// Read a slip row as a [`ConfirmOutcome`] without changing it.
+///
+/// Used when the automatic path finds the slip already verified. A runtime
+/// query rather than the macro: `slipok_*` columns are new in migration
+/// `20260910000000_booking_slips_slipok.sql` and a runtime query needs no
+/// `.sqlx` offline-cache entry.
+async fn read_outcome(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    slip_id: Uuid,
+) -> Result<ConfirmOutcome, AppError> {
+    use sqlx::Row;
+
+    let row = sqlx::query(
+        r#"
+        SELECT id, booking_id, slip_url, uploaded_at, admin_status,
+               admin_verified_at, admin_verified_by, admin_notes,
+               slipok_status, slipok_verified_at
+        FROM booking_slips
+        WHERE id = $1
+        "#,
+    )
+    .bind(slip_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Slip".to_string()))?;
+
+    Ok(ConfirmOutcome {
+        id: row.try_get("id")?,
+        booking_id: row.try_get("booking_id")?,
+        slip_url: row.try_get("slip_url")?,
+        uploaded_at: row.try_get("uploaded_at")?,
+        admin_status: row.try_get("admin_status")?,
+        admin_verified_at: row.try_get("admin_verified_at")?,
+        admin_verified_by: row.try_get("admin_verified_by")?,
+        admin_notes: row.try_get("admin_notes")?,
+        slipok_status: row.try_get("slipok_status")?,
+        slipok_verified_at: row.try_get("slipok_verified_at")?,
+        booking_confirmed: false,
     })
 }
 

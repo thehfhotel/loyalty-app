@@ -13,7 +13,15 @@
 //!   `pending` (this is the state we ship in);
 //! - amount mismatch               → `manual` / `amount_mismatch`;
 //! - HTTP 429                      → `unavailable` / `quota_exceeded`, and
-//!   the guest's upload still succeeds.
+//!   the guest's upload still succeeds;
+//! - HTTP 500                      → `unavailable` / `api_error` — a vendor
+//!   outage is never recorded as a bad slip.
+//!
+//! Case (a) also pins the *outgoing* request: the `x-authorization` header
+//! and the documented multipart shape (`files` part named `slip.jpg`,
+//! `log=false`). Nothing else in the suite would notice if that shape drifted
+//! back to the old JSON `url` body — the mock would still answer and every
+//! assertion would still pass, while production got a 400 on every slip.
 
 use axum::body::Body;
 use axum::http::{header, Request};
@@ -21,7 +29,7 @@ use chrono::Duration;
 use serde_json::{json, Value};
 use tower::ServiceExt;
 use uuid::Uuid;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::common::{generate_test_token_with_role, TestApp, TestUser};
@@ -155,6 +163,26 @@ fn slipok_success_body(trans_ref: &str, amount: f64, receiver_value: &str) -> Va
     })
 }
 
+/// Assert the outgoing request really is the multipart shape SlipOK
+/// documents at https://slipok.com/api-documentation/check-slip/.
+///
+/// A hand-rolled matcher rather than `body_string_contains`: the multipart
+/// body carries raw JPEG bytes, so it is not valid UTF-8 and wiremock's
+/// string matcher refuses it outright. The envelope around the bytes *is*
+/// plain text, which `from_utf8_lossy` keeps intact.
+///
+/// Without this, renaming the part back to `file`, dropping the header or
+/// sending `log=true` would leave every case in this file green while
+/// production got a 400 on every slip.
+fn multipart_shape_is_the_documented_one(request: &wiremock::Request) -> bool {
+    let body = String::from_utf8_lossy(&request.body);
+    body.contains("name=\"files\"")
+        && body.contains("filename=\"slip.jpg\"")
+        && body.contains("Content-Type: image/jpeg")
+        && body.contains("name=\"log\"")
+        && body.contains("false")
+}
+
 /// The SlipOK-facing state of a slip row.
 async fn read_slip_state(
     pool: &sqlx::PgPool,
@@ -197,6 +225,12 @@ async fn auto_verify_confirms_a_matching_slip() {
     let slipok_mock = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(format!("/{}", BRANCH_ID)))
+        // The vendor contract, asserted where it can actually be checked:
+        // the API key rides `x-authorization`, the image is a multipart part
+        // called `files` (not `file`), named `slip.jpg` and typed as a JPEG,
+        // and `log=false` keeps the slip out of SlipOK's own retention.
+        .and(header("x-authorization", "test-key"))
+        .and(multipart_shape_is_the_documented_one)
         .respond_with(
             ResponseTemplate::new(200).set_body_json(slipok_success_body(
                 "AUTOVERIFY0001",
@@ -204,6 +238,9 @@ async fn auto_verify_confirms_a_matching_slip() {
                 MASKED_RECEIVER,
             )),
         )
+        // A request that never fires must fail the test too — otherwise a
+        // mock that no longer matches reads as "SlipOK said nothing".
+        .expect(1)
         .mount(&slipok_mock)
         .await;
 
@@ -467,6 +504,149 @@ async fn quota_exceeded_is_recorded_and_the_upload_still_succeeds() {
     assert_eq!(trans_ref, None);
     assert_eq!(admin_status.as_deref(), Some("pending"));
     assert_eq!(booking_status(app.db(), booking_id).await, "pending");
+
+    app.cleanup().await.ok();
+}
+
+/// (e) SlipOK is having an outage. The slip must land on `unavailable` /
+/// `api_error`, NOT on `manual` / `slip_invalid`: the machine may not tell
+/// an admin that a guest's slip is fake because our vendor returned a 500,
+/// and shadow-mode calibration data is worthless if an outage reads as a
+/// wall of forged slips.
+#[tokio::test]
+async fn a_vendor_outage_is_recorded_as_unavailable_not_as_a_bad_slip() {
+    let slipok_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("/{}", BRANCH_ID)))
+        .respond_with(ResponseTemplate::new(500).set_body_string("upstream exploded"))
+        .mount(&slipok_mock)
+        .await;
+
+    let slipok_uri = slipok_mock.uri();
+    let mutate = move |cfg: &mut loyalty_backend::Settings| {
+        cfg.slipok.api_key = Some("test-key".to_string());
+        cfg.slipok.branch_id = Some(BRANCH_ID.to_string());
+        cfg.slipok.api_url = Some(slipok_uri.clone());
+        cfg.slipok.auto_verify = true;
+        cfg.promptpay.hf_id = Some(RECEIVING_ID.to_string());
+    };
+
+    let app = TestApp::new_with_config(&mutate)
+        .await
+        .expect("create test app");
+
+    let user = TestUser::new("slipok-outage@test.com");
+    user.insert(app.db()).await.expect("insert user");
+
+    let booking_id = seed_channel_booking(app.db(), user.id, "1500.00", "PMS-OUTAGE-1").await;
+    let slip_url = upload_slip(&app, &user).await;
+
+    let client = app.authenticated_client(&user.id, &user.email);
+    let response = client
+        .post(
+            &format!("/api/bookings/{}/slips", booking_id),
+            &json!({ "slipUrl": slip_url }),
+        )
+        .await;
+    response.assert_status(201);
+
+    let body: Value = response.json().expect("slip response is JSON");
+    let slip_id: Uuid = body["id"].as_str().expect("slip id").parse().expect("uuid");
+
+    let (slipok_status, slipok_reason, trans_ref, admin_status) =
+        read_slip_state(app.db(), slip_id).await;
+    assert_eq!(slipok_status.as_deref(), Some("unavailable"));
+    assert_eq!(slipok_reason.as_deref(), Some("api_error"));
+    assert_eq!(trans_ref, None);
+    assert_eq!(admin_status.as_deref(), Some("pending"));
+    assert_eq!(booking_status(app.db(), booking_id).await, "pending");
+
+    app.cleanup().await.ok();
+}
+
+/// (f) A perfect slip against a booking that can no longer take a payment.
+///
+/// The hold-expiry sweep cancels a channel booking whose PMS hold ran out;
+/// a guest who pays late still uploads a slip that matches on amount,
+/// receiver and reference. Auto-confirming it would post a payment event
+/// against a PMS booking whose room has already been released. The machine
+/// must refuse and hand it to a human, who can still override.
+#[tokio::test]
+async fn a_cancelled_booking_is_never_auto_confirmed() {
+    let slipok_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("/{}", BRANCH_ID)))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(slipok_success_body(
+                "CANCELLED0001",
+                SLIP_AMOUNT,
+                MASKED_RECEIVER,
+            )),
+        )
+        .mount(&slipok_mock)
+        .await;
+
+    // The PMS must not hear about a payment for a released hold.
+    let pms_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/api/channel/bookings/PMS-CANCELLED-1/payment-verified",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "ok": true })))
+        .expect(0)
+        .mount(&pms_mock)
+        .await;
+
+    let slipok_uri = slipok_mock.uri();
+    let pms_uri = pms_mock.uri();
+    let mutate = move |cfg: &mut loyalty_backend::Settings| {
+        cfg.slipok.api_key = Some("test-key".to_string());
+        cfg.slipok.branch_id = Some(BRANCH_ID.to_string());
+        cfg.slipok.api_url = Some(slipok_uri.clone());
+        cfg.slipok.auto_verify = true;
+        cfg.promptpay.hf_id = Some(RECEIVING_ID.to_string());
+        cfg.pms.base_url = Some(pms_uri.clone());
+        cfg.pms.channel_token = Some("test-channel-token".to_string());
+    };
+
+    let app = TestApp::new_with_config(&mutate)
+        .await
+        .expect("create test app");
+
+    let user = TestUser::new("slipok-cancelled@test.com");
+    user.insert(app.db()).await.expect("insert user");
+
+    let booking_id = seed_channel_booking(app.db(), user.id, "1500.00", "PMS-CANCELLED-1").await;
+    sqlx::query("UPDATE bookings SET status = 'cancelled' WHERE id = $1")
+        .bind(booking_id)
+        .execute(app.db())
+        .await
+        .expect("cancel the booking");
+
+    let slip_url = upload_slip(&app, &user).await;
+
+    let client = app.authenticated_client(&user.id, &user.email);
+    let response = client
+        .post(
+            &format!("/api/bookings/{}/slips", booking_id),
+            &json!({ "slipUrl": slip_url }),
+        )
+        .await;
+    response.assert_status(201);
+
+    let body: Value = response.json().expect("slip response is JSON");
+    let slip_id: Uuid = body["id"].as_str().expect("slip id").parse().expect("uuid");
+
+    let (slipok_status, slipok_reason, trans_ref, admin_status) =
+        read_slip_state(app.db(), slip_id).await;
+    assert_eq!(slipok_status.as_deref(), Some("manual"));
+    assert_eq!(slipok_reason.as_deref(), Some("booking_not_payable"));
+    assert_eq!(
+        trans_ref, None,
+        "a slip we refused to act on must not occupy the transRef unique index"
+    );
+    assert_eq!(admin_status.as_deref(), Some("pending"));
+    assert_eq!(booking_status(app.db(), booking_id).await, "cancelled");
 
     app.cleanup().await.ok();
 }

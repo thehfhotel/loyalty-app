@@ -12,11 +12,21 @@
 --   shadow_pass  Every check passed but SLIPOK_AUTO_VERIFY is off, so the
 --                slip is still queued for manual verification. This is the
 --                calibration state: compare it against what the admin did.
---   manual       SlipOK answered but a check failed. `slipok_reason` is one
---                of: amount_mismatch, receiver_mismatch, duplicate,
---                slip_invalid.
+--   manual       SlipOK answered but the slip may not be confirmed by a
+--                machine. `slipok_reason` is one of: amount_mismatch,
+--                receiver_mismatch, duplicate, slip_invalid, or —
+--                written by the caller rather than by the match rules —
+--                booking_not_payable (every check passed but the booking
+--                is cancelled or its PMS hold has expired) and
+--                confirm_failed (every check passed but confirming it
+--                broke part-way, typically the PMS refusing the payment
+--                event; the slip is back in the admin's queue).
 --   unavailable  No usable answer from SlipOK. `slipok_reason` is one of:
 --                quota_exceeded, timeout, api_error, not_configured.
+--                `api_error` covers every HTTP-level failure — a vendor
+--                5xx, a rotated API key answering 401 — which must never
+--                be recorded as `slip_invalid`: that would blame the guest
+--                for our outage and poison the shadow-mode calibration.
 --
 -- `slipok_status` already exists (VARCHAR(20), DEFAULT 'pending', from
 -- `20260511000000_booking_slips.sql`); it is listed here only so a database

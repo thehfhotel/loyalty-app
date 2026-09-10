@@ -59,6 +59,15 @@ pub enum VerificationStatus {
     Failed,
     /// SlipOK monthly quota has been exceeded
     QuotaExceeded,
+    /// SlipOK gave no verdict at all: an HTTP-level failure (5xx, a rotated
+    /// API key answering 401, a gateway in the way) or the service not being
+    /// configured.
+    ///
+    /// Distinct from [`VerificationStatus::Failed`], which means SlipOK read
+    /// the slip and said no. Blaming a guest's slip for our own outage
+    /// corrupts exactly the shadow-mode data the rollout decision rests on,
+    /// so `services::slip_match` maps this to `unavailable`, never `manual`.
+    ApiError,
 }
 
 /// Result of a slip verification attempt
@@ -208,9 +217,20 @@ impl SlipVerificationResult {
         }
     }
 
+    /// Create a result for "SlipOK never gave a verdict".
+    ///
+    /// Same shape as [`Self::failed`] but with [`VerificationStatus::ApiError`],
+    /// which the decision rules read as `unavailable`.
+    fn api_error(error_code: impl Into<String>, error_message: impl Into<String>) -> Self {
+        Self {
+            status: VerificationStatus::ApiError,
+            ..Self::failed(error_code, error_message)
+        }
+    }
+
     /// Create a not configured result
     fn not_configured() -> Self {
-        Self::failed(
+        Self::api_error(
             "NOT_CONFIGURED",
             "SlipOK API key or branch ID not configured",
         )
@@ -490,6 +510,18 @@ impl SlipOKService {
         }))
     }
 
+    /// The per-request timeout this client was built with.
+    ///
+    /// The caller (`routes::bookings`) budgets the whole inline check
+    /// against it, so the guest's upload can never be held past the
+    /// router's own timeout layer.
+    pub fn timeout(&self) -> Duration {
+        self.config
+            .as_ref()
+            .map(|c| c.timeout)
+            .unwrap_or_else(|| Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+    }
+
     /// Check if the service is configured
     pub fn is_configured(&self) -> bool {
         self.config.is_some()
@@ -695,12 +727,20 @@ impl SlipOKService {
                 "SlipOK API error"
             );
 
-            // Check for quota exceeded (HTTP 429)
-            if status.as_u16() == 429 {
+            // Quota refusals arrive two ways: HTTP 429, or the documented
+            // in-body code 1008 delivered with a 4xx. Both are "we are out of
+            // calls", not "this slip is bad".
+            let body_code = serde_json::from_str::<serde_json::Value>(&error_text)
+                .ok()
+                .and_then(|v| v.get("code").and_then(serde_json::Value::as_i64));
+            if status.as_u16() == 429 || body_code == Some(QUOTA_EXCEEDED_ERROR_CODE as i64) {
                 return Ok(SlipVerificationResult::quota_exceeded(None));
             }
 
-            return Ok(SlipVerificationResult::failed(
+            // Everything else at the HTTP level is *our* problem, not the
+            // slip's: a 5xx, a rotated key answering 401, a proxy in the way.
+            // `api_error` keeps it out of the `manual` / `slip_invalid` bucket.
+            return Ok(SlipVerificationResult::api_error(
                 format!("HTTP_{}", status.as_u16()),
                 error_text,
             ));
