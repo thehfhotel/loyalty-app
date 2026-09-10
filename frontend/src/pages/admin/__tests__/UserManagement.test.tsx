@@ -168,7 +168,7 @@ describe('UserManagement', () => {
       render(<UserManagement />);
 
       const table = await screen.findByRole('table');
-      expect(within(table).getByText('No name provided')).toBeInTheDocument();
+      expect(await within(table).findByText('No name provided')).toBeInTheDocument();
     });
 
     it('renders name when only firstName is available', async () => {
