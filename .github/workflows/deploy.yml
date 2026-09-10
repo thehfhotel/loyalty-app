@@ -236,6 +236,7 @@ jobs:
           # secrets: a tax id is printed on every receipt). The QR endpoint
           # answers "not configured" for a property whose id is unset.
           PROMPTPAY_HF_ID:      ${{ vars.PROMPTPAY_HF_ID }}
+          SLIPOK_AUTO_VERIFY:      ${{ vars.SLIPOK_AUTO_VERIFY }}
           PROMPTPAY_HFVILLE_ID: ${{ vars.PROMPTPAY_HFVILLE_ID }}
           # Property mailboxes for the new-booking / deposit-received email
           # (B0). Repository *variables*, not secrets: a mailbox address is
@@ -305,6 +306,7 @@ jobs:
             --arg SLIPOK_API_KEY       "${SLIPOK_API_KEY:-}" \
             --arg SLIPOK_BRANCH_ID     "${SLIPOK_BRANCH_ID:-}" \
             --arg PROMPTPAY_HF_ID      "${PROMPTPAY_HF_ID:-}" \
+            --arg SLIPOK_AUTO_VERIFY      "${SLIPOK_AUTO_VERIFY:-}" \
             --arg PROMPTPAY_HFVILLE_ID "${PROMPTPAY_HFVILLE_ID:-}" \
             --arg BOOKING_NOTIFY_EMAIL_HF      "${BOOKING_NOTIFY_EMAIL_HF:-}" \
             --arg BOOKING_NOTIFY_EMAIL_HFVILLE "${BOOKING_NOTIFY_EMAIL_HFVILLE:-}" \
@@ -347,7 +349,8 @@ jobs:
             | .env += ({ SLIPOK_API_KEY: $SLIPOK_API_KEY, SLIPOK_BRANCH_ID: $SLIPOK_BRANCH_ID,
                          PROMPTPAY_HF_ID: $PROMPTPAY_HF_ID, PROMPTPAY_HFVILLE_ID: $PROMPTPAY_HFVILLE_ID,
                          BOOKING_NOTIFY_EMAIL_HF: $BOOKING_NOTIFY_EMAIL_HF,
-                         BOOKING_NOTIFY_EMAIL_HFVILLE: $BOOKING_NOTIFY_EMAIL_HFVILLE }
+                         BOOKING_NOTIFY_EMAIL_HFVILLE: $BOOKING_NOTIFY_EMAIL_HFVILLE,
+                         SLIPOK_AUTO_VERIFY: $SLIPOK_AUTO_VERIFY }
                        | with_entries(select(.value != "")))' \
           | ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=yes \
