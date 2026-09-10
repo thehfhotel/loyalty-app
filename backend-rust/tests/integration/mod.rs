@@ -13,6 +13,7 @@
 //! - `coupon_test` - Coupon management tests (/api/coupons/*)
 //! - `deposit_link_test` - Deposit request links (/api/deposit/*, /api/admin/deposit-links)
 //! - `user_test` - User management tests (/api/users/*)
+//! - `verify_status_flip_test` - What verifying a slip does to the booking (A11)
 //! - `loyalty_test` - Loyalty program tests (/api/loyalty/*)
 //! - `survey_test` - Survey management tests (/api/surveys/*)
 //! - `oauth_test` - OAuth authentication tests (/api/oauth/*)
@@ -55,6 +56,7 @@ pub mod storage_test;
 pub mod survey_test;
 pub mod tier_admin_test;
 pub mod user_test;
+pub mod verify_status_flip_test;
 
 // Re-export common utilities for convenience
 pub use crate::common::*;

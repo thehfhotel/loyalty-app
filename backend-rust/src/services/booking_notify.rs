@@ -659,7 +659,12 @@ fn status_wording(status: &str) -> (&'static str, &'static str) {
 }
 
 /// Locked `payment.slipok.reason.*` wording (PR #404), Thai then English.
-fn reason_wording(reason: &str) -> Option<(&'static str, &'static str)> {
+///
+/// `pub(crate)` so `services::slip_confirm` can label the audit row it writes
+/// when a verified slip could not confirm its booking with the same sentence
+/// the guest and the desk already see on the slip badge, instead of a second
+/// English-only phrasing of the same state.
+pub(crate) fn reason_wording(reason: &str) -> Option<(&'static str, &'static str)> {
     Some(match reason {
         "amount_mismatch" => (
             "ยอดโอนไม่ตรงกับยอดที่ต้องชำระ",
