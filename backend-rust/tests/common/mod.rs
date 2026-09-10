@@ -202,6 +202,42 @@ async fn template_db_has_users(admin_pool: &PgPool) -> Result<bool, sqlx::Error>
     Ok(has_users)
 }
 
+/// Discover every `*.sql` migration file under `backend-rust/migrations/`,
+/// sorted lexically by filename (matching the `<version>_<name>.sql` naming
+/// convention, so this is also version order — the same order
+/// `sqlx::migrate!()` applies them in at runtime and in CI).
+///
+/// Runs at test time (not compile time) via `CARGO_MANIFEST_DIR`, so a
+/// migration file added, renamed or removed on disk is picked up on the
+/// next test run without touching this file — unlike the old hand-maintained
+/// `include_str!` list, which could silently omit a file and test against a
+/// stale schema.
+fn discover_migration_files() -> Vec<(String, String)> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    let mut entries: Vec<std::fs::DirEntry> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("failed to read migrations dir {}: {}", dir.display(), e))
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("sql"))
+        .collect();
+    entries.sort_by_key(|entry| entry.file_name());
+
+    assert!(
+        !entries.is_empty(),
+        "no *.sql migration files found in {}",
+        dir.display()
+    );
+
+    entries
+        .into_iter()
+        .map(|entry| {
+            let path = entry.path();
+            let sql = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("failed to read migration {}: {}", path.display(), e));
+            (entry.file_name().to_string_lossy().into_owned(), sql)
+        })
+        .collect()
+}
+
 /// Ensure the template database exists with migrations and seed data.
 ///
 /// Two layers of serialization, because there are two ways concurrent
@@ -297,94 +333,48 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         .connect(&template_url)
         .await?;
 
-    // Run migrations in order. Each migration file must be applied separately
-    // so the file order matches `sqlx::migrate!()` at runtime.
-    let init_migration = include_str!("../../migrations/20240101000000_init.sql");
-    template_pool.execute(init_migration).await?;
+    // Run every migration file in `backend-rust/migrations/` in filename
+    // order — the same lexical-by-version-prefix order sqlx::migrate!()
+    // applies them in at runtime and in CI. Discovered at test run time
+    // instead of hand-listed, so a new migration file can never be
+    // silently skipped by the test suite.
+    //
+    // One legacy seed is interleaved: the four tiers in the LEGACY flat
+    // Thai shape are inserted right after `20260710000000_property_line_channel.sql`
+    // and before `20260726000000_tier_benefits_bilingual.sql` — exactly the
+    // state a deployed database was in when that migration first ran. This
+    // makes every suite run exercise the real legacy -> bilingual transform
+    // instead of testing against hand-seeded post-migration rows. Content
+    // mirrors what seed.rs seeded before the bilingual change.
+    const LEGACY_TIER_SEED_AFTER: &str = "20260710000000_property_line_channel.sql";
+    const LEGACY_TIER_SEED_SQL: &str = r#"
+        INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
+        VALUES
+            ('Bronze', 0, 0, '{"description": "ระดับต้อนรับสำหรับสมาชิกใหม่", "perks": ["ราคาพิเศษสำหรับสมาชิก", "บริการแต่งห้องวันเกิด", "ได้รับคะแนนเพิ่ม"]}', '#CD7F32', 1, true),
+            ('Silver', 0, 1, '{"description": "สิทธิพิเศษระดับกลางสำหรับสมาชิกที่ใช้บริการ", "perks": ["ส่วนลดเครื่องดื่ม 10%", "ได้รับคะแนนเพิ่ม"]}', '#C0C0C0', 2, true),
+            ('Gold', 0, 10, '{"description": "สิทธิพิเศษระดับพรีเมียมสำหรับสมาชิกที่มีค่า", "perks": ["อัพเกรดห้องฟรี", "ได้รับคะแนนเพิ่ม"]}', '#FFD700', 3, true),
+            ('Platinum', 0, 20, '{"description": "สิทธิพิเศษสุดพิเศษสำหรับสมาชิกระดับสูงสุด", "perks": ["ส่วนลดพิเศษสำหรับสมาชิกขั้นสูงสุด"]}', '#E5E4E2', 4, true)
+        ON CONFLICT (name) DO NOTHING
+        "#;
 
-    let booking_slips_migration = include_str!("../../migrations/20260511000000_booking_slips.sql");
-    template_pool.execute(booking_slips_migration).await?;
+    let migration_files = discover_migration_files();
+    let discovered_count = migration_files.len();
+    let mut applied_count = 0usize;
+    for (file_name, sql) in &migration_files {
+        template_pool.execute(sql.as_str()).await?;
+        applied_count += 1;
 
-    let room_management_columns_migration =
-        include_str!("../../migrations/20260512000000_room_management_columns.sql");
-    template_pool
-        .execute(room_management_columns_migration)
-        .await?;
-
-    let booking_admin_fields_migration =
-        include_str!("../../migrations/20260512020000_booking_admin_fields.sql");
-    template_pool
-        .execute(booking_admin_fields_migration)
-        .await?;
-
-    let users_email_unique_migration =
-        include_str!("../../migrations/20260513000000_users_email_unique.sql");
-    template_pool.execute(users_email_unique_migration).await?;
-
-    let idempotency_keys_migration =
-        include_str!("../../migrations/20260513010000_idempotency_keys.sql");
-    template_pool.execute(idempotency_keys_migration).await?;
-
-    let bookings_no_overlap_migration =
-        include_str!("../../migrations/20260513020000_bookings_no_overlap.sql");
-    template_pool.execute(bookings_no_overlap_migration).await?;
-
-    let property_line_channel_migration =
-        include_str!("../../migrations/20260710000000_property_line_channel.sql");
-    template_pool
-        .execute(property_line_channel_migration)
-        .await?;
-
-    // Seed the four tiers in the LEGACY flat Thai shape BEFORE applying the
-    // bilingual-benefits migration below — exactly the state a deployed
-    // database was in when that migration first ran. This makes every suite
-    // run exercise the real legacy -> bilingual transform instead of testing
-    // against hand-seeded post-migration rows. Content mirrors what seed.rs
-    // seeded before the bilingual change.
-    template_pool
-        .execute(
-            r#"
-            INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
-            VALUES
-                ('Bronze', 0, 0, '{"description": "ระดับต้อนรับสำหรับสมาชิกใหม่", "perks": ["ราคาพิเศษสำหรับสมาชิก", "บริการแต่งห้องวันเกิด", "ได้รับคะแนนเพิ่ม"]}', '#CD7F32', 1, true),
-                ('Silver', 0, 1, '{"description": "สิทธิพิเศษระดับกลางสำหรับสมาชิกที่ใช้บริการ", "perks": ["ส่วนลดเครื่องดื่ม 10%", "ได้รับคะแนนเพิ่ม"]}', '#C0C0C0', 2, true),
-                ('Gold', 0, 10, '{"description": "สิทธิพิเศษระดับพรีเมียมสำหรับสมาชิกที่มีค่า", "perks": ["อัพเกรดห้องฟรี", "ได้รับคะแนนเพิ่ม"]}', '#FFD700', 3, true),
-                ('Platinum', 0, 20, '{"description": "สิทธิพิเศษสุดพิเศษสำหรับสมาชิกระดับสูงสุด", "perks": ["ส่วนลดพิเศษสำหรับสมาชิกขั้นสูงสุด"]}', '#E5E4E2', 4, true)
-            ON CONFLICT (name) DO NOTHING
-            "#,
-        )
-        .await?;
-
-    let tier_benefits_bilingual_migration =
-        include_str!("../../migrations/20260726000000_tier_benefits_bilingual.sql");
-    template_pool
-        .execute(tier_benefits_bilingual_migration)
-        .await?;
-
-    let booking_slips_slipok_migration =
-        include_str!("../../migrations/20260910000000_booking_slips_slipok.sql");
-    template_pool
-        .execute(booking_slips_slipok_migration)
-        .await?;
-
-    // Seeds the SlipOK system actor every automatic slip verification is
-    // attributed to. Without it the FK on `booking_audit_log.admin_id`
-    // rejects the audit row and every auto-verify test fails.
-    let slipok_system_user_migration =
-        include_str!("../../migrations/20260911000000_slipok_system_user.sql");
-    template_pool.execute(slipok_system_user_migration).await?;
-
-    // Dedup log behind the property booking-notification email (B0). Without
-    // it every notify() call fails its claim and silently sends nothing.
-    let booking_notify_log_migration =
-        include_str!("../../migrations/20260912000000_booking_notify_log.sql");
-    template_pool.execute(booking_notify_log_migration).await?;
-
-    // Deposit request links (B1): `bookings.booking_source` / `pms_ref`,
-    // the `booking_deposit_links` table, and the non-loginable
-    // "Deposit link guest" actor every deposit-link booking is owned by.
-    let deposit_links_migration = include_str!("../../migrations/20260912010000_deposit_links.sql");
-    template_pool.execute(deposit_links_migration).await?;
+        if file_name == LEGACY_TIER_SEED_AFTER {
+            template_pool.execute(LEGACY_TIER_SEED_SQL).await?;
+        }
+    }
+    // Guard against a discovery bug (or a migration silently failing to
+    // apply) leaving the template schema stale relative to what's on disk.
+    assert_eq!(
+        applied_count, discovered_count,
+        "applied {} migrations but discovered {} files in backend-rust/migrations/",
+        applied_count, discovered_count
+    );
 
     // Seed membership_id_sequence
     template_pool
