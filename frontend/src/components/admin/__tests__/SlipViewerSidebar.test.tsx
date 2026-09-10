@@ -1,6 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// The sidebar reaches the backend only through this service.
+const { mockGetSlip, mockVerifySlip, mockMarkSlipNeedsAction } = vi.hoisted(() => ({
+  mockGetSlip: vi.fn(),
+  mockVerifySlip: vi.fn(),
+  mockMarkSlipNeedsAction: vi.fn(),
+}));
+
+vi.mock('../../../services/adminBookingService', () => ({
+  adminBookingService: {
+    getSlip: mockGetSlip,
+    verifySlip: mockVerifySlip,
+    markSlipNeedsAction: mockMarkSlipNeedsAction,
+  },
+}));
+
 import SlipViewerSidebar from '../SlipViewerSidebar';
 
 // Only the strings this file asserts on; anything else falls through as its
@@ -33,7 +50,35 @@ const translations: Record<string, string> = {
   'admin.booking.bookingManagement.actions.edit': 'Edit',
   'payment.slipok.reason.amount_mismatch': 'Transferred amount does not match the booking',
   'payment.slipok.reason.duplicate': 'This slip has already been used',
+  'payment.slipok.reason.receiver_mismatch': 'The receiving account does not match',
+  'admin.booking.bookingManagement.modals.needsAction.title': 'Mark as needs action',
+  'admin.booking.bookingManagement.modals.needsAction.placeholder': 'What does the guest need to fix?',
+  'admin.booking.bookingManagement.modals.needsAction.submit': 'Submit',
+  'admin.booking.bookingManagement.messages.slipVerified': 'Slip verified successfully',
+  'admin.booking.bookingManagement.messages.needsActionMarked': 'Marked as needs action',
+  'common.cancel': 'Cancel',
 };
+
+/** An `AdminSlipResponse` as `admin_slips.rs` serialises it. */
+function slipResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'slip-1',
+    bookingId: 'booking-1',
+    slipUrl: 'https://example.test/slip-1.png',
+    uploadedAt: '2027-06-01T10:00:00Z',
+    adminStatus: 'pending',
+    adminVerifiedAt: null,
+    adminVerifiedBy: null,
+    adminNotes: null,
+    slipokStatus: 'pending',
+    slipokReason: null,
+    slipokTransRef: null,
+    slipokCheckedAt: null,
+    slipokVerifiedAt: null,
+    autoVerified: false,
+    ...overrides,
+  };
+}
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -105,7 +150,34 @@ function makeBooking(overrides: SlipOverrides = {}) {
   };
 }
 
-function renderSidebar(overrides: SlipOverrides = {}) {
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockVerifySlip.mockResolvedValue(slipResponse({ adminStatus: 'verified' }));
+  mockMarkSlipNeedsAction.mockResolvedValue(slipResponse({ adminStatus: 'needs_action' }));
+});
+
+function renderSidebar(
+  overrides: SlipOverrides = {},
+  props: { onRefresh?: () => void } = {}
+) {
+  // By default the per-slip read agrees with the row the list rendered, so
+  // the badge assertions below stay about the data under test rather than
+  // about which of the two reads won the merge. Tests that care about the
+  // decision record the list cannot carry override `mockGetSlip` themselves.
+  if (!mockGetSlip.getMockImplementation()) {
+    mockGetSlip.mockResolvedValue(
+      slipResponse({
+        slipokStatus: overrides.slipokStatus ?? 'pending',
+        slipokReason: overrides.slipokReason ?? null,
+        slipokCheckedAt: overrides.slipokCheckedAt ?? null,
+        slipokVerifiedAt: overrides.slipokVerifiedAt ?? null,
+        adminStatus: overrides.adminStatus ?? 'pending',
+        adminVerifiedAt: overrides.adminVerifiedAt ?? null,
+        autoVerified: overrides.autoVerified ?? false,
+      })
+    );
+  }
+
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -114,6 +186,27 @@ function renderSidebar(overrides: SlipOverrides = {}) {
     <QueryClientProvider client={queryClient}>
       <SlipViewerSidebar
         booking={makeBooking(overrides) as never}
+        onVerify={vi.fn()}
+        onNeedsAction={vi.fn()}
+        onEdit={vi.fn()}
+        onRefresh={props.onRefresh ?? vi.fn()}
+      />
+    </QueryClientProvider>
+  );
+}
+
+/** A booking with nothing attached — the only state in which the legacy
+ *  booking-scoped controls are the ones on screen. */
+function renderSidebarWithoutSlips() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const booking = { ...makeBooking(), slips: [], slip: null };
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <SlipViewerSidebar
+        booking={booking as never}
         onVerify={vi.fn()}
         onNeedsAction={vi.fn()}
         onEdit={vi.fn()}
@@ -220,5 +313,109 @@ describe('SlipViewerSidebar SlipOK surfacing', () => {
 
     expect(screen.getByRole('button', { name: 'Verify' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Needs Action' })).toBeInTheDocument();
+  });
+});
+
+describe('SlipViewerSidebar wired calls', () => {
+  it('reads the slip it is showing so the decision record the list omits can render', async () => {
+    // `slipokReason` / `slipokCheckedAt` / `autoVerified` exist only on the
+    // per-slip route; the booking list projection has no columns for them.
+    mockGetSlip.mockResolvedValue(
+      slipResponse({
+        slipokStatus: 'manual',
+        slipokReason: 'receiver_mismatch',
+        slipokCheckedAt: '2027-06-01T10:05:00Z',
+      })
+    );
+
+    renderSidebar();
+
+    await waitFor(() => {
+      expect(mockGetSlip).toHaveBeenCalledWith('slip-1');
+    });
+
+    const column = within(slipOkColumn());
+    await waitFor(() => {
+      expect(column.getByText('Manual check needed')).toBeInTheDocument();
+    });
+    expect(column.getByText(/The receiving account does not match/)).toBeInTheDocument();
+    expect(column.getByText(/^Checked: /)).toHaveTextContent(/01\/06\/2027/);
+  });
+
+  it('keeps the list badge when the per-slip read fails', async () => {
+    mockGetSlip.mockRejectedValue(new Error('boom'));
+
+    renderSidebar({ slipokStatus: 'manual' });
+
+    await waitFor(() => {
+      expect(mockGetSlip).toHaveBeenCalled();
+    });
+    // Merge, never replace: a failed read must not blank the badge.
+    expect(within(slipOkColumn()).getByText('Manual check needed')).toBeInTheDocument();
+  });
+
+  it('attributes the slip to SlipOK when the per-slip read says the machine verified it', async () => {
+    mockGetSlip.mockResolvedValue(
+      slipResponse({
+        slipokStatus: 'verified',
+        adminStatus: 'verified',
+        adminVerifiedAt: '2027-06-01T10:05:01Z',
+        autoVerified: true,
+      })
+    );
+
+    renderSidebar();
+
+    await waitFor(() => {
+      expect(screen.getByText('By: SlipOK')).toBeInTheDocument();
+    });
+  });
+
+  it('verifies through the per-slip endpoint', async () => {
+    const onRefresh = vi.fn();
+    const user = userEvent.setup();
+    renderSidebar({}, { onRefresh });
+
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+
+    await waitFor(() => {
+      expect(mockVerifySlip).toHaveBeenCalledWith('slip-1');
+    });
+    await waitFor(() => {
+      expect(onRefresh).toHaveBeenCalled();
+    });
+  });
+
+  it('sends the admin notes with the needs-action call', async () => {
+    const onRefresh = vi.fn();
+    const user = userEvent.setup();
+    renderSidebar({}, { onRefresh });
+
+    await user.click(screen.getByRole('button', { name: 'Needs Action' }));
+
+    const notes = screen.getByPlaceholderText('What does the guest need to fix?');
+    await user.type(notes, 'Please re-upload a clearer photo');
+    await user.click(screen.getByRole('button', { name: 'Submit' }));
+
+    await waitFor(() => {
+      expect(mockMarkSlipNeedsAction).toHaveBeenCalledWith('slip-1', {
+        notes: 'Please re-upload a clearer photo',
+      });
+    });
+    await waitFor(() => {
+      expect(onRefresh).toHaveBeenCalled();
+    });
+  });
+
+  it('leaves the booking-scoped fallbacks disabled while their routes are missing', () => {
+    // `POST /api/admin/bookings/:id/verify-slip` and `.../needs-action` have
+    // no Rust handler (docs/admin-backend-gaps.md), and a booking with no
+    // slip gives the per-slip routes nothing to act on.
+    renderSidebarWithoutSlips();
+
+    expect(screen.getByRole('button', { name: 'Verify' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Needs Action' })).toBeDisabled();
+    // Slip replacement has no admin upload route at all.
+    expect(screen.getByRole('button', { name: 'Replace Slip' })).toBeDisabled();
   });
 });
