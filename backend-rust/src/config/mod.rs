@@ -238,6 +238,18 @@ pub struct OAuthConfig {
     pub line: LineOAuthConfig,
 }
 
+/// `env::var(name)` with the compose convention applied: every compose file
+/// passes optional settings as `VAR: ${VAR:-}`, so an unset value arrives as
+/// `Some("")`. For SlipOK and PromptPay a blank must mean "unset", or the
+/// backend would report SlipOK configured with no key, or mint a PromptPay
+/// QR with an empty receiving id. Blank means absent.
+fn env_present(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
 /// `Some(trimmed)` when a value is present and not blank, `None` otherwise.
 ///
 /// Every compose file passes its optional settings as `VAR: ${VAR:-}`, so an
@@ -856,15 +868,15 @@ impl Settings {
             .set_override_option("email.imap.port", env::var("IMAP_PORT").ok())?
             .set_override_option("email.imap.user", env::var("IMAP_USER").ok())?
             .set_override_option("email.imap.pass", env::var("IMAP_PASS").ok())?
-            .set_override_option("slipok.branch_id", env::var("SLIPOK_BRANCH_ID").ok())?
-            .set_override_option("slipok.api_key", env::var("SLIPOK_API_KEY").ok())?
-            .set_override_option("slipok.api_url", env::var("SLIPOK_API_URL").ok())?
-            .set_override_option("slipok.auto_verify", env::var("SLIPOK_AUTO_VERIFY").ok())?
-            .set_override_option("promptpay.tax_id", env::var("PROMPTPAY_TAX_ID").ok())?
-            .set_override_option("promptpay.hf_id", env::var("PROMPTPAY_HF_ID").ok())?
+            .set_override_option("slipok.branch_id", env_present("SLIPOK_BRANCH_ID"))?
+            .set_override_option("slipok.api_key", env_present("SLIPOK_API_KEY"))?
+            .set_override_option("slipok.api_url", env_present("SLIPOK_API_URL"))?
+            .set_override_option("slipok.auto_verify", env_present("SLIPOK_AUTO_VERIFY"))?
+            .set_override_option("promptpay.tax_id", env_present("PROMPTPAY_TAX_ID"))?
+            .set_override_option("promptpay.hf_id", env_present("PROMPTPAY_HF_ID"))?
             .set_override_option(
                 "promptpay.hfville_id",
-                env::var("PROMPTPAY_HFVILLE_ID").ok(),
+                env_present("PROMPTPAY_HFVILLE_ID"),
             )?
             .set_override_option(
                 "line_messaging.hf.access_token",
@@ -1071,6 +1083,22 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Compose passes optional settings as `VAR: ${VAR:-}`, so an unset
+    /// SlipOK key or PromptPay id arrives as an empty string. A blank must
+    /// read as absent (issue class of #352), never as a configured value.
+    #[test]
+    fn env_present_treats_blank_as_unset() {
+        let name = "LOYALTY_TEST_ENV_PRESENT_PROBE";
+        env::set_var(name, "");
+        assert_eq!(env_present(name), None);
+        env::set_var(name, "   ");
+        assert_eq!(env_present(name), None);
+        env::set_var(name, " 0845557000341 ");
+        assert_eq!(env_present(name), Some("0845557000341".to_string()));
+        env::remove_var(name);
+        assert_eq!(env_present(name), None);
+    }
 
     /// `SLIPOK_AUTO_VERIFY` arrives from the environment as a *string*
     /// override on a `bool` field. If the config layer refused to coerce it,
