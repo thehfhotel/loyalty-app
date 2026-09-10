@@ -34,7 +34,8 @@
 //!   counted separately and an untrusted caller is counted as itself; the
 //!   global bucket stays one bucket however the token and address vary;
 //!   and with Redis gone the slip upload refuses (503, nothing written)
-//!   while the read keeps being served.
+//!   while the read keeps being served — in seconds, whether Redis is
+//!   refusing connections or accepting them and never answering.
 
 use axum::body::Body;
 use axum::http::{header, Request};
@@ -1565,6 +1566,7 @@ async fn a_slip_upload_is_refused_when_the_limiter_cannot_reach_redis() {
     // accepting, so reconnects are refused too.
     relay.cut();
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let redis_down_at = std::time::Instant::now();
 
     let marker = format!("redis-down-{}", Uuid::new_v4());
     let mut payload = vec![0xFF, 0xD8, 0xFF, 0xE0];
@@ -1597,6 +1599,82 @@ async fn a_slip_upload_is_refused_when_the_limiter_cannot_reach_redis() {
     // The read is still served: its budget bounds polling, and a guest
     // staring at a blank payment page is the worse failure.
     read_link(&app, &token).await.assert_status(200);
+
+    // And all of it answered in seconds. This is not a performance nicety:
+    // `ConnectionManager` shares one reconnect future between callers, so
+    // a command issued during an outage waits for that reconnect to finish
+    // backing off. Left at the crate's defaults that is minutes per
+    // command — the guest holding a transferred bank slip watches a
+    // spinner instead of being told to try again. Every limiter call is
+    // bounded by `REDIS_CALL_TIMEOUT` (2 s), and the four calls above are
+    // the whole of it.
+    let elapsed = redis_down_at.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_secs(10),
+        "a Redis outage must be answered in seconds, not minutes; took {elapsed:?}"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// Redis that **accepts and never answers** is refused just as fast.
+///
+/// The cut above is the kind failure: the socket dies, the client learns
+/// immediately. The real outages are quieter — a hung server, a half-open
+/// NAT mapping, a network partition that swallows packets. The connection
+/// is up, the command is accepted, and no answer ever comes; nothing below
+/// the limiter times that out. Only the limiter's own deadline ends it, so
+/// this pins the deadline rather than the error handling: 503, in seconds,
+/// with nothing written.
+#[tokio::test]
+async fn a_slip_upload_is_refused_when_redis_accepts_but_never_answers() {
+    let relay = RedisRelay::start().await.expect("start the redis relay");
+    let app = TestApp::new_with_redis_url(&promptpay_only, relay.url())
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "deposit-redishangs@test.com").await;
+    let room_type_id = seed_room_type(app.db(), "Deposit RedisHangs Deluxe").await;
+    let created = issue_link(&app, &admin, room_type_id, "3000.00").await;
+    let token = created["token"].as_str().expect("token").to_string();
+    let booking_id =
+        Uuid::parse_str(created["bookingId"].as_str().expect("bookingId")).expect("booking uuid");
+
+    // Redis stops answering without closing anything.
+    relay.black_hole();
+
+    let marker = format!("redis-hangs-{}", Uuid::new_v4());
+    let mut payload = vec![0xFF, 0xD8, 0xFF, 0xE0];
+    payload.extend_from_slice(marker.as_bytes());
+
+    let started = std::time::Instant::now();
+    let (status, body) =
+        upload_file_to_token(&app, &token, "slip.jpg", "image/jpeg", &payload).await;
+    let elapsed = started.elapsed();
+
+    assert_eq!(
+        status, 503,
+        "a budget that cannot be read in time is a budget that cannot be read: {body}"
+    );
+    let message = body["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("กรุณาลองใหม่อีกครั้ง") && message.contains("try again in a moment"),
+        "the guest is told to come back, in both languages: {message}"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(8),
+        "the limiter's own deadline is the only thing that can end this wait; took {elapsed:?}"
+    );
+
+    assert!(
+        !slip_storage_contains(marker.as_bytes()),
+        "a refused upload must not leave its bytes in slip storage"
+    );
+    let slips: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM booking_slips WHERE booking_id = $1")
+        .bind(booking_id)
+        .fetch_one(app.db())
+        .await
+        .expect("count slips");
+    assert_eq!(slips, 0, "and no row either");
 
     app.cleanup().await.ok();
 }
