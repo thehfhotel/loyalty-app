@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  DEPOSIT_TOKEN_HEADER,
-  depositFragmentUrl,
-  readDepositToken,
-} from '../depositToken';
+import { DEPOSIT_TOKEN_HEADER, readDepositToken } from '../depositToken';
 
 /**
  * The rule these tests exist to hold: the deposit token is a bearer
@@ -13,64 +9,27 @@ import {
  */
 describe('readDepositToken', () => {
   it('reads the token out of the fragment', () => {
-    expect(readDepositToken({ pathname: '/d', hash: '#abcdefghijklmnop' })).toEqual({
-      token: 'abcdefghijklmnop',
-      fromLegacyPath: false,
-    });
+    expect(readDepositToken({ hash: '#abcdefghijklmnop' })).toBe('abcdefghijklmnop');
   });
 
   it('accepts the base64url alphabet a real token uses', () => {
     const token = 'aB3-_dEfGhIjKlMnOpQrStUvWxYz0123456789-_x';
-    expect(readDepositToken({ pathname: '/d', hash: `#${token}` }).token).toBe(token);
+    expect(readDepositToken({ hash: `#${token}` })).toBe(token);
   });
 
   it('has no token when the fragment is empty or is not token-shaped', () => {
     for (const hash of ['', '#', '#short', '#has spaces', '#../../etc/passwd', '#a!b@c']) {
-      expect(readDepositToken({ pathname: '/d', hash }).token).toBeNull();
+      expect(readDepositToken({ hash })).toBeNull();
     }
   });
 
-  it('reads a legacy /d/<token> path and flags it for rewriting', () => {
-    expect(readDepositToken({ pathname: '/d/abcdefghijklmnop', hash: '' })).toEqual({
-      token: 'abcdefghijklmnop',
-      fromLegacyPath: true,
-    });
-    // A trailing slash is the same link.
-    expect(readDepositToken({ pathname: '/d/abcdefghijklmnop/', hash: '' })).toEqual({
-      token: 'abcdefghijklmnop',
-      fromLegacyPath: true,
-    });
-  });
-
-  it('decodes a percent-encoded legacy path segment', () => {
-    // Old links were built with `encodeURIComponent`, which leaves the
-    // base64url alphabet alone but would have encoded anything else.
-    expect(readDepositToken({ pathname: '/d/abcdefghij%2Dklmnop', hash: '' }).token).toBe(
-      'abcdefghij-klmnop',
-    );
-  });
-
-  it('prefers the fragment when a URL carries both', () => {
-    // What a reissued link pasted over an old one looks like: the token the
-    // guest just followed is the one that should render.
-    expect(
-      readDepositToken({ pathname: '/d/old-token-aaaaaaaa', hash: '#new-token-bbbbbbbb' }),
-    ).toEqual({ token: 'new-token-bbbbbbbb', fromLegacyPath: false });
-  });
-
-  it('has no token for any other page', () => {
-    expect(readDepositToken({ pathname: '/dashboard', hash: '' }).token).toBeNull();
-    expect(readDepositToken({ pathname: '/d/a/b', hash: '' }).token).toBeNull();
-    expect(readDepositToken({ pathname: '/', hash: '' }).token).toBeNull();
-  });
-});
-
-describe('depositFragmentUrl', () => {
-  it('puts the token in the fragment, never in the path', () => {
-    const url = depositFragmentUrl('abcdefghijklmnop');
-    expect(url).toBe('/d#abcdefghijklmnop');
-    const [beforeHash] = url.split('#');
-    expect(beforeHash).not.toContain('abcdefghijklmnop');
+  it('reads only the fragment, never a path', () => {
+    // There is no `/d/<token>` form: none was ever issued, and honouring
+    // one would mean accepting a token out of a request line that nginx
+    // and Cloudflare both write to disk. A URL carrying a path-shaped
+    // token and no fragment therefore has no token at all.
+    const pathShaped = { hash: '', pathname: '/d/abcdefghijklmnop' };
+    expect(readDepositToken(pathShaped)).toBeNull();
   });
 });
 

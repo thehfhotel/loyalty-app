@@ -7,6 +7,7 @@
 //! - Helper functions for making authenticated requests
 //! - Cleanup utilities
 
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use axum::{
@@ -507,7 +508,7 @@ impl TestApp {
     /// Retries up to 5 times on transient "Tokio runtime shutdown" errors that
     /// can occur when parallel `#[tokio::test]` runtimes race during cleanup.
     pub async fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        Self::new_internal(None).await
+        Self::new_internal(None, None).await
     }
 
     /// Like [`TestApp::new`] but lets the test mutate `Settings` before the
@@ -516,17 +517,32 @@ impl TestApp {
     pub async fn new_with_config(
         mutate: &(dyn Fn(&mut loyalty_backend::Settings) + Sync),
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        Self::new_internal(Some(mutate)).await
+        Self::new_internal(Some(mutate), None).await
+    }
+
+    /// Like [`TestApp::new_with_config`] but reaches Redis through the
+    /// given URL instead of the shared test server.
+    ///
+    /// Point it at a [`RedisRelay`] to build an app whose Redis can be
+    /// taken away mid-test. Everything else — the per-test database, the
+    /// bucket namespace — is unchanged.
+    #[allow(dead_code)]
+    pub async fn new_with_redis_url(
+        mutate: &(dyn Fn(&mut loyalty_backend::Settings) + Sync),
+        redis_url: &str,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Self::new_internal(Some(mutate), Some(redis_url)).await
     }
 
     async fn new_internal(
         mutate: Option<&(dyn Fn(&mut loyalty_backend::Settings) + Sync)>,
+        redis_url: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         const MAX_RETRIES: u32 = 5;
         let mut last_error = None;
 
         for attempt in 0..MAX_RETRIES {
-            match Self::try_new(mutate).await {
+            match Self::try_new(mutate, redis_url).await {
                 Ok(app) => return Ok(app),
                 Err(e) => {
                     let err_str = e.to_string();
@@ -552,6 +568,7 @@ impl TestApp {
     /// Inner implementation of TestApp creation.
     async fn try_new(
         mutate: Option<&(dyn Fn(&mut loyalty_backend::Settings) + Sync)>,
+        redis_url: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let _ = dotenvy::dotenv();
 
@@ -598,12 +615,18 @@ impl TestApp {
             .await?;
 
         // Initialize test Redis
-        let redis = init_test_redis().await?;
+        let redis = match redis_url {
+            Some(url) => ConnectionManager::new(redis::Client::open(url)?).await?,
+            None => init_test_redis().await?,
+        };
 
         // Create application state and router
         let mut config = create_test_config();
         if let Some(mutate) = mutate {
             mutate(&mut config);
+        }
+        if let Some(url) = redis_url {
+            config.redis.url = url.to_string();
         }
         let rate_limit_namespace = config.security.rate_limit_namespace.clone();
         let state = loyalty_backend::AppState::new(pool.clone(), redis.clone(), config);
@@ -1168,8 +1191,16 @@ pub struct TestClient {
     ///
     /// Needed by anything whose credential is not a bearer token: the
     /// public deposit-link routes take their capability in
-    /// `X-Deposit-Token`, and the per-IP limiters read `X-Forwarded-For`.
+    /// `X-Deposit-Token`, and the per-IP limiters read the forwarding
+    /// headers.
     extra_headers: Vec<(String, String)>,
+    /// The TCP peer this client pretends to be, as axum's `ConnectInfo`.
+    ///
+    /// `oneshot` inserts none, and code that reads the peer then falls
+    /// back to loopback. Anything that decides whether to *believe* a
+    /// forwarding header needs to present an untrusted peer as well as a
+    /// trusted one, which is what this is for.
+    peer: Option<SocketAddr>,
 }
 
 impl TestClient {
@@ -1180,7 +1211,20 @@ impl TestClient {
             auth_token: None,
             cookie_header: None,
             extra_headers: Vec::new(),
+            peer: None,
         }
+    }
+
+    /// Present a particular TCP peer to the router, the way a real
+    /// connection would. See the `peer` field.
+    #[allow(dead_code)]
+    pub fn with_peer(mut self, addr: &str) -> Self {
+        self.peer = Some(
+            format!("{addr}:54321")
+                .parse()
+                .expect("test peer address literal"),
+        );
+        self
     }
 
     /// Attach an arbitrary request header to every subsequent request.
@@ -1221,6 +1265,9 @@ impl TestClient {
         }
         for (name, value) in &self.extra_headers {
             builder = builder.header(name, value);
+        }
+        if let Some(peer) = self.peer {
+            builder = builder.extension(axum::extract::ConnectInfo(peer));
         }
         builder
     }
@@ -1547,6 +1594,121 @@ pub fn hash_test_password(password: &str) -> String {
 // ============================================================================
 // Redis Test Helpers
 // ============================================================================
+
+/// A TCP relay in front of the shared test Redis, so a test can take
+/// Redis away in the middle of a run.
+///
+/// There is no other way to model it: `ConnectionManager::new` connects
+/// eagerly, so an app pointed straight at a dead port cannot be built at
+/// all — which is not the failure worth testing. What production actually
+/// does is lose a Redis that was working, so that is what this reproduces.
+/// Build the app against [`RedisRelay::url`], then call
+/// [`RedisRelay::cut`]: open connections are dropped and the port stops
+/// accepting, so every later command fails and every reconnect is
+/// refused.
+pub struct RedisRelay {
+    url: String,
+    stop: tokio::sync::watch::Sender<bool>,
+    accept: tokio::task::JoinHandle<()>,
+}
+
+impl RedisRelay {
+    /// Start relaying to the shared test Redis on a fresh loopback port.
+    pub async fn start() -> Result<Self, std::io::Error> {
+        let upstream = redis_host_port();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let (stop, stop_rx) = tokio::sync::watch::channel(false);
+
+        let accept = tokio::spawn(async move {
+            loop {
+                let accepted = {
+                    let mut rx = stop_rx.clone();
+                    tokio::select! {
+                        _ = rx.wait_for(|stopped| *stopped) => break,
+                        accepted = listener.accept() => accepted,
+                    }
+                };
+                let Ok((mut inbound, _)) = accepted else {
+                    break;
+                };
+                let upstream = upstream.clone();
+                let stop_rx = stop_rx.clone();
+                tokio::spawn(async move {
+                    let Ok(mut outbound) = tokio::net::TcpStream::connect(&upstream).await else {
+                        return;
+                    };
+                    let mut rx = stop_rx.clone();
+                    tokio::select! {
+                        _ = rx.wait_for(|stopped| *stopped) => {},
+                        _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound) => {},
+                    }
+                });
+            }
+        });
+
+        Ok(Self {
+            url: relay_url(addr),
+            stop,
+            accept,
+        })
+    }
+
+    /// The URL an app should be built against.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// Take Redis away: cut every relayed connection and stop listening,
+    /// so reconnects are refused too.
+    pub fn cut(&self) {
+        let _ = self.stop.send(true);
+        self.accept.abort();
+    }
+}
+
+impl Drop for RedisRelay {
+    fn drop(&mut self) {
+        self.cut();
+    }
+}
+
+/// Split `TEST_REDIS_URL` into (everything before the host, host:port,
+/// everything after) so [`RedisRelay`] can reach the real server and hand
+/// out a URL that differs from it *only* in host and port — any
+/// credentials or database number in the configured URL survive.
+fn redis_url_parts() -> (String, String, String) {
+    let url = test_redis_url();
+    let (scheme, rest) = match url.split_once("://") {
+        Some((scheme, rest)) => (format!("{scheme}://"), rest.to_string()),
+        None => (String::new(), url.clone()),
+    };
+    let (authority, tail) = match rest.find('/') {
+        Some(at) => (rest[..at].to_string(), rest[at..].to_string()),
+        None => (rest.clone(), String::new()),
+    };
+    let (userinfo, host_port) = match authority.rsplit_once('@') {
+        Some((userinfo, host_port)) => (format!("{userinfo}@"), host_port.to_string()),
+        None => (String::new(), authority),
+    };
+    let host_port = if host_port.contains(':') {
+        host_port
+    } else {
+        format!("{host_port}:6379")
+    };
+    (format!("{scheme}{userinfo}"), host_port, tail)
+}
+
+/// Where the real test Redis lives, for [`RedisRelay`]'s upstream.
+fn redis_host_port() -> String {
+    redis_url_parts().1
+}
+
+/// `TEST_REDIS_URL` with the relay's address in place of the real one.
+fn relay_url(addr: SocketAddr) -> String {
+    let (head, _, tail) = redis_url_parts();
+    format!("{head}{addr}{tail}")
+}
 
 /// Initialize test Redis connection
 pub async fn init_test_redis() -> Result<ConnectionManager, redis::RedisError> {

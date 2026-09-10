@@ -30,6 +30,11 @@
 //!   malformed reissue body is a 400 rather than a silent default.
 //! - **configuration** — a property with no PromptPay receiving account
 //!   is a 400 that names it, and writes nothing.
+//! - **the limiter** — two guests arriving through the same tunnel are
+//!   counted separately and an untrusted caller is counted as itself; the
+//!   global bucket stays one bucket however the token and address vary;
+//!   and with Redis gone the slip upload refuses (503, nothing written)
+//!   while the read keeps being served.
 
 use axum::body::Body;
 use axum::http::{header, Request};
@@ -42,7 +47,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use loyalty_backend::services::slip_confirm::SLIPOK_SYSTEM_USER_ID;
 
-use crate::common::{TestApp, TestResponse, TestUser};
+use crate::common::{RedisRelay, TestApp, TestResponse, TestUser};
 
 /// The property's receiving PromptPay ID for these tests. Deliberately
 /// different from anything `PROMPTPAY_TAX_ID` would hold, so a QR built
@@ -146,11 +151,25 @@ async fn read_link(app: &TestApp, token: &str) -> TestResponse {
         .await
 }
 
-/// GET the guest page as a particular client behind the trusted proxy.
-async fn read_link_from(app: &TestApp, token: &str, client_ip: &str) -> TestResponse {
+/// The address the backend sees a real request coming *from*.
+///
+/// Deployed topology: Cloudflare edge -> cloudflared -> nginx -> backend,
+/// every hop of it inside the compose network or on the same host. So the
+/// TCP peer is a trusted-proxy address, identical for every guest on
+/// earth, and it is the headers that carry who the guest is.
+const TUNNEL_PEER: &str = "172.18.0.9";
+
+/// The header Cloudflare's edge sets to the visitor's address, and the
+/// one nginx forwards (see nginx/nginx.conf).
+const VISITOR_HEADER: &str = "CF-Connecting-IP";
+
+/// GET the guest page the way a real request arrives: from the tunnel
+/// hop, with the visitor's own address in `CF-Connecting-IP`.
+async fn read_link_from(app: &TestApp, token: &str, visitor: &str) -> TestResponse {
     app.client()
+        .with_peer(TUNNEL_PEER)
         .with_header(TOKEN_HEADER, token)
-        .with_header("X-Forwarded-For", client_ip)
+        .with_header(VISITOR_HEADER, visitor)
         .get("/api/deposit")
         .await
 }
@@ -1305,66 +1324,94 @@ async fn the_admin_list_reports_state_and_filters_on_it() {
 //
 // These endpoints have no authentication, so their budgets are the only
 // thing standing between a leaked token and the storage volume. Three
-// layers, and each one is here because the other two cannot do its job:
+// layers, charged narrowest first, and each one is here because the other
+// two cannot do its job:
 //
-// - per client IP, resolved from `X-Forwarded-For` because behind nginx
-//   the TCP peer is the same container for every guest on earth;
-// - one global bucket per route, because a caller who varies the token
-//   mints a fresh per-token bucket every time;
 // - per link, because a phone that changes IP mid-payment is still one
-//   guest and one link.
+//   guest and one link;
+// - per client IP, resolved from the forwarding headers because behind
+//   the tunnel the TCP peer is the same address for every guest on earth;
+// - one global bucket per route, last, because a caller who varies the
+//   token mints a fresh per-token bucket every time — and because a
+//   request a narrower bucket already refused must not have spent a slot
+//   of the bucket that protects everyone else.
 
-/// Two guests behind the same nginx get **separate** budgets, and the one
-/// that overruns is the only one refused.
+/// Two guests arriving through the same tunnel get **two** per-IP
+/// buckets, and a caller the backend does not trust gets neither.
 ///
-/// This is the whole reason the limiter reads `X-Forwarded-For` at all. If
-/// it keyed on the TCP peer, both guests below would share one bucket:
-/// the first to poll would spend it and the second would meet a 429 in the
-/// middle of paying, having done nothing wrong.
+/// This is the whole reason the limiter reads a forwarding header at all.
+/// cloudflared opens its own connection to nginx, so the TCP peer is the
+/// same address for every guest on earth; keyed on the peer, the first
+/// guest to poll would spend the bucket and the second would meet a 429
+/// in the middle of paying, having done nothing wrong.
+///
+/// The other half is the rule that makes reading a header safe: it is
+/// believed **only** from a peer on the trusted list. A caller who reaches
+/// the backend directly can claim any address it likes, and is counted on
+/// its own.
+///
+/// Asserted on the bucket *keys* rather than by exhausting a budget: the
+/// question here is "who is this request counted as", and the keys answer
+/// it exactly.
 #[tokio::test]
-async fn two_clients_behind_the_same_proxy_get_separate_ip_budgets() {
-    const NOISY: &str = "203.0.113.10";
-    const QUIET: &str = "198.51.100.20";
-    // Must match `deposit_links::READ_PER_IP`.
-    const READ_PER_IP: usize = 30;
+async fn the_per_ip_bucket_follows_the_visitor_not_the_tunnel() {
+    use redis::AsyncCommands;
+
+    const GUEST_A: &str = "203.0.113.10";
+    const GUEST_B: &str = "198.51.100.20";
+    /// Not on the trusted list: something talking to the backend directly.
+    const UNTRUSTED_PEER: &str = "203.0.113.99";
 
     let app = TestApp::new_with_config(&promptpay_only)
         .await
         .expect("create test app");
     let admin = seed_admin(&app, "deposit-iplimit@test.com").await;
     let room_type_id = seed_room_type(app.db(), "Deposit IpLimit Deluxe").await;
+    let created = issue_link(&app, &admin, room_type_id, "3000.00").await;
+    let token = created["token"].as_str().expect("token").to_string();
 
-    // Two links, so the per-link budget can never be the thing that fires
-    // below: each token is asked for far fewer times than its own budget.
-    let first = issue_link(&app, &admin, room_type_id, "3000.00").await;
-    let second = issue_link(&app, &admin, room_type_id, "4000.00").await;
-    let first_token = first["token"].as_str().expect("token").to_string();
-    let second_token = second["token"].as_str().expect("token").to_string();
+    // Two guests, one link, arriving through the tunnel exactly as
+    // production delivers them.
+    read_link_from(&app, &token, GUEST_A)
+        .await
+        .assert_status(200);
+    read_link_from(&app, &token, GUEST_B)
+        .await
+        .assert_status(200);
 
-    // The noisy client spends its whole per-IP budget on one link.
-    for request in 1..=READ_PER_IP {
-        let response = read_link_from(&app, &first_token, NOISY).await;
-        assert_eq!(
-            response.status, 200,
-            "read {request} of {READ_PER_IP} is inside the budget"
-        );
-    }
+    // And a caller the backend has no reason to trust, shouting both
+    // headers at once. Neither is believed: it is counted as its own peer.
+    app.client()
+        .with_peer(UNTRUSTED_PEER)
+        .with_header(TOKEN_HEADER, &token)
+        .with_header(VISITOR_HEADER, GUEST_A)
+        .with_header("X-Forwarded-For", GUEST_B)
+        .get("/api/deposit")
+        .await
+        .assert_status(200);
 
-    // One more from the same client — on a *different* link, whose own
-    // bucket has been touched once. Only the per-IP bucket is over, so a
-    // 429 here can mean nothing else.
-    let over = read_link_from(&app, &second_token, NOISY).await;
+    let mut redis = app.redis();
+    let prefix = format!("rate_limit:{}:deposit_ip_read:", app.rate_limit_namespace());
+    let keys: Vec<String> = redis
+        .keys(format!("{prefix}*"))
+        .await
+        .expect("list per-IP buckets");
+    let mut subjects: Vec<String> = keys
+        .iter()
+        .map(|key| key.trim_start_matches(&prefix).to_string())
+        .collect();
+    subjects.sort();
+
+    let mut expected = vec![
+        GUEST_A.to_string(),
+        GUEST_B.to_string(),
+        UNTRUSTED_PEER.to_string(),
+    ];
+    expected.sort();
     assert_eq!(
-        over.status, 429,
-        "the client that overran its budget is refused"
-    );
-
-    // The quiet client, arriving through the same nginx on the same TCP
-    // connection as far as the backend can see, is untouched.
-    let unaffected = read_link_from(&app, &second_token, QUIET).await;
-    assert_eq!(
-        unaffected.status, 200,
-        "a second guest behind the same proxy must have their own bucket"
+        subjects, expected,
+        "each guest is counted as themselves, and an untrusted caller as \
+         its own peer — never as the tunnel: {keys:?}"
     );
 
     app.cleanup().await.ok();
@@ -1477,6 +1524,79 @@ async fn a_slip_over_the_budget_is_never_written_to_storage() {
         .await
         .expect("count slips");
     assert_eq!(slips, 5, "five stored, and the refused one stored nowhere");
+
+    app.cleanup().await.ok();
+}
+
+/// With Redis gone, the slip upload **refuses and writes nothing**, and
+/// the read keeps working.
+///
+/// A budget that cannot be evaluated is not a budget. On an endpoint that
+/// is unauthenticated and *writes* — a file on the shared storage volume
+/// and a row against a stranger's booking — "allow" would then mean
+/// "unlimited", and a caller need only keep Redis unhappy to fill the
+/// volume. So the slip route fails closed: 503, the plain retry message,
+/// and nothing written. The guest's money is not lost; reception can
+/// still confirm the payment by hand.
+///
+/// The read fails **open** on purpose, and the second half of this test
+/// pins that: blanking a guest's payment page over a Redis blip, while
+/// their money is already transferred, would be a worse outage than the
+/// unbounded polling it prevents. Reads write nothing.
+#[tokio::test]
+async fn a_slip_upload_is_refused_when_the_limiter_cannot_reach_redis() {
+    // The app is built against a relay to the shared test Redis rather
+    // than a dead port: `ConnectionManager` connects eagerly, so an app
+    // pointed at a dead port could not be built at all — and that is not
+    // the failure worth testing. Production loses a Redis that *was*
+    // working, which is what cutting the relay reproduces.
+    let relay = RedisRelay::start().await.expect("start the redis relay");
+    let app = TestApp::new_with_redis_url(&promptpay_only, relay.url())
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "deposit-redisdown@test.com").await;
+    let room_type_id = seed_room_type(app.db(), "Deposit RedisDown Deluxe").await;
+    let created = issue_link(&app, &admin, room_type_id, "3000.00").await;
+    let token = created["token"].as_str().expect("token").to_string();
+    let booking_id =
+        Uuid::parse_str(created["bookingId"].as_str().expect("bookingId")).expect("booking uuid");
+
+    // Redis goes away mid-run: open connections cut, the port stops
+    // accepting, so reconnects are refused too.
+    relay.cut();
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let marker = format!("redis-down-{}", Uuid::new_v4());
+    let mut payload = vec![0xFF, 0xD8, 0xFF, 0xE0];
+    payload.extend_from_slice(marker.as_bytes());
+    let (status, body) =
+        upload_file_to_token(&app, &token, "slip.jpg", "image/jpeg", &payload).await;
+
+    assert_eq!(
+        status, 503,
+        "an unevaluable budget on an unauthenticated write is a refusal: {body}"
+    );
+    let message = body["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("กรุณาลองใหม่อีกครั้ง") && message.contains("try again in a moment"),
+        "the guest is told to come back, in both languages, and nothing \
+         about what broke: {message}"
+    );
+
+    assert!(
+        !slip_storage_contains(marker.as_bytes()),
+        "a refused upload must not leave its bytes in slip storage"
+    );
+    let slips: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM booking_slips WHERE booking_id = $1")
+        .bind(booking_id)
+        .fetch_one(app.db())
+        .await
+        .expect("count slips");
+    assert_eq!(slips, 0, "and no row either");
+
+    // The read is still served: its budget bounds polling, and a guest
+    // staring at a blank payment page is the worse failure.
+    read_link(&app, &token).await.assert_status(200);
 
     app.cleanup().await.ok();
 }

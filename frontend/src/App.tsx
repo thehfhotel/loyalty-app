@@ -292,18 +292,11 @@ function App() {
             browser never sends, so it cannot land in the frontend nginx
             access log or in Cloudflare's. The route therefore carries no
             path parameter — the page reads `window.location.hash` itself
-            (`utils/depositToken`).
-
-            `/d/:token` stays only as a grace period for links already sent.
-            It renders the same page, which rewrites the URL to `/d#<token>`
-            with `history.replaceState` — no request, no redirect round
-            trip. Delete it once the longest issued expiry has passed. */}
+            (`utils/depositToken`). Do not add a `/d/:token` variant: it
+            would put the token back in the request line of every page
+            load. */}
         <Route
           path="/d"
-          element={<DepositLinkPage />}
-        />
-        <Route
-          path="/d/:token"
           element={<DepositLinkPage />}
         />
         <Route

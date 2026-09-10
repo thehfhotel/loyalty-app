@@ -693,14 +693,27 @@ pub struct SecurityConfig {
     /// attacker-supplied unless the hop that set it is one we put there.
     ///
     /// So: believe the header only when the peer is on this list. The
-    /// default is the private ranges a compose network is built from. The
-    /// backend port is not published to the host in any deployment, so
-    /// nothing outside that network can open a connection to it in the
-    /// first place; a public deployment that fronts the backend directly
-    /// must set `TRUSTED_PROXIES=none`, which trusts no hop and keys every
-    /// limiter on the TCP peer. A *blank* value is read as unset (every
-    /// compose file passes optional settings as `VAR: ${VAR:-}`), so the
-    /// literal `none` is the only way to say "trust nobody".
+    /// default is loopback plus the private ranges a compose network is
+    /// built from.
+    ///
+    /// Loopback is in the default deliberately, and it is not vacuous:
+    /// `docker-compose.prod.yml` publishes the backend as
+    /// `127.0.0.1:4011:4001`, i.e. on the host's loopback interface and
+    /// nowhere else. Nothing off the box can open that socket — a
+    /// published loopback port is not reachable from the network — but a
+    /// process already on the host can, and it arrives with a peer of
+    /// `127.0.0.1`. That connection is trusted here on purpose: the port
+    /// exists so operators can curl the API from the box, and anything
+    /// running on the box can forge a bucket key by far cheaper means than
+    /// this header. Anything genuinely public reaches the backend through
+    /// the tunnel and nginx, never through that port.
+    ///
+    /// A deployment that fronts the backend directly with something that
+    /// is *not* a proxy we control must set `TRUSTED_PROXIES=none`, which
+    /// trusts no hop and keys every limiter on the TCP peer. A *blank*
+    /// value is read as unset (every compose file passes optional settings
+    /// as `VAR: ${VAR:-}`), so the literal `none` is the only way to say
+    /// "trust nobody".
     #[serde(default = "default_trusted_proxies")]
     pub trusted_proxies: String,
 

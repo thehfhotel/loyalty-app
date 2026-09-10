@@ -132,7 +132,14 @@ impl RateLimiter {
 /// Rate limit error
 #[derive(Debug)]
 pub enum RateLimitError {
-    TooManyRequests { retry_after: u32 },
+    TooManyRequests {
+        retry_after: u32,
+    },
+    /// The budget could not be **evaluated** — Redis was unreachable or
+    /// answered an error. Only a limiter built with
+    /// [`RedisRateLimiter::fail_closed`] ever returns this; the default is
+    /// still to allow the request and log a warning.
+    Unavailable,
 }
 
 impl IntoResponse for RateLimitError {
@@ -154,6 +161,16 @@ impl IntoResponse for RateLimitError {
                     body,
                 )
                     .into_response()
+            },
+            RateLimitError::Unavailable => {
+                let body = Json(ErrorResponse {
+                    error: "service_unavailable".to_string(),
+                    message: "Service temporarily unavailable. Please try again in a moment."
+                        .to_string(),
+                    details: None,
+                });
+
+                (StatusCode::SERVICE_UNAVAILABLE, body).into_response()
             },
         }
     }
@@ -292,28 +309,39 @@ fn prefix_eq(a: &[u8], b: &[u8], bits: u8) -> bool {
     (a[whole] & mask) == (b[whole] & mask)
 }
 
-/// The header nginx writes the client address into (`$remote_addr`, and it
-/// **replaces** rather than appends — see nginx/nginx.conf).
+/// The forwarding chain. nginx **replaces** it rather than appending —
+/// see nginx/nginx.conf — so its first entry is the visitor, not
+/// something a caller wrote.
 const X_FORWARDED_FOR: &str = "x-forwarded-for";
-/// Cloudflare's own client-address header, used as the fallback when the
-/// trusted hop forwarded nothing.
+/// Cloudflare's own client-address header, and in the deployed topology
+/// the only honest carrier of the visitor's address.
 const CF_CONNECTING_IP: &str = "cf-connecting-ip";
 
 /// The address a public, unauthenticated route should count against.
 ///
-/// - Peer not trusted (or nothing trusted): **the peer**, full stop. That
-///   is [`get_client_ip`]'s rule and it is what protects the budget from a
-///   client that invents its own `X-Forwarded-For`.
-/// - Peer trusted: the **first** address in `X-Forwarded-For` — the one
-///   furthest from us, i.e. the original client, as our own nginx writes
-///   it. Falling back to `CF-Connecting-IP` when the header is absent or
-///   unparseable, and to the peer when neither is usable.
+/// The deployed topology is `Cloudflare edge -> cloudflared on evergreen
+/// -> the repo's nginx -> this process`. cloudflared opens its own local
+/// connection to nginx, so nginx's `$remote_addr` is the **tunnel hop**
+/// and says nothing whatever about the guest; the visitor's address
+/// arrives only in `CF-Connecting-IP`, which Cloudflare's edge sets and
+/// overwrites on every request. That is why the order below is what it
+/// is:
 ///
-/// The first entry is the right one *because* the trusted hop replaces the
-/// header rather than appending to it. If nginx is ever changed back to
-/// `proxy_add_x_forwarded_for`, the leftmost value becomes client-supplied
-/// again and this function becomes a way to mint a fresh bucket per
-/// request — the nginx config and this function are one decision, not two.
+/// - Peer **not** trusted (or nothing trusted): **the peer**, full stop.
+///   That is [`get_client_ip`]'s rule and it is what protects the budget
+///   from a client that invents its own headers.
+/// - Peer trusted: `CF-Connecting-IP` first, because in this deployment
+///   it is the header that carries the real client. Then the **first**
+///   address in `X-Forwarded-For`, for a deployment (or a local compose
+///   run) with a plain reverse proxy and no Cloudflare in front. Then the
+///   peer, when neither header is usable.
+///
+/// The first `X-Forwarded-For` entry is the right one *because* the
+/// trusted hop replaces the header rather than appending to it. If nginx
+/// is ever changed back to `proxy_add_x_forwarded_for`, the leftmost value
+/// becomes client-supplied again and this function becomes a way to mint a
+/// fresh bucket per request — the nginx config and this function are one
+/// decision, not two.
 pub fn resolve_client_ip(
     peer: Option<IpAddr>,
     headers: &axum::http::HeaderMap,
@@ -329,19 +357,19 @@ pub fn resolve_client_ip(
         return peer;
     }
 
-    let forwarded = headers
-        .get(X_FORWARDED_FOR)
+    let cf = headers
+        .get(CF_CONNECTING_IP)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .and_then(|first| first.trim().parse::<IpAddr>().ok());
-    if let Some(ip) = forwarded {
+        .and_then(|v| v.trim().parse::<IpAddr>().ok());
+    if let Some(ip) = cf {
         return ip;
     }
 
     headers
-        .get(CF_CONNECTING_IP)
+        .get(X_FORWARDED_FOR)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.trim().parse::<IpAddr>().ok())
+        .and_then(|v| v.split(',').next())
+        .and_then(|first| first.trim().parse::<IpAddr>().ok())
         .unwrap_or(peer)
 }
 
@@ -424,6 +452,15 @@ pub struct RedisRateLimiter {
     config: RateLimitConfig,
     /// Key prefix for namespacing rate limit keys
     key_prefix: String,
+    /// What to do when the budget cannot be evaluated at all.
+    ///
+    /// `false` (the default) allows the request and logs a warning: a
+    /// Redis blip must not take a read endpoint down. `true` refuses it
+    /// with [`RateLimitError::Unavailable`], which is what a *writing*
+    /// endpoint with no authentication needs — an unevaluated budget there
+    /// means an unauthenticated caller could write without limit for as
+    /// long as Redis is down.
+    fail_closed: bool,
 }
 
 impl RedisRateLimiter {
@@ -442,7 +479,18 @@ impl RedisRateLimiter {
             redis,
             config,
             key_prefix: key_prefix.into(),
+            fail_closed: false,
         }
+    }
+
+    /// Refuse the request when the budget cannot be evaluated.
+    ///
+    /// Reach for this only where an unevaluated budget is worse than a
+    /// refusal: a public endpoint that writes. See the `fail_closed`
+    /// field.
+    pub fn fail_closed(mut self) -> Self {
+        self.fail_closed = true;
+        self
     }
 
     /// Create a rate limiter with default configuration
@@ -520,6 +568,19 @@ impl RedisRateLimiter {
                 Ok(())
             },
             Err(e) => {
+                if self.fail_closed {
+                    // No budget could be evaluated, and this limiter guards
+                    // something that writes without authentication. Refuse
+                    // rather than let an unbounded caller through for as
+                    // long as Redis is down. `key` carries the prefix and
+                    // the subject, which is a token *hash* on the deposit
+                    // routes and never the token itself.
+                    tracing::error!(
+                        key = %key,
+                        "Redis rate limit check failed: {e}. Refusing the request."
+                    );
+                    return Err(RateLimitError::Unavailable);
+                }
                 // Log the error but fail open to prevent blocking legitimate requests
                 // when Redis is temporarily unavailable
                 tracing::warn!("Redis rate limit check failed: {}. Allowing request.", e);
@@ -847,7 +908,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_client_ip_falls_back_to_cf_connecting_ip_then_to_the_peer() {
+    fn resolve_client_ip_prefers_cf_connecting_ip_then_xff_then_the_peer() {
         let trusted = compose_default();
         assert_eq!(
             resolve_client_ip(
@@ -856,19 +917,32 @@ mod tests {
                 &trusted,
             ),
             ip("198.51.100.7"),
-            "no XFF, so Cloudflare's header is the next best evidence"
+            "the deployed topology's only carrier of the visitor address"
         );
         assert_eq!(
             resolve_client_ip(
                 Some(ip("172.18.0.5")),
                 &headers(&[
-                    ("x-forwarded-for", "unknown"),
                     ("cf-connecting-ip", "198.51.100.7"),
+                    ("x-forwarded-for", "203.0.113.9"),
                 ]),
                 &trusted,
             ),
             ip("198.51.100.7"),
-            "an unparseable XFF is no evidence at all"
+            "CF-Connecting-IP wins: behind cloudflared it is the one \
+             header Cloudflare's edge sets itself"
+        );
+        assert_eq!(
+            resolve_client_ip(
+                Some(ip("172.18.0.5")),
+                &headers(&[
+                    ("cf-connecting-ip", "not-an-ip"),
+                    ("x-forwarded-for", "203.0.113.9"),
+                ]),
+                &trusted,
+            ),
+            ip("203.0.113.9"),
+            "an unparseable CF header is no evidence at all"
         );
         assert_eq!(
             resolve_client_ip(Some(ip("172.18.0.5")), &headers(&[]), &trusted),

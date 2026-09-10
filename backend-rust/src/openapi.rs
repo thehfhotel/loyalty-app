@@ -1533,7 +1533,7 @@ pub mod paths {
         responses(
             (status = 200, description = "The guest page payload. `state` is one of awaiting_payment | checking | confirmed | expired | revoked"),
             (status = 404, description = "No link matches this token, or the header is absent or malformed — the same response either way, carrying no detail"),
-            (status = 429, description = "Rate limited: one global bucket per route, 30/min per client IP, 30/min per link")
+            (status = 429, description = "Rate limited. Budgets are charged narrowest first: 30/min per link, then 120/min per client IP, then one global bucket per route")
         )
     )]
     pub async fn deposit_link_public_get() {}
@@ -1551,7 +1551,8 @@ pub mod paths {
             (status = 404, description = "No link matches this token, or the header is absent or malformed"),
             (status = 409, description = "The link has been revoked"),
             (status = 413, description = "File larger than 10 MB"),
-            (status = 429, description = "Rate limited: 5 stored slips/hour and 30 attempts/hour per link, 20/hour per client IP, plus the global bucket. Nothing is written to storage when the budget refuses")
+            (status = 429, description = "Rate limited. Charged narrowest first: 30 attempts/hour per link, then 40/hour per client IP, then the global bucket; plus 5 *stored* slips/hour per link. Nothing is written to storage when a budget refuses"),
+            (status = 503, description = "A budget could not be evaluated (Redis unreachable). This route fails closed because it writes and has no authentication: nothing is stored, and the body carries a plain Thai/English \"try again in a moment\"")
         )
     )]
     pub async fn deposit_link_public_slip() {}
@@ -1563,7 +1564,7 @@ pub mod paths {
         tag = "deposit-links",
         security(("bearer_auth" = [])),
         responses(
-            (status = 201, description = "Booking and link created. The token is returned ONCE and never again; `url` is `https://<FRONTEND_URL>/d#<token>` and `lineShareUrl` carries the same link"),
+            (status = 201, description = "Booking and link created. The token is returned ONCE and never again. `url` is `https://<FRONTEND_URL>/d#<token>` — the primary action: reception copies it and sends it by any channel. `lineShareUrl` wraps the same link in a LINE share intent, which hands the link to LINE when tapped"),
             (status = 400, description = "Validation failed, or this property has no PromptPay receiving account configured so the link would have no QR"),
             (status = 403, description = "Admin access required")
         )

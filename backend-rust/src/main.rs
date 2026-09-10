@@ -566,9 +566,8 @@ fn make_http_span(request: &Request) -> tracing::Span {
 /// bearer capability for a payment, and the design keeps them out of every
 /// URL — `X-Deposit-Token` on the API, a `/d#<token>` fragment in the link
 /// — precisely because paths are logged in this many places. This function
-/// is the belt to that: a route added later that does put a secret in a
-/// path segment leaks it to no log here, and the `/d/<token>` links still
-/// in circulation during the grace period are covered too.
+/// is the belt to that pair of braces: a route added later that does put a
+/// secret in a path segment leaks it to no log here.
 ///
 /// `MatchedPath` is inserted by axum's router before the route service
 /// runs, and every layer in `create_app` is applied with `Router::layer`

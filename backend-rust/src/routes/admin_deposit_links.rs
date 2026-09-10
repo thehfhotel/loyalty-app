@@ -125,10 +125,30 @@ pub struct DepositLinkCreatedResponse {
     pub booking_id: Uuid,
     /// Shown to the issuing admin once and never again.
     pub token: String,
+    /// **The link itself, and the primary action in the modal.**
     /// `https://<FRONTEND_URL>/d#<token>` — the token in the fragment, so
     /// no server on the way ever sees it. See [`guest_link_url`].
+    ///
+    /// Reception copies this and sends it by whatever channel the guest
+    /// actually uses: LINE, SMS, WhatsApp, Messenger, a phone call read
+    /// out loud. Copying hands the link to nobody but reception, which is
+    /// why it is the primary action and [`Self::line_share_url`] is the
+    /// second one.
     pub url: String,
     /// Pre-composed LINE share intent, Thai-first and with no vendor name.
+    ///
+    /// **Tapping this hands the link to LINE.** The token is inside the
+    /// `text` parameter of a `line.me/R/share` URL, so it goes to LINE's
+    /// servers as part of composing the message, and then to whatever
+    /// chat reception picks. That is not a leak to route around — sharing
+    /// a link *through* LINE necessarily transmits the link, and this is
+    /// how reception has always sent these — but it is the reason the
+    /// plain [`url`](Self::url) above is the primary action: a guest who
+    /// is not on LINE, or a reception desk that would rather send an SMS,
+    /// must never have to go through LINE to deliver a payment link.
+    ///
+    /// The token is a bearer capability, so both fields are as sensitive
+    /// as each other; neither is ever logged.
     pub line_share_url: String,
     pub total_amount: f64,
     pub amount_due_now: f64,
@@ -926,7 +946,12 @@ fn guest_link_url(frontend_url: &str, token: &str) -> String {
     format!("{}/d#{}", frontend_url.trim_end_matches('/'), token)
 }
 
-/// A LINE share intent reception can tap straight from the modal.
+/// A LINE share intent reception can tap straight from the modal — the
+/// *second* action, after copying the plain link.
+///
+/// Tapping it opens LINE's share sheet with the message pre-composed,
+/// which means the link is handed to LINE. See
+/// [`DepositLinkCreatedResponse::line_share_url`].
 ///
 /// Thai first, and **no vendor name anywhere** — the guest is told what to
 /// pay and where, never who checks it. The strings are the ones in

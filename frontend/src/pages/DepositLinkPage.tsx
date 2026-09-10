@@ -14,7 +14,7 @@ import {
   type Property,
 } from '../services/depositLinkService';
 import { depositPollIntervalMs } from '../utils/depositPolling';
-import { depositFragmentUrl, readDepositToken } from '../utils/depositToken';
+import { readDepositToken } from '../utils/depositToken';
 import { deskPhone, deskPhoneHref } from '../utils/deskContact';
 import { guestSlipOkStatusKey } from '../types/slipok';
 import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../utils/dateFormatter';
@@ -31,8 +31,8 @@ import { logger } from '../utils/logger';
  * The fragment is load-bearing, not cosmetic: it is the one part of a URL
  * a browser never sends, so the token cannot reach the frontend
  * container's access log, Cloudflare's HTTP logs, or a `Referer` header.
- * `utils/depositToken` holds the rule and the `/d/<token>` grace-period
- * rewrite; the page below only asks it for a token.
+ * `utils/depositToken` holds the rule; the page below only asks it for a
+ * token.
  *
  * Thai first with one English line under each heading: most of these guests
  * booked by phone in Thai, and the rest must still be able to pay. The two
@@ -101,8 +101,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 export default function DepositLinkPage() {
   // The URL is read once per navigation rather than through the router:
   // the token lives in the fragment, which react-router does not route on.
-  const [resolved, setResolved] = useState(() => readDepositToken(window.location));
-  const token = resolved.token;
+  const [token, setToken] = useState(() => readDepositToken(window.location));
   const { i18n } = useTranslation();
   const th = useMemo(() => i18n.getFixedT('th'), [i18n]);
   const en = useMemo(() => i18n.getFixedT('en'), [i18n]);
@@ -114,23 +113,11 @@ export default function DepositLinkPage() {
   const [engagedAt, setEngagedAt] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // A link already sent to a guest may still carry the old `/d/<token>`
-  // shape. Rewrite it to `/d#<token>` in place: `replaceState` changes the
-  // address bar and the history entry without making a request, so the
-  // token stops being in the URL and never reaches a log on the way out.
-  // Only the page load that started this session ever carried it.
-  useEffect(() => {
-    if (resolved.fromLegacyPath && resolved.token) {
-      window.history.replaceState(null, '', depositFragmentUrl(resolved.token));
-      setResolved({ token: resolved.token, fromLegacyPath: false });
-    }
-  }, [resolved]);
-
   // A reissued link pasted into the same tab changes only the fragment, so
   // the browser fires `hashchange` and never reloads. Without this the
   // guest would sit on the dead link's page.
   useEffect(() => {
-    const onHashChange = () => setResolved(readDepositToken(window.location));
+    const onHashChange = () => setToken(readDepositToken(window.location));
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
@@ -213,9 +200,14 @@ export default function DepositLinkPage() {
     onError: async (error: unknown) => {
       const status = axios.isAxiosError(error) ? error.response?.status : undefined;
       // "Please try again" is the wrong instruction for two of these. The
-      // upload is rate limited at 5 per hour per token and 20 per hour per IP
-      // (B1 §5), and a link revoked between page load and upload answers 409
-      // — in both cases another tap only burns the guest's remaining budget.
+      // upload is rate limited at 5 stored slips and 30 attempts per hour
+      // per link, and 40 attempts per hour per client address (B1 §5), and
+      // a link revoked between page load and upload answers 409 — in both
+      // cases another tap only burns the guest's remaining budget.
+      //
+      // A 503 is the opposite: the backend refused because it could not
+      // evaluate a budget at all and wrote nothing, so the generic
+      // "please try again" at the bottom is exactly the right advice.
       if (status === 429) {
         setUploadError(th('depositLink.upload.rateLimited'));
         return;

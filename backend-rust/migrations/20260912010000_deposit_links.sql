@@ -4,7 +4,15 @@
 -- Reception takes a booking by phone, LINE or at the desk and issues ONE
 -- link for it. The guest opens the link, sees the amount and a PromptPay
 -- QR with the amount already filled in, and uploads the slip. No login:
--- the token in the URL is the capability.
+-- the token IS the capability.
+--
+-- The token never travels in a request line. The guest link is
+-- `https://<frontend>/d#<token>` — a fragment, which no browser sends to
+-- any server — and the API takes the token in the `X-Deposit-Token`
+-- header. There is no path-parameter form of either: a path is written to
+-- the nginx and Cloudflare access logs on every request, and a bearer
+-- capability for a payment sitting in two log stores is a payment page
+-- anyone with log access can open.
 --
 -- A deposit request is an ordinary `bookings` row plus one row in
 -- `booking_deposit_links`. Almost every column it needs already exists —

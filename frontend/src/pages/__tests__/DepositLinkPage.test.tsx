@@ -380,21 +380,19 @@ describe('DepositLinkPage', () => {
       expect(mockGetDepositPage).not.toHaveBeenCalled();
     });
 
-    it('rewrites a legacy /d/<token> link to /d#<token> without a request', async () => {
-      // The grace-period path: links already sent to guests carry the old
-      // shape. The page renders normally and the address bar is rewritten
-      // in place — `replaceState`, so no navigation and no round trip that
-      // could carry the token to a log.
-      goTo('/d/legacy-token-ccccccccccccc', '');
-      await renderSettled();
+    it('ignores a token in the path — only the fragment is read', async () => {
+      // There is no `/d/<token>` route and no link was ever issued in that
+      // shape. A URL that carries one anyway is a URL with no token: the
+      // page must not fetch anything, because honouring it would mean
+      // accepting a payment capability out of a request line that nginx
+      // and Cloudflare both write to disk.
+      goTo('/d/path-shaped-cccccccccccc', '');
+      renderPage();
 
-      // It loaded the right link...
-      expect(mockGetDepositPage).toHaveBeenCalledWith('legacy-token-ccccccccccccc');
-      expect(screen.getByTestId('deposit-stay')).toBeInTheDocument();
-
-      // ...and the token has moved out of the path into the fragment.
-      await waitFor(() => expect(window.location.pathname).toBe('/d'));
-      expect(window.location.hash).toBe('#legacy-token-ccccccccccccc');
+      await waitFor(() =>
+        expect(screen.getByTestId('deposit-notFound')).toBeInTheDocument(),
+      );
+      expect(mockGetDepositPage).not.toHaveBeenCalled();
     });
 
     it('follows the fragment when a reissued link is pasted into the same tab', async () => {

@@ -50,9 +50,11 @@
 //!   request line, so the default nginx `combined` format never writes
 //!   them, and no proxy on the path logs them by default.
 //!
-//! `/d/:token` still resolves in the SPA for links already sent, but only
-//! as a client-side rewrite to `/d#<token>`; it makes no request carrying
-//! the token.
+//! There is no second, path-shaped form of either. `/d/<token>` does not
+//! resolve in the SPA and `/api/deposit/<token>` does not exist: no link
+//! has ever been issued in any environment in that shape, so there is
+//! nothing to keep working and no reason to carry a route whose whole
+//! effect would be to put the token back in a request line.
 //!
 //! ## Security notes that are easy to undo by accident
 //!
@@ -262,24 +264,44 @@ pub(crate) fn derive_state(
 // Rate limits
 // ============================================================================
 //
-// Three layers on every public request, in this order:
+// Three layers on every public request. They are **charged narrowest
+// first**, and that order is the design, not an accident of how the code
+// reads:
 //
-// 1. **One global bucket per route.** Keyed on the route and nothing else,
+// 1. **Per link**, keyed on the hex SHA-256 of the token (never the
+//    token: the key reaches Redis and the error log on a Redis failure).
+//    This is the layer that speaks about a guest, and it is what survives
+//    a phone changing IP between attempts.
+// 2. **Per client IP**, resolved through the trusted-proxy rule
+//    (`middleware::rate_limit::resolve_client_ip`), never the raw TCP
+//    peer. Behind cloudflared the peer is the tunnel for every guest on
+//    earth, so a peer-keyed budget is one bucket that three people paying
+//    at once would exhaust between them — a 429 in the middle of a
+//    payment.
+// 3. **One global bucket per route.** Keyed on the route and nothing else,
 //    so it is the same bucket for everyone. It is the only layer a caller
 //    cannot escape: a token holder who rotates tokens mints a fresh
 //    per-token bucket every time and a botnet mints a fresh per-IP bucket
 //    every time, and the global bucket counts both anyway. Sized so that
 //    it is the *last* thing a legitimate load meets, never the first.
-// 2. **Per client IP**, resolved through the trusted-proxy rule
-//    (`middleware::rate_limit::resolve_client_ip`), never the raw TCP
-//    peer. Behind nginx the peer is the nginx container for every guest on
-//    earth, so a peer-keyed budget is one bucket that three people paying
-//    at once would exhaust between them — a 429 in the middle of a
-//    payment.
-// 3. **Per link**, keyed on the hex SHA-256 of the token (never the
-//    token: the key reaches Redis and the warning log on a Redis
-//    failure). This is the layer that speaks about a guest, and it is what
-//    survives a phone changing IP between attempts.
+//
+// ## Why narrowest first
+//
+// Every layer both *checks* and *charges*: a check is an INCR. So a
+// request refused by a narrow bucket must not have already spent a slot
+// of a wider one, or the attacker the narrow bucket just stopped goes on
+// draining the budget that protects everybody else. Charge the global
+// bucket first and one hammering token holder — already refused by their
+// own per-link budget — still burns 600 global slots a minute, and a
+// guest who has done nothing wrong meets a 429 because of them. Charging
+// per-link first means the refusal costs the attacker their own bucket
+// and nobody else's.
+//
+// The trade is that a request refused at layer 1 is invisible to layers 2
+// and 3, so the wider counters undercount an already-refused caller. That
+// is the right way round: the wider buckets exist to bound callers the
+// narrow ones cannot see (rotated tokens, a botnet), and those are
+// precisely the requests that reach them.
 //
 // All three run in every environment. The public deposit endpoints have no
 // authentication at all, so their budgets are a property of the capability
@@ -288,10 +310,21 @@ pub(crate) fn derive_state(
 // the limiters off.
 
 /// The guest page polls the read endpoint every 5 seconds for two minutes
-/// after an upload (12/min), so 30/min is a little over double what a
-/// well-behaved page asks for — per link and per client, independently.
+/// after an upload (12/min), so 30/min per **link** is a little over
+/// double what a well-behaved page asks for.
 const READ_PER_TOKEN: (u32, u64) = (30, 60);
-const READ_PER_IP: (u32, u64) = (30, 60);
+
+/// 120/min per client address.
+///
+/// Deliberately four times the per-link budget, because an address is a
+/// much worse proxy for "a guest" than a link is: hotel WiFi puts every
+/// person in the building behind one address, and Thai mobile carriers put
+/// tens of thousands behind one CGNAT address. A family of four in the
+/// lobby, each polling their own link at 12/min, is 48/min from a single
+/// address and has done nothing wrong. The per-link budget above is what
+/// actually shapes a single guest; this one is a ceiling on an address
+/// that has clearly stopped being one guest.
+const READ_PER_IP: (u32, u64) = (120, 60);
 
 /// The global read budget. Deliberately far above any real day: reception
 /// issues a handful of links a day and each one polls at 12/min while a
@@ -316,8 +349,13 @@ const UPLOAD_PER_TOKEN: (u32, u64) = (5, 3600);
 /// all day.
 const UPLOAD_ATTEMPTS_PER_TOKEN: (u32, u64) = (30, 3600);
 
-/// 20 upload attempts per hour per client IP.
-const UPLOAD_PER_IP: (u32, u64) = (20, 3600);
+/// 40 upload attempts per hour per client address.
+///
+/// Same reasoning as [`READ_PER_IP`]: hotel WiFi and carrier NAT share one
+/// address between many guests, so this budget has to hold several people
+/// uploading at once. The per-link budgets above are the ones that bound
+/// any single guest.
+const SLIP_PER_IP: (u32, u64) = (40, 3600);
 
 /// The global upload budget — see [`READ_GLOBAL`] for the reasoning.
 const UPLOAD_GLOBAL: (u32, u64) = (300, 3600);
@@ -344,6 +382,27 @@ impl PublicDepositRoute {
         }
     }
 
+    /// Does an unreachable Redis refuse the request, or let it through?
+    ///
+    /// **The read fails open.** Its budget exists to bound polling, and a
+    /// Redis blip that blanked the guest's payment page — while their
+    /// money is already transferred — would be a worse outage than the
+    /// unbounded reads it prevents. Reads write nothing.
+    ///
+    /// **The slip upload fails closed.** It is unauthenticated and it
+    /// *writes*: a file on the shared storage volume and a row against a
+    /// stranger's booking. With no budget evaluable, "allow" means
+    /// "unlimited", and the caller need only keep Redis unhappy to fill
+    /// the volume. A guest meets a 503 and the plain retry message, and
+    /// nothing is written; their money is not lost, and reception can
+    /// still confirm the payment by hand.
+    fn fails_closed(self) -> bool {
+        match self {
+            Self::Read => false,
+            Self::Slip => true,
+        }
+    }
+
     /// Namespace component so the three routes do not share buckets.
     fn slug(self) -> &'static str {
         match self {
@@ -361,7 +420,7 @@ impl PublicDepositRoute {
             },
             Self::Slip => RouteBudgets {
                 global: UPLOAD_GLOBAL,
-                per_ip: UPLOAD_PER_IP,
+                per_ip: SLIP_PER_IP,
                 per_token: UPLOAD_ATTEMPTS_PER_TOKEN,
             },
         }
@@ -398,36 +457,60 @@ impl DepositRateLimit {
     }
 }
 
+/// What a caller is told when a budget could not be evaluated at all.
+///
+/// Thai first, English under it, and no mention of what broke — the
+/// caller is a guest on a payment page, not an operator. `AppError`
+/// returns the string verbatim as the response `message`.
+const BUDGET_UNAVAILABLE_MESSAGE: &str = "ระบบไม่พร้อมใช้งานชั่วคราว กรุณาลองใหม่อีกครั้งในอีกสักครู่ / \
+     Temporarily unavailable, please try again in a moment.";
+
 /// Build a limiter whose Redis keys are namespaced for this deployment.
 ///
 /// `security.rate_limit_namespace` is empty everywhere but the test
 /// harness, so in production every replica shares one bucket per subject —
 /// which is the only way a budget means what it says.
-fn limiter(state: &AppState, key: &str, budget: (u32, u64)) -> RedisRateLimiter {
+///
+/// `fail_closed` decides what an unreachable Redis means for this layer.
+/// See [`PublicDepositRoute::fails_closed`].
+fn limiter(state: &AppState, key: &str, budget: (u32, u64), fail_closed: bool) -> RedisRateLimiter {
     let namespace = &state.config().security.rate_limit_namespace;
     let prefix = if namespace.is_empty() {
         key.to_string()
     } else {
         format!("{namespace}:{key}")
     };
-    RedisRateLimiter::new(
+    let limiter = RedisRateLimiter::new(
         state.redis(),
         RateLimitConfig::new(budget.0, budget.1),
         prefix,
-    )
+    );
+    if fail_closed {
+        limiter.fail_closed()
+    } else {
+        limiter
+    }
 }
 
-/// Turn a limiter refusal into a 429 that tells the truth about *when* to
-/// come back.
+/// Turn a limiter refusal into the right status.
 ///
-/// `check_subject` has already computed the remaining TTL of the window
-/// and hands it back on the error. Discarding it and answering with the
-/// full window length instead tells a guest who hit the budget at minute
-/// 59 to wait an hour for a bucket that resets in a minute — and a
-/// frontend that honours `Retry-After` will do exactly that.
-fn too_many_requests(err: RateLimitError) -> AppError {
-    let RateLimitError::TooManyRequests { retry_after } = err;
-    AppError::TooManyRequests(retry_after as u64)
+/// - Over budget → a 429 that tells the truth about *when* to come back.
+///   `check_subject` has already computed the remaining TTL of the window
+///   and hands it back on the error. Discarding it and answering with the
+///   full window length instead tells a guest who hit the budget at minute
+///   59 to wait an hour for a bucket that resets in a minute — and a
+///   frontend that honours `Retry-After` will do exactly that.
+/// - Budget unevaluable → 503 and the plain retry message. Only a
+///   fail-closed layer ever produces this.
+fn limiter_refusal(err: RateLimitError) -> AppError {
+    match err {
+        RateLimitError::TooManyRequests { retry_after } => {
+            AppError::TooManyRequests(retry_after as u64)
+        },
+        RateLimitError::Unavailable => {
+            AppError::ServiceUnavailable(BUDGET_UNAVAILABLE_MESSAGE.to_string())
+        },
+    }
 }
 
 /// The layered limiter for one public deposit route.
@@ -435,10 +518,15 @@ fn too_many_requests(err: RateLimitError) -> AppError {
 /// Runs before the handler and before the multipart body is read, so a
 /// flood costs a Redis round trip rather than 10 MB of buffering.
 ///
-/// A request with no usable token still pays the global and per-IP
-/// budgets: it reached a public endpoint and cost us work, and skipping
-/// the charge would make "send a junk header" the cheapest way to probe.
-/// It simply has no third bucket to be charged against.
+/// **Charging order: per link, then per IP, then global** — narrowest
+/// first, so a request a narrow bucket refuses never drains a wider one.
+/// The reasoning is written out under "Why narrowest first" above; it is
+/// the kind of order that looks arbitrary and is not.
+///
+/// A request with no usable token has no per-link bucket to be charged
+/// against, and still pays the per-IP and global budgets: it reached a
+/// public endpoint and cost us work, and skipping the charge would make
+/// "send a junk header" the cheapest way to probe.
 pub async fn deposit_public_rate_limit(
     State(guard): State<DepositRateLimit>,
     request: axum::extract::Request,
@@ -446,28 +534,38 @@ pub async fn deposit_public_rate_limit(
 ) -> AppResult<axum::response::Response> {
     let budgets = guard.route.budgets();
     let slug = guard.route.slug();
+    let closed = guard.route.fails_closed();
 
-    limiter(&guard.state, "deposit_global", budgets.global)
-        .check_subject(guard.route.global_subject())
-        .await
-        .map_err(too_many_requests)?;
-
-    let client_ip = resolve_client_ip(peer_ip(&request), request.headers(), &guard.trusted);
-    limiter(&guard.state, &format!("deposit_ip_{slug}"), budgets.per_ip)
-        .check_subject(&client_ip.to_string())
-        .await
-        .map_err(too_many_requests)?;
-
+    // 1. Per link — the narrowest thing we know about this caller.
     if let Ok(token) = token_from_headers(request.headers()) {
         limiter(
             &guard.state,
             &format!("deposit_token_{slug}"),
             budgets.per_token,
+            closed,
         )
         .check_subject(&hex::encode(token_hash(&token)))
         .await
-        .map_err(too_many_requests)?;
+        .map_err(limiter_refusal)?;
     }
+
+    // 2. Per client address.
+    let client_ip = resolve_client_ip(peer_ip(&request), request.headers(), &guard.trusted);
+    limiter(
+        &guard.state,
+        &format!("deposit_ip_{slug}"),
+        budgets.per_ip,
+        closed,
+    )
+    .check_subject(&client_ip.to_string())
+    .await
+    .map_err(limiter_refusal)?;
+
+    // 3. The global bucket, last, so nothing already refused has spent it.
+    limiter(&guard.state, "deposit_global", budgets.global, closed)
+        .check_subject(guard.route.global_subject())
+        .await
+        .map_err(limiter_refusal)?;
 
     Ok(next.run(request).await)
 }
@@ -475,11 +573,14 @@ pub async fn deposit_public_rate_limit(
 /// Charge one **stored** slip against the strict per-link budget.
 ///
 /// Called after the upload has validated and before a byte reaches disk.
+/// Fail-closed for the same reason as the rest of the slip route: an
+/// unevaluated budget here would let an unauthenticated caller write to
+/// the storage volume without limit for as long as Redis is down.
 async fn charge_stored_slip_budget(state: &AppState, token_hash_hex: &str) -> AppResult<()> {
-    limiter(state, "deposit_upload_token", UPLOAD_PER_TOKEN)
+    limiter(state, "deposit_upload_token", UPLOAD_PER_TOKEN, true)
         .check_subject(token_hash_hex)
         .await
-        .map_err(too_many_requests)
+        .map_err(limiter_refusal)
 }
 
 // ============================================================================
@@ -918,9 +1019,11 @@ fn given_name(guest_name: Option<&str>) -> String {
 /// Public deposit-link routes, mounted at `/api/deposit` with **no auth
 /// middleware** — that is the whole design (see the module docs).
 ///
-/// Neither route has a path parameter: the token travels in
-/// `X-Deposit-Token`, so `/api/deposit` and `/api/deposit/slip` are the
-/// complete URLs and there is nothing in them worth logging or leaking.
+/// Neither route has a path parameter, and neither ever had one: the
+/// token travels in `X-Deposit-Token`, so `/api/deposit` and
+/// `/api/deposit/slip` are the complete URLs and there is nothing in them
+/// worth logging or leaking. Adding a `/:token` variant "for convenience"
+/// would undo the module's central decision.
 ///
 /// The limiter is layered per route (rather than once over the sub-router)
 /// because the read and the upload have different budgets and different
