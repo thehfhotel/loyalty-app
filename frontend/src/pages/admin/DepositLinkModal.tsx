@@ -186,31 +186,20 @@ export default function DepositLinkModal({ open, onClose }: DepositLinkModalProp
       onClose={handleClose}
       size="lg"
       title={t('depositLink.admin.modalTitle')}
-      footer={
-        issued ? (
-          <Button type="button" onClick={handleClose}>
-            {t('depositLink.admin.issued.done')}
-          </Button>
-        ) : (
-          <div className="flex gap-2">
-            <Button type="button" variant="secondary" onClick={handleClose}>
-              {t('depositLink.admin.form.cancel')}
-            </Button>
-            <Button
-              type="submit"
-              form={formId}
-              loading={createMutation.isPending}
-              disabled={createMutation.isPending}
-              data-testid="deposit-link-submit"
-            >
-              {t('depositLink.admin.form.submit')}
-            </Button>
-          </div>
-        )
-      }
     >
       {issued ? (
-        <IssuedDepositLinkPanel link={issued} />
+        // The actions live inside the panel/form rather than in the Modal's
+        // `footer` slot: a submit button outside its own <form> depends on
+        // the `form` attribute association, which is exactly the kind of
+        // thing that works in a browser and quietly does nothing elsewhere.
+        <div className="space-y-4">
+          <IssuedDepositLinkPanel link={issued} />
+          <div className="flex justify-end">
+            <Button type="button" onClick={handleClose}>
+              {t('depositLink.admin.issued.done')}
+            </Button>
+          </div>
+        </div>
       ) : (
         <form id={formId} onSubmit={handleSubmit} className="space-y-4">
           <p className="text-caption text-ink-muted">{t('depositLink.admin.modalSubtitle')}</p>
@@ -219,6 +208,7 @@ export default function DepositLinkModal({ open, onClose }: DepositLinkModalProp
             <Select
               value={property}
               onChange={(event) => setProperty(event.target.value as Property | '')}
+              data-testid="deposit-link-property"
             >
               <option value="">{t('depositLink.admin.form.selectProperty')}</option>
               {PROPERTIES.map((value) => (
@@ -231,23 +221,38 @@ export default function DepositLinkModal({ open, onClose }: DepositLinkModalProp
 
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField label={t('depositLink.admin.form.guestName')} htmlFor={`${formId}-guest-name`} required>
-              <Input value={guestName} onChange={(event) => setGuestName(event.target.value)} />
+              <Input
+                value={guestName}
+                onChange={(event) => setGuestName(event.target.value)}
+                data-testid="deposit-link-guest-name"
+              />
             </FormField>
             <FormField label={t('depositLink.admin.form.guestPhone')} htmlFor={`${formId}-guest-phone`} required>
               <Input
                 type="tel"
                 value={guestPhone}
                 onChange={(event) => setGuestPhone(event.target.value)}
+                data-testid="deposit-link-guest-phone"
               />
             </FormField>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
             <FormField label={t('depositLink.admin.form.checkIn')} htmlFor={`${formId}-check-in`} required>
-              <Input type="date" value={checkIn} onChange={(event) => setCheckIn(event.target.value)} />
+              <Input
+                type="date"
+                value={checkIn}
+                onChange={(event) => setCheckIn(event.target.value)}
+                data-testid="deposit-link-check-in"
+              />
             </FormField>
             <FormField label={t('depositLink.admin.form.checkOut')} htmlFor={`${formId}-check-out`} required>
-              <Input type="date" value={checkOut} onChange={(event) => setCheckOut(event.target.value)} />
+              <Input
+                type="date"
+                value={checkOut}
+                onChange={(event) => setCheckOut(event.target.value)}
+                data-testid="deposit-link-check-out"
+              />
             </FormField>
             <FormField label={t('depositLink.admin.form.guests')} htmlFor={`${formId}-guests`} required>
               <Input
@@ -255,12 +260,17 @@ export default function DepositLinkModal({ open, onClose }: DepositLinkModalProp
                 min={1}
                 value={guests}
                 onChange={(event) => setGuests(event.target.value)}
+                data-testid="deposit-link-guests"
               />
             </FormField>
           </div>
 
           <FormField label={t('depositLink.admin.form.roomType')} htmlFor={`${formId}-room-type`} required>
-            <Select value={roomTypeId} onChange={(event) => setRoomTypeId(event.target.value)}>
+            <Select
+              value={roomTypeId}
+              onChange={(event) => setRoomTypeId(event.target.value)}
+              data-testid="deposit-link-room-type"
+            >
               <option value="">{t('depositLink.admin.form.selectRoomType')}</option>
               {roomTypes.map((roomType) => (
                 <option key={roomType.id} value={roomType.id}>
@@ -329,6 +339,20 @@ export default function DepositLinkModal({ open, onClose }: DepositLinkModalProp
               {error}
             </p>
           )}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={handleClose}>
+              {t('depositLink.admin.form.cancel')}
+            </Button>
+            <Button
+              type="submit"
+              loading={createMutation.isPending}
+              disabled={createMutation.isPending}
+              data-testid="deposit-link-submit"
+            >
+              {t('depositLink.admin.form.submit')}
+            </Button>
+          </div>
         </form>
       )}
     </Modal>

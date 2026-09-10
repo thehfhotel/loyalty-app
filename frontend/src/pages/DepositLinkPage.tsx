@@ -446,7 +446,9 @@ export default function DepositLinkPage() {
           {/* The guest vocabulary collapses every non-verified machine
               verdict onto "being checked" — a vendor outage never reaches a
               guest's phone as an error, and no vendor is ever named. */}
-          <Badge tone="warning">{th(guestSlipOkStatusKey(deposit.slipokStatus))}</Badge>
+          <Badge tone="warning" data-testid="deposit-slipok-status">
+            {th(guestSlipOkStatusKey(deposit.slipokStatus))}
+          </Badge>
         </Card>
       )}
 
