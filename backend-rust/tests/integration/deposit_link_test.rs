@@ -15,7 +15,9 @@
 //!   payload built from the *property's* receiving account, and **no phone
 //!   number**. An unknown token is a bare 404.
 //! - **upload** — a slip row appears with a recorded `slipok_status`, and
-//!   the sixth upload inside the window is refused.
+//!   the sixth *stored* slip inside the window is refused. Files the
+//!   storage writer rejects, and uploads to a revoked link, cost the guest
+//!   nothing: the budget counts slips, not attempts.
 //! - **auto-verify** — with the flag on and everything matching: the slip
 //!   verifies, the booking flips to `confirmed` **with no PMS call
 //!   attempted**, and the audit row names the SlipOK system actor.
@@ -23,7 +25,11 @@
 //!   on `manual` / `booking_not_payable`; the same bank reference on a
 //!   second link lands on `manual` / `duplicate`.
 //! - **revoke / reissue** — a revoked link reads `revoked` and refuses
-//!   uploads with 409; a reissue kills the old token and mints a new one.
+//!   uploads with 409; a reissue kills every live token and mints a new
+//!   one, twice in a row without tripping the one-live-link index; a
+//!   malformed reissue body is a 400 rather than a silent default.
+//! - **configuration** — a property with no PromptPay receiving account
+//!   is a 400 that names it, and writes nothing.
 
 use axum::body::Body;
 use axum::http::{header, Request};
@@ -129,7 +135,19 @@ async fn issue_link(app: &TestApp, admin: &TestUser, room_type_id: Uuid, total: 
 
 /// POST a slip through the public endpoint. Returns (status, body).
 async fn upload_slip_to_token(app: &TestApp, token: &str) -> (u16, Value) {
-    let (boundary, body) = build_multipart("slip.jpg", "image/jpeg", &jpeg_bytes());
+    upload_file_to_token(app, token, "slip.jpg", "image/jpeg", &jpeg_bytes()).await
+}
+
+/// POST an arbitrary file through the public endpoint, so a test can send
+/// the things a guest's phone actually sends when they pick the wrong one.
+async fn upload_file_to_token(
+    app: &TestApp,
+    token: &str,
+    filename: &str,
+    content_type: &str,
+    data: &[u8],
+) -> (u16, Value) {
+    let (boundary, body) = build_multipart(filename, content_type, data);
 
     let req = Request::builder()
         .method("POST")
@@ -493,6 +511,78 @@ async fn the_sixth_upload_on_one_link_is_refused() {
         status, 429,
         "the sixth upload inside the window must be refused"
     );
+
+    app.cleanup().await.ok();
+}
+
+/// The five-slips-an-hour budget counts slips we STORED, not attempts.
+///
+/// A guest who has already transferred the money and then picks the wrong
+/// file five times — a WebP screenshot out of an Android gallery, a PDF
+/// out of a bank app — must not be locked out for an hour from the only
+/// page that lets them show proof of payment.
+#[tokio::test]
+async fn rejected_files_do_not_burn_the_five_slip_budget() {
+    let app = TestApp::new_with_config(&promptpay_only)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "deposit-badfiles@test.com").await;
+    let room_type_id = seed_room_type(app.db(), "Deposit BadFiles Deluxe").await;
+    let created = issue_link(&app, &admin, room_type_id, "3000.00").await;
+    let token = created["token"].as_str().expect("token").to_string();
+
+    // Five files the storage writer refuses: an unsupported image type,
+    // and a JPEG-labelled file whose magic bytes say otherwise.
+    for attempt in 1..=5 {
+        let (status, _) = upload_file_to_token(
+            &app,
+            &token,
+            "screenshot.webp",
+            "image/webp",
+            b"RIFF____WEBPVP8 not a jpeg",
+        )
+        .await;
+        assert_eq!(
+            status, 400,
+            "attempt {attempt} is a rejected file, not a stored slip"
+        );
+    }
+
+    let (status, body) = upload_slip_to_token(&app, &token).await;
+    assert_eq!(
+        status, 201,
+        "a real slip after five rejected files must still be accepted: {body}"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// A revoked link answers 409 without spending one of the guest's five
+/// slips either — there is nothing they can do about a revocation.
+#[tokio::test]
+async fn a_revoked_link_does_not_spend_the_budget() {
+    let app = TestApp::new_with_config(&promptpay_only)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "deposit-revokedbudget@test.com").await;
+    let room_type_id = seed_room_type(app.db(), "Deposit RevokedBudget Deluxe").await;
+    let created = issue_link(&app, &admin, room_type_id, "3000.00").await;
+    let token = created["token"].as_str().expect("token").to_string();
+    let link_id = created["linkId"].as_str().expect("linkId").to_string();
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    client
+        .post_empty(&format!("/api/admin/deposit-links/{}/revoke", link_id))
+        .await
+        .assert_status(200);
+
+    for _ in 0..6 {
+        let (status, _) = upload_slip_to_token(&app, &token).await;
+        assert_eq!(
+            status, 409,
+            "a revoked link stays a 409 and never turns into a 429"
+        );
+    }
 
     app.cleanup().await.ok();
 }
@@ -896,6 +986,149 @@ async fn reissue_kills_the_old_token_and_mints_a_new_one() {
     .await
     .expect("read expiries");
     assert_eq!(hold_expires, link_expires);
+
+    app.cleanup().await.ok();
+}
+
+/// Reissue twice on the SAME link id, which is what reception does when
+/// they double-click, retry after a timeout, or press Reissue on a link
+/// an earlier reissue already replaced (the desk still has the old link
+/// id on screen).
+///
+/// Revoking only the named row is a no-op the second time, so the insert
+/// used to be the second live link on the booking and the partial unique
+/// index turned the whole thing into a bare 500 — on the one operation
+/// whose purpose is to recover a lost link.
+#[tokio::test]
+async fn reissuing_the_same_link_twice_hands_back_a_link_not_a_500() {
+    let app = TestApp::new_with_config(&promptpay_only)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "deposit-reissue-twice@test.com").await;
+    let room_type_id = seed_room_type(app.db(), "Deposit Reissue Twice Deluxe").await;
+    let created = issue_link(&app, &admin, room_type_id, "3000.00").await;
+    let link_id = created["linkId"].as_str().expect("linkId").to_string();
+    let booking_id: Uuid = created["bookingId"]
+        .as_str()
+        .expect("bookingId")
+        .parse()
+        .expect("bookingId is a UUID");
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let first = client
+        .post_empty(&format!("/api/admin/deposit-links/{}/reissue", link_id))
+        .await;
+    first.assert_status(201);
+    let first: Value = first.json().expect("first reissue response");
+
+    // Same link id again — the desk never learned the new one.
+    let second = client
+        .post_empty(&format!("/api/admin/deposit-links/{}/reissue", link_id))
+        .await;
+    second.assert_status(201);
+    let second: Value = second.json().expect("second reissue response");
+
+    assert_ne!(
+        first["token"].as_str(),
+        second["token"].as_str(),
+        "each reissue mints a fresh token"
+    );
+
+    // Exactly one live link on the booking, and it is the newest one.
+    let live: Vec<Uuid> = sqlx::query_scalar(
+        r#"SELECT id FROM booking_deposit_links WHERE booking_id = $1 AND revoked_at IS NULL"#,
+    )
+    .bind(booking_id)
+    .fetch_all(app.db())
+    .await
+    .expect("read live links");
+    assert_eq!(live.len(), 1, "one live link per booking, always");
+    assert_eq!(
+        live[0].to_string(),
+        second["linkId"].as_str().expect("linkId"),
+        "the survivor is the link the last reissue minted"
+    );
+
+    // The link the FIRST reissue minted is dead, and its page says so.
+    let page = app
+        .client()
+        .get(&format!(
+            "/api/deposit/{}",
+            first["token"].as_str().expect("token")
+        ))
+        .await;
+    page.assert_status(200);
+    let page: Value = page.json().expect("page JSON");
+    assert_eq!(page["state"].as_str(), Some("revoked"));
+
+    app.cleanup().await.ok();
+}
+
+/// A body that is present but unreadable is a 400, not a silent fallback
+/// to the 48-hour default. `{"expiresInHours": "24"}` is what a form
+/// field bound straight to an input produces.
+#[tokio::test]
+async fn a_malformed_reissue_body_is_refused_rather_than_ignored() {
+    let app = TestApp::new_with_config(&promptpay_only)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "deposit-reissue-body@test.com").await;
+    let room_type_id = seed_room_type(app.db(), "Deposit Reissue Body Deluxe").await;
+    let created = issue_link(&app, &admin, room_type_id, "3000.00").await;
+    let link_id = created["linkId"].as_str().expect("linkId").to_string();
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    client
+        .post(
+            &format!("/api/admin/deposit-links/{}/reissue", link_id),
+            &json!({ "expiresInHours": "24" }),
+        )
+        .await
+        .assert_status(400);
+
+    // An empty body still means "use the default expiry".
+    client
+        .post_empty(&format!("/api/admin/deposit-links/{}/reissue", link_id))
+        .await
+        .assert_status(201);
+
+    app.cleanup().await.ok();
+}
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+/// A property with no PromptPay receiving account is a 400 naming the
+/// property, not a 500 saying "Server configuration error". Reception
+/// issuing the first link after a misspelt `PROMPTPAY_HF_ID` should read
+/// the answer and fix the variable, not page someone.
+#[tokio::test]
+async fn a_property_with_no_receiving_account_is_a_named_400() {
+    // Default test config carries no PromptPay ids at all.
+    let app = TestApp::new().await.expect("create test app");
+    let admin = seed_admin(&app, "deposit-noqr@test.com").await;
+    let room_type_id = seed_room_type(app.db(), "Deposit NoQr Deluxe").await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let response = client
+        .post(
+            "/api/admin/deposit-links",
+            &create_body(room_type_id, "3000.00"),
+        )
+        .await;
+    response.assert_status(400);
+
+    // Nothing was written: a link the guest could never pay is worse than
+    // no link at all.
+    let bookings: i64 =
+        sqlx::query_scalar(r#"SELECT COUNT(*) FROM bookings WHERE room_type_id = $1"#)
+            .bind(room_type_id)
+            .fetch_one(app.db())
+            .await
+            .expect("count bookings for this fixture room type");
+    assert_eq!(bookings, 0);
 
     app.cleanup().await.ok();
 }

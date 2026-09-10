@@ -115,14 +115,20 @@ pub fn create_router(state: AppState) -> Router {
     // Public deposit-request links (B1). Unauthenticated by design — the
     // 43-character token in the path is the capability — so the whole
     // sub-router carries its own limiter, layered the same way the strict
-    // auth limiter is above: 30 requests per minute per IP, production
-    // only. The guest page polls the read endpoint every 5 seconds after
-    // an upload (12/min), so a well-behaved page sits at well under half
-    // the budget.
+    // auth limiter is above: 30 requests per minute, production only. The
+    // guest page polls the read endpoint every 5 seconds after an upload
+    // (12/min), so a well-behaved page sits at well under half the budget.
     //
-    // The upload's tighter budgets (5 per hour per *link*, 20 per hour per
-    // IP) live inside the handler, because the subject that matters most
-    // there is the link, not the address a phone happens to be on.
+    // The subject is the **link**, not the client IP, and that is not a
+    // detail: `get_client_ip` reads the TCP peer, and in production every
+    // request arrives from the nginx container, so a per-IP budget here
+    // would be a single global bucket that three guests paying at once
+    // would exhaust between them — a 429 in the middle of a payment. The
+    // per-IP global limiter below still stands as the coarse backstop.
+    //
+    // The upload's tighter budgets (5 stored slips per hour per link, 30
+    // attempts, 20 per hour per IP) live inside the handler, for the same
+    // reason.
     let deposit_routes = match &rate_limiters {
         Some(_) => deposit_links::routes().layer(middleware::from_fn_with_state(
             RedisRateLimiter::new(
@@ -130,7 +136,7 @@ pub fn create_router(state: AppState) -> Router {
                 deposit_links::public_read_rate_limit(),
                 "deposit_public",
             ),
-            redis_rate_limit_middleware,
+            deposit_links::deposit_link_rate_limit_middleware,
         )),
         None => deposit_links::routes(),
     };

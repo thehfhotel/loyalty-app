@@ -53,7 +53,7 @@ use std::net::{IpAddr, SocketAddr};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::middleware::rate_limit::{RateLimitConfig, RedisRateLimiter};
+use crate::middleware::rate_limit::{RateLimitConfig, RateLimitError, RedisRateLimiter};
 use crate::services::promptpay::PromptPayService;
 use crate::state::AppState;
 
@@ -170,48 +170,109 @@ pub(crate) fn derive_state(
 // Rate limits
 // ============================================================================
 
-/// 30 GET per minute per IP, layered on the public sub-router in
-/// `routes::mod` the way the strict auth limiter is layered — production
-/// only, like every other limiter in this codebase.
+/// 30 requests per minute **per link**, layered on the public sub-router
+/// in `routes::mod` the way the strict auth limiter is layered —
+/// production only, like every other limiter in this codebase.
 ///
-/// The guest page polls this endpoint every 5 seconds for two minutes
+/// The guest page polls the read endpoint every 5 seconds for two minutes
 /// after an upload (12/min), so the budget is a little over double what a
 /// well-behaved page asks for.
+///
+/// **Per link, not per IP, and that is the point.** `get_client_ip` reads
+/// the TCP peer and deliberately ignores `X-Forwarded-For` (HIGH-2), but
+/// in production `/api` is served through nginx, so the peer is the nginx
+/// container for every request on earth. A per-IP budget here would be
+/// one global bucket: three guests paying at once, at 12 polls a minute
+/// each, would exhaust 30/min between them and a paying guest's page
+/// would start answering 429 in the middle of a payment. The link is the
+/// subject that actually matters on this router, exactly as it already is
+/// for the upload budget below.
 pub fn public_read_rate_limit() -> RateLimitConfig {
     RateLimitConfig::new(30, 60)
 }
 
-/// 5 uploads per hour **per link**.
+/// Rate-limit the public deposit endpoints on the **link** rather than on
+/// the client address; see [`public_read_rate_limit`] for why.
+///
+/// The bucket key is the hex SHA-256 of the token, never the token: the
+/// key reaches Redis and, on a Redis failure, the warning log line.
+pub async fn deposit_link_rate_limit_middleware(
+    State(limiter): State<RedisRateLimiter>,
+    Path(token): Path<String>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Result<axum::response::Response, crate::middleware::rate_limit::RateLimitError> {
+    limiter
+        .check_subject(&hex::encode(token_hash(&token)))
+        .await?;
+    Ok(next.run(request).await)
+}
+
+/// 5 **stored** slips per hour per link.
 ///
 /// Unlike every other limiter here this one runs in *all* environments,
 /// and deliberately: the public upload has no authentication at all, so
 /// the per-link budget is a property of the capability rather than a
 /// production-only convenience. It is safe to leave on in tests because
 /// the bucket key is the token hash, which is unique per test.
+///
+/// Charged **after** the file has validated and been written, never on an
+/// attempt. A guest who has already transferred the money and then picks
+/// the wrong file five times — a WebP screenshot from an Android gallery,
+/// a PDF out of a bank app, a HEIC iOS did not transcode, a truncated
+/// upload on a flaky mobile connection — would otherwise be locked out
+/// for an hour from the only page that lets them show proof of payment.
 const UPLOAD_PER_TOKEN: (u32, u64) = (5, 3600);
+
+/// 30 upload *attempts* per hour per link, charged before the body is
+/// read.
+///
+/// This is the anti-flood budget [`UPLOAD_PER_TOKEN`] used to be, split
+/// off so that the strict budget can count stored slips instead. Loose
+/// enough that a guest fumbling with their gallery never meets it, tight
+/// enough that a token holder cannot make us parse 10 MB bodies all day.
+const UPLOAD_ATTEMPTS_PER_TOKEN: (u32, u64) = (30, 3600);
 
 /// 20 uploads per hour per IP. Production only — in tests every request
 /// comes from 127.0.0.1, so an always-on IP bucket would leak between test
 /// cases and make the suite flaky in a way that says nothing about the
 /// code.
+///
+/// Behind nginx this is effectively one global bucket (see
+/// [`public_read_rate_limit`]), so treat it as the coarse backstop it is:
+/// the per-link budgets above are the ones that speak about a guest.
 const UPLOAD_PER_IP: (u32, u64) = (20, 3600);
 
-/// Charge one upload against both budgets.
+/// Turn a limiter refusal into a 429 that tells the truth about *when* to
+/// come back.
 ///
-/// The per-link bucket is charged first: it is the one that is always on,
-/// and the one whose 429 the suite asserts.
-async fn charge_upload_budgets(
+/// `check_subject` has already computed the remaining TTL of the window
+/// and hands it back on the error. Discarding it and answering with the
+/// full window length instead tells a guest who hit the budget at minute
+/// 59 to wait an hour for a bucket that resets in a minute — and a
+/// frontend that honours `Retry-After` will do exactly that.
+fn too_many_requests(err: RateLimitError) -> AppError {
+    let RateLimitError::TooManyRequests { retry_after } = err;
+    AppError::TooManyRequests(retry_after as u64)
+}
+
+/// Charge one upload *attempt*, before the multipart body is read.
+///
+/// Deliberately does not touch [`UPLOAD_PER_TOKEN`]: that budget counts
+/// slips we actually stored, and is charged by
+/// [`charge_stored_slip_budget`] once the file has validated.
+async fn charge_upload_attempt_budgets(
     state: &AppState,
     token_hash_hex: &str,
     client_ip: Option<IpAddr>,
 ) -> AppResult<()> {
-    let per_token = RedisRateLimiter::new(
+    let attempts = RedisRateLimiter::new(
         state.redis(),
-        RateLimitConfig::new(UPLOAD_PER_TOKEN.0, UPLOAD_PER_TOKEN.1),
-        "deposit_upload_token",
+        RateLimitConfig::new(UPLOAD_ATTEMPTS_PER_TOKEN.0, UPLOAD_ATTEMPTS_PER_TOKEN.1),
+        "deposit_upload_attempt",
     );
-    if per_token.check_subject(token_hash_hex).await.is_err() {
-        return Err(AppError::TooManyRequests(UPLOAD_PER_TOKEN.1));
+    if let Err(e) = attempts.check_subject(token_hash_hex).await {
+        return Err(too_many_requests(e));
     }
 
     if state.is_production() {
@@ -221,13 +282,26 @@ async fn charge_upload_budgets(
                 RateLimitConfig::new(UPLOAD_PER_IP.0, UPLOAD_PER_IP.1),
                 "deposit_upload_ip",
             );
-            if per_ip.check(ip).await.is_err() {
-                return Err(AppError::TooManyRequests(UPLOAD_PER_IP.1));
+            if let Err(e) = per_ip.check(ip).await {
+                return Err(too_many_requests(e));
             }
         }
     }
 
     Ok(())
+}
+
+/// Charge one **stored** slip against the strict per-link budget.
+async fn charge_stored_slip_budget(state: &AppState, token_hash_hex: &str) -> AppResult<()> {
+    let per_token = RedisRateLimiter::new(
+        state.redis(),
+        RateLimitConfig::new(UPLOAD_PER_TOKEN.0, UPLOAD_PER_TOKEN.1),
+        "deposit_upload_token",
+    );
+    match per_token.check_subject(token_hash_hex).await {
+        Ok(()) => Ok(()),
+        Err(e) => Err(too_many_requests(e)),
+    }
 }
 
 // ============================================================================
@@ -419,14 +493,27 @@ async fn get_deposit_link(
 
     // Opens are counted for the A9 shadow-window report and so reception
     // can tell "the guest never opened it" from "the guest opened it and
-    // did nothing". Best-effort: a failed counter must never cost the
-    // guest their page.
+    // did nothing".
+    //
+    // A *session*, not a request. This page polls itself every 5 seconds
+    // for two minutes after an upload and every 30 seconds after that, so
+    // counting requests would score one guest who opened the link once and
+    // paid at around thirty, and a page left open in a LINE in-app browser
+    // tab at two a minute forever — a number that answers neither question
+    // above. The 30-minute gate also means the one endpoint on this
+    // service with no authentication at all stops writing to the database
+    // on every read.
+    //
+    // Best-effort either way: a failed counter must never cost the guest
+    // their page.
     if let Err(e) = sqlx::query!(
         r#"
         UPDATE booking_deposit_links
         SET open_count      = open_count + 1,
-            first_opened_at = COALESCE(first_opened_at, NOW())
+            first_opened_at = COALESCE(first_opened_at, NOW()),
+            last_opened_at  = NOW()
         WHERE id = $1
+          AND (last_opened_at IS NULL OR last_opened_at < NOW() - INTERVAL '30 minutes')
         "#,
         link.link_id,
     )
@@ -478,26 +565,36 @@ async fn upload_deposit_slip(
     multipart: Multipart,
 ) -> AppResult<(StatusCode, Json<DepositSlipUploadResponse>)> {
     let link = find_link_by_token(state.db(), &token).await?;
+    let token_hash_hex = hex::encode(token_hash(&token));
 
-    // Budgets are charged before the body is read, so a flood costs us a
-    // lookup rather than 10 MB of buffering per request.
-    charge_upload_budgets(
-        &state,
-        &hex::encode(token_hash(&token)),
-        connect_info.map(|ConnectInfo(addr)| addr.ip()),
-    )
-    .await?;
-
+    // Revocation first, and before any budget: reception saying "not this
+    // link" is a 409 the guest can do nothing about, and it must not cost
+    // them one of the five slips they are allowed to show.
     if link.revoked_at.is_some() {
         return Err(AppError::Conflict(
             "This payment link is no longer active".to_string(),
         ));
     }
 
+    // The *attempt* budget is charged before the body is read, so a flood
+    // costs us a lookup rather than 10 MB of buffering per request. The
+    // strict five-slips-an-hour budget is charged further down, once the
+    // file has actually validated.
+    charge_upload_attempt_budgets(
+        &state,
+        &token_hash_hex,
+        connect_info.map(|ConnectInfo(addr)| addr.ip()),
+    )
+    .await?;
+
     // The same writer `POST /api/slips/upload` uses: same 10 MB cap, same
     // JPEG/PNG magic-byte check, same `STORAGE_PATH/slips/<uuid>` target,
     // so F2's retention and access logging cover this with no special case.
+    // Everything it rejects — wrong format, oversize, truncated body — is
+    // rejected before the strict budget below is touched.
     let slip_url = crate::routes::slips::store_slip_upload(multipart).await?;
+
+    charge_stored_slip_budget(&state, &token_hash_hex).await?;
 
     let mut tx = state.db().begin().await?;
     let slip = crate::routes::bookings::insert_booking_slip_tx(

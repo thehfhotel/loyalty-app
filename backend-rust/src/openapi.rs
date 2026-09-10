@@ -1558,7 +1558,7 @@ pub mod paths {
         security(("bearer_auth" = [])),
         responses(
             (status = 201, description = "Booking and link created. The token is returned ONCE and never again"),
-            (status = 400, description = "Validation failed"),
+            (status = 400, description = "Validation failed, or this property has no PromptPay receiving account configured so the link would have no QR"),
             (status = 403, description = "Admin access required")
         )
     )]
@@ -1605,7 +1605,8 @@ pub mod paths {
         params(("id" = String, Path, description = "Link id to replace")),
         security(("bearer_auth" = [])),
         responses(
-            (status = 201, description = "A new link for the same booking; the old token is dead"),
+            (status = 201, description = "A new link for the same booking; every previously live token on it is dead. Safe to repeat: reissuing the same link id twice returns a link, not a conflict"),
+            (status = 400, description = "The body was present but could not be read (an absent or empty body is fine and means \"use the default expiry\")"),
             (status = 403, description = "Admin access required"),
             (status = 404, description = "No such link")
         )

@@ -87,11 +87,31 @@ CREATE TABLE IF NOT EXISTS "public"."booking_deposit_links" (
     "expires_at"      TIMESTAMPTZ(6) NOT NULL,
     "revoked_at"      TIMESTAMPTZ(6),
     "first_opened_at" TIMESTAMPTZ(6),
+    "last_opened_at"  TIMESTAMPTZ(6),
     "open_count"      INTEGER NOT NULL DEFAULT 0,
     "note"            TEXT,
 
     CONSTRAINT "booking_deposit_links_pkey" PRIMARY KEY ("id")
 );
+
+-- Idempotency belt: `CREATE TABLE IF NOT EXISTS` is a no-op against a
+-- table created by an earlier run of this file, so a column added later
+-- needs its own guard.
+ALTER TABLE "public"."booking_deposit_links"
+    ADD COLUMN IF NOT EXISTS "last_opened_at" TIMESTAMPTZ(6);
+
+-- What the open counters mean, because "count" invites the wrong reading.
+-- The guest page polls `GET /api/deposit/:token` every 5 seconds for two
+-- minutes after an upload and every 30 seconds after that, so a counter
+-- incremented per HTTP request would read ~30 for one guest who opened
+-- the link once and paid, and would answer none of the questions
+-- reception asks of it.
+COMMENT ON COLUMN "public"."booking_deposit_links"."open_count"
+    IS 'Number of viewing SESSIONS, not HTTP requests: a read only counts when the previous one was more than 30 minutes ago, so a page polling itself counts once.';
+COMMENT ON COLUMN "public"."booking_deposit_links"."first_opened_at"
+    IS 'When the guest first opened the link. NULL means they never did — the one fact that separates "never opened it" from "opened it and did nothing".';
+COMMENT ON COLUMN "public"."booking_deposit_links"."last_opened_at"
+    IS 'When the most recent viewing session STARTED (not the last request). Also the gate that keeps a polling page from writing to this row every 5 seconds.';
 
 DO $$
 BEGIN

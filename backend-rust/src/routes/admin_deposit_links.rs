@@ -134,9 +134,29 @@ pub struct DepositLinkCreatedResponse {
 }
 
 #[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReissueDepositLinkRequest {
     pub expires_in_hours: Option<i64>,
+}
+
+impl ReissueDepositLinkRequest {
+    /// Parse the request body, which §2 makes optional.
+    ///
+    /// Not `Option<Json<Self>>`: that yields `None` for an *absent* body
+    /// and, indistinguishably, for a body that failed to deserialize or
+    /// arrived without a JSON content-type. `{"expiresInHours": "24"}` —
+    /// a string, which is what a form field bound straight to an input
+    /// produces — would then fall through to the 48-hour default, answer
+    /// 201, and never tell reception their 24 was ignored. It would also
+    /// silently swallow any field added to this body later.
+    fn parse(body: &[u8]) -> AppResult<Self> {
+        if body.iter().all(|b| b.is_ascii_whitespace()) {
+            return Ok(Self::default());
+        }
+        serde_json::from_slice(body).map_err(|e| {
+            AppError::Validation(format!("Could not read the reissue request body: {e}"))
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -235,14 +255,21 @@ async fn create_deposit_link(
     // written: a link whose page cannot show a QR is a booking the guest
     // can never pay, and finding that out at open time is worse than
     // finding it out here.
+    //
+    // A 400 naming the property, not a 500. `AppError::Configuration`
+    // answers "Server configuration error" and throws the property name
+    // away, so reception issuing the first link after a misspelt
+    // `PROMPTPAY_HF_ID` would see a generic server error, assume the app
+    // is down and page someone — when the fix is one environment
+    // variable. It is also what the OpenAPI stub for this path documents.
     if state
         .config()
         .promptpay
         .id_for_property(payload.property.as_str())
         .is_none()
     {
-        return Err(AppError::Configuration(format!(
-            "PromptPay account for {} is not configured",
+        return Err(AppError::Validation(format!(
+            "The PromptPay receiving account for {} is not configured, so this link would have no QR. Ask an admin to set it before issuing links.",
             payload.property
         )));
     }
@@ -592,11 +619,17 @@ async fn revoke_deposit_link(
 
 /// `POST /api/admin/deposit-links/:id/reissue`
 ///
-/// The old token dies and a new one is minted against the *same booking*,
-/// in one transaction. The partial unique index
+/// Every live token on the booking dies and a new one is minted against
+/// the *same booking*, in one transaction, with the booking row locked so
+/// two reissues cannot race. The partial unique index
 /// `booking_deposit_links_one_live_uidx` is the backstop: two live tokens
 /// for one booking cannot exist even if a future handler forgets the
 /// revoke.
+///
+/// Reissuing the *same link id* twice is therefore idempotent-shaped
+/// rather than an error: the second call finds nothing live left to
+/// revoke, revokes the link the first call minted, and hands back a third
+/// one. Reception double-clicking Reissue gets a link, not a 500.
 ///
 /// The booking's `hold_expires_at` moves with the new link, because that
 /// column is what `slipok_check` reads to decide whether a slip is still
@@ -606,12 +639,12 @@ async fn reissue_deposit_link(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     Path(link_id): Path<Uuid>,
-    body: Option<Json<ReissueDepositLinkRequest>>,
+    body: axum::body::Bytes,
 ) -> AppResult<(StatusCode, Json<DepositLinkCreatedResponse>)> {
     require_admin(&auth_user)?;
     let admin_id = Uuid::parse_str(&auth_user.id)
         .map_err(|_| AppError::InvalidToken("Invalid user ID in token".to_string()))?;
-    let expires_in_hours = body.and_then(|Json(b)| b.expires_in_hours);
+    let expires_in_hours = ReissueDepositLinkRequest::parse(&body)?.expires_in_hours;
 
     let mut tx = state.db().begin().await?;
 
@@ -645,9 +678,32 @@ async fn reissue_deposit_link(
 
     let expires_at = resolve_expiry(Utc::now(), old.check_in_date, expires_in_hours)?;
 
+    // Lock the booking, not just the named link, so two reissues racing on
+    // the same booking serialise here rather than at the unique index.
+    sqlx::query_scalar!(
+        r#"SELECT id AS "id!" FROM bookings WHERE id = $1 FOR UPDATE"#,
+        old.booking_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    // Revoke every LIVE link on this booking, not only the one named in
+    // the path. Revoking just that row is a no-op when it is already
+    // revoked — which is exactly the state reception is in when they
+    // double-click Reissue, retry after a timeout, or press Reissue on a
+    // link some earlier reissue already replaced (the desk still has the
+    // old link id on screen; nothing tells the UI to forget it). The
+    // insert below would then be the second live link on the booking, the
+    // partial unique index `booking_deposit_links_one_live_uidx` would
+    // reject it, and reception would get a bare 500 out of the one
+    // operation whose entire purpose is to recover a lost link.
     sqlx::query!(
-        r#"UPDATE booking_deposit_links SET revoked_at = COALESCE(revoked_at, NOW()) WHERE id = $1"#,
-        link_id,
+        r#"
+        UPDATE booking_deposit_links
+        SET revoked_at = NOW()
+        WHERE booking_id = $1 AND revoked_at IS NULL
+        "#,
+        old.booking_id,
     )
     .execute(&mut *tx)
     .await?;
@@ -838,7 +894,7 @@ fn build_created_response(
     expires_at: DateTime<Utc>,
 ) -> DepositLinkCreatedResponse {
     let url = guest_link_url(&state.config().server.frontend_url, &token);
-    let line_share_url = line_share_url(property, amount_due_now, &url);
+    let line_share_url = line_share_url(property, amount_due_now, total_price, &url);
 
     DepositLinkCreatedResponse {
         link_id,
@@ -862,15 +918,75 @@ fn guest_link_url(frontend_url: &str, token: &str) -> String {
 /// A LINE share intent reception can tap straight from the modal.
 ///
 /// Thai first, and **no vendor name anywhere** — the guest is told what to
-/// pay and where, never who checks it.
-fn line_share_url(property: Property, amount_due_now: Decimal, url: &str) -> String {
-    let text = format!(
-        "ยืนยันการจองที่ {}\nกรุณาชำระมัดจำ {} บาท ที่ลิงก์นี้\n{}",
-        property.display_name(),
-        amount_due_now.normalize(),
-        url
-    );
+/// pay and where, never who checks it. The strings are the ones in
+/// `direct-booking-designs/f-policy-copy-drafts.md` §6, so they go through
+/// the same Thai review as the rest of the guest copy.
+///
+/// The noun branches on whether this is a deposit or the whole price.
+/// `create_deposit_link` sets `payment_option = "full"` when reception
+/// overrides the amount up to the total, and calling that "มัดจำ" would
+/// tell a guest paying in full that they still owe a balance — while the
+/// policy copy promises "ส่วนที่เหลือชำระที่แผนกต้อนรับตอนเช็คอิน", a
+/// balance that in this case does not exist.
+///
+/// The property name stays in Latin script: "The Harbour Front Hotel" and
+/// "HF Ville" are the brand as the OAs and the signage use it, and
+/// inventing a Thai rendering here would be new copy with no source.
+fn line_share_url(
+    property: Property,
+    amount_due_now: Decimal,
+    total_price: Decimal,
+    url: &str,
+) -> String {
+    let amount = format_baht(amount_due_now);
+    let text = if amount_due_now >= total_price {
+        format!(
+            "ยืนยันการจองที่ {}\nกรุณาชำระยอดเต็ม {} บาท ที่ลิงก์นี้\n{}",
+            property.display_name(),
+            amount,
+            url
+        )
+    } else {
+        format!(
+            "ยืนยันการจองที่ {}\nกรุณาชำระมัดจำ {} บาท ที่ลิงก์นี้\nส่วนที่เหลือชำระที่แผนกต้อนรับตอนเช็คอิน\n{}",
+            property.display_name(),
+            amount,
+            url
+        )
+    };
     format!("https://line.me/R/share?text={}", percent_encode(&text))
+}
+
+/// A baht amount as a person reads it: thousands separated, and no
+/// decimal point unless there are satang. "4,500", not "4500"; "4,500.50"
+/// when it matters.
+fn format_baht(amount: Decimal) -> String {
+    let value = amount.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+    let rendered = if value.fract() == Decimal::ZERO {
+        value.normalize().to_string()
+    } else {
+        format!("{:.2}", value)
+    };
+    let (integer, fraction) = match rendered.split_once('.') {
+        Some((i, f)) => (i, Some(f)),
+        None => (rendered.as_str(), None),
+    };
+
+    let sign = if integer.starts_with('-') { "-" } else { "" };
+    let digits = integer.trim_start_matches('-');
+
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(digit);
+    }
+
+    match fraction {
+        Some(fraction) => format!("{sign}{grouped}.{fraction}"),
+        None => format!("{sign}{grouped}"),
+    }
 }
 
 /// Percent-encode everything outside the RFC 3986 unreserved set.
@@ -1056,6 +1172,7 @@ mod tests {
         let url = line_share_url(
             Property::Hfville,
             dec!(1500.00),
+            dec!(3000.00),
             "https://loyalty.saichon.com/d/tok",
         );
         assert!(url.starts_with("https://line.me/R/share?text="));
@@ -1063,6 +1180,41 @@ mod tests {
         assert!(url.contains("https%3A%2F%2Floyalty.saichon.com%2Fd%2Ftok"));
         // No vendor ever appears in guest-facing copy.
         assert!(!url.to_lowercase().contains("slipok"));
+        // A half payment is a มัดจำ, and the balance line goes with it.
+        assert!(url.contains(&percent_encode("กรุณาชำระมัดจำ 1,500 บาท")));
+        assert!(url.contains(&percent_encode("ส่วนที่เหลือชำระที่แผนกต้อนรับตอนเช็คอิน")));
+    }
+
+    /// Reception can override the amount up to the full price, and then
+    /// the message must not call it a deposit or promise a balance the
+    /// guest does not owe.
+    #[test]
+    fn line_share_url_calls_a_full_payment_a_full_payment() {
+        let url = line_share_url(
+            Property::Hf,
+            dec!(4500.00),
+            dec!(4500.00),
+            "https://loyalty.saichon.com/d/tok",
+        );
+        assert!(url.contains(&percent_encode("กรุณาชำระยอดเต็ม 4,500 บาท")));
+        assert!(
+            !url.contains(&percent_encode("มัดจำ")),
+            "a full payment is never a deposit"
+        );
+        assert!(
+            !url.contains(&percent_encode("ส่วนที่เหลือ")),
+            "there is no balance to pay at check-in"
+        );
+    }
+
+    #[test]
+    fn baht_amounts_read_the_way_a_person_reads_them() {
+        assert_eq!(format_baht(dec!(4500.00)), "4,500");
+        assert_eq!(format_baht(dec!(100)), "100");
+        assert_eq!(format_baht(dec!(1234567.00)), "1,234,567");
+        assert_eq!(format_baht(dec!(1500.50)), "1,500.50");
+        assert_eq!(format_baht(dec!(999)), "999");
+        assert_eq!(format_baht(dec!(1000)), "1,000");
     }
 
     #[test]
