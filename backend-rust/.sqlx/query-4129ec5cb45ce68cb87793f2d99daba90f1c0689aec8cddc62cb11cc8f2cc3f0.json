@@ -1,0 +1,84 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH link_state AS (\n            SELECT l.id           AS link_id,\n                   l.booking_id   AS booking_id,\n                   l.expires_at   AS expires_at,\n                   l.issued_at    AS issued_at,\n                   l.issued_by    AS issued_by,\n                   l.last_opened_at AS last_opened_at,\n                   b.property     AS property,\n                   b.guest_name   AS guest_name,\n                   COALESCE(b.amount_due_now, b.total_price) AS amount_due_now,\n                   s.latest_slipok_status AS latest_slipok_status,\n                   CASE\n                       WHEN l.revoked_at IS NOT NULL THEN 'revoked'\n                       WHEN l.expires_at <= NOW() AND NOT s.any_verified THEN 'expired'\n                       WHEN b.status = 'confirmed' OR s.any_verified THEN 'confirmed'\n                       WHEN s.any_slip THEN 'checking'\n                       ELSE 'awaiting_payment'\n                   END AS state\n            FROM booking_deposit_links l\n            JOIN bookings b ON b.id = l.booking_id\n            LEFT JOIN LATERAL (\n                SELECT COUNT(*) > 0 AS any_slip,\n                       COALESCE(BOOL_OR(admin_status = 'verified'), FALSE) AS any_verified,\n                       (ARRAY_AGG(slipok_status ORDER BY uploaded_at DESC NULLS LAST))[1]\n                           AS latest_slipok_status\n                FROM booking_slips\n                WHERE booking_id = b.id\n            ) s ON TRUE\n        )\n        SELECT ls.link_id        AS \"link_id!\",\n               ls.booking_id     AS \"booking_id!\",\n               ls.property,\n               ls.guest_name,\n               ls.amount_due_now AS \"amount_due_now!\",\n               ls.state          AS \"state!\",\n               ls.expires_at     AS \"expires_at!\",\n               ls.issued_at      AS \"issued_at!\",\n               ls.last_opened_at,\n               ls.latest_slipok_status,\n               COALESCE(\n                   NULLIF(TRIM(CONCAT(p.first_name, ' ', p.last_name)), ''),\n                   u.email,\n                   'unknown'\n               ) AS \"issued_by_name!\"\n        FROM link_state ls\n        JOIN users u ON u.id = ls.issued_by\n        LEFT JOIN user_profiles p ON p.user_id = u.id\n        WHERE $1::text[] IS NULL OR ls.state = ANY($1::text[])\n        ORDER BY ls.issued_at DESC\n        LIMIT $2 OFFSET $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "link_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "booking_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "property",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "guest_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "amount_due_now!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "state!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "expires_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "issued_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "last_opened_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "latest_slipok_status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "issued_by_name!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      null,
+      null,
+      false,
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "4129ec5cb45ce68cb87793f2d99daba90f1c0689aec8cddc62cb11cc8f2cc3f0"
+}

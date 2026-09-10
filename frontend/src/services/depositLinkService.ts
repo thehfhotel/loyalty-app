@@ -135,15 +135,42 @@ export type DepositLinkListFilter = 'open' | 'paid' | 'expired' | 'revoked';
 export interface DepositLinkListItem {
   linkId: string;
   bookingId: string;
-  property: Property;
-  guestName: string;
+  /**
+   * Nullable on the wire: the backend serialises both of these as
+   * `Option<String>` (the columns are nullable), and create-time validation
+   * is the only thing keeping them filled today. Typed honestly so the
+   * table renders a gap rather than the literal string `property.null`.
+   */
+  property: Property | null;
+  guestName: string | null;
   amountDueNow: number;
   state: DepositLinkState;
   expiresAt: string;
   issuedByName: string;
   issuedAt: string;
+  /**
+   * When the guest's most recent viewing SESSION started, or `null` when
+   * they have never opened the link.
+   *
+   * Not a request count: the backend writes this at most once every 30
+   * minutes, so the guest page polling itself every 5 seconds does not
+   * read as "just now" forever. The null is the useful half — "issued
+   * yesterday, never opened" is a link to resend, while "opened ten
+   * minutes ago, still awaiting payment" is a guest mid-transfer.
+   */
+  lastOpenedAt: string | null;
   slipokStatus: SlipOkStatusValue | null;
 }
+
+/**
+ * There is no `url` on a list row, and there never can be.
+ *
+ * The backend stores only the SHA-256 of the token, so the plain link
+ * exists exactly once — in the create/reissue response. Copy and LINE
+ * share are therefore actions on an [`IssuedDepositLink`] the desk is
+ * holding from this session, not on a list row; a row whose token is gone
+ * offers Reissue instead. See `pages/admin/DepositLinkListPanel`.
+ */
 
 export interface DepositLinkListResponse {
   links: DepositLinkListItem[];

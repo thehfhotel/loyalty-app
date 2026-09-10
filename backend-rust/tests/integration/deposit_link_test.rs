@@ -1300,6 +1300,34 @@ async fn the_admin_list_reports_state_and_filters_on_it() {
         Some("deposit-list@test.com"),
         "an admin with no profile row falls back to their email"
     );
+    // The one fact that separates "the guest never saw it" from "they saw
+    // it and did nothing" — which is the difference between reception
+    // resending the link and reception phoning the guest. Nobody has
+    // opened this one yet, so it is null rather than absent.
+    assert!(
+        links[0].get("lastOpenedAt").is_some(),
+        "lastOpenedAt is part of the list contract even when it is null"
+    );
+    assert!(
+        links[0]["lastOpenedAt"].is_null(),
+        "a link nobody has opened reports no last-opened time"
+    );
+
+    // Open it as the guest would, and the desk can see that they did.
+    read_link(
+        &app,
+        open["token"].as_str().expect("token in create response"),
+    )
+    .await
+    .assert_status(200);
+
+    let response = client.get("/api/admin/deposit-links?status=open").await;
+    response.assert_status(200);
+    let body: Value = response.json().expect("list response");
+    assert!(
+        body["links"][0]["lastOpenedAt"].as_str().is_some(),
+        "the list reports when the guest last opened the link"
+    );
 
     let response = client.get("/api/admin/deposit-links?status=revoked").await;
     response.assert_status(200);
