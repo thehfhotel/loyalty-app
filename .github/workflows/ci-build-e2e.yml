@@ -367,12 +367,10 @@ jobs:
           # NOTE: adding this changes the key, so the first main run after merge
           # takes a prefix-match restore and one real save.
           shared-key: "container-test"
-          # TEMPORARY (PR #417 measurement) — restored to main-only in the next
-          # commit. `shared-key` above is a NEW cache key, so nothing on main
-          # holds it yet; with the normal main-only rule every run on this
-          # branch compiles from scratch and the steady state cannot be
-          # measured. Saving once from this PR ref lets the next run restore it.
-          save-if: true
+          # See the note on `build-backend-release`'s cache step. This job owns
+          # the largest cache entry in the repo (~870 MB), so it is the biggest
+          # single contributor to the quota pressure described there.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Grant CREATEDB for per-test database isolation
         run: |
