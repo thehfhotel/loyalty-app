@@ -663,6 +663,11 @@ export default function MyBookingsPage() {
                             <Badge
                               tone={slipOkBadge(slip.slipokStatus).tone}
                               size="sm"
+                              // Badge renders a bare <span> (role=generic), and
+                              // ARIA ignores aria-label there — with the glyph
+                              // aria-hidden, this badge would be silent. role=img
+                              // gives the label something to attach to.
+                              role="img"
                               aria-label={t(guestSlipOkStatusKey(slip.slipokStatus))}
                             >
                               <StatusGlyph icon={slipOkBadge(slip.slipokStatus).icon} />
@@ -872,6 +877,9 @@ export default function MyBookingsPage() {
                           <Badge
                             tone={slipOkBadge(slip.slipokStatus).tone}
                             size="sm"
+                            // See the details-modal badge: role=img is what
+                            // makes the aria-label reach a screen reader.
+                            role="img"
                             aria-label={t(guestSlipOkStatusKey(slip.slipokStatus))}
                           >
                             <StatusGlyph icon={slipOkBadge(slip.slipokStatus).icon} />

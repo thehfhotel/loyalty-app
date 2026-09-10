@@ -968,5 +968,34 @@ describe('MyBookingsPage', () => {
       // Only the booking-status badge remains.
       expect(within(card).getAllByText('Confirmed')).toHaveLength(1);
     });
+
+    it('gives the icon-only slip thumbnail badge a label a screen reader can reach', async () => {
+      const user = userEvent.setup();
+      mockBookingsData = [
+        {
+          ...bookingWithSlipStatus('slip-thumb', 'manual'),
+          slips: [
+            {
+              id: 'slip-thumb-1',
+              slipUrl: 'https://example.test/slip-1.png',
+              uploadedAt: '2027-07-01T10:00:00Z',
+              slipokStatus: 'manual',
+              adminStatus: 'pending',
+            },
+          ],
+        },
+      ] as never;
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
+
+      await user.click(screen.getByTestId('booking-card-slip-thumb'));
+      const modal = screen.getByRole('dialog');
+
+      // The glyph inside the badge is aria-hidden, and ARIA ignores
+      // aria-label on a bare <span> (role=generic) — without an explicit
+      // role the badge is silent, which is what this asserts against.
+      const badge = within(modal).getByLabelText('Being checked');
+      expect(badge).toHaveAttribute('role', 'img');
+    });
   });
 });

@@ -17,7 +17,7 @@ import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { Badge, Button, type BadgeTone } from '../ui';
-import { slipOkReasonKey, type SlipOkStatusValue } from '../../types/slipok';
+import { deskSlipOkStatus, slipOkReasonKey, type SlipOkStatusValue } from '../../types/slipok';
 
 // Types matching BookingManagement
 interface BookingUser {
@@ -50,6 +50,9 @@ interface BookingSlip {
   adminStatus: 'pending' | 'verified' | 'needs_action';
   adminVerifiedAt: string | null;
   adminVerifiedBy: string | null;
+  /** Display name of the human who verified. Absent on rows the API has not
+   *  resolved a name for; an auto verify is attributed to SlipOK instead. */
+  adminVerifiedByName?: string | null;
   /** True when `admin_verified_by` is the SlipOK system actor, i.e. the
    *  verify was automatic. Missing (older API) is read as false. */
   autoVerified?: boolean;
@@ -194,6 +197,7 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
         adminStatus: booking.slip.adminStatus,
         adminVerifiedAt: booking.slip.adminVerifiedAt,
         adminVerifiedBy: booking.slip.adminVerifiedBy,
+        adminVerifiedByName: booking.slip.adminVerifiedByName,
         autoVerified: booking.slip.autoVerified ?? false,
         isPrimary: true
       }];
@@ -288,7 +292,10 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     reason?: string | null;
     checkedAt?: string | null;
   }> = ({ status, verifiedAt, reason, checkedAt }) => {
-    const badges: Record<string, { tone: BadgeTone; text: string }> = {
+    // Keyed by the locked vocabulary, not `string`: adding a status to
+    // `SLIPOK_STATUSES` must break this build rather than quietly render the
+    // machine's new verdict as "not yet checked" at the desk.
+    const badges: Record<SlipOkStatusValue, { tone: BadgeTone; text: string }> = {
       verified: { tone: 'success', text: t('admin.booking.bookingManagement.slipStatus.verified') },
       pending: { tone: 'warning', text: t('admin.booking.bookingManagement.slipStatus.pending') },
       shadow_pass: { tone: 'info', text: t('admin.booking.bookingManagement.slipStatus.shadowPass') },
@@ -298,7 +305,10 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
       quota_exceeded: { tone: 'warning', text: t('admin.booking.bookingManagement.slipStatus.quotaExceeded') }
     };
 
-    const badge = badges[status] ?? badges.pending;
+    // A status this bundle predates still renders — as "pending" — rather
+    // than as a blank badge; `deskSlipOkStatus` is the only place that
+    // decision is made.
+    const badge = badges[deskSlipOkStatus(status)];
     const reasonKey = slipOkReasonKey(reason);
     // An unknown reason still reaches the desk verbatim — a raw key beats a
     // blank space when reception is deciding whether to call the guest.
@@ -307,14 +317,19 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
 
     return (
       <div className="flex flex-col gap-1">
-        <Badge tone={badge?.tone ?? 'warning'}>{badge?.text ?? ''}</Badge>
+        <Badge tone={badge.tone}>{badge.text}</Badge>
         {reasonText && (
           <span className="text-fine text-ink-muted">
             {t('admin.booking.bookingManagement.slipViewer.slipokReason')}: {reasonText}
           </span>
         )}
         {decidedAt && (
+          // Labelled, because the admin badge beside it prints its own bare
+          // timestamp — an unlabelled pair leaves reception guessing which
+          // one is the machine's check, exactly when they are deciding
+          // whether that verdict is stale.
           <span className="text-fine text-ink-muted">
+            {t('admin.booking.bookingManagement.slipViewer.slipokCheckedAt')}:{' '}
             {formatDateTimeToEuropean(decidedAt)}
           </span>
         )}
@@ -431,7 +446,7 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
             <AdminStatusBadge
               status={currentSlip.adminStatus}
               verifiedAt={currentSlip.adminVerifiedAt}
-              verifiedByName={null}
+              verifiedByName={currentSlip.adminVerifiedByName ?? null}
               autoVerified={currentSlip.autoVerified ?? false}
             />
           </div>

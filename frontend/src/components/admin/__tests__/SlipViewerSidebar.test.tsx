@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import SlipViewerSidebar from '../SlipViewerSidebar';
 
@@ -19,6 +19,7 @@ const translations: Record<string, string> = {
   'admin.booking.bookingManagement.slipViewer.slipokStatus': 'SlipOK Status',
   'admin.booking.bookingManagement.slipViewer.adminStatus': 'Admin Status',
   'admin.booking.bookingManagement.slipViewer.slipokReason': 'Reason',
+  'admin.booking.bookingManagement.slipViewer.slipokCheckedAt': 'Checked',
   'admin.booking.bookingManagement.slipViewer.autoVerifier': 'SlipOK',
   'admin.booking.bookingManagement.slipViewer.uploaded': 'Uploaded',
   'admin.booking.bookingManagement.slipViewer.noAuditHistory': 'No activity history',
@@ -51,6 +52,7 @@ type SlipOverrides = {
   slipokVerifiedAt?: string | null;
   adminStatus?: string;
   adminVerifiedAt?: string | null;
+  adminVerifiedByName?: string | null;
   autoVerified?: boolean;
 };
 
@@ -91,6 +93,7 @@ function makeBooking(overrides: SlipOverrides = {}) {
         adminStatus: 'pending' as const,
         adminVerifiedAt: null,
         adminVerifiedBy: null,
+        adminVerifiedByName: null,
         isPrimary: true,
         ...overrides,
       },
@@ -120,6 +123,21 @@ function renderSidebar(overrides: SlipOverrides = {}) {
   );
 }
 
+/**
+ * The SlipOK column only. The admin column sits in a sibling block and
+ * renders labels of its own ("Pending", "Verified", a bare timestamp), so an
+ * unscoped query can be satisfied by the wrong badge — which would let a
+ * broken SlipOK lookup pass.
+ */
+function slipOkColumn(): HTMLElement {
+  const heading = screen.getByText('SlipOK Status');
+  const column = heading.closest('div');
+  if (!column) {
+    throw new Error('SlipOK column not found');
+  }
+  return column;
+}
+
 describe('SlipViewerSidebar SlipOK surfacing', () => {
   it('shows the manual status, its reason and the time the machine checked', () => {
     renderSidebar({
@@ -128,14 +146,17 @@ describe('SlipViewerSidebar SlipOK surfacing', () => {
       slipokCheckedAt: '2027-06-01T10:05:00Z',
     });
 
-    expect(screen.getByText('Manual check needed')).toBeInTheDocument();
+    const column = within(slipOkColumn());
+    expect(column.getByText('Manual check needed')).toBeInTheDocument();
     expect(
-      screen.getByText(/Transferred amount does not match the booking/)
+      column.getByText(/Transferred amount does not match the booking/)
     ).toBeInTheDocument();
-    expect(screen.getByText(/Reason:/)).toBeInTheDocument();
+    expect(column.getByText(/Reason:/)).toBeInTheDocument();
+    // The check time is labelled: the admin badge beside it prints its own
+    // timestamp, and two bare dates tell reception nothing.
     // dd/mm/yyyy, hh:mm from formatDateTimeToEuropean — the date part is
     // timezone-stable enough to assert on, the hour is not.
-    expect(screen.getAllByText(/01\/06\/2027/).length).toBeGreaterThan(0);
+    expect(column.getByText(/^Checked: /)).toHaveTextContent(/01\/06\/2027/);
   });
 
   it('renders a distinct badge for every locked status', () => {
@@ -149,7 +170,7 @@ describe('SlipViewerSidebar SlipOK surfacing', () => {
 
     for (const [status, label] of cases) {
       const { unmount } = renderSidebar({ slipokStatus: status });
-      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+      expect(within(slipOkColumn()).getByText(label)).toBeInTheDocument();
       unmount();
     }
   });
@@ -172,7 +193,19 @@ describe('SlipViewerSidebar SlipOK surfacing', () => {
     expect(screen.getByText('By: SlipOK')).toBeInTheDocument();
   });
 
-  it('treats a missing autoVerified flag as a human verify', () => {
+  it('attributes a slip with no autoVerified flag to the human who verified it', () => {
+    renderSidebar({
+      slipokStatus: 'verified',
+      adminStatus: 'verified',
+      adminVerifiedAt: '2027-06-01T10:05:01Z',
+      adminVerifiedByName: 'Khun Ploy',
+    });
+
+    expect(screen.getByText('By: Khun Ploy')).toBeInTheDocument();
+    expect(screen.queryByText('By: SlipOK')).not.toBeInTheDocument();
+  });
+
+  it('attributes nothing when a human verify carries no name', () => {
     renderSidebar({
       slipokStatus: 'verified',
       adminStatus: 'verified',

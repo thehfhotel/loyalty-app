@@ -91,3 +91,21 @@ export function guestSlipOkStatusKey(status: string | null | undefined): string 
 export function slipOkReasonKey(reason: string | null | undefined): string | null {
   return isSlipOkReason(reason) ? `payment.slipok.reason.${reason}` : null;
 }
+
+const STATUS_VALUE_SET = new Set<string>([...SLIPOK_STATUSES, ...LEGACY_SLIPOK_STATUSES]);
+
+/** True for any status a slip row may legitimately hold today, legacy included. */
+export function isSlipOkStatusValue(value: string | null | undefined): value is SlipOkStatusValue {
+  return typeof value === 'string' && STATUS_VALUE_SET.has(value);
+}
+
+/**
+ * Narrow a wire status to a value the desk lookup tables are guaranteed to
+ * hold, so those tables can be `Record<SlipOkStatusValue, …>` and a value
+ * added to the locked set fails typecheck at every desk surface instead of
+ * silently falling through to "pending". The runtime fallback stays for the
+ * other direction: a backend newer than this bundle.
+ */
+export function deskSlipOkStatus(status: string | null | undefined): SlipOkStatusValue {
+  return isSlipOkStatusValue(status) ? status : 'pending';
+}
