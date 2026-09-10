@@ -19,6 +19,7 @@ import type { BadgeTone, TableColumn, TabItem } from '../../components/ui';
 import SlipViewerSidebar from '../../components/admin/SlipViewerSidebar';
 import BookingEditModal from './BookingEditModal';
 import DepositLinkModal from './DepositLinkModal';
+import DepositLinkListPanel from './DepositLinkListPanel';
 import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAdminBookingSSE } from '../../hooks/useAdminBookingSSE';
@@ -89,9 +90,14 @@ const BookingManagement: React.FC = () => {
   // B1: reception issues a deposit link for a booking it already took by
   // phone, LINE or at the desk. The booking it creates lands in the table on
   // this page because it carries a room type, so the slip is verified from
-  // the screen reception already uses. The dedicated link list with its own
-  // expiry/revoke/reissue lifecycle is B2's surface, not this one's.
+  // the screen reception already uses. The link's own lifecycle — expiry,
+  // revoke, reissue — lives on the "ลิงก์มัดจำ" tab below.
   const [showDepositLinkModal, setShowDepositLinkModal] = useState(false);
+  // B2: the same page, two surfaces. Bookings is where a slip is verified;
+  // "ลิงก์มัดจำ" is where reception asks which links are still unpaid, which
+  // guest never opened theirs, and which one needs killing. They are one
+  // page because they are one job — the desk moves between them mid-call.
+  const [surface, setSurface] = useState<'bookings' | 'links'>('bookings');
 
   const pageSize = 10;
   const totalPages = Math.ceil(totalBookings / pageSize);
@@ -515,49 +521,28 @@ const BookingManagement: React.FC = () => {
     { value: 'completed', label: t('booking.status.completed'), count: statusCounts.completed },
   ];
 
-  // Loading state
-  if (initialLoading) {
-    return (
-      <AppShell variant="admin" title={t('admin.booking.bookingManagement.title')}>
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 w-64 rounded-lg bg-surface-sunken" />
-          <div className="h-12 rounded-lg bg-surface-sunken" />
-          <div className="space-y-4 rounded-card border border-hairline bg-surface-card p-6">
-            {[1, 2, 3, 4, 5].map(i => (
-              <div key={i} className="h-16 rounded-lg bg-surface-sunken" />
-            ))}
-          </div>
-        </div>
-      </AppShell>
-    );
-  }
+  // The two surfaces of this page. Not a route each: reception switches
+  // between them mid-phone-call, and a route change would drop the search
+  // term, the open sidebar and the slip they were part-way through reading.
+  const surfaceTabItems: TabItem[] = [
+    { value: 'bookings', label: t('admin.booking.bookingManagement.surfaceBookings') },
+    { value: 'links', label: t('depositLink.admin.list.tab') },
+  ];
 
-  return (
-    <AppShell variant="admin" title={t('admin.booking.bookingManagement.title')}>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <p className="text-caption text-ink-muted">{t('admin.booking.bookingManagement.subtitle')}</p>
-        <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          onClick={() => setShowDepositLinkModal(true)}
-          data-testid="open-deposit-link-modal"
-        >
-          <FiLink className="h-4 w-4" aria-hidden="true" />
-          {t('depositLink.admin.open')}
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() => bookingsQuery.refetch()}
-          disabled={bookingsQuery.isRefetching}
-        >
-          <FiRefreshCw className={`h-4 w-4 ${bookingsQuery.isRefetching ? 'animate-spin' : ''}`} aria-hidden="true" />
-          {t('common.refresh')}
-        </Button>
-        </div>
+  // The bookings surface, still skeleton-first: `initialLoading` covers the
+  // first list read only, so switching to the links tab never waits on it.
+  const bookingsSurface = initialLoading ? (
+    <div className="animate-pulse space-y-6">
+      <div className="h-8 w-64 rounded-lg bg-surface-sunken" />
+      <div className="h-12 rounded-lg bg-surface-sunken" />
+      <div className="space-y-4 rounded-card border border-hairline bg-surface-card p-6">
+        {[1, 2, 3, 4, 5].map(i => (
+          <div key={i} className="h-16 rounded-lg bg-surface-sunken" />
+        ))}
       </div>
-
-      <div className="flex flex-col gap-6 lg:flex-row">
+    </div>
+  ) : (
+    <div className="flex flex-col gap-6 lg:flex-row">
         {/* Left: Table Section */}
         <div className="min-w-0 lg:w-[70%]">
           {/* Status Tabs */}
@@ -681,7 +666,47 @@ const BookingManagement: React.FC = () => {
             onRefresh={refreshBooking}
           />
         </div>
+    </div>
+  );
+
+  return (
+    <AppShell variant="admin" title={t('admin.booking.bookingManagement.title')}>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <p className="text-caption text-ink-muted">{t('admin.booking.bookingManagement.subtitle')}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            onClick={() => setShowDepositLinkModal(true)}
+            data-testid="open-deposit-link-modal"
+          >
+            <FiLink className="h-4 w-4" aria-hidden="true" />
+            {t('depositLink.admin.open')}
+          </Button>
+          {/* Refreshes the bookings list, so it belongs to that surface only —
+              the links panel carries its own refresh next to its own filter. */}
+          {surface === 'bookings' && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => bookingsQuery.refetch()}
+              disabled={bookingsQuery.isRefetching}
+            >
+              <FiRefreshCw className={`h-4 w-4 ${bookingsQuery.isRefetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+              {t('common.refresh')}
+            </Button>
+          )}
+        </div>
       </div>
+
+      <TabNav
+        aria-label={t('admin.booking.bookingManagement.title')}
+        items={surfaceTabItems}
+        value={surface}
+        onChange={(value) => setSurface(value === 'links' ? 'links' : 'bookings')}
+        className="mb-6"
+      />
+
+      {surface === 'links' ? <DepositLinkListPanel /> : bookingsSurface}
 
       <DepositLinkModal
         open={showDepositLinkModal}

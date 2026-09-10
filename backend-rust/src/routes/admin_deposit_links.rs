@@ -211,6 +211,16 @@ pub struct DepositLinkSummary {
     pub expires_at: DateTime<Utc>,
     pub issued_by_name: String,
     pub issued_at: DateTime<Utc>,
+    /// When the guest's most recent viewing SESSION started, or `null` when
+    /// they have never opened the link.
+    ///
+    /// The reception surface (B2) leans on the null: "issued two days ago,
+    /// never opened" is a phone call to make, while "opened an hour ago,
+    /// still awaiting payment" is a guest who is probably mid-transfer. The
+    /// column is written at most once per 30 minutes, so the guest page
+    /// polling itself every 5 seconds does not turn this into "just now"
+    /// forever — see the migration's column comment.
+    pub last_opened_at: Option<DateTime<Utc>>,
     pub slipok_status: Option<String>,
 }
 
@@ -474,6 +484,7 @@ async fn list_deposit_links(
                    l.expires_at   AS expires_at,
                    l.issued_at    AS issued_at,
                    l.issued_by    AS issued_by,
+                   l.last_opened_at AS last_opened_at,
                    b.property     AS property,
                    b.guest_name   AS guest_name,
                    COALESCE(b.amount_due_now, b.total_price) AS amount_due_now,
@@ -504,6 +515,7 @@ async fn list_deposit_links(
                ls.state          AS "state!",
                ls.expires_at     AS "expires_at!",
                ls.issued_at      AS "issued_at!",
+               ls.last_opened_at,
                ls.latest_slipok_status,
                COALESCE(
                    NULLIF(TRIM(CONCAT(p.first_name, ' ', p.last_name)), ''),
@@ -564,6 +576,7 @@ async fn list_deposit_links(
             expires_at: r.expires_at,
             issued_by_name: r.issued_by_name,
             issued_at: r.issued_at,
+            last_opened_at: r.last_opened_at,
             slipok_status: r.latest_slipok_status,
         })
         .collect();

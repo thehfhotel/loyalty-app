@@ -908,7 +908,8 @@
           "discountReasonRequired": "Discount reason is required",
           "invalidFileType": "Please select a valid image file",
           "fileTooLarge": "File size must be less than 5MB"
-        }
+        },
+        "surfaceBookings": "Bookings"
       },
       "availability": {
         "title": "Room Availability",
@@ -2029,6 +2030,36 @@
         "expiresAt": "Expires",
         "done": "Done",
         "shareMessage": "Here is the link to pay your booking deposit"
+      },
+      "list": {
+        "heading": "Deposit links",
+        "subtitle": "Track the links issued to guests: opened or not, paid or not, and when each one expires.",
+        "tab": "Deposit links",
+        "filter": {
+          "open": "Open only",
+          "all": "All"
+        },
+        "table": {
+          "guest": "Guest",
+          "amountDueNow": "Deposit",
+          "state": "State",
+          "expiresAt": "Expires",
+          "issuedBy": "Issued by",
+          "lastOpenedAt": "Last opened",
+          "actions": "Actions"
+        },
+        "neverOpened": "Never opened",
+        "linkNotHeld": "The link is shown only once when it is issued. To send it again, reissue it.",
+        "revoke": "Revoke link",
+        "reissue": "Reissue link",
+        "confirmRevoke": "Revoke the deposit link for {{guest}}? Their existing link stops working and you will have to reissue one.",
+        "revoked": "Link revoked",
+        "revokeFailed": "Could not revoke the link",
+        "reissued": "New link issued — the old one no longer works",
+        "reissueFailed": "Could not reissue the link",
+        "empty": "No deposit links yet",
+        "loadFailed": "Could not load the deposit links",
+        "pagination": "Page {{current}} of {{total}}"
       }
     }
   }
