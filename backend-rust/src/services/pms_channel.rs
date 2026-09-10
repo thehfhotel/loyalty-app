@@ -13,6 +13,18 @@ use crate::config::Settings;
 use crate::error::{AppError, AppResult};
 use crate::types::Property;
 
+/// Per-request ceiling for every PMS call.
+///
+/// `reqwest::Client::new()` has no timeout at all, which made a hung PMS
+/// hold the caller's request open until the router's own 30s `TimeoutLayer`
+/// cut it — turning a request that had already done its work into a 408 for
+/// the guest. Anything the PMS cannot answer in this long is an outage, and
+/// the caller is better off being told so.
+///
+/// `routes::bookings` budgets the inline slip check against this constant,
+/// so raising it means raising that budget too.
+pub const PMS_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// One bookable room type as reported by the PMS.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PmsRoomType {
@@ -81,7 +93,12 @@ impl PmsChannelClient {
         Ok(Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             token,
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .timeout(PMS_REQUEST_TIMEOUT)
+                .build()
+                .map_err(|e| {
+                    AppError::Internal(format!("Failed to build the PMS HTTP client: {e}"))
+                })?,
         })
     }
 
