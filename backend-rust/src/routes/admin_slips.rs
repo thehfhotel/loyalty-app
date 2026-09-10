@@ -233,6 +233,16 @@ async fn verify_slip(
     let (slipok_reason, slipok_trans_ref, slipok_checked_at) =
         fetch_slipok_decision(state.db(), slip_id).await?;
 
+    // Tell the property's desk the deposit landed (B0). Fire-and-forget, and
+    // deduped on the slip: re-verifying an already-verified slip (which this
+    // handler deliberately allows) sends no second email.
+    crate::services::booking_notify::notify(
+        &state,
+        outcome.booking_id,
+        crate::services::booking_notify::BookingNotifyEvent::DepositVerified { slip_id },
+    )
+    .await;
+
     Ok(Json(AdminSlipResponse {
         id: outcome.id,
         booking_id: outcome.booking_id,

@@ -459,6 +459,56 @@ impl PromptPayConfig {
     }
 }
 
+/// Property mailboxes that receive the short "a guest is coming" email
+/// (B0 spec: `hf-tasks/tasks/direct-booking-designs/b0-booking-email-spec.md`).
+///
+/// Both are optional and **blank means off**: every compose file passes them
+/// as `VAR: ${VAR:-}`, so an unset variable arrives as `Some("")` — the #352
+/// bug. Reads go through [`present`], never through a bare `.is_some()`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BookingNotifyConfig {
+    /// Mailbox for The Harbour Front Hotel bookings (`BOOKING_NOTIFY_EMAIL_HF`).
+    pub hf: Option<String>,
+
+    /// Mailbox for HF Ville bookings (`BOOKING_NOTIFY_EMAIL_HFVILLE`).
+    pub hfville: Option<String>,
+}
+
+impl BookingNotifyConfig {
+    /// The mailbox for a property ("hf" | "hfville"), or `None` when that
+    /// property has no mailbox set.
+    ///
+    /// Deliberately **without** the legacy single-account fallback
+    /// [`PromptPayConfig::id_for_property`] has: an unknown or blank property
+    /// string must not send one property's arrivals to the other's desk.
+    pub fn recipient_for(&self, property: &str) -> Option<&str> {
+        match property.trim() {
+            "hf" => present(&self.hf),
+            "hfville" => present(&self.hfville),
+            _ => None,
+        }
+    }
+
+    /// True when at least one property has a mailbox — i.e. the feature is on
+    /// somewhere. Used only for the startup log line.
+    pub fn is_configured(&self) -> bool {
+        present(&self.hf).is_some() || present(&self.hfville).is_some()
+    }
+
+    /// Every configured mailbox, as (env var name, address) pairs, so startup
+    /// can validate them without knowing the field names.
+    pub fn configured_mailboxes(&self) -> Vec<(&'static str, &str)> {
+        let mut out = Vec::new();
+        if let Some(address) = present(&self.hf) {
+            out.push(("BOOKING_NOTIFY_EMAIL_HF", address));
+        }
+        if let Some(address) = present(&self.hfville) {
+            out.push(("BOOKING_NOTIFY_EMAIL_HFVILLE", address));
+        }
+        out
+    }
+}
+
 /// One LINE Messaging API channel (a property's OA).
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct LineMessagingChannelConfig {
@@ -781,6 +831,10 @@ pub struct Settings {
     /// Admin bootstrap allowlist (`ADMIN_BOOTSTRAP_EMAILS`, issue #348)
     #[serde(default)]
     pub admin_bootstrap: AdminBootstrapConfig,
+
+    /// Property mailboxes for new-booking / deposit-received notifications
+    #[serde(default)]
+    pub booking_notify: BookingNotifyConfig,
 }
 
 impl Settings {
@@ -877,6 +931,17 @@ impl Settings {
             .set_override_option(
                 "promptpay.hfville_id",
                 env_present("PROMPTPAY_HFVILLE_ID"),
+            )?
+            // Property notification mailboxes (B0). `env_present` so the
+            // `${VAR:-}` blank every compose file passes reads as "off"
+            // rather than as a recipient the relay would reject.
+            .set_override_option(
+                "booking_notify.hf",
+                env_present("BOOKING_NOTIFY_EMAIL_HF"),
+            )?
+            .set_override_option(
+                "booking_notify.hfville",
+                env_present("BOOKING_NOTIFY_EMAIL_HFVILLE"),
             )?
             .set_override_option(
                 "line_messaging.hf.access_token",

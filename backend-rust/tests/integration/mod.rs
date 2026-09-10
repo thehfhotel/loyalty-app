@@ -8,6 +8,7 @@
 //! - `admin_test` - Admin panel tests (/api/admin/*)
 //! - `health_test` - Health check endpoint tests (/api/health/*)
 //! - `auth_test` - Authentication tests (/api/auth/*)
+//! - `booking_notify_test` - Property booking-notification email (B0)
 //! - `booking_test` - Booking management tests (/api/bookings/*)
 //! - `coupon_test` - Coupon management tests (/api/coupons/*)
 //! - `user_test` - User management tests (/api/users/*)
@@ -35,6 +36,7 @@
 pub mod admin_bootstrap_test;
 pub mod admin_test;
 pub mod auth_test;
+pub mod booking_notify_test;
 pub mod booking_test;
 pub mod cf_access_test;
 pub mod coupon_test;

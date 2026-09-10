@@ -415,6 +415,27 @@ fn log_startup_info(config: &Settings) {
         info!("  SMTP Email: Not configured");
     }
 
+    // Property notification mailboxes (B0). Blank is a normal state — the
+    // feature is simply off for that property — but a *set* value that is not
+    // a mailbox fails every send silently, so it is reported here rather than
+    // discovered when reception says the emails stopped. Warn, never fail:
+    // a typo in one address must not keep the app from booting.
+    if config.booking_notify.is_configured() {
+        for (var, address) in config.booking_notify.configured_mailboxes() {
+            if is_valid_mailbox(address) {
+                info!("  Booking notify: {} -> {:?}", var, address);
+            } else {
+                warn!(
+                    "  Booking notify: {} is set to {:?}, which is not a valid mailbox — \
+                     no booking email will reach it. Expected `desk@example.com`.",
+                    var, address
+                );
+            }
+        }
+    } else {
+        info!("  Booking notify: Not configured (no property mailbox set)");
+    }
+
     // Log SlipOK configuration status. Which of the three states we are in
     // decides whether a guest's slip can be verified without an admin, so
     // the startup line names it explicitly rather than just "Enabled".

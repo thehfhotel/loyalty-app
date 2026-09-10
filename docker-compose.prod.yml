@@ -106,6 +106,11 @@ services:
       # From address for outgoing mail. Falls back to SMTP_USER when unset,
       # and must be an address the mailbox genuinely OWNS (issue #352).
       SMTP_FROM: ${SMTP_FROM:-}
+      # Property mailboxes that get one short email per new booking and per
+      # verified deposit (B0). Blank = off for that property; the backend
+      # reads a blank as "unset" so `${VAR:-}` cannot mean "send to nobody".
+      BOOKING_NOTIFY_EMAIL_HF: ${BOOKING_NOTIFY_EMAIL_HF:-}
+      BOOKING_NOTIFY_EMAIL_HFVILLE: ${BOOKING_NOTIFY_EMAIL_HFVILLE:-}
       IMAP_HOST: ${IMAP_HOST:-}
       IMAP_PORT: ${IMAP_PORT:-993}
       IMAP_USER: ${IMAP_USER:-}

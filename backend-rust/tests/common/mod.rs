@@ -373,6 +373,12 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         include_str!("../../migrations/20260911000000_slipok_system_user.sql");
     template_pool.execute(slipok_system_user_migration).await?;
 
+    // Dedup log behind the property booking-notification email (B0). Without
+    // it every notify() call fails its claim and silently sends nothing.
+    let booking_notify_log_migration =
+        include_str!("../../migrations/20260912000000_booking_notify_log.sql");
+    template_pool.execute(booking_notify_log_migration).await?;
+
     // Seed membership_id_sequence
     template_pool
         .execute(
@@ -726,6 +732,9 @@ fn create_test_config() -> loyalty_backend::Settings {
         },
         // Feature off by default; tests opt in via TestApp::new_with_config.
         admin_bootstrap: AdminBootstrapConfig::default(),
+        // No property mailbox: the booking notification is off unless a test
+        // sets one through `TestApp::new_with_config`.
+        booking_notify: BookingNotifyConfig::default(),
     }
 }
 
