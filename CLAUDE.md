@@ -147,11 +147,42 @@ Workflows fire on push to `main`:
   Workspace" job: both jobs derive the same cache key inline and fall
   back to `npm ci` on a miss, so the serial hop it added to the deploy
   critical path bought nothing.
-- `ci-build-e2e.yml` (named **CI Build & Deploy**) — Lint Backend (Rust) →
-  parallel (Test Backend Unit, Test Backend Integration, Build Backend
-  Release) → Build & Push to GHCR → **Regression & Smoke (API)** +
-  Deploy to Staging (inline, on push to `main` only) → Verify Staging
-  health check. The deploy gate is the **API regression/smoke suite**
+- `ci-image.yml` (**CI Runner Image**) — builds
+  `ghcr.io/thehfhotel/loyalty-app/ci-rust`, the container the Rust jobs
+  run inside (`.github/ci-image/Dockerfile`: rust:1.93-bookworm + the
+  apt deps + sccache + cargo-nextest + sqlx-cli). Runs on changes to
+  that Dockerfile and weekly. **The tag is the Dockerfile's content
+  hash**, so editing it selects a new tag automatically — nothing to
+  bump by hand. It MUST stay a bookworm base: the release binary is
+  COPYed into distroless cc-debian12 (glibc 2.36) and a newer glibc
+  produces a binary that cannot load (issue #360).
+- `ci-build-e2e.yml` (named **CI Build & Deploy**) — `Ensure CI Runner
+  Image` resolves that tag (and builds it if GHCR lacks it, so a first
+  run or a retention sweep self-heals) → the Rust container jobs. Lint
+  Backend, Test Backend Unit, Build & Push Frontend and Wait for
+  Frontend Checks start at T+0 with no dependency at all; Test Backend
+  Integration, Verify SQLx Query Cache and Build Backend Release start
+  behind the image job; Build Backend Release → Build & Push Backend to
+  GHCR; both image jobs + both test jobs → **Regression & Smoke (API)**
+  → Deploy to Staging (inline, on push to `main` only) → Verify Staging
+  health check.
+
+  **`cargo sqlx prepare --check` is its own job (`sqlx-check`), not a
+  step inside the integration job**, so its compile runs in parallel
+  instead of adding ~18s to the critical path. It needs a migrated
+  Postgres, hence its own service. It shares the integration job's
+  rust-cache entry via `shared-key` and never saves, so it costs no
+  extra cache quota. It is a `needs:` of `deploy-staging` and
+  `promote-latest` — a stale `.sqlx/` cache still blocks the deploy.
+
+  **Lint Backend gates the deploy directly, not through the test jobs.**
+  `deploy-staging` and `promote-latest` list `lint-backend` in their
+  `needs:` explicitly, so a red clippy/rustfmt still blocks staging,
+  still blocks the `latest` retag and still blocks production — but the
+  test jobs no longer idle behind it, which took ~1 min off the critical
+  path. Don't "tidy" that edge back into the test jobs.
+
+  The deploy gate is the **API regression/smoke suite**
   (`regression-api`, the Playwright `api` project — `*.api.spec.ts`),
   which uses Playwright's request context with **no browser**, so it has
   no `cdn.playwright.dev` dependency and is reliable enough to block

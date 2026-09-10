@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT admin_status, slipok_status, slipok_reason\n        FROM booking_slips\n        WHERE booking_id = $1\n        ORDER BY uploaded_at DESC NULLS LAST, id DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "admin_status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "slipok_status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "slipok_reason",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "51205f8832e02bb93cb15675c79648747da964a9dec5f0a1f4f275b21c1d4a99"
+}

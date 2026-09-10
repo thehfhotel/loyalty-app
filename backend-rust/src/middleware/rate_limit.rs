@@ -132,7 +132,14 @@ impl RateLimiter {
 /// Rate limit error
 #[derive(Debug)]
 pub enum RateLimitError {
-    TooManyRequests { retry_after: u32 },
+    TooManyRequests {
+        retry_after: u32,
+    },
+    /// The budget could not be **evaluated** — Redis was unreachable or
+    /// answered an error. Only a limiter built with
+    /// [`RedisRateLimiter::fail_closed`] ever returns this; the default is
+    /// still to allow the request and log a warning.
+    Unavailable,
 }
 
 impl IntoResponse for RateLimitError {
@@ -154,6 +161,16 @@ impl IntoResponse for RateLimitError {
                     body,
                 )
                     .into_response()
+            },
+            RateLimitError::Unavailable => {
+                let body = Json(ErrorResponse {
+                    error: "service_unavailable".to_string(),
+                    message: "Service temporarily unavailable. Please try again in a moment."
+                        .to_string(),
+                    details: None,
+                });
+
+                (StatusCode::SERVICE_UNAVAILABLE, body).into_response()
             },
         }
     }
@@ -186,6 +203,186 @@ fn get_client_ip(request: &Request) -> IpAddr {
                 .parse()
                 .expect("127.0.0.1 is a valid IPv4 literal")
         })
+}
+
+/// The hops whose `X-Forwarded-For` this process is willing to believe.
+///
+/// Parsed once from `SecurityConfig::trusted_proxies` (a comma-separated
+/// list of bare IPs and CIDR blocks) and then asked, per request, whether
+/// the TCP peer is one of them.
+///
+/// The rule this type exists to keep honest: **a forwarding header is
+/// evidence only about the hop that wrote it.** [`get_client_ip`] answers
+/// the general case by refusing to read those headers at all (HIGH-2), and
+/// that stays right for every authenticated route, where the peer being
+/// nginx costs nothing — the limiter has a user id to count.
+///
+/// The public deposit routes have no user id. Their subject *is* the
+/// client address, and behind nginx the peer is the nginx container for
+/// every request on earth, so keying on the peer would put every guest in
+/// the world in one bucket: three people paying at once would 429 each
+/// other in the middle of a payment. There the header has to be read — and
+/// [`resolve_client_ip`] reads it only when this type says the peer is a
+/// hop we put there ourselves.
+#[derive(Debug, Clone, Default)]
+pub struct TrustedProxies {
+    /// (network address, prefix length). An entry with no `/len` is stored
+    /// as a full-width prefix, i.e. that single address.
+    nets: Vec<(IpAddr, u8)>,
+}
+
+impl TrustedProxies {
+    /// Parse a comma-separated list of IPs and CIDR blocks.
+    ///
+    /// The literal `none` (any case, alone or as an entry) trusts nothing.
+    /// An entry that does not parse is dropped with a warning rather than
+    /// failing startup: a typo in one CIDR must not take the service down,
+    /// and dropping it fails in the safe direction (one fewer trusted hop).
+    pub fn parse(list: &str) -> Self {
+        let mut nets = Vec::new();
+        for raw in list.split(',') {
+            let entry = raw.trim();
+            if entry.is_empty() || entry.eq_ignore_ascii_case("none") {
+                continue;
+            }
+            match parse_cidr(entry) {
+                Some(net) => nets.push(net),
+                None => tracing::warn!(
+                    entry = %entry,
+                    "ignoring an unparseable TRUSTED_PROXIES entry"
+                ),
+            }
+        }
+        Self { nets }
+    }
+
+    /// Is this address one of the hops we trust to have set the header?
+    pub fn contains(&self, ip: IpAddr) -> bool {
+        self.nets
+            .iter()
+            .any(|&(net, bits)| ip_in_net(ip, net, bits))
+    }
+
+    /// True when nothing is trusted, i.e. every limiter keys on the peer.
+    pub fn is_empty(&self) -> bool {
+        self.nets.is_empty()
+    }
+}
+
+/// `a.b.c.d`, `a.b.c.d/len`, `::1` or `2001:db8::/32`.
+fn parse_cidr(entry: &str) -> Option<(IpAddr, u8)> {
+    let (addr, bits) = match entry.split_once('/') {
+        Some((addr, len)) => (addr, Some(len.parse::<u8>().ok()?)),
+        None => (entry, None),
+    };
+    let addr: IpAddr = addr.parse().ok()?;
+    let width = if addr.is_ipv4() { 32 } else { 128 };
+    let bits = bits.unwrap_or(width);
+    if bits > width {
+        return None;
+    }
+    Some((addr, bits))
+}
+
+/// Prefix comparison. Mixed families never match — an IPv4-mapped IPv6
+/// peer is deliberately not unwrapped, because a proxy that presents one
+/// is not the deployment this list describes.
+fn ip_in_net(ip: IpAddr, net: IpAddr, bits: u8) -> bool {
+    match (ip, net) {
+        (IpAddr::V4(a), IpAddr::V4(b)) => prefix_eq(&a.octets(), &b.octets(), bits),
+        (IpAddr::V6(a), IpAddr::V6(b)) => prefix_eq(&a.octets(), &b.octets(), bits),
+        _ => false,
+    }
+}
+
+fn prefix_eq(a: &[u8], b: &[u8], bits: u8) -> bool {
+    let bits = (bits as usize).min(a.len() * 8);
+    let whole = bits / 8;
+    if a[..whole] != b[..whole] {
+        return false;
+    }
+    let rest = bits % 8;
+    if rest == 0 {
+        return true;
+    }
+    let mask = 0xffu8 << (8 - rest);
+    (a[whole] & mask) == (b[whole] & mask)
+}
+
+/// The forwarding chain. nginx **replaces** it rather than appending —
+/// see nginx/nginx.conf — so its first entry is the visitor, not
+/// something a caller wrote.
+const X_FORWARDED_FOR: &str = "x-forwarded-for";
+/// Cloudflare's own client-address header, and in the deployed topology
+/// the only honest carrier of the visitor's address.
+const CF_CONNECTING_IP: &str = "cf-connecting-ip";
+
+/// The address a public, unauthenticated route should count against.
+///
+/// The deployed topology is `Cloudflare edge -> cloudflared on evergreen
+/// -> the repo's nginx -> this process`. cloudflared opens its own local
+/// connection to nginx, so nginx's `$remote_addr` is the **tunnel hop**
+/// and says nothing whatever about the guest; the visitor's address
+/// arrives only in `CF-Connecting-IP`, which Cloudflare's edge sets and
+/// overwrites on every request. That is why the order below is what it
+/// is:
+///
+/// - Peer **not** trusted (or nothing trusted): **the peer**, full stop.
+///   That is [`get_client_ip`]'s rule and it is what protects the budget
+///   from a client that invents its own headers.
+/// - Peer trusted: `CF-Connecting-IP` first, because in this deployment
+///   it is the header that carries the real client. Then the **first**
+///   address in `X-Forwarded-For`, for a deployment (or a local compose
+///   run) with a plain reverse proxy and no Cloudflare in front. Then the
+///   peer, when neither header is usable.
+///
+/// The first `X-Forwarded-For` entry is the right one *because* the
+/// trusted hop replaces the header rather than appending to it. If nginx
+/// is ever changed back to `proxy_add_x_forwarded_for`, the leftmost value
+/// becomes client-supplied again and this function becomes a way to mint a
+/// fresh bucket per request — the nginx config and this function are one
+/// decision, not two.
+pub fn resolve_client_ip(
+    peer: Option<IpAddr>,
+    headers: &axum::http::HeaderMap,
+    trusted: &TrustedProxies,
+) -> IpAddr {
+    let peer = peer.unwrap_or_else(|| {
+        "127.0.0.1"
+            .parse()
+            .expect("127.0.0.1 is a valid IPv4 literal")
+    });
+
+    if !trusted.contains(peer) {
+        return peer;
+    }
+
+    let cf = headers
+        .get(CF_CONNECTING_IP)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<IpAddr>().ok());
+    if let Some(ip) = cf {
+        return ip;
+    }
+
+    headers
+        .get(X_FORWARDED_FOR)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .and_then(|first| first.trim().parse::<IpAddr>().ok())
+        .unwrap_or(peer)
+}
+
+/// The TCP peer, when the connection info is available.
+///
+/// Separate from [`get_client_ip`] because [`resolve_client_ip`] has to
+/// tell "no peer known" from "the peer is loopback": the first has no
+/// forwarding hop to trust, the second may well have one.
+pub fn peer_ip(request: &Request) -> Option<IpAddr> {
+    request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(addr)| addr.ip())
 }
 
 /// Rate limiting middleware
@@ -247,6 +444,41 @@ pub fn strict_rate_limit_layer() -> RateLimiter {
 /// // Check if request is allowed
 /// limiter.check("192.168.1.1".parse().unwrap()).await?;
 /// ```
+/// The longest a single Redis round trip may take before the limiter
+/// stops waiting and treats the budget as unevaluable.
+///
+/// **Why a limiter needs its own deadline.** `ConnectionManager` shares
+/// one reconnect future between every caller, and a command issued while
+/// that reconnect is in flight simply awaits it. The crate's default
+/// backoff runs to about five minutes per cycle (see
+/// [`crate::redis::connection_manager_config`] for the exact arithmetic),
+/// and a black-holed server — one that accepts the connection and then
+/// answers nothing — has no deadline at all. Either way the caller is a
+/// guest on a payment page holding a bank slip, and a guest who waits
+/// minutes for an answer has been failed more thoroughly than one told
+/// in two seconds to try again.
+///
+/// A timeout means exactly what a Redis error means here: *no budget was
+/// evaluated*. It is handled identically — the fail-closed routes refuse
+/// with [`RateLimitError::Unavailable`], the fail-open ones allow. Two
+/// seconds is far above a healthy round trip (sub-millisecond on the
+/// deployment's own network) and far below a guest's patience.
+pub const REDIS_CALL_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// The error a blown [`REDIS_CALL_TIMEOUT`] is reported as.
+///
+/// Deliberately a `redis::RedisError`: "Redis did not answer in time" and
+/// "Redis answered with an error" are the same fact about a budget, and
+/// giving them one representation keeps one decision — fail closed or
+/// fail open — instead of two that could drift apart.
+fn timed_out() -> redis::RedisError {
+    redis::RedisError::from((
+        redis::ErrorKind::IoError,
+        "rate limit Redis call timed out",
+        format!("no answer within {REDIS_CALL_TIMEOUT:?}"),
+    ))
+}
+
 #[derive(Clone)]
 pub struct RedisRateLimiter {
     /// Redis connection manager (handles reconnection automatically)
@@ -255,6 +487,15 @@ pub struct RedisRateLimiter {
     config: RateLimitConfig,
     /// Key prefix for namespacing rate limit keys
     key_prefix: String,
+    /// What to do when the budget cannot be evaluated at all.
+    ///
+    /// `false` (the default) allows the request and logs a warning: a
+    /// Redis blip must not take a read endpoint down. `true` refuses it
+    /// with [`RateLimitError::Unavailable`], which is what a *writing*
+    /// endpoint with no authentication needs — an unevaluated budget there
+    /// means an unauthenticated caller could write without limit for as
+    /// long as Redis is down.
+    fail_closed: bool,
 }
 
 impl RedisRateLimiter {
@@ -273,7 +514,18 @@ impl RedisRateLimiter {
             redis,
             config,
             key_prefix: key_prefix.into(),
+            fail_closed: false,
         }
+    }
+
+    /// Refuse the request when the budget cannot be evaluated.
+    ///
+    /// Reach for this only where an unevaluated budget is worse than a
+    /// refusal: a public endpoint that writes. See the `fail_closed`
+    /// field.
+    pub fn fail_closed(mut self) -> Self {
+        self.fail_closed = true;
+        self
     }
 
     /// Create a rate limiter with default configuration
@@ -297,9 +549,28 @@ impl RedisRateLimiter {
     /// # Returns
     /// - `Ok(())` if the request is allowed
     /// - `Err(RateLimitError::TooManyRequests)` if the limit is exceeded
-    /// - `Err(RateLimitError::RedisError)` if Redis communication fails
+    /// - `Err(RateLimitError::Unavailable)` if the budget could not be
+    ///   evaluated — Redis errored, or did not answer within
+    ///   [`REDIS_CALL_TIMEOUT`] — **and** this limiter is fail-closed;
+    ///   a fail-open limiter returns `Ok(())` in that case
     pub async fn check(&self, ip: IpAddr) -> Result<(), RateLimitError> {
-        let key = format!("rate_limit:{}:{}", self.key_prefix, ip);
+        self.check_subject(&ip.to_string()).await
+    }
+
+    /// Check a request against an arbitrary subject rather than an IP.
+    ///
+    /// Every limiter in the codebase counts per client IP, which is the
+    /// right subject when the caller is identified by nothing else. The
+    /// public deposit-link upload has a second subject that matters more:
+    /// the link itself. A guest re-uploading a slip from a phone that
+    /// changes IP between attempts is still one link, and one link is the
+    /// unit the "5 uploads per hour" budget is about.
+    ///
+    /// `subject` must never be a raw capability token — pass a hash. The
+    /// key lands in Redis and in the log line on a Redis failure, and a
+    /// token in either is a live link in a place it does not belong.
+    pub async fn check_subject(&self, subject: &str) -> Result<(), RateLimitError> {
+        let key = format!("rate_limit:{}:{}", self.key_prefix, subject);
         let window_secs = self.config.window.as_secs() as i64;
         let mut conn = self.redis.clone();
 
@@ -316,11 +587,14 @@ impl RedisRateLimiter {
             "#,
         );
 
-        let result: Result<(i64, i64), redis::RedisError> = script
-            .key(&key)
-            .arg(window_secs)
-            .invoke_async(&mut conn)
-            .await;
+        // Bounded: a budget that cannot be read *in time* is a budget that
+        // cannot be read. See `REDIS_CALL_TIMEOUT`.
+        let result: Result<(i64, i64), redis::RedisError> = tokio::time::timeout(
+            REDIS_CALL_TIMEOUT,
+            script.key(&key).arg(window_secs).invoke_async(&mut conn),
+        )
+        .await
+        .unwrap_or_else(|_elapsed| Err(timed_out()));
 
         match result {
             Ok((count, ttl)) => {
@@ -335,6 +609,19 @@ impl RedisRateLimiter {
                 Ok(())
             },
             Err(e) => {
+                if self.fail_closed {
+                    // No budget could be evaluated, and this limiter guards
+                    // something that writes without authentication. Refuse
+                    // rather than let an unbounded caller through for as
+                    // long as Redis is down. `key` carries the prefix and
+                    // the subject, which is a token *hash* on the deposit
+                    // routes and never the token itself.
+                    tracing::error!(
+                        key = %key,
+                        "Redis rate limit check failed: {e}. Refusing the request."
+                    );
+                    return Err(RateLimitError::Unavailable);
+                }
                 // Log the error but fail open to prevent blocking legitimate requests
                 // when Redis is temporarily unavailable
                 tracing::warn!("Redis rate limit check failed: {}. Allowing request.", e);
@@ -352,7 +639,10 @@ impl RedisRateLimiter {
         let key = format!("rate_limit:{}:{}", self.key_prefix, ip);
         let mut conn = self.redis.clone();
 
-        match conn.get::<_, Option<u32>>(&key).await {
+        match tokio::time::timeout(REDIS_CALL_TIMEOUT, conn.get::<_, Option<u32>>(&key))
+            .await
+            .unwrap_or_else(|_elapsed| Err(timed_out()))
+        {
             Ok(Some(count)) => Ok(count),
             Ok(None) => Ok(0),
             Err(e) => {
@@ -369,8 +659,12 @@ impl RedisRateLimiter {
         let key = format!("rate_limit:{}:{}", self.key_prefix, ip);
         let mut conn = self.redis.clone();
 
-        let result: Result<(), redis::RedisError> =
-            redis::cmd("DEL").arg(&key).query_async(&mut conn).await;
+        let result: Result<(), redis::RedisError> = tokio::time::timeout(
+            REDIS_CALL_TIMEOUT,
+            redis::cmd("DEL").arg(&key).query_async(&mut conn),
+        )
+        .await
+        .unwrap_or_else(|_elapsed| Err(timed_out()));
 
         if let Err(e) = result {
             tracing::warn!("Redis reset failed: {}", e);
@@ -553,6 +847,172 @@ mod tests {
 
         let ip = get_client_ip(&req);
         assert_eq!(ip, "127.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    // ----------------------------------------------------------------
+    // TrustedProxies / resolve_client_ip
+    //
+    // The public deposit routes count per client IP, and behind nginx the
+    // TCP peer is the same container for every guest on earth. These
+    // tests pin the two halves of the rule: the header is read ONLY when
+    // the peer is a hop we put there, and when it is read it is the first
+    // address (our nginx replaces the header rather than appending).
+    // ----------------------------------------------------------------
+
+    fn ip(s: &str) -> IpAddr {
+        s.parse().expect("test IP literal")
+    }
+
+    fn headers(pairs: &[(&str, &str)]) -> axum::http::HeaderMap {
+        let mut map = axum::http::HeaderMap::new();
+        for (name, value) in pairs {
+            map.insert(
+                axum::http::HeaderName::from_bytes(name.as_bytes()).expect("header name"),
+                axum::http::HeaderValue::from_str(value).expect("header value"),
+            );
+        }
+        map
+    }
+
+    fn compose_default() -> TrustedProxies {
+        TrustedProxies::parse("127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
+    }
+
+    #[test]
+    fn trusted_proxies_matches_cidr_blocks_and_bare_addresses() {
+        let trusted = compose_default();
+        assert!(trusted.contains(ip("172.18.0.7")), "compose bridge network");
+        assert!(trusted.contains(ip("127.0.0.1")));
+        assert!(trusted.contains(ip("10.1.2.3")));
+        assert!(trusted.contains(ip("192.168.1.9")));
+        assert!(trusted.contains(ip("::1")));
+        // Outside every listed block.
+        assert!(!trusted.contains(ip("203.0.113.9")));
+        assert!(!trusted.contains(ip("172.32.0.1")), "just past 172.16/12");
+        assert!(!trusted.contains(ip("2001:db8::1")));
+
+        let single = TrustedProxies::parse(" 203.0.113.7 ");
+        assert!(single.contains(ip("203.0.113.7")));
+        assert!(!single.contains(ip("203.0.113.8")));
+    }
+
+    #[test]
+    fn trusted_proxies_none_and_junk_trust_nothing() {
+        assert!(TrustedProxies::parse("none").is_empty());
+        assert!(TrustedProxies::parse("NONE").is_empty());
+        assert!(TrustedProxies::parse("").is_empty());
+        assert!(TrustedProxies::parse("   ,  ").is_empty());
+        // A typo drops that entry and keeps the rest.
+        let mixed = TrustedProxies::parse("172.16.0.0/12,not-an-ip,10.0.0.0/99");
+        assert!(mixed.contains(ip("172.20.0.1")));
+        assert!(!mixed.contains(ip("10.0.0.1")), "/99 is not a v4 prefix");
+    }
+
+    #[test]
+    fn resolve_client_ip_reads_the_forwarded_client_behind_a_trusted_hop() {
+        let trusted = compose_default();
+        let resolved = resolve_client_ip(
+            Some(ip("172.18.0.5")),
+            &headers(&[("x-forwarded-for", "203.0.113.9")]),
+            &trusted,
+        );
+        assert_eq!(resolved, ip("203.0.113.9"));
+    }
+
+    #[test]
+    fn resolve_client_ip_takes_the_first_forwarded_address() {
+        // If a hop ever appends instead of replacing, the leftmost value
+        // is the original client — and the one this function must use.
+        let resolved = resolve_client_ip(
+            Some(ip("172.18.0.5")),
+            &headers(&[("x-forwarded-for", " 203.0.113.9 , 10.0.0.4 ")]),
+            &compose_default(),
+        );
+        assert_eq!(resolved, ip("203.0.113.9"));
+    }
+
+    #[test]
+    fn resolve_client_ip_ignores_the_header_from_an_untrusted_peer() {
+        // The whole HIGH-2 lesson: a client that opens a connection to us
+        // directly can claim any address it likes, and must not be
+        // believed.
+        let resolved = resolve_client_ip(
+            Some(ip("203.0.113.42")),
+            &headers(&[
+                ("x-forwarded-for", "1.1.1.1"),
+                ("cf-connecting-ip", "9.9.9.9"),
+            ]),
+            &compose_default(),
+        );
+        assert_eq!(resolved, ip("203.0.113.42"));
+
+        // ...and with nothing trusted at all, not even the compose peer.
+        let resolved = resolve_client_ip(
+            Some(ip("172.18.0.5")),
+            &headers(&[("x-forwarded-for", "1.1.1.1")]),
+            &TrustedProxies::parse("none"),
+        );
+        assert_eq!(resolved, ip("172.18.0.5"));
+    }
+
+    #[test]
+    fn resolve_client_ip_prefers_cf_connecting_ip_then_xff_then_the_peer() {
+        let trusted = compose_default();
+        assert_eq!(
+            resolve_client_ip(
+                Some(ip("172.18.0.5")),
+                &headers(&[("cf-connecting-ip", "198.51.100.7")]),
+                &trusted,
+            ),
+            ip("198.51.100.7"),
+            "the deployed topology's only carrier of the visitor address"
+        );
+        assert_eq!(
+            resolve_client_ip(
+                Some(ip("172.18.0.5")),
+                &headers(&[
+                    ("cf-connecting-ip", "198.51.100.7"),
+                    ("x-forwarded-for", "203.0.113.9"),
+                ]),
+                &trusted,
+            ),
+            ip("198.51.100.7"),
+            "CF-Connecting-IP wins: behind cloudflared it is the one \
+             header Cloudflare's edge sets itself"
+        );
+        assert_eq!(
+            resolve_client_ip(
+                Some(ip("172.18.0.5")),
+                &headers(&[
+                    ("cf-connecting-ip", "not-an-ip"),
+                    ("x-forwarded-for", "203.0.113.9"),
+                ]),
+                &trusted,
+            ),
+            ip("203.0.113.9"),
+            "an unparseable CF header is no evidence at all"
+        );
+        assert_eq!(
+            resolve_client_ip(Some(ip("172.18.0.5")), &headers(&[]), &trusted),
+            ip("172.18.0.5"),
+            "nothing forwarded: the peer is all we know"
+        );
+    }
+
+    #[test]
+    fn resolve_client_ip_without_connect_info_reads_the_header() {
+        // The test harness drives the router with `oneshot`, which
+        // inserts no `ConnectInfo`. Treating "no peer" as loopback keeps
+        // that path on the trusted side, so a test can present two
+        // clients by setting the header — exactly what production does.
+        assert_eq!(
+            resolve_client_ip(
+                None,
+                &headers(&[("x-forwarded-for", "203.0.113.9")]),
+                &compose_default(),
+            ),
+            ip("203.0.113.9")
+        );
     }
 
     // Redis rate limiter tests require a running Redis instance

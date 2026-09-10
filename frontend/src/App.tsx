@@ -40,6 +40,7 @@ const BookingPage = lazy(() => import('./pages/BookingPage'));
 const MyBookingsPage = lazy(() => import('./pages/MyBookingsPage'));
 const MemberCardPage = lazy(() => import('./pages/MemberCardPage'));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'));
+const DepositLinkPage = lazy(() => import('./pages/DepositLinkPage'));
 const TierBenefitsPage = lazy(() => import('./pages/TierBenefitsPage'));
 const TierPerksManagement = lazy(() => import('./pages/admin/TierPerksManagement'));
 const RoomTypeManagement = lazy(() => import('./pages/admin/RoomTypeManagement'));
@@ -281,6 +282,22 @@ function App() {
         <Route
           path="/privacy"
           element={<PrivacyPage />}
+        />
+        {/* Public deposit page (B1). No session, no app shell: reception's
+            guests arrive from a LINE message with no account at all. Kept a
+            plain SPA path (not a LIFF deep link) so a guest who is not on
+            LINE can pay.
+
+            The link is `/d#<token>`: the token is in the FRAGMENT, which a
+            browser never sends, so it cannot land in the frontend nginx
+            access log or in Cloudflare's. The route therefore carries no
+            path parameter — the page reads `window.location.hash` itself
+            (`utils/depositToken`). Do not add a `/d/:token` variant: it
+            would put the token back in the request line of every page
+            load. */}
+        <Route
+          path="/d"
+          element={<DepositLinkPage />}
         />
         <Route
           path="/benefits"

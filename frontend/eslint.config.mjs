@@ -66,7 +66,7 @@ export default tseslint.config(
       'react/jsx-uses-vars': 'error',
       'react/jsx-no-target-blank': 'error',
       'react/jsx-no-duplicate-props': 'error',
-      'react/no-danger': 'warn',
+      'react/no-danger': 'error',
       'react/no-danger-with-children': 'error',
       'react/no-deprecated': 'warn',
       'react/no-direct-mutation-state': 'error',
@@ -119,16 +119,21 @@ export default tseslint.config(
       '@typescript-eslint/prefer-optional-chain': 'error',
       '@typescript-eslint/no-non-null-assertion': 'error',
 
-      // Security rules (temporarily downgraded to warnings for pipeline unblock)
+      // Security rules. detect-object-injection stays 'warn' here (see the
+      // TS/utils overrides below — 98.5% false-positive rate on union types,
+      // documented in SECURITY_ANALYSIS.md). The rest currently produce zero
+      // warnings repo-wide, so promoting them to 'error' is zero-churn and
+      // closes the gap where the --max-warnings ratchet (frontend/package.json)
+      // could trade a benign warning for a new security-class one and stay green.
       'security/detect-object-injection': 'warn',
-      'security/detect-non-literal-regexp': 'warn',
-      'security/detect-unsafe-regex': 'warn',
-      'security/detect-buffer-noassert': 'warn',
-      'security/detect-child-process': 'warn',
-      'security/detect-disable-mustache-escape': 'warn',
-      'security/detect-eval-with-expression': 'warn',
-      'security/detect-new-buffer': 'warn',
-      'security/detect-pseudoRandomBytes': 'warn',
+      'security/detect-non-literal-regexp': 'error',
+      'security/detect-unsafe-regex': 'error',
+      'security/detect-buffer-noassert': 'error',
+      'security/detect-child-process': 'error',
+      'security/detect-disable-mustache-escape': 'error',
+      'security/detect-eval-with-expression': 'error',
+      'security/detect-new-buffer': 'error',
+      'security/detect-pseudoRandomBytes': 'error',
 
       // General security
       'no-eval': 'error',
@@ -176,8 +181,10 @@ export default tseslint.config(
       'no-var': 'error',
       'eqeqeq': ['error', 'always'],
       'curly': 'warn',
+      // no-alert stays 'warn': 2 existing warnings today, so 'error' would
+      // break the build rather than being the zero-churn promotion the others are.
       'no-alert': 'warn',
-      'no-debugger': 'warn',
+      'no-debugger': 'error', // 0 warnings today — zero-churn promotion, see security rules above
       'no-case-declarations': 'warn',
       'no-empty-pattern': 'warn',
     },

@@ -238,6 +238,18 @@ pub struct OAuthConfig {
     pub line: LineOAuthConfig,
 }
 
+/// `env::var(name)` with the compose convention applied: every compose file
+/// passes optional settings as `VAR: ${VAR:-}`, so an unset value arrives as
+/// `Some("")`. For SlipOK and PromptPay a blank must mean "unset", or the
+/// backend would report SlipOK configured with no key, or mint a PromptPay
+/// QR with an empty receiving id. Blank means absent.
+fn env_present(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
 /// `Some(trimmed)` when a value is present and not blank, `None` otherwise.
 ///
 /// Every compose file passes its optional settings as `VAR: ${VAR:-}`, so an
@@ -385,6 +397,22 @@ pub struct SlipokConfig {
 
     /// SlipOK API key
     pub api_key: Option<String>,
+
+    /// Base API URL, without the branch id (`SLIPOK_API_URL`). Defaults to
+    /// the vendor endpoint inside `services::slipok`; overridable so
+    /// integration tests can point at a local mock server.
+    #[serde(default)]
+    pub api_url: Option<String>,
+
+    /// Kill switch for automatic slip verification (`SLIPOK_AUTO_VERIFY`).
+    ///
+    /// Defaults to **false** = shadow mode: SlipOK is still called and the
+    /// decision is still stored on the slip (`slipok_status='shadow_pass'`
+    /// when every check passed), but nothing is confirmed without an admin.
+    /// Only `true` lets a machine verify a slip. Flipping it is a restart,
+    /// not a deploy.
+    #[serde(default)]
+    pub auto_verify: bool,
 }
 
 impl SlipokConfig {
@@ -428,6 +456,56 @@ impl PromptPayConfig {
             _ => None,
         };
         per_property.or(self.tax_id.as_ref())
+    }
+}
+
+/// Property mailboxes that receive the short "a guest is coming" email
+/// (B0 spec: `hf-tasks/tasks/direct-booking-designs/b0-booking-email-spec.md`).
+///
+/// Both are optional and **blank means off**: every compose file passes them
+/// as `VAR: ${VAR:-}`, so an unset variable arrives as `Some("")` — the #352
+/// bug. Reads go through [`present`], never through a bare `.is_some()`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BookingNotifyConfig {
+    /// Mailbox for The Harbour Front Hotel bookings (`BOOKING_NOTIFY_EMAIL_HF`).
+    pub hf: Option<String>,
+
+    /// Mailbox for HF Ville bookings (`BOOKING_NOTIFY_EMAIL_HFVILLE`).
+    pub hfville: Option<String>,
+}
+
+impl BookingNotifyConfig {
+    /// The mailbox for a property ("hf" | "hfville"), or `None` when that
+    /// property has no mailbox set.
+    ///
+    /// Deliberately **without** the legacy single-account fallback
+    /// [`PromptPayConfig::id_for_property`] has: an unknown or blank property
+    /// string must not send one property's arrivals to the other's desk.
+    pub fn recipient_for(&self, property: &str) -> Option<&str> {
+        match property.trim() {
+            "hf" => present(&self.hf),
+            "hfville" => present(&self.hfville),
+            _ => None,
+        }
+    }
+
+    /// True when at least one property has a mailbox — i.e. the feature is on
+    /// somewhere. Used only for the startup log line.
+    pub fn is_configured(&self) -> bool {
+        present(&self.hf).is_some() || present(&self.hfville).is_some()
+    }
+
+    /// Every configured mailbox, as (env var name, address) pairs, so startup
+    /// can validate them without knowing the field names.
+    pub fn configured_mailboxes(&self) -> Vec<(&'static str, &str)> {
+        let mut out = Vec::new();
+        if let Some(address) = present(&self.hf) {
+            out.push(("BOOKING_NOTIFY_EMAIL_HF", address));
+        }
+        if let Some(address) = present(&self.hfville) {
+            out.push(("BOOKING_NOTIFY_EMAIL_HFVILLE", address));
+        }
+        out
     }
 }
 
@@ -603,6 +681,56 @@ pub struct SecurityConfig {
     /// Maximum requests per rate limit window
     #[serde(default = "default_rate_limit_max")]
     pub rate_limit_max_requests: u32,
+
+    /// Peers whose `X-Forwarded-For` may be believed, as a comma-separated
+    /// list of bare IPs and CIDR blocks (`TRUSTED_PROXIES`).
+    ///
+    /// Every limiter that counts per client IP has to answer one question
+    /// first: *which* address is the client? Behind nginx the TCP peer is
+    /// the nginx container for every request on earth, so a per-IP budget
+    /// keyed on the peer is a single global bucket. The forwarding header
+    /// is the only thing that carries the real address — and it is
+    /// attacker-supplied unless the hop that set it is one we put there.
+    ///
+    /// So: believe the header only when the peer is on this list. The
+    /// default is loopback plus the private ranges a compose network is
+    /// built from.
+    ///
+    /// Loopback is in the default deliberately, and it is not vacuous:
+    /// `docker-compose.prod.yml` publishes the backend as
+    /// `127.0.0.1:4011:4001`, i.e. on the host's loopback interface and
+    /// nowhere else. Nothing off the box can open that socket — a
+    /// published loopback port is not reachable from the network — but a
+    /// process already on the host can, and it arrives with a peer of
+    /// `127.0.0.1`. That connection is trusted here on purpose: the port
+    /// exists so operators can curl the API from the box, and anything
+    /// running on the box can forge a bucket key by far cheaper means than
+    /// this header. Anything genuinely public reaches the backend through
+    /// the tunnel and nginx, never through that port.
+    ///
+    /// A deployment that fronts the backend directly with something that
+    /// is *not* a proxy we control must set `TRUSTED_PROXIES=none`, which
+    /// trusts no hop and keys every limiter on the TCP peer. A *blank*
+    /// value is read as unset (every compose file passes optional settings
+    /// as `VAR: ${VAR:-}`), so the literal `none` is the only way to say
+    /// "trust nobody".
+    #[serde(default = "default_trusted_proxies")]
+    pub trusted_proxies: String,
+
+    /// Prefix prepended to every rate-limit bucket key.
+    ///
+    /// Empty in every real deployment, and deliberately: replicas of the
+    /// same service must share one bucket per subject, or the budget is
+    /// multiplied by the replica count.
+    ///
+    /// It exists for the test harness. Redis is *not* isolated per test
+    /// the way the database is — one server backs the whole suite — so
+    /// two tests that both drive an always-on limiter would otherwise
+    /// share its buckets and fail in whichever order they happened to
+    /// run. `TestApp` sets a fresh namespace per app, which gives the
+    /// limiters the same per-test isolation the database already has.
+    #[serde(default)]
+    pub rate_limit_namespace: String,
 }
 
 fn default_max_file_size() -> usize {
@@ -617,12 +745,20 @@ fn default_rate_limit_max() -> u32 {
     10_000
 }
 
+/// Loopback plus the RFC1918 ranges docker compose builds its networks
+/// from. See [`SecurityConfig::trusted_proxies`].
+fn default_trusted_proxies() -> String {
+    "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16".to_string()
+}
+
 impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
             max_file_size: default_max_file_size(),
             rate_limit_window_ms: default_rate_limit_window(),
             rate_limit_max_requests: default_rate_limit_max(),
+            trusted_proxies: default_trusted_proxies(),
+            rate_limit_namespace: String::new(),
         }
     }
 }
@@ -753,6 +889,10 @@ pub struct Settings {
     /// Admin bootstrap allowlist (`ADMIN_BOOTSTRAP_EMAILS`, issue #348)
     #[serde(default)]
     pub admin_bootstrap: AdminBootstrapConfig,
+
+    /// Property mailboxes for new-booking / deposit-received notifications
+    #[serde(default)]
+    pub booking_notify: BookingNotifyConfig,
 }
 
 impl Settings {
@@ -783,6 +923,9 @@ impl Settings {
             .set_default("security.max_file_size", 5_242_880)?
             .set_default("security.rate_limit_window_ms", 900_000)?
             .set_default("security.rate_limit_max_requests", 10_000)?
+            .set_default("security.trusted_proxies", default_trusted_proxies())?
+            .set_default("security.rate_limit_namespace", "")?
+            .set_default("slipok.auto_verify", false)?
             .set_default("cf_access.enabled", true)?
             .set_default("cf_access.aud", DEFAULT_CF_ACCESS_AUD)?
             .set_default("cf_access.issuer", default_cf_access_issuer())?
@@ -839,13 +982,34 @@ impl Settings {
             .set_override_option("email.imap.port", env::var("IMAP_PORT").ok())?
             .set_override_option("email.imap.user", env::var("IMAP_USER").ok())?
             .set_override_option("email.imap.pass", env::var("IMAP_PASS").ok())?
-            .set_override_option("slipok.branch_id", env::var("SLIPOK_BRANCH_ID").ok())?
-            .set_override_option("slipok.api_key", env::var("SLIPOK_API_KEY").ok())?
-            .set_override_option("promptpay.tax_id", env::var("PROMPTPAY_TAX_ID").ok())?
-            .set_override_option("promptpay.hf_id", env::var("PROMPTPAY_HF_ID").ok())?
+            .set_override_option("slipok.branch_id", env_present("SLIPOK_BRANCH_ID"))?
+            .set_override_option("slipok.api_key", env_present("SLIPOK_API_KEY"))?
+            .set_override_option("slipok.api_url", env_present("SLIPOK_API_URL"))?
+            .set_override_option("slipok.auto_verify", env_present("SLIPOK_AUTO_VERIFY"))?
+            // Which hop's `X-Forwarded-For` the per-IP limiters believe.
+            // `env_present` so the `${VAR:-}` blank a compose file passes
+            // reads as "unset" and keeps the default rather than trusting
+            // nobody by accident.
+            .set_override_option(
+                "security.trusted_proxies",
+                env_present("TRUSTED_PROXIES"),
+            )?
+            .set_override_option("promptpay.tax_id", env_present("PROMPTPAY_TAX_ID"))?
+            .set_override_option("promptpay.hf_id", env_present("PROMPTPAY_HF_ID"))?
             .set_override_option(
                 "promptpay.hfville_id",
-                env::var("PROMPTPAY_HFVILLE_ID").ok(),
+                env_present("PROMPTPAY_HFVILLE_ID"),
+            )?
+            // Property notification mailboxes (B0). `env_present` so the
+            // `${VAR:-}` blank every compose file passes reads as "off"
+            // rather than as a recipient the relay would reject.
+            .set_override_option(
+                "booking_notify.hf",
+                env_present("BOOKING_NOTIFY_EMAIL_HF"),
+            )?
+            .set_override_option(
+                "booking_notify.hfville",
+                env_present("BOOKING_NOTIFY_EMAIL_HFVILLE"),
             )?
             .set_override_option(
                 "line_messaging.hf.access_token",
@@ -1052,6 +1216,48 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Compose passes optional settings as `VAR: ${VAR:-}`, so an unset
+    /// SlipOK key or PromptPay id arrives as an empty string. A blank must
+    /// read as absent (issue class of #352), never as a configured value.
+    #[test]
+    fn env_present_treats_blank_as_unset() {
+        let name = "LOYALTY_TEST_ENV_PRESENT_PROBE";
+        env::set_var(name, "");
+        assert_eq!(env_present(name), None);
+        env::set_var(name, "   ");
+        assert_eq!(env_present(name), None);
+        env::set_var(name, " 0845557000341 ");
+        assert_eq!(env_present(name), Some("0845557000341".to_string()));
+        env::remove_var(name);
+        assert_eq!(env_present(name), None);
+    }
+
+    /// `SLIPOK_AUTO_VERIFY` arrives from the environment as a *string*
+    /// override on a `bool` field. If the config layer refused to coerce it,
+    /// setting the variable would fail `Settings::new()` at boot — i.e. the
+    /// kill switch would take the service down instead of turning the
+    /// feature on. This pins the coercion (and the false default).
+    #[test]
+    fn slipok_auto_verify_parses_from_a_string_override() {
+        fn load(value: Option<&str>) -> SlipokConfig {
+            let mut builder = ::config::Config::builder()
+                .set_default("slipok.auto_verify", false)
+                .expect("default");
+            builder = builder
+                .set_override_option("slipok.auto_verify", value.map(str::to_string))
+                .expect("override");
+            builder
+                .build()
+                .expect("build config")
+                .get::<SlipokConfig>("slipok")
+                .expect("deserialise slipok config")
+        }
+
+        assert!(!load(None).auto_verify, "unset must default to off");
+        assert!(load(Some("true")).auto_verify);
+        assert!(!load(Some("false")).auto_verify);
+    }
 
     #[test]
     fn test_admin_bootstrap_email_list_parsing() {
