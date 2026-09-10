@@ -626,7 +626,356 @@ async fn add_booking_slip(
         "Booking slip added"
     );
 
+    // Automatic SlipOK verification. Runs inline (not `tokio::spawn`) so the
+    // stored decision is deterministic the moment this response returns —
+    // which is what makes it assertable in an integration test and visible
+    // to the guest without a refetch.
+    //
+    // It can never fail the upload: the slip row is already committed, and
+    // every error inside is swallowed into a WARN. A guest must not see an
+    // error because our slip vendor had a bad day.
+    //
+    // The whole check runs under one explicit budget. The SlipOK client's
+    // own timeout only covers the SlipOK call; a confirmation also talks to
+    // the PMS, and without a ceiling here a hung downstream would hold the
+    // guest's request until the router's 30s `TimeoutLayer` cut it — turning
+    // a *successful* upload into a 408 for the guest. Blowing the budget
+    // just abandons the check; the slip is then exactly where it was before
+    // this feature existed, in the admin's queue.
+    let budget = slipok_check_budget(&state);
+    if tokio::time::timeout(
+        budget,
+        run_slipok_check(&state, slip.id, booking_id, &slip_url),
+    )
+    .await
+    .is_err()
+    {
+        tracing::warn!(
+            slip_id = %slip.id,
+            booking_id = %booking_id,
+            budget_secs = budget.as_secs(),
+            "SlipOK check exceeded its latency budget; slip left for manual verification"
+        );
+    }
+
     Ok((StatusCode::CREATED, Json(slip)))
+}
+
+/// How long the whole inline check may take: the SlipOK client's own
+/// timeout plus one PMS round trip (`pms_channel` caps its client too) plus
+/// a little slack. Must stay comfortably under the router's `TimeoutLayer`,
+/// which is what the guest's request is actually racing.
+fn slipok_check_budget(state: &AppState) -> std::time::Duration {
+    let slipok_timeout = state
+        .slipok()
+        .map(|s| s.timeout())
+        .unwrap_or_else(|| std::time::Duration::from_secs(8));
+    slipok_timeout
+        + crate::services::pms_channel::PMS_REQUEST_TIMEOUT
+        + std::time::Duration::from_secs(2)
+}
+
+/// SlipOK status values written to `booking_slips.slipok_status`. See the
+/// migration `20260910000000_booking_slips_slipok.sql` for the vocabulary.
+const SLIPOK_STATUS_VERIFIED: &str = "verified";
+const SLIPOK_STATUS_SHADOW_PASS: &str = "shadow_pass";
+const SLIPOK_STATUS_MANUAL: &str = "manual";
+const SLIPOK_STATUS_UNAVAILABLE: &str = "unavailable";
+
+/// Run the automatic slip check and record its outcome. Infallible by
+/// construction: anything that goes wrong is logged and the slip is left on
+/// the manual admin path, which is exactly where it was before this existed.
+async fn run_slipok_check(state: &AppState, slip_id: Uuid, booking_id: Uuid, slip_url: &str) {
+    if let Err(e) = slipok_check(state, slip_id, booking_id, slip_url).await {
+        tracing::warn!(
+            slip_id = %slip_id,
+            booking_id = %booking_id,
+            error = %e,
+            "SlipOK check failed; slip left for manual verification"
+        );
+    }
+}
+
+/// The body of the check. Returns `Err` only on problems the caller should
+/// log — the guest's response is already decided by the time this runs.
+async fn slipok_check(
+    state: &AppState,
+    slip_id: Uuid,
+    booking_id: Uuid,
+    slip_url: &str,
+) -> AppResult<()> {
+    use crate::services::slip_match::{self, SlipDecision};
+
+    // Not configured: record why, then behave exactly as before.
+    let Some(slipok) = state.slipok() else {
+        record_slipok_result(
+            state.db(),
+            slip_id,
+            SLIPOK_STATUS_UNAVAILABLE,
+            Some("not_configured"),
+            None,
+        )
+        .await?;
+        return Ok(());
+    };
+
+    // What we expect to have been paid, to whom, and whether the booking can
+    // still accept a payment at all. `amount_due_now` is the deposit for a
+    // deposit50 booking and the full price otherwise; both columns are
+    // DECIMAL(10,2) baht.
+    let (amount_due, property, booking_status, hold_expires_at): (
+        Decimal,
+        Option<String>,
+        Option<String>,
+        Option<DateTime<Utc>>,
+    ) = sqlx::query_as(
+        "SELECT COALESCE(amount_due_now, total_price), property, status, hold_expires_at \
+         FROM bookings WHERE id = $1",
+    )
+    .bind(booking_id)
+    .fetch_one(state.db())
+    .await?;
+
+    let Some(expected_satang) = slip_match::to_satang(amount_due) else {
+        return Err(AppError::Internal(format!(
+            "Booking {} has an unrepresentable amount due",
+            booking_id
+        )));
+    };
+
+    // A booking with no property tells us nothing about which account the
+    // guest was shown, and `id_for_property("")` would silently fall back to
+    // the legacy single account — i.e. match the payee against a possibly
+    // unrelated company. The QR endpoint refuses to serve a booking it
+    // cannot price to an account; the matcher refuses to judge one.
+    let receiving_id = property
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .and_then(|p| state.config().promptpay.id_for_property(p))
+        .cloned();
+    let Some(receiving_id) = receiving_id else {
+        // Nothing to match the payee against — the check cannot be trusted.
+        record_slipok_result(
+            state.db(),
+            slip_id,
+            SLIPOK_STATUS_UNAVAILABLE,
+            Some("not_configured"),
+            None,
+        )
+        .await?;
+        return Ok(());
+    };
+
+    let image = crate::services::storage::read_slip_bytes(slip_url).await?;
+
+    let result = match slipok.verify_slip(image).await {
+        Ok(result) => result,
+        Err(e) => {
+            // A transport-level failure: SlipOK never gave a verdict.
+            let reason = match e {
+                AppError::ExternalServiceTimeout(_) => "timeout",
+                _ => "api_error",
+            };
+            record_slipok_result(
+                state.db(),
+                slip_id,
+                SLIPOK_STATUS_UNAVAILABLE,
+                Some(reason),
+                None,
+            )
+            .await?;
+            tracing::warn!(
+                slip_id = %slip_id,
+                booking_id = %booking_id,
+                reason = %reason,
+                "SlipOK gave no verdict; slip left for manual verification"
+            );
+            return Ok(());
+        },
+    };
+
+    // Duplicate defence, first half: has this bank reference already been
+    // stored against another slip? The partial unique index on
+    // `slipok_trans_ref` is the other half, for the racing case.
+    let trans_ref = result
+        .transaction_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .map(str::to_string);
+    let already_seen = match trans_ref.as_deref() {
+        Some(reference) => sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM booking_slips WHERE slipok_trans_ref = $1 AND id <> $2)",
+        )
+        .bind(reference)
+        .bind(slip_id)
+        .fetch_one(state.db())
+        .await?,
+        None => false,
+    };
+
+    let decision = slip_match::decide(&result, expected_satang, &receiving_id, already_seen);
+    let auto_verify = state.config().slipok.auto_verify;
+
+    // A slip can be perfect and still not be something a machine may act on.
+    // `add_booking_slip` accepts a slip against a booking in any state, and
+    // the hold-expiry sweep cancels a channel booking whose PMS hold ran
+    // out — confirming one of those would post a payment event against a
+    // room the PMS has already released. An admin may still override it by
+    // hand (that is a human decision); the automatic path may not.
+    let payable = booking_status.as_deref() == Some("pending")
+        && hold_expires_at.map_or(true, |expires| expires > Utc::now());
+
+    // The reference is stored only when every check passed. A rejected slip
+    // must not occupy the unique index: the guest may legitimately re-upload
+    // the same transfer once the mismatch is sorted out.
+    let (status, reason, stored_ref) = match &decision {
+        SlipDecision::Confirm { .. } if !payable => (
+            SLIPOK_STATUS_MANUAL,
+            Some(slip_match::REASON_BOOKING_NOT_PAYABLE),
+            None,
+        ),
+        SlipDecision::Confirm { trans_ref } if auto_verify => {
+            (SLIPOK_STATUS_VERIFIED, None, Some(trans_ref.clone()))
+        },
+        SlipDecision::Confirm { trans_ref } => {
+            (SLIPOK_STATUS_SHADOW_PASS, None, Some(trans_ref.clone()))
+        },
+        SlipDecision::Manual { reason } => (SLIPOK_STATUS_MANUAL, Some(*reason), None),
+        SlipDecision::Unavailable { reason } => (SLIPOK_STATUS_UNAVAILABLE, Some(*reason), None),
+    };
+
+    let status = record_slipok_result(state.db(), slip_id, status, reason, stored_ref.as_deref())
+        .await?
+        .unwrap_or(status);
+
+    if status == SLIPOK_STATUS_VERIFIED {
+        // Same function the admin's Verify button runs, with no actor.
+        //
+        // If it fails part-way — the slip transaction commits and then the
+        // PMS refuses the payment event — nobody retries: there is no admin
+        // holding a button. Compensate instead, so the slip lands back in
+        // the manual queue rather than sitting there reading `verified`
+        // against a booking that is still pending, and log at ERROR so the
+        // failure is pageable.
+        if let Err(e) =
+            crate::services::slip_confirm::confirm_slip(state, slip_id, booking_id, None).await
+        {
+            tracing::error!(
+                slip_id = %slip_id,
+                booking_id = %booking_id,
+                error = %e,
+                "SlipOK auto-confirm failed after the slip passed every check; \
+                 returning the slip to manual verification"
+            );
+            revert_auto_confirm(state.db(), slip_id).await?;
+            return Ok(());
+        }
+    }
+
+    tracing::info!(
+        slip_id = %slip_id,
+        booking_id = %booking_id,
+        decision = %status,
+        reason = reason.unwrap_or("none"),
+        auto_verify_enabled = auto_verify,
+        "SlipOK decision recorded"
+    );
+
+    Ok(())
+}
+
+/// Store the SlipOK outcome on the slip row.
+///
+/// Deliberately a **runtime** `sqlx::query` rather than the compile-time
+/// macro: the four `slipok_*` columns are new in migration
+/// `20260910000000_booking_slips_slipok.sql`, and a runtime query is not
+/// validated against the offline cache in `.sqlx/`, so this change needs no
+/// `cargo sqlx prepare` run (and cannot go stale against it).
+///
+/// Returns `Some(status)` when the write had to fall back to a different
+/// status than the one asked for — today only when the unique index on
+/// `slipok_trans_ref` rejects the reference because a concurrent upload of
+/// the same transfer won the race, which is a duplicate by definition.
+async fn record_slipok_result(
+    db: &PgPool,
+    slip_id: Uuid,
+    status: &'static str,
+    reason: Option<&str>,
+    trans_ref: Option<&str>,
+) -> AppResult<Option<&'static str>> {
+    const SQL: &str = r#"
+        UPDATE booking_slips
+        SET slipok_status     = $1,
+            slipok_reason     = $2,
+            slipok_trans_ref  = $3,
+            slipok_checked_at = NOW()
+        WHERE id = $4
+    "#;
+
+    let outcome = sqlx::query(SQL)
+        .bind(status)
+        .bind(reason)
+        .bind(trans_ref)
+        .bind(slip_id)
+        .execute(db)
+        .await;
+
+    match outcome {
+        Ok(_) => Ok(None),
+        Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("23505") => {
+            tracing::warn!(
+                slip_id = %slip_id,
+                "SlipOK reference already stored by a concurrent upload; recording duplicate"
+            );
+            sqlx::query(SQL)
+                .bind(SLIPOK_STATUS_MANUAL)
+                .bind(Some(crate::services::slip_match::REASON_DUPLICATE))
+                .bind(Option::<&str>::None)
+                .bind(slip_id)
+                .execute(db)
+                .await?;
+            Ok(Some(SLIPOK_STATUS_MANUAL))
+        },
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Undo a half-finished automatic confirmation.
+///
+/// [`crate::services::slip_confirm::confirm_slip`] commits the slip's
+/// `admin_status` before it calls the PMS, so a PMS failure on the automatic
+/// path would otherwise leave a slip that claims to be verified — by nobody,
+/// since `admin_verified_by` is NULL for a machine verify — against a
+/// booking that never got confirmed. Put it back in the admin's queue and
+/// say why.
+///
+/// Deliberately guarded on `admin_verified_by IS NULL`: it must never undo
+/// an admin's own verification, only the machine's.
+///
+/// Runtime query, like [`record_slipok_result`], so the new `slipok_*`
+/// columns need no `.sqlx` offline cache entry.
+async fn revert_auto_confirm(db: &PgPool, slip_id: Uuid) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE booking_slips
+        SET admin_status      = 'pending',
+            admin_verified_at = NULL,
+            slipok_status     = $1,
+            slipok_reason     = $2,
+            slipok_trans_ref  = NULL,
+            slipok_checked_at = NOW()
+        WHERE id = $3
+          AND admin_verified_by IS NULL
+        "#,
+    )
+    .bind(SLIPOK_STATUS_MANUAL)
+    .bind(crate::services::slip_match::REASON_CONFIRM_FAILED)
+    .bind(slip_id)
+    .execute(db)
+    .await?;
+    Ok(())
 }
 
 /// DELETE /api/bookings/slips/:slip_id - Remove a payment slip

@@ -39,8 +39,12 @@ use crate::utils::logging::sanitize_log_value;
 /// Default SlipOK API base URL
 const DEFAULT_SLIPOK_API_URL: &str = "https://api.slipok.com/api/line/apikey";
 
-/// Default request timeout in seconds
-const DEFAULT_TIMEOUT_SECS: u64 = 30;
+/// Default request timeout in seconds.
+///
+/// The slip check runs inline on the guest's upload request
+/// (`routes/bookings.rs::run_slipok_check`), so this is the ceiling on the
+/// latency SlipOK can add to that response. `SLIPOK_TIMEOUT_SECS` overrides it.
+const DEFAULT_TIMEOUT_SECS: u64 = 8;
 
 /// SlipOK quota exceeded error code
 const QUOTA_EXCEEDED_ERROR_CODE: i32 = 1008;
@@ -55,6 +59,15 @@ pub enum VerificationStatus {
     Failed,
     /// SlipOK monthly quota has been exceeded
     QuotaExceeded,
+    /// SlipOK gave no verdict at all: an HTTP-level failure (5xx, a rotated
+    /// API key answering 401, a gateway in the way) or the service not being
+    /// configured.
+    ///
+    /// Distinct from [`VerificationStatus::Failed`], which means SlipOK read
+    /// the slip and said no. Blaming a guest's slip for our own outage
+    /// corrupts exactly the shadow-mode data the rollout decision rests on,
+    /// so `services::slip_match` maps this to `unavailable`, never `manual`.
+    ApiError,
 }
 
 /// Result of a slip verification attempt
@@ -68,8 +81,20 @@ pub struct SlipVerificationResult {
     pub amount: Option<Decimal>,
     /// Sender's display name or account name
     pub sender_name: Option<String>,
-    /// Receiver's display name or account name
+    /// Receiver's display name or account name.
+    ///
+    /// Guest-facing payee identity: never logged, and never used for
+    /// matching — `receiver_proxy_value` / `receiver_account_value` are.
     pub receiver_name: Option<String>,
+    /// Receiver's PromptPay proxy value exactly as SlipOK returned it
+    /// (usually partially masked, e.g. `xxx-xxx-3047`). This is the
+    /// primary value `services::slip_match` matches the property's
+    /// receiving PromptPay ID against.
+    pub receiver_proxy_value: Option<String>,
+    /// Receiver's bank account value exactly as SlipOK returned it
+    /// (also usually masked). Used as the fallback when the slip carries
+    /// no proxy value.
+    pub receiver_account_value: Option<String>,
     /// Transaction date and time
     pub transaction_date: Option<DateTime<Utc>>,
     /// Transaction reference ID from the bank
@@ -117,6 +142,18 @@ impl SlipVerificationResult {
             .as_ref()
             .and_then(|r| r.display_name.clone().or_else(|| r.name.clone()));
 
+        let receiver_proxy_value = response
+            .receiver
+            .as_ref()
+            .and_then(|r| r.proxy.as_ref())
+            .and_then(|p| p.value.clone());
+
+        let receiver_account_value = response
+            .receiver
+            .as_ref()
+            .and_then(|r| r.account.as_ref())
+            .and_then(|a| a.value.clone());
+
         // Convert f64 amount to Decimal for precision
         let amount = response.amount.and_then(|a| Decimal::try_from(a).ok());
 
@@ -126,6 +163,8 @@ impl SlipVerificationResult {
             amount,
             sender_name,
             receiver_name,
+            receiver_proxy_value,
+            receiver_account_value,
             transaction_date,
             transaction_id: response.trans_ref,
             bank_code: response.sending_bank,
@@ -144,6 +183,8 @@ impl SlipVerificationResult {
             amount: None,
             sender_name: None,
             receiver_name: None,
+            receiver_proxy_value: None,
+            receiver_account_value: None,
             transaction_date: None,
             transaction_id: None,
             bank_code: None,
@@ -162,6 +203,8 @@ impl SlipVerificationResult {
             amount: None,
             sender_name: None,
             receiver_name: None,
+            receiver_proxy_value: None,
+            receiver_account_value: None,
             transaction_date: None,
             transaction_id: None,
             bank_code: None,
@@ -174,9 +217,20 @@ impl SlipVerificationResult {
         }
     }
 
+    /// Create a result for "SlipOK never gave a verdict".
+    ///
+    /// Same shape as [`Self::failed`] but with [`VerificationStatus::ApiError`],
+    /// which the decision rules read as `unavailable`.
+    fn api_error(error_code: impl Into<String>, error_message: impl Into<String>) -> Self {
+        Self {
+            status: VerificationStatus::ApiError,
+            ..Self::failed(error_code, error_message)
+        }
+    }
+
     /// Create a not configured result
     fn not_configured() -> Self {
-        Self::failed(
+        Self::api_error(
             "NOT_CONFIGURED",
             "SlipOK API key or branch ID not configured",
         )
@@ -275,15 +329,6 @@ pub struct SlipOKResponse {
 struct SlipOKRequest {
     /// URL of the slip image to verify
     url: String,
-    /// Enable logging for duplicate detection
-    log: bool,
-}
-
-/// Request body for SlipOK API with base64 data
-#[derive(Debug, Serialize)]
-struct SlipOKBase64Request {
-    /// Base64-encoded slip image data
-    data: String,
     /// Enable logging for duplicate detection
     log: bool,
 }
@@ -425,6 +470,58 @@ impl SlipOKService {
         }
     }
 
+    /// Build the service from application settings, or `None` when either
+    /// credential is missing.
+    ///
+    /// This is the constructor `AppState` uses, so the live service and the
+    /// integration tests are built the same way — a test points
+    /// `slipok.api_url` at a wiremock server and gets a real client.
+    /// `SLIPOK_TIMEOUT_SECS` still overrides the default timeout, matching
+    /// [`SlipOKConfig::from_env`].
+    pub fn from_settings(settings: &crate::config::SlipokConfig) -> Option<Self> {
+        let api_key = settings
+            .api_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())?;
+        let branch_id = settings
+            .branch_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())?;
+
+        let api_url = settings
+            .api_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .unwrap_or(DEFAULT_SLIPOK_API_URL);
+
+        let timeout_secs: u64 = env::var("SLIPOK_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_TIMEOUT_SECS);
+
+        Some(Self::with_config(SlipOKConfig {
+            api_key: api_key.to_string(),
+            branch_id: branch_id.to_string(),
+            api_url: api_url.to_string(),
+            timeout: Duration::from_secs(timeout_secs),
+        }))
+    }
+
+    /// The per-request timeout this client was built with.
+    ///
+    /// The caller (`routes::bookings`) budgets the whole inline check
+    /// against it, so the guest's upload can never be held past the
+    /// router's own timeout layer.
+    pub fn timeout(&self) -> Duration {
+        self.config
+            .as_ref()
+            .map(|c| c.timeout)
+            .unwrap_or_else(|| Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+    }
+
     /// Check if the service is configured
     pub fn is_configured(&self) -> bool {
         self.config.is_some()
@@ -547,48 +644,74 @@ impl SlipOKService {
             },
         };
 
+        let (content_type, file_name) = detect_image_type(&slip_image);
+
         tracing::info!(
             booking_id = %booking_ref,
             image_size = slip_image.len(),
+            content_type = %content_type,
             "Starting SlipOK verification with image bytes"
         );
 
-        // Convert image bytes to base64
-        use base64::{engine::general_purpose::STANDARD, Engine};
-        let base64_data = STANDARD.encode(&slip_image);
+        // Multipart `files`, per https://slipok.com/api-documentation/check-slip/
+        // — the vendor accepts exactly one of `files` (multipart image),
+        // `url`, or `data` (the *decoded QR payload*, not base64 image
+        // bytes). We hold the image, so `files` is the documented shape.
+        //
+        // `log=false` keeps SlipOK from retaining the guest's slip in its
+        // own LIFF: duplicate detection is ours, via the partial unique
+        // index on `booking_slips.slipok_trans_ref`.
+        let part = reqwest::multipart::Part::bytes(slip_image.to_vec())
+            .file_name(file_name)
+            .mime_str(content_type)
+            .map_err(|e| AppError::SlipOk(format!("Failed to build slip upload part: {}", e)))?;
+        let form = reqwest::multipart::Form::new()
+            .part("files", part)
+            .text("log", "false");
 
-        // Make API request with base64 data
-        let request_body = SlipOKBase64Request {
-            data: base64_data,
-            log: true,
-        };
+        // No explicit Content-Type header here: reqwest sets
+        // `multipart/form-data` with the generated boundary.
+        let request = self
+            .client
+            .post(config.get_api_url())
+            .header("x-authorization", &config.api_key)
+            .multipart(form);
 
-        self.make_api_request(config, &request_body).await
+        self.execute_request(request).await
     }
 
-    /// Make the actual API request to SlipOK
+    /// Make a JSON-bodied API request to SlipOK (the `url` shape).
     async fn make_api_request<T: Serialize>(
         &self,
         config: &SlipOKConfig,
         body: &T,
     ) -> Result<SlipVerificationResult, AppError> {
-        let response = self
+        let request = self
             .client
             .post(config.get_api_url())
             .header("Content-Type", "application/json")
             .header("x-authorization", &config.api_key)
-            .json(body)
-            .send()
-            .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    AppError::ExternalServiceTimeout("SlipOK".to_string())
-                } else if e.is_connect() {
-                    AppError::ExternalServiceUnavailable("SlipOK".to_string())
-                } else {
-                    AppError::SlipOk(format!("Request failed: {}", e))
-                }
-            })?;
+            .json(body);
+
+        self.execute_request(request).await
+    }
+
+    /// Send a prepared request and turn the response into a
+    /// `SlipVerificationResult`. Shared by the JSON (`url`) and multipart
+    /// (`files`) request shapes.
+    async fn execute_request(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> Result<SlipVerificationResult, AppError> {
+        let response = request.send().await.map_err(|e| {
+            if e.is_timeout() {
+                AppError::ExternalServiceTimeout("SlipOK".to_string())
+            } else if e.is_connect() {
+                AppError::ExternalServiceUnavailable("SlipOK".to_string())
+            } else {
+                AppError::SlipOk(format!("Request failed: {}", e))
+            }
+        })?;
 
         let status = response.status();
 
@@ -604,21 +727,35 @@ impl SlipOKService {
                 "SlipOK API error"
             );
 
-            // Check for quota exceeded (HTTP 429)
-            if status.as_u16() == 429 {
+            // Quota refusals arrive two ways: HTTP 429, or the documented
+            // in-body code 1008 delivered with a 4xx. Both are "we are out of
+            // calls", not "this slip is bad".
+            let body_code = serde_json::from_str::<serde_json::Value>(&error_text)
+                .ok()
+                .and_then(|v| v.get("code").and_then(serde_json::Value::as_i64));
+            if status.as_u16() == 429 || body_code == Some(QUOTA_EXCEEDED_ERROR_CODE as i64) {
                 return Ok(SlipVerificationResult::quota_exceeded(None));
             }
 
-            return Ok(SlipVerificationResult::failed(
+            // Everything else at the HTTP level is *our* problem, not the
+            // slip's: a 5xx, a rotated key answering 401, a proxy in the way.
+            // `api_error` keeps it out of the `manual` / `slip_invalid` bucket.
+            return Ok(SlipVerificationResult::api_error(
                 format!("HTTP_{}", status.as_u16()),
                 error_text,
             ));
         }
 
-        // Parse response
-        let data: SlipOKResponse = response
+        // Parse response. SlipOK answers `{ success, data: { transRef, ... } }`
+        // (https://slipok.com/api-documentation/check-slip/), so the slip
+        // fields are unwrapped out of `data` before deserialising. A flat
+        // body is still accepted unchanged.
+        let body: serde_json::Value = response
             .json()
             .await
+            .map_err(|e| AppError::SlipOk(format!("Failed to parse response: {}", e)))?;
+
+        let data: SlipOKResponse = serde_json::from_value(unwrap_envelope(body))
             .map_err(|e| AppError::SlipOk(format!("Failed to parse response: {}", e)))?;
 
         // Handle response based on success flag
@@ -697,6 +834,48 @@ pub struct SlipOKHealthStatus {
     pub branch_id: String,
     /// Whether the service can connect (best-effort check)
     pub can_connect: bool,
+}
+
+/// Flatten SlipOK's `{ success, data: { ... } }` envelope into the flat
+/// shape [`SlipOKResponse`] deserialises from.
+///
+/// The slip fields live under `data`; `success`, `code` and `message` stay
+/// at the top level. A body without a `data` object is returned untouched,
+/// so a flat response (and every existing fixture) still parses.
+fn unwrap_envelope(body: serde_json::Value) -> serde_json::Value {
+    let serde_json::Value::Object(outer) = &body else {
+        return body;
+    };
+
+    let Some(serde_json::Value::Object(data)) = outer.get("data") else {
+        return body;
+    };
+
+    let mut merged = data.clone();
+    for key in ["success", "code", "message"] {
+        if let Some(value) = outer.get(key) {
+            merged.entry(key.to_string()).or_insert(value.clone());
+        }
+    }
+
+    serde_json::Value::Object(merged)
+}
+
+/// Pick the multipart content type and file name for a slip image from its
+/// magic bytes.
+///
+/// The upload endpoint (`routes/slips.rs`) already refuses anything that is
+/// not a JPEG or PNG, so this only has to tell those two apart; anything
+/// else falls back to JPEG, which is what SlipOK sees from a phone camera
+/// in practice.
+fn detect_image_type(data: &[u8]) -> (&'static str, &'static str) {
+    const PNG_MAGIC: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    if data.starts_with(&PNG_MAGIC) {
+        ("image/png", "slip.png")
+    } else {
+        ("image/jpeg", "slip.jpg")
+    }
 }
 
 /// Parse Thai date/time format from SlipOK response
@@ -958,6 +1137,147 @@ mod tests {
         assert!(!response.success);
         assert_eq!(response.message, Some("Invalid slip image".to_string()));
         assert_eq!(response.code, Some(1001));
+    }
+
+    #[test]
+    fn test_unwrap_envelope_matches_the_documented_shape() {
+        // What SlipOK actually returns.
+        let nested = serde_json::json!({
+            "success": true,
+            "data": {
+                "transRef": "REF123",
+                "amount": 1500.0,
+                "receiver": { "proxy": { "type": "NATID", "value": "xxx-xxx-xxx3047" } }
+            }
+        });
+
+        let parsed: SlipOKResponse =
+            serde_json::from_value(unwrap_envelope(nested)).expect("nested body parses");
+        assert!(parsed.success);
+        assert_eq!(parsed.trans_ref, Some("REF123".to_string()));
+        assert_eq!(parsed.amount, Some(1500.0));
+
+        let result = SlipVerificationResult::success(parsed);
+        assert_eq!(
+            result.receiver_proxy_value,
+            Some("xxx-xxx-xxx3047".to_string())
+        );
+
+        // A flat body is passed through untouched.
+        let flat = serde_json::json!({ "success": true, "transRef": "REF456" });
+        let parsed: SlipOKResponse =
+            serde_json::from_value(unwrap_envelope(flat)).expect("flat body parses");
+        assert_eq!(parsed.trans_ref, Some("REF456".to_string()));
+
+        // An error body keeps its code and message.
+        let error = serde_json::json!({
+            "success": false,
+            "code": 1008,
+            "message": "quota exceeded"
+        });
+        let parsed: SlipOKResponse =
+            serde_json::from_value(unwrap_envelope(error)).expect("error body parses");
+        assert_eq!(parsed.code, Some(1008));
+    }
+
+    #[test]
+    fn test_detect_image_type() {
+        let png = [0x89u8, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00];
+        assert_eq!(detect_image_type(&png), ("image/png", "slip.png"));
+
+        let jpeg = [0xFFu8, 0xD8, 0xFF, 0xE0];
+        assert_eq!(detect_image_type(&jpeg), ("image/jpeg", "slip.jpg"));
+
+        // Unknown/empty falls back to JPEG rather than refusing to send.
+        assert_eq!(detect_image_type(&[]), ("image/jpeg", "slip.jpg"));
+    }
+
+    #[test]
+    fn test_success_result_exposes_receiver_proxy_and_account() {
+        let response = SlipOKResponse {
+            success: true,
+            message: None,
+            trans_ref: Some("REF999".to_string()),
+            trans_date: None,
+            trans_time: None,
+            trans_timestamp: Some("2026-09-10T09:15:00+07:00".to_string()),
+            amount: Some(1500.0),
+            sending_bank: None,
+            receiving_bank: None,
+            sender: None,
+            receiver: Some(AccountInfo {
+                display_name: Some("Should never be logged".to_string()),
+                name: None,
+                proxy: Some(ProxyInfo {
+                    proxy_type: Some("NATID".to_string()),
+                    value: Some("xxx-x-x3047-x".to_string()),
+                }),
+                account: Some(AccountDetail {
+                    account_type: Some("BANKAC".to_string()),
+                    value: Some("xxx-x-x1234-x".to_string()),
+                }),
+            }),
+            ref1: None,
+            ref2: None,
+            ref3: None,
+            paid_local_amount: None,
+            paid_local_currency: None,
+            country_code: None,
+            trans_fee_amount: None,
+            code: None,
+        };
+
+        let result = SlipVerificationResult::success(response);
+
+        assert_eq!(
+            result.receiver_proxy_value,
+            Some("xxx-x-x3047-x".to_string())
+        );
+        assert_eq!(
+            result.receiver_account_value,
+            Some("xxx-x-x1234-x".to_string())
+        );
+        assert_eq!(result.transaction_id, Some("REF999".to_string()));
+        assert!(result.transaction_date.is_some());
+    }
+
+    #[test]
+    fn test_from_settings_requires_both_credentials() {
+        use crate::config::SlipokConfig;
+
+        let none_set = SlipokConfig::default();
+        assert!(SlipOKService::from_settings(&none_set).is_none());
+
+        let key_only = SlipokConfig {
+            api_key: Some("k".to_string()),
+            ..Default::default()
+        };
+        assert!(SlipOKService::from_settings(&key_only).is_none());
+
+        let blank = SlipokConfig {
+            api_key: Some("  ".to_string()),
+            branch_id: Some("b".to_string()),
+            ..Default::default()
+        };
+        assert!(SlipOKService::from_settings(&blank).is_none());
+
+        let both = SlipokConfig {
+            api_key: Some("k".to_string()),
+            branch_id: Some("42".to_string()),
+            api_url: Some("http://127.0.0.1:1/api".to_string()),
+            auto_verify: true,
+        };
+        let service = SlipOKService::from_settings(&both).expect("configured service");
+        assert_eq!(
+            service.config().map(|c| c.get_api_url()),
+            Some("http://127.0.0.1:1/api/42".to_string())
+        );
+    }
+
+    #[test]
+    fn test_default_timeout_is_inline_friendly() {
+        // The check runs inline on the guest's upload; 8s is the agreed cap.
+        assert_eq!(DEFAULT_TIMEOUT_SECS, 8);
     }
 
     #[test]

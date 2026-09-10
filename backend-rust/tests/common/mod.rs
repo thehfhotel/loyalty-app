@@ -360,6 +360,12 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         .execute(tier_benefits_bilingual_migration)
         .await?;
 
+    let booking_slips_slipok_migration =
+        include_str!("../../migrations/20260910000000_booking_slips_slipok.sql");
+    template_pool
+        .execute(booking_slips_slipok_migration)
+        .await?;
+
     // Seed membership_id_sequence
     template_pool
         .execute(

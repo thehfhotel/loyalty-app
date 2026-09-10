@@ -772,6 +772,46 @@ fn sanitize_filename(filename: &str) -> String {
         .collect()
 }
 
+/// Read back a slip image that `POST /api/slips/upload` stored.
+///
+/// `slip_url` is the public path the upload endpoint returned, e.g.
+/// `/storage/slips/<uuid>.jpg`; only its file name is used, and it is
+/// sanitised, so a `../` in a stored URL cannot escape the slips directory.
+///
+/// The base directory is resolved the way `routes::slips` resolves it when
+/// *writing* — `STORAGE_PATH`, else `./storage` — deliberately **not** via
+/// [`StorageConfig::default`], which prefers `UPLOAD_DIR`. Those two env
+/// vars point at different directories in the production compose file, so
+/// reading through `StorageConfig` would look in a directory the slip was
+/// never written to.
+pub async fn read_slip_bytes(slip_url: &str) -> AppResult<Bytes> {
+    let file_name = slip_url
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| AppError::BadRequest(format!("Malformed slip URL: {}", slip_url)))?;
+
+    let path = slips_base_dir().join(sanitize_filename(file_name));
+
+    let data = fs::read(&path)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to read slip file {:?}: {}", path, e)))?;
+
+    Ok(Bytes::from(data))
+}
+
+/// Directory slips are written to by `routes::slips::upload_slip`.
+fn slips_base_dir() -> PathBuf {
+    let base_dir = env::var("STORAGE_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("storage")
+        });
+    base_dir.join("slips")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

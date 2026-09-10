@@ -23,13 +23,18 @@
 //!
 //! ## Audit logging
 //!
-//! Each slip mutation should ideally produce an entry in `booking_audit_log`
-//! so the slip viewer's audit-history panel can show "Admin X verified slip Y
-//! at Z". That table doesn't exist in the canonical schema yet (tracked in
-//! `docs/admin-backend-gaps.md` under the booking-management cluster). When
-//! it lands, extend this file to also `INSERT INTO booking_audit_log (...)`.
-//! For now the slip row itself is the audit trail: `admin_verified_by`,
-//! `admin_verified_at`, `admin_notes` capture the who/when/why.
+//! Each slip mutation writes a `booking_audit_log` row inside the same
+//! transaction as the slip update, so the slip viewer's audit-history panel
+//! can show "Admin X verified slip Y at Z". The slip row itself carries the
+//! same facts denormalised: `admin_verified_by`, `admin_verified_at`,
+//! `admin_notes`.
+//!
+//! ## Where the verify logic lives
+//!
+//! The verify action's effects — mark the slip verified, write the audit
+//! row, push the payment event to the PMS, confirm the booking — live in
+//! `services::slip_confirm`, because the automatic SlipOK check runs the
+//! same code with no admin behind it. Do not re-implement any of it here.
 //!
 //! ## sqlx note
 //!
@@ -146,137 +151,40 @@ async fn verify_slip(
     let body = payload.map(|Json(p)| p).unwrap_or_default();
     body.validate().map_err(AppError::from)?;
 
-    let mut tx = state.db().begin().await?;
+    // `confirm_slip_with_notes` needs the booking the slip pays for, and a
+    // missing slip must still 404 before anything is written. Runtime query
+    // (not the `query!` macro) so this lookup needs no `.sqlx` cache entry.
+    let booking_id: Uuid = sqlx::query_scalar("SELECT booking_id FROM booking_slips WHERE id = $1")
+        .bind(slip_id)
+        .fetch_optional(state.db())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Slip".to_string()))?;
 
-    // Capture the previous state *before* the UPDATE so the audit row
-    // can describe what changed. `FOR UPDATE` serialises concurrent
-    // admins racing to verify the same slip — under contention exactly
-    // one admin "wins" the row and the other reads the post-write state
-    // when it acquires the lock.
-    let before = sqlx::query!(
-        r#"
-        SELECT admin_status, admin_verified_at, admin_verified_by, admin_notes
-        FROM booking_slips
-        WHERE id = $1
-        FOR UPDATE
-        "#,
+    let outcome = crate::services::slip_confirm::confirm_slip_with_notes(
+        &state,
         slip_id,
-    )
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Slip".to_string()))?;
-
-    let row = sqlx::query!(
-        r#"
-        UPDATE booking_slips
-        SET admin_status      = 'verified',
-            admin_verified_at = NOW(),
-            admin_verified_by = $1,
-            admin_notes       = COALESCE($2, admin_notes)
-        WHERE id = $3
-        RETURNING
-            id,
-            booking_id,
-            slip_url,
-            uploaded_at,
-            admin_status,
-            admin_verified_at,
-            admin_verified_by,
-            admin_notes,
-            slipok_status,
-            slipok_verified_at
-        "#,
-        admin_id,
-        body.admin_notes,
-        slip_id,
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-
-    let before_json = json!({
-        "adminStatus": before.admin_status,
-        "adminVerifiedBy": before.admin_verified_by,
-        "adminVerifiedAt": before.admin_verified_at,
-        "adminNotes": before.admin_notes,
-    });
-    let after_json = json!({
-        "adminStatus": row.admin_status,
-        "adminVerifiedBy": row.admin_verified_by,
-        "adminVerifiedAt": row.admin_verified_at,
-        "adminNotes": row.admin_notes,
-        "slipId": row.id,
-    });
-
-    insert_slip_audit_row(
-        &mut *tx,
-        row.booking_id,
-        admin_id,
-        "slip_verified",
-        Some(before_json),
-        Some(after_json),
+        booking_id,
+        Some(admin_id),
         body.admin_notes.clone(),
     )
     .await?;
 
-    tx.commit().await?;
-
-    tracing::info!(
-        slip_id = %slip_id,
-        booking_id = %row.booking_id,
-        admin_id = %admin_id,
-        "Admin verified slip"
-    );
-
-    // PMS booking channel (ADR-0003): a verified slip IS the payment event
-    // for a channel booking. Confirm the PMS booking first — if the PMS is
-    // unreachable this returns an error so the admin retries the verify
-    // action (idempotent on both sides) rather than leaving money received
-    // against a hold that would silently expire.
-    let channel_row = sqlx::query!(
-        r#"
-        SELECT pms_booking_id AS "pms_booking_id!",
-               COALESCE(amount_due_now, total_price) AS "amount_received!"
-        FROM bookings WHERE id = $1 AND pms_booking_id IS NOT NULL
-        "#,
-        row.booking_id
-    )
-    .fetch_optional(state.db())
-    .await?;
-    if let Some(channel) = channel_row {
-        let pms_booking_id = channel.pms_booking_id;
-        let pms = crate::services::pms_channel::PmsChannelClient::from_settings(state.config())?;
-        // The PMS needs the received amount — it doesn't persist the
-        // guest's deposit50/full choice.
-        pms.payment_verified(&pms_booking_id, channel.amount_received)
-            .await?;
-        sqlx::query!(
-            r#"UPDATE bookings SET status = 'confirmed', updated_at = NOW()
-               WHERE id = $1 AND status = 'pending'"#,
-            row.booking_id
-        )
-        .execute(state.db())
-        .await?;
-        tracing::info!(
-            booking_id = %row.booking_id,
-            pms_booking_id = %pms_booking_id,
-            "channel booking confirmed after slip verification"
-        );
-    }
-
     Ok(Json(AdminSlipResponse {
-        id: row.id,
-        booking_id: row.booking_id,
-        slip_url: row.slip_url,
+        id: outcome.id,
+        booking_id: outcome.booking_id,
+        slip_url: outcome.slip_url,
         // `uploaded_at` is nullable in the schema (DEFAULT CURRENT_TIMESTAMP),
         // so we collapse a NULL to "now" — should never actually be null
         // for a row that's been inserted through the normal path.
-        uploaded_at: row.uploaded_at.unwrap_or_else(Utc::now),
-        admin_status: row.admin_status.unwrap_or_else(|| "verified".to_string()),
-        admin_verified_at: row.admin_verified_at,
-        admin_verified_by: row.admin_verified_by,
-        admin_notes: row.admin_notes,
-        slipok_status: row.slipok_status,
-        slipok_verified_at: row.slipok_verified_at,
+        uploaded_at: outcome.uploaded_at.unwrap_or_else(Utc::now),
+        admin_status: outcome
+            .admin_status
+            .unwrap_or_else(|| "verified".to_string()),
+        admin_verified_at: outcome.admin_verified_at,
+        admin_verified_by: outcome.admin_verified_by,
+        admin_notes: outcome.admin_notes,
+        slipok_status: outcome.slipok_status,
+        slipok_verified_at: outcome.slipok_verified_at,
     }))
 }
 
@@ -361,7 +269,7 @@ async fn mark_slip_needs_action(
         "slipId": row.id,
     });
 
-    insert_slip_audit_row(
+    crate::services::slip_confirm::insert_slip_audit_row(
         &mut *tx,
         row.booking_id,
         admin_id,
@@ -395,42 +303,6 @@ async fn mark_slip_needs_action(
         slipok_status: row.slipok_status,
         slipok_verified_at: row.slipok_verified_at,
     }))
-}
-
-/// Insert a single `booking_audit_log` row from inside the caller's
-/// transaction. Mirrors `routes::admin_bookings::insert_audit_row`
-/// (kept local rather than `pub`-ing the original to avoid coupling
-/// admin_slips to admin_bookings's internals — both files are part of
-/// the admin surface and share the audit-row contract by convention,
-/// not by import).
-async fn insert_slip_audit_row<'c, E>(
-    executor: E,
-    booking_id: Uuid,
-    admin_id: Uuid,
-    action: &str,
-    before_data: Option<serde_json::Value>,
-    after_data: Option<serde_json::Value>,
-    reason: Option<String>,
-) -> AppResult<()>
-where
-    E: sqlx::Executor<'c, Database = sqlx::Postgres>,
-{
-    sqlx::query!(
-        r#"
-        INSERT INTO booking_audit_log
-            (booking_id, admin_id, action, before_data, after_data, reason)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        "#,
-        booking_id,
-        admin_id,
-        action,
-        before_data,
-        after_data,
-        reason,
-    )
-    .execute(executor)
-    .await?;
-    Ok(())
 }
 
 // ============================================================================

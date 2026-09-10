@@ -415,11 +415,33 @@ fn log_startup_info(config: &Settings) {
         info!("  SMTP Email: Not configured");
     }
 
-    // Log SlipOK configuration status
+    // Log SlipOK configuration status. Which of the three states we are in
+    // decides whether a guest's slip can be verified without an admin, so
+    // the startup line names it explicitly rather than just "Enabled".
     if config.slipok.is_configured() {
-        info!("  SlipOK Payment: Enabled");
+        if config.slipok.auto_verify {
+            info!("  SlipOK Payment: Enabled — auto-verify ON (a passing slip confirms itself)");
+        } else {
+            info!(
+                "  SlipOK Payment: Enabled — shadow mode (decisions recorded, \
+                 admin verify still required; set SLIPOK_AUTO_VERIFY=true to enable)"
+            );
+        }
     } else {
-        info!("  SlipOK Payment: Not configured");
+        info!("  SlipOK Payment: Not configured — every slip goes to manual verify");
+    }
+    // SLIPOK_API_URL is a test/staging affordance. If it is ever set in a
+    // real deployment, every guest's slip image and the API key go to that
+    // host, and the only symptom is that slips quietly stop verifying — so
+    // say so loudly at boot rather than leaving it invisible.
+    if let Some(api_url) = config.slipok.api_url.as_deref() {
+        if !api_url.starts_with("https://api.slipok.com") {
+            warn!(
+                "  SlipOK Payment: SLIPOK_API_URL overrides the vendor endpoint ({}). \
+                 Slip images and the API key are being sent there. Unset it outside tests.",
+                api_url
+            );
+        }
     }
 
     info!("============================");
