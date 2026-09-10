@@ -4,9 +4,10 @@
 //! for common operations including session management.
 
 use anyhow::{Context, Result};
-use redis::aio::ConnectionManager;
+use redis::aio::{ConnectionManager, ConnectionManagerConfig};
 use redis::{AsyncCommands, Client};
 use serde::{de::DeserializeOwned, Serialize};
+use std::time::Duration;
 use tracing::{debug, info};
 
 /// Default TTL for sessions (24 hours)
@@ -14,6 +15,62 @@ const DEFAULT_SESSION_TTL_SECS: u64 = 86400;
 
 /// Session key prefix
 const SESSION_PREFIX: &str = "session:";
+
+/// How many times a lost connection is retried before the reconnect future
+/// gives up and resolves with an error.
+///
+/// Every command issued while a reconnect is in flight *awaits that
+/// reconnect*, so this number is not "how hard we try", it is "how long a
+/// request waits before it is told the truth".
+const RECONNECT_RETRIES: usize = 3;
+
+/// Ceiling on the delay between reconnect attempts.
+///
+/// See [`connection_manager_config`] for why the default is not a ceiling
+/// anybody would choose on purpose.
+const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(2);
+
+/// Growth factor between reconnect attempts.
+///
+/// `backon` starts at a 1 s minimum delay and multiplies by this each
+/// attempt, so 1 s → 2 s → 2 s (clamped by [`RECONNECT_MAX_DELAY`]):
+/// a failed reconnect cycle resolves in about five seconds.
+const RECONNECT_FACTOR: u64 = 2;
+
+/// Bound the connection manager's reconnect loop.
+///
+/// **Why this exists.** `ConnectionManager::new` uses
+/// `ConnectionManagerConfig::default()`, and redis 0.27 feeds that
+/// config's `factor` — documented there as a *millisecond* multiplier and
+/// defaulting to `100` — straight into `backon`'s `ExponentialBuilder`,
+/// where `factor` is the *exponential growth factor* instead
+/// (`redis-0.27.6/src/aio/connection_manager.rs`, `with_factor(config.factor as f32)`).
+/// `backon`'s own defaults then supply a 1 s minimum delay and a 60 s
+/// maximum, and redis only overrides the maximum when `max_delay` is set —
+/// which by default it is not. The result is a reconnect that backs off
+/// 1 s, 100 s (clamped to 60 s), 60 s, 60 s, 60 s, 60 s: **just over five
+/// minutes** before the attempt resolves as failed, six retries deep.
+///
+/// That is not merely slow reconnection. `ConnectionManager` shares one
+/// reconnect future between all callers, so every command issued while it
+/// is in flight *waits for it*. During a Redis outage a guest's request
+/// therefore hangs for minutes instead of failing, which is what made one
+/// integration test take 23 minutes (CI run 34475250785).
+///
+/// So: three retries, a 2 s ceiling on the delay, and a 2 s cap on each
+/// connect attempt so a black-holed address cannot stall the loop either.
+/// `exponent_base` is deliberately not set — redis 0.27 never reads it.
+///
+/// The reconnect bound is defence in depth, not the guarantee: callers on
+/// a guest-facing path bound their own Redis calls with
+/// [`crate::middleware::rate_limit::REDIS_CALL_TIMEOUT`].
+pub fn connection_manager_config() -> ConnectionManagerConfig {
+    ConnectionManagerConfig::new()
+        .set_factor(RECONNECT_FACTOR)
+        .set_number_of_retries(RECONNECT_RETRIES)
+        .set_max_delay(RECONNECT_MAX_DELAY.as_millis() as u64)
+        .set_connection_timeout(RECONNECT_MAX_DELAY)
+}
 
 /// Redis connection manager wrapper with automatic reconnection
 #[derive(Clone)]
@@ -38,8 +95,10 @@ impl RedisManager {
 
         let client = Client::open(redis_url).context("Failed to create Redis client")?;
 
-        // ConnectionManager provides automatic reconnection
-        let connection = ConnectionManager::new(client)
+        // ConnectionManager provides automatic reconnection — bounded, so a
+        // Redis outage fails requests instead of parking them for minutes.
+        // See `connection_manager_config`.
+        let connection = ConnectionManager::new_with_config(client, connection_manager_config())
             .await
             .context("Failed to establish Redis connection")?;
 

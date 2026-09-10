@@ -12,7 +12,7 @@ export default {
         // `hover:bg-brand-700` call sites read correctly. The dark end of
         // the ramp converges onto the legacy HF One burgundy so dark
         // surfaces and pressed states keep the estate's deep tones —
-        // see /Users/nut/HF-erp/design/HF-ONE.md (crimson is a sanctioned
+        // see /Users/nut/HF/HF-erp/design/HF-ONE.md (crimson is a sanctioned
         // guest-app exception; primary action = brand-600).
         brand: {
           50: '#FDF1F1',

@@ -9,6 +9,8 @@
     "lint": "eslint . --report-unused-disable-directives && node scripts/check-design.cjs",
     "lint:strict": "eslint . --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "eslint . --fix",
+    "lint:eslint:ci": "eslint . --report-unused-disable-directives --max-warnings 18",
+    "lint:design:ci": "node scripts/check-design.cjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "check:translations": "node scripts/check-translations.cjs",

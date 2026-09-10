@@ -7,6 +7,7 @@
 //! - Helper functions for making authenticated requests
 //! - Cleanup utilities
 
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use axum::{
@@ -74,6 +75,38 @@ static TEMPLATE_READY: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
 /// Template database name
 const TEMPLATE_DB_NAME: &str = "loyalty_test_template";
+
+/// Marker table stamped into the template database at the end of a
+/// successful build, holding a fingerprint of the migrations and seeds it
+/// was built from. See `template_db_is_current()`.
+const TEMPLATE_FINGERPRINT_TABLE: &str = "_test_template_fingerprint";
+
+/// The compile-time embedded migration set — exactly what `sqlx::migrate!()`
+/// applies at backend startup in CI and in production. Runtime discovery is
+/// cross-checked against it so "what the tests apply" cannot drift from
+/// "what production applies" without a loud failure.
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
+/// The migration that performs the legacy -> bilingual tier transform. The
+/// legacy tier seed is inserted immediately *before* it, which is the
+/// actual semantic requirement (anchoring on whatever happens to precede it
+/// breaks silently when a migration is inserted in between).
+const LEGACY_TIER_SEED_BEFORE: &str = "20260726000000_tier_benefits_bilingual.sql";
+
+/// The four tiers in the LEGACY flat Thai shape — exactly the state a
+/// deployed database was in when `LEGACY_TIER_SEED_BEFORE` first ran, so
+/// every suite run exercises the real transform instead of testing against
+/// hand-seeded post-migration rows. Content mirrors what seed.rs seeded
+/// before the bilingual change.
+const LEGACY_TIER_SEED_SQL: &str = r#"
+    INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
+    VALUES
+        ('Bronze', 0, 0, '{"description": "ระดับต้อนรับสำหรับสมาชิกใหม่", "perks": ["ราคาพิเศษสำหรับสมาชิก", "บริการแต่งห้องวันเกิด", "ได้รับคะแนนเพิ่ม"]}', '#CD7F32', 1, true),
+        ('Silver', 0, 1, '{"description": "สิทธิพิเศษระดับกลางสำหรับสมาชิกที่ใช้บริการ", "perks": ["ส่วนลดเครื่องดื่ม 10%", "ได้รับคะแนนเพิ่ม"]}', '#C0C0C0', 2, true),
+        ('Gold', 0, 10, '{"description": "สิทธิพิเศษระดับพรีเมียมสำหรับสมาชิกที่มีค่า", "perks": ["อัพเกรดห้องฟรี", "ได้รับคะแนนเพิ่ม"]}', '#FFD700', 3, true),
+        ('Platinum', 0, 20, '{"description": "สิทธิพิเศษสุดพิเศษสำหรับสมาชิกระดับสูงสุด", "perks": ["ส่วนลดพิเศษสำหรับสมาชิกขั้นสูงสุด"]}', '#E5E4E2', 4, true)
+    ON CONFLICT (name) DO NOTHING
+    "#;
 
 /// Get or create the admin pool (connects to "postgres" database).
 ///
@@ -154,17 +187,41 @@ async fn create_db_fresh_connection(
     }
 }
 
-/// Probe whether the template database has already been built and is
-/// usable. We check for the presence of the `users` table specifically
-/// because the init migration creates it — if it's there, the template
-/// build either completed or crashed *after* the init migration, which is
-/// the common case for "another nextest worker just finished building it
-/// while I was waiting for the advisory lock".
+/// URL of the template database (the test URL with the database name
+/// swapped for `TEMPLATE_DB_NAME`).
+fn template_database_url() -> String {
+    let url = test_database_url();
+    if let Some(pos) = url.rfind('/') {
+        format!("{}{}", &url[..pos + 1], TEMPLATE_DB_NAME)
+    } else {
+        url
+    }
+}
+
+/// Probe whether the template database has already been built by another
+/// worker **from exactly the migrations that are on disk right now**.
 ///
-/// Returns `false` if the template DB doesn't exist, doesn't have a
-/// `users` table, or can't be connected to for any reason. Caller treats
-/// `false` as "rebuild needed".
-async fn template_db_has_users(admin_pool: &PgPool) -> Result<bool, sqlx::Error> {
+/// The marker is the one-row `_test_template_fingerprint` table written as
+/// the very last step of a successful build (see `ensure_template_db`),
+/// holding a hash of every discovered `(filename, sql)` pair plus the
+/// interleaved seeds. Requiring it to match `expected_fingerprint` buys two
+/// things the old "does the `users` table exist?" probe could not:
+///
+/// * A build that died part-way — say migration 9 of 13 failed — never
+///   wrote the row, so every sibling nextest worker rebuilds instead of
+///   running its tests against a half-migrated template.
+/// * A template left over from a previous checkout is rebuilt when a
+///   migration is added, renamed or edited. `loyalty_test_template` is
+///   never swept by the stale-DB cleanup below (it doesn't match `test_%`),
+///   so locally it otherwise survives between runs indefinitely.
+///
+/// Returns `false` if the template DB doesn't exist, predates the
+/// fingerprint table, or was built from different migrations. Caller
+/// treats `false` as "rebuild needed".
+async fn template_db_is_current(
+    admin_pool: &PgPool,
+    expected_fingerprint: &str,
+) -> Result<bool, sqlx::Error> {
     let exists: bool = sqlx::query_scalar(&format!(
         "SELECT EXISTS (SELECT FROM pg_database WHERE datname = '{}')",
         TEMPLATE_DB_NAME
@@ -175,30 +232,167 @@ async fn template_db_has_users(admin_pool: &PgPool) -> Result<bool, sqlx::Error>
         return Ok(false);
     }
 
-    // Connect to the template DB directly to check for the marker table.
-    let template_url = {
-        let url = test_database_url();
-        if let Some(pos) = url.rfind('/') {
-            format!("{}{}", &url[..pos + 1], TEMPLATE_DB_NAME)
-        } else {
-            url
-        }
-    };
+    // Connect to the template DB directly to read the fingerprint row.
     let template_pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect(&template_url)
+        .connect(&template_database_url())
         .await?;
-    let has_users: bool = sqlx::query_scalar(
-        "SELECT EXISTS (
-            SELECT FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = 'users'
-        )",
-    )
-    .fetch_one(&template_pool)
+    // Querying a table that doesn't exist is an *error*, not an empty row:
+    // a template predating the fingerprint table lands here and must read
+    // as stale, hence `unwrap_or(None)`.
+    let stored: Option<String> = sqlx::query_scalar(&format!(
+        "SELECT fingerprint FROM {} WHERE id = 1",
+        TEMPLATE_FINGERPRINT_TABLE
+    ))
+    .fetch_optional(&template_pool)
     .await
-    .unwrap_or(false);
+    .unwrap_or(None);
     template_pool.close().await;
-    Ok(has_users)
+    Ok(stored.as_deref() == Some(expected_fingerprint))
+}
+
+/// One migration file discovered on disk.
+struct MigrationFile {
+    /// Version parsed from the filename prefix, the way sqlx parses it.
+    version: i64,
+    file_name: String,
+    sql: String,
+}
+
+/// Parse the version out of a migration filename the way sqlx's own
+/// resolver does: the digits before the first `_`, as an `i64`.
+///
+/// Returns `Err` with a human-readable reason for anything that is not a
+/// plain `<version>_<description>.sql` (or `.up.sql`), so a `.down.sql`
+/// half of a reversible pair, an editor swap file or an AppleDouble
+/// `._foo.sql` sidecar fails the suite loudly instead of being applied as
+/// if it were a migration — or silently skipped.
+fn parse_migration_version(file_name: &str) -> Result<i64, String> {
+    let stem = file_name
+        .strip_suffix(".sql")
+        .ok_or_else(|| "not a .sql file".to_string())?;
+    if let Some(base) = stem.strip_suffix(".down") {
+        return Err(format!(
+            "this is the down half of a reversible migration (`sqlx migrate add -r`); \
+             the test harness applies migrations forward only and must not execute it. \
+             Make `{base}` irreversible, or teach discover_migration_files() to skip \
+             `.down.sql` explicitly"
+        ));
+    }
+    let stem = stem.strip_suffix(".up").unwrap_or(stem);
+    let (version, description) = stem
+        .split_once('_')
+        .ok_or_else(|| "expected <version>_<description>.sql".to_string())?;
+    if version.is_empty() || !version.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!("`{version}` is not a numeric version prefix"));
+    }
+    if description.contains('.') {
+        return Err("description contains a `.` — unexpected filename form".to_string());
+    }
+    version
+        .parse::<i64>()
+        .map_err(|e| format!("version `{version}` does not fit in an i64: {e}"))
+}
+
+/// Discover every migration under `backend-rust/migrations/`, ordered the
+/// way `sqlx::migrate!()` orders them: ascending **numeric** version, not
+/// lexical filename order (a prefix of a different digit width sorts
+/// differently between the two).
+///
+/// Read at test run time via `CARGO_MANIFEST_DIR`, so a migration file
+/// added, renamed or removed on disk is picked up the next time the
+/// template database is *built* — and `ensure_template_db()`'s fingerprint
+/// probe is what forces that rebuild instead of reusing a warm template.
+///
+/// The result is cross-checked against `MIGRATOR`, the compile-time
+/// embedded set the backend itself applies at startup in CI and
+/// production, so a file this function drops (or an extra one it picks up)
+/// fails the suite rather than quietly producing a test-only schema.
+fn discover_migration_files() -> Vec<MigrationFile> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    let mut files: Vec<MigrationFile> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("failed to read migrations dir {}: {}", dir.display(), e))
+        // A `DirEntry` that fails to stat must never be silently dropped:
+        // that would build the template from a subset of the migrations.
+        .map(|entry| {
+            entry.unwrap_or_else(|e| panic!("failed to read an entry in {}: {}", dir.display(), e))
+        })
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("sql"))
+        })
+        .map(|entry| {
+            let path = entry.path();
+            let file_name = entry.file_name().to_string_lossy().into_owned();
+            let version = parse_migration_version(&file_name).unwrap_or_else(|reason| {
+                panic!(
+                    "unexpected file `{}` in {}: {}",
+                    file_name,
+                    dir.display(),
+                    reason
+                )
+            });
+            let sql = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("failed to read migration {}: {}", path.display(), e));
+            MigrationFile {
+                version,
+                file_name,
+                sql,
+            }
+        })
+        .collect();
+    files.sort_by_key(|file| file.version);
+
+    // The real guard: compare against what `sqlx::migrate!()` embedded at
+    // compile time. Counting our own loop iterations would be a tautology —
+    // a file dropped by discovery shrinks both sides of that comparison
+    // identically. The embedded set is an independent witness.
+    let embedded: Vec<i64> = MIGRATOR
+        .iter()
+        .filter(|migration| !migration.migration_type.is_down_migration())
+        .map(|migration| migration.version)
+        .collect();
+    let discovered: Vec<i64> = files.iter().map(|file| file.version).collect();
+    assert_eq!(
+        discovered,
+        embedded,
+        "migrations discovered on disk do not match the compile-time \
+         sqlx::migrate!() set the backend applies in CI and production.\n\
+         on disk:  {:?}\n\
+         embedded: {:?}\n\
+         (if you just added a migration file, the embedded set may simply be \
+         stale — force a rebuild of this test crate and re-run)",
+        files
+            .iter()
+            .map(|file| file.file_name.as_str())
+            .collect::<Vec<_>>(),
+        embedded,
+    );
+
+    files
+}
+
+/// SHA-256 over everything that goes into the template database: every
+/// discovered migration in apply order, plus the interleaved legacy seed.
+/// Any migration added, renamed or edited changes it, which is what makes
+/// a warm `loyalty_test_template` self-invalidating instead of silently
+/// serving a stale schema.
+fn migrations_fingerprint(files: &[MigrationFile]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    for file in files {
+        hasher.update(file.file_name.as_bytes());
+        hasher.update(b"\0");
+        hasher.update(file.sql.as_bytes());
+        hasher.update(b"\0");
+    }
+    hasher.update(LEGACY_TIER_SEED_BEFORE.as_bytes());
+    hasher.update(LEGACY_TIER_SEED_SQL.as_bytes());
+    hex::encode(hasher.finalize())
 }
 
 /// Ensure the template database exists with migrations and seed data.
@@ -246,11 +440,21 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
     // Inside the lock now. Re-check whether some other worker already built
     // the template while we were waiting. Process-local `TEMPLATE_READY`
     // can't see other processes' work, so probe Postgres instead: the
-    // template DB needs to (a) exist and (b) contain the `users` table
-    // that the init migration creates. This is enough to distinguish "we
-    // built it earlier in this CI run" from "fresh service container".
+    // template DB has to exist AND carry a fingerprint stamp matching the
+    // migrations that are on disk right now. That distinguishes "another
+    // worker just finished building it from this checkout" from "fresh
+    // service container", from "a build that died half-way", and from
+    // "yesterday's template, built before this branch added a migration".
+    //
+    // The migrations are therefore read off disk *before* the probe: the
+    // template is only reusable if it was built from exactly these files.
+    let migration_files = discover_migration_files();
+    let fingerprint = migrations_fingerprint(&migration_files);
     let admin_pool = get_admin_pool().await?;
-    if template_db_has_users(&admin_pool).await.unwrap_or(false) {
+    if template_db_is_current(&admin_pool, &fingerprint)
+        .await
+        .unwrap_or(false)
+    {
         // Scope the std::sync::Mutex guard so it doesn't get held across
         // the `.await` below (`clippy::await_holding_lock`).
         {
@@ -282,83 +486,39 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         .await?;
 
     // Connect to the template database to run migrations and seeds
-    let template_url = {
-        let url = test_database_url();
-        if let Some(pos) = url.rfind('/') {
-            format!("{}{}", &url[..pos + 1], TEMPLATE_DB_NAME)
-        } else {
-            url
-        }
-    };
-
     let template_pool = PgPoolOptions::new()
         .max_connections(2)
-        .connect(&template_url)
+        .connect(&template_database_url())
         .await?;
 
-    // Run migrations in order. Each migration file must be applied separately
-    // so the file order matches `sqlx::migrate!()` at runtime.
-    let init_migration = include_str!("../../migrations/20240101000000_init.sql");
-    template_pool.execute(init_migration).await?;
-
-    let booking_slips_migration = include_str!("../../migrations/20260511000000_booking_slips.sql");
-    template_pool.execute(booking_slips_migration).await?;
-
-    let room_management_columns_migration =
-        include_str!("../../migrations/20260512000000_room_management_columns.sql");
-    template_pool
-        .execute(room_management_columns_migration)
-        .await?;
-
-    let booking_admin_fields_migration =
-        include_str!("../../migrations/20260512020000_booking_admin_fields.sql");
-    template_pool
-        .execute(booking_admin_fields_migration)
-        .await?;
-
-    let users_email_unique_migration =
-        include_str!("../../migrations/20260513000000_users_email_unique.sql");
-    template_pool.execute(users_email_unique_migration).await?;
-
-    let idempotency_keys_migration =
-        include_str!("../../migrations/20260513010000_idempotency_keys.sql");
-    template_pool.execute(idempotency_keys_migration).await?;
-
-    let bookings_no_overlap_migration =
-        include_str!("../../migrations/20260513020000_bookings_no_overlap.sql");
-    template_pool.execute(bookings_no_overlap_migration).await?;
-
-    let property_line_channel_migration =
-        include_str!("../../migrations/20260710000000_property_line_channel.sql");
-    template_pool
-        .execute(property_line_channel_migration)
-        .await?;
-
-    // Seed the four tiers in the LEGACY flat Thai shape BEFORE applying the
-    // bilingual-benefits migration below — exactly the state a deployed
-    // database was in when that migration first ran. This makes every suite
-    // run exercise the real legacy -> bilingual transform instead of testing
-    // against hand-seeded post-migration rows. Content mirrors what seed.rs
-    // seeded before the bilingual change.
-    template_pool
-        .execute(
-            r#"
-            INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
-            VALUES
-                ('Bronze', 0, 0, '{"description": "ระดับต้อนรับสำหรับสมาชิกใหม่", "perks": ["ราคาพิเศษสำหรับสมาชิก", "บริการแต่งห้องวันเกิด", "ได้รับคะแนนเพิ่ม"]}', '#CD7F32', 1, true),
-                ('Silver', 0, 1, '{"description": "สิทธิพิเศษระดับกลางสำหรับสมาชิกที่ใช้บริการ", "perks": ["ส่วนลดเครื่องดื่ม 10%", "ได้รับคะแนนเพิ่ม"]}', '#C0C0C0', 2, true),
-                ('Gold', 0, 10, '{"description": "สิทธิพิเศษระดับพรีเมียมสำหรับสมาชิกที่มีค่า", "perks": ["อัพเกรดห้องฟรี", "ได้รับคะแนนเพิ่ม"]}', '#FFD700', 3, true),
-                ('Platinum', 0, 20, '{"description": "สิทธิพิเศษสุดพิเศษสำหรับสมาชิกระดับสูงสุด", "perks": ["ส่วนลดพิเศษสำหรับสมาชิกขั้นสูงสุด"]}', '#E5E4E2', 4, true)
-            ON CONFLICT (name) DO NOTHING
-            "#,
-        )
-        .await?;
-
-    let tier_benefits_bilingual_migration =
-        include_str!("../../migrations/20260726000000_tier_benefits_bilingual.sql");
-    template_pool
-        .execute(tier_benefits_bilingual_migration)
-        .await?;
+    // Apply every migration in `backend-rust/migrations/`, in the same
+    // ascending-version order `sqlx::migrate!()` applies them at runtime and
+    // in CI. Discovered at test run time (see `discover_migration_files`) and
+    // cross-checked there against the embedded migrator, so the test schema
+    // cannot drift from the production one.
+    //
+    // One legacy seed is interleaved: the tiers in their LEGACY flat Thai
+    // shape are inserted immediately before the bilingual transform runs.
+    let mut legacy_seed_applied = false;
+    for file in &migration_files {
+        if file.file_name == LEGACY_TIER_SEED_BEFORE {
+            template_pool.execute(LEGACY_TIER_SEED_SQL).await?;
+            legacy_seed_applied = true;
+        }
+        template_pool.execute(file.sql.as_str()).await?;
+    }
+    // The seed is anchored on a filename. If that migration is renamed,
+    // squashed or folded into another file the `if` above simply stops
+    // firing, the transform runs against an empty `tiers` table, and the
+    // failure surfaces far away in tier_admin_test as "Bronze must be in the
+    // public tier list". Fail here instead, where the cause is named.
+    assert!(
+        legacy_seed_applied,
+        "legacy tier seed anchor `{LEGACY_TIER_SEED_BEFORE}` not found in \
+         backend-rust/migrations/ — the legacy -> bilingual tier transform is no \
+         longer being exercised. Re-anchor LEGACY_TIER_SEED_BEFORE on whichever \
+         migration now performs that transform."
+    );
 
     // Seed membership_id_sequence
     template_pool
@@ -370,6 +530,29 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
             "#,
         )
         .await?;
+
+    // Stamp the template with a fingerprint of exactly what built it, as the
+    // LAST step. Written only on success, so a build that bailed part-way
+    // (a migration failed to apply, `?` returned) leaves no stamp and the
+    // next worker rebuilds instead of running its tests against a
+    // half-migrated template. Read back by `template_db_is_current()`.
+    template_pool
+        .execute(
+            format!(
+                "CREATE TABLE IF NOT EXISTS {} (id int PRIMARY KEY, fingerprint text NOT NULL)",
+                TEMPLATE_FINGERPRINT_TABLE
+            )
+            .as_str(),
+        )
+        .await?;
+    sqlx::query(&format!(
+        "INSERT INTO {} (id, fingerprint) VALUES (1, $1) \
+         ON CONFLICT (id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint",
+        TEMPLATE_FINGERPRINT_TABLE
+    ))
+    .bind(&fingerprint)
+    .execute(&template_pool)
+    .await?;
 
     // Close the template pool — required before using it as a TEMPLATE
     template_pool.close().await;
@@ -469,6 +652,9 @@ pub struct TestApp {
     pool: PgPool,
     /// Redis connection manager
     redis: ConnectionManager,
+    /// This app's private rate-limit bucket namespace, so a test can look
+    /// its own buckets up in the Redis every test shares.
+    rate_limit_namespace: String,
     /// Per-test database name (for cleanup)
     db_name: String,
 }
@@ -479,7 +665,7 @@ impl TestApp {
     /// Retries up to 5 times on transient "Tokio runtime shutdown" errors that
     /// can occur when parallel `#[tokio::test]` runtimes race during cleanup.
     pub async fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        Self::new_internal(None).await
+        Self::new_internal(None, None).await
     }
 
     /// Like [`TestApp::new`] but lets the test mutate `Settings` before the
@@ -488,17 +674,32 @@ impl TestApp {
     pub async fn new_with_config(
         mutate: &(dyn Fn(&mut loyalty_backend::Settings) + Sync),
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        Self::new_internal(Some(mutate)).await
+        Self::new_internal(Some(mutate), None).await
+    }
+
+    /// Like [`TestApp::new_with_config`] but reaches Redis through the
+    /// given URL instead of the shared test server.
+    ///
+    /// Point it at a [`RedisRelay`] to build an app whose Redis can be
+    /// taken away mid-test. Everything else — the per-test database, the
+    /// bucket namespace — is unchanged.
+    #[allow(dead_code)]
+    pub async fn new_with_redis_url(
+        mutate: &(dyn Fn(&mut loyalty_backend::Settings) + Sync),
+        redis_url: &str,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Self::new_internal(Some(mutate), Some(redis_url)).await
     }
 
     async fn new_internal(
         mutate: Option<&(dyn Fn(&mut loyalty_backend::Settings) + Sync)>,
+        redis_url: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         const MAX_RETRIES: u32 = 5;
         let mut last_error = None;
 
         for attempt in 0..MAX_RETRIES {
-            match Self::try_new(mutate).await {
+            match Self::try_new(mutate, redis_url).await {
                 Ok(app) => return Ok(app),
                 Err(e) => {
                     let err_str = e.to_string();
@@ -524,6 +725,7 @@ impl TestApp {
     /// Inner implementation of TestApp creation.
     async fn try_new(
         mutate: Option<&(dyn Fn(&mut loyalty_backend::Settings) + Sync)>,
+        redis_url: Option<&str>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let _ = dotenvy::dotenv();
 
@@ -569,14 +771,29 @@ impl TestApp {
             .connect(&test_url)
             .await?;
 
-        // Initialize test Redis
-        let redis = init_test_redis().await?;
+        // Initialize test Redis. Built with the production reconnect
+        // config, so a test that takes Redis away sees the same bounded
+        // behaviour a deployment would.
+        let redis = match redis_url {
+            Some(url) => {
+                ConnectionManager::new_with_config(
+                    redis::Client::open(url)?,
+                    loyalty_backend::redis::connection_manager_config(),
+                )
+                .await?
+            },
+            None => init_test_redis().await?,
+        };
 
         // Create application state and router
         let mut config = create_test_config();
         if let Some(mutate) = mutate {
             mutate(&mut config);
         }
+        if let Some(url) = redis_url {
+            config.redis.url = url.to_string();
+        }
+        let rate_limit_namespace = config.security.rate_limit_namespace.clone();
         let state = loyalty_backend::AppState::new(pool.clone(), redis.clone(), config);
         let router = loyalty_backend::routes::create_router(state);
 
@@ -585,6 +802,7 @@ impl TestApp {
             pool,
             redis,
             db_name,
+            rate_limit_namespace,
         })
     }
 
@@ -597,6 +815,12 @@ impl TestApp {
     #[allow(dead_code)]
     pub fn redis(&self) -> ConnectionManager {
         self.redis.clone()
+    }
+
+    /// The prefix every rate-limit key this app writes carries.
+    #[allow(dead_code)]
+    pub fn rate_limit_namespace(&self) -> &str {
+        &self.rate_limit_namespace
     }
 
     /// Get a TestClient for making HTTP requests.
@@ -704,7 +928,16 @@ fn create_test_config() -> loyalty_backend::Settings {
         email: EmailConfig::default(),
         slipok: SlipokConfig::default(),
         promptpay: PromptPayConfig::default(),
-        security: SecurityConfig::default(),
+        // Redis is shared by the whole suite (one server, no per-test
+        // database), so a limiter that runs in tests would otherwise carry
+        // its buckets from one test into the next. A fresh namespace per
+        // app gives the limiters the isolation the database already has;
+        // it is empty in every real deployment, where replicas must share
+        // buckets. See `SecurityConfig::rate_limit_namespace`.
+        security: SecurityConfig {
+            rate_limit_namespace: format!("test-{}", Uuid::new_v4().simple()),
+            ..SecurityConfig::default()
+        },
         cf_access: CfAccessConfig::default(),
         line_messaging: LineMessagingConfig::default(),
         pms: PmsConfig::default(),
@@ -713,6 +946,9 @@ fn create_test_config() -> loyalty_backend::Settings {
         },
         // Feature off by default; tests opt in via TestApp::new_with_config.
         admin_bootstrap: AdminBootstrapConfig::default(),
+        // No property mailbox: the booking notification is off unless a test
+        // sets one through `TestApp::new_with_config`.
+        booking_notify: BookingNotifyConfig::default(),
     }
 }
 
@@ -1116,6 +1352,20 @@ pub struct TestClient {
     /// Optional `Cookie` request header value (e.g. `"refresh_token=abc"`).
     /// Used by tests that need to exercise cookie-based auth flows.
     cookie_header: Option<String>,
+    /// Extra request headers applied to every request this client makes.
+    ///
+    /// Needed by anything whose credential is not a bearer token: the
+    /// public deposit-link routes take their capability in
+    /// `X-Deposit-Token`, and the per-IP limiters read the forwarding
+    /// headers.
+    extra_headers: Vec<(String, String)>,
+    /// The TCP peer this client pretends to be, as axum's `ConnectInfo`.
+    ///
+    /// `oneshot` inserts none, and code that reads the peer then falls
+    /// back to loopback. Anything that decides whether to *believe* a
+    /// forwarding header needs to present an untrusted peer as well as a
+    /// trusted one, which is what this is for.
+    peer: Option<SocketAddr>,
 }
 
 impl TestClient {
@@ -1125,7 +1375,29 @@ impl TestClient {
             router,
             auth_token: None,
             cookie_header: None,
+            extra_headers: Vec::new(),
+            peer: None,
         }
+    }
+
+    /// Present a particular TCP peer to the router, the way a real
+    /// connection would. See the `peer` field.
+    #[allow(dead_code)]
+    pub fn with_peer(mut self, addr: &str) -> Self {
+        self.peer = Some(
+            format!("{addr}:54321")
+                .parse()
+                .expect("test peer address literal"),
+        );
+        self
+    }
+
+    /// Attach an arbitrary request header to every subsequent request.
+    #[allow(dead_code)]
+    pub fn with_header(mut self, name: &str, value: &str) -> Self {
+        self.extra_headers
+            .push((name.to_string(), value.to_string()));
+        self
     }
 
     /// Set the authentication token
@@ -1155,6 +1427,12 @@ impl TestClient {
         }
         if let Some(cookie) = &self.cookie_header {
             builder = builder.header("Cookie", cookie);
+        }
+        for (name, value) in &self.extra_headers {
+            builder = builder.header(name, value);
+        }
+        if let Some(peer) = self.peer {
+            builder = builder.extension(axum::extract::ConnectInfo(peer));
         }
         builder
     }
@@ -1482,10 +1760,168 @@ pub fn hash_test_password(password: &str) -> String {
 // Redis Test Helpers
 // ============================================================================
 
+/// What the relay is currently doing to the traffic it carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RelayMode {
+    /// Bytes flow both ways: a healthy Redis.
+    Pass,
+    /// Sockets stay open and carry nothing. This is the failure a
+    /// connection-refused test cannot reach — the server is *there*, the
+    /// TCP handshake succeeds, the command is accepted, and no answer
+    /// ever comes. Nothing in the client stack times this out by itself.
+    BlackHole,
+    /// Every socket is dropped and the port stops accepting: reconnects
+    /// are refused.
+    Cut,
+}
+
+/// A TCP relay in front of the shared test Redis, so a test can take
+/// Redis away in the middle of a run.
+///
+/// There is no other way to model it: `ConnectionManager::new` connects
+/// eagerly, so an app pointed straight at a dead port cannot be built at
+/// all — which is not the failure worth testing. What production actually
+/// does is lose a Redis that was working, so that is what this reproduces.
+/// Build the app against [`RedisRelay::url`], then pick the failure:
+///
+/// - [`RedisRelay::cut`] — open connections are dropped and the port stops
+///   accepting, so every later command fails and every reconnect is
+///   refused. The *fast* failure.
+/// - [`RedisRelay::black_hole`] — connections stay open and carry nothing,
+///   so a command is accepted and never answered. The *slow* failure, and
+///   the one only a client-side deadline can end.
+pub struct RedisRelay {
+    url: String,
+    mode: tokio::sync::watch::Sender<RelayMode>,
+    accept: tokio::task::JoinHandle<()>,
+}
+
+impl RedisRelay {
+    /// Start relaying to the shared test Redis on a fresh loopback port.
+    pub async fn start() -> Result<Self, std::io::Error> {
+        let upstream = redis_host_port();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let addr = listener.local_addr()?;
+        let (mode, mode_rx) = tokio::sync::watch::channel(RelayMode::Pass);
+
+        let accept = tokio::spawn(async move {
+            loop {
+                let accepted = {
+                    let mut rx = mode_rx.clone();
+                    tokio::select! {
+                        _ = rx.wait_for(|mode| *mode == RelayMode::Cut) => break,
+                        accepted = listener.accept() => accepted,
+                    }
+                };
+                let Ok((mut inbound, _)) = accepted else {
+                    break;
+                };
+                let upstream = upstream.clone();
+                let mut rx = mode_rx.clone();
+                tokio::spawn(async move {
+                    if *rx.borrow_and_update() == RelayMode::Pass {
+                        let Ok(mut outbound) = tokio::net::TcpStream::connect(&upstream).await
+                        else {
+                            return;
+                        };
+                        tokio::select! {
+                            _ = rx.wait_for(|mode| *mode != RelayMode::Pass) => {},
+                            _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound) => return,
+                        }
+                        if *rx.borrow_and_update() == RelayMode::Cut {
+                            // Dropping both sockets here is the cut: the
+                            // client's connection dies at once.
+                            return;
+                        }
+                        // Black-holing: hold both ends open and move no
+                        // bytes, so whatever the client writes is accepted
+                        // by the kernel and answered by nobody.
+                        let _ = rx.wait_for(|mode| *mode == RelayMode::Cut).await;
+                        return;
+                    }
+                    // Accepted while black-holing: never reach upstream,
+                    // never answer, keep the socket open.
+                    let _ = rx.wait_for(|mode| *mode == RelayMode::Cut).await;
+                    drop(inbound);
+                });
+            }
+        });
+
+        Ok(Self {
+            url: relay_url(addr),
+            mode,
+            accept,
+        })
+    }
+
+    /// The URL an app should be built against.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// Take Redis away: cut every relayed connection and stop listening,
+    /// so reconnects are refused too.
+    pub fn cut(&self) {
+        let _ = self.mode.send(RelayMode::Cut);
+        self.accept.abort();
+    }
+
+    /// Turn Redis into a black hole: connections stay up, commands are
+    /// accepted, nothing is ever answered — and new connections are
+    /// accepted and black-holed too, so a reconnect does not escape it.
+    pub fn black_hole(&self) {
+        let _ = self.mode.send(RelayMode::BlackHole);
+    }
+}
+
+impl Drop for RedisRelay {
+    fn drop(&mut self) {
+        self.cut();
+    }
+}
+
+/// Split `TEST_REDIS_URL` into (everything before the host, host:port,
+/// everything after) so [`RedisRelay`] can reach the real server and hand
+/// out a URL that differs from it *only* in host and port — any
+/// credentials or database number in the configured URL survive.
+fn redis_url_parts() -> (String, String, String) {
+    let url = test_redis_url();
+    let (scheme, rest) = match url.split_once("://") {
+        Some((scheme, rest)) => (format!("{scheme}://"), rest.to_string()),
+        None => (String::new(), url.clone()),
+    };
+    let (authority, tail) = match rest.find('/') {
+        Some(at) => (rest[..at].to_string(), rest[at..].to_string()),
+        None => (rest.clone(), String::new()),
+    };
+    let (userinfo, host_port) = match authority.rsplit_once('@') {
+        Some((userinfo, host_port)) => (format!("{userinfo}@"), host_port.to_string()),
+        None => (String::new(), authority),
+    };
+    let host_port = if host_port.contains(':') {
+        host_port
+    } else {
+        format!("{host_port}:6379")
+    };
+    (format!("{scheme}{userinfo}"), host_port, tail)
+}
+
+/// Where the real test Redis lives, for [`RedisRelay`]'s upstream.
+fn redis_host_port() -> String {
+    redis_url_parts().1
+}
+
+/// `TEST_REDIS_URL` with the relay's address in place of the real one.
+fn relay_url(addr: SocketAddr) -> String {
+    let (head, _, tail) = redis_url_parts();
+    format!("{head}{addr}{tail}")
+}
+
 /// Initialize test Redis connection
 pub async fn init_test_redis() -> Result<ConnectionManager, redis::RedisError> {
     let client = redis::Client::open(test_redis_url())?;
-    ConnectionManager::new(client).await
+    ConnectionManager::new_with_config(client, loyalty_backend::redis::connection_manager_config())
+        .await
 }
 
 /// Clean up Redis test data
