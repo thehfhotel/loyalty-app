@@ -111,8 +111,31 @@ pub struct AdminSlipResponse {
     pub admin_verified_by: Option<Uuid>,
     pub admin_notes: Option<String>,
     /// The current SlipOK auto-verification state, pulled along so the
-    /// frontend can re-render the badge without a refetch.
+    /// frontend can re-render the badge without a refetch. One of the locked
+    /// vocabulary values: `pending`, `verified`, `shadow_pass`, `manual`,
+    /// `unavailable`.
     pub slipok_status: Option<String>,
+    /// Why the machine landed on that status — one of the locked
+    /// `slipok_reason` keys (`amount_mismatch`, `receiver_mismatch`,
+    /// `duplicate`, `slip_invalid`, `booking_not_payable`, `confirm_failed`,
+    /// `quota_exceeded`, `api_error`, `not_configured`, `timeout`), or null
+    /// when the check passed.
+    ///
+    /// In shadow mode nothing else on this response distinguishes one
+    /// machine decision from another: `admin_status` stays `pending` and
+    /// `autoVerified` is false for every row, so this field and the two
+    /// below are the whole decision record the drill and the agreement
+    /// report read back.
+    pub slipok_reason: Option<String>,
+    /// The bank reference SlipOK returned, stored only when every check
+    /// passed. The forensic anchor for an automatic decision.
+    pub slipok_trans_ref: Option<String>,
+    /// When the machine last decided about this slip.
+    pub slipok_checked_at: Option<DateTime<Utc>>,
+    /// Legacy, always null: nothing in the backend writes
+    /// `booking_slips.slipok_verified_at` — the automatic path records its
+    /// timestamp in `slipok_checked_at`. Kept on the response only until
+    /// A6's sidebar stops reading it; drop it then, along with the column.
     pub slipok_verified_at: Option<DateTime<Utc>>,
     /// True when `admin_verified_by` is the SlipOK system actor — the slip
     /// was decided by the machine and no human has touched it since.
@@ -128,6 +151,28 @@ pub struct AdminSlipResponse {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/// Read the three `slipok_*` decision columns the mutations' `RETURNING`
+/// clauses do not carry.
+///
+/// The two mutation queries are compile-time `query!` macros whose text is
+/// pinned by the offline cache in `.sqlx/`; widening their `RETURNING` lists
+/// would force a `cargo sqlx prepare` run for three columns the mutation
+/// does not write. A runtime query needs no cache entry, and one extra
+/// indexed read per admin click is not worth the coupling.
+async fn fetch_slipok_decision(
+    db: &sqlx::PgPool,
+    slip_id: Uuid,
+) -> AppResult<(Option<String>, Option<String>, Option<DateTime<Utc>>)> {
+    let row: Option<(Option<String>, Option<String>, Option<DateTime<Utc>>)> = sqlx::query_as(
+        "SELECT slipok_reason, slipok_trans_ref, slipok_checked_at FROM booking_slips WHERE id = $1",
+    )
+    .bind(slip_id)
+    .fetch_optional(db)
+    .await?;
+
+    Ok(row.unwrap_or((None, None, None)))
+}
 
 /// Parse the admin's user id from the JWT, returning a typed error on
 /// malformed claims rather than panicking with `unwrap`. We need a real
@@ -185,6 +230,9 @@ async fn verify_slip(
     )
     .await?;
 
+    let (slipok_reason, slipok_trans_ref, slipok_checked_at) =
+        fetch_slipok_decision(state.db(), slip_id).await?;
+
     Ok(Json(AdminSlipResponse {
         id: outcome.id,
         booking_id: outcome.booking_id,
@@ -200,6 +248,9 @@ async fn verify_slip(
         admin_verified_by: outcome.admin_verified_by,
         admin_notes: outcome.admin_notes,
         slipok_status: outcome.slipok_status,
+        slipok_reason,
+        slipok_trans_ref,
+        slipok_checked_at,
         slipok_verified_at: outcome.slipok_verified_at,
         auto_verified: crate::services::slip_confirm::is_slipok_actor(outcome.admin_verified_by),
     }))
@@ -306,6 +357,9 @@ async fn mark_slip_needs_action(
         "Admin marked slip as needs_action"
     );
 
+    let (slipok_reason, slipok_trans_ref, slipok_checked_at) =
+        fetch_slipok_decision(state.db(), slip_id).await?;
+
     Ok(Json(AdminSlipResponse {
         id: row.id,
         booking_id: row.booking_id,
@@ -318,6 +372,9 @@ async fn mark_slip_needs_action(
         admin_verified_by: row.admin_verified_by,
         admin_notes: row.admin_notes,
         slipok_status: row.slipok_status,
+        slipok_reason,
+        slipok_trans_ref,
+        slipok_checked_at,
         slipok_verified_at: row.slipok_verified_at,
         auto_verified: crate::services::slip_confirm::is_slipok_actor(row.admin_verified_by),
     }))
@@ -333,6 +390,13 @@ async fn mark_slip_needs_action(
 /// hard rule 5 in `CLAUDE.md` forbids ("never touch the database directly").
 /// The auto-verify drill and the shadow-window agreement report both need
 /// to read decisions back; this is the route they use.
+///
+/// Which is why the response carries `slipokReason`, `slipokTransRef` and
+/// `slipokCheckedAt` as well. In shadow mode — production today — nothing
+/// else on it varies: `adminStatus` stays `pending` and `autoVerified` is
+/// false for every row, so without the reason the route could not tell an
+/// `amount_mismatch` from a `receiver_mismatch` from a `duplicate`, which is
+/// exactly the histogram the agreement report is specified to produce.
 ///
 /// Returns 200 with the slip row; 404 if the slip doesn't exist.
 ///
@@ -353,7 +417,8 @@ async fn get_slip(
         r#"
         SELECT id, booking_id, slip_url, uploaded_at, admin_status,
                admin_verified_at, admin_verified_by, admin_notes,
-               slipok_status, slipok_verified_at
+               slipok_status, slipok_reason, slipok_trans_ref,
+               slipok_checked_at, slipok_verified_at
         FROM booking_slips
         WHERE id = $1
         "#,
@@ -377,6 +442,9 @@ async fn get_slip(
         admin_verified_by,
         admin_notes: row.try_get("admin_notes")?,
         slipok_status: row.try_get("slipok_status")?,
+        slipok_reason: row.try_get("slipok_reason")?,
+        slipok_trans_ref: row.try_get("slipok_trans_ref")?,
+        slipok_checked_at: row.try_get("slipok_checked_at")?,
         slipok_verified_at: row.try_get("slipok_verified_at")?,
         auto_verified: crate::services::slip_confirm::is_slipok_actor(admin_verified_by),
     }))
@@ -444,6 +512,9 @@ mod tests {
             admin_verified_by,
             admin_notes: None,
             slipok_status: Some("verified".to_string()),
+            slipok_reason: None,
+            slipok_trans_ref: Some("TESTREF0001".to_string()),
+            slipok_checked_at: Some(Utc::now()),
             slipok_verified_at: None,
             auto_verified: crate::services::slip_confirm::is_slipok_actor(admin_verified_by),
         }
@@ -457,6 +528,10 @@ mod tests {
         assert!(json.contains("\"slipUrl\""));
         assert!(json.contains("\"adminStatus\":\"verified\""));
         assert!(json.contains("\"slipokStatus\""));
+        // The locked camelCase names the drill and the agreement report read.
+        assert!(json.contains("\"slipokReason\""));
+        assert!(json.contains("\"slipokTransRef\":\"TESTREF0001\""));
+        assert!(json.contains("\"slipokCheckedAt\""));
         assert!(json.contains("\"autoVerified\""));
     }
 

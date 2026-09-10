@@ -335,6 +335,147 @@ pub async fn confirm_slip_with_notes(
     })
 }
 
+/// The audit action written when an automatic confirmation is undone.
+///
+/// A distinct action rather than a second `slip_verified` row: the
+/// shadow-window agreement report and the human-touch KPI both count
+/// `slip_verified` rows owned by [`SLIPOK_SYSTEM_USER_ID`], and a verify
+/// that was rolled back must not be counted as a decision that held.
+pub const ACTION_SLIP_VERIFY_REVERTED: &str = "slip_verify_reverted";
+
+/// Undo a half-finished automatic confirmation.
+///
+/// [`confirm_slip`] commits the slip's `admin_status` — and the
+/// `slip_verified` audit row naming [`SLIPOK_SYSTEM_USER_ID`] — before it
+/// calls the PMS, so a PMS failure on the automatic path would otherwise
+/// leave a slip that claims to be verified against a booking that never got
+/// confirmed. Nobody retries it: there is no admin holding a button. Put the
+/// slip back in the admin's queue, say why, and **contradict the audit row
+/// in the audit log**, so the history cannot permanently assert a verify
+/// that was rolled back.
+///
+/// Lives here rather than in `routes::bookings` because it is the
+/// compensating half of [`confirm_slip`]: the two must agree on the actor,
+/// on the audit contract and on which writes are one transaction. Being
+/// `pub` is also what lets the integration suite drive the admin-won-the-race
+/// branch directly, which no HTTP-level fixture can reach.
+///
+/// Returns `true` when the slip was reverted, `false` when an admin had
+/// verified it in the meantime and their decision was left standing.
+///
+/// Runtime queries, like the rest of the `slipok_*` writes: those columns are
+/// new in migration `20260910000000_booking_slips_slipok.sql` and a runtime
+/// query needs no `.sqlx` offline-cache entry.
+pub async fn revert_auto_confirm(db: &sqlx::PgPool, slip_id: Uuid) -> AppResult<bool> {
+    use sqlx::Row;
+
+    let mut tx = db.begin().await?;
+
+    // `FOR UPDATE` is what makes the guard below sound: an admin pressing
+    // Verify between this read and the UPDATE would otherwise have their
+    // stamp overwritten by the revert.
+    let before = sqlx::query(
+        r#"
+        SELECT booking_id, admin_status, admin_verified_at, admin_verified_by,
+               slipok_status, slipok_trans_ref
+        FROM booking_slips
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(slip_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Slip".to_string()))?;
+
+    let booking_id: Uuid = before.try_get("booking_id")?;
+    let before_admin_status: Option<String> = before.try_get("admin_status")?;
+    let before_verified_at: Option<DateTime<Utc>> = before.try_get("admin_verified_at")?;
+    let before_verified_by: Option<Uuid> = before.try_get("admin_verified_by")?;
+    let before_slipok_status: Option<String> = before.try_get("slipok_status")?;
+    let before_trans_ref: Option<String> = before.try_get("slipok_trans_ref")?;
+
+    // Never undo an admin's own verification, only the machine's. NULL is
+    // accepted too, so a slip verified by an older build — before the system
+    // actor existed — can still be reverted.
+    if !(before_verified_by.is_none() || is_slipok_actor(before_verified_by)) {
+        tx.rollback().await?;
+        tracing::warn!(
+            slip_id = %slip_id,
+            booking_id = %booking_id,
+            admin_verified_by = ?before_verified_by,
+            "Automatic confirmation failed part-way, but an admin had already \
+             verified this slip; leaving their decision standing. The slip \
+             reads verified against a booking the PMS did not confirm — \
+             someone has to reconcile it by hand."
+        );
+        return Ok(false);
+    }
+
+    let after = sqlx::query(
+        r#"
+        UPDATE booking_slips
+        SET admin_status      = 'pending',
+            admin_verified_at = NULL,
+            admin_verified_by = NULL,
+            slipok_status     = $1,
+            slipok_reason     = $2,
+            slipok_trans_ref  = NULL,
+            slipok_checked_at = NOW()
+        WHERE id = $3
+        RETURNING admin_status, admin_verified_at, admin_verified_by, slipok_status
+        "#,
+    )
+    .bind(crate::services::slip_match::SLIPOK_STATUS_MANUAL)
+    .bind(crate::services::slip_match::REASON_CONFIRM_FAILED)
+    .bind(slip_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let before_json = json!({
+        "adminStatus": before_admin_status,
+        "adminVerifiedBy": before_verified_by,
+        "adminVerifiedAt": before_verified_at,
+        "slipokStatus": before_slipok_status,
+        "slipokTransRef": before_trans_ref,
+        "slipId": slip_id,
+    });
+    let after_json = json!({
+        "adminStatus": after.try_get::<Option<String>, _>("admin_status")?,
+        "adminVerifiedBy": after.try_get::<Option<Uuid>, _>("admin_verified_by")?,
+        "adminVerifiedAt": after.try_get::<Option<DateTime<Utc>>, _>("admin_verified_at")?,
+        "slipokStatus": after.try_get::<Option<String>, _>("slipok_status")?,
+        "slipokReason": crate::services::slip_match::REASON_CONFIRM_FAILED,
+        "slipId": slip_id,
+    });
+
+    // Written inside the same transaction as the revert: the desk must never
+    // read the machine's verify without the row that takes it back.
+    insert_slip_audit_row(
+        &mut *tx,
+        booking_id,
+        SLIPOK_SYSTEM_USER_ID,
+        ACTION_SLIP_VERIFY_REVERTED,
+        Some(before_json),
+        Some(after_json),
+        Some(format!(
+            "Automatic verification reverted ({}): confirming the booking failed after the slip was marked verified",
+            crate::services::slip_match::REASON_CONFIRM_FAILED
+        )),
+    )
+    .await?;
+
+    tx.commit().await?;
+
+    tracing::warn!(
+        slip_id = %slip_id,
+        booking_id = %booking_id,
+        "Automatic verification reverted; slip returned to the manual queue"
+    );
+
+    Ok(true)
+}
+
 /// Read a slip row as a [`ConfirmOutcome`] without changing it.
 ///
 /// Used when the automatic path finds the slip already verified. A runtime

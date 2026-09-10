@@ -28,10 +28,14 @@
 --
 -- Four independent guards, because this row carries the `admin` role:
 --
---   1. `is_active = false`. Every authentication path requires an active
---      row — password login (`routes::auth::login`), the refresh path, and
---      the Cloudflare Access admin exchange (`routes::auth::cf_exchange`,
---      `... AND role::text IN ('admin','super_admin') AND is_active`).
+--   1. `is_active = false`. The password login (`routes::auth::login`),
+--      the refresh path and the Cloudflare Access admin exchange
+--      (`routes::auth::cf_exchange`, `... AND role::text IN
+--      ('admin','super_admin') AND is_active`) each refuse an inactive
+--      row. **The OAuth path does not**: `services::oauth::
+--      find_or_create_oauth_user` selects `is_active` and never tests it,
+--      so on that path this guard is worth nothing and guard 4 (the
+--      email) is the one that stands.
 --   2. `password_hash IS NULL`. Password login rejects a row with no hash
 --      before it ever reaches the verifier.
 --   3. `oauth_provider IS NULL` / `oauth_provider_id IS NULL`. The OAuth
@@ -41,9 +45,14 @@
 --      guaranteed never to resolve, so no identity provider — Google,
 --      LINE or Cloudflare Access — can ever assert it.
 --
--- Guards 1 and 2 are additionally pinned by a CHECK constraint below, so
--- the row cannot be activated or given a password even by hand at the
--- database.
+-- All four are pinned by the CHECK constraint below, so the row cannot be
+-- activated, given a password, linked to an identity provider or moved to
+-- a reachable email address even by hand at the database. The email is in
+-- the constraint for exactly the reason guard 1 is not enough on its own:
+-- `routes::admin_users::update_user` will happily rewrite this row's
+-- email like any other user's, and the OAuth by-email branch would then
+-- link a real Google account to it. The constraint is what makes that
+-- rewrite fail.
 --
 -- ## Why the `admin` role
 --
@@ -105,25 +114,31 @@ SET first_name = EXCLUDED.first_name,
     updated_at = NOW();
 
 -- ----- the row can never become loginable ------------------------------
--- Guarded by a `pg_constraint` lookup so re-applying the migration on a
--- partially migrated database is a no-op rather than an error.
+-- Dropped and re-added rather than added only when missing, so re-running
+-- the migration converges an older or hand-edited constraint definition on
+-- the current one — the same reason the seed above is `DO UPDATE` rather
+-- than `DO NOTHING`. `IF EXISTS` keeps the first application a no-op.
+--
+-- `IS NOT DISTINCT FROM` for the email, not `=`: a CHECK passes when its
+-- expression evaluates to NULL, so `email = '...'` would let the email be
+-- nulled out and the row would slip the guard.
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'users_slipok_system_actor_not_loginable'
-          AND conrelid = '"public"."users"'::regclass
-    ) THEN
-        ALTER TABLE "public"."users"
-            ADD CONSTRAINT "users_slipok_system_actor_not_loginable"
-            CHECK (
-                id <> '00000000-0000-4000-8000-0000005110b0'::uuid
-                OR (is_active IS NOT TRUE AND password_hash IS NULL)
-            );
-    END IF;
-END $$;
+ALTER TABLE "public"."users"
+    DROP CONSTRAINT IF EXISTS "users_slipok_system_actor_not_loginable";
+
+ALTER TABLE "public"."users"
+    ADD CONSTRAINT "users_slipok_system_actor_not_loginable"
+    CHECK (
+        id <> '00000000-0000-4000-8000-0000005110b0'::uuid
+        OR (
+            is_active IS NOT TRUE
+            AND password_hash IS NULL
+            AND oauth_provider IS NULL
+            AND oauth_provider_id IS NULL
+            AND email IS NOT DISTINCT FROM 'slipok@system.hf.invalid'
+        )
+    );
 
 COMMENT ON CONSTRAINT "users_slipok_system_actor_not_loginable"
     ON "public"."users"
-    IS 'The SlipOK system actor exists only to own booking_audit_log rows for automatic slip verifications. It must never be activated or given a password.';
+    IS 'The SlipOK system actor exists only to own booking_audit_log rows for automatic slip verifications. It must never be activated, given a password, linked to an identity provider, or moved to an email address a provider could assert.';

@@ -24,6 +24,19 @@ use rust_decimal::{Decimal, RoundingStrategy};
 
 use crate::services::slipok::{SlipVerificationResult, VerificationStatus};
 
+/// Status values stored in `booking_slips.slipok_status`. See the migration
+/// `20260910000000_booking_slips_slipok.sql` for the vocabulary; it is a
+/// locked cross-repo interface (the guest badge, the admin sidebar and the
+/// shadow-window agreement report all key off these exact strings).
+///
+/// They live beside the reasons rather than in `routes::bookings` because
+/// `services::slip_confirm` writes them too when it undoes a half-finished
+/// automatic confirmation.
+pub const SLIPOK_STATUS_VERIFIED: &str = "verified";
+pub const SLIPOK_STATUS_SHADOW_PASS: &str = "shadow_pass";
+pub const SLIPOK_STATUS_MANUAL: &str = "manual";
+pub const SLIPOK_STATUS_UNAVAILABLE: &str = "unavailable";
+
 /// Reason strings stored in `booking_slips.slipok_reason`. They are machine
 /// values, not copy: the admin sidebar maps them to wording.
 pub const REASON_QUOTA_EXCEEDED: &str = "quota_exceeded";

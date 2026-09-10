@@ -16,7 +16,11 @@
 //! - HTTP 429                      → `unavailable` / `quota_exceeded`, and
 //!   the guest's upload still succeeds;
 //! - HTTP 500                      → `unavailable` / `api_error` — a vendor
-//!   outage is never recorded as a bad slip.
+//!   outage is never recorded as a bad slip;
+//! - flag on, slip passes, the PMS then refuses the payment event →
+//!   the confirmation is rolled back to `manual` / `confirm_failed` and the
+//!   rollback is itself audited, so the trail cannot assert a verify that
+//!   did not hold.
 //!
 //! Case (a) also pins the *outgoing* request: the `x-authorization` header
 //! and the documented multipart shape (`files` part named `slip.jpg`,
@@ -33,7 +37,9 @@ use uuid::Uuid;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use loyalty_backend::services::slip_confirm::SLIPOK_SYSTEM_USER_ID;
+use loyalty_backend::services::slip_confirm::{
+    revert_auto_confirm, ACTION_SLIP_VERIFY_REVERTED, SLIPOK_SYSTEM_USER_ID,
+};
 
 use crate::common::{generate_test_token_with_role, TestApp, TestUser};
 
@@ -826,6 +832,235 @@ async fn an_automatic_verify_is_attributed_to_the_system_actor_in_the_admin_api(
     assert_eq!(
         reverified["adminVerifiedBy"].as_str(),
         Some(admin.id.to_string()).as_deref()
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// (h) Flag on, the slip passes every check, and then the PMS refuses the
+/// payment event.
+///
+/// `confirm_slip` has already committed by that point: the slip reads
+/// `verified`, stamped with the system actor, and a `slip_verified` audit row
+/// naming the machine is on the record. Nobody retries — there is no admin
+/// holding a button — so the compensating revert has to put the slip back in
+/// the manual queue **and** contradict that audit row. Without the second
+/// half the history permanently asserts a verify that was rolled back, and
+/// the agreement report and the human-touch KPI both count a decision that
+/// never held.
+#[tokio::test]
+async fn a_pms_failure_after_an_automatic_verify_is_rolled_back_and_audited() {
+    let slipok_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("/{}", BRANCH_ID)))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(slipok_success_body(
+                "REVERT0001",
+                SLIP_AMOUNT,
+                MASKED_RECEIVER,
+            )),
+        )
+        .expect(1)
+        .mount(&slipok_mock)
+        .await;
+
+    // The failure under test: the PMS refuses the payment event once the
+    // slip has already been marked verified.
+    let pms_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/channel/bookings/PMS-REVERT-1/payment-verified"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({ "error": "pms down" })))
+        .expect(1)
+        .mount(&pms_mock)
+        .await;
+
+    let slipok_uri = slipok_mock.uri();
+    let pms_uri = pms_mock.uri();
+    let mutate = move |cfg: &mut loyalty_backend::Settings| {
+        cfg.slipok.api_key = Some("test-key".to_string());
+        cfg.slipok.branch_id = Some(BRANCH_ID.to_string());
+        cfg.slipok.api_url = Some(slipok_uri.clone());
+        cfg.slipok.auto_verify = true;
+        cfg.promptpay.hf_id = Some(RECEIVING_ID.to_string());
+        cfg.pms.base_url = Some(pms_uri.clone());
+        cfg.pms.channel_token = Some("test-channel-token".to_string());
+    };
+
+    let app = TestApp::new_with_config(&mutate)
+        .await
+        .expect("create test app");
+
+    let user = TestUser::new("slipok-revert@test.com");
+    user.insert(app.db()).await.expect("insert user");
+
+    let booking_id = seed_channel_booking(app.db(), user.id, "1500.00", "PMS-REVERT-1").await;
+    let slip_url = upload_slip(&app, &user).await;
+
+    let client = app.authenticated_client(&user.id, &user.email);
+    let response = client
+        .post(
+            &format!("/api/bookings/{}/slips", booking_id),
+            &json!({ "slipUrl": slip_url }),
+        )
+        .await;
+    // The guest's upload still succeeds — a PMS outage is not their problem.
+    response.assert_status(201);
+
+    let body: Value = response.json().expect("slip response is JSON");
+    let slip_id: Uuid = body["id"].as_str().expect("slip id").parse().expect("uuid");
+
+    let (slipok_status, slipok_reason, trans_ref, admin_status) =
+        read_slip_state(app.db(), slip_id).await;
+    assert_eq!(slipok_status.as_deref(), Some("manual"));
+    assert_eq!(slipok_reason.as_deref(), Some("confirm_failed"));
+    assert_eq!(
+        trans_ref, None,
+        "a reverted slip must not keep the reference: the guest may re-upload \
+         the same transfer once the PMS is back"
+    );
+    assert_eq!(
+        admin_status.as_deref(),
+        Some("pending"),
+        "a slip whose booking was never confirmed must go back in the queue"
+    );
+
+    let verified_by: Option<Uuid> =
+        sqlx::query_scalar("SELECT admin_verified_by FROM booking_slips WHERE id = $1")
+            .bind(slip_id)
+            .fetch_one(app.db())
+            .await
+            .expect("read admin_verified_by");
+    assert_eq!(
+        verified_by, None,
+        "the machine's stamp is cleared, so the desk never reads the slip as \
+         verified-by-anyone"
+    );
+
+    assert_eq!(
+        booking_status(app.db(), booking_id).await,
+        "pending",
+        "the PMS never confirmed the booking"
+    );
+
+    // Both halves of the story are on the record, in order: the machine
+    // verified, then the machine took it back.
+    let actions: Vec<(String, Uuid)> = sqlx::query_as(
+        "SELECT action, admin_id FROM booking_audit_log WHERE booking_id = $1 \
+         ORDER BY occurred_at, id",
+    )
+    .bind(booking_id)
+    .fetch_all(app.db())
+    .await
+    .expect("read the audit trail");
+
+    assert_eq!(
+        actions.iter().map(|(a, _)| a.as_str()).collect::<Vec<_>>(),
+        vec!["slip_verified", ACTION_SLIP_VERIFY_REVERTED],
+        "a rolled-back verify must be contradicted in the audit log, not left \
+         standing alone"
+    );
+    assert!(
+        actions
+            .iter()
+            .all(|(_, admin_id)| *admin_id == SLIPOK_SYSTEM_USER_ID),
+        "both rows belong to the machine"
+    );
+
+    let revert_reason: Option<String> = sqlx::query_scalar(
+        "SELECT reason FROM booking_audit_log WHERE booking_id = $1 AND action = $2",
+    )
+    .bind(booking_id)
+    .bind(ACTION_SLIP_VERIFY_REVERTED)
+    .fetch_one(app.db())
+    .await
+    .expect("read the revert reason");
+    assert!(
+        revert_reason
+            .as_deref()
+            .is_some_and(|r| r.contains("confirm_failed")),
+        "the revert row should say why: {revert_reason:?}"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// (i) The revert's guard: an admin who verified the slip in the window
+/// between the automatic confirm and the PMS failure keeps their decision.
+///
+/// Driven against `revert_auto_confirm` directly. The race it guards is real
+/// but not reachable from an HTTP fixture — it lives between two awaits
+/// inside one handler — and the guard is one `WHERE` clause away from
+/// silently wiping an admin's stamp, which is exactly the kind of edit that
+/// otherwise ships green.
+#[tokio::test]
+async fn a_revert_leaves_an_admins_own_verification_standing() {
+    let app = TestApp::new().await.expect("create test app");
+
+    let user = TestUser::new("slipok-revert-guard@test.com");
+    user.insert(app.db()).await.expect("insert user");
+    let admin = TestUser::admin("slipok-revert-guard-admin@test.com");
+    admin.insert(app.db()).await.expect("insert admin");
+
+    let booking_id = seed_channel_booking(app.db(), user.id, "1500.00", "PMS-REVERT-GUARD-1").await;
+
+    // A slip an admin verified by hand. Written as a fixture rather than
+    // through the API because what is under test is the guard, not the
+    // admin path that produced the row.
+    let slip_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO booking_slips
+            (id, booking_id, slip_url, uploaded_by, admin_status,
+             admin_verified_at, admin_verified_by, slipok_status,
+             slipok_trans_ref)
+        VALUES ($1, $2, '/storage/slips/guard.jpg', $3, 'verified',
+                NOW(), $4, 'verified', 'REVERTGUARD0001')
+        "#,
+    )
+    .bind(slip_id)
+    .bind(booking_id)
+    .bind(user.id)
+    .bind(admin.id)
+    .execute(app.db())
+    .await
+    .expect("insert the admin-verified slip fixture");
+
+    let reverted = revert_auto_confirm(app.db(), slip_id)
+        .await
+        .expect("the revert runs");
+    assert!(
+        !reverted,
+        "the revert must stand aside for an admin's own verification"
+    );
+
+    let (slipok_status, slipok_reason, trans_ref, admin_status) =
+        read_slip_state(app.db(), slip_id).await;
+    assert_eq!(admin_status.as_deref(), Some("verified"));
+    assert_eq!(slipok_status.as_deref(), Some("verified"));
+    assert_eq!(slipok_reason, None);
+    assert_eq!(trans_ref.as_deref(), Some("REVERTGUARD0001"));
+
+    let verified_by: Option<Uuid> =
+        sqlx::query_scalar("SELECT admin_verified_by FROM booking_slips WHERE id = $1")
+            .bind(slip_id)
+            .fetch_one(app.db())
+            .await
+            .expect("read admin_verified_by");
+    assert_eq!(
+        verified_by,
+        Some(admin.id),
+        "the admin's stamp must survive the revert"
+    );
+
+    let audit_rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM booking_audit_log WHERE booking_id = $1")
+            .bind(booking_id)
+            .fetch_one(app.db())
+            .await
+            .expect("count audit rows");
+    assert_eq!(
+        audit_rows, 0,
+        "a revert that changed nothing must not write an audit row either"
     );
 
     app.cleanup().await.ok();
