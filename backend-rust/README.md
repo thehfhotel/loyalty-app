@@ -420,6 +420,7 @@ backend-rust/
 |----------|-------------|
 | `SLIPOK_API_KEY` | SlipOK API key |
 | `SLIPOK_BRANCH_ID` | SlipOK branch ID |
+| `SLIP_RETENTION_DAYS` | Days after a booking closes before the slip image is erased from `STORAGE_PATH/slips` (F2). Blank/unset = retention off; there is no default. |
 
 ### Database Pool Configuration
 

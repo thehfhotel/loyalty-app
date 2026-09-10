@@ -45,6 +45,7 @@
 
 use axum::{
     extract::{Extension, Path, Query, State},
+    http::HeaderMap,
     routing::{get, post, put},
     Json, Router,
 };
@@ -57,6 +58,7 @@ use validator::Validate;
 
 use crate::error::{AppError, AppResult};
 use crate::middleware::auth::{require_admin, AuthUser};
+use crate::services::slip_access_log;
 use crate::state::AppState;
 
 // ============================================================================
@@ -187,7 +189,14 @@ pub struct AdminBookingRoomType {
 #[serde(rename_all = "camelCase")]
 pub struct AdminBookingSlipSummary {
     pub id: Uuid,
-    pub image_url: String,
+    /// `null` once the image has been erased under the F2 retention policy,
+    /// and null too for the pre-existing case of a row with no URL. Never
+    /// `""` — an empty `src` resolves to the page itself and renders as a
+    /// broken image with no explanation.
+    pub image_url: Option<String>,
+    /// When the image was erased, or null while it is still on disk. The
+    /// payment record itself is unchanged either way.
+    pub deleted_at: Option<DateTime<Utc>>,
     pub uploaded_at: DateTime<Utc>,
     pub slipok_status: Option<String>,
     pub slipok_verified_at: Option<DateTime<Utc>>,
@@ -348,6 +357,9 @@ struct BookingRow {
     slip_admin_status: Option<String>,
     slip_admin_verified_at: Option<DateTime<Utc>>,
     slip_admin_verified_by: Option<Uuid>,
+    /// When this slip's image was erased under the F2 retention policy;
+    /// `None` while it is still on disk.
+    slip_deleted_at: Option<DateTime<Utc>>,
     /// Built the same way as `fetch_audit_history`'s `admin_name`:
     /// COALESCE + NULLIF + TRIM over the profile name, falling back to the
     /// verifier's email. A bare `first_name || ' ' || last_name` would render
@@ -361,7 +373,8 @@ impl From<BookingRow> for AdminBookingListItem {
     fn from(row: BookingRow) -> Self {
         let slip = row.slip_id.map(|id| AdminBookingSlipSummary {
             id,
-            image_url: row.slip_url.unwrap_or_default(),
+            image_url: row.slip_url,
+            deleted_at: row.slip_deleted_at,
             uploaded_at: row.slip_uploaded_at.unwrap_or_else(Utc::now),
             slipok_status: row.slip_slipok_status,
             slipok_verified_at: row.slip_slipok_verified_at,
@@ -421,6 +434,7 @@ impl From<BookingRow> for AdminBookingListItem {
 async fn list_bookings(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<ListBookingsQuery>,
 ) -> AppResult<Json<ListBookingsResponse>> {
     require_admin(&user)?;
@@ -561,6 +575,7 @@ async fn list_bookings(
             s.admin_status                  AS "slip_admin_status?",
             s.admin_verified_at             AS "slip_admin_verified_at?",
             s.admin_verified_by             AS "slip_admin_verified_by?",
+            s.deleted_at                    AS "slip_deleted_at?",
             COALESCE(NULLIF(TRIM(COALESCE(vup.first_name, '') || ' ' || COALESCE(vup.last_name, '')), ''),
                      vu.email)
                 AS "slip_admin_verified_by_name?"
@@ -616,6 +631,17 @@ async fn list_bookings(
 
     let bookings: Vec<AdminBookingListItem> = rows.into_iter().map(Into::into).collect();
 
+    // F2: each row carries its most recent slip's image URL, so a page of
+    // this list is a read of every slip on it.
+    record_slip_access(
+        &state,
+        &bookings,
+        &user,
+        &headers,
+        slip_access_log::ROUTE_ADMIN_BOOKING_LIST,
+    )
+    .await;
+
     Ok(Json(ListBookingsResponse {
         bookings,
         total,
@@ -669,6 +695,7 @@ async fn get_booking_detail(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
     Path(booking_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> AppResult<Json<AdminBookingDetail>> {
     require_admin(&user)?;
 
@@ -706,6 +733,7 @@ async fn get_booking_detail(
             s.admin_status                  AS "slip_admin_status?",
             s.admin_verified_at             AS "slip_admin_verified_at?",
             s.admin_verified_by             AS "slip_admin_verified_by?",
+            s.deleted_at                    AS "slip_deleted_at?",
             COALESCE(NULLIF(TRIM(COALESCE(vup.first_name, '') || ' ' || COALESCE(vup.last_name, '')), ''),
                      vu.email)
                 AS "slip_admin_verified_by_name?"
@@ -734,10 +762,63 @@ async fn get_booking_detail(
 
     let audit_history = fetch_audit_history(state.db(), booking_id).await?;
 
+    // F2: this is where the Slip Viewer Sidebar gets its image URL from
+    // (`booking.slip.imageUrl`), so it is the read that has to be recorded.
+    record_slip_access(
+        &state,
+        std::slice::from_ref(&booking),
+        &user,
+        &headers,
+        slip_access_log::ROUTE_ADMIN_BOOKING_DETAIL,
+    )
+    .await;
+
     Ok(Json(AdminBookingDetail {
         booking,
         audit_history,
     }))
+}
+
+/// Write a `slip_access_log` row for every slip whose URL is about to leave
+/// in this response (F2).
+///
+/// Best-effort by design: these surfaces answer with a *URL*, not the
+/// photograph, and taking the booking console down over an audit insert
+/// would be a worse outcome than an ERROR line naming what went unrecorded.
+/// The image route itself (`GET /api/storage/slips/:filename`) is the one
+/// that fails closed.
+///
+/// A caller whose token carries a malformed user id is skipped rather than
+/// failed: `require_admin` has already passed, and this is a log write.
+async fn record_slip_access(
+    state: &AppState,
+    bookings: &[AdminBookingListItem],
+    user: &AuthUser,
+    headers: &HeaderMap,
+    route: &str,
+) {
+    let slip_ids: Vec<Uuid> = bookings
+        .iter()
+        .filter_map(|b| b.slip.as_ref().map(|slip| slip.id))
+        .collect();
+
+    if slip_ids.is_empty() {
+        return;
+    }
+
+    let Ok(admin_id) = Uuid::parse_str(&user.id) else {
+        tracing::error!(route = %route, "admin token has a malformed user id; slip read unrecorded");
+        return;
+    };
+
+    slip_access_log::record_best_effort(
+        state.db(),
+        &slip_ids,
+        admin_id,
+        route,
+        slip_access_log::request_id(headers).as_deref(),
+    )
+    .await;
 }
 
 async fn fetch_audit_history(
@@ -798,6 +879,7 @@ async fn update_booking(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
     Path(booking_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(payload): Json<UpdateBookingRequest>,
 ) -> AppResult<Json<AdminBookingDetail>> {
     require_admin(&user)?;
@@ -970,6 +1052,15 @@ async fn update_booking(
     // Re-read the full detail through the same code path the GET uses so
     // the response always matches what a subsequent fetch would return.
     let detail = read_detail_after_mutation(state.db(), booking_id).await?;
+    // F2: that detail carries the slip's image URL, same as the GET.
+    record_slip_access(
+        &state,
+        std::slice::from_ref(&detail.booking),
+        &user,
+        &headers,
+        slip_access_log::ROUTE_ADMIN_BOOKING_UPDATE,
+    )
+    .await;
     Ok(Json(detail))
 }
 
@@ -984,6 +1075,7 @@ async fn apply_discount(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
     Path(booking_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(payload): Json<ApplyDiscountRequest>,
 ) -> AppResult<Json<AdminBookingDetail>> {
     require_admin(&user)?;
@@ -1061,6 +1153,15 @@ async fn apply_discount(
     tx.commit().await?;
 
     let detail = read_detail_after_mutation(state.db(), booking_id).await?;
+    // F2: that detail carries the slip's image URL, same as the GET.
+    record_slip_access(
+        &state,
+        std::slice::from_ref(&detail.booking),
+        &user,
+        &headers,
+        slip_access_log::ROUTE_ADMIN_BOOKING_DISCOUNT,
+    )
+    .await;
     Ok(Json(detail))
 }
 
@@ -1073,6 +1174,7 @@ async fn cancel_booking(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
     Path(booking_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(payload): Json<CancelBookingRequest>,
 ) -> AppResult<Json<AdminBookingDetail>> {
     require_admin(&user)?;
@@ -1137,6 +1239,15 @@ async fn cancel_booking(
     tx.commit().await?;
 
     let detail = read_detail_after_mutation(state.db(), booking_id).await?;
+    // F2: that detail carries the slip's image URL, same as the GET.
+    record_slip_access(
+        &state,
+        std::slice::from_ref(&detail.booking),
+        &user,
+        &headers,
+        slip_access_log::ROUTE_ADMIN_BOOKING_CANCEL,
+    )
+    .await;
     Ok(Json(detail))
 }
 
@@ -1185,6 +1296,7 @@ async fn read_detail_after_mutation(
             s.admin_status                  AS "slip_admin_status?",
             s.admin_verified_at             AS "slip_admin_verified_at?",
             s.admin_verified_by             AS "slip_admin_verified_by?",
+            s.deleted_at                    AS "slip_deleted_at?",
             COALESCE(NULLIF(TRIM(COALESCE(vup.first_name, '') || ' ' || COALESCE(vup.last_name, '')), ''),
                      vu.email)
                 AS "slip_admin_verified_by_name?"

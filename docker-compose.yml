@@ -95,6 +95,11 @@ services:
       PROMPTPAY_TAX_ID: ${PROMPTPAY_TAX_ID:-}
       PROMPTPAY_HF_ID: ${PROMPTPAY_HF_ID:-}
       PROMPTPAY_HFVILLE_ID: ${PROMPTPAY_HFVILLE_ID:-}
+      # Slip-image retention (F2). Days after a booking closes before the
+      # slip photograph is erased from STORAGE_PATH/slips. Blank = OFF: the
+      # backend reads a blank as unset (config::env_present), and there is
+      # deliberately no default, because the window is the owner's decision.
+      SLIP_RETENTION_DAYS: ${SLIP_RETENTION_DAYS:-}
       # Rust-specific logging
       RUST_LOG: ${RUST_LOG:-info}
     # VOLUMES: Source mounts (./backend-rust:/app) are in docker-compose.dev.yml ONLY

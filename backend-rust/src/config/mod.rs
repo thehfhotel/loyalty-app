@@ -509,6 +509,53 @@ impl BookingNotifyConfig {
     }
 }
 
+/// Personal-data retention windows (task F2, `docs/privacy/2026-09-pdpa-data-map.md`).
+///
+/// **Every window here is off until somebody sets it.** The numbers in the
+/// data map are *proposals* the owner and the lawyer have not signed off,
+/// and a retention sweep that starts erasing on a default would be this
+/// codebase deciding a policy question on their behalf. So the field is an
+/// `Option<String>` fed by [`env_present`]: unset is off, and the `${VAR:-}`
+/// blank every compose file passes is off too.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct RetentionConfig {
+    /// Days after a booking closes before its slip **image** is erased
+    /// (`SLIP_RETENTION_DAYS`). The metadata row is never deleted — it is
+    /// payment evidence and the duplicate-detection key — it gets a
+    /// tombstone instead. Blank or unset means the sweep never runs.
+    ///
+    /// Kept as a string and parsed by [`RetentionConfig::slip_retention_days`]
+    /// rather than deserialised as `Option<u32>`: the whole point of the
+    /// compose convention is that a blank arrives as a *string*, and no other
+    /// setting in this file goes through an `Option<u32>` parse path.
+    pub slip_days: Option<String>,
+}
+
+impl RetentionConfig {
+    /// The configured slip-image retention window in days, or `None` when
+    /// retention is off.
+    ///
+    /// A value that is not a positive integer is treated as **off** and
+    /// reported by [`RetentionConfig::slip_days_error`], because the
+    /// alternative — falling back to some default — would erase guest data
+    /// on the strength of a typo.
+    pub fn slip_retention_days(&self) -> Option<u32> {
+        present(&self.slip_days)
+            .and_then(|raw| raw.parse::<u32>().ok())
+            .filter(|days| *days > 0)
+    }
+
+    /// `Some(raw)` when `SLIP_RETENTION_DAYS` was set to something that is
+    /// not a positive integer, so startup can say so out loud instead of
+    /// silently running with retention off.
+    pub fn slip_days_error(&self) -> Option<&str> {
+        match present(&self.slip_days) {
+            Some(raw) if self.slip_retention_days().is_none() => Some(raw),
+            _ => None,
+        }
+    }
+}
+
 /// One LINE Messaging API channel (a property's OA).
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct LineMessagingChannelConfig {
@@ -893,6 +940,10 @@ pub struct Settings {
     /// Property mailboxes for new-booking / deposit-received notifications
     #[serde(default)]
     pub booking_notify: BookingNotifyConfig,
+
+    /// Personal-data retention windows (F2). Every window is off by default.
+    #[serde(default)]
+    pub retention: RetentionConfig,
 }
 
 impl Settings {
@@ -993,6 +1044,14 @@ impl Settings {
             .set_override_option(
                 "security.trusted_proxies",
                 env_present("TRUSTED_PROXIES"),
+            )?
+            // Slip-image retention (F2). `env_present` so an unset variable
+            // and the `${VAR:-}` blank both mean "retention is off" — there
+            // is deliberately no default window, because the number is the
+            // owner's decision and not this file's.
+            .set_override_option(
+                "retention.slip_days",
+                env_present("SLIP_RETENTION_DAYS"),
             )?
             .set_override_option("promptpay.tax_id", env_present("PROMPTPAY_TAX_ID"))?
             .set_override_option("promptpay.hf_id", env_present("PROMPTPAY_HF_ID"))?
@@ -1231,6 +1290,46 @@ mod tests {
         assert_eq!(env_present(name), Some("0845557000341".to_string()));
         env::remove_var(name);
         assert_eq!(env_present(name), None);
+    }
+
+    /// Retention is off unless somebody sets a positive whole number of
+    /// days. The blank case is the one that matters: every compose file
+    /// passes `SLIP_RETENTION_DAYS: ${SLIP_RETENTION_DAYS:-}`, so "unset"
+    /// reaches the process as `Some("")`, and a sweep that read that as
+    /// "0 days" would erase every closed booking's slip on first boot.
+    #[test]
+    fn slip_retention_is_off_unless_a_positive_number_of_days_is_set() {
+        fn cfg(raw: Option<&str>) -> RetentionConfig {
+            RetentionConfig {
+                slip_days: raw.map(str::to_string),
+            }
+        }
+
+        assert_eq!(cfg(None).slip_retention_days(), None, "unset is off");
+        assert_eq!(cfg(Some("")).slip_retention_days(), None, "blank is off");
+        assert_eq!(
+            cfg(Some("   ")).slip_retention_days(),
+            None,
+            "whitespace is off"
+        );
+        assert_eq!(cfg(Some("0")).slip_retention_days(), None, "zero is off");
+        assert_eq!(
+            cfg(Some("-5")).slip_retention_days(),
+            None,
+            "a negative window is off, not a panic"
+        );
+        assert_eq!(
+            cfg(Some("ninety")).slip_retention_days(),
+            None,
+            "a typo is off, never a fallback default"
+        );
+        assert_eq!(cfg(Some(" 90 ")).slip_retention_days(), Some(90));
+
+        // A typo is off *and* reported, so startup can say so out loud.
+        assert_eq!(cfg(Some("ninety")).slip_days_error(), Some("ninety"));
+        assert_eq!(cfg(Some("90")).slip_days_error(), None);
+        assert_eq!(cfg(None).slip_days_error(), None);
+        assert_eq!(cfg(Some("")).slip_days_error(), None);
     }
 
     /// `SLIPOK_AUTO_VERIFY` arrives from the environment as a *string*

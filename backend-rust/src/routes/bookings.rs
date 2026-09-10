@@ -119,7 +119,10 @@ pub struct AddSlipRequest {
 pub struct BookingSlipResponse {
     pub id: Uuid,
     pub booking_id: Uuid,
-    pub slip_url: String,
+    /// `null` once the image has been erased under the F2 retention policy.
+    /// Deliberately null rather than `""` — an empty `src` resolves to the
+    /// page itself, which renders as a broken image with no explanation.
+    pub slip_url: Option<String>,
     pub uploaded_by: Uuid,
     pub uploaded_at: DateTime<Utc>,
     /// Reserved for future SlipOK verification integration.
@@ -1674,7 +1677,8 @@ async fn award_loyalty_points(
 struct BookingSlipRow {
     pub id: Uuid,
     pub booking_id: Uuid,
-    pub slip_url: String,
+    /// `None` once the image has been erased under the F2 retention policy.
+    pub slip_url: Option<String>,
     pub uploaded_by: Uuid,
     pub uploaded_at: Option<DateTime<Utc>>,
     pub slipok_status: Option<String>,

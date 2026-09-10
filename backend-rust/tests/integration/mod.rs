@@ -19,6 +19,7 @@
 //! - `oauth_test` - OAuth authentication tests (/api/oauth/*)
 //! - `slipok_auto_verify_test` - Automatic SlipOK slip verification
 //! - `slipok_system_actor_test` - The seeded SlipOK audit actor's guards
+//! - `slip_retention_test` - F2: slip image retention + admin access logging
 //! - `storage_test` - Storage/file upload tests (/api/storage/*)
 //! - `sse_test` - Server-Sent Events tests (/api/sse/*)
 //!
@@ -47,6 +48,7 @@ pub mod health_test;
 pub mod loyalty_test;
 pub mod notification_test;
 pub mod oauth_test;
+pub mod slip_retention_test;
 pub mod slipok_auto_verify_test;
 pub mod slipok_system_actor_test;
 pub mod slips_test;

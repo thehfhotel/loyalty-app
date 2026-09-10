@@ -116,7 +116,11 @@ pub fn is_slipok_actor(admin_verified_by: Option<Uuid>) -> bool {
 pub struct ConfirmOutcome {
     pub id: Uuid,
     pub booking_id: Uuid,
-    pub slip_url: String,
+    /// `None` once the image has been erased under the F2 retention policy
+    /// (`booking_slips.slip_url` lost its `NOT NULL` in
+    /// `20260912020000_slip_retention_access_log.sql`). Nullability only —
+    /// nothing about when or why a slip is confirmed changed here.
+    pub slip_url: Option<String>,
     pub uploaded_at: Option<DateTime<Utc>>,
     pub admin_status: Option<String>,
     pub admin_verified_at: Option<DateTime<Utc>>,

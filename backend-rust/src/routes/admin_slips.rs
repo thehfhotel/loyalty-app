@@ -14,6 +14,14 @@
 //! - `GET  /api/admin/bookings/slips/:slip_id`              — read one slip
 //! - `POST /api/admin/bookings/slips/:slip_id/verify`       — admin verify
 //! - `POST /api/admin/bookings/slips/:slip_id/needs-action` — admin reject
+//! - `GET  /api/admin/bookings/slips/:slip_id/access-log`   — who read it
+//!
+//! ## Access logging (F2)
+//!
+//! The first three all answer with the slip's image URL, so each writes a
+//! `slip_access_log` row naming the admin, the slip and the time — the
+//! record `docs/privacy/2026-09-pdpa-data-map.md` §7 says did not exist. The
+//! fourth reads that log back and is not itself a slip read.
 //!
 //! Note the mount path: nested under `/bookings/slips/...` to match the
 //! frontend's `verifySlipByIdMutation` URL in `SlipViewerSidebar.tsx:130-158`
@@ -50,7 +58,8 @@
 //! `backend-rust/scripts/regen-sqlx-cache.sh` after any query change.
 
 use axum::{
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, Query, State},
+    http::HeaderMap,
     routing::{get, post},
     Json, Router,
 };
@@ -62,6 +71,7 @@ use validator::Validate;
 
 use crate::error::{AppError, AppResult};
 use crate::middleware::auth::{require_admin, AuthUser};
+use crate::services::slip_access_log;
 use crate::state::AppState;
 
 // ============================================================================
@@ -103,7 +113,18 @@ pub struct NeedsActionRequest {
 pub struct AdminSlipResponse {
     pub id: Uuid,
     pub booking_id: Uuid,
-    pub slip_url: String,
+    /// Path to the image, or **null** once the image has been erased under
+    /// the F2 retention policy — read it together with `deletedAt`. The
+    /// column lost its `NOT NULL` in
+    /// `20260912020000_slip_retention_access_log.sql` precisely so an erased
+    /// slip has no path that still looks like a path.
+    pub slip_url: Option<String>,
+    /// When the image was erased, or null while it is still on disk. The
+    /// metadata row itself is never deleted: the amount, the bank reference
+    /// and the decision are payment evidence.
+    pub deleted_at: Option<DateTime<Utc>>,
+    /// Why it was erased — `retention_sweep` today.
+    pub deletion_reason: Option<String>,
     pub uploaded_at: DateTime<Utc>,
     /// One of: `pending`, `verified`, `needs_action`.
     pub admin_status: String,
@@ -189,30 +210,104 @@ pub struct AdminSlipResponse {
     pub booking_not_confirmed_reason: Option<String>,
 }
 
+/// Query for `GET /api/admin/bookings/slips/:slip_id/access-log`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessLogQuery {
+    #[serde(default = "default_access_log_page")]
+    pub page: i64,
+    #[serde(default = "default_access_log_limit")]
+    pub limit: i64,
+}
+
+fn default_access_log_page() -> i64 {
+    1
+}
+fn default_access_log_limit() -> i64 {
+    50
+}
+
+/// One recorded read of a slip.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlipAccessEntry {
+    pub id: Uuid,
+    pub slip_id: Uuid,
+    /// Who read it. Never null — an access nobody can be named for is not
+    /// something this table is allowed to hold.
+    pub admin_id: Uuid,
+    /// Profile name, falling back to the email, built the same way
+    /// `admin_bookings::fetch_audit_history` builds its `adminName`.
+    pub admin_name: String,
+    /// The surface that served it, as a stable machine key — e.g.
+    /// `GET /api/storage/slips/:filename`. Never the literal request line,
+    /// which would carry the slip UUID a second time.
+    pub route: String,
+    pub accessed_at: DateTime<Utc>,
+    /// Correlates with the request's log lines. Null when the caller sent no
+    /// `x-request-id` and no layer generated one.
+    pub request_id: Option<String>,
+}
+
+/// Paged access log for one slip.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlipAccessLogResponse {
+    pub entries: Vec<SlipAccessEntry>,
+    pub total: i64,
+    pub page: i64,
+    pub limit: i64,
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
 
-/// Read the three `slipok_*` decision columns the mutations' `RETURNING`
-/// clauses do not carry.
+/// Read the `slipok_*` decision columns and the F2 retention tombstone —
+/// the columns the mutations' `RETURNING` clauses do not carry.
 ///
 /// The two mutation queries are compile-time `query!` macros whose text is
 /// pinned by the offline cache in `.sqlx/`; widening their `RETURNING` lists
 /// would force a `cargo sqlx prepare` run for three columns the mutation
 /// does not write. A runtime query needs no cache entry, and one extra
 /// indexed read per admin click is not worth the coupling.
-async fn fetch_slipok_decision(
-    db: &sqlx::PgPool,
-    slip_id: Uuid,
-) -> AppResult<(Option<String>, Option<String>, Option<DateTime<Utc>>)> {
-    let row: Option<(Option<String>, Option<String>, Option<DateTime<Utc>>)> = sqlx::query_as(
-        "SELECT slipok_reason, slipok_trans_ref, slipok_checked_at FROM booking_slips WHERE id = $1",
+async fn fetch_slip_extras(db: &sqlx::PgPool, slip_id: Uuid) -> AppResult<SlipExtras> {
+    type Row = (
+        Option<String>,
+        Option<String>,
+        Option<DateTime<Utc>>,
+        Option<DateTime<Utc>>,
+        Option<String>,
+    );
+
+    let row: Option<Row> = sqlx::query_as(
+        "SELECT slipok_reason, slipok_trans_ref, slipok_checked_at, deleted_at, deletion_reason \
+         FROM booking_slips WHERE id = $1",
     )
     .bind(slip_id)
     .fetch_optional(db)
     .await?;
 
-    Ok(row.unwrap_or((None, None, None)))
+    let (slipok_reason, slipok_trans_ref, slipok_checked_at, deleted_at, deletion_reason) =
+        row.unwrap_or((None, None, None, None, None));
+
+    Ok(SlipExtras {
+        slipok_reason,
+        slipok_trans_ref,
+        slipok_checked_at,
+        deleted_at,
+        deletion_reason,
+    })
+}
+
+/// The columns [`fetch_slip_extras`] carries back.
+#[derive(Debug, Default)]
+struct SlipExtras {
+    slipok_reason: Option<String>,
+    slipok_trans_ref: Option<String>,
+    slipok_checked_at: Option<DateTime<Utc>>,
+    deleted_at: Option<DateTime<Utc>>,
+    deletion_reason: Option<String>,
 }
 
 /// Parse the admin's user id from the JWT, returning a typed error on
@@ -245,6 +340,7 @@ async fn verify_slip(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
     Path(slip_id): Path<Uuid>,
+    headers: HeaderMap,
     payload: Option<Json<VerifySlipRequest>>,
 ) -> AppResult<Json<AdminSlipResponse>> {
     require_admin(&user)?;
@@ -271,8 +367,17 @@ async fn verify_slip(
     )
     .await?;
 
-    let (slipok_reason, slipok_trans_ref, slipok_checked_at) =
-        fetch_slipok_decision(state.db(), slip_id).await?;
+    let extras = fetch_slip_extras(state.db(), slip_id).await?;
+
+    // F2: the response carries the slip's URL, so the read is logged.
+    slip_access_log::record_best_effort(
+        state.db(),
+        &[slip_id],
+        admin_id,
+        slip_access_log::ROUTE_ADMIN_SLIP_VERIFY,
+        slip_access_log::request_id(&headers).as_deref(),
+    )
+    .await;
 
     // Tell the property's desk the deposit landed (B0). Fire-and-forget, and
     // deduped on the slip: re-verifying an already-verified slip (which this
@@ -305,6 +410,8 @@ async fn verify_slip(
         id: outcome.id,
         booking_id: outcome.booking_id,
         slip_url: outcome.slip_url,
+        deleted_at: extras.deleted_at,
+        deletion_reason: extras.deletion_reason,
         // `uploaded_at` is nullable in the schema (DEFAULT CURRENT_TIMESTAMP),
         // so we collapse a NULL to "now" — should never actually be null
         // for a row that's been inserted through the normal path.
@@ -316,9 +423,9 @@ async fn verify_slip(
         admin_verified_by: outcome.admin_verified_by,
         admin_notes: outcome.admin_notes,
         slipok_status: outcome.slipok_status,
-        slipok_reason,
-        slipok_trans_ref,
-        slipok_checked_at,
+        slipok_reason: extras.slipok_reason,
+        slipok_trans_ref: extras.slipok_trans_ref,
+        slipok_checked_at: extras.slipok_checked_at,
         slipok_verified_at: outcome.slipok_verified_at,
         auto_verified: crate::services::slip_confirm::is_slipok_actor(outcome.admin_verified_by),
         booking_confirmed: outcome.booking_confirmed,
@@ -344,6 +451,7 @@ async fn mark_slip_needs_action(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
     Path(slip_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(payload): Json<NeedsActionRequest>,
 ) -> AppResult<Json<AdminSlipResponse>> {
     require_admin(&user)?;
@@ -427,13 +535,24 @@ async fn mark_slip_needs_action(
         "Admin marked slip as needs_action"
     );
 
-    let (slipok_reason, slipok_trans_ref, slipok_checked_at) =
-        fetch_slipok_decision(state.db(), slip_id).await?;
+    let extras = fetch_slip_extras(state.db(), slip_id).await?;
+
+    // F2: the response carries the slip's URL, so the read is logged.
+    slip_access_log::record_best_effort(
+        state.db(),
+        &[slip_id],
+        admin_id,
+        slip_access_log::ROUTE_ADMIN_SLIP_NEEDS_ACTION,
+        slip_access_log::request_id(&headers).as_deref(),
+    )
+    .await;
 
     Ok(Json(AdminSlipResponse {
         id: row.id,
         booking_id: row.booking_id,
         slip_url: row.slip_url,
+        deleted_at: extras.deleted_at,
+        deletion_reason: extras.deletion_reason,
         uploaded_at: row.uploaded_at.unwrap_or_else(Utc::now),
         admin_status: row
             .admin_status
@@ -442,9 +561,9 @@ async fn mark_slip_needs_action(
         admin_verified_by: row.admin_verified_by,
         admin_notes: row.admin_notes,
         slipok_status: row.slipok_status,
-        slipok_reason,
-        slipok_trans_ref,
-        slipok_checked_at,
+        slipok_reason: extras.slipok_reason,
+        slipok_trans_ref: extras.slipok_trans_ref,
+        slipok_checked_at: extras.slipok_checked_at,
         slipok_verified_at: row.slipok_verified_at,
         auto_verified: crate::services::slip_confirm::is_slipok_actor(row.admin_verified_by),
         // needs-action never confirms anything and never refuses a
@@ -482,8 +601,10 @@ async fn get_slip(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
     Path(slip_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> AppResult<Json<AdminSlipResponse>> {
     require_admin(&user)?;
+    let admin_id = admin_user_id(&user)?;
 
     use sqlx::Row;
 
@@ -492,7 +613,8 @@ async fn get_slip(
         SELECT id, booking_id, slip_url, uploaded_at, admin_status,
                admin_verified_at, admin_verified_by, admin_notes,
                slipok_status, slipok_reason, slipok_trans_ref,
-               slipok_checked_at, slipok_verified_at
+               slipok_checked_at, slipok_verified_at,
+               deleted_at, deletion_reason
         FROM booking_slips
         WHERE id = $1
         "#,
@@ -506,10 +628,25 @@ async fn get_slip(
     let uploaded_at: Option<DateTime<Utc>> = row.try_get("uploaded_at")?;
     let admin_status: Option<String> = row.try_get("admin_status")?;
 
+    // F2: this response carries the slip's image URL, so reading it is a
+    // read of the slip. `slipUrl` is `null` and `deletedAt` is set once the
+    // image has been erased — a deleted slip answers 200 with a state the
+    // sidebar can render, never a decode failure dressed up as a 500.
+    slip_access_log::record_best_effort(
+        state.db(),
+        &[slip_id],
+        admin_id,
+        slip_access_log::ROUTE_ADMIN_SLIP_DETAIL,
+        slip_access_log::request_id(&headers).as_deref(),
+    )
+    .await;
+
     Ok(Json(AdminSlipResponse {
         id: row.try_get("id")?,
         booking_id: row.try_get("booking_id")?,
         slip_url: row.try_get("slip_url")?,
+        deleted_at: row.try_get("deleted_at")?,
+        deletion_reason: row.try_get("deletion_reason")?,
         uploaded_at: uploaded_at.unwrap_or_else(Utc::now),
         admin_status: admin_status.unwrap_or_else(|| "pending".to_string()),
         admin_verified_at: row.try_get("admin_verified_at")?,
@@ -529,6 +666,100 @@ async fn get_slip(
     }))
 }
 
+/// `GET /api/admin/bookings/slips/:slip_id/access-log`
+///
+/// Who has read this slip, newest first, paged. The answer to the question
+/// `docs/privacy/2026-09-pdpa-data-map.md` §7 says we could not answer:
+/// *"today we cannot answer 'who looked at this guest's payer's bank
+/// details'."*
+///
+/// 404 when the slip id is unknown — including a slip whose *image* has been
+/// erased is **not** a 404: the metadata row outlives the picture, and the
+/// history of who saw it while it existed is exactly what a rights request
+/// or a breach report needs.
+///
+/// Reading this log is not itself a slip read: it returns no image and no
+/// image URL, so it writes no row of its own and cannot start a feedback
+/// loop with itself.
+async fn get_slip_access_log(
+    Extension(user): Extension<AuthUser>,
+    State(state): State<AppState>,
+    Path(slip_id): Path<Uuid>,
+    Query(query): Query<AccessLogQuery>,
+) -> AppResult<Json<SlipAccessLogResponse>> {
+    require_admin(&user)?;
+
+    let page = query.page.max(1);
+    let limit = query.limit.clamp(1, 200);
+    let offset = (page - 1) * limit;
+
+    let exists: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM booking_slips WHERE id = $1")
+        .bind(slip_id)
+        .fetch_optional(state.db())
+        .await?;
+    if exists.is_none() {
+        return Err(AppError::NotFound("Slip".to_string()));
+    }
+
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM slip_access_log WHERE slip_id = $1")
+        .bind(slip_id)
+        .fetch_one(state.db())
+        .await?;
+
+    // Runtime query rather than the `query!` macro, like every other read in
+    // this file: `slip_access_log` is new in migration
+    // `20260912020000_slip_retention_access_log.sql`.
+    use sqlx::Row;
+    let rows = sqlx::query(
+        r#"
+        SELECT sal.id,
+               sal.slip_id,
+               sal.admin_id,
+               COALESCE(
+                   NULLIF(TRIM(COALESCE(up.first_name, '') || ' ' || COALESCE(up.last_name, '')), ''),
+                   u.email,
+                   sal.admin_id::text
+               ) AS admin_name,
+               sal.route,
+               sal.accessed_at,
+               sal.request_id
+        FROM slip_access_log sal
+        LEFT JOIN users u          ON u.id = sal.admin_id
+        LEFT JOIN user_profiles up ON up.user_id = sal.admin_id
+        WHERE sal.slip_id = $1
+        ORDER BY sal.accessed_at DESC, sal.id DESC
+        LIMIT $2 OFFSET $3
+        "#,
+    )
+    .bind(slip_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(state.db())
+    .await?;
+
+    let entries = rows
+        .into_iter()
+        .map(|row| {
+            Ok(SlipAccessEntry {
+                id: row.try_get("id")?,
+                slip_id: row.try_get("slip_id")?,
+                admin_id: row.try_get("admin_id")?,
+                admin_name: row.try_get("admin_name")?,
+                route: row.try_get("route")?,
+                accessed_at: row.try_get("accessed_at")?,
+                request_id: row.try_get("request_id")?,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+
+    Ok(Json(SlipAccessLogResponse {
+        entries,
+        total,
+        page,
+        limit,
+    }))
+}
+
 // ============================================================================
 // Router
 // ============================================================================
@@ -540,6 +771,10 @@ async fn get_slip(
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/bookings/slips/:slip_id", get(get_slip))
+        .route(
+            "/bookings/slips/:slip_id/access-log",
+            get(get_slip_access_log),
+        )
         .route("/bookings/slips/:slip_id/verify", post(verify_slip))
         .route(
             "/bookings/slips/:slip_id/needs-action",
@@ -584,7 +819,9 @@ mod tests {
         AdminSlipResponse {
             id: Uuid::new_v4(),
             booking_id: Uuid::new_v4(),
-            slip_url: "/storage/slips/x.jpg".to_string(),
+            slip_url: Some("/storage/slips/x.jpg".to_string()),
+            deleted_at: None,
+            deletion_reason: None,
             uploaded_at: Utc::now(),
             admin_status: "verified".to_string(),
             admin_verified_at: Some(Utc::now()),

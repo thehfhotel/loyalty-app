@@ -314,9 +314,15 @@ async fn serve_avatar(
 /// authorizes inside the handler: the caller must be either the
 /// booking owner or an admin. Avatars stay public — they're less
 /// sensitive and used as profile pictures.
+///
+/// F2: an **admin** fetch writes one `slip_access_log` row before the bytes
+/// go out, and does so fail-closed — a view we could not record must not
+/// happen, or the published notice's "every view is logged" is a false
+/// statement. The guest fetching their own slip is deliberately not logged.
 async fn serve_slip(
     State(state): State<StorageState>,
     Extension(auth_user): Extension<AuthUser>,
+    headers: axum::http::HeaderMap,
     Path(filename): Path<String>,
 ) -> Result<Response, AppError> {
     // Authorization needs DB lookup — bail if AppState wasn't attached
@@ -327,9 +333,30 @@ async fn serve_slip(
         AppError::Internal("Storage authorization unavailable".to_string())
     })?;
 
+    let slip_url = format!("/storage/slips/{}", filename);
+
     // Admin bypass — any admin (regular or super) can fetch any slip
-    // for moderation, refund / chargeback investigation, etc.
+    // for moderation, refund / chargeback investigation, etc. What used to
+    // be a straight file read now resolves the row first, because the access
+    // log needs the slip's id.
     if has_role(&auth_user, "admin") {
+        let admin_id = Uuid::parse_str(&auth_user.id)
+            .map_err(|_| AppError::InvalidToken("Invalid user ID in token".to_string()))?;
+
+        let slip_id = lookup_slip_id_by_url(app_state, &slip_url).await?;
+
+        // Fail closed: no log row, no bytes. This is the surface the
+        // photograph itself goes out on, and the notice F3 publishes will
+        // say every view of one is recorded.
+        crate::services::slip_access_log::record(
+            app_state.db(),
+            &[slip_id],
+            admin_id,
+            crate::services::slip_access_log::ROUTE_SLIP_IMAGE,
+            crate::services::slip_access_log::request_id(&headers).as_deref(),
+        )
+        .await?;
+
         return serve_static_file(&state.storage.get_slip_path(&filename), &filename).await;
     }
 
@@ -341,7 +368,6 @@ async fn serve_slip(
     // hot path fast.
     let caller_id = Uuid::parse_str(&auth_user.id)
         .map_err(|_| AppError::InvalidToken("Invalid user ID in token".to_string()))?;
-    let slip_url = format!("/storage/slips/{}", filename);
 
     let owner_id = lookup_slip_owner(app_state, &slip_url).await?;
 
@@ -357,6 +383,50 @@ async fn serve_slip(
     }
 
     serve_static_file(&state.storage.get_slip_path(&filename), &filename).await
+}
+
+/// Resolve a slip URL to the `booking_slips.id` the access log needs.
+///
+/// Deliberately **not** cached in Redis the way [`lookup_slip_owner`] is:
+/// the retention sweep nulls `slip_url` when it erases an image, and a
+/// five-minute stale cache entry would keep resolving a URL the sweep has
+/// already retired. The admin path is low-volume — one indexed read per
+/// view is the right trade.
+///
+/// Two behaviour notes, both deliberate:
+///
+/// * An **orphaned** file on the volume (uploaded, never attached to a
+///   booking) used to be served to admins and is now a 404. That is the
+///   price of the access log: a read we cannot attribute to a slip is a read
+///   we cannot record, and an unrecorded admin read of a bank photograph is
+///   exactly the gap F2 exists to close. Non-admins already got a 404 here.
+/// * An **erased** slip is also a 404, because the tombstone nulls the very
+///   column this looks up. The clear "this was deleted, and when" answer
+///   lives on `GET /api/admin/bookings/slips/:slip_id`, which is addressed
+///   by row id and survives the erase; the message below points there.
+async fn lookup_slip_id_by_url(state: &AppState, slip_url: &str) -> Result<Uuid, AppError> {
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        r#"
+        SELECT id
+        FROM booking_slips
+        WHERE slip_url = $1
+        LIMIT 1
+        "#,
+    )
+    .bind(slip_url)
+    .fetch_optional(state.db())
+    .await?;
+
+    row.map(|(id,)| id).ok_or_else(|| {
+        // `AppError::NotFound` renders as "{resource} not found", so the
+        // resource has to stay a noun phrase. The nuance goes in the log,
+        // where an operator chasing a broken thumbnail will look.
+        debug!(
+            "Slip URL resolves to no live booking_slips row — erased under \
+             retention, or a file never attached to a booking"
+        );
+        AppError::NotFound("Slip image".to_string())
+    })
 }
 
 /// Resolve a slip URL to the user ID that owns the booking it's
