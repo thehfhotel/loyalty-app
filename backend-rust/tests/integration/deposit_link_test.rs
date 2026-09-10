@@ -478,17 +478,24 @@ async fn a_missing_or_malformed_token_header_is_the_same_404_as_an_unknown_token
     bare.assert_status(404);
     let bare_body: Value = bare.json().unwrap_or(Value::Null);
 
-    // Malformed: empty, too short, and carrying characters outside the
-    // base64url alphabet (a path traversal, a space, a newline).
+    // Malformed: empty, blank, too short, too long, and carrying
+    // characters outside the base64url alphabet (a path traversal, a
+    // space, dots).
+    //
+    // No CR/LF case here on purpose: `HeaderValue` refuses to hold one, so
+    // a header carrying a newline cannot be built, sent or received at
+    // all. That is a stronger guarantee than a 404, and it belongs to the
+    // HTTP layer rather than to this handler.
+    let too_long = "a".repeat(200);
     for bad in [
         "",
+        "   ",
         "short",
         "../../etc/passwd",
         "has spaces in it here",
-        "carriage
-return
-injected",
+        "token.with.dots.in.it",
         "!!!!!!!!!!!!!!!!!!!!",
+        too_long.as_str(),
     ] {
         let response = read_link(&app, bad).await;
         assert_eq!(
