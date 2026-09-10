@@ -650,9 +650,21 @@ async fn a_booking_is_created_even_when_the_relay_is_unreachable() {
 
 /// End to end through the real admin route: verifying the same slip twice
 /// claims the event once, so reception is told once.
+///
+/// The relay has to be *configured* for there to be a claim at all — nothing
+/// is claimed until there is something to send through, which is the point of
+/// `a_stack_with_no_relay_claims_nothing` below. Pointed at a dead port here:
+/// the first send fails and the retry is 30 s away, so the claim is still
+/// standing when the second verify arrives, which is exactly the state the
+/// dedup rule has to hold in.
 #[tokio::test]
 async fn verifying_a_slip_twice_claims_the_event_once() {
     let app = TestApp::new_with_config(&|config| {
+        config.email.smtp.host = Some("127.0.0.1".to_string());
+        config.email.smtp.port = 1;
+        config.email.smtp.user = Some("relay@example.com".to_string());
+        config.email.smtp.pass = Some("not-a-real-password".to_string());
+        config.email.smtp.from = Some("relay@example.com".to_string());
         config.booking_notify.hf = Some(HF_MAILBOX.to_string());
         config.booking_notify.hfville = Some(HFVILLE_MAILBOX.to_string());
     })
@@ -697,6 +709,58 @@ async fn verifying_a_slip_twice_claims_the_event_once() {
             .await
             .expect("count claims");
     assert_eq!(claims, 1, "the second verify must not re-notify");
+
+    app.cleanup().await.expect("cleanup");
+}
+
+/// Mailboxes set, no relay behind them: the rollout state while the two
+/// repository variables exist and the SMTP secrets have not landed. Nothing
+/// may be claimed, because a claim says "the desk has been told" and would
+/// keep these bookings silent for good once SMTP is fixed.
+#[tokio::test]
+async fn a_stack_with_no_relay_claims_nothing() {
+    let app = TestApp::new_with_config(&|config| {
+        // Mailboxes on, SMTP off.
+        config.email.smtp.host = None;
+        config.email.smtp.user = None;
+        config.email.smtp.pass = None;
+        config.booking_notify.hf = Some(HF_MAILBOX.to_string());
+        config.booking_notify.hfville = Some(HFVILLE_MAILBOX.to_string());
+    })
+    .await
+    .expect("test app");
+
+    let guest = crate::common::create_test_user(app.db(), "notify-no-relay-guest@example.com")
+        .await
+        .expect("guest user");
+    let admin = crate::common::create_test_user(app.db(), "notify-no-relay-admin@example.com")
+        .await
+        .expect("admin user");
+
+    let booking_id = seed_booking(app.db(), guest.id, "hf", None).await;
+    let slip_id = seed_slip(app.db(), booking_id, guest.id).await;
+    let token = generate_test_token_with_role(&admin.id, &admin.email, "admin");
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/admin/bookings/slips/{}/verify", slip_id))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from("{}"))
+        .expect("build verify request");
+
+    let resp = app.router().oneshot(req).await.expect("verify slip");
+    assert_eq!(
+        resp.status().as_u16(),
+        200,
+        "no relay is a normal state, not an error"
+    );
+
+    assert_eq!(
+        claim_rows(app.db(), booking_id).await,
+        0,
+        "an event with no relay behind it must stay unclaimed"
+    );
 
     app.cleanup().await.expect("cleanup");
 }
