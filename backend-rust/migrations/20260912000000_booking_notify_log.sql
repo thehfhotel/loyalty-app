@@ -29,3 +29,8 @@ CREATE TABLE IF NOT EXISTS "public"."booking_notify_log" (
 
 CREATE INDEX IF NOT EXISTS "idx_booking_notify_log_booking_id"
     ON "public"."booking_notify_log"("booking_id");
+
+-- The hourly volume cap reads "how many messages has this mailbox had in the
+-- last hour" before every claim, on the guest's request path.
+CREATE INDEX IF NOT EXISTS "idx_booking_notify_log_recipient_sent_at"
+    ON "public"."booking_notify_log"("recipient", "sent_at" DESC);

@@ -657,19 +657,33 @@ async fn add_booking_slip(
     // just abandons the check; the slip is then exactly where it was before
     // this feature existed, in the admin's queue.
     let budget = slipok_check_budget(&state);
-    if tokio::time::timeout(
+    let notify_event = match tokio::time::timeout(
         budget,
         run_slipok_check(&state, slip.id, booking_id, &slip_url),
     )
     .await
-    .is_err()
     {
-        tracing::warn!(
-            slip_id = %slip.id,
-            booking_id = %booking_id,
-            budget_secs = budget.as_secs(),
-            "SlipOK check exceeded its latency budget; slip left for manual verification"
-        );
+        Ok(event) => event,
+        Err(_) => {
+            tracing::warn!(
+                slip_id = %slip.id,
+                booking_id = %booking_id,
+                budget_secs = budget.as_secs(),
+                "SlipOK check exceeded its latency budget; slip left for manual verification"
+            );
+            None
+        },
+    };
+
+    // Deliberately *outside* the budget above. The notifier claims the event
+    // in `booking_notify_log` before it spawns the send, and by the time the
+    // check has talked to SlipOK and (on the verified branch) the PMS, the
+    // remaining slack can be near zero — a deadline landing between the claim
+    // and the spawn would leave a claimed event nobody ever sends, with no
+    // retry behind it. Out here it races nothing: the guest's response is
+    // already decided, and `notify` never blocks on SMTP.
+    if let Some(event) = notify_event {
+        crate::services::booking_notify::notify(&state, booking_id, event).await;
     }
 
     Ok((StatusCode::CREATED, Json(slip)))
@@ -700,14 +714,26 @@ use crate::services::slip_match::{
 /// Run the automatic slip check and record its outcome. Infallible by
 /// construction: anything that goes wrong is logged and the slip is left on
 /// the manual admin path, which is exactly where it was before this existed.
-async fn run_slipok_check(state: &AppState, slip_id: Uuid, booking_id: Uuid, slip_url: &str) {
-    if let Err(e) = slipok_check(state, slip_id, booking_id, slip_url).await {
-        tracing::warn!(
-            slip_id = %slip_id,
-            booking_id = %booking_id,
-            error = %e,
-            "SlipOK check failed; slip left for manual verification"
-        );
+///
+/// Returns the desk notification the decision earned, if any, for the caller
+/// to fire *after* the latency budget — never inside it.
+async fn run_slipok_check(
+    state: &AppState,
+    slip_id: Uuid,
+    booking_id: Uuid,
+    slip_url: &str,
+) -> Option<crate::services::booking_notify::BookingNotifyEvent> {
+    match slipok_check(state, slip_id, booking_id, slip_url).await {
+        Ok(event) => event,
+        Err(e) => {
+            tracing::warn!(
+                slip_id = %slip_id,
+                booking_id = %booking_id,
+                error = %e,
+                "SlipOK check failed; slip left for manual verification"
+            );
+            None
+        },
     }
 }
 
@@ -718,7 +744,7 @@ async fn slipok_check(
     slip_id: Uuid,
     booking_id: Uuid,
     slip_url: &str,
-) -> AppResult<()> {
+) -> AppResult<Option<crate::services::booking_notify::BookingNotifyEvent>> {
     use crate::services::slip_match::{self, SlipDecision};
 
     // Not configured: record why, then behave exactly as before.
@@ -731,7 +757,7 @@ async fn slipok_check(
             None,
         )
         .await?;
-        return Ok(());
+        return Ok(None);
     };
 
     // What we expect to have been paid, to whom, and whether the booking can
@@ -779,7 +805,7 @@ async fn slipok_check(
             None,
         )
         .await?;
-        return Ok(());
+        return Ok(None);
     };
 
     let image = crate::services::storage::read_slip_bytes(slip_url).await?;
@@ -806,7 +832,7 @@ async fn slipok_check(
                 reason = %reason,
                 "SlipOK gave no verdict; slip left for manual verification"
             );
-            return Ok(());
+            return Ok(None);
         },
     };
 
@@ -885,7 +911,7 @@ async fn slipok_check(
                  returning the slip to manual verification"
             );
             crate::services::slip_confirm::revert_auto_confirm(state.db(), slip_id).await?;
-            return Ok(());
+            return Ok(None);
         }
     }
 
@@ -902,16 +928,22 @@ async fn slipok_check(
     // passes send too — during the shadow window a human still has to look,
     // and the email says so. `manual`, `unavailable` and `pending` do not:
     // they reach the desk through the admin queue, not the mailbox.
-    if status == SLIPOK_STATUS_VERIFIED || status == SLIPOK_STATUS_SHADOW_PASS {
-        crate::services::booking_notify::notify(
-            state,
-            booking_id,
-            crate::services::booking_notify::BookingNotifyEvent::DepositVerified { slip_id },
-        )
-        .await;
-    }
+    //
+    // A shadow pass is its own event, not a `DepositVerified`: shadow mode is
+    // what production runs, and the admin's Verify that follows must still be
+    // able to tell the desk the deposit is confirmed. One shared dedup key
+    // would have swallowed that second message.
+    let event = match status {
+        SLIPOK_STATUS_VERIFIED => {
+            Some(crate::services::booking_notify::BookingNotifyEvent::DepositVerified { slip_id })
+        },
+        SLIPOK_STATUS_SHADOW_PASS => {
+            Some(crate::services::booking_notify::BookingNotifyEvent::DepositShadowPass { slip_id })
+        },
+        _ => None,
+    };
 
-    Ok(())
+    Ok(event)
 }
 
 /// Store the SlipOK outcome on the slip row.
