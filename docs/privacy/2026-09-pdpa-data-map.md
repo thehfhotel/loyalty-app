@@ -11,7 +11,8 @@ where the code and an assumption disagreed, the code won.
 the input F2 (retention, deletion, admin-view access logging) and F3 (guest rights,
 published notice) build from. Thailand's PDPA (B.E. 2562) section numbers are used
 as shorthand: s.19 consent, s.23/s.25 notice duty, s.24(3) contract, s.24(5)
-legitimate interest, s.30-s.33 data-subject rights, s.37(4) breach notification.
+legitimate interest, s.28/s.29 transfer abroad, s.30-s.33 data-subject rights,
+s.37(4) breach notification.
 
 **Controller:** the hotel operating company, for both properties (`hf` = The Harbour
 Front Hotel, `hfville` = HF Ville). The Program is one controller across both
@@ -36,7 +37,7 @@ from every other row in this map.
 | **Lawful basis** | *Guest:* contract, s.24(3) — verifying the deposit is a step in performing the booking. *Payer:* legitimate interest, s.24(5) — confirming that money we were sent is the money a booking owes, and detecting a reused slip, cannot be done without reading who sent it; the payer chose to transfer to us and expects the transfer to be checked. Consent is the wrong basis here: refusing would mean refusing the payment |
 | **Purpose** | Confirm one deposit against one booking. Nothing else — no marketing, no profiling, no cross-booking analysis |
 | **Storage** | File: `STORAGE_PATH/slips/<uuid>.<ext>` (`routes/slips.rs:39,277`; `services/storage.rs:805-813`). In production that is the `backend_storage` Docker volume mounted at `/app/storage` (`docker-compose.prod.yml:129,171`). Metadata: `booking_slips` (`migrations/20260511000000_booking_slips.sql:31-46`, extended by `20260910000000_booking_slips_slipok.sql:44-47`) |
-| **Access** | Image: `GET /storage/slips/:filename` — authenticated, then either any `admin` role **or** the member who owns the booking the slip hangs off (`routes/storage.rs:305-345`, owner chain at `374-389`). Metadata and decisions: `GET/POST /api/admin/bookings/slips/:slip_id{,/verify,/needs-action}`, `require_admin` on each (`routes/admin_slips.rs:209,289,422,473-478`) |
+| **Access** | Image: `GET /storage/slips/:filename` — authenticated, then either any `admin` role **or** the member who owns the booking the slip hangs off (`routes/storage.rs:305-345`, owner chain at `374-389`). Metadata and decisions: `GET/POST /api/admin/bookings/slips/:slip_id{,/verify,/needs-action}`, `require_admin` on each (`routes/admin_slips.rs:209,289,422,473-478`). **Caveat:** the owner branch is `booking_slips → bookings.user_id` (`routes/storage.rs:374-389`), and on a deposit-link booking that column holds the fixed system actor, not a person (§2) — so for those slips the owner branch resolves to nobody who can log in, and only an admin can ever fetch the image. The guest who uploaded it cannot retrieve their own copy through this route |
 | **Retention proposal** | **Image: 90 days after booking closure** (checkout, cancellation or expiry — whichever ends the booking), then the file is erased. **Metadata row: 5 years** from the same trigger — amount, `slipok_trans_ref` and the decision are payment evidence and the duplicate-detection key (`routes/bookings.rs:845-854`), and a chargeback or tax question arrives long after the picture is useless |
 | **Deletion today** | **None.** No job, no route, no `remove_file` anywhere touches `STORAGE_PATH/slips` — a repo-wide grep for a purge/retention path finds nothing. `DELETE /api/users/account` is a soft delete only: `UPDATE users SET is_active = false` (`routes/users.rs:957-979`), as is the admin path (`routes/admin.rs:724+`). Slips therefore live forever, and a member who "deletes their account" still has their payer's bank photo on disk |
 | **Deletion needed** | F2: an erase job keyed on booking closure that removes the file and blanks nothing else; a per-booking erase callable from the rights path (F3); and a rule that an erased image leaves the metadata row intact with a tombstone, so the audit trail does not develop a hole |
@@ -48,7 +49,7 @@ persists only the four `slipok_*` scalars (`routes/bookings.rs:965-977`), so the
 raw JSON, including the payer's name, is never stored. And the payer's name never reaches
 a log: `sender_name` exists only inside `services/slipok.rs` and a test fixture in
 `services/slip_match.rs:249,268`. Both are good outcomes that a refactor could silently
-undo; the notice in §8 promises them.
+undo; the notice in §9 promises them.
 
 ---
 
@@ -58,6 +59,7 @@ undo; the notice in §8 promises them.
 |---|---|
 | **Data elements** | On the link row: `token_hash` (SHA-256 — the token itself is never stored), `issued_by`, `issued_at`, `expires_at`, `revoked_at`, `first_opened_at`, `last_opened_at`, `open_count`, `note` (`migrations/20260912010000_deposit_links.sql:88-103`). On the booking it points at: `guest_name`, `guest_phone`, dates, room type, amounts, `booking_source = 'deposit_link'`, `pms_ref` (`20260912010000:59-66`; `20260710000000_property_line_channel.sql` bookings columns) |
 | **Data subject** | Guest (a non-member, typically — a phone or LINE booking). Staff: `issued_by` names the receptionist |
+| **Whose row is it** | **Nobody's.** `bookings.user_id` is NOT NULL and a deposit-link guest has no account, so every deposit-link booking is inserted against one fixed, non-loginable actor — `DEPOSIT_LINK_SYSTEM_USER_ID` (`routes/deposit_links.rs:100-111`, written at `routes/admin_deposit_links.rs:349`, seeded by `migrations/20260912010000_deposit_links.sql:161-217` the same way §7's `SLIPOK_SYSTEM_USER_ID` is). The guest's name, full phone and their payer's slip image therefore hang off a booking with no link to any account, and no `user_id` will ever identify them |
 | **Lawful basis** | Contract, s.24(3) — the guest asked to book and to be sent a way to pay. `last_opened_at` / `open_count` are legitimate interest, s.24(5): "did the guest ever open the link" is what tells the desk to phone rather than wait, and it is deliberately session-grained (a read counts only after 30 minutes) so it cannot become a behavioural trail (`20260912010000:117-122`) |
 | **Purpose** | Take a deposit for a booking reception already accepted, and let the desk see whether the link was opened, expired or revoked |
 | **Storage** | `booking_deposit_links` and `bookings`, Postgres |
@@ -66,6 +68,17 @@ undo; the notice in §8 promises them.
 | **Deletion today** | None. Revoke sets `revoked_at`; the row and its `token_hash` stay forever. `ON DELETE CASCADE` from `bookings` (`20260912010000:130-134`) means a booking erase would take links with it, but nothing ever erases a booking |
 | **Deletion needed** | F2: a sweep that deletes dead link rows past the window. Low risk, low value on its own — it matters because these rows are the pointer from a stranger's payment page to a named guest |
 | **Processors** | None for the link itself. The share message reception sends travels over **LINE** or SMS from reception's own phone — the link text is generated here (`admin_deposit_links.rs:919,971`) but we are not the sender, so the channel is outside this system's control and inside the desk SOP (B14) |
+
+**The consequence for rights, stated here so F3 cannot miss it.** The deposit program's
+whole point is to serve guests who are *not* members, and this map's rights and erasure
+design (§6 "Deletion needed", §10 Q4) is keyed on the authenticated member or on
+`users.oauth_provider_id`. Keyed that way it silently excludes the entire non-member
+population the program creates: a phone-booking guest who asks under s.30 or s.33 would be
+answered "we hold no data about you" while `bookings.guest_name`, `bookings.guest_phone`
+and their `booking_slips` rows persist. **The rights path must be resolvable by
+`guest_phone` plus a booking reference, not only by `user_id`** — gap 7. Identity proof for
+that branch (the phone the booking was taken on, plus the reference) is an owner and lawyer
+question, not a coding one.
 
 ---
 
@@ -112,8 +125,8 @@ undo; the notice in §8 promises them.
 | **Lawful basis** | Consent, s.19 — answering is voluntary and the survey often carries a coupon reward (`survey_coupon_assignments`, init.sql:267). The invitation itself is legitimate interest, s.24(5), bounded by the push budget |
 | **Purpose** | Service quality, and the stay-linked feedback KPI (K11) |
 | **Storage** | Postgres `survey_responses`, `survey_invitations`, `survey_reward_history` |
-| **Access** | Admin: `GET /api/surveys/:id/responses`, `/analytics`, and **`/:id/export`** (`routes/surveys.rs:1061-1064`). The export is the surface that turns this from a database row into a spreadsheet on a laptop — F2's access-logging story should cover it, not only slip images |
-| **Retention proposal** | **24 months** from `completed_at`; aggregate analytics may outlive it once responses are unlinked from `user_id` |
+| **Access** | The live surface is **`GET /api/surveys/:id/responses`** — `has_role("admin")`, paginated, and it returns the free-text answers (`routes/surveys.rs:782-793`). `/:id/analytics` and `/:id/export` are **registered but not implemented**: both check the admin role and then return `not_implemented_response()` (`surveys.rs:909-920` and `927-938`; router at `surveys.rs:1061-1064`). So the spreadsheet-on-a-laptop path does not exist yet, and today's unlogged bulk read is `/responses` — that is what F2's access-logging story has to cover (gap 9) |
+| **Retention proposal** | **24 months** from `COALESCE(completed_at, started_at, created_at)` — *not* from `completed_at` alone. `completed_at` is nullable and `is_completed` defaults to false (`init.sql:302-316`), so an abandoned half-finished response is a stored row with real free-text content and a NULL `completed_at`; keyed on that column alone the sweep would match it never and retain it forever while the notice says 24 months. Aggregate analytics may outlive the window once responses are unlinked from `user_id` |
 | **Deletion today** | None. `DELETE /api/surveys/:id` removes a *survey*, not a person's responses |
 | **Deletion needed** | F2: an age sweep plus an unlink (set `user_id` NULL) rather than a hard delete, so the quality signal survives the erase. F3: responses must be included in an access request |
 | **Processors** | None. Responses never leave the system — but see §3: nothing stops an admin pasting an export into email, which is a policy control, not a technical one |
@@ -143,6 +156,9 @@ undo; the notice in §8 promises them.
 - **Viewing a slip is not recorded anywhere.** `serve_slip` authorises and returns bytes; it writes no audit row (`routes/storage.rs:317-345`). This is the largest single gap in the map: today we cannot answer "who looked at this guest's payer's bank details".
 - **`user_audit_log` holds `ip_address INET` and `user_agent`** (`init.sql:415-425`) — personal data with no retention rule.
 - **Backups.** `scripts/evergreen/backup-loyalty-db.sh` dumps Postgres, gzips and `age`-encrypts to `/srv/backups/loyalty` on evergreen, single-site by an accepted-risk decision (`docs/public-launch-readiness.md:104-116`). Two consequences: an erase in the live database does **not** reach backups until they age out, and **slip image files are not backed up at all** — the `backend_storage` volume is not in that script. The second fact means the image erase in §1 has no second copy to chase, which makes it easier, not harder.
+- **Cloudflare is in the path of every row.** The evergreen host has no direct public ingress: all production traffic reaches it through the Cloudflare global network and a `cloudflared` tunnel (`docs/cloudflare-tunnel-runbook.md:1-21`). Cloudflare's edge therefore terminates TLS for, and can see, the slip image bytes returned by `GET /storage/slips/:filename`, the guest's unmasked phone in admin responses, and the `X-Deposit-Token` header that `routes/deposit_links.rs:34-58` keeps out of our own logs. No per-row "Processors" cell names it because it sits under all of them; it belongs in the processor inventory and in whatever DPA list the owner keeps.
+- **Transfer abroad (s.28/s.29) — the question this map cannot answer on its own.** Outside Thailand: **LINE (LY Corporation, Japan)** holds the friendship, the user id and every pushed message (§4, §6); **Google (Gmail, US)** holds every booking notification and therefore the longest-lived copy of guests' phone numbers (§3); **Cloudflare (US)** terminates TLS for everything above. Inside Thailand, on the face of it: **SlipOK** (a Thai vendor) and the **SMTP relay** if the relay account is domestic — which nobody has confirmed. PDPA s.28/s.29 needs a stated basis for each overseas one; §10 Q5 puts it to the lawyer.
+- **Redis holds personal data too, bounded by TTL rather than by a sweep.** Rate limiting stores client IP addresses as `rate_limit:{prefix}:{ip}` (`middleware/rate_limit.rs:434,639`) — the same IPs the `user_audit_log` bullet above calls personal data. `routes/storage.rs:365,375` caches `slip_owner:{slip_url}` → owning user UUID for five minutes; `oauth_state:{provider}:{key}` (`routes/oauth.rs:292`) and `email_test_quota:{admin_id}:{date}` (`routes/admin_email.rs:190`) live there as well. Every key carries an EXPIRE, so this is inventory, not an F2 work item — but a "where is my data held" answer that omits Redis is wrong.
 - **Logging discipline already in place**: the deposit token is never logged and never in a URL (`routes/deposit_links.rs:60-70`); notification logs carry `hash_email`, never the address (`booking_notify.rs:29-32`); the payer name is never logged (§1).
 
 ---
@@ -152,7 +168,7 @@ undo; the notice in §8 promises them.
 **P1 — before the first reactivation batch or survey invitation goes out**
 
 1. **Slip image erase job** (F2). 90 days after booking closure; deletes the file under `STORAGE_PATH/slips`, leaves the `booking_slips` row with a tombstone. Nothing deletes a slip today.
-2. **Admin slip-view access logging** (F2). Every `GET /storage/slips/:filename` that an admin serves writes a row naming the admin, the slip and the time. Without it §8's notice sentence "every view is logged" is false.
+2. **Admin slip-view access logging** (F2). Every `GET /storage/slips/:filename` that an admin serves writes a row naming the admin, the slip and the time. Without it §9's notice sentence "every view is logged" is false.
 3. **Real account deletion** (F3). `DELETE /api/users/account` must at minimum null `users.oauth_provider_id` so push targeting can never resolve the member again; soft delete alone leaves them reachable.
 4. **Published notice + named contact** (F3). The current `privacy.*` page has four cards and no mention of slip images, payers, retention periods or a named contact (`PrivacyPage.tsx:18-40`, `th/translation.json` `privacy.contactBody`). §9 is the copy; the retention numbers in it are only true once gap 1 ships.
 5. **Payer notice route** (F3). PDPA s.25 asks that data collected from someone other than the data subject be notified to them. We will never have the payer's contact details, so the honest answer is a notice on the payment page itself, before the upload, plus a rights channel that accepts a request from a payer who is not the guest.
@@ -160,9 +176,9 @@ undo; the notice in §8 promises them.
 **P2 — inside the program window**
 
 6. **Retention sweeps** (F2) for `booking_deposit_links` (90 days past death), `line_friendships` where `is_friend = false` (12 months), `survey_responses` (24 months, unlink not delete), `booking_notify_log` (12 months), `user_audit_log` IP/user-agent (12 months).
-7. **Rights request path** (F3): access, correction, erasure, objection to messaging — with a written turnaround (PDPA s.30-s.32 default 30 days), a log of requests, and an answer for a request that arrives by LINE rather than email.
+7. **Rights request path** (F3): access, correction, erasure, objection to messaging — with a written turnaround (PDPA s.30-s.32 default 30 days), a log of requests, and an answer for a request that arrives by LINE rather than email. **It must have a non-member branch keyed on `guest_phone` + booking reference**, because every deposit-link booking is owned by a system actor and no `user_id` will ever find it (§2).
 8. **Breach notification step** (F3): who decides, the 72-hour clock to the PDPC (s.37(4)), and the fact that a slip-storage breach exposes third-party bank details, which raises it above a nuisance.
-9. **Survey export is an unlogged bulk read** (F2). Same treatment as gap 2, or at least a counter.
+9. **Survey responses are an unlogged bulk read** (F2). The surface is `GET /api/surveys/:id/responses` (`surveys.rs:782-793`), not `/export` — `/export` and `/analytics` are 501 stubs (§5). Same treatment as gap 2, or at least a counter. Build the logging into `/export` when it is implemented rather than retrofitting it afterwards.
 10. **Owner: SlipOK DPA on file** (A3), and the mailbox retention rule for §3.
 
 **P3 — after the flip**
@@ -179,6 +195,17 @@ Drafted from `hf-tasks/tasks/direct-booking-designs/f-policy-copy-drafts.md` §3
 blanks filled by the retention proposals above. **Not publishable until gaps 1 and 2 ship** —
 until then the last two sentences describe controls that do not exist. `[ผู้ติดต่อ]` stays
 blank for the owner (gap 4).
+
+**Locales.** The app ships three — `th`, `en`, `zh-CN` — with `fallbackLng: 'en'`
+(`frontend/src/i18n/config.ts:31`), and `zh-CN` already carries the full existing
+`privacy.*` card set. The blocks below are Thai and English only, so **zh-CN is deferred to
+C12** (`program-plan.md:209`, which requires zh-CN to cover exactly the booking, slip-upload
+and status screens — including the deposit page the pre-upload line sits on). Until C12
+lands, F3 must **suppress** the new slip card and the new `messagesBody` sentences in
+`zh-CN` rather than let them fall back to English: a Chinese-reading guest getting an
+English-only PDPA notice on the upload screen is worse than getting the existing card
+unchanged. That is a deliberate call, not an oversight — and it means F1's verify-live
+("the notice text matches the map, line for line") is checked in `th` and `en` only.
 
 ### ภาพสลิปโอนเงิน (การ์ดใหม่ ต่อจาก `privacy.*` เดิม)
 
@@ -244,3 +271,11 @@ blank for the owner (gap 4).
    size need a Data Protection Officer under s.41?
 4. **Where a guest's own copy comes from** — an access request today would be assembled by
    hand from six tables. F3 should decide whether that stays manual (documented) or gets a route.
+   Whichever it is, it needs the non-member branch from §2: deposit-link guests are found by
+   phone and booking reference, never by `user_id`. What proof of identity do we accept on
+   that branch, given the requester has no account to log into?
+5. **Transfer abroad, s.28/s.29** — LINE (LY Corporation, Japan) holds friendships and pushed
+   messages, Google (US) holds every booking notification mailbox, and Cloudflare (US)
+   terminates TLS for all traffic including slip images (§7). On what basis do those transfers
+   stand — adequacy, standard contractual clauses, consent, or s.28's contract-performance
+   exception — and does any of them need to be named in the published notice?
