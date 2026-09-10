@@ -76,6 +76,38 @@ static TEMPLATE_READY: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 /// Template database name
 const TEMPLATE_DB_NAME: &str = "loyalty_test_template";
 
+/// Marker table stamped into the template database at the end of a
+/// successful build, holding a fingerprint of the migrations and seeds it
+/// was built from. See `template_db_is_current()`.
+const TEMPLATE_FINGERPRINT_TABLE: &str = "_test_template_fingerprint";
+
+/// The compile-time embedded migration set — exactly what `sqlx::migrate!()`
+/// applies at backend startup in CI and in production. Runtime discovery is
+/// cross-checked against it so "what the tests apply" cannot drift from
+/// "what production applies" without a loud failure.
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
+/// The migration that performs the legacy -> bilingual tier transform. The
+/// legacy tier seed is inserted immediately *before* it, which is the
+/// actual semantic requirement (anchoring on whatever happens to precede it
+/// breaks silently when a migration is inserted in between).
+const LEGACY_TIER_SEED_BEFORE: &str = "20260726000000_tier_benefits_bilingual.sql";
+
+/// The four tiers in the LEGACY flat Thai shape — exactly the state a
+/// deployed database was in when `LEGACY_TIER_SEED_BEFORE` first ran, so
+/// every suite run exercises the real transform instead of testing against
+/// hand-seeded post-migration rows. Content mirrors what seed.rs seeded
+/// before the bilingual change.
+const LEGACY_TIER_SEED_SQL: &str = r#"
+    INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
+    VALUES
+        ('Bronze', 0, 0, '{"description": "ระดับต้อนรับสำหรับสมาชิกใหม่", "perks": ["ราคาพิเศษสำหรับสมาชิก", "บริการแต่งห้องวันเกิด", "ได้รับคะแนนเพิ่ม"]}', '#CD7F32', 1, true),
+        ('Silver', 0, 1, '{"description": "สิทธิพิเศษระดับกลางสำหรับสมาชิกที่ใช้บริการ", "perks": ["ส่วนลดเครื่องดื่ม 10%", "ได้รับคะแนนเพิ่ม"]}', '#C0C0C0', 2, true),
+        ('Gold', 0, 10, '{"description": "สิทธิพิเศษระดับพรีเมียมสำหรับสมาชิกที่มีค่า", "perks": ["อัพเกรดห้องฟรี", "ได้รับคะแนนเพิ่ม"]}', '#FFD700', 3, true),
+        ('Platinum', 0, 20, '{"description": "สิทธิพิเศษสุดพิเศษสำหรับสมาชิกระดับสูงสุด", "perks": ["ส่วนลดพิเศษสำหรับสมาชิกขั้นสูงสุด"]}', '#E5E4E2', 4, true)
+    ON CONFLICT (name) DO NOTHING
+    "#;
+
 /// Get or create the admin pool (connects to "postgres" database).
 ///
 /// The pool is cached in a static for reuse across tests. However, since each
@@ -155,17 +187,41 @@ async fn create_db_fresh_connection(
     }
 }
 
-/// Probe whether the template database has already been built and is
-/// usable. We check for the presence of the `users` table specifically
-/// because the init migration creates it — if it's there, the template
-/// build either completed or crashed *after* the init migration, which is
-/// the common case for "another nextest worker just finished building it
-/// while I was waiting for the advisory lock".
+/// URL of the template database (the test URL with the database name
+/// swapped for `TEMPLATE_DB_NAME`).
+fn template_database_url() -> String {
+    let url = test_database_url();
+    if let Some(pos) = url.rfind('/') {
+        format!("{}{}", &url[..pos + 1], TEMPLATE_DB_NAME)
+    } else {
+        url
+    }
+}
+
+/// Probe whether the template database has already been built by another
+/// worker **from exactly the migrations that are on disk right now**.
 ///
-/// Returns `false` if the template DB doesn't exist, doesn't have a
-/// `users` table, or can't be connected to for any reason. Caller treats
-/// `false` as "rebuild needed".
-async fn template_db_has_users(admin_pool: &PgPool) -> Result<bool, sqlx::Error> {
+/// The marker is the one-row `_test_template_fingerprint` table written as
+/// the very last step of a successful build (see `ensure_template_db`),
+/// holding a hash of every discovered `(filename, sql)` pair plus the
+/// interleaved seeds. Requiring it to match `expected_fingerprint` buys two
+/// things the old "does the `users` table exist?" probe could not:
+///
+/// * A build that died part-way — say migration 9 of 13 failed — never
+///   wrote the row, so every sibling nextest worker rebuilds instead of
+///   running its tests against a half-migrated template.
+/// * A template left over from a previous checkout is rebuilt when a
+///   migration is added, renamed or edited. `loyalty_test_template` is
+///   never swept by the stale-DB cleanup below (it doesn't match `test_%`),
+///   so locally it otherwise survives between runs indefinitely.
+///
+/// Returns `false` if the template DB doesn't exist, predates the
+/// fingerprint table, or was built from different migrations. Caller
+/// treats `false` as "rebuild needed".
+async fn template_db_is_current(
+    admin_pool: &PgPool,
+    expected_fingerprint: &str,
+) -> Result<bool, sqlx::Error> {
     let exists: bool = sqlx::query_scalar(&format!(
         "SELECT EXISTS (SELECT FROM pg_database WHERE datname = '{}')",
         TEMPLATE_DB_NAME
@@ -176,30 +232,167 @@ async fn template_db_has_users(admin_pool: &PgPool) -> Result<bool, sqlx::Error>
         return Ok(false);
     }
 
-    // Connect to the template DB directly to check for the marker table.
-    let template_url = {
-        let url = test_database_url();
-        if let Some(pos) = url.rfind('/') {
-            format!("{}{}", &url[..pos + 1], TEMPLATE_DB_NAME)
-        } else {
-            url
-        }
-    };
+    // Connect to the template DB directly to read the fingerprint row.
     let template_pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect(&template_url)
+        .connect(&template_database_url())
         .await?;
-    let has_users: bool = sqlx::query_scalar(
-        "SELECT EXISTS (
-            SELECT FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = 'users'
-        )",
-    )
-    .fetch_one(&template_pool)
+    // Querying a table that doesn't exist is an *error*, not an empty row:
+    // a template predating the fingerprint table lands here and must read
+    // as stale, hence `unwrap_or(None)`.
+    let stored: Option<String> = sqlx::query_scalar(&format!(
+        "SELECT fingerprint FROM {} WHERE id = 1",
+        TEMPLATE_FINGERPRINT_TABLE
+    ))
+    .fetch_optional(&template_pool)
     .await
-    .unwrap_or(false);
+    .unwrap_or(None);
     template_pool.close().await;
-    Ok(has_users)
+    Ok(stored.as_deref() == Some(expected_fingerprint))
+}
+
+/// One migration file discovered on disk.
+struct MigrationFile {
+    /// Version parsed from the filename prefix, the way sqlx parses it.
+    version: i64,
+    file_name: String,
+    sql: String,
+}
+
+/// Parse the version out of a migration filename the way sqlx's own
+/// resolver does: the digits before the first `_`, as an `i64`.
+///
+/// Returns `Err` with a human-readable reason for anything that is not a
+/// plain `<version>_<description>.sql` (or `.up.sql`), so a `.down.sql`
+/// half of a reversible pair, an editor swap file or an AppleDouble
+/// `._foo.sql` sidecar fails the suite loudly instead of being applied as
+/// if it were a migration — or silently skipped.
+fn parse_migration_version(file_name: &str) -> Result<i64, String> {
+    let stem = file_name
+        .strip_suffix(".sql")
+        .ok_or_else(|| "not a .sql file".to_string())?;
+    if let Some(base) = stem.strip_suffix(".down") {
+        return Err(format!(
+            "this is the down half of a reversible migration (`sqlx migrate add -r`); \
+             the test harness applies migrations forward only and must not execute it. \
+             Make `{base}` irreversible, or teach discover_migration_files() to skip \
+             `.down.sql` explicitly"
+        ));
+    }
+    let stem = stem.strip_suffix(".up").unwrap_or(stem);
+    let (version, description) = stem
+        .split_once('_')
+        .ok_or_else(|| "expected <version>_<description>.sql".to_string())?;
+    if version.is_empty() || !version.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!("`{version}` is not a numeric version prefix"));
+    }
+    if description.contains('.') {
+        return Err("description contains a `.` — unexpected filename form".to_string());
+    }
+    version
+        .parse::<i64>()
+        .map_err(|e| format!("version `{version}` does not fit in an i64: {e}"))
+}
+
+/// Discover every migration under `backend-rust/migrations/`, ordered the
+/// way `sqlx::migrate!()` orders them: ascending **numeric** version, not
+/// lexical filename order (a prefix of a different digit width sorts
+/// differently between the two).
+///
+/// Read at test run time via `CARGO_MANIFEST_DIR`, so a migration file
+/// added, renamed or removed on disk is picked up the next time the
+/// template database is *built* — and `ensure_template_db()`'s fingerprint
+/// probe is what forces that rebuild instead of reusing a warm template.
+///
+/// The result is cross-checked against `MIGRATOR`, the compile-time
+/// embedded set the backend itself applies at startup in CI and
+/// production, so a file this function drops (or an extra one it picks up)
+/// fails the suite rather than quietly producing a test-only schema.
+fn discover_migration_files() -> Vec<MigrationFile> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    let mut files: Vec<MigrationFile> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("failed to read migrations dir {}: {}", dir.display(), e))
+        // A `DirEntry` that fails to stat must never be silently dropped:
+        // that would build the template from a subset of the migrations.
+        .map(|entry| {
+            entry.unwrap_or_else(|e| panic!("failed to read an entry in {}: {}", dir.display(), e))
+        })
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("sql"))
+        })
+        .map(|entry| {
+            let path = entry.path();
+            let file_name = entry.file_name().to_string_lossy().into_owned();
+            let version = parse_migration_version(&file_name).unwrap_or_else(|reason| {
+                panic!(
+                    "unexpected file `{}` in {}: {}",
+                    file_name,
+                    dir.display(),
+                    reason
+                )
+            });
+            let sql = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("failed to read migration {}: {}", path.display(), e));
+            MigrationFile {
+                version,
+                file_name,
+                sql,
+            }
+        })
+        .collect();
+    files.sort_by_key(|file| file.version);
+
+    // The real guard: compare against what `sqlx::migrate!()` embedded at
+    // compile time. Counting our own loop iterations would be a tautology —
+    // a file dropped by discovery shrinks both sides of that comparison
+    // identically. The embedded set is an independent witness.
+    let embedded: Vec<i64> = MIGRATOR
+        .iter()
+        .filter(|migration| !migration.migration_type.is_down_migration())
+        .map(|migration| migration.version)
+        .collect();
+    let discovered: Vec<i64> = files.iter().map(|file| file.version).collect();
+    assert_eq!(
+        discovered,
+        embedded,
+        "migrations discovered on disk do not match the compile-time \
+         sqlx::migrate!() set the backend applies in CI and production.\n\
+         on disk:  {:?}\n\
+         embedded: {:?}\n\
+         (if you just added a migration file, the embedded set may simply be \
+         stale — force a rebuild of this test crate and re-run)",
+        files
+            .iter()
+            .map(|file| file.file_name.as_str())
+            .collect::<Vec<_>>(),
+        embedded,
+    );
+
+    files
+}
+
+/// SHA-256 over everything that goes into the template database: every
+/// discovered migration in apply order, plus the interleaved legacy seed.
+/// Any migration added, renamed or edited changes it, which is what makes
+/// a warm `loyalty_test_template` self-invalidating instead of silently
+/// serving a stale schema.
+fn migrations_fingerprint(files: &[MigrationFile]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    for file in files {
+        hasher.update(file.file_name.as_bytes());
+        hasher.update(b"\0");
+        hasher.update(file.sql.as_bytes());
+        hasher.update(b"\0");
+    }
+    hasher.update(LEGACY_TIER_SEED_BEFORE.as_bytes());
+    hasher.update(LEGACY_TIER_SEED_SQL.as_bytes());
+    hex::encode(hasher.finalize())
 }
 
 /// Ensure the template database exists with migrations and seed data.
@@ -247,11 +440,21 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
     // Inside the lock now. Re-check whether some other worker already built
     // the template while we were waiting. Process-local `TEMPLATE_READY`
     // can't see other processes' work, so probe Postgres instead: the
-    // template DB needs to (a) exist and (b) contain the `users` table
-    // that the init migration creates. This is enough to distinguish "we
-    // built it earlier in this CI run" from "fresh service container".
+    // template DB has to exist AND carry a fingerprint stamp matching the
+    // migrations that are on disk right now. That distinguishes "another
+    // worker just finished building it from this checkout" from "fresh
+    // service container", from "a build that died half-way", and from
+    // "yesterday's template, built before this branch added a migration".
+    //
+    // The migrations are therefore read off disk *before* the probe: the
+    // template is only reusable if it was built from exactly these files.
+    let migration_files = discover_migration_files();
+    let fingerprint = migrations_fingerprint(&migration_files);
     let admin_pool = get_admin_pool().await?;
-    if template_db_has_users(&admin_pool).await.unwrap_or(false) {
+    if template_db_is_current(&admin_pool, &fingerprint)
+        .await
+        .unwrap_or(false)
+    {
         // Scope the std::sync::Mutex guard so it doesn't get held across
         // the `.await` below (`clippy::await_holding_lock`).
         {
@@ -283,108 +486,39 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         .await?;
 
     // Connect to the template database to run migrations and seeds
-    let template_url = {
-        let url = test_database_url();
-        if let Some(pos) = url.rfind('/') {
-            format!("{}{}", &url[..pos + 1], TEMPLATE_DB_NAME)
-        } else {
-            url
-        }
-    };
-
     let template_pool = PgPoolOptions::new()
         .max_connections(2)
-        .connect(&template_url)
+        .connect(&template_database_url())
         .await?;
 
-    // Run migrations in order. Each migration file must be applied separately
-    // so the file order matches `sqlx::migrate!()` at runtime.
-    let init_migration = include_str!("../../migrations/20240101000000_init.sql");
-    template_pool.execute(init_migration).await?;
-
-    let booking_slips_migration = include_str!("../../migrations/20260511000000_booking_slips.sql");
-    template_pool.execute(booking_slips_migration).await?;
-
-    let room_management_columns_migration =
-        include_str!("../../migrations/20260512000000_room_management_columns.sql");
-    template_pool
-        .execute(room_management_columns_migration)
-        .await?;
-
-    let booking_admin_fields_migration =
-        include_str!("../../migrations/20260512020000_booking_admin_fields.sql");
-    template_pool
-        .execute(booking_admin_fields_migration)
-        .await?;
-
-    let users_email_unique_migration =
-        include_str!("../../migrations/20260513000000_users_email_unique.sql");
-    template_pool.execute(users_email_unique_migration).await?;
-
-    let idempotency_keys_migration =
-        include_str!("../../migrations/20260513010000_idempotency_keys.sql");
-    template_pool.execute(idempotency_keys_migration).await?;
-
-    let bookings_no_overlap_migration =
-        include_str!("../../migrations/20260513020000_bookings_no_overlap.sql");
-    template_pool.execute(bookings_no_overlap_migration).await?;
-
-    let property_line_channel_migration =
-        include_str!("../../migrations/20260710000000_property_line_channel.sql");
-    template_pool
-        .execute(property_line_channel_migration)
-        .await?;
-
-    // Seed the four tiers in the LEGACY flat Thai shape BEFORE applying the
-    // bilingual-benefits migration below — exactly the state a deployed
-    // database was in when that migration first ran. This makes every suite
-    // run exercise the real legacy -> bilingual transform instead of testing
-    // against hand-seeded post-migration rows. Content mirrors what seed.rs
-    // seeded before the bilingual change.
-    template_pool
-        .execute(
-            r#"
-            INSERT INTO tiers (name, min_points, min_nights, benefits, color, sort_order, is_active)
-            VALUES
-                ('Bronze', 0, 0, '{"description": "ระดับต้อนรับสำหรับสมาชิกใหม่", "perks": ["ราคาพิเศษสำหรับสมาชิก", "บริการแต่งห้องวันเกิด", "ได้รับคะแนนเพิ่ม"]}', '#CD7F32', 1, true),
-                ('Silver', 0, 1, '{"description": "สิทธิพิเศษระดับกลางสำหรับสมาชิกที่ใช้บริการ", "perks": ["ส่วนลดเครื่องดื่ม 10%", "ได้รับคะแนนเพิ่ม"]}', '#C0C0C0', 2, true),
-                ('Gold', 0, 10, '{"description": "สิทธิพิเศษระดับพรีเมียมสำหรับสมาชิกที่มีค่า", "perks": ["อัพเกรดห้องฟรี", "ได้รับคะแนนเพิ่ม"]}', '#FFD700', 3, true),
-                ('Platinum', 0, 20, '{"description": "สิทธิพิเศษสุดพิเศษสำหรับสมาชิกระดับสูงสุด", "perks": ["ส่วนลดพิเศษสำหรับสมาชิกขั้นสูงสุด"]}', '#E5E4E2', 4, true)
-            ON CONFLICT (name) DO NOTHING
-            "#,
-        )
-        .await?;
-
-    let tier_benefits_bilingual_migration =
-        include_str!("../../migrations/20260726000000_tier_benefits_bilingual.sql");
-    template_pool
-        .execute(tier_benefits_bilingual_migration)
-        .await?;
-
-    let booking_slips_slipok_migration =
-        include_str!("../../migrations/20260910000000_booking_slips_slipok.sql");
-    template_pool
-        .execute(booking_slips_slipok_migration)
-        .await?;
-
-    // Seeds the SlipOK system actor every automatic slip verification is
-    // attributed to. Without it the FK on `booking_audit_log.admin_id`
-    // rejects the audit row and every auto-verify test fails.
-    let slipok_system_user_migration =
-        include_str!("../../migrations/20260911000000_slipok_system_user.sql");
-    template_pool.execute(slipok_system_user_migration).await?;
-
-    // Dedup log behind the property booking-notification email (B0). Without
-    // it every notify() call fails its claim and silently sends nothing.
-    let booking_notify_log_migration =
-        include_str!("../../migrations/20260912000000_booking_notify_log.sql");
-    template_pool.execute(booking_notify_log_migration).await?;
-
-    // Deposit request links (B1): `bookings.booking_source` / `pms_ref`,
-    // the `booking_deposit_links` table, and the non-loginable
-    // "Deposit link guest" actor every deposit-link booking is owned by.
-    let deposit_links_migration = include_str!("../../migrations/20260912010000_deposit_links.sql");
-    template_pool.execute(deposit_links_migration).await?;
+    // Apply every migration in `backend-rust/migrations/`, in the same
+    // ascending-version order `sqlx::migrate!()` applies them at runtime and
+    // in CI. Discovered at test run time (see `discover_migration_files`) and
+    // cross-checked there against the embedded migrator, so the test schema
+    // cannot drift from the production one.
+    //
+    // One legacy seed is interleaved: the tiers in their LEGACY flat Thai
+    // shape are inserted immediately before the bilingual transform runs.
+    let mut legacy_seed_applied = false;
+    for file in &migration_files {
+        if file.file_name == LEGACY_TIER_SEED_BEFORE {
+            template_pool.execute(LEGACY_TIER_SEED_SQL).await?;
+            legacy_seed_applied = true;
+        }
+        template_pool.execute(file.sql.as_str()).await?;
+    }
+    // The seed is anchored on a filename. If that migration is renamed,
+    // squashed or folded into another file the `if` above simply stops
+    // firing, the transform runs against an empty `tiers` table, and the
+    // failure surfaces far away in tier_admin_test as "Bronze must be in the
+    // public tier list". Fail here instead, where the cause is named.
+    assert!(
+        legacy_seed_applied,
+        "legacy tier seed anchor `{LEGACY_TIER_SEED_BEFORE}` not found in \
+         backend-rust/migrations/ — the legacy -> bilingual tier transform is no \
+         longer being exercised. Re-anchor LEGACY_TIER_SEED_BEFORE on whichever \
+         migration now performs that transform."
+    );
 
     // Seed membership_id_sequence
     template_pool
@@ -396,6 +530,29 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
             "#,
         )
         .await?;
+
+    // Stamp the template with a fingerprint of exactly what built it, as the
+    // LAST step. Written only on success, so a build that bailed part-way
+    // (a migration failed to apply, `?` returned) leaves no stamp and the
+    // next worker rebuilds instead of running its tests against a
+    // half-migrated template. Read back by `template_db_is_current()`.
+    template_pool
+        .execute(
+            format!(
+                "CREATE TABLE IF NOT EXISTS {} (id int PRIMARY KEY, fingerprint text NOT NULL)",
+                TEMPLATE_FINGERPRINT_TABLE
+            )
+            .as_str(),
+        )
+        .await?;
+    sqlx::query(&format!(
+        "INSERT INTO {} (id, fingerprint) VALUES (1, $1) \
+         ON CONFLICT (id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint",
+        TEMPLATE_FINGERPRINT_TABLE
+    ))
+    .bind(&fingerprint)
+    .execute(&template_pool)
+    .await?;
 
     // Close the template pool — required before using it as a TEMPLATE
     template_pool.close().await;
