@@ -531,18 +531,39 @@ pub struct RetentionConfig {
     pub slip_days: Option<String>,
 }
 
+/// Smallest accepted slip-retention window, in days.
+pub const SLIP_RETENTION_MIN_DAYS: u32 = 1;
+
+/// Largest accepted slip-retention window, in days (ten years).
+///
+/// Not a style preference — a bound. The window reaches Postgres as
+/// `make_interval(days => $1)` with an `i32` parameter, so an unbounded value
+/// is an overflow away from becoming a *negative* interval, which would turn
+/// "erase slips older than N days" into "erase slips older than a date in the
+/// future" — i.e. erase every closed booking's slip on the first tick. Ten
+/// years also comfortably exceeds the five-year metadata window in
+/// `docs/privacy/2026-09-pdpa-data-map.md` §1, so no legitimate setting is
+/// excluded.
+pub const SLIP_RETENTION_MAX_DAYS: u32 = 3650;
+
 impl RetentionConfig {
     /// The configured slip-image retention window in days, or `None` when
     /// retention is off.
     ///
-    /// A value that is not a positive integer is treated as **off** and
-    /// reported by [`RetentionConfig::slip_days_error`], because the
-    /// alternative — falling back to some default — would erase guest data
-    /// on the strength of a typo.
+    /// Only a whole number of days in `1..=3650` is accepted. Anything else —
+    /// a typo, zero, a negative, or a value large enough to overflow the
+    /// interval the sweep builds — is treated as **off** and reported by
+    /// [`RetentionConfig::slip_days_error`].
+    ///
+    /// Out-of-range is refused rather than *clamped* on purpose. Silently
+    /// clamping, say, `100000` down to `3650` would erase guests' payment
+    /// photographs 264 years earlier than the operator asked for, on a
+    /// schedule nobody chose — the same class of mistake as falling back to a
+    /// built-in default, and the whole reason this setting has none.
     pub fn slip_retention_days(&self) -> Option<u32> {
         present(&self.slip_days)
             .and_then(|raw| raw.parse::<u32>().ok())
-            .filter(|days| *days > 0)
+            .filter(|days| (SLIP_RETENTION_MIN_DAYS..=SLIP_RETENTION_MAX_DAYS).contains(days))
     }
 
     /// `Some(raw)` when `SLIP_RETENTION_DAYS` was set to something that is
@@ -1324,6 +1345,31 @@ mod tests {
             "a typo is off, never a fallback default"
         );
         assert_eq!(cfg(Some(" 90 ")).slip_retention_days(), Some(90));
+        assert_eq!(cfg(Some("1")).slip_retention_days(), Some(1), "lower bound");
+        assert_eq!(
+            cfg(Some("3650")).slip_retention_days(),
+            Some(3650),
+            "upper bound"
+        );
+
+        // The overflow guard. `make_interval(days => $1)` takes an i32; a
+        // window past that wraps negative and turns "older than N days" into
+        // "older than a date in the future", erasing every closed booking's
+        // slip on the first tick. Refused, not clamped — see the doc comment.
+        assert_eq!(cfg(Some("3651")).slip_retention_days(), None);
+        assert_eq!(
+            cfg(Some(&(i32::MAX as u32 + 1).to_string())).slip_retention_days(),
+            None,
+            "a value past i32::MAX must never reach make_interval"
+        );
+        assert_eq!(cfg(Some(&u32::MAX.to_string())).slip_retention_days(), None);
+        assert_eq!(
+            cfg(Some("99999999999999999999")).slip_retention_days(),
+            None,
+            "a value past u32 does not even parse, and is still off"
+        );
+        assert_eq!(cfg(Some("3651")).slip_days_error(), Some("3651"));
+        assert!(cfg(Some(&u32::MAX.to_string())).slip_days_error().is_some());
 
         // A typo is off *and* reported, so startup can say so out loud.
         assert_eq!(cfg(Some("ninety")).slip_days_error(), Some("ninety"));

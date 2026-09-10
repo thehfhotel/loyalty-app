@@ -560,6 +560,42 @@ async fn add_booking_slip(
         ));
     }
 
+    // F2 (B2): one file, one live slip row.
+    //
+    // `slipUrl` comes from the request body, and nothing in the schema stops
+    // two rows carrying the same path. Two rows sharing a file is not a
+    // harmless duplicate: it lets one guest attach another guest's slip as
+    // evidence for their own booking, and it means the retention sweep
+    // unlinking on behalf of one row would destroy the other booking's
+    // payment evidence while leaving its row claiming the image is present.
+    //
+    // Rejected here rather than by a unique index because `booking_slips`
+    // already exists in production and a migration that failed on
+    // pre-existing duplicates would wedge the deploy. The sweep tolerates any
+    // duplicates already out there with a `NOT EXISTS` guard; this stops new
+    // ones being created. Tombstoned rows are excluded — their `slip_url` is
+    // NULL, so they cannot collide anyway.
+    let already_attached: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM booking_slips WHERE slip_url = $1 AND deleted_at IS NULL LIMIT 1",
+    )
+    .bind(&slip_url)
+    .fetch_optional(state.db())
+    .await?;
+
+    if let Some((existing_id,)) = already_attached {
+        tracing::warn!(
+            user_id = %auth_user.id,
+            booking_id = %booking_id,
+            existing_slip_id = %existing_id,
+            "Rejected a slip URL that is already attached to a live slip row"
+        );
+        return Err(AppError::Conflict(
+            "That slip has already been attached. Upload the slip again to attach it to this \
+             booking."
+                .to_string(),
+        ));
+    }
+
     // Parse the optional `Idempotency-Key` header. When present, a retry
     // with the same key replays the original response payload byte-for-byte
     // rather than inserting a second slip row. See
@@ -642,6 +678,24 @@ async fn add_booking_slip(
         slip_id = %slip.id,
         "Booking slip added"
     );
+
+    // F2 (M4): this response echoes `slipUrl` back. The caller supplied it,
+    // so an admin learns nothing here they did not already send — but the
+    // access log's rule is role-based, not disclosure-based (`serve_slip`
+    // logs an admin who happens to own the booking too), and a rule with an
+    // exception nobody can see is how the next reader talks themselves into
+    // a second one. An admin attaching a slip is logged; a guest attaching
+    // their own is not.
+    if is_admin {
+        crate::services::slip_access_log::record_best_effort(
+            state.db(),
+            &[slip.id],
+            auth_user_id,
+            crate::services::slip_access_log::ROUTE_BOOKING_SLIP_ATTACH,
+            crate::services::slip_access_log::request_id(&headers).as_deref(),
+        )
+        .await;
+    }
 
     // Automatic SlipOK verification. Runs inline (not `tokio::spawn`) so the
     // stored decision is deterministic the moment this response returns —

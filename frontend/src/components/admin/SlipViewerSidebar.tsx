@@ -19,6 +19,7 @@ import { toast } from 'react-hot-toast';
 import { Badge, Button, type BadgeTone } from '../ui';
 import { deskSlipOkStatus, slipOkReasonKey, type SlipOkStatusValue } from '../../types/slipok';
 import { adminBookingService } from '../../services/adminBookingService';
+import { SlipErasedNotice } from '../SlipErasedNotice';
 import type {
   AdminBooking as Booking,
   AdminBookingSlip as BookingSlip,
@@ -103,6 +104,7 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
       return [{
         id: booking.slip.id,
         slipUrl: booking.slip.imageUrl,
+        deletedAt: booking.slip.deletedAt,
         uploadedAt: booking.slip.uploadedAt,
         slipokStatus: booking.slip.slipokStatus,
         slipokVerifiedAt: booking.slip.slipokVerifiedAt,
@@ -143,6 +145,13 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     if (detail?.id !== listSlip.id) {return listSlip;}
     return {
       ...listSlip,
+      // The per-slip read is authoritative for the F2 tombstone, and no `??`
+      // fallback here: if the detail says the image is erased, a `slipUrl`
+      // the list fetched before the sweep ran is exactly the stale value that
+      // would render a dead <img>.
+      slipUrl: detail.slipUrl,
+      deletedAt: detail.deletedAt ?? listSlip.deletedAt ?? null,
+      deletionReason: detail.deletionReason ?? listSlip.deletionReason ?? null,
       slipokStatus: (detail.slipokStatus as SlipOkStatusValue | null) ?? listSlip.slipokStatus,
       slipokReason: detail.slipokReason ?? listSlip.slipokReason ?? null,
       slipokCheckedAt: detail.slipokCheckedAt ?? listSlip.slipokCheckedAt ?? null,
@@ -405,22 +414,32 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
         {slips.length > 0 ? (
           <>
           <div className="relative min-h-[300px] flex-1 rounded-lg border border-hairline bg-surface-card p-2">
-            {/* Main Image */}
-            <img
-              src={currentSlip?.slipUrl}
-              alt={t('admin.booking.bookingManagement.slipViewer.slipImage')}
-              className="h-full w-full cursor-pointer object-contain rounded-lg"
-              onClick={() => currentSlip && openFullscreen(currentSlip.slipUrl)}
-            />
+            {/* Main Image, or the tombstone once retention has erased it.
+                F2: `slipUrl` is null after the sweep unlinks the file, and an
+                empty `src` resolves to the page itself — a broken image with
+                no explanation. The fullscreen action goes with it: there is
+                nothing to open. */}
+            {currentSlip?.slipUrl ? (
+              <>
+                <img
+                  src={currentSlip.slipUrl}
+                  alt={t('admin.booking.bookingManagement.slipViewer.slipImage')}
+                  className="h-full w-full cursor-pointer object-contain rounded-lg"
+                  onClick={() => openFullscreen(currentSlip.slipUrl as string)}
+                />
 
-            {/* Fullscreen Button */}
-            <button
-              onClick={() => currentSlip && openFullscreen(currentSlip.slipUrl)}
-              className={`absolute right-2 top-2 ${ICON_BUTTON_CLASSES}`}
-              title={t('admin.booking.bookingManagement.slipViewer.fullscreen')}
-            >
-              <FiMaximize2 className="h-4 w-4" aria-hidden="true" />
-            </button>
+                {/* Fullscreen Button */}
+                <button
+                  onClick={() => openFullscreen(currentSlip.slipUrl as string)}
+                  className={`absolute right-2 top-2 ${ICON_BUTTON_CLASSES}`}
+                  title={t('admin.booking.bookingManagement.slipViewer.fullscreen')}
+                >
+                  <FiMaximize2 className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </>
+            ) : (
+              <SlipErasedNotice deletedAt={currentSlip?.deletedAt} />
+            )}
 
             {/* Multi-slip Navigation */}
             {hasMultipleSlips && (
@@ -456,11 +475,15 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
                         index === currentSlipIndex ? 'border-white' : 'border-transparent opacity-70 hover:opacity-100'
                       }`}
                     >
-                      <img
-                        src={slip.slipUrl}
-                        alt={`Slip ${index + 1}`}
-                        className="h-full w-full object-cover"
-                      />
+                      {slip.slipUrl ? (
+                        <img
+                          src={slip.slipUrl}
+                          alt={`Slip ${index + 1}`}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <SlipErasedNotice deletedAt={slip.deletedAt} compact />
+                      )}
                     </button>
                   ))}
                 </div>

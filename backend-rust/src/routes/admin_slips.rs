@@ -232,7 +232,10 @@ fn default_access_log_limit() -> i64 {
 #[serde(rename_all = "camelCase")]
 pub struct SlipAccessEntry {
     pub id: Uuid,
-    pub slip_id: Uuid,
+    /// The slip that was read. `null` only when that `booking_slips` row was
+    /// later hard-deleted — the FK is `ON DELETE SET NULL`, so the record of
+    /// the read outlives its subject instead of vanishing with it.
+    pub slip_id: Option<Uuid>,
     /// Who read it. Never null — an access nobody can be named for is not
     /// something this table is allowed to hold.
     pub admin_id: Uuid,

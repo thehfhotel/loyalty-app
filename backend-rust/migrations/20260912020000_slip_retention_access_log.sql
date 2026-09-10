@@ -71,6 +71,24 @@ CREATE INDEX IF NOT EXISTS "idx_booking_slips_live"
     ON "public"."booking_slips" ("booking_id")
     WHERE "deleted_at" IS NULL;
 
+-- `slip_url` is now a lookup key, and there was no index on it before.
+--
+-- Two hot callers: `routes::storage::serve_slip` resolves the URL an admin
+-- asked for to the row the access log has to name, on every image fetch; and
+-- the retention sweep's `NOT EXISTS` shared-file guard asks whether any other
+-- live row points at the same file. Both were sequential scans.
+--
+-- Not UNIQUE, deliberately. A unique index would be the stronger fix for the
+-- shared-file problem, but this table already exists in production and a
+-- migration that fails on pre-existing duplicates would wedge the deploy.
+-- Duplicates are prevented going forward at the API instead
+-- (`routes::bookings::add_booking_slip` rejects a URL already attached to a
+-- live row), and tolerated safely in the sweep by the `NOT EXISTS` guard.
+-- Promoting this to UNIQUE is a follow-up for once production is known clean.
+CREATE INDEX IF NOT EXISTS "idx_booking_slips_slip_url"
+    ON "public"."booking_slips" ("slip_url")
+    WHERE "slip_url" IS NOT NULL;
+
 -- ----- admin-viewer access log ------------------------------------------
 --
 -- `route` is a stable machine key for the surface that served the slip
@@ -83,7 +101,7 @@ CREATE INDEX IF NOT EXISTS "idx_booking_slips_live"
 
 CREATE TABLE IF NOT EXISTS "public"."slip_access_log" (
     "id"          UUID        NOT NULL DEFAULT uuid_generate_v4(),
-    "slip_id"     UUID        NOT NULL,
+    "slip_id"     UUID,
     "admin_id"    UUID        NOT NULL,
     "route"       TEXT        NOT NULL,
     "accessed_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -96,16 +114,32 @@ CREATE TABLE IF NOT EXISTS "public"."slip_access_log" (
 -- earlier partial run, so any column added to this file later needs its own
 -- `ADD COLUMN IF NOT EXISTS` guard rather than an edit to the block above.
 
+-- `slip_id` is NULLABLE and the FK is ON DELETE SET NULL, not CASCADE.
+--
+-- `DELETE /api/bookings/slips/:slip_id` is a hard delete of the row, and
+-- `booking_slips` itself cascades from `bookings`. Under CASCADE, deleting
+-- either would silently take the access history with it — so the one action
+-- most likely to follow a complaint about a slip is the action that erases
+-- the record of who read it. That is the opposite of what an audit table is
+-- for.
+--
+-- SET NULL rather than making the guest's delete a soft delete: that endpoint
+-- is a guest-facing behaviour with its own tests and semantics, and quietly
+-- changing what DELETE means is a bigger and less reviewable change than
+-- letting an audit row outlive its subject. An orphaned row still answers
+-- "this admin read a slip at this time"; it simply no longer names which,
+-- which also means it holds nothing about the guest at all.
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'slip_access_log_slip_id_fkey'
+          AND conrelid = '"public"."slip_access_log"'::regclass
     ) THEN
         ALTER TABLE "public"."slip_access_log"
             ADD CONSTRAINT "slip_access_log_slip_id_fkey"
             FOREIGN KEY ("slip_id") REFERENCES "public"."booking_slips"("id")
-            ON DELETE CASCADE ON UPDATE NO ACTION;
+            ON DELETE SET NULL ON UPDATE NO ACTION;
     END IF;
 END $$;
 
@@ -117,6 +151,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'slip_access_log_admin_id_fkey'
+          AND conrelid = '"public"."slip_access_log"'::regclass
     ) THEN
         ALTER TABLE "public"."slip_access_log"
             ADD CONSTRAINT "slip_access_log_admin_id_fkey"
@@ -133,6 +168,9 @@ CREATE INDEX IF NOT EXISTS "idx_slip_access_log_admin_id"
 
 COMMENT ON TABLE "public"."slip_access_log"
     IS 'One row per admin-facing read of a slip image or of a response carrying its URL (PDPA data map §8 gap 2). The guest reading their own slip is deliberately not logged.';
+
+COMMENT ON COLUMN "public"."slip_access_log"."slip_id"
+    IS 'The slip that was read. NULL only when that booking_slips row was later hard-deleted (ON DELETE SET NULL): the record of the read outlives its subject rather than vanishing with it.';
 
 COMMENT ON COLUMN "public"."slip_access_log"."route"
     IS 'Stable machine key for the surface that served the slip, e.g. GET /api/storage/slips/:filename. Never the literal request line.';

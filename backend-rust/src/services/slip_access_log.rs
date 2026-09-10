@@ -16,10 +16,11 @@
 //!
 //! Logged: every admin-facing surface that returns a slip image or a URL
 //! that resolves to one. That is the image route itself, the three
-//! slip-moderation routes behind the Slip Viewer Sidebar, and the admin
-//! booking list/detail (and the three booking mutations that answer with the
-//! same detail shape) — because the sidebar reads the image URL out of
-//! *those* responses, not out of a dedicated image endpoint.
+//! slip-moderation routes behind the Slip Viewer Sidebar, the admin booking
+//! list/detail (and the three booking mutations that answer with the same
+//! detail shape) — because the sidebar reads the image URL out of *those*
+//! responses, not out of a dedicated image endpoint — and the slip-attach
+//! route when an **admin** calls it.
 //!
 //! **Not** logged: the guest reading their own slip. The point of the table
 //! is staff accountability, not surveilling the data subject; a guest
@@ -73,6 +74,11 @@ pub const ROUTE_ADMIN_BOOKING_DISCOUNT: &str = "POST /api/admin/bookings/:id/dis
 
 /// `POST /api/admin/bookings/:id/cancel` — answers with the same detail shape.
 pub const ROUTE_ADMIN_BOOKING_CANCEL: &str = "POST /api/admin/bookings/:id/cancel";
+
+/// `POST /api/bookings/:id/slips` — the attach route, which echoes the slip
+/// URL back. Recorded only when the caller is an admin; a guest attaching
+/// their own slip is not an access-log event.
+pub const ROUTE_BOOKING_SLIP_ATTACH: &str = "POST /api/bookings/:id/slips";
 
 /// The request's `x-request-id`, so a log row ties back to the request's
 /// tracing span.
