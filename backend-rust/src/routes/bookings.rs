@@ -626,7 +626,239 @@ async fn add_booking_slip(
         "Booking slip added"
     );
 
+    // Automatic SlipOK verification. Runs inline (not `tokio::spawn`) so the
+    // stored decision is deterministic the moment this response returns —
+    // which is what makes it assertable in an integration test and visible
+    // to the guest without a refetch. The added latency is bounded by the
+    // SlipOK client's own timeout (8s by default, `SLIPOK_TIMEOUT_SECS`).
+    //
+    // It can never fail the upload: the slip row is already committed, and
+    // every error inside is swallowed into a WARN. A guest must not see an
+    // error because our slip vendor had a bad day.
+    run_slipok_check(&state, slip.id, booking_id, &slip_url).await;
+
     Ok((StatusCode::CREATED, Json(slip)))
+}
+
+/// SlipOK status values written to `booking_slips.slipok_status`. See the
+/// migration `20260910000000_booking_slips_slipok.sql` for the vocabulary.
+const SLIPOK_STATUS_VERIFIED: &str = "verified";
+const SLIPOK_STATUS_SHADOW_PASS: &str = "shadow_pass";
+const SLIPOK_STATUS_MANUAL: &str = "manual";
+const SLIPOK_STATUS_UNAVAILABLE: &str = "unavailable";
+
+/// Run the automatic slip check and record its outcome. Infallible by
+/// construction: anything that goes wrong is logged and the slip is left on
+/// the manual admin path, which is exactly where it was before this existed.
+async fn run_slipok_check(state: &AppState, slip_id: Uuid, booking_id: Uuid, slip_url: &str) {
+    if let Err(e) = slipok_check(state, slip_id, booking_id, slip_url).await {
+        tracing::warn!(
+            slip_id = %slip_id,
+            booking_id = %booking_id,
+            error = %e,
+            "SlipOK check failed; slip left for manual verification"
+        );
+    }
+}
+
+/// The body of the check. Returns `Err` only on problems the caller should
+/// log — the guest's response is already decided by the time this runs.
+async fn slipok_check(
+    state: &AppState,
+    slip_id: Uuid,
+    booking_id: Uuid,
+    slip_url: &str,
+) -> AppResult<()> {
+    use crate::services::slip_match::{self, SlipDecision};
+
+    // Not configured: record why, then behave exactly as before.
+    let Some(slipok) = state.slipok() else {
+        record_slipok_result(
+            state.db(),
+            slip_id,
+            SLIPOK_STATUS_UNAVAILABLE,
+            Some("not_configured"),
+            None,
+        )
+        .await?;
+        return Ok(());
+    };
+
+    // What we expect to have been paid, and to whom. `amount_due_now` is the
+    // deposit for a deposit50 booking and the full price otherwise; both
+    // columns are DECIMAL(10,2) baht.
+    let (amount_due, property): (Decimal, Option<String>) = sqlx::query_as(
+        "SELECT COALESCE(amount_due_now, total_price), property FROM bookings WHERE id = $1",
+    )
+    .bind(booking_id)
+    .fetch_one(state.db())
+    .await?;
+
+    let Some(expected_satang) = slip_match::to_satang(amount_due) else {
+        return Err(AppError::Internal(format!(
+            "Booking {} has an unrepresentable amount due",
+            booking_id
+        )));
+    };
+
+    let receiving_id = state
+        .config()
+        .promptpay
+        .id_for_property(property.as_deref().unwrap_or_default())
+        .cloned();
+    let Some(receiving_id) = receiving_id else {
+        // Nothing to match the payee against — the check cannot be trusted.
+        record_slipok_result(
+            state.db(),
+            slip_id,
+            SLIPOK_STATUS_UNAVAILABLE,
+            Some("not_configured"),
+            None,
+        )
+        .await?;
+        return Ok(());
+    };
+
+    let image = crate::services::storage::read_slip_bytes(slip_url).await?;
+
+    let result = match slipok.verify_slip(image).await {
+        Ok(result) => result,
+        Err(e) => {
+            // A transport-level failure: SlipOK never gave a verdict.
+            let reason = match e {
+                AppError::ExternalServiceTimeout(_) => "timeout",
+                _ => "api_error",
+            };
+            record_slipok_result(
+                state.db(),
+                slip_id,
+                SLIPOK_STATUS_UNAVAILABLE,
+                Some(reason),
+                None,
+            )
+            .await?;
+            tracing::warn!(
+                slip_id = %slip_id,
+                booking_id = %booking_id,
+                reason = %reason,
+                "SlipOK gave no verdict; slip left for manual verification"
+            );
+            return Ok(());
+        },
+    };
+
+    // Duplicate defence, first half: has this bank reference already been
+    // stored against another slip? The partial unique index on
+    // `slipok_trans_ref` is the other half, for the racing case.
+    let trans_ref = result
+        .transaction_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .map(str::to_string);
+    let already_seen = match trans_ref.as_deref() {
+        Some(reference) => sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM booking_slips WHERE slipok_trans_ref = $1 AND id <> $2)",
+        )
+        .bind(reference)
+        .bind(slip_id)
+        .fetch_one(state.db())
+        .await?,
+        None => false,
+    };
+
+    let decision = slip_match::decide(&result, expected_satang, &receiving_id, already_seen);
+    let auto_verify = state.config().slipok.auto_verify;
+
+    // The reference is stored only when every check passed. A rejected slip
+    // must not occupy the unique index: the guest may legitimately re-upload
+    // the same transfer once the mismatch is sorted out.
+    let (status, reason, stored_ref) = match &decision {
+        SlipDecision::Confirm { trans_ref } if auto_verify => {
+            (SLIPOK_STATUS_VERIFIED, None, Some(trans_ref.clone()))
+        },
+        SlipDecision::Confirm { trans_ref } => {
+            (SLIPOK_STATUS_SHADOW_PASS, None, Some(trans_ref.clone()))
+        },
+        SlipDecision::Manual { reason } => (SLIPOK_STATUS_MANUAL, Some(*reason), None),
+        SlipDecision::Unavailable { reason } => (SLIPOK_STATUS_UNAVAILABLE, Some(*reason), None),
+    };
+
+    let status = record_slipok_result(state.db(), slip_id, status, reason, stored_ref.as_deref())
+        .await?
+        .unwrap_or(status);
+
+    if status == SLIPOK_STATUS_VERIFIED {
+        // Same function the admin's Verify button runs, with no actor.
+        crate::services::slip_confirm::confirm_slip(state, slip_id, booking_id, None).await?;
+    }
+
+    tracing::info!(
+        slip_id = %slip_id,
+        booking_id = %booking_id,
+        decision = %status,
+        reason = reason.unwrap_or("none"),
+        auto_verify_enabled = auto_verify,
+        "SlipOK decision recorded"
+    );
+
+    Ok(())
+}
+
+/// Store the SlipOK outcome on the slip row.
+///
+/// Deliberately a **runtime** `sqlx::query` rather than the compile-time
+/// macro: the four `slipok_*` columns are new in migration
+/// `20260910000000_booking_slips_slipok.sql`, and a runtime query is not
+/// validated against the offline cache in `.sqlx/`, so this change needs no
+/// `cargo sqlx prepare` run (and cannot go stale against it).
+///
+/// Returns `Some(status)` when the write had to fall back to a different
+/// status than the one asked for — today only when the unique index on
+/// `slipok_trans_ref` rejects the reference because a concurrent upload of
+/// the same transfer won the race, which is a duplicate by definition.
+async fn record_slipok_result(
+    db: &PgPool,
+    slip_id: Uuid,
+    status: &'static str,
+    reason: Option<&str>,
+    trans_ref: Option<&str>,
+) -> AppResult<Option<&'static str>> {
+    const SQL: &str = r#"
+        UPDATE booking_slips
+        SET slipok_status     = $1,
+            slipok_reason     = $2,
+            slipok_trans_ref  = $3,
+            slipok_checked_at = NOW()
+        WHERE id = $4
+    "#;
+
+    let outcome = sqlx::query(SQL)
+        .bind(status)
+        .bind(reason)
+        .bind(trans_ref)
+        .bind(slip_id)
+        .execute(db)
+        .await;
+
+    match outcome {
+        Ok(_) => Ok(None),
+        Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("23505") => {
+            tracing::warn!(
+                slip_id = %slip_id,
+                "SlipOK reference already stored by a concurrent upload; recording duplicate"
+            );
+            sqlx::query(SQL)
+                .bind(SLIPOK_STATUS_MANUAL)
+                .bind(Some(crate::services::slip_match::REASON_DUPLICATE))
+                .bind(Option::<&str>::None)
+                .bind(slip_id)
+                .execute(db)
+                .await?;
+            Ok(Some(SLIPOK_STATUS_MANUAL))
+        },
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// DELETE /api/bookings/slips/:slip_id - Remove a payment slip
