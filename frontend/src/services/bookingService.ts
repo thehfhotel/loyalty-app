@@ -1,4 +1,5 @@
 import api from './authService';
+import type { SlipOkStatusValue } from '../types/slipok';
 
 export interface RoomTypeAvailability {
   id: string;
@@ -16,7 +17,11 @@ export interface BookingSlip {
   id: string;
   slipUrl: string;
   uploadedAt: string | Date;
-  slipokStatus: 'pending' | 'verified' | 'failed' | 'quota_exceeded' | null;
+  slipokStatus: SlipOkStatusValue | null;
+  /** Locked `SlipOkReason` value in practice; typed loosely because the
+   *  wire may carry a reason this bundle predates. */
+  slipokReason?: string | null;
+  slipokCheckedAt?: string | Date | null;
   adminStatus: 'pending' | 'verified' | 'needs_action' | null;
 }
 
@@ -38,7 +43,7 @@ export interface Booking {
   slips?: BookingSlip[];
   slipUrl?: string;
   slipUploadedAt?: string | Date;
-  slipOkStatus?: 'pending' | 'verified' | 'failed' | 'quota_exceeded' | null;
+  slipOkStatus?: SlipOkStatusValue | null;
   adminVerificationStatus?: 'pending' | 'verified' | 'needs_action' | null;
   verifiedAt?: string | Date;
   verifiedBy?: string;

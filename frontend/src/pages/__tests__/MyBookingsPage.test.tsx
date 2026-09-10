@@ -158,6 +158,13 @@ vi.mock('react-i18next', () => ({
         'common.close': 'Close',
         'common.optional': 'optional',
         'common.processing': 'Processing',
+        // Locked SlipOK guest vocabulary: only two things a guest ever
+        // reads, whatever the machine actually decided.
+        'payment.slipok.status.pending': 'Being checked',
+        'payment.slipok.status.verified': 'Confirmed',
+        'payment.slipok.status.shadow_pass': 'Being checked',
+        'payment.slipok.status.manual': 'Being checked',
+        'payment.slipok.status.unavailable': 'Being checked',
       };
       return translations[key] ?? key;
     },
@@ -888,6 +895,78 @@ describe('MyBookingsPage', () => {
       await user.click(screen.getByTestId('booking-card-booking-5'));
       modal = screen.getByRole('dialog');
       expect(within(modal).getByText('Cancelled by Admin')).toBeInTheDocument();
+    });
+  });
+  describe('SlipOK Status Badge', () => {
+    /** A future confirmed booking (so it lands in the Current tab) carrying one slip status. */
+    function bookingWithSlipStatus(id: string, slipOkStatus: string | null) {
+      return {
+        id,
+        roomTypeName: `Room ${id}`,
+        checkInDate: '2027-08-01',
+        checkOutDate: '2027-08-03',
+        numGuests: 1,
+        totalPrice: 1000,
+        pointsEarned: 100,
+        status: 'confirmed',
+        notes: null,
+        cancellationReason: null,
+        createdAt: '2027-07-01',
+        slipOkStatus,
+      };
+    }
+
+    it('should show a confirmed badge only for the verified status', async () => {
+      mockBookingsData = [bookingWithSlipStatus('slip-verified', 'verified')] as never;
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
+
+      const card = screen.getByTestId('booking-card-slip-verified');
+      // Two badges read "Confirmed" on a verified card: the booking status
+      // and the slip status. The second one is the slip.
+      const badges = within(card).getAllByText('Confirmed');
+      expect(badges).toHaveLength(2);
+      expect(badges[1]).toHaveAttribute('data-tone', 'success');
+      expect(within(card).queryByText('Being checked')).not.toBeInTheDocument();
+    });
+
+    it.each(['pending', 'shadow_pass', 'manual', 'unavailable'])(
+      'should show the neutral "being checked" badge for %s',
+      async (status) => {
+        mockBookingsData = [bookingWithSlipStatus(`slip-${status}`, status)] as never;
+        render(<MyBookingsPage />, { wrapper });
+        await waitForBookingsLoaded();
+
+        const card = screen.getByTestId(`booking-card-slip-${status}`);
+        const badge = within(card).getByText('Being checked');
+        expect(badge).toHaveAttribute('data-tone', 'warning');
+        // A guest must never read the machine's own vocabulary — least of
+        // all a vendor outage (`unavailable`) — off their booking card.
+        expect(within(card).queryByText(status)).not.toBeInTheDocument();
+      }
+    );
+
+    it('should fall back to "being checked" for a pre-lock status value', async () => {
+      // Rows written before the vocabulary lock still carry `failed`.
+      mockBookingsData = [bookingWithSlipStatus('slip-legacy', 'failed')] as never;
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
+
+      const card = screen.getByTestId('booking-card-slip-legacy');
+      expect(within(card).getByText('Being checked')).toBeInTheDocument();
+      expect(within(card).queryByText('failed')).not.toBeInTheDocument();
+      expect(within(card).queryByText(/payment\.slipok/)).not.toBeInTheDocument();
+    });
+
+    it('should render no slip badge at all when the booking has no slip status', async () => {
+      mockBookingsData = [bookingWithSlipStatus('slip-none', null)] as never;
+      render(<MyBookingsPage />, { wrapper });
+      await waitForBookingsLoaded();
+
+      const card = screen.getByTestId('booking-card-slip-none');
+      expect(within(card).queryByText('Being checked')).not.toBeInTheDocument();
+      // Only the booking-status badge remains.
+      expect(within(card).getAllByText('Confirmed')).toHaveLength(1);
     });
   });
 });

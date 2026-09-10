@@ -22,6 +22,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { bookingService } from '../services/bookingService';
 import type { Booking } from '../services/bookingService';
+import { guestSlipOkStatusKey, isSlipOkStatus, type SlipOkStatus } from '../types/slipok';
 import companyQRCode from '../assets/company-promptpay-qr.png';
 import kbankLogo from '../assets/kbank-logo.png';
 
@@ -46,12 +47,27 @@ const PAYMENT_TYPE_BADGE_TONE: Record<string, BadgeTone> = {
   full: 'success',
 };
 
-const SLIP_OK_STATUS: Record<string, { tone: BadgeTone; icon: StatusGlyphName }> = {
+// The guest half of the locked SlipOK vocabulary. Every status other than
+// `verified` is a slip we have not finished confirming, so it gets the same
+// calm "being checked" badge — a guest must never read a vendor outage
+// (`unavailable`), a shadow-mode pass or a queued manual review as a problem
+// with their money. The wording collapse lives in the
+// `payment.slipok.status.*` strings; the tones collapse here.
+const SLIP_OK_STATUS: Record<SlipOkStatus, { tone: BadgeTone; icon: StatusGlyphName }> = {
   pending: { tone: 'warning', icon: 'clock' },
   verified: { tone: 'success', icon: 'check' },
-  failed: { tone: 'error', icon: 'alert' },
-  quota_exceeded: { tone: 'warning', icon: 'alert' },
+  shadow_pass: { tone: 'warning', icon: 'clock' },
+  manual: { tone: 'warning', icon: 'clock' },
+  unavailable: { tone: 'warning', icon: 'clock' },
 };
+
+// Legacy rows (`failed`, `quota_exceeded`) and any status a newer backend
+// starts writing land here rather than on a bare neutral badge.
+const SLIP_OK_STATUS_FALLBACK = SLIP_OK_STATUS.pending;
+
+function slipOkBadge(status: string | null | undefined) {
+  return isSlipOkStatus(status) ? SLIP_OK_STATUS[status] : SLIP_OK_STATUS_FALLBACK;
+}
 
 const ADMIN_STATUS: Record<string, { tone: BadgeTone; icon: StatusGlyphName }> = {
   pending: { tone: 'warning', icon: 'clock' },
@@ -436,9 +452,9 @@ export default function MyBookingsPage() {
                         )}
                         {/* SlipOK Status Badge */}
                         {booking.slipOkStatus && (
-                          <Badge tone={SLIP_OK_STATUS[booking.slipOkStatus]?.tone ?? 'neutral'} size="sm">
-                            <StatusGlyph icon={SLIP_OK_STATUS[booking.slipOkStatus]?.icon} />
-                            {t(`payment.slipok.${booking.slipOkStatus}`)}
+                          <Badge tone={slipOkBadge(booking.slipOkStatus).tone} size="sm">
+                            <StatusGlyph icon={slipOkBadge(booking.slipOkStatus).icon} />
+                            {t(guestSlipOkStatusKey(booking.slipOkStatus))}
                           </Badge>
                         )}
                         {/* Admin Status Badge */}
@@ -644,8 +660,12 @@ export default function MyBookingsPage() {
                         {/* Status badge overlay */}
                         <div className="absolute bottom-1 right-1">
                           {slip.slipokStatus && (
-                            <Badge tone={SLIP_OK_STATUS[slip.slipokStatus]?.tone ?? 'neutral'} size="sm">
-                              <StatusGlyph icon={SLIP_OK_STATUS[slip.slipokStatus]?.icon} />
+                            <Badge
+                              tone={slipOkBadge(slip.slipokStatus).tone}
+                              size="sm"
+                              aria-label={t(guestSlipOkStatusKey(slip.slipokStatus))}
+                            >
+                              <StatusGlyph icon={slipOkBadge(slip.slipokStatus).icon} />
                             </Badge>
                           )}
                         </div>
@@ -849,8 +869,12 @@ export default function MyBookingsPage() {
                       {/* Status badge overlay */}
                       <div className="absolute bottom-1 right-1">
                         {slip.slipokStatus && (
-                          <Badge tone={SLIP_OK_STATUS[slip.slipokStatus]?.tone ?? 'neutral'} size="sm">
-                            <StatusGlyph icon={SLIP_OK_STATUS[slip.slipokStatus]?.icon} />
+                          <Badge
+                            tone={slipOkBadge(slip.slipokStatus).tone}
+                            size="sm"
+                            aria-label={t(guestSlipOkStatusKey(slip.slipokStatus))}
+                          >
+                            <StatusGlyph icon={slipOkBadge(slip.slipokStatus).icon} />
                           </Badge>
                         )}
                       </div>
