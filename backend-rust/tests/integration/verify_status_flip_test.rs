@@ -49,7 +49,7 @@ use loyalty_backend::services::slip_confirm::{
     ACTION_BOOKING_NOT_CONFIRMED, SLIPOK_SYSTEM_USER_ID,
 };
 
-use crate::common::{generate_test_token_with_role, TestApp, TestUser};
+use crate::common::{generate_test_token_with_role, test_app_state_config, TestApp, TestUser};
 
 /// The property's receiving PromptPay ID for these tests.
 const RECEIVING_ID: &str = "0105556123047";
@@ -590,94 +590,66 @@ async fn an_admin_may_confirm_a_booking_whose_hold_expired() {
     app.cleanup().await.ok();
 }
 
-/// The machine's half of the same rule, in the one window where it can
-/// actually happen: `slipok_check` reads `hold_expires_at` *before* the
-/// SlipOK round-trip, so a hold can lapse while the vendor is thinking. The
-/// mock therefore holds the response until after the fixture's hold has
-/// expired — `payable` was true when it was read, and false by the time the
-/// confirmation runs.
+/// The machine's half of the same rule.
+///
+/// The state under test is the one the race leaves behind: `slipok_check`
+/// reads `status` and `hold_expires_at` *before* the SlipOK round-trip and
+/// found the booking payable, and by the time the vendor answered and
+/// `confirm_slip` ran, the hold had lapsed. This drives `confirm_slip`
+/// directly with `actor = None` — that instant exactly, and without racing a
+/// real clock inside CI, which is the only part of the story a wall-clock
+/// fixture could add.
 ///
 /// The slip is still verified (the money did arrive, and the check agreed),
 /// but the booking must not move, and the refusal has to be on the record
 /// with the same word `slipok_check` uses for this state.
 #[tokio::test]
 async fn the_machine_will_not_confirm_a_hold_that_lapsed_mid_check() {
-    /// How long the fixture's hold has left when the upload starts.
-    const HOLD_SECS: i64 = 2;
-    /// How long the vendor "thinks" for. Comfortably past the hold, and
-    /// comfortably inside the SlipOK client's 8 s timeout and the inline
-    /// check's budget, so neither ceiling decides this test.
-    const VENDOR_DELAY_SECS: u64 = 4;
-
-    let slipok_mock = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path(format!("/{}", BRANCH_ID)))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_delay(std::time::Duration::from_secs(VENDOR_DELAY_SECS))
-                .set_body_json(slipok_success_body(
-                    "A11RACE0001",
-                    SLIP_AMOUNT,
-                    MASKED_RECEIVER,
-                )),
-        )
-        .expect(1)
-        .mount(&slipok_mock)
-        .await;
-
-    let slipok_uri = slipok_mock.uri();
-    let mutate = move |cfg: &mut loyalty_backend::Settings| {
-        cfg.slipok.api_key = Some("test-key".to_string());
-        cfg.slipok.branch_id = Some(BRANCH_ID.to_string());
-        cfg.slipok.api_url = Some(slipok_uri.clone());
-        cfg.slipok.auto_verify = true;
-        cfg.promptpay.hf_id = Some(RECEIVING_ID.to_string());
-    };
-
-    let app = TestApp::new_with_config(&mutate)
+    let app = TestApp::new_with_config(&promptpay_only)
         .await
         .expect("create test app");
     let guest = seed_guest(&app, "a11-race-guest@test.com").await;
 
-    let booking_id = seed_app_booking(
+    // The shape `routes::admin_deposit_links` writes, with the link's expiry
+    // now behind us.
+    let booking_id = seed_booking(
         app.db(),
         guest.id,
-        "Race",
-        Some(Utc::now() + Duration::seconds(HOLD_SECS)),
+        None,
+        None,
+        None,
+        Some("deposit_link"),
+        Some(Utc::now() - Duration::minutes(1)),
     )
     .await;
-    let slip_url = upload_slip(&app, &guest).await;
+    let slip_id = seed_pending_slip(app.db(), booking_id, guest.id).await;
 
-    let client = app.authenticated_client(&guest.id, &guest.email);
-    let response = client
-        .post(
-            &format!("/api/bookings/{}/slips", booking_id),
-            &json!({ "slipUrl": slip_url }),
-        )
-        .await;
-    response.assert_status(201);
+    let mut config = test_app_state_config();
+    promptpay_only(&mut config);
+    let state = loyalty_backend::AppState::new(app.db().clone(), app.redis(), config);
 
-    let body: Value = response.json().expect("slip response is JSON");
-    let slip_id: Uuid = body["id"].as_str().expect("slip id").parse().expect("uuid");
-
-    let (slipok_status, admin_status): (Option<String>, Option<String>) =
-        sqlx::query_as("SELECT slipok_status, admin_status FROM booking_slips WHERE id = $1")
-            .bind(slip_id)
-            .fetch_one(app.db())
+    let outcome =
+        loyalty_backend::services::slip_confirm::confirm_slip(&state, slip_id, booking_id, None)
             .await
-            .expect("read slip row");
-    assert_eq!(
-        slipok_status.as_deref(),
-        Some("verified"),
-        "the check itself passed — the hold is not the matcher's business"
-    );
-    assert_eq!(admin_status.as_deref(), Some("verified"));
+            .expect("the verify itself must not fail: the money did arrive");
 
     assert_eq!(
-        booking_status(app.db(), booking_id).await,
-        "pending",
+        outcome.admin_status.as_deref(),
+        Some("verified"),
+        "the slip is verified either way — the hold is not the matcher's \
+         business"
+    );
+    assert!(
+        !outcome.booking_confirmed,
         "the machine must never confirm a room nobody is holding any more"
     );
+    assert_eq!(
+        outcome.booking_not_confirmed_reason,
+        Some(loyalty_backend::services::slip_match::REASON_BOOKING_NOT_PAYABLE),
+        "and it has to say why, in the vocabulary slipok_check already uses"
+    );
+
+    assert_eq!(booking_status(app.db(), booking_id).await, "pending");
 
     let rows = audit_rows(app.db(), booking_id).await;
     let refusal = rows
