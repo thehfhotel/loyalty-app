@@ -385,6 +385,22 @@ pub struct SlipokConfig {
 
     /// SlipOK API key
     pub api_key: Option<String>,
+
+    /// Base API URL, without the branch id (`SLIPOK_API_URL`). Defaults to
+    /// the vendor endpoint inside `services::slipok`; overridable so
+    /// integration tests can point at a local mock server.
+    #[serde(default)]
+    pub api_url: Option<String>,
+
+    /// Kill switch for automatic slip verification (`SLIPOK_AUTO_VERIFY`).
+    ///
+    /// Defaults to **false** = shadow mode: SlipOK is still called and the
+    /// decision is still stored on the slip (`slipok_status='shadow_pass'`
+    /// when every check passed), but nothing is confirmed without an admin.
+    /// Only `true` lets a machine verify a slip. Flipping it is a restart,
+    /// not a deploy.
+    #[serde(default)]
+    pub auto_verify: bool,
 }
 
 impl SlipokConfig {
@@ -783,6 +799,7 @@ impl Settings {
             .set_default("security.max_file_size", 5_242_880)?
             .set_default("security.rate_limit_window_ms", 900_000)?
             .set_default("security.rate_limit_max_requests", 10_000)?
+            .set_default("slipok.auto_verify", false)?
             .set_default("cf_access.enabled", true)?
             .set_default("cf_access.aud", DEFAULT_CF_ACCESS_AUD)?
             .set_default("cf_access.issuer", default_cf_access_issuer())?
@@ -841,6 +858,8 @@ impl Settings {
             .set_override_option("email.imap.pass", env::var("IMAP_PASS").ok())?
             .set_override_option("slipok.branch_id", env::var("SLIPOK_BRANCH_ID").ok())?
             .set_override_option("slipok.api_key", env::var("SLIPOK_API_KEY").ok())?
+            .set_override_option("slipok.api_url", env::var("SLIPOK_API_URL").ok())?
+            .set_override_option("slipok.auto_verify", env::var("SLIPOK_AUTO_VERIFY").ok())?
             .set_override_option("promptpay.tax_id", env::var("PROMPTPAY_TAX_ID").ok())?
             .set_override_option("promptpay.hf_id", env::var("PROMPTPAY_HF_ID").ok())?
             .set_override_option(
