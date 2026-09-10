@@ -10,13 +10,16 @@ import {
   FiClock,
   FiRefreshCw,
   FiChevronUp,
-  FiChevronDown
+  FiChevronDown,
+  FiLink
 } from 'react-icons/fi';
 import AppShell from '../../components/layout/AppShell';
 import { Badge, Button, EmptyState, Input, Table, TabNav } from '../../components/ui';
 import type { BadgeTone, TableColumn, TabItem } from '../../components/ui';
 import SlipViewerSidebar from '../../components/admin/SlipViewerSidebar';
 import BookingEditModal from './BookingEditModal';
+import DepositLinkModal from './DepositLinkModal';
+import DepositLinkList from './DepositLinkList';
 import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAdminBookingSSE } from '../../hooks/useAdminBookingSSE';
@@ -148,6 +151,11 @@ const BookingManagement: React.FC = () => {
   const [initialLoading, setInitialLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'confirmed' | 'cancelled' | 'completed' | ''>('');
+  // B1: reception issues a deposit link for a booking it already took by
+  // phone, LINE or at the desk. The booking it creates lands in the list
+  // above because it carries a room type; the list below is the link's own
+  // lifecycle (expiry, revoke, reissue).
+  const [showDepositLinkModal, setShowDepositLinkModal] = useState(false);
 
   const pageSize = 10;
   const totalPages = Math.ceil(totalBookings / pageSize);
@@ -538,6 +546,15 @@ const BookingManagement: React.FC = () => {
     <AppShell variant="admin" title={t('admin.booking.bookingManagement.title')}>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <p className="text-caption text-ink-muted">{t('admin.booking.bookingManagement.subtitle')}</p>
+        <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          onClick={() => setShowDepositLinkModal(true)}
+          data-testid="open-deposit-link-modal"
+        >
+          <FiLink className="h-4 w-4" aria-hidden="true" />
+          {t('depositLink.admin.open')}
+        </Button>
         <Button
           type="button"
           variant="secondary"
@@ -547,6 +564,7 @@ const BookingManagement: React.FC = () => {
           <FiRefreshCw className={`h-4 w-4 ${bookingsQuery.isRefetching ? 'animate-spin' : ''}`} aria-hidden="true" />
           {t('common.refresh')}
         </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-6 lg:flex-row">
@@ -674,6 +692,16 @@ const BookingManagement: React.FC = () => {
           />
         </div>
       </div>
+
+      {/* Deposit links issued from this desk (B1) */}
+      <div className="mt-6">
+        <DepositLinkList />
+      </div>
+
+      <DepositLinkModal
+        open={showDepositLinkModal}
+        onClose={() => setShowDepositLinkModal(false)}
+      />
 
       {/* Edit Modal */}
       {showEditModal && selectedBooking && (
