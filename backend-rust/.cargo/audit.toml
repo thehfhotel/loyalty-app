@@ -23,4 +23,18 @@
 # Until then, keep this entry; do NOT delete it without confirming the
 # above paths still hold. Removing it makes the daily cargo-audit job
 # permanently red and drowns out future real advisories.
-ignore = ["RUSTSEC-2023-0071"]
+
+# RUSTSEC-2026-0235 — advisory against `rkyv` 0.7.46.
+#
+# Why it doesn't apply here: rkyv enters Cargo.lock ONLY as a
+# never-enabled optional dependency of `rust_decimal` 1.42.1 —
+# `cargo tree -i rkyv` is empty, i.e. it is never compiled into any
+# artifact. No patched rkyv 0.7.x exists to update to.
+#
+# Revisit when: rust_decimal ships the fix for
+# https://github.com/paupino/rust-decimal/issues/819 (still open) —
+# then remove this entry and run `cargo update -p rust_decimal`.
+#
+# Owner-approved 2026-08-14; full triage in loyalty-app issue #387
+# (2026-08-14 comment).
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0235"]

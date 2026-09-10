@@ -69,7 +69,8 @@ impl Modify for SecurityAddon {
         (name = "loyalty", description = "Loyalty program endpoints - tiers, points, transactions"),
         (name = "coupons", description = "Coupon management and redemption endpoints"),
         (name = "surveys", description = "Survey management and response endpoints"),
-        (name = "sse", description = "Server-Sent Events for real-time updates")
+        (name = "sse", description = "Server-Sent Events for real-time updates"),
+        (name = "deposit-links", description = "Deposit request links — the public guest page and the reception endpoints behind it")
     ),
     paths(
         // Health endpoints
@@ -123,6 +124,13 @@ impl Modify for SecurityAddon {
         // SSE endpoints
         crate::openapi::paths::sse_events,
         crate::openapi::paths::sse_info,
+        // Deposit request links (B1)
+        crate::openapi::paths::deposit_link_public_get,
+        crate::openapi::paths::deposit_link_public_slip,
+        crate::openapi::paths::admin_create_deposit_link,
+        crate::openapi::paths::admin_list_deposit_links,
+        crate::openapi::paths::admin_revoke_deposit_link,
+        crate::openapi::paths::admin_reissue_deposit_link,
     ),
     components(
         schemas(
@@ -1499,6 +1507,118 @@ pub mod schemas {
 pub mod paths {
     #[allow(unused_imports)]
     use super::schemas::*;
+
+    // ============================================================================
+    // Deposit request links (B1)
+    // ============================================================================
+    //
+    // Bodies are documented in the response text rather than as registered
+    // schemas: these DTOs live in `routes::deposit_links` /
+    // `routes::admin_deposit_links` and the contract that matters is the
+    // one locked in `b1-deposit-link-spec.md` §2, which the frontend
+    // agent builds against by hand.
+
+    /// Read a deposit request link (public — the token is the capability)
+    ///
+    /// The token travels in `X-Deposit-Token`, never in the path or query
+    /// string: a path is written to the nginx and Cloudflare access logs
+    /// on every request, and this token is a bearer credential for a
+    /// payment. The guest link is `https://<frontend>/d#<token>`, whose
+    /// fragment no server ever sees.
+    #[utoipa::path(
+        get,
+        path = "/deposit",
+        tag = "deposit-links",
+        params(("X-Deposit-Token" = String, Header, description = "The 43-character link token")),
+        responses(
+            (status = 200, description = "The guest page payload. `state` is one of awaiting_payment | checking | confirmed | expired | revoked"),
+            (status = 404, description = "No link matches this token, or the header is absent or malformed — the same response either way, carrying no detail"),
+            (status = 429, description = "Rate limited. Budgets are charged narrowest first: 30/min per link, then 120/min per client IP, then one global bucket per route")
+        )
+    )]
+    pub async fn deposit_link_public_get() {}
+
+    /// Upload a payment slip against a deposit request link (public)
+    #[utoipa::path(
+        post,
+        path = "/deposit/slip",
+        tag = "deposit-links",
+        params(("X-Deposit-Token" = String, Header, description = "The 43-character link token")),
+        request_body(content = String, description = "multipart/form-data with a `file` part (JPEG or PNG, 10 MB max)", content_type = "multipart/form-data"),
+        responses(
+            (status = 201, description = "Slip stored; `state` and `slipokStatus` reflect the decision already made"),
+            (status = 400, description = "Not a JPEG or PNG, or no file part"),
+            (status = 404, description = "No link matches this token, or the header is absent or malformed"),
+            (status = 409, description = "The link has been revoked"),
+            (status = 413, description = "File larger than 10 MB"),
+            (status = 429, description = "Rate limited. Charged narrowest first: 30 attempts/hour per link, then 40/hour per client IP, then the global bucket; plus 5 *stored* slips/hour per link. Nothing is written to storage when a budget refuses"),
+            (status = 503, description = "A budget could not be evaluated (Redis unreachable). This route fails closed because it writes and has no authentication: nothing is stored, and the body carries a plain Thai/English \"try again in a moment\"")
+        )
+    )]
+    pub async fn deposit_link_public_slip() {}
+
+    /// Issue a deposit request link for a booking reception already took
+    #[utoipa::path(
+        post,
+        path = "/admin/deposit-links",
+        tag = "deposit-links",
+        security(("bearer_auth" = [])),
+        responses(
+            (status = 201, description = "Booking and link created. The token is returned ONCE and never again. `url` is `https://<FRONTEND_URL>/d#<token>` — the primary action: reception copies it and sends it by any channel. `lineShareUrl` wraps the same link in a LINE share intent, which hands the link to LINE when tapped"),
+            (status = 400, description = "Validation failed, or this property has no PromptPay receiving account configured so the link would have no QR"),
+            (status = 403, description = "Admin access required")
+        )
+    )]
+    pub async fn admin_create_deposit_link() {}
+
+    /// List deposit request links
+    #[utoipa::path(
+        get,
+        path = "/admin/deposit-links",
+        tag = "deposit-links",
+        params(
+            ("status" = Option<String>, Query, description = "open | paid | expired | revoked"),
+            ("page" = Option<i64>, Query, description = "1-indexed page"),
+            ("limit" = Option<i64>, Query, description = "Page size, 1-100")
+        ),
+        security(("bearer_auth" = [])),
+        responses(
+            (status = 200, description = "Links and the total matching the filter"),
+            (status = 403, description = "Admin access required")
+        )
+    )]
+    pub async fn admin_list_deposit_links() {}
+
+    /// Revoke a deposit request link
+    #[utoipa::path(
+        post,
+        path = "/admin/deposit-links/{id}/revoke",
+        tag = "deposit-links",
+        params(("id" = String, Path, description = "Link id")),
+        security(("bearer_auth" = [])),
+        responses(
+            (status = 200, description = "The link is revoked (idempotent)"),
+            (status = 403, description = "Admin access required"),
+            (status = 404, description = "No such link")
+        )
+    )]
+    pub async fn admin_revoke_deposit_link() {}
+
+    /// Reissue a deposit request link, killing the old token
+    #[utoipa::path(
+        post,
+        path = "/admin/deposit-links/{id}/reissue",
+        tag = "deposit-links",
+        params(("id" = String, Path, description = "Link id to replace")),
+        security(("bearer_auth" = [])),
+        responses(
+            (status = 201, description = "A new link for the same booking; every previously live token on it is dead. Safe to repeat: reissuing the same link id twice returns a link, not a conflict"),
+            (status = 400, description = "The body was present but could not be read (an absent or empty body is fine and means \"use the default expiry\")"),
+            (status = 403, description = "Admin access required"),
+            (status = 404, description = "No such link")
+        )
+    )]
+    pub async fn admin_reissue_deposit_link() {}
 
     // ============================================================================
     // Health Endpoints

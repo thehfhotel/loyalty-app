@@ -13,67 +13,11 @@ import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button, Card, FormField, Input, Modal, Select, Textarea, TabNav } from '../../components/ui';
 import type { TabItem } from '../../components/ui';
+import { adminBookingService } from '../../services/adminBookingService';
+import type { AdminBooking as Booking } from '../../services/adminBookingService';
 
-// Types matching BookingManagement
-interface BookingUser {
-  id: string;
-  firstName: string | null;
-  lastName: string | null;
-  email: string;
-  membershipId: string | null;
-  phone: string | null;
-}
-
-interface RoomType {
-  id: string;
-  name: string;
-}
-
-interface BookingSlip {
-  id: string;
-  imageUrl: string;
-  uploadedAt: string;
-  slipokStatus: 'pending' | 'verified' | 'failed' | 'quota_exceeded';
-  slipokVerifiedAt: string | null;
-  adminStatus: 'pending' | 'verified' | 'needs_action';
-  adminVerifiedAt: string | null;
-  adminVerifiedBy: string | null;
-  adminVerifiedByName: string | null;
-}
-
-interface BookingAuditEntry {
-  id: string;
-  action: string;
-  adminId: string;
-  adminName: string;
-  oldValue: string | null;
-  newValue: string | null;
-  notes: string | null;
-  createdAt: string;
-}
-
-interface Booking {
-  id: string;
-  userId: string;
-  user: BookingUser;
-  roomTypeId: string;
-  roomType: RoomType;
-  checkInDate: string;
-  checkOutDate: string;
-  numberOfGuests: number;
-  totalPrice: number;
-  paymentType: 'full' | 'deposit';
-  paymentAmount: number | null;
-  discountAmount: number | null;
-  discountReason: string | null;
-  status: 'confirmed' | 'cancelled' | 'completed';
-  notes: string | null;
-  adminNotes: string | null;
-  slip: BookingSlip | null;
-  auditHistory: BookingAuditEntry[];
-  createdAt: string;
-  updatedAt: string;
-}
+// Booking shapes come from the admin booking service, which mirrors the
+// serde DTOs in `backend-rust/src/routes/admin_bookings.rs`.
 
 interface BookingEditModalProps {
   booking: Booking;
@@ -83,6 +27,10 @@ interface BookingEditModalProps {
 }
 
 type TabType = 'details' | 'payment' | 'audit' | 'cancel';
+
+/** `<input type="date">` wants `YYYY-MM-DD`. The admin routes serialise a
+ *  `NaiveDate` already, but a legacy row may arrive as a full timestamp. */
+const toDateInputValue = (value: string): string => value.split('T')[0] ?? value;
 
 const BookingEditModal: React.FC<BookingEditModalProps> = ({
   booking,
@@ -96,15 +44,19 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   const headingRef = useRef<HTMLParagraphElement>(null);
 
   // Form state - Details tab
-  const [checkInDate, setCheckInDate] = useState(booking.checkInDate.split('T')[0]);
-  const [checkOutDate, setCheckOutDate] = useState(booking.checkOutDate.split('T')[0]);
+  const [checkInDate, setCheckInDate] = useState(toDateInputValue(booking.checkInDate));
+  const [checkOutDate, setCheckOutDate] = useState(toDateInputValue(booking.checkOutDate));
   const [numberOfGuests, setNumberOfGuests] = useState(booking.numberOfGuests);
   const [roomTypeId, setRoomTypeId] = useState(booking.roomTypeId);
   const [adminNotes, setAdminNotes] = useState(booking.adminNotes ?? '');
 
   // Form state - Payment tab
-  const [totalPrice, setTotalPrice] = useState(booking.totalPrice);
-  const [discountAmount, setDiscountAmount] = useState(booking.discountAmount ?? 0);
+  // `totalPrice` / `discountAmount` arrive as strings ("6000.00") — the Rust
+  // `Decimal`s serialise via `serialize_str`. Coerce at the seed so the
+  // number inputs, the arithmetic below and the discount POST (whose handler
+  // deserialises an `f64` and rejects a string) all see a number.
+  const [totalPrice, setTotalPrice] = useState(Number(booking.totalPrice));
+  const [discountAmount, setDiscountAmount] = useState(Number(booking.discountAmount ?? 0));
   const [discountReason, setDiscountReason] = useState(booking.discountReason ?? '');
   const [showDiscountForm, setShowDiscountForm] = useState(false);
 
@@ -113,25 +65,29 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
 
-  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-  // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-  // Fetch room types for dropdown
-  const roomTypesQuery = useQuery<RoomType[]>({
-    queryKey: ['booking', 'roomTypes'],
-    queryFn: async () => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      return [];
-    },
+  // `GET /api/admin/bookings/room-types` — active types only, so the modal
+  // cannot move a booking onto a hidden one.
+  const roomTypesQuery = useQuery({
+    queryKey: ['admin', 'bookings', 'roomTypes'],
+    queryFn: () => adminBookingService.listRoomTypes(),
   });
   const roomTypes = roomTypesQuery.data ?? [];
 
-  // Update booking mutation
+  // `PUT /api/admin/bookings/:id` — the handler writes only the fields it
+  // is sent, and ignores anything outside its allow-list.
   const updateBookingMutation = useMutation({
-    mutationFn: async (_data: { bookingId: string; checkInDate: Date; checkOutDate: Date; numGuests: number; roomTypeId: string; notes?: string; totalPrice: number }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
+    mutationFn: (data: {
+      bookingId: string;
+      checkInDate: string;
+      checkOutDate: string;
+      numberOfGuests: number;
+      roomTypeId: string;
+      adminNotes: string;
+      totalPrice: number;
+      paymentAmount: number;
+    }) => {
+      const { bookingId, ...body } = data;
+      return adminBookingService.updateBooking(bookingId, body);
     },
     onSuccess: () => {
       toast.success(t('admin.booking.bookingManagement.messages.bookingUpdated'));
@@ -145,11 +101,11 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
 
   // Apply discount mutation
   const applyDiscountMutation = useMutation({
-    mutationFn: async (_data: { bookingId: string; discountAmount: number; reason: string }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
-    },
+    mutationFn: (data: { bookingId: string; discountAmount: number; reason: string }) =>
+      adminBookingService.applyDiscount(data.bookingId, {
+        discountAmount: data.discountAmount,
+        reason: data.reason,
+      }),
     onSuccess: () => {
       toast.success(t('admin.booking.bookingManagement.messages.discountApplied'));
       setShowDiscountForm(false);
@@ -162,11 +118,8 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
 
   // Cancel booking mutation
   const cancelBookingMutation = useMutation({
-    mutationFn: async (_data: { bookingId: string; reason: string }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
-    },
+    mutationFn: (data: { bookingId: string; reason: string }) =>
+      adminBookingService.cancelBooking(data.bookingId, { reason: data.reason }),
     onSuccess: () => {
       toast.success(t('admin.booking.cancel.success'));
       setIsCancelling(false);
@@ -182,13 +135,13 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       // Reset form state when modal opens
-      setCheckInDate(booking.checkInDate.split('T')[0]);
-      setCheckOutDate(booking.checkOutDate.split('T')[0]);
+      setCheckInDate(toDateInputValue(booking.checkInDate));
+      setCheckOutDate(toDateInputValue(booking.checkOutDate));
       setNumberOfGuests(booking.numberOfGuests);
       setRoomTypeId(booking.roomTypeId);
       setAdminNotes(booking.adminNotes ?? '');
-      setTotalPrice(booking.totalPrice);
-      setDiscountAmount(booking.discountAmount ?? 0);
+      setTotalPrice(Number(booking.totalPrice));
+      setDiscountAmount(Number(booking.discountAmount ?? 0));
       setDiscountReason(booking.discountReason ?? '');
       setActiveTab('details');
       // Reset cancel form state
@@ -196,21 +149,33 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
       setConfirmCancel(false);
       setIsCancelling(false);
     }
-  }, [isOpen, booking]);
+    // Keyed on the booking's *id*, not the object: the page re-renders this
+    // modal with a fresher object when the detail read lands, and resetting
+    // on identity would wipe whatever the admin had already typed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, booking.id]);
 
   const handleSave = async () => {
     setIsSaving(true);
-    // Create Date objects for the API (which expects Date type via z.coerce.date())
-    const checkIn = new Date(checkInDate + 'T00:00:00');
-    const checkOut = new Date(checkOutDate + 'T00:00:00');
-
+    // The handler parses `NaiveDate`, so send the plain `YYYY-MM-DD` the
+    // date inputs already hold — serialising a `Date` would send an instant
+    // and shift the stay by a day either side of UTC.
     await updateBookingMutation.mutateAsync({
       bookingId: booking.id,
-      checkInDate: checkIn,
-      checkOutDate: checkOut,
-      numGuests: numberOfGuests,
+      checkInDate,
+      checkOutDate,
+      numberOfGuests,
       roomTypeId,
-      notes: adminNotes || undefined,
+      // `notes` is the guest's own note and stays read-only in this modal;
+      // what the admin types here is `adminNotes`. Sent unconditionally: the
+      // handler reads an absent field as "keep current", so `undefined` for
+      // an empty box would silently discard a cleared note behind a success
+      // toast. An empty string is a legitimate value it will write.
+      adminNotes,
+      // The Payment tab shows this figure under the editable total; write it
+      // too, or the stored Payment Amount contradicts what the admin was
+      // just shown the moment the total changes.
+      paymentAmount: calculatePaymentAmount(totalPrice),
       totalPrice
     });
   };
@@ -243,10 +208,13 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
 
   // Calculate payment amount based on payment type
   const calculatePaymentAmount = (price: number): number => {
+    // Clamped: the handler rejects a negative paymentAmount, and the figure
+    // rendered under the total is the one saved, so both clamp identically.
+    const net = Math.max(0, price - discountAmount);
     if (booking.paymentType === 'full') {
-      return price - discountAmount;
+      return net;
     }
-    return Math.ceil((price - discountAmount) * 0.5); // 50% deposit
+    return Math.ceil(net * 0.5); // 50% deposit
   };
 
   const formatAuditAction = (action: string): string => {
@@ -479,7 +447,7 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
                 </span>
                 <span className="ml-2 font-semibold text-ink">
                   {booking.paymentAmount !== null
-                    ? `${booking.paymentAmount.toLocaleString()} THB`
+                    ? `${Number(booking.paymentAmount).toLocaleString()} THB`
                     : '-'}
                 </span>
               </div>
@@ -506,14 +474,14 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
           </div>
 
           {/* Current Discount */}
-          {booking.discountAmount && booking.discountAmount > 0 && (
+          {Number(booking.discountAmount ?? 0) > 0 && (
             <Card className="border-success-200 bg-success-50">
               <h4 className="mb-2 flex items-center gap-2 text-caption font-semibold text-success-700">
                 <FiPercent className="h-4 w-4" aria-hidden="true" />
                 {t('admin.booking.bookingManagement.editModal.currentDiscount')}
               </h4>
               <p className="text-title text-success-700">
-                -{booking.discountAmount.toLocaleString()} THB
+                -{Number(booking.discountAmount).toLocaleString()} THB
               </p>
               {booking.discountReason && (
                 <p className="mt-1 text-caption text-success-600">
@@ -571,7 +539,7 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
                   className="flex-1"
                   onClick={() => {
                     setShowDiscountForm(false);
-                    setDiscountAmount(booking.discountAmount ?? 0);
+                    setDiscountAmount(Number(booking.discountAmount ?? 0));
                     setDiscountReason(booking.discountReason ?? '');
                   }}
                 >
@@ -709,7 +677,7 @@ const BookingEditModal: React.FC<BookingEditModalProps> = ({
                   <div>
                     <span className="text-ink-muted">{t('admin.booking.bookingManagement.editModal.totalPrice')}:</span>
                     <span className="ml-2 font-semibold text-ink">
-                      {booking.totalPrice.toLocaleString()} THB
+                      {Number(booking.totalPrice).toLocaleString()} THB
                     </span>
                   </div>
                 </div>

@@ -92,12 +92,21 @@ jobs:
 
       - name: ESLint
         working-directory: ./frontend
-        # Ratchet, same idiom as the design baseline: `eslint .` alone exits 0
-        # on warnings, so every warn-level rule (including the security ones)
-        # was decorative in the deploy-gating workflow. Pinning the current
-        # count blocks NEW warnings without a big code churn.
-        # Lower this number as warnings are fixed; never raise it.
-        run: npm run lint -- --max-warnings 14
+        # Ratchet, same idiom as the design baseline. `npm run lint` chains
+        # `eslint ... && node scripts/check-design.cjs`, so a `--max-warnings`
+        # flag appended by `npm run lint -- --max-warnings N` lands on the
+        # *last* command in that chain (check-design.cjs, which ignores it)
+        # rather than on eslint — eslint always exited 0 on warnings and the
+        # ratchet was decorative. Split into dedicated lint:eslint:ci /
+        # lint:design:ci scripts so the flag reaches eslint directly.
+        # Pinning the current warning count blocks NEW warnings without a
+        # big code churn. Lower this number as warnings are fixed; never
+        # raise it (see frontend/package.json's lint:eslint:ci script).
+        run: npm run lint:eslint:ci
+
+      - name: Design ratchet
+        working-directory: ./frontend
+        run: npm run lint:design:ci
 
       # CLAUDE.md hard rule 4 ("never bypass, skip, or fake tests") is enforced
       # by scripts/validate-test-integrity.sh, which pre-push runs via

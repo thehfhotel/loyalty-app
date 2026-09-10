@@ -1467,6 +1467,9 @@ pub fn router() -> Router<AppState> {
         // viewer sidebar. Conceptually unrelated to room inventory, so
         // it lives in its own module.
         .merge(crate::routes::admin_slips::router())
+        // Deposit request links (B1): issue / list / revoke / reissue the
+        // link reception sends a guest who booked by phone or at the desk.
+        .merge(crate::routes::admin_deposit_links::router())
         // Apply auth middleware to all routes
         .layer(middleware::from_fn(auth_middleware))
 }
