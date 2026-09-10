@@ -1,12 +1,18 @@
 //! Integration coverage for A11: verifying a slip has to move the booking
-//! it pays for, whoever pressed the button.
+//! it pays for, whoever pressed the button — and the two who can press it
+//! do not have the same authority.
 //!
-//! Before this, `services::slip_confirm` flipped a booking to `confirmed`
-//! only when it was a PMS channel booking (`pms_booking_id` set) or came
-//! from a deposit request link (`booking_source = 'deposit_link'`). An
-//! ordinary in-app booking whose slip reception verified kept `pending`
-//! forever, so a guest who had paid still read "pending" on their booking
-//! page — the D6 gap.
+//! `services::slip_confirm` used to flip a non-PMS booking only when
+//! `booking_source = 'deposit_link'`. Widening that to every booking the PMS
+//! does not hold is a *forward* fix: nothing in this repo currently creates a
+//! non-PMS booking in `pending` from any other source (the in-app create
+//! writes `'confirmed'` outright), so the `'app'` fixtures below are
+//! hand-inserted precisely because the application cannot produce that row
+//! yet. They prove the branch is right for the app booking-with-deposit flow
+//! that is coming, not that a live booking was ever rescued by it.
+//!
+//! The rule that *does* move live rows is the second one: the automatic path
+//! may not confirm a booking whose hold has lapsed, and a human still may.
 //!
 //! What is asserted here:
 //!
@@ -17,11 +23,18 @@
 //!   drift;
 //! - a PMS channel booking still confirms *through the payment event*, and
 //!   is never touched by the local flip;
-//! - a booking whose hold has already expired is refused: it stays
-//!   `pending` and the refusal is recorded as `booking_not_payable`, the
-//!   same word `slipok_check` writes for exactly this state;
+//! - **an admin may confirm a booking whose hold has already expired** —
+//!   reception finishing a lapsed deposit link is what the manual queue is
+//!   for, and it is the only way to complete that booking;
+//! - **the machine may not**, even when the hold lapses during the SlipOK
+//!   round-trip: the booking stays `pending` and the refusal is recorded as
+//!   `booking_not_payable`, the same word `slipok_check` writes for exactly
+//!   this state;
 //! - a deposit-link booking still confirms, so the branch B1 shipped is
-//!   preserved by the generalisation rather than replaced by it.
+//!   preserved by the generalisation rather than replaced by it;
+//! - the silent half of "nothing moved" stays silent: a second Verify on an
+//!   already-confirmed booking, and a Verify on a cancelled one, refuse
+//!   nothing and write no refusal row.
 
 use axum::body::Body;
 use axum::http::{header, Request};
@@ -317,6 +330,15 @@ async fn admin_verify_confirms_an_app_booking() {
 
     let body: Value = response.json().expect("verify response is JSON");
     assert_eq!(body["adminStatus"].as_str(), Some("verified"));
+    assert_eq!(
+        body["bookingConfirmed"].as_bool(),
+        Some(true),
+        "the actor is told what the verify did to the booking: {body}"
+    );
+    assert!(
+        body["bookingNotConfirmedReason"].is_null(),
+        "nothing was refused: {body}"
+    );
 
     assert_eq!(
         booking_status(app.db(), booking_id).await,
@@ -501,26 +523,32 @@ async fn a_channel_booking_still_confirms_through_the_pms_event() {
 }
 
 // ============================================================================
-// 3. An expired hold is refused
+// 3. An expired hold: the human overrides it, the machine does not
 // ============================================================================
 
-/// The room is no longer held, so the payment cannot confirm anything: the
-/// slip is still verified (the money did arrive and the desk said so), the
-/// booking stays `pending`, and the refusal is on the record as
-/// `booking_not_payable` — the same word the automatic check writes when it
-/// meets this state before uploading a decision.
+/// Reception's Verify is the manual completion path for a deposit link
+/// whose 48 h window closed before anyone looked at the transfer.
+/// `routes::deposit_links` deliberately keeps accepting the guest's upload
+/// after expiry so that a human can finish the booking, and this is the
+/// button that finishes it: there is no admin endpoint that can set a
+/// booking to `confirmed` any other way.
 #[tokio::test]
-async fn an_expired_hold_is_not_confirmed_and_says_why() {
+async fn an_admin_may_confirm_a_booking_whose_hold_expired() {
     let app = TestApp::new_with_config(&promptpay_only)
         .await
         .expect("create test app");
     let admin = seed_admin(&app, "a11-admin-expired@test.com").await;
     let guest = seed_guest(&app, "a11-guest-expired@test.com").await;
 
-    let booking_id = seed_app_booking(
+    // The shape `routes::admin_deposit_links` writes, with the link's
+    // 48 h expiry now in the past.
+    let booking_id = seed_booking(
         app.db(),
         guest.id,
-        "Expired",
+        None,
+        None,
+        None,
+        Some("deposit_link"),
         Some(Utc::now() - Duration::hours(1)),
     )
     .await;
@@ -530,19 +558,125 @@ async fn an_expired_hold_is_not_confirmed_and_says_why() {
     let response = client
         .post(
             &format!("/api/admin/bookings/slips/{}/verify", slip_id),
-            &json!({ "adminNotes": "เลยเวลาแล้ว" }),
+            &json!({ "adminNotes": "โอนมาก่อนหมดเวลา ตรวจสอบแล้ว" }),
         )
         .await;
-    // The verify itself is not an error: refusing it would leave the desk
-    // unable to record a payment that really did arrive.
     response.assert_status(200);
+
     let body: Value = response.json().expect("verify response is JSON");
     assert_eq!(body["adminStatus"].as_str(), Some("verified"));
+    assert_eq!(
+        body["bookingConfirmed"].as_bool(),
+        Some(true),
+        "the human decision stands: {body}"
+    );
+
+    assert_eq!(
+        booking_status(app.db(), booking_id).await,
+        "confirmed",
+        "an expired hold is a reason for a machine to stand aside, never a \
+         reason to refuse the desk the only way it has to complete this \
+         booking"
+    );
+
+    let rows = audit_rows(app.db(), booking_id).await;
+    assert!(
+        !rows
+            .iter()
+            .any(|(action, _, _)| action == ACTION_BOOKING_NOT_CONFIRMED),
+        "nothing was refused: {rows:?}"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// The machine's half of the same rule, in the one window where it can
+/// actually happen: `slipok_check` reads `hold_expires_at` *before* the
+/// SlipOK round-trip, so a hold can lapse while the vendor is thinking. The
+/// mock therefore holds the response until after the fixture's hold has
+/// expired — `payable` was true when it was read, and false by the time the
+/// confirmation runs.
+///
+/// The slip is still verified (the money did arrive, and the check agreed),
+/// but the booking must not move, and the refusal has to be on the record
+/// with the same word `slipok_check` uses for this state.
+#[tokio::test]
+async fn the_machine_will_not_confirm_a_hold_that_lapsed_mid_check() {
+    /// How long the fixture's hold has left when the upload starts.
+    const HOLD_SECS: i64 = 2;
+    /// How long the vendor "thinks" for. Comfortably past the hold, and
+    /// comfortably inside the SlipOK client's 8 s timeout and the inline
+    /// check's budget, so neither ceiling decides this test.
+    const VENDOR_DELAY_SECS: u64 = 4;
+
+    let slipok_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("/{}", BRANCH_ID)))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(std::time::Duration::from_secs(VENDOR_DELAY_SECS))
+                .set_body_json(slipok_success_body(
+                    "A11RACE0001",
+                    SLIP_AMOUNT,
+                    MASKED_RECEIVER,
+                )),
+        )
+        .expect(1)
+        .mount(&slipok_mock)
+        .await;
+
+    let slipok_uri = slipok_mock.uri();
+    let mutate = move |cfg: &mut loyalty_backend::Settings| {
+        cfg.slipok.api_key = Some("test-key".to_string());
+        cfg.slipok.branch_id = Some(BRANCH_ID.to_string());
+        cfg.slipok.api_url = Some(slipok_uri.clone());
+        cfg.slipok.auto_verify = true;
+        cfg.promptpay.hf_id = Some(RECEIVING_ID.to_string());
+    };
+
+    let app = TestApp::new_with_config(&mutate)
+        .await
+        .expect("create test app");
+    let guest = seed_guest(&app, "a11-race-guest@test.com").await;
+
+    let booking_id = seed_app_booking(
+        app.db(),
+        guest.id,
+        "Race",
+        Some(Utc::now() + Duration::seconds(HOLD_SECS)),
+    )
+    .await;
+    let slip_url = upload_slip(&app, &guest).await;
+
+    let client = app.authenticated_client(&guest.id, &guest.email);
+    let response = client
+        .post(
+            &format!("/api/bookings/{}/slips", booking_id),
+            &json!({ "slipUrl": slip_url }),
+        )
+        .await;
+    response.assert_status(201);
+
+    let body: Value = response.json().expect("slip response is JSON");
+    let slip_id: Uuid = body["id"].as_str().expect("slip id").parse().expect("uuid");
+
+    let (slipok_status, admin_status): (Option<String>, Option<String>) =
+        sqlx::query_as("SELECT slipok_status, admin_status FROM booking_slips WHERE id = $1")
+            .bind(slip_id)
+            .fetch_one(app.db())
+            .await
+            .expect("read slip row");
+    assert_eq!(
+        slipok_status.as_deref(),
+        Some("verified"),
+        "the check itself passed — the hold is not the matcher's business"
+    );
+    assert_eq!(admin_status.as_deref(), Some("verified"));
 
     assert_eq!(
         booking_status(app.db(), booking_id).await,
         "pending",
-        "a booking whose hold has lapsed must never be confirmed by a slip"
+        "the machine must never confirm a room nobody is holding any more"
     );
 
     let rows = audit_rows(app.db(), booking_id).await;
@@ -551,16 +685,17 @@ async fn an_expired_hold_is_not_confirmed_and_says_why() {
         .find(|(action, _, _)| action == ACTION_BOOKING_NOT_CONFIRMED)
         .unwrap_or_else(|| panic!("the refusal must be on the record: {rows:?}"));
     assert_eq!(
-        refusal.1, admin.id,
+        refusal.1, SLIPOK_SYSTEM_USER_ID,
         "attributed to the same actor as the verify"
     );
+    let reason = refusal.2.as_deref().unwrap_or_default();
     assert!(
-        refusal
-            .2
-            .as_deref()
-            .is_some_and(|reason| reason.contains("booking_not_payable")),
-        "the reason vocabulary is the machine's own: {:?}",
-        refusal.2
+        reason.contains("booking_not_payable"),
+        "the reason vocabulary is the machine's own: {reason:?}"
+    );
+    assert!(
+        reason.contains("การจองนี้ยังรับชำระเงินไม่ได้ในตอนนี้"),
+        "the desk reads this row in Thai, in the locked wording: {reason:?}"
     );
 
     app.cleanup().await.ok();
@@ -606,6 +741,128 @@ async fn a_deposit_link_booking_still_confirms() {
         .assert_status(200);
 
     assert_eq!(booking_status(app.db(), booking_id).await, "confirmed");
+
+    app.cleanup().await.ok();
+}
+
+// ============================================================================
+// 5. The silent half of "nothing moved"
+// ============================================================================
+
+/// `rows_affected() == 0` has two causes and only one of them is a refusal.
+/// Pressing Verify twice is the ordinary one: the second press confirms
+/// nothing because there is nothing left to confirm, and it must not leave a
+/// `booking_not_confirmed` row behind. Those rows would be doubly harmful —
+/// the sidebar renders only the newest three, so a run of them pushes the
+/// real `slip_verified` entry out of view.
+#[tokio::test]
+async fn verifying_twice_confirms_once_and_refuses_nothing() {
+    let app = TestApp::new_with_config(&promptpay_only)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "a11-admin-twice@test.com").await;
+    let guest = seed_guest(&app, "a11-guest-twice@test.com").await;
+
+    let booking_id = seed_app_booking(app.db(), guest.id, "Twice", None).await;
+    let slip_id = seed_pending_slip(app.db(), booking_id, guest.id).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let url = format!("/api/admin/bookings/slips/{}/verify", slip_id);
+
+    let first: Value = client
+        .post(&url, &json!({}))
+        .await
+        .json()
+        .expect("first verify is JSON");
+    assert_eq!(first["bookingConfirmed"].as_bool(), Some(true));
+
+    let second_response = client.post(&url, &json!({})).await;
+    second_response.assert_status(200);
+    let second: Value = second_response.json().expect("second verify is JSON");
+    assert_eq!(
+        second["adminStatus"].as_str(),
+        Some("verified"),
+        "re-verifying is allowed and idempotent"
+    );
+    assert_eq!(
+        second["bookingConfirmed"].as_bool(),
+        Some(false),
+        "the second press confirmed nothing, and says so: {second}"
+    );
+    assert!(
+        second["bookingNotConfirmedReason"].is_null(),
+        "but it refused nothing either — there was nothing left to move: \
+         {second}"
+    );
+
+    assert_eq!(booking_status(app.db(), booking_id).await, "confirmed");
+
+    let rows = audit_rows(app.db(), booking_id).await;
+    assert!(
+        !rows
+            .iter()
+            .any(|(action, _, _)| action == ACTION_BOOKING_NOT_CONFIRMED),
+        "an idempotent re-verify writes no refusal row: {rows:?}"
+    );
+    // Each human press is a deliberate action and is audited as one; what
+    // must not grow is the refusal count above.
+    assert_eq!(
+        rows.iter()
+            .filter(|(action, _, _)| action == "slip_verified")
+            .count(),
+        2,
+        "one slip_verified row per press: {rows:?}"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// The other silent cause: a booking that is no longer `pending` at all. A
+/// cancelled booking is not moved by a slip — and it is not "refused"
+/// either, because an expired hold is not why it did not move.
+#[tokio::test]
+async fn a_cancelled_booking_is_never_moved_by_a_verify() {
+    let app = TestApp::new_with_config(&promptpay_only)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "a11-admin-cancelled@test.com").await;
+    let guest = seed_guest(&app, "a11-guest-cancelled@test.com").await;
+
+    let booking_id = seed_app_booking(app.db(), guest.id, "Cancelled", None).await;
+    let slip_id = seed_pending_slip(app.db(), booking_id, guest.id).await;
+
+    sqlx::query("UPDATE bookings SET status = 'cancelled' WHERE id = $1")
+        .bind(booking_id)
+        .execute(app.db())
+        .await
+        .expect("cancel the fixture booking");
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/verify", slip_id),
+            &json!({}),
+        )
+        .await;
+    response.assert_status(200);
+    let body: Value = response.json().expect("verify response is JSON");
+    assert_eq!(body["bookingConfirmed"].as_bool(), Some(false));
+    assert!(body["bookingNotConfirmedReason"].is_null());
+
+    assert_eq!(
+        booking_status(app.db(), booking_id).await,
+        "cancelled",
+        "a verified slip must not resurrect a cancelled booking"
+    );
+
+    let rows = audit_rows(app.db(), booking_id).await;
+    assert!(
+        !rows
+            .iter()
+            .any(|(action, _, _)| action == ACTION_BOOKING_NOT_CONFIRMED),
+        "not payable is about the hold, not about every non-pending status: \
+         {rows:?}"
+    );
 
     app.cleanup().await.ok();
 }

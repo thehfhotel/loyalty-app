@@ -146,6 +146,47 @@ pub struct AdminSlipResponse {
     /// responses report `false` by construction; the value is `true` on the
     /// read surfaces that render a slip the machine verified.
     pub auto_verified: bool,
+    /// True when this call moved the booking the slip pays for to
+    /// `confirmed`.
+    ///
+    /// `false` is not an error and usually means "there was nothing to move"
+    /// — the booking was already `confirmed` (this endpoint deliberately
+    /// allows a re-verify), or cancelled, or the PMS owns it and answered
+    /// the payment event. It is `booking_not_confirmed_reason` that says a
+    /// confirmation was *refused*.
+    pub booking_confirmed: bool,
+    /// Set only when a verified slip was refused the booking it pays for —
+    /// today only `booking_not_payable`, from the automatic path meeting a
+    /// hold that lapsed during the SlipOK round-trip.
+    ///
+    /// It exists because without it nothing on this response distinguishes
+    /// "verified and confirmed" from "verified and the booking did not
+    /// move", while the guest page, the deposit-link admin list and the desk
+    /// mail all read `confirmed` off a verified slip. One of the locked
+    /// `slipok_reason` keys, so the UI can render it with the wording it
+    /// already has for the badge.
+    ///
+    /// **Follow-up owed to B2 (reception deposit-link panel).** The backend
+    /// half is done; the admin UI is not, and this is the exact work, so it
+    /// does not have to be rediscovered:
+    ///
+    /// 1. `SlipViewerSidebar.tsx` renders audit rows through
+    ///    `actionMap[action] ?? action`, and `booking_not_confirmed` has no
+    ///    entry — a Thai-first desk currently reads the raw English
+    ///    identifier. Add
+    ///    `admin.booking.bookingManagement.auditActions.bookingNotConfirmed`
+    ///    to both locales — th: `ยังไม่ได้ยืนยันการจอง`, en: `Booking not
+    ///    confirmed` — and map `booking_not_confirmed` to it.
+    /// 2. Badge the verify result itself when this field is non-null. The
+    ///    wording already exists in both locales: render
+    ///    `payment.slipok.reason.${bookingNotConfirmedReason}` (for today's
+    ///    only value that is `payment.slipok.reason.booking_not_payable`),
+    ///    so no new reason strings are needed.
+    ///
+    /// Until then the desk's only signal is the audit row and the backend
+    /// WARN — which is why the desk mail is suppressed in the handler rather
+    /// than left to contradict the UI.
+    pub booking_not_confirmed_reason: Option<String>,
 }
 
 // ============================================================================
@@ -236,12 +277,29 @@ async fn verify_slip(
     // Tell the property's desk the deposit landed (B0). Fire-and-forget, and
     // deduped on the slip: re-verifying an already-verified slip (which this
     // handler deliberately allows) sends no second email.
-    crate::services::booking_notify::notify(
-        &state,
-        outcome.booking_id,
-        crate::services::booking_notify::BookingNotifyEvent::DepositVerified { slip_id },
-    )
-    .await;
+    //
+    // Held back when the confirmation was *refused*: that mail says
+    // "ยืนยันแล้ว / Confirmed (เจ้าหน้าที่ยืนยันแล้ว / confirmed by staff)",
+    // which would be a false statement about a booking still sitting on
+    // `pending`. The gate is the refusal, not `booking_confirmed`: a second
+    // slip verified against an already-confirmed booking confirms nothing
+    // and still deserves its mail.
+    if let Some(reason) = outcome.booking_not_confirmed_reason {
+        tracing::warn!(
+            slip_id = %slip_id,
+            booking_id = %outcome.booking_id,
+            reason = %reason,
+            "slip verified but the booking was not confirmed; the desk \
+             confirmation mail is suppressed"
+        );
+    } else {
+        crate::services::booking_notify::notify(
+            &state,
+            outcome.booking_id,
+            crate::services::booking_notify::BookingNotifyEvent::DepositVerified { slip_id },
+        )
+        .await;
+    }
 
     Ok(Json(AdminSlipResponse {
         id: outcome.id,
@@ -263,6 +321,8 @@ async fn verify_slip(
         slipok_checked_at,
         slipok_verified_at: outcome.slipok_verified_at,
         auto_verified: crate::services::slip_confirm::is_slipok_actor(outcome.admin_verified_by),
+        booking_confirmed: outcome.booking_confirmed,
+        booking_not_confirmed_reason: outcome.booking_not_confirmed_reason.map(str::to_string),
     }))
 }
 
@@ -387,6 +447,10 @@ async fn mark_slip_needs_action(
         slipok_checked_at,
         slipok_verified_at: row.slipok_verified_at,
         auto_verified: crate::services::slip_confirm::is_slipok_actor(row.admin_verified_by),
+        // needs-action never confirms anything and never refuses a
+        // confirmation: it hands the slip back to the guest.
+        booking_confirmed: false,
+        booking_not_confirmed_reason: None,
     }))
 }
 
@@ -457,6 +521,11 @@ async fn get_slip(
         slipok_checked_at: row.try_get("slipok_checked_at")?,
         slipok_verified_at: row.try_get("slipok_verified_at")?,
         auto_verified: crate::services::slip_confirm::is_slipok_actor(admin_verified_by),
+        // A read decides nothing. Both fields describe what a *call* did to
+        // the booking, so on this endpoint they are always the empty answer;
+        // a reader who wants the booking's state reads the booking.
+        booking_confirmed: false,
+        booking_not_confirmed_reason: None,
     }))
 }
 
@@ -527,6 +596,8 @@ mod tests {
             slipok_checked_at: Some(Utc::now()),
             slipok_verified_at: None,
             auto_verified: crate::services::slip_confirm::is_slipok_actor(admin_verified_by),
+            booking_confirmed: true,
+            booking_not_confirmed_reason: None,
         }
     }
 
@@ -542,6 +613,10 @@ mod tests {
         assert!(json.contains("\"slipokReason\""));
         assert!(json.contains("\"slipokTransRef\":\"TESTREF0001\""));
         assert!(json.contains("\"slipokCheckedAt\""));
+        // A6's sidebar reads these to tell "verified and confirmed" apart
+        // from "verified and the booking did not move".
+        assert!(json.contains("\"bookingConfirmed\":true"));
+        assert!(json.contains("\"bookingNotConfirmedReason\":null"));
         assert!(json.contains("\"autoVerified\""));
     }
 

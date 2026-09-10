@@ -937,6 +937,17 @@ async fn slipok_check(
     // what production runs, and the admin's Verify that follows must still be
     // able to tell the desk the deposit is confirmed. One shared dedup key
     // would have swallowed that second message.
+    //
+    // Known gap, deliberately left for B0 rather than half-fixed here (A11):
+    // `confirm_slip` can now decline to confirm the booking when the hold
+    // lapsed during the SlipOK round-trip, and this mail would then read
+    // "ยืนยันแล้ว / Confirmed" about a booking still on `pending`. Suppressing
+    // it is not obviously better — nobody is holding a button on this path,
+    // so silence would leave the `booking_not_confirmed` audit row and the
+    // WARN as the only trace. Saying it properly needs a notify event of its
+    // own (the shape `DepositShadowPass` already has), which is B0's
+    // contract, not this PR's. The admin path, where the actor is present
+    // and gets the reason on the response, does suppress it.
     let event = match status {
         SLIPOK_STATUS_VERIFIED => {
             Some(crate::services::booking_notify::BookingNotifyEvent::DepositVerified { slip_id })

@@ -31,21 +31,52 @@
 //!   Unchanged since ADR-0003.
 //! * **Everything else** (`pms_booking_id IS NULL`) — deposit request links
 //!   and ordinary in-app bookings. Nothing else knows the guest paid, so a
-//!   verified slip flips the booking here, provided it is still `pending`
-//!   and its hold has not run out. A `pending` booking behind a lapsed hold
-//!   is refused and recorded as `booking_not_payable` — see
-//!   [`booking_not_payable_reason`].
+//!   verified slip flips the booking here while it is still `pending`.
 //!
-//! Before A11 the second shape was restricted to `booking_source =
-//! 'deposit_link'`, so an ordinary app booking whose slip reception
-//! verified kept its `pending` status forever and the guest who had paid
-//! still saw "pending".
+//! A11 changes that second shape in two ways, and it is worth being exact
+//! about which of them moves a live row today.
+//!
+//! 1. **The guard no longer names `booking_source`.** It used to read
+//!    `booking_source = 'deposit_link'`; it now reads `pms_booking_id IS
+//!    NULL`. What a received payment means does not depend on which screen
+//!    created the booking. This is a *forward* fix, not the repair of
+//!    observed damage, and the module doc should not claim otherwise: no
+//!    path in this repo currently creates a non-PMS booking in `pending`
+//!    outside `routes::admin_deposit_links` — the in-app create
+//!    (`routes::bookings`) writes `'confirmed'` directly, the channel create
+//!    always sets `pms_booking_id`, and `'deposit_link'` is the only value
+//!    ever written to `booking_source` — so no live row is known to be stuck
+//!    behind the old guard. It closes the hole ahead of the app
+//!    booking-with-deposit flow rather than reporting a rescue.
+//! 2. **The machine may not confirm a booking whose hold has lapsed; a
+//!    human still may.** `routes::bookings::slipok_check` already refuses to
+//!    act on a slip against an expired hold, and says why in as many words:
+//!    "an admin may still override it by hand (that is a human decision);
+//!    the automatic path may not". That rule was enforced only at the top of
+//!    `slipok_check`, which reads `status` and `hold_expires_at` *before* the
+//!    SlipOK round-trip — so a hold lapsing during the vendor call let the
+//!    machine confirm a room nobody was holding any more. The flip below now
+//!    carries the same condition, applied when `actor.is_none()` and only
+//!    then. An admin's Verify stays unconditional on purpose: reception
+//!    finishing a deposit-link booking whose 48 h link lapsed overnight is
+//!    the exact case B1 shipped the manual queue for, and `routes::
+//!    deposit_links` deliberately accepts the guest's upload after expiry so
+//!    that a human can complete it.
+//!
+//! A machine verify that loses that race confirms nothing, is recorded as
+//! `booking_not_payable` and is reported back on the outcome — see
+//! [`booking_not_payable_reason`].
 //!
 //! ## sqlx note
 //!
-//! The compile-time queries here were **moved**, not rewritten: the offline
-//! cache in `.sqlx/` is keyed on the query text, so keeping the text
-//! byte-identical means the extraction needs no `cargo sqlx prepare` run.
+//! The extraction that created this module **moved** its compile-time
+//! queries rather than rewriting them, because the offline cache in `.sqlx/`
+//! is keyed on the query text and byte-identical text needs no `cargo sqlx
+//! prepare` run. A11 does change one of them — the non-PMS flip below gained
+//! its `$2` override — so that query has a fresh cache entry and any further
+//! edit to its text needs `scripts/regen-sqlx-cache.sh` again. Everything
+//! that needs no cache entry (the refusal bookkeeping, the trans-ref read)
+//! is a runtime `sqlx::query` on purpose.
 
 use chrono::{DateTime, Utc};
 use serde_json::json;
@@ -100,11 +131,18 @@ pub struct ConfirmOutcome {
     /// Why the booking was **not** confirmed, when a verified slip could
     /// not move it.
     ///
-    /// Only ever [`slip_match::REASON_BOOKING_NOT_PAYABLE`] today: the
-    /// booking is still `pending` but its hold has run out, so the room is
-    /// gone and confirming it would promise a bed nobody is holding. `None`
-    /// covers both "confirmed it" and the ordinary idempotent re-verify of
-    /// a booking that was already `confirmed`, which refuses nothing.
+    /// Only ever [`slip_match::REASON_BOOKING_NOT_PAYABLE`] today, and only
+    /// ever on the automatic path: the booking is still `pending` but its
+    /// hold has run out, so the room is gone and a machine confirming it
+    /// would promise a bed nobody is holding. An admin's Verify overrides an
+    /// expired hold by design and never lands here. `None` covers both
+    /// "confirmed it" and the ordinary idempotent re-verify of a booking
+    /// that was already `confirmed`, which refuses nothing.
+    ///
+    /// Surfaced to the actor on `AdminSlipResponse` and used by
+    /// `routes::admin_slips` to hold back the "confirmed by staff" desk
+    /// mail, so no surface can announce a confirmation that did not
+    /// happen.
     ///
     /// [`slip_match::REASON_BOOKING_NOT_PAYABLE`]: crate::services::slip_match::REASON_BOOKING_NOT_PAYABLE
     pub booking_not_confirmed_reason: Option<&'static str>,
@@ -353,25 +391,38 @@ pub async fn confirm_slip_with_notes(
         // flip the booking here or the guest pays and their page never
         // leaves `pending` / `checking`.
         //
-        // The guard used to name `booking_source = 'deposit_link'`, which
-        // left an app booking with a verified slip sitting on `pending`
-        // forever — a guest who had paid still read "รอชำระเงิน" (D6).
-        // `pms_booking_id IS NULL` is the whole rule now; `booking_source`
-        // does not change what a received payment means.
+        // The guard used to name `booking_source = 'deposit_link'`;
+        // `pms_booking_id IS NULL` is the whole rule now, because
+        // `booking_source` does not change what a received payment means.
+        // See the module docs for what that does and does not fix today.
         //
-        // Eligibility is read off the same two columns the automatic check
-        // reads before it will act (`routes::bookings::slipok_check`):
+        // Two conditions, and they do not apply to the same actors:
         //
-        // * `status = 'pending'` — the only status a payment can move.
-        //   It also makes this idempotent: an admin re-verifying an
-        //   already-confirmed booking updates no row and reports
+        // * `status = 'pending'` — **both actors**. The only status a
+        //   payment can move, and what makes this idempotent: re-verifying
+        //   an already-confirmed booking updates no row and reports
         //   `booking_confirmed = false`, which is the truth — this call
         //   confirmed nothing. A cancelled or checked-out booking is not
-        //   moved either.
-        // * the hold has not run out — `hold_expires_at IS NULL` (an
-        //   ordinary app booking holds nothing) or still in the future. A
-        //   deposit link stamps the link's expiry onto `hold_expires_at`,
-        //   so an expired link's booking lands here and is refused below.
+        //   moved either, by anybody.
+        // * the hold has not run out — **the machine only**. A deposit link
+        //   stamps the link's expiry onto `hold_expires_at`, so a lapsed
+        //   link's booking is one the automatic path must not confirm:
+        //   `slipok_check` reads that column before the SlipOK call and
+        //   already refuses on it, and this repeats the check after the call
+        //   so a hold expiring mid-round-trip cannot slip through.
+        //
+        //   An admin's Verify skips it. `slipok_check` states the rule as
+        //   "an admin may still override it by hand (that is a human
+        //   decision); the automatic path may not", and it is the only way
+        //   reception can finish a deposit-link booking whose link lapsed
+        //   before the guest's transfer was looked at — a case
+        //   `routes::deposit_links` deliberately keeps accepting uploads
+        //   for. Applying the machine's rule to the human would delete the
+        //   manual completion path B1 shipped, and leave no API able to put
+        //   the booking right (`UpdateBookingRequest` carries no status).
+        //
+        // `$2` is that override: true when a human pressed Verify.
+        let admin_override = actor.is_some();
         let flipped = sqlx::query!(
             r#"
             UPDATE bookings
@@ -379,9 +430,10 @@ pub async fn confirm_slip_with_notes(
             WHERE id = $1
               AND status = 'pending'
               AND pms_booking_id IS NULL
-              AND (hold_expires_at IS NULL OR hold_expires_at > NOW())
+              AND ($2::boolean OR hold_expires_at IS NULL OR hold_expires_at > NOW())
             "#,
             row.booking_id,
+            admin_override,
         )
         .execute(state.db())
         .await?;
@@ -390,7 +442,8 @@ pub async fn confirm_slip_with_notes(
             // Nothing moved. Two very different reasons, and only one of
             // them needs to reach a human: the booking was already
             // `confirmed` (the idempotent re-verify above — silence is
-            // right), or it is still `pending` behind a lapsed hold.
+            // right), or it is still `pending` behind a lapsed hold (the
+            // machine only; see above).
             //
             // The second is money received against a room that is no
             // longer held, and the verify must NOT confirm it. Record it
@@ -406,13 +459,37 @@ pub async fn confirm_slip_with_notes(
             // from a human verify would destroy that record. The audit log
             // is append-only, is already what the booking detail page
             // renders, and is attributed to the same actor as the verify.
-            booking_not_confirmed_reason = booking_not_payable_reason(
+            //
+            // Best-effort, deliberately: this runs *after* the slip
+            // transaction committed, so a pool timeout on the re-read or the
+            // insert must not turn a verify that already succeeded into a
+            // failure. Propagating it would give the desk a 500 for a slip
+            // the database already says is `verified`, and on the automatic
+            // path `slipok_check` treats any `Err` from `confirm_slip` as
+            // "auto-confirm failed" and calls `revert_auto_confirm` —
+            // unwinding a verification that was never the thing that broke.
+            // Losing the bookkeeping row is the smaller failure, and it is
+            // loud: the ERROR below, plus the WARN the helper logs.
+            booking_not_confirmed_reason = match booking_not_payable_reason(
                 state.db(),
                 row.booking_id,
                 slip_id,
                 actor.unwrap_or(SLIPOK_SYSTEM_USER_ID),
             )
-            .await?;
+            .await
+            {
+                Ok(reason) => reason,
+                Err(e) => {
+                    tracing::error!(
+                        slip_id = %slip_id,
+                        booking_id = %row.booking_id,
+                        error = %e,
+                        "could not record why a verified slip did not confirm \
+                         its booking; the verify itself stands"
+                    );
+                    None
+                },
+            };
         } else {
             booking_confirmed = true;
             tracing::info!(
@@ -469,8 +546,11 @@ pub const ACTION_BOOKING_NOT_CONFIRMED: &str = "booking_not_confirmed";
 /// Decide whether a booking that refused to flip did so because it is no
 /// longer payable, and if so record it.
 ///
-/// Called only when the `UPDATE` above matched no row. Re-reads the booking
-/// to tell the two cases apart:
+/// Called only when the `UPDATE` above matched no row, and in practice only
+/// on the automatic path — an admin's Verify overrides an expired hold, so
+/// the only zero-row case a human can produce is a booking that was not
+/// `pending`, which is refused nothing and written nothing. Re-reads the
+/// booking to tell the two cases apart:
 ///
 /// * already `confirmed` (or cancelled, checked out, …) — nothing was
 ///   refused, so nothing is written and the caller reports `None`;
@@ -506,6 +586,14 @@ async fn booking_not_payable_reason(
 
     let reason = crate::services::slip_match::REASON_BOOKING_NOT_PAYABLE;
 
+    // The desk reads this row in the booking's history, in Thai. Reuse the
+    // locked `payment.slipok.reason.*` pair (PR #404) rather than inventing
+    // a second sentence for the same situation — the slip badge and this row
+    // then say the same thing. Falling back to the key keeps a wording table
+    // that lost the entry from producing an empty reason.
+    let (reason_th, reason_en) =
+        crate::services::booking_notify::reason_wording(reason).unwrap_or((reason, reason));
+
     insert_slip_audit_row(
         db,
         booking_id,
@@ -519,7 +607,8 @@ async fn booking_not_payable_reason(
             "reason": reason,
         })),
         Some(format!(
-            "Slip verified but the booking was not confirmed ({reason}): its hold had already expired"
+            "{reason_th} (หมดเวลาถือห้องแล้ว ตรวจสอบสลิปแล้วแต่ยังไม่ยืนยันการจอง) / \
+             {reason_en} ({reason}: slip verified, hold had already expired)"
         )),
     )
     .await?;
@@ -769,6 +858,19 @@ mod tests {
             SLIPOK_SYSTEM_USER_ID.hyphenated().to_string(),
             "00000000-0000-4000-8000-0000005110b0"
         );
+    }
+
+    /// The audit row a refused confirmation writes is rendered to reception
+    /// in Thai. It borrows the locked `payment.slipok.reason.*` pair rather
+    /// than carrying its own wording, so the entry has to exist — otherwise
+    /// the row silently degrades to the bare English key.
+    #[test]
+    fn the_refusal_reason_has_locked_thai_wording() {
+        let reason = crate::services::slip_match::REASON_BOOKING_NOT_PAYABLE;
+        let (th, en) = crate::services::booking_notify::reason_wording(reason)
+            .expect("booking_not_payable must have locked wording");
+        assert!(!th.is_ascii(), "the Thai half must actually be Thai: {th}");
+        assert!(!en.is_empty());
     }
 
     #[test]
