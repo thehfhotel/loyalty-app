@@ -675,12 +675,13 @@ fn slipok_check_budget(state: &AppState) -> std::time::Duration {
         + std::time::Duration::from_secs(2)
 }
 
-/// SlipOK status values written to `booking_slips.slipok_status`. See the
-/// migration `20260910000000_booking_slips_slipok.sql` for the vocabulary.
-const SLIPOK_STATUS_VERIFIED: &str = "verified";
-const SLIPOK_STATUS_SHADOW_PASS: &str = "shadow_pass";
-const SLIPOK_STATUS_MANUAL: &str = "manual";
-const SLIPOK_STATUS_UNAVAILABLE: &str = "unavailable";
+// SlipOK status values written to `booking_slips.slipok_status`. Defined in
+// `services::slip_match` beside the reason strings, because
+// `services::slip_confirm::revert_auto_confirm` writes them too.
+use crate::services::slip_match::{
+    SLIPOK_STATUS_MANUAL, SLIPOK_STATUS_SHADOW_PASS, SLIPOK_STATUS_UNAVAILABLE,
+    SLIPOK_STATUS_VERIFIED,
+};
 
 /// Run the automatic slip check and record its outcome. Infallible by
 /// construction: anything that goes wrong is logged and the slip is left on
@@ -869,7 +870,7 @@ async fn slipok_check(
                 "SlipOK auto-confirm failed after the slip passed every check; \
                  returning the slip to manual verification"
             );
-            revert_auto_confirm(state.db(), slip_id).await?;
+            crate::services::slip_confirm::revert_auto_confirm(state.db(), slip_id).await?;
             return Ok(());
         }
     }
@@ -940,42 +941,6 @@ async fn record_slipok_result(
         },
         Err(e) => Err(e.into()),
     }
-}
-
-/// Undo a half-finished automatic confirmation.
-///
-/// [`crate::services::slip_confirm::confirm_slip`] commits the slip's
-/// `admin_status` before it calls the PMS, so a PMS failure on the automatic
-/// path would otherwise leave a slip that claims to be verified — by nobody,
-/// since `admin_verified_by` is NULL for a machine verify — against a
-/// booking that never got confirmed. Put it back in the admin's queue and
-/// say why.
-///
-/// Deliberately guarded on `admin_verified_by IS NULL`: it must never undo
-/// an admin's own verification, only the machine's.
-///
-/// Runtime query, like [`record_slipok_result`], so the new `slipok_*`
-/// columns need no `.sqlx` offline cache entry.
-async fn revert_auto_confirm(db: &PgPool, slip_id: Uuid) -> AppResult<()> {
-    sqlx::query(
-        r#"
-        UPDATE booking_slips
-        SET admin_status      = 'pending',
-            admin_verified_at = NULL,
-            slipok_status     = $1,
-            slipok_reason     = $2,
-            slipok_trans_ref  = NULL,
-            slipok_checked_at = NOW()
-        WHERE id = $3
-          AND admin_verified_by IS NULL
-        "#,
-    )
-    .bind(SLIPOK_STATUS_MANUAL)
-    .bind(crate::services::slip_match::REASON_CONFIRM_FAILED)
-    .bind(slip_id)
-    .execute(db)
-    .await?;
-    Ok(())
 }
 
 /// DELETE /api/bookings/slips/:slip_id - Remove a payment slip

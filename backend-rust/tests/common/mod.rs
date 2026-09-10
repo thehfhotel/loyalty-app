@@ -366,6 +366,13 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         .execute(booking_slips_slipok_migration)
         .await?;
 
+    // Seeds the SlipOK system actor every automatic slip verification is
+    // attributed to. Without it the FK on `booking_audit_log.admin_id`
+    // rejects the audit row and every auto-verify test fails.
+    let slipok_system_user_migration =
+        include_str!("../../migrations/20260911000000_slipok_system_user.sql");
+    template_pool.execute(slipok_system_user_migration).await?;
+
     // Seed membership_id_sequence
     template_pool
         .execute(

@@ -9,13 +9,18 @@
 //!
 //! * `Some(admin_id)` — an admin pressed Verify. Behaves exactly as before
 //!   the extraction, including the `booking_audit_log` row.
-//! * `None` — the automatic check confirmed it. `booking_audit_log.admin_id`
-//!   is `UUID NOT NULL` with an FK to `users`, and there is no system user
-//!   row to point it at, so the audit insert is skipped and the confirmation
-//!   is recorded as a `tracing::info!` carrying the slip, the booking and
-//!   the bank reference instead. It also stands aside for an admin who
-//!   verified the same slip first, rather than overwriting their name with
-//!   nobody's.
+//! * `None` — the automatic check confirmed it. It writes the same
+//!   `booking_audit_log` row, attributed to [`SLIPOK_SYSTEM_USER_ID`] — the
+//!   fixed, non-loginable system actor seeded by migration
+//!   `20260911000000_slipok_system_user.sql`. An automatic verify is a money
+//!   decision, so it gets an audit row like any other; the actor is what
+//!   makes machine and human verifies countable apart. It also stands aside
+//!   for an admin who verified the same slip first, rather than overwriting
+//!   their name with the machine's.
+//!
+//! Everything else — the `admin_status` write, the PMS payment event, the
+//! booking confirmation — is identical on both paths, and the human path is
+//! byte-for-byte what it was before the system actor existed.
 //!
 //! ## sqlx note
 //!
@@ -29,6 +34,30 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
+
+/// The one user row every automatic slip verification is attributed to.
+///
+/// Seeded by migration `20260911000000_slipok_system_user.sql` as
+/// `slipok@system.hf.invalid`, display name "SlipOK", non-loginable. The
+/// value is a fixed constant rather than a lookup: it is part of the
+/// cross-repo interface for the deposit programme (admin surfaces, the
+/// shadow-window agreement report and the human-touch KPI all key off it),
+/// so it must never be regenerated.
+///
+/// Guest-facing surfaces never render this actor's name — a guest sees
+/// "ตรวจสอบอัตโนมัติ" / "checked automatically", never "SlipOK".
+pub const SLIPOK_SYSTEM_USER_ID: Uuid = Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0051_10b0);
+
+/// True when `admin_verified_by` names the SlipOK system actor — i.e. the
+/// slip was verified by the machine and no human has since touched it.
+///
+/// Both admin mutations in `routes::admin_slips` re-stamp
+/// `admin_verified_by` with the acting admin, so a human verify or reject
+/// after an automatic one flips this back to `false`, which is exactly what
+/// the human-touch count wants.
+pub fn is_slipok_actor(admin_verified_by: Option<Uuid>) -> bool {
+    admin_verified_by == Some(SLIPOK_SYSTEM_USER_ID)
+}
 
 /// The slip row after confirmation, plus what confirmation did to the
 /// booking. Carries exactly the columns `AdminSlipResponse` needs so the
@@ -103,10 +132,11 @@ pub async fn confirm_slip_with_notes(
     // The automatic check runs inline for several seconds after the slip
     // row becomes visible, so an admin can press Verify inside that window.
     // If they did, theirs stands: re-running the UPDATE with `actor = None`
-    // would blank `admin_verified_by` (destroying the attribution behind an
-    // audit row that names them) and post a second payment event. An admin
-    // re-verifying keeps its old behaviour — that is a deliberate human
-    // action, and the extraction had to preserve it exactly.
+    // would overwrite `admin_verified_by` with the system actor (destroying
+    // the attribution behind an audit row that names them) and post a
+    // second payment event. An admin re-verifying keeps its old behaviour —
+    // that is a deliberate human action, and the extraction had to preserve
+    // it exactly.
     if actor.is_none() && before.admin_status.as_deref() == Some("verified") {
         let outcome = read_outcome(&mut tx, slip_id).await?;
         tx.commit().await?;
@@ -117,6 +147,13 @@ pub async fn confirm_slip_with_notes(
         );
         return Ok(outcome);
     }
+
+    // Who the slip is stamped with. An automatic verify is attributed to the
+    // system actor rather than to nobody, so `admin_verified_by` answers
+    // "who decided this" for every verified slip in the table — the query
+    // behind the human-touch KPI is then a single `admin_verified_by`
+    // comparison instead of a join against the audit log.
+    let verified_by: Option<Uuid> = Some(actor.unwrap_or(SLIPOK_SYSTEM_USER_ID));
 
     let row = sqlx::query!(
         r#"
@@ -138,7 +175,7 @@ pub async fn confirm_slip_with_notes(
             slipok_status,
             slipok_verified_at
         "#,
-        actor,
+        verified_by,
         admin_notes,
         slip_id,
     )
@@ -182,11 +219,10 @@ pub async fn confirm_slip_with_notes(
             );
         },
         None => {
-            // No audit row: `booking_audit_log.admin_id` is NOT NULL with an
-            // FK to `users`, and an automatic verify has no user. The bank
-            // reference stored by the SlipOK check is the forensic anchor, so
-            // it goes in the log line. Runtime query (not the macro) so the
-            // new `slipok_trans_ref` column needs no `.sqlx` cache entry.
+            // The bank reference stored by the SlipOK check is the forensic
+            // anchor for an automatic decision, so it goes on the audit row
+            // as well as in the log line. Runtime query (not the macro) so
+            // the new `slipok_trans_ref` column needs no `.sqlx` cache entry.
             let trans_ref: Option<String> =
                 sqlx::query_scalar("SELECT slipok_trans_ref FROM booking_slips WHERE id = $1")
                     .bind(slip_id)
@@ -194,12 +230,47 @@ pub async fn confirm_slip_with_notes(
                     .await?
                     .flatten();
 
+            let before_json = json!({
+                "adminStatus": before.admin_status,
+                "adminVerifiedBy": before.admin_verified_by,
+                "adminVerifiedAt": before.admin_verified_at,
+                "adminNotes": before.admin_notes,
+            });
+            let after_json = json!({
+                "adminStatus": row.admin_status,
+                "adminVerifiedBy": row.admin_verified_by,
+                "adminVerifiedAt": row.admin_verified_at,
+                "adminNotes": row.admin_notes,
+                "slipId": row.id,
+                "slipokTransRef": trans_ref,
+                "autoVerified": true,
+            });
+
+            // Same action as the human path: what happened is identical, and
+            // `admin_id` is what says who did it. Anything keyed on the
+            // action string keeps working, and the actor is the one filter
+            // that separates machine from human.
+            insert_slip_audit_row(
+                &mut *tx,
+                row.booking_id,
+                SLIPOK_SYSTEM_USER_ID,
+                "slip_verified",
+                Some(before_json),
+                Some(after_json),
+                Some(match trans_ref.as_deref() {
+                    Some(r) => format!("Verified automatically (bank reference {r})"),
+                    None => "Verified automatically".to_string(),
+                }),
+            )
+            .await?;
+
             tx.commit().await?;
 
             tracing::info!(
                 slip_id = %slip_id,
                 booking_id = %row.booking_id,
                 trans_ref = trans_ref.as_deref().unwrap_or("unknown"),
+                admin_id = %SLIPOK_SYSTEM_USER_ID,
                 "SlipOK auto-verified slip"
             );
         },
@@ -262,6 +333,147 @@ pub async fn confirm_slip_with_notes(
         slipok_verified_at: row.slipok_verified_at,
         booking_confirmed,
     })
+}
+
+/// The audit action written when an automatic confirmation is undone.
+///
+/// A distinct action rather than a second `slip_verified` row: the
+/// shadow-window agreement report and the human-touch KPI both count
+/// `slip_verified` rows owned by [`SLIPOK_SYSTEM_USER_ID`], and a verify
+/// that was rolled back must not be counted as a decision that held.
+pub const ACTION_SLIP_VERIFY_REVERTED: &str = "slip_verify_reverted";
+
+/// Undo a half-finished automatic confirmation.
+///
+/// [`confirm_slip`] commits the slip's `admin_status` — and the
+/// `slip_verified` audit row naming [`SLIPOK_SYSTEM_USER_ID`] — before it
+/// calls the PMS, so a PMS failure on the automatic path would otherwise
+/// leave a slip that claims to be verified against a booking that never got
+/// confirmed. Nobody retries it: there is no admin holding a button. Put the
+/// slip back in the admin's queue, say why, and **contradict the audit row
+/// in the audit log**, so the history cannot permanently assert a verify
+/// that was rolled back.
+///
+/// Lives here rather than in `routes::bookings` because it is the
+/// compensating half of [`confirm_slip`]: the two must agree on the actor,
+/// on the audit contract and on which writes are one transaction. Being
+/// `pub` is also what lets the integration suite drive the admin-won-the-race
+/// branch directly, which no HTTP-level fixture can reach.
+///
+/// Returns `true` when the slip was reverted, `false` when an admin had
+/// verified it in the meantime and their decision was left standing.
+///
+/// Runtime queries, like the rest of the `slipok_*` writes: those columns are
+/// new in migration `20260910000000_booking_slips_slipok.sql` and a runtime
+/// query needs no `.sqlx` offline-cache entry.
+pub async fn revert_auto_confirm(db: &sqlx::PgPool, slip_id: Uuid) -> AppResult<bool> {
+    use sqlx::Row;
+
+    let mut tx = db.begin().await?;
+
+    // `FOR UPDATE` is what makes the guard below sound: an admin pressing
+    // Verify between this read and the UPDATE would otherwise have their
+    // stamp overwritten by the revert.
+    let before = sqlx::query(
+        r#"
+        SELECT booking_id, admin_status, admin_verified_at, admin_verified_by,
+               slipok_status, slipok_trans_ref
+        FROM booking_slips
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(slip_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Slip".to_string()))?;
+
+    let booking_id: Uuid = before.try_get("booking_id")?;
+    let before_admin_status: Option<String> = before.try_get("admin_status")?;
+    let before_verified_at: Option<DateTime<Utc>> = before.try_get("admin_verified_at")?;
+    let before_verified_by: Option<Uuid> = before.try_get("admin_verified_by")?;
+    let before_slipok_status: Option<String> = before.try_get("slipok_status")?;
+    let before_trans_ref: Option<String> = before.try_get("slipok_trans_ref")?;
+
+    // Never undo an admin's own verification, only the machine's. NULL is
+    // accepted too, so a slip verified by an older build — before the system
+    // actor existed — can still be reverted.
+    if !(before_verified_by.is_none() || is_slipok_actor(before_verified_by)) {
+        tx.rollback().await?;
+        tracing::warn!(
+            slip_id = %slip_id,
+            booking_id = %booking_id,
+            admin_verified_by = ?before_verified_by,
+            "Automatic confirmation failed part-way, but an admin had already \
+             verified this slip; leaving their decision standing. The slip \
+             reads verified against a booking the PMS did not confirm — \
+             someone has to reconcile it by hand."
+        );
+        return Ok(false);
+    }
+
+    let after = sqlx::query(
+        r#"
+        UPDATE booking_slips
+        SET admin_status      = 'pending',
+            admin_verified_at = NULL,
+            admin_verified_by = NULL,
+            slipok_status     = $1,
+            slipok_reason     = $2,
+            slipok_trans_ref  = NULL,
+            slipok_checked_at = NOW()
+        WHERE id = $3
+        RETURNING admin_status, admin_verified_at, admin_verified_by, slipok_status
+        "#,
+    )
+    .bind(crate::services::slip_match::SLIPOK_STATUS_MANUAL)
+    .bind(crate::services::slip_match::REASON_CONFIRM_FAILED)
+    .bind(slip_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let before_json = json!({
+        "adminStatus": before_admin_status,
+        "adminVerifiedBy": before_verified_by,
+        "adminVerifiedAt": before_verified_at,
+        "slipokStatus": before_slipok_status,
+        "slipokTransRef": before_trans_ref,
+        "slipId": slip_id,
+    });
+    let after_json = json!({
+        "adminStatus": after.try_get::<Option<String>, _>("admin_status")?,
+        "adminVerifiedBy": after.try_get::<Option<Uuid>, _>("admin_verified_by")?,
+        "adminVerifiedAt": after.try_get::<Option<DateTime<Utc>>, _>("admin_verified_at")?,
+        "slipokStatus": after.try_get::<Option<String>, _>("slipok_status")?,
+        "slipokReason": crate::services::slip_match::REASON_CONFIRM_FAILED,
+        "slipId": slip_id,
+    });
+
+    // Written inside the same transaction as the revert: the desk must never
+    // read the machine's verify without the row that takes it back.
+    insert_slip_audit_row(
+        &mut *tx,
+        booking_id,
+        SLIPOK_SYSTEM_USER_ID,
+        ACTION_SLIP_VERIFY_REVERTED,
+        Some(before_json),
+        Some(after_json),
+        Some(format!(
+            "Automatic verification reverted ({}): confirming the booking failed after the slip was marked verified",
+            crate::services::slip_match::REASON_CONFIRM_FAILED
+        )),
+    )
+    .await?;
+
+    tx.commit().await?;
+
+    tracing::warn!(
+        slip_id = %slip_id,
+        booking_id = %booking_id,
+        "Automatic verification reverted; slip returned to the manual queue"
+    );
+
+    Ok(true)
 }
 
 /// Read a slip row as a [`ConfirmOutcome`] without changing it.
@@ -339,4 +551,29 @@ where
     .execute(executor)
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The system actor's id is a cross-repo constant (the migration that
+    /// seeds the row, the admin surfaces and the shadow-window report all
+    /// hard-code it). A typo here would silently attribute every automatic
+    /// verify to a row that does not exist, and the FK would then fail the
+    /// whole confirmation.
+    #[test]
+    fn slipok_system_user_id_is_the_locked_value() {
+        assert_eq!(
+            SLIPOK_SYSTEM_USER_ID.hyphenated().to_string(),
+            "00000000-0000-4000-8000-0000005110b0"
+        );
+    }
+
+    #[test]
+    fn is_slipok_actor_only_matches_the_system_actor() {
+        assert!(is_slipok_actor(Some(SLIPOK_SYSTEM_USER_ID)));
+        assert!(!is_slipok_actor(Some(Uuid::new_v4())));
+        assert!(!is_slipok_actor(None));
+    }
 }
