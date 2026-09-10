@@ -174,6 +174,34 @@ fn promptpay_only(cfg: &mut loyalty_backend::Settings) {
     cfg.promptpay.hf_id = Some(RECEIVING_ID.to_string());
 }
 
+/// The columns of `bookings` that say what kind of booking a deposit link
+/// produced. A named row rather than a seven-wide tuple: the assertions
+/// below read as claims about a booking, not as positional unpacking.
+#[derive(Debug, sqlx::FromRow)]
+struct BookingShape {
+    booking_source: Option<String>,
+    pms_booking_id: Option<String>,
+    pms_ref: Option<String>,
+    status: String,
+    user_id: Uuid,
+    amount_due_now: Option<rust_decimal::Decimal>,
+    balance_due: Option<rust_decimal::Decimal>,
+}
+
+async fn read_booking_shape(pool: &sqlx::PgPool, booking_id: Uuid) -> BookingShape {
+    sqlx::query_as::<_, BookingShape>(
+        r#"
+        SELECT booking_source, pms_booking_id, pms_ref, status, user_id,
+               amount_due_now, balance_due
+        FROM bookings WHERE id = $1
+        "#,
+    )
+    .bind(booking_id)
+    .fetch_one(pool)
+    .await
+    .expect("read booking")
+}
+
 async fn read_slip_state(
     pool: &sqlx::PgPool,
     slip_id: Uuid,
@@ -230,41 +258,29 @@ async fn admin_create_issues_a_link_against_a_deposit_link_booking() {
         .parse()
         .expect("uuid");
 
-    let (source, pms_booking_id, pms_ref, status, owner, amount_due, balance): (
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        String,
-        Uuid,
-        Option<rust_decimal::Decimal>,
-        Option<rust_decimal::Decimal>,
-    ) = sqlx::query_as(
-        r#"
-        SELECT booking_source, pms_booking_id, pms_ref, status, user_id,
-               amount_due_now, balance_due
-        FROM bookings WHERE id = $1
-        "#,
-    )
-    .bind(booking_id)
-    .fetch_one(app.db())
-    .await
-    .expect("read booking");
+    let booking = read_booking_shape(app.db(), booking_id).await;
 
-    assert_eq!(source.as_deref(), Some("deposit_link"));
+    assert_eq!(booking.booking_source.as_deref(), Some("deposit_link"));
     assert_eq!(
-        pms_booking_id, None,
+        booking.pms_booking_id, None,
         "a non-null pms_booking_id would send a verified slip into the dark PMS channel"
     );
-    assert_eq!(pms_ref, None);
-    assert_eq!(status, "pending");
+    assert_eq!(booking.pms_ref, None);
+    assert_eq!(booking.status, "pending");
     assert_eq!(
-        owner.hyphenated().to_string(),
+        booking.user_id.hyphenated().to_string(),
         "00000000-0000-4000-8000-0000005110b2",
         "the booking must be owned by the non-loginable deposit-link actor, \
          never by a real member"
     );
-    assert_eq!(amount_due, Some(rust_decimal::Decimal::new(150_000, 2)));
-    assert_eq!(balance, Some(rust_decimal::Decimal::new(150_000, 2)));
+    assert_eq!(
+        booking.amount_due_now,
+        Some(rust_decimal::Decimal::new(150_000, 2))
+    );
+    assert_eq!(
+        booking.balance_due,
+        Some(rust_decimal::Decimal::new(150_000, 2))
+    );
 
     // The token is stored only as a hash.
     let stored_hash: Vec<u8> =
