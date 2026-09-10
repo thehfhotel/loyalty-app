@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE bookings\n                SET status = 'cancelled', cancelled_at = NOW(),\n                    cancellation_reason = 'Payment window expired; PMS reference unusable',\n                    updated_at = NOW()\n                WHERE id = $1 AND status = 'pending'\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1f513e02a0dde999a0b37fb14280ba0f5bcf7f15aaaf4bc7f167068636bcefdd"
+}

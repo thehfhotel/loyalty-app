@@ -10,88 +10,32 @@ import {
   FiClock,
   FiRefreshCw,
   FiChevronUp,
-  FiChevronDown
+  FiChevronDown,
+  FiLink
 } from 'react-icons/fi';
 import AppShell from '../../components/layout/AppShell';
 import { Badge, Button, EmptyState, Input, Table, TabNav } from '../../components/ui';
 import type { BadgeTone, TableColumn, TabItem } from '../../components/ui';
 import SlipViewerSidebar from '../../components/admin/SlipViewerSidebar';
 import BookingEditModal from './BookingEditModal';
+import DepositLinkModal from './DepositLinkModal';
+import DepositLinkListPanel from './DepositLinkListPanel';
 import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../../utils/dateFormatter';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAdminBookingSSE } from '../../hooks/useAdminBookingSSE';
+import { deskSlipOkStatus, type SlipOkStatusValue } from '../../types/slipok';
+import { adminBookingService } from '../../services/adminBookingService';
+import type {
+  AdminBooking as Booking,
+  AdminBookingStatusCounts as StatusCounts,
+} from '../../services/adminBookingService';
 
-// Types for booking management
-interface BookingUser {
-  id: string;
-  firstName: string | null;
-  lastName: string | null;
-  email: string;
-  membershipId: string | null;
-  phone: string | null;
-}
-
-interface RoomType {
-  id: string;
-  name: string;
-}
-
-interface BookingSlip {
-  id: string;
-  imageUrl: string;
-  uploadedAt: string;
-  slipokStatus: 'pending' | 'verified' | 'failed' | 'quota_exceeded';
-  slipokVerifiedAt: string | null;
-  adminStatus: 'pending' | 'verified' | 'needs_action';
-  adminVerifiedAt: string | null;
-  adminVerifiedBy: string | null;
-  adminVerifiedByName: string | null;
-}
-
-interface BookingAuditEntry {
-  id: string;
-  action: string;
-  adminId: string;
-  adminName: string;
-  oldValue: string | null;
-  newValue: string | null;
-  notes: string | null;
-  createdAt: string;
-}
-
-interface Booking {
-  id: string;
-  userId: string;
-  user: BookingUser;
-  roomTypeId: string;
-  roomType: RoomType;
-  checkInDate: string;
-  checkOutDate: string;
-  numberOfGuests: number;
-  totalPrice: number;
-  paymentType: 'full' | 'deposit';
-  paymentAmount: number | null;
-  discountAmount: number | null;
-  discountReason: string | null;
-  status: 'confirmed' | 'cancelled' | 'completed';
-  notes: string | null;
-  adminNotes: string | null;
-  slip: BookingSlip | null;
-  auditHistory: BookingAuditEntry[];
-  createdAt: string;
-  updatedAt: string;
-}
-
+// Booking shapes come from the admin booking service, which mirrors the
+// serde DTOs in `backend-rust/src/routes/admin_bookings.rs`. Keeping one
+// definition means the table, the slip viewer and the edit modal cannot
+// drift apart from each other or from the wire.
 type SortField = 'created_at' | 'check_in_date' | 'room_type' | 'status' | 'total_price' | 'user_name';
 type SortDirection = 'asc' | 'desc';
-
-// Type for status counts from the API response
-interface StatusCounts {
-  all: number;
-  confirmed: number;
-  cancelled: number;
-  completed: number;
-}
 
 // Semantic tone lookups — kept in sync with the guest-facing booking page
 // (src/pages/MyBookingsPage.tsx) so the same status reads the same color
@@ -102,10 +46,18 @@ const BOOKING_STATUS_TONE: Record<string, BadgeTone> = {
   completed: 'brand',
 };
 
-const SLIP_OK_STATUS_TONE: Record<string, BadgeTone> = {
+// One tone per locked `slipok_status`, plus the two pre-lock values old rows
+// still carry. Desk-facing, so unlike the guest badge these stay distinct.
+// Keyed by the locked vocabulary, not `string`, so a status added to
+// `SLIPOK_STATUSES` breaks this build instead of showing the desk "Pending"
+// for a slip the machine has already rejected.
+const SLIP_OK_STATUS_TONE: Record<SlipOkStatusValue, BadgeTone> = {
   verified: 'success',
-  failed: 'error',
   pending: 'warning',
+  shadow_pass: 'info',
+  manual: 'warning',
+  unavailable: 'neutral',
+  failed: 'error',
   quota_exceeded: 'warning',
 };
 
@@ -135,25 +87,40 @@ const BookingManagement: React.FC = () => {
   const [initialLoading, setInitialLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'confirmed' | 'cancelled' | 'completed' | ''>('');
+  // B1: reception issues a deposit link for a booking it already took by
+  // phone, LINE or at the desk. The booking it creates lands in the table on
+  // this page because it carries a room type, so the slip is verified from
+  // the screen reception already uses. The link's own lifecycle — expiry,
+  // revoke, reissue — lives on the "ลิงก์มัดจำ" tab below.
+  const [showDepositLinkModal, setShowDepositLinkModal] = useState(false);
+  // B2: the same page, two surfaces. Bookings is where a slip is verified;
+  // "ลิงก์มัดจำ" is where reception asks which links are still unpaid, which
+  // guest never opened theirs, and which one needs killing. They are one
+  // page because they are one job — the desk moves between them mid-call.
+  const [surface, setSurface] = useState<'bookings' | 'links'>('bookings');
+  // The links panel is mounted on first visit and then stays mounted (see
+  // the render below), so it is not built until the desk actually asks for
+  // it — and it never re-runs its first load on the way back.
+  const [linksVisited, setLinksVisited] = useState(false);
 
   const pageSize = 10;
   const totalPages = Math.ceil(totalBookings / pageSize);
 
-  // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-  // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-  interface BookingsResponse {
-    bookings: Booking[];
-    total: number;
-    statusCounts?: StatusCounts;
-  }
+  // `GET /api/admin/bookings` — the page's filters, sort and pagination go
+  // to the handler verbatim; the query key mirrors them so a filter change
+  // is a new cache entry rather than a refetch of the same one.
+  const listParams = {
+    page: currentPage,
+    limit: pageSize,
+    search: debouncedSearchTerm || undefined,
+    status: statusFilter || undefined,
+    sortBy: sortField,
+    sortOrder: sortDirection,
+  } as const;
 
-  const bookingsQuery = useQuery<BookingsResponse>({
-    queryKey: ['admin', 'bookings', { page: currentPage, limit: pageSize, search: debouncedSearchTerm || undefined, status: statusFilter || undefined, sortBy: sortField, sortOrder: sortDirection }],
-    queryFn: async () => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      return { bookings: [], total: 0, statusCounts: { all: 0, confirmed: 0, cancelled: 0, completed: 0 } };
-    },
+  const bookingsQuery = useQuery({
+    queryKey: ['admin', 'bookings', listParams],
+    queryFn: () => adminBookingService.listBookings(listParams),
   });
 
   // Real-time updates via SSE - refetch when slip is uploaded
@@ -164,10 +131,10 @@ const BookingManagement: React.FC = () => {
   // Update state when query data changes
   useEffect(() => {
     if (bookingsQuery.data) {
-      setBookings(bookingsQuery.data.bookings as unknown as Booking[]);
+      setBookings(bookingsQuery.data.bookings);
       setTotalBookings(bookingsQuery.data.total);
       // Set statusCounts from API response, with fallback to default values
-      const apiStatusCounts = bookingsQuery.data.statusCounts as StatusCounts | undefined;
+      const apiStatusCounts: StatusCounts | undefined = bookingsQuery.data.statusCounts;
       if (apiStatusCounts) {
         setStatusCounts(apiStatusCounts);
       }
@@ -185,37 +152,65 @@ const BookingManagement: React.FC = () => {
     }
   }, [bookingsQuery.error, t]);
 
+  // `GET /api/admin/bookings/:id` — the list projection carries no audit
+  // rows, so the slip viewer and the edit modal read the selected booking's
+  // history from the detail route instead of an N+1 on every row.
+  const selectedBookingId = selectedBooking?.id ?? null;
+  const bookingDetailQuery = useQuery({
+    queryKey: ['admin', 'booking', selectedBookingId],
+    queryFn: () => adminBookingService.getBooking(selectedBookingId as string),
+    enabled: selectedBookingId !== null,
+  });
+
+  // Detail wins where it has more to say (audit history, a freshly verified
+  // slip); the row keeps the page rendering while the read is in flight.
+  const selectedBookingDetail = React.useMemo(() => {
+    if (!selectedBooking) {return null;}
+    const detail = bookingDetailQuery.data;
+    if (detail?.id !== selectedBooking.id) {return selectedBooking;}
+    return detail;
+  }, [selectedBooking, bookingDetailQuery.data]);
+
+  const queryClient = useQueryClient();
+
+  const refreshBooking = useCallback(() => {
+    bookingsQuery.refetch();
+    if (selectedBookingId) {bookingDetailQuery.refetch();}
+    // refetch identities are stable per query instance; listing the queries
+    // themselves would re-create this callback on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBookingId]);
+
+  // `POST /api/admin/bookings/slips/:slipId/verify`. The row action verifies
+  // the booking's primary slip, whose id the list response already carries —
+  // the booking-scoped `/:id/verify-slip` route is still missing
+  // (docs/admin-backend-gaps.md), and the button is disabled without a slip,
+  // so the desk never reaches for it.
   const verifySlipMutation = useMutation({
-    mutationFn: async (_data: { bookingId: string }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
-    },
-    onSuccess: () => {
+    mutationFn: (data: { slipId: string }) => adminBookingService.verifySlip(data.slipId),
+    onSuccess: (slip) => {
+      // The sidebar renders the per-slip read on top of the list row, and
+      // `refreshBooking` never touches that key (staleTime is 5 min and
+      // refetchOnWindowFocus is off). Without this seed a verify done from
+      // the table leaves the open sidebar showing "Pending" beside a
+      // "Verified" badge — two verdicts for one slip.
+      queryClient.setQueryData(['admin', 'slip', slip.id], slip);
       toast.success(t('admin.booking.bookingManagement.messages.slipVerified'));
-      bookingsQuery.refetch();
-      if (selectedBooking) {
-        // Update selected booking with new data
-        const updatedBooking = bookings.find(b => b.id === selectedBooking.id);
-        if (updatedBooking) {
-          setSelectedBooking(updatedBooking);
-        }
-      }
+      refreshBooking();
     },
     onError: () => {
       toast.error(t('admin.booking.bookingManagement.errors.verifyFailed'));
     }
   });
 
+  // `POST /api/admin/bookings/slips/:slipId/needs-action`.
   const markNeedsActionMutation = useMutation({
-    mutationFn: async (_data: { bookingId: string; notes: string }) => {
-      // Backend endpoint missing. Tracked in docs/admin-backend-gaps.md.
-      // TODO: Replace with REST service when Rust admin booking endpoints are implemented
-      throw new Error('Admin booking management is being migrated');
-    },
-    onSuccess: () => {
+    mutationFn: (data: { slipId: string; notes: string }) =>
+      adminBookingService.markSlipNeedsAction(data.slipId, { notes: data.notes }),
+    onSuccess: (slip) => {
+      queryClient.setQueryData(['admin', 'slip', slip.id], slip);
       toast.success(t('admin.booking.bookingManagement.messages.markedNeedsAction'));
-      bookingsQuery.refetch();
+      refreshBooking();
     },
     onError: () => {
       toast.error(t('admin.booking.bookingManagement.errors.markFailed'));
@@ -261,12 +256,34 @@ const BookingManagement: React.FC = () => {
     }
   };
 
+  // The per-slip routes need a slip id. Resolve it from the row (or from the
+  // detail read, when the sidebar acts on the selected booking). A booking
+  // with no slip has nothing to verify: the booking-scoped fallback route
+  // does not exist yet, so the controls for that case stay disabled.
+  const primarySlipId = (bookingId: string): string | null => {
+    if (selectedBookingDetail?.id === bookingId && selectedBookingDetail.slip) {
+      return selectedBookingDetail.slip.id;
+    }
+    return bookings.find(b => b.id === bookingId)?.slip?.id ?? null;
+  };
+
   const handleVerifySlip = async (bookingId: string) => {
-    await verifySlipMutation.mutateAsync({ bookingId });
+    const slipId = primarySlipId(bookingId);
+    if (!slipId) {
+      // Not a migration — this booking simply has no slip to act on.
+      toast.error(t('admin.booking.bookingManagement.noSlip'));
+      return;
+    }
+    await verifySlipMutation.mutateAsync({ slipId });
   };
 
   const handleNeedsAction = async (bookingId: string, notes: string) => {
-    await markNeedsActionMutation.mutateAsync({ bookingId, notes });
+    const slipId = primarySlipId(bookingId);
+    if (!slipId) {
+      toast.error(t('admin.booking.bookingManagement.noSlip'));
+      return;
+    }
+    await markNeedsActionMutation.mutateAsync({ slipId, notes });
   };
 
   const handleEditBooking = (booking: Booking) => {
@@ -279,7 +296,7 @@ const BookingManagement: React.FC = () => {
   };
 
   const handleEditSave = () => {
-    bookingsQuery.refetch();
+    refreshBooking();
     setShowEditModal(false);
   };
 
@@ -304,29 +321,39 @@ const BookingManagement: React.FC = () => {
     );
   };
 
-  const SlipOkStatusBadge: React.FC<{ status: string }> = ({ status }) => {
-    const icons: Record<string, React.ReactNode> = {
+  const SlipOkStatusBadge: React.FC<{ status: string | null }> = ({ status }) => {
+    const icons: Record<SlipOkStatusValue, React.ReactNode> = {
       verified: <FiCheck className="h-3 w-3" aria-hidden="true" />,
-      failed: <FiAlertTriangle className="h-3 w-3" aria-hidden="true" />,
       pending: <FiClock className="h-3 w-3" aria-hidden="true" />,
+      shadow_pass: <FiCheck className="h-3 w-3" aria-hidden="true" />,
+      manual: <FiAlertTriangle className="h-3 w-3" aria-hidden="true" />,
+      unavailable: <FiAlertTriangle className="h-3 w-3" aria-hidden="true" />,
+      failed: <FiAlertTriangle className="h-3 w-3" aria-hidden="true" />,
       quota_exceeded: <FiAlertTriangle className="h-3 w-3" aria-hidden="true" />,
     };
-    const labels: Record<string, string> = {
+    const labels: Record<SlipOkStatusValue, string> = {
       verified: t('admin.booking.bookingManagement.slipStatus.verified'),
-      failed: t('admin.booking.bookingManagement.slipStatus.failed'),
       pending: t('admin.booking.bookingManagement.slipStatus.pending'),
+      shadow_pass: t('admin.booking.bookingManagement.slipStatus.shadowPass'),
+      manual: t('admin.booking.bookingManagement.slipStatus.manual'),
+      unavailable: t('admin.booking.bookingManagement.slipStatus.unavailable'),
+      failed: t('admin.booking.bookingManagement.slipStatus.failed'),
       quota_exceeded: t('admin.booking.bookingManagement.slipStatus.quotaExceeded'),
     };
 
+    // A status this bundle predates still renders — as "pending" — rather
+    // than as a blank badge.
+    const known = deskSlipOkStatus(status);
+
     return (
-      <Badge tone={SLIP_OK_STATUS_TONE[status] ?? 'warning'}>
-        {icons[status] ?? icons.pending}
-        {labels[status] ?? labels.pending}
+      <Badge tone={SLIP_OK_STATUS_TONE[known]}>
+        {icons[known]}
+        {labels[known]}
       </Badge>
     );
   };
 
-  const AdminStatusBadge: React.FC<{ status: string }> = ({ status }) => {
+  const AdminStatusBadge: React.FC<{ status: string | null }> = ({ status }) => {
     const icons: Record<string, React.ReactNode> = {
       verified: <FiCheck className="h-3 w-3" aria-hidden="true" />,
       needs_action: <FiAlertTriangle className="h-3 w-3" aria-hidden="true" />,
@@ -338,10 +365,14 @@ const BookingManagement: React.FC = () => {
       pending: t('admin.booking.bookingManagement.adminStatus.pending'),
     };
 
+    // A NULL `admin_status` on a legacy row reads as "pending", the same
+    // way an unknown value does.
+    const known = status ?? 'pending';
+
     return (
-      <Badge tone={ADMIN_STATUS_TONE[status] ?? 'warning'}>
-        {icons[status] ?? icons.pending}
-        {labels[status] ?? labels.pending}
+      <Badge tone={ADMIN_STATUS_TONE[known] ?? 'warning'}>
+        {icons[known] ?? icons.pending}
+        {labels[known] ?? labels.pending}
       </Badge>
     );
   };
@@ -458,7 +489,7 @@ const BookingManagement: React.FC = () => {
               : t('admin.booking.bookingManagement.paymentType.deposit')}
           </p>
           <p className="font-semibold text-ink">
-            {booking.paymentAmount !== null ? `${booking.paymentAmount.toLocaleString()} THB` : '-'}
+            {booking.paymentAmount !== null ? `${Number(booking.paymentAmount).toLocaleString()} THB` : '-'}
           </p>
         </div>
       ),
@@ -494,39 +525,28 @@ const BookingManagement: React.FC = () => {
     { value: 'completed', label: t('booking.status.completed'), count: statusCounts.completed },
   ];
 
-  // Loading state
-  if (initialLoading) {
-    return (
-      <AppShell variant="admin" title={t('admin.booking.bookingManagement.title')}>
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 w-64 rounded-lg bg-surface-sunken" />
-          <div className="h-12 rounded-lg bg-surface-sunken" />
-          <div className="space-y-4 rounded-card border border-hairline bg-surface-card p-6">
-            {[1, 2, 3, 4, 5].map(i => (
-              <div key={i} className="h-16 rounded-lg bg-surface-sunken" />
-            ))}
-          </div>
-        </div>
-      </AppShell>
-    );
-  }
+  // The two surfaces of this page. Not a route each: reception switches
+  // between them mid-phone-call, and a route change would drop the search
+  // term, the open sidebar and the slip they were part-way through reading.
+  const surfaceTabItems: TabItem[] = [
+    { value: 'bookings', label: t('admin.booking.bookingManagement.surfaceBookings') },
+    { value: 'links', label: t('depositLink.admin.list.tab') },
+  ];
 
-  return (
-    <AppShell variant="admin" title={t('admin.booking.bookingManagement.title')}>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <p className="text-caption text-ink-muted">{t('admin.booking.bookingManagement.subtitle')}</p>
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() => bookingsQuery.refetch()}
-          disabled={bookingsQuery.isRefetching}
-        >
-          <FiRefreshCw className={`h-4 w-4 ${bookingsQuery.isRefetching ? 'animate-spin' : ''}`} aria-hidden="true" />
-          {t('common.refresh')}
-        </Button>
+  // The bookings surface, still skeleton-first: `initialLoading` covers the
+  // first list read only, so switching to the links tab never waits on it.
+  const bookingsSurface = initialLoading ? (
+    <div className="animate-pulse space-y-6">
+      <div className="h-8 w-64 rounded-lg bg-surface-sunken" />
+      <div className="h-12 rounded-lg bg-surface-sunken" />
+      <div className="space-y-4 rounded-card border border-hairline bg-surface-card p-6">
+        {[1, 2, 3, 4, 5].map(i => (
+          <div key={i} className="h-16 rounded-lg bg-surface-sunken" />
+        ))}
       </div>
-
-      <div className="flex flex-col gap-6 lg:flex-row">
+    </div>
+  ) : (
+    <div className="flex flex-col gap-6 lg:flex-row">
         {/* Left: Table Section */}
         <div className="min-w-0 lg:w-[70%]">
           {/* Status Tabs */}
@@ -598,7 +618,7 @@ const BookingManagement: React.FC = () => {
                       <span className="text-fine text-ink-faint">{t('admin.booking.bookingManagement.noSlip')}</span>
                     )}
                     <span className="ml-auto text-caption font-semibold text-ink">
-                      {booking.paymentAmount !== null ? `${booking.paymentAmount.toLocaleString()} THB` : '-'}
+                      {booking.paymentAmount !== null ? `${Number(booking.paymentAmount).toLocaleString()} THB` : '-'}
                     </span>
                   </div>
                   <div className="flex justify-end gap-1 pt-1">{rowActionButtons(booking)}</div>
@@ -643,19 +663,83 @@ const BookingManagement: React.FC = () => {
         {/* Right: Slip Viewer Sidebar */}
         <div className="min-w-0 lg:w-[30%]">
           <SlipViewerSidebar
-            booking={selectedBooking}
+            booking={selectedBookingDetail}
             onVerify={handleVerifySlip}
             onNeedsAction={handleNeedsAction}
             onEdit={handleEditBooking}
-            onRefresh={() => bookingsQuery.refetch()}
+            onRefresh={refreshBooking}
           />
+        </div>
+    </div>
+  );
+
+  return (
+    <AppShell variant="admin" title={t('admin.booking.bookingManagement.title')}>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <p className="text-caption text-ink-muted">{t('admin.booking.bookingManagement.subtitle')}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            onClick={() => setShowDepositLinkModal(true)}
+            data-testid="open-deposit-link-modal"
+          >
+            <FiLink className="h-4 w-4" aria-hidden="true" />
+            {t('depositLink.admin.open')}
+          </Button>
+          {/* Refreshes the bookings list, so it belongs to that surface only —
+              the links panel carries its own refresh next to its own filter. */}
+          {surface === 'bookings' && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => bookingsQuery.refetch()}
+              disabled={bookingsQuery.isRefetching}
+            >
+              <FiRefreshCw className={`h-4 w-4 ${bookingsQuery.isRefetching ? 'animate-spin' : ''}`} aria-hidden="true" />
+              {t('common.refresh')}
+            </Button>
+          )}
         </div>
       </div>
 
+      <TabNav
+        aria-label={t('admin.booking.bookingManagement.title')}
+        items={surfaceTabItems}
+        value={surface}
+        onChange={(value) => {
+          const next = value === 'links' ? 'links' : 'bookings';
+          if (next === 'links') {
+            setLinksVisited(true);
+          }
+          setSurface(next);
+        }}
+        className="mb-6"
+      />
+
+      {/* HIDE, do not swap. Conditionally rendering one surface unmounts the
+          other, and the slip sidebar keeps the note reception is half-way
+          through typing, the slip they are part-way through the carousel of,
+          and the fullscreen they opened in its OWN state. Flipping to
+          "ลิงก์มัดจำ" mid-phone-call to check whether the guest ever opened
+          their link used to throw all of that away — the exact loss the tab
+          strip exists to avoid. The panel is told when it is hidden so it
+          stops polling. */}
+      <div hidden={surface !== 'bookings'}>{bookingsSurface}</div>
+      {linksVisited && (
+        <div hidden={surface !== 'links'}>
+          <DepositLinkListPanel active={surface === 'links'} />
+        </div>
+      )}
+
+      <DepositLinkModal
+        open={showDepositLinkModal}
+        onClose={() => setShowDepositLinkModal(false)}
+      />
+
       {/* Edit Modal */}
-      {showEditModal && selectedBooking && (
+      {showEditModal && selectedBookingDetail && (
         <BookingEditModal
-          booking={selectedBooking}
+          booking={selectedBookingDetail}
           isOpen={showEditModal}
           onClose={handleEditModalClose}
           onSave={handleEditSave}

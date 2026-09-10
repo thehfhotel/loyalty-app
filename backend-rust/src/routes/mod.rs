@@ -5,6 +5,7 @@
 
 pub mod admin;
 pub mod admin_bookings;
+pub mod admin_deposit_links;
 pub mod admin_email;
 pub mod admin_rooms;
 pub mod admin_slips;
@@ -12,6 +13,7 @@ pub mod analytics;
 pub mod auth;
 pub mod bookings;
 pub mod coupons;
+pub mod deposit_links;
 pub mod health;
 pub mod line_webhook;
 pub mod loyalty;
@@ -52,6 +54,7 @@ use crate::state::AppState;
 /// - /api/membership -> membership ID management routes
 /// - /api/payments -> payment QR code generation routes (PromptPay)
 /// - /api/slips -> payment slip upload routes
+/// - /api/deposit -> PUBLIC deposit-request-link routes (no auth; the `X-Deposit-Token` header is the capability)
 /// - /api/analytics -> analytics tracking routes
 /// - /api/translation -> content translation routes
 /// - /api/docs -> Swagger UI for API documentation
@@ -109,6 +112,17 @@ pub fn create_router(state: AppState) -> Router {
         None => auth::routes(),
     };
 
+    // Public deposit-request links (B1). Unauthenticated by design — the
+    // token in the `X-Deposit-Token` header is the capability — so the two
+    // routes carry their own layered limiter: one global bucket per route,
+    // then per client IP, then per link. All three run in every
+    // environment, unlike the production-only limiters above: an endpoint
+    // with no authentication at all does not get to be unbudgeted in
+    // staging. `deposit_links::routes` builds those layers, because the
+    // budgets and the trusted-proxy list belong next to the handlers they
+    // protect.
+    let deposit_routes = deposit_links::routes(state.clone());
+
     let app = Router::new()
         .nest("/api/health", health::routes())
         .nest("/api/auth", auth_routes)
@@ -124,6 +138,7 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/membership", membership::routes())
         .nest("/api/payments", payments::routes())
         .nest("/api/slips", slips::routes())
+        .nest("/api/deposit", deposit_routes)
         .nest("/api/analytics", analytics::routes())
         .nest("/api/translation", translation::routes())
         // LINE Messaging API webhooks (per-property OA). Public by design —
