@@ -14,10 +14,15 @@
 
 use std::path::PathBuf;
 
+use axum::{
+    body::Body,
+    http::{header, Request},
+};
 use serde_json::Value;
+use tower::ServiceExt;
 use uuid::Uuid;
 
-use crate::common::{TestApp, TestUser};
+use crate::common::{generate_test_token_with_role, TestApp, TestUser};
 
 // ============================================================================
 // Fixtures
@@ -168,6 +173,38 @@ fn served_slips_dir() -> PathBuf {
         .expect("slip path has a parent directory")
 }
 
+/// Fetch a slip image and hand back the **raw** bytes.
+///
+/// Deliberately not `TestClient`: that helper decodes every body as UTF-8,
+/// and a PNG is not UTF-8. Same shape as `slips_test`'s raw-request helper.
+async fn get_slip_image(
+    app: &TestApp,
+    user_id: &Uuid,
+    email: &str,
+    role: &str,
+    file_name: &str,
+) -> (u16, Vec<u8>) {
+    let token = generate_test_token_with_role(user_id, email, role);
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/storage/slips/{}", file_name))
+        .header(header::AUTHORIZATION, format!("Bearer {}", token))
+        .body(Body::empty())
+        .expect("build request");
+
+    let response = app
+        .router()
+        .oneshot(request)
+        .await
+        .expect("router oneshot failed");
+    let status = response.status().as_u16();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read response body");
+
+    (status, bytes.to_vec())
+}
+
 async fn count_access_rows(pool: &sqlx::PgPool, slip_id: Uuid) -> i64 {
     sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM slip_access_log WHERE slip_id = $1")
         .bind(slip_id)
@@ -196,11 +233,12 @@ async fn an_admin_view_of_a_slip_image_is_logged() {
     let booking_id = seed_booking(app.db(), guest.id, "confirmed", 0).await;
     let (slip_id, file_name) = seed_slip(app.db(), booking_id, guest.id, "pending", &dir).await;
 
-    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
-    let response = client
-        .get(&format!("/api/storage/slips/{}", file_name))
-        .await;
-    response.assert_status(200);
+    let (status, bytes) = get_slip_image(&app, &admin.id, &admin.email, "admin", &file_name).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        bytes, TINY_PNG,
+        "the admin really did receive the image, not an error page"
+    );
 
     let row = sqlx::query_as::<_, (Uuid, String, Option<String>)>(
         "SELECT admin_id, route, request_id FROM slip_access_log WHERE slip_id = $1",
@@ -238,11 +276,10 @@ async fn a_guest_viewing_their_own_slip_is_not_logged() {
     let booking_id = seed_booking(app.db(), guest.id, "confirmed", 0).await;
     let (slip_id, file_name) = seed_slip(app.db(), booking_id, guest.id, "pending", &dir).await;
 
-    let client = app.authenticated_client(&guest.id, &guest.email);
-    let response = client
-        .get(&format!("/api/storage/slips/{}", file_name))
-        .await;
-    response.assert_status(200);
+    let (status, bytes) =
+        get_slip_image(&app, &guest.id, &guest.email, "customer", &file_name).await;
+    assert_eq!(status, 200, "the guest can still read their own slip");
+    assert_eq!(bytes, TINY_PNG);
 
     assert_eq!(
         count_access_rows(app.db(), slip_id).await,
@@ -501,10 +538,8 @@ async fn an_erased_slips_admin_view_reports_the_deletion_instead_of_failing() {
 
     // And the image route answers a clean 404 rather than a 500 — the bytes
     // are gone and the URL no longer resolves to anything.
-    let response = client
-        .get(&format!("/api/storage/slips/{}", file_name))
-        .await;
-    response.assert_status(404);
+    let (status, _) = get_slip_image(&app, &admin.id, &admin.email, "admin", &file_name).await;
+    assert_eq!(status, 404);
 
     app.cleanup().await.ok();
 }
