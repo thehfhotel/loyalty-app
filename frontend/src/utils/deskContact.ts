@@ -10,9 +10,13 @@ import type { Property } from '../services/channelBookingService';
  * hide the fallback altogether — a guest stuck on a payment page always
  * needs a way out, even a vague one.
  *
- * Read lazily (not captured at module load) so a deploy that only changes
- * the built bundle's env cannot leave a stale value behind, and so tests can
- * stub `import.meta.env` per case.
+ * These are BUILD-TIME substitutions, not runtime configuration: Vite
+ * statically replaces `import.meta.env.VITE_*` when the bundle is built, so
+ * reading them inside the function buys testability (a test can stub
+ * `import.meta.env` per case) and nothing else. When B16 supplies the
+ * numbers, they have to reach the frontend *build* step in `deploy.yml` and
+ * the image has to be rebuilt and redeployed — adding them to the running
+ * container's environment changes nothing.
  */
 export function deskPhone(property: Property | null | undefined): string | null {
   if (!property) {

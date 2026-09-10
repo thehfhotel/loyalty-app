@@ -1936,15 +1936,14 @@
     "upload": {
       "heading": "Upload your transfer slip",
       "hint": "After you transfer, pick the slip image from your phone and send it.",
-      "choose": "Choose slip image",
-      "change": "Choose another image",
       "submit": "Send slip",
       "sending": "Sending",
       "previewAlt": "Selected slip image",
       "invalidType": "Please choose a JPG or PNG image",
       "tooLarge": "The file must be 10MB or smaller",
       "failed": "We could not send the slip. Please try again.",
-      "success": "Slip sent"
+      "rateLimited": "You have sent the slip too many times. Please wait a moment before trying again, or contact the front desk.",
+      "linkClosed": "This link can no longer be used. Please contact the front desk."
     },
     "expiresAt": "This link works until {{time}}",
     "checking": {
@@ -1977,7 +1976,7 @@
       "withPhone": "Call the front desk on {{phone}}",
       "withoutPhone": "Please contact the front desk of the hotel you booked."
     },
-    "privacyNote": "We use the slip image only to check this payment, and keep it for the period stated in our privacy notice.",
+    "privacyNote": "We use the slip image only to check and confirm this deposit payment. A slip may show the name and account number of whoever sent the money, which may not be the guest who booked.",
     "privacyLink": "Read the privacy notice",
     "state": {
       "awaiting_payment": "Awaiting payment",
@@ -2015,10 +2014,7 @@
         "dates": "Check-out must be after check-in",
         "totalPrice": "The booking total must be greater than 0",
         "amountDueNow": "The deposit must be between 1 and the booking total",
-        "createFailed": "Could not issue the link",
-        "loadFailed": "Could not load the deposit links",
-        "revokeFailed": "Could not revoke the link",
-        "reissueFailed": "Could not reissue the link"
+        "createFailed": "Could not issue the link"
       },
       "issued": {
         "heading": "Link issued",
@@ -2032,29 +2028,6 @@
         "expiresAt": "Expires",
         "done": "Done",
         "shareMessage": "Here is the link to pay your booking deposit"
-      },
-      "list": {
-        "heading": "Deposit links issued",
-        "empty": "No deposit links yet",
-        "filterAll": "All",
-        "filter": {
-          "open": "Awaiting payment",
-          "paid": "Paid",
-          "expired": "Expired",
-          "revoked": "Revoked"
-        },
-        "guest": "Guest",
-        "property": "Property",
-        "amount": "Deposit",
-        "state": "State",
-        "expiresAt": "Expires",
-        "issuedBy": "Issued by",
-        "actions": "Actions",
-        "revoke": "Revoke",
-        "reissue": "Reissue",
-        "revoked": "Link revoked",
-        "reissued": "New link issued",
-        "confirmRevoke": "Revoke this link? The guest will no longer be able to open it."
       }
     }
   }

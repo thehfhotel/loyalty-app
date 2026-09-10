@@ -8,6 +8,8 @@ import axios from 'axios';
 import { Badge, Button, Card } from '../components/ui';
 import {
   depositLinkService,
+  isDepositLinkState,
+  type DepositLinkState,
   type DepositPage,
   type Property,
 } from '../services/depositLinkService';
@@ -118,7 +120,15 @@ export default function DepositLinkPage() {
   });
 
   const deposit = depositQuery.data;
-  const state = deposit?.state;
+  // Vocabulary guard, the same defensive choice `guestSlipOkStatusKey` makes
+  // for slip statuses. A `state` this bundle predates must never reach a
+  // guest as a raw i18n key or as a page with no card on it, so it reads as
+  // "being checked" and the page keeps polling until it resolves.
+  const state: DepositLinkState | undefined = deposit
+    ? isDepositLinkState(deposit.state)
+      ? deposit.state
+      : 'checking'
+    : undefined;
 
   // A link reopened after an upload (another phone, another session) arrives
   // already `checking`; start the fast window from that first sighting so the
@@ -169,7 +179,27 @@ export default function DepositLinkPage() {
       }
       await depositQuery.refetch();
     },
-    onError: () => {
+    onError: async (error: unknown) => {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      // "Please try again" is the wrong instruction for two of these. The
+      // upload is rate limited at 5 per hour per token and 20 per hour per IP
+      // (B1 §5), and a link revoked between page load and upload answers 409
+      // — in both cases another tap only burns the guest's remaining budget.
+      if (status === 429) {
+        setUploadError(th('depositLink.upload.rateLimited'));
+        return;
+      }
+      if (status === 409 || status === 410) {
+        setUploadError(th('depositLink.upload.linkClosed'));
+        // Refetch so the page flips to the expired/revoked card, which is
+        // the one that carries the call-the-desk line.
+        await depositQuery.refetch();
+        return;
+      }
+      if (status === 413) {
+        setUploadError(th('depositLink.upload.tooLarge'));
+        return;
+      }
       setUploadError(th('depositLink.upload.failed'));
     },
   });
@@ -299,7 +329,7 @@ export default function DepositLinkPage() {
         <Bilingual as="h1" thai={th('depositLink.title')} english={en('depositLink.title')} />
         <p className="text-body text-ink-muted">{th(`property.${deposit.property}`)}</p>
         <Badge tone={isConfirmed ? 'success' : isDead ? 'neutral' : 'warning'} data-testid="deposit-state">
-          {th(`depositLink.state.${deposit.state}`)}
+          {th(`depositLink.state.${state}`)}
         </Badge>
       </header>
 
@@ -488,9 +518,15 @@ export default function DepositLinkPage() {
       )}
 
       <Card className="space-y-2" data-testid="deposit-footer">
-        {/* PDPA: the payer is frequently not the guest, so a slip routinely
-            carries a third party's bank details. This line ships with the
-            page, not after it. */}
+        {/* PDPA (B1 §5): the payer is frequently not the guest, so a slip
+            routinely carries a third party's bank details, and this line
+            ships with the page rather than after it. It deliberately claims
+            only what is true today — purpose limitation and the third-party
+            payer warning. The retention period, the access-logging promise
+            and the slip card on /privacy are F1/F2's, and the F drafts say
+            not to publish a notice describing controls that do not exist
+            yet (`f-policy-copy-drafts.md` §3, still carrying [CONFIRM] on
+            the retention period and the named contact). */}
         <p className="text-caption text-ink-muted">{th('depositLink.privacyNote')}</p>
         <p className="text-fine text-ink-muted">{en('depositLink.privacyNote')}</p>
         <Link to="/privacy" className="text-caption text-brand-700 hover:underline">

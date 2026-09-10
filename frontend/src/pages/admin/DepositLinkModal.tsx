@@ -10,6 +10,7 @@ import {
   type Property,
 } from '../../services/depositLinkService';
 import IssuedDepositLinkPanel from './IssuedDepositLinkPanel';
+import { logger } from '../../utils/logger';
 
 /**
  * "Send deposit link" (B1 §3, reception half).
@@ -109,7 +110,13 @@ export default function DepositLinkModal({ open, onClose }: DepositLinkModalProp
       await queryClient.invalidateQueries({ queryKey: ['admin', 'deposit-links'] });
     },
     onError: (mutationError: Error) => {
-      setError(mutationError.message || t('depositLink.admin.errors.createFailed'));
+      // Not `mutationError.message || t(...)`: the shared axios instance
+      // rejects with a message that is always non-empty and always English
+      // (worst case axios's own "Request failed with status code 500"), so
+      // that fallback could never fire and reception would read English in a
+      // Thai-first form. The raw detail belongs in the log, not on screen.
+      logger.error('Deposit link create failed:', mutationError.message);
+      setError(t('depositLink.admin.errors.createFailed'));
     },
   });
 

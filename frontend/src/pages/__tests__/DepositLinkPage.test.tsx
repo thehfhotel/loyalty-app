@@ -74,20 +74,33 @@ async function renderSettled() {
   return result;
 }
 
-function notFoundError() {
+function httpError(status: number) {
   return new AxiosError(
-    'Not Found',
+    `HTTP ${status}`,
     'ERR_BAD_REQUEST',
     undefined,
     undefined,
     {
-      status: 404,
-      statusText: 'Not Found',
+      status,
+      statusText: `HTTP ${status}`,
       data: {},
       headers: new AxiosHeaders(),
       config: { headers: new AxiosHeaders() },
     },
   );
+}
+
+/** Pick a slip and press Send. */
+async function uploadSlip() {
+  const input = screen.getByTestId('deposit-slip-input') as HTMLInputElement;
+  const slip = new File(['jpeg-bytes'], 'slip.jpg', { type: 'image/jpeg' });
+  await act(async () => {
+    fireEvent.change(input, { target: { files: [slip] } });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByTestId('deposit-slip-submit'));
+    await Promise.resolve();
+  });
 }
 
 describe('DepositLinkPage', () => {
@@ -105,10 +118,13 @@ describe('DepositLinkPage', () => {
       expect(screen.getByAltText('QR พร้อมเพย์สำหรับชำระเงินมัดจำ')).toBeInTheDocument();
       expect(screen.getByText('สแกน QR นี้ด้วยแอปธนาคารของท่าน ยอดเงินถูกกรอกไว้ให้แล้ว')).toBeInTheDocument();
       expect(screen.getByTestId('deposit-slip-input')).toBeInTheDocument();
-      // The PDPA line ships with the page, not after it (spec §5).
+      // The PDPA line ships with the page, not after it (spec §5), and it
+      // claims only what is true today: purpose limitation plus the
+      // third-party payer warning. No retention period, because /privacy
+      // does not state one yet (F1/F2).
       expect(
         screen.getByText(
-          'เราใช้ภาพสลิปเพื่อตรวจสอบการชำระเงินครั้งนี้เท่านั้น และเก็บไว้ตามระยะเวลาที่ระบุในประกาศความเป็นส่วนตัว',
+          'เราใช้ภาพสลิปเพื่อตรวจสอบและยืนยันการชำระเงินมัดจำครั้งนี้เท่านั้น ภาพสลิปอาจแสดงชื่อและเลขบัญชีของผู้โอนเงิน ซึ่งอาจไม่ใช่ผู้จอง',
         ),
       ).toBeInTheDocument();
     });
@@ -177,7 +193,7 @@ describe('DepositLinkPage', () => {
   });
 
   it('renders the not-found page for an unknown token, with no booking detail', async () => {
-    mockGetDepositPage.mockRejectedValue(notFoundError());
+    mockGetDepositPage.mockRejectedValue(httpError(404));
     await renderSettled();
 
     expect(screen.getByTestId('deposit-notFound')).toBeInTheDocument();
@@ -233,6 +249,56 @@ describe('DepositLinkPage', () => {
       });
 
       expect(mockUploadSlip).toHaveBeenCalledWith('test-token', slip);
+    });
+  });
+
+  it('falls back to "being checked" for a state this bundle does not know', async () => {
+    // The list filter vocabulary (`open`) is not the guest vocabulary. If a
+    // newer backend ever sends one, the guest must not read a raw i18n key
+    // or land on a page with no card on it.
+    mockGetDepositPage.mockResolvedValue({ ...BASE_PAGE, state: 'open' });
+    await renderSettled();
+
+    expect(screen.getByTestId('deposit-state')).toHaveTextContent('กำลังตรวจสอบ');
+    expect(screen.getByTestId('deposit-checking')).toBeInTheDocument();
+    expect(screen.queryByText('depositLink.state.open')).not.toBeInTheDocument();
+  });
+
+  describe('when an upload fails', () => {
+    it('tells a rate-limited guest to wait rather than to try again', async () => {
+      mockUploadSlip.mockRejectedValue(httpError(429));
+      await renderSettled();
+      await uploadSlip();
+
+      await waitFor(() =>
+        expect(screen.getByTestId('deposit-upload-error')).toHaveTextContent(
+          'ท่านส่งสลิปบ่อยเกินไป กรุณารอสักครู่ก่อนส่งใหม่ หรือติดต่อแผนกต้อนรับ',
+        ),
+      );
+    });
+
+    it('refetches when the link died under the guest, so the desk line appears', async () => {
+      mockUploadSlip.mockRejectedValue(httpError(409));
+      await renderSettled();
+      // The link was revoked between page load and Send.
+      mockGetDepositPage.mockResolvedValue({ ...BASE_PAGE, state: 'revoked' });
+      await uploadSlip();
+
+      await waitFor(() => expect(screen.getByTestId('deposit-revoked')).toBeInTheDocument());
+      expect(screen.getByText('ลิงก์นี้ถูกยกเลิกแล้ว')).toBeInTheDocument();
+      expect(screen.queryByTestId('deposit-slip-input')).not.toBeInTheDocument();
+    });
+
+    it('keeps the generic retry line for everything else', async () => {
+      mockUploadSlip.mockRejectedValue(httpError(500));
+      await renderSettled();
+      await uploadSlip();
+
+      await waitFor(() =>
+        expect(screen.getByTestId('deposit-upload-error')).toHaveTextContent(
+          'ส่งสลิปไม่สำเร็จ กรุณาลองอีกครั้ง',
+        ),
+      );
     });
   });
 

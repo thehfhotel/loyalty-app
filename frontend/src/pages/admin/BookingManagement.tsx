@@ -19,7 +19,6 @@ import type { BadgeTone, TableColumn, TabItem } from '../../components/ui';
 import SlipViewerSidebar from '../../components/admin/SlipViewerSidebar';
 import BookingEditModal from './BookingEditModal';
 import DepositLinkModal from './DepositLinkModal';
-import DepositLinkList from './DepositLinkList';
 import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAdminBookingSSE } from '../../hooks/useAdminBookingSSE';
@@ -152,9 +151,10 @@ const BookingManagement: React.FC = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'confirmed' | 'cancelled' | 'completed' | ''>('');
   // B1: reception issues a deposit link for a booking it already took by
-  // phone, LINE or at the desk. The booking it creates lands in the list
-  // above because it carries a room type; the list below is the link's own
-  // lifecycle (expiry, revoke, reissue).
+  // phone, LINE or at the desk. The booking it creates lands in the table on
+  // this page because it carries a room type, so the slip is verified from
+  // the screen reception already uses. The dedicated link list with its own
+  // expiry/revoke/reissue lifecycle is B2's surface, not this one's.
   const [showDepositLinkModal, setShowDepositLinkModal] = useState(false);
 
   const pageSize = 10;
@@ -691,11 +691,6 @@ const BookingManagement: React.FC = () => {
             onRefresh={() => bookingsQuery.refetch()}
           />
         </div>
-      </div>
-
-      {/* Deposit links issued from this desk (B1) */}
-      <div className="mt-6">
-        <DepositLinkList />
       </div>
 
       <DepositLinkModal
