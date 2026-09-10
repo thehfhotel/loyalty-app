@@ -11,6 +11,7 @@
 //! - `booking_notify_test` - Property booking-notification email (B0)
 //! - `booking_test` - Booking management tests (/api/bookings/*)
 //! - `coupon_test` - Coupon management tests (/api/coupons/*)
+//! - `deposit_link_test` - Deposit request links (/api/deposit/*, /api/admin/deposit-links)
 //! - `user_test` - User management tests (/api/users/*)
 //! - `loyalty_test` - Loyalty program tests (/api/loyalty/*)
 //! - `survey_test` - Survey management tests (/api/surveys/*)
@@ -40,6 +41,7 @@ pub mod booking_notify_test;
 pub mod booking_test;
 pub mod cf_access_test;
 pub mod coupon_test;
+pub mod deposit_link_test;
 pub mod health_test;
 pub mod loyalty_test;
 pub mod notification_test;

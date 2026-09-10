@@ -693,7 +693,7 @@ async fn add_booking_slip(
 /// timeout plus one PMS round trip (`pms_channel` caps its client too) plus
 /// a little slack. Must stay comfortably under the router's `TimeoutLayer`,
 /// which is what the guest's request is actually racing.
-fn slipok_check_budget(state: &AppState) -> std::time::Duration {
+pub(crate) fn slipok_check_budget(state: &AppState) -> std::time::Duration {
     let slipok_timeout = state
         .slipok()
         .map(|s| s.timeout())
@@ -717,7 +717,11 @@ use crate::services::slip_match::{
 ///
 /// Returns the desk notification the decision earned, if any, for the caller
 /// to fire *after* the latency budget — never inside it.
-async fn run_slipok_check(
+///
+/// `pub(crate)` because the deposit-link guest upload path
+/// (`routes::deposit_links`) runs the very same check, under the same budget,
+/// and fires the same notification afterwards.
+pub(crate) async fn run_slipok_check(
     state: &AppState,
     slip_id: Uuid,
     booking_id: Uuid,
@@ -1690,7 +1694,7 @@ impl From<BookingSlipRow> for BookingSlipResponse {
 /// `add_booking_slip` handler — the placeholder reservation, slip
 /// insert, and response cache live in one transaction so a rollback
 /// removes all three.
-async fn insert_booking_slip_tx(
+pub(crate) async fn insert_booking_slip_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     booking_id: Uuid,
     slip_url: &str,

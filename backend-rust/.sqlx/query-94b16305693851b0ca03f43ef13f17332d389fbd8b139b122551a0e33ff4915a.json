@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE booking_deposit_links\n        SET open_count      = open_count + 1,\n            first_opened_at = COALESCE(first_opened_at, NOW())\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "94b16305693851b0ca03f43ef13f17332d389fbd8b139b122551a0e33ff4915a"
+}

@@ -5,6 +5,7 @@
 
 pub mod admin;
 pub mod admin_bookings;
+pub mod admin_deposit_links;
 pub mod admin_email;
 pub mod admin_rooms;
 pub mod admin_slips;
@@ -12,6 +13,7 @@ pub mod analytics;
 pub mod auth;
 pub mod bookings;
 pub mod coupons;
+pub mod deposit_links;
 pub mod health;
 pub mod line_webhook;
 pub mod loyalty;
@@ -52,6 +54,7 @@ use crate::state::AppState;
 /// - /api/membership -> membership ID management routes
 /// - /api/payments -> payment QR code generation routes (PromptPay)
 /// - /api/slips -> payment slip upload routes
+/// - /api/deposit -> PUBLIC deposit-request-link routes (no auth; the token is the capability)
 /// - /api/analytics -> analytics tracking routes
 /// - /api/translation -> content translation routes
 /// - /api/docs -> Swagger UI for API documentation
@@ -109,6 +112,29 @@ pub fn create_router(state: AppState) -> Router {
         None => auth::routes(),
     };
 
+    // Public deposit-request links (B1). Unauthenticated by design — the
+    // 43-character token in the path is the capability — so the whole
+    // sub-router carries its own limiter, layered the same way the strict
+    // auth limiter is above: 30 requests per minute per IP, production
+    // only. The guest page polls the read endpoint every 5 seconds after
+    // an upload (12/min), so a well-behaved page sits at well under half
+    // the budget.
+    //
+    // The upload's tighter budgets (5 per hour per *link*, 20 per hour per
+    // IP) live inside the handler, because the subject that matters most
+    // there is the link, not the address a phone happens to be on.
+    let deposit_routes = match &rate_limiters {
+        Some(_) => deposit_links::routes().layer(middleware::from_fn_with_state(
+            RedisRateLimiter::new(
+                state.redis(),
+                deposit_links::public_read_rate_limit(),
+                "deposit_public",
+            ),
+            redis_rate_limit_middleware,
+        )),
+        None => deposit_links::routes(),
+    };
+
     let app = Router::new()
         .nest("/api/health", health::routes())
         .nest("/api/auth", auth_routes)
@@ -124,6 +150,7 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/membership", membership::routes())
         .nest("/api/payments", payments::routes())
         .nest("/api/slips", slips::routes())
+        .nest("/api/deposit", deposit_routes)
         .nest("/api/analytics", analytics::routes())
         .nest("/api/translation", translation::routes())
         // LINE Messaging API webhooks (per-property OA). Public by design —

@@ -379,6 +379,12 @@ async fn ensure_template_db() -> Result<(), Box<dyn std::error::Error + Send + S
         include_str!("../../migrations/20260912000000_booking_notify_log.sql");
     template_pool.execute(booking_notify_log_migration).await?;
 
+    // Deposit request links (B1): `bookings.booking_source` / `pms_ref`,
+    // the `booking_deposit_links` table, and the non-loginable
+    // "Deposit link guest" actor every deposit-link booking is owned by.
+    let deposit_links_migration = include_str!("../../migrations/20260912010000_deposit_links.sql");
+    template_pool.execute(deposit_links_migration).await?;
+
     // Seed membership_id_sequence
     template_pool
         .execute(

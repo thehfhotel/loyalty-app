@@ -299,7 +299,23 @@ impl RedisRateLimiter {
     /// - `Err(RateLimitError::TooManyRequests)` if the limit is exceeded
     /// - `Err(RateLimitError::RedisError)` if Redis communication fails
     pub async fn check(&self, ip: IpAddr) -> Result<(), RateLimitError> {
-        let key = format!("rate_limit:{}:{}", self.key_prefix, ip);
+        self.check_subject(&ip.to_string()).await
+    }
+
+    /// Check a request against an arbitrary subject rather than an IP.
+    ///
+    /// Every limiter in the codebase counts per client IP, which is the
+    /// right subject when the caller is identified by nothing else. The
+    /// public deposit-link upload has a second subject that matters more:
+    /// the link itself. A guest re-uploading a slip from a phone that
+    /// changes IP between attempts is still one link, and one link is the
+    /// unit the "5 uploads per hour" budget is about.
+    ///
+    /// `subject` must never be a raw capability token — pass a hash. The
+    /// key lands in Redis and in the log line on a Redis failure, and a
+    /// token in either is a live link in a place it does not belong.
+    pub async fn check_subject(&self, subject: &str) -> Result<(), RateLimitError> {
+        let key = format!("rate_limit:{}:{}", self.key_prefix, subject);
         let window_secs = self.config.window.as_secs() as i64;
         let mut conn = self.redis.clone();
 

@@ -127,8 +127,26 @@ fn matches_image_magic_bytes(declared_mime: &str, data: &[u8]) -> bool {
 async fn upload_slip(
     State(_state): State<AppState>,
     Extension(_auth_user): Extension<AuthUser>,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> Result<Json<SlipUploadResponse>, AppError> {
+    let url = store_slip_upload(multipart).await?;
+    Ok(Json(SlipUploadResponse { url }))
+}
+
+/// Validate a multipart slip upload and write it to slip storage,
+/// returning the `/storage/slips/<uuid>.<ext>` URL.
+///
+/// The whole body of what `POST /api/slips/upload` used to do inline. It
+/// is extracted — not duplicated — because the public deposit-link upload
+/// (`routes::deposit_links`) must land in exactly the same place, under
+/// exactly the same size cap and magic-byte checks, so that F2's retention
+/// and access logging cover it with no special case. The two handlers
+/// differ only in who is allowed to call them.
+///
+/// Takes ownership of the `Multipart` extractor rather than a byte buffer:
+/// the size cap is enforced *while streaming*, which is the point of
+/// MED-3 (see the loop below).
+pub(crate) async fn store_slip_upload(mut multipart: Multipart) -> Result<String, AppError> {
     let config = SlipStorageConfig::default();
 
     let mut file_data: Option<Bytes> = None;
@@ -240,9 +258,7 @@ async fn upload_slip(
     info!("Slip upload completed: {}", filename);
 
     // Return URL path (relative to storage)
-    let url = format!("/storage/slips/{}", filename);
-
-    Ok(Json(SlipUploadResponse { url }))
+    Ok(format!("/storage/slips/{}", filename))
 }
 
 // ============================================================================
@@ -260,7 +276,7 @@ async fn upload_slip(
 ///
 /// Kept in sync with `SlipStorageConfig::max_slip_file_size` so the
 /// handler-side check stays as a belt-and-braces safeguard.
-const SLIP_UPLOAD_BODY_LIMIT_BYTES: usize = 10 * 1024 * 1024;
+pub(crate) const SLIP_UPLOAD_BODY_LIMIT_BYTES: usize = 10 * 1024 * 1024;
 
 /// Create slips routes
 ///
