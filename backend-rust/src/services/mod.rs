@@ -1,8 +1,9 @@
 //! Business logic services module
 //!
 //! Contains the service logic the route handlers delegate to: email, OAuth,
-//! slip verification (the SlipOK client and the pure decision rules in
-//! `slip_match`), storage, SSE, PromptPay, and request idempotency.
+//! slip verification (the SlipOK client, the pure decision rules in
+//! `slip_match`, and the shared confirm path in `slip_confirm`), storage,
+//! SSE, PromptPay, and request idempotency.
 //! Domain CRUD lives directly in the `routes/` handlers via `sqlx` rather
 //! than behind a service trait.
 
@@ -13,6 +14,7 @@ pub mod line;
 pub mod oauth;
 pub mod pms_channel;
 pub mod promptpay;
+pub mod slip_confirm;
 pub mod slip_match;
 pub mod slipok;
 pub mod sse;
@@ -24,6 +26,7 @@ pub use oauth::{
     GoogleTokens, GoogleUserInfo, LineTokens, LineUserInfo, OAuthAuthResult, OAuthService,
     OAuthServiceImpl, OAuthUser, OAuthUserInfo,
 };
+pub use slip_confirm::{confirm_slip, ConfirmOutcome};
 pub use slip_match::{decide, SlipDecision};
 pub use slipok::{
     SlipOKConfig, SlipOKHealthStatus, SlipOKService, SlipOkService, SlipVerificationResult,
