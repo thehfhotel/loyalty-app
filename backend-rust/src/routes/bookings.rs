@@ -285,6 +285,20 @@ async fn create_booking(
         "Booking created"
     );
 
+    // Tell the property's desk a guest is coming (B0). Fire-and-forget: this
+    // never fails the create, and an idempotent replay of the same request
+    // finds the event already claimed and stays quiet.
+    //
+    // An in-app booking sets no `property` yet, so the notifier routes it to
+    // HF Ville and says "ยังไม่ระบุสาขา / property not set" in the body
+    // rather than inventing one.
+    crate::services::booking_notify::notify(
+        &state,
+        booking.id,
+        crate::services::booking_notify::BookingNotifyEvent::BookingCreated,
+    )
+    .await;
+
     Ok((StatusCode::CREATED, Json(booking)))
 }
 
@@ -883,6 +897,19 @@ async fn slipok_check(
         auto_verify_enabled = auto_verify,
         "SlipOK decision recorded"
     );
+
+    // The desk is told about a deposit the machine accepted (B0). Shadow
+    // passes send too — during the shadow window a human still has to look,
+    // and the email says so. `manual`, `unavailable` and `pending` do not:
+    // they reach the desk through the admin queue, not the mailbox.
+    if status == SLIPOK_STATUS_VERIFIED || status == SLIPOK_STATUS_SHADOW_PASS {
+        crate::services::booking_notify::notify(
+            state,
+            booking_id,
+            crate::services::booking_notify::BookingNotifyEvent::DepositVerified { slip_id },
+        )
+        .await;
+    }
 
     Ok(())
 }
@@ -1962,6 +1989,14 @@ async fn create_channel_booking(
         payment_option = %payload.payment_option,
         "channel booking held"
     );
+
+    // Same notification as the in-app path, after the insert succeeded (B0).
+    crate::services::booking_notify::notify(
+        &state,
+        booking_id,
+        crate::services::booking_notify::BookingNotifyEvent::BookingCreated,
+    )
+    .await;
 
     Ok((
         StatusCode::CREATED,

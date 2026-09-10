@@ -237,6 +237,13 @@ jobs:
           # answers "not configured" for a property whose id is unset.
           PROMPTPAY_HF_ID:      ${{ vars.PROMPTPAY_HF_ID }}
           PROMPTPAY_HFVILLE_ID: ${{ vars.PROMPTPAY_HFVILLE_ID }}
+          # Property mailboxes for the new-booking / deposit-received email
+          # (B0). Repository *variables*, not secrets: a mailbox address is
+          # not a secret, and a variable is readable in the UI, which is what
+          # the owner needs to check who is actually being told. Unset = the
+          # notification is off for that property.
+          BOOKING_NOTIFY_EMAIL_HF:      ${{ vars.BOOKING_NOTIFY_EMAIL_HF }}
+          BOOKING_NOTIFY_EMAIL_HFVILLE: ${{ vars.BOOKING_NOTIFY_EMAIL_HFVILLE }}
         run: |
           set -euo pipefail
 
@@ -293,6 +300,8 @@ jobs:
             --arg SLIPOK_BRANCH_ID     "${SLIPOK_BRANCH_ID:-}" \
             --arg PROMPTPAY_HF_ID      "${PROMPTPAY_HF_ID:-}" \
             --arg PROMPTPAY_HFVILLE_ID "${PROMPTPAY_HFVILLE_ID:-}" \
+            --arg BOOKING_NOTIFY_EMAIL_HF      "${BOOKING_NOTIFY_EMAIL_HF:-}" \
+            --arg BOOKING_NOTIFY_EMAIL_HFVILLE "${BOOKING_NOTIFY_EMAIL_HFVILLE:-}" \
             '{
               commit_sha: $commit_sha,
               deploy_payload_b64: $deploy_payload_b64,
@@ -331,9 +340,13 @@ jobs:
             }
             # Optional keys are only written when non-empty: the backend reads an
             # empty PROMPTPAY_*_ID / SLIPOK_* as "set", which would mint a QR with
-            # no receiving id or call SlipOK with no key.
+            # no receiving id or call SlipOK with no key. BOOKING_NOTIFY_EMAIL_*
+            # joins the same merge: an empty one must mean "off", not "mail
+            # nobody", so it must not reach the shim's .env at all.
             | .env += ({ SLIPOK_API_KEY: $SLIPOK_API_KEY, SLIPOK_BRANCH_ID: $SLIPOK_BRANCH_ID,
-                         PROMPTPAY_HF_ID: $PROMPTPAY_HF_ID, PROMPTPAY_HFVILLE_ID: $PROMPTPAY_HFVILLE_ID }
+                         PROMPTPAY_HF_ID: $PROMPTPAY_HF_ID, PROMPTPAY_HFVILLE_ID: $PROMPTPAY_HFVILLE_ID,
+                         BOOKING_NOTIFY_EMAIL_HF: $BOOKING_NOTIFY_EMAIL_HF,
+                         BOOKING_NOTIFY_EMAIL_HFVILLE: $BOOKING_NOTIFY_EMAIL_HFVILLE }
                        | with_entries(select(.value != "")))' \
           | ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=yes \

@@ -1,12 +1,14 @@
 //! Business logic services module
 //!
-//! Contains the service logic the route handlers delegate to: email, OAuth,
+//! Contains the service logic the route handlers delegate to: email, the
+//! property booking notification in `booking_notify`, OAuth,
 //! slip verification (the SlipOK client, the pure decision rules in
 //! `slip_match`, and the shared confirm path in `slip_confirm`), storage,
 //! SSE, PromptPay, and request idempotency.
 //! Domain CRUD lives directly in the `routes/` handlers via `sqlx` rather
 //! than behind a service trait.
 
+pub mod booking_notify;
 pub mod cf_access;
 pub mod email;
 pub mod idempotency;
@@ -21,6 +23,7 @@ pub mod sse;
 pub mod storage;
 
 // Re-export service traits and implementations
+pub use booking_notify::BookingNotifyEvent;
 pub use email::{EmailConfig, EmailService, EmailServiceImpl, NoOpEmailService};
 pub use oauth::{
     GoogleTokens, GoogleUserInfo, LineTokens, LineUserInfo, OAuthAuthResult, OAuthService,
