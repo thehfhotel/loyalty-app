@@ -706,10 +706,16 @@ impl SlipOKService {
             ));
         }
 
-        // Parse response
-        let data: SlipOKResponse = response
+        // Parse response. SlipOK answers `{ success, data: { transRef, ... } }`
+        // (https://slipok.com/api-documentation/check-slip/), so the slip
+        // fields are unwrapped out of `data` before deserialising. A flat
+        // body is still accepted unchanged.
+        let body: serde_json::Value = response
             .json()
             .await
+            .map_err(|e| AppError::SlipOk(format!("Failed to parse response: {}", e)))?;
+
+        let data: SlipOKResponse = serde_json::from_value(unwrap_envelope(body))
             .map_err(|e| AppError::SlipOk(format!("Failed to parse response: {}", e)))?;
 
         // Handle response based on success flag
@@ -788,6 +794,31 @@ pub struct SlipOKHealthStatus {
     pub branch_id: String,
     /// Whether the service can connect (best-effort check)
     pub can_connect: bool,
+}
+
+/// Flatten SlipOK's `{ success, data: { ... } }` envelope into the flat
+/// shape [`SlipOKResponse`] deserialises from.
+///
+/// The slip fields live under `data`; `success`, `code` and `message` stay
+/// at the top level. A body without a `data` object is returned untouched,
+/// so a flat response (and every existing fixture) still parses.
+fn unwrap_envelope(body: serde_json::Value) -> serde_json::Value {
+    let serde_json::Value::Object(outer) = &body else {
+        return body;
+    };
+
+    let Some(serde_json::Value::Object(data)) = outer.get("data") else {
+        return body;
+    };
+
+    let mut merged = data.clone();
+    for key in ["success", "code", "message"] {
+        if let Some(value) = outer.get(key) {
+            merged.entry(key.to_string()).or_insert(value.clone());
+        }
+    }
+
+    serde_json::Value::Object(merged)
 }
 
 /// Pick the multipart content type and file name for a slip image from its
@@ -1066,6 +1097,47 @@ mod tests {
         assert!(!response.success);
         assert_eq!(response.message, Some("Invalid slip image".to_string()));
         assert_eq!(response.code, Some(1001));
+    }
+
+    #[test]
+    fn test_unwrap_envelope_matches_the_documented_shape() {
+        // What SlipOK actually returns.
+        let nested = serde_json::json!({
+            "success": true,
+            "data": {
+                "transRef": "REF123",
+                "amount": 1500.0,
+                "receiver": { "proxy": { "type": "NATID", "value": "xxx-xxx-xxx3047" } }
+            }
+        });
+
+        let parsed: SlipOKResponse =
+            serde_json::from_value(unwrap_envelope(nested)).expect("nested body parses");
+        assert!(parsed.success);
+        assert_eq!(parsed.trans_ref, Some("REF123".to_string()));
+        assert_eq!(parsed.amount, Some(1500.0));
+
+        let result = SlipVerificationResult::success(parsed);
+        assert_eq!(
+            result.receiver_proxy_value,
+            Some("xxx-xxx-xxx3047".to_string())
+        );
+
+        // A flat body is passed through untouched.
+        let flat = serde_json::json!({ "success": true, "transRef": "REF456" });
+        let parsed: SlipOKResponse =
+            serde_json::from_value(unwrap_envelope(flat)).expect("flat body parses");
+        assert_eq!(parsed.trans_ref, Some("REF456".to_string()));
+
+        // An error body keeps its code and message.
+        let error = serde_json::json!({
+            "success": false,
+            "code": 1008,
+            "message": "quota exceeded"
+        });
+        let parsed: SlipOKResponse =
+            serde_json::from_value(unwrap_envelope(error)).expect("error body parses");
+        assert_eq!(parsed.code, Some(1008));
     }
 
     #[test]
