@@ -13,6 +13,7 @@ import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button, Card, FormField, Input, Modal, Select, Textarea, TabNav } from '../../components/ui';
 import type { TabItem } from '../../components/ui';
+import type { SlipOkStatusValue } from '../../types/slipok';
 
 // Types matching BookingManagement
 interface BookingUser {
@@ -33,8 +34,11 @@ interface BookingSlip {
   id: string;
   imageUrl: string;
   uploadedAt: string;
-  slipokStatus: 'pending' | 'verified' | 'failed' | 'quota_exceeded';
+  slipokStatus: SlipOkStatusValue;
   slipokVerifiedAt: string | null;
+  slipokReason?: string | null;
+  slipokCheckedAt?: string | null;
+  autoVerified?: boolean;
   adminStatus: 'pending' | 'verified' | 'needs_action';
   adminVerifiedAt: string | null;
   adminVerifiedBy: string | null;

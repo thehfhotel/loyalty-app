@@ -17,6 +17,7 @@ import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { Badge, Button, type BadgeTone } from '../ui';
+import { deskSlipOkStatus, slipOkReasonKey, type SlipOkStatusValue } from '../../types/slipok';
 
 // Types matching BookingManagement
 interface BookingUser {
@@ -39,11 +40,22 @@ interface BookingSlip {
   slipUrl: string;
   uploadedAt: string;
   uploadedBy?: string;
-  slipokStatus: 'pending' | 'verified' | 'failed' | 'quota_exceeded';
+  slipokStatus: SlipOkStatusValue;
   slipokVerifiedAt: string | null;
+  /** Locked `slipok_reason` key; absent on rows checked before the reason
+   *  column existed, and on slips the machine never looked at. */
+  slipokReason?: string | null;
+  /** When the machine last decided. Falls back to `slipokVerifiedAt`. */
+  slipokCheckedAt?: string | null;
   adminStatus: 'pending' | 'verified' | 'needs_action';
   adminVerifiedAt: string | null;
   adminVerifiedBy: string | null;
+  /** Display name of the human who verified. Absent on rows the API has not
+   *  resolved a name for; an auto verify is attributed to SlipOK instead. */
+  adminVerifiedByName?: string | null;
+  /** True when `admin_verified_by` is the SlipOK system actor, i.e. the
+   *  verify was automatic. Missing (older API) is read as false. */
+  autoVerified?: boolean;
   adminNotes?: string | null;
   isPrimary?: boolean;
 }
@@ -53,12 +65,15 @@ interface LegacySlip {
   id: string;
   imageUrl: string;
   uploadedAt: string;
-  slipokStatus: 'pending' | 'verified' | 'failed' | 'quota_exceeded';
+  slipokStatus: SlipOkStatusValue;
   slipokVerifiedAt: string | null;
+  slipokReason?: string | null;
+  slipokCheckedAt?: string | null;
   adminStatus: 'pending' | 'verified' | 'needs_action';
   adminVerifiedAt: string | null;
   adminVerifiedBy: string | null;
   adminVerifiedByName: string | null;
+  autoVerified?: boolean;
 }
 
 interface BookingAuditEntry {
@@ -177,9 +192,13 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
         uploadedAt: booking.slip.uploadedAt,
         slipokStatus: booking.slip.slipokStatus,
         slipokVerifiedAt: booking.slip.slipokVerifiedAt,
+        slipokReason: booking.slip.slipokReason ?? null,
+        slipokCheckedAt: booking.slip.slipokCheckedAt ?? null,
         adminStatus: booking.slip.adminStatus,
         adminVerifiedAt: booking.slip.adminVerifiedAt,
         adminVerifiedBy: booking.slip.adminVerifiedBy,
+        adminVerifiedByName: booking.slip.adminVerifiedByName,
+        autoVerified: booking.slip.autoVerified ?? false,
         isPrimary: true
       }];
     }
@@ -258,25 +277,60 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     setIsFullscreen(true);
   };
 
-  const SlipStatusBadge: React.FC<{ status: string; verifiedAt: string | null }> = ({
-    status,
-    verifiedAt
-  }) => {
-    const badges: Record<string, { tone: BadgeTone; text: string }> = {
+  /**
+   * Desk-facing slip badge: one distinct label per locked `slipok_status`
+   * (unlike the guest badge, which collapses everything but `verified` into
+   * "being checked"), plus the machine's reason and the time it decided.
+   * Reception seeing *why* the machine stopped is the whole point — without
+   * it the desk re-checks every slip by hand and the automation buys
+   * nothing. `failed`/`quota_exceeded` stay for rows written before the
+   * vocabulary lock.
+   */
+  const SlipStatusBadge: React.FC<{
+    status: string;
+    verifiedAt: string | null;
+    reason?: string | null;
+    checkedAt?: string | null;
+  }> = ({ status, verifiedAt, reason, checkedAt }) => {
+    // Keyed by the locked vocabulary, not `string`: adding a status to
+    // `SLIPOK_STATUSES` must break this build rather than quietly render the
+    // machine's new verdict as "not yet checked" at the desk.
+    const badges: Record<SlipOkStatusValue, { tone: BadgeTone; text: string }> = {
       verified: { tone: 'success', text: t('admin.booking.bookingManagement.slipStatus.verified') },
-      failed: { tone: 'error', text: t('admin.booking.bookingManagement.slipStatus.failed') },
       pending: { tone: 'warning', text: t('admin.booking.bookingManagement.slipStatus.pending') },
+      shadow_pass: { tone: 'info', text: t('admin.booking.bookingManagement.slipStatus.shadowPass') },
+      manual: { tone: 'warning', text: t('admin.booking.bookingManagement.slipStatus.manual') },
+      unavailable: { tone: 'neutral', text: t('admin.booking.bookingManagement.slipStatus.unavailable') },
+      failed: { tone: 'error', text: t('admin.booking.bookingManagement.slipStatus.failed') },
       quota_exceeded: { tone: 'warning', text: t('admin.booking.bookingManagement.slipStatus.quotaExceeded') }
     };
 
-    const badge = badges[status] ?? badges.pending;
+    // A status this bundle predates still renders — as "pending" — rather
+    // than as a blank badge; `deskSlipOkStatus` is the only place that
+    // decision is made.
+    const badge = badges[deskSlipOkStatus(status)];
+    const reasonKey = slipOkReasonKey(reason);
+    // An unknown reason still reaches the desk verbatim — a raw key beats a
+    // blank space when reception is deciding whether to call the guest.
+    const reasonText = reasonKey ? t(reasonKey) : (reason ?? null);
+    const decidedAt = checkedAt ?? verifiedAt;
 
     return (
       <div className="flex flex-col gap-1">
-        <Badge tone={badge?.tone ?? 'warning'}>{badge?.text ?? ''}</Badge>
-        {verifiedAt && (
+        <Badge tone={badge.tone}>{badge.text}</Badge>
+        {reasonText && (
           <span className="text-fine text-ink-muted">
-            {formatDateTimeToEuropean(verifiedAt)}
+            {t('admin.booking.bookingManagement.slipViewer.slipokReason')}: {reasonText}
+          </span>
+        )}
+        {decidedAt && (
+          // Labelled, because the admin badge beside it prints its own bare
+          // timestamp — an unlabelled pair leaves reception guessing which
+          // one is the machine's check, exactly when they are deciding
+          // whether that verdict is stale.
+          <span className="text-fine text-ink-muted">
+            {t('admin.booking.bookingManagement.slipViewer.slipokCheckedAt')}:{' '}
+            {formatDateTimeToEuropean(decidedAt)}
           </span>
         )}
       </div>
@@ -287,7 +341,8 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     status: string;
     verifiedAt: string | null;
     verifiedByName?: string | null;
-  }> = ({ status, verifiedAt, verifiedByName }) => {
+    autoVerified?: boolean;
+  }> = ({ status, verifiedAt, verifiedByName, autoVerified = false }) => {
     const badges: Record<string, { tone: BadgeTone; text: string }> = {
       verified: { tone: 'success', text: t('admin.booking.bookingManagement.adminStatus.verified') },
       needs_action: { tone: 'error', text: t('admin.booking.bookingManagement.adminStatus.needsAction') },
@@ -295,6 +350,12 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     };
 
     const badge = badges[status] ?? badges.pending;
+    // A machine verify is attributed to the SlipOK system actor, never to a
+    // human admin — that attribution is what makes the human-touch KPI
+    // countable, so it has to be visible at the desk too.
+    const verifier = autoVerified
+      ? t('admin.booking.bookingManagement.slipViewer.autoVerifier')
+      : verifiedByName;
 
     return (
       <div className="flex flex-col gap-1">
@@ -304,9 +365,9 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
             {formatDateTimeToEuropean(verifiedAt)}
           </span>
         )}
-        {verifiedByName && (
+        {verifier && (
           <span className="text-fine text-ink-muted">
-            {t('admin.booking.bookingManagement.by')}: {verifiedByName}
+            {t('admin.booking.bookingManagement.by')}: {verifier}
           </span>
         )}
       </div>
@@ -371,7 +432,12 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
             <p className="mb-1 text-fine text-ink-muted">
               {t('admin.booking.bookingManagement.slipViewer.slipokStatus')}
             </p>
-            <SlipStatusBadge status={currentSlip.slipokStatus} verifiedAt={currentSlip.slipokVerifiedAt} />
+            <SlipStatusBadge
+              status={currentSlip.slipokStatus}
+              verifiedAt={currentSlip.slipokVerifiedAt}
+              reason={currentSlip.slipokReason}
+              checkedAt={currentSlip.slipokCheckedAt}
+            />
           </div>
           <div>
             <p className="mb-1 text-fine text-ink-muted">
@@ -380,7 +446,8 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
             <AdminStatusBadge
               status={currentSlip.adminStatus}
               verifiedAt={currentSlip.adminVerifiedAt}
-              verifiedByName={null}
+              verifiedByName={currentSlip.adminVerifiedByName ?? null}
+              autoVerified={currentSlip.autoVerified ?? false}
             />
           </div>
         </div>

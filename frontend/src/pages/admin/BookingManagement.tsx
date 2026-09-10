@@ -20,6 +20,7 @@ import BookingEditModal from './BookingEditModal';
 import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAdminBookingSSE } from '../../hooks/useAdminBookingSSE';
+import { deskSlipOkStatus, type SlipOkStatusValue } from '../../types/slipok';
 
 // Types for booking management
 interface BookingUser {
@@ -40,12 +41,16 @@ interface BookingSlip {
   id: string;
   imageUrl: string;
   uploadedAt: string;
-  slipokStatus: 'pending' | 'verified' | 'failed' | 'quota_exceeded';
+  slipokStatus: SlipOkStatusValue;
   slipokVerifiedAt: string | null;
+  slipokReason?: string | null;
+  slipokCheckedAt?: string | null;
   adminStatus: 'pending' | 'verified' | 'needs_action';
   adminVerifiedAt: string | null;
   adminVerifiedBy: string | null;
   adminVerifiedByName: string | null;
+  /** True when the verify was the SlipOK system actor's, not a human's. */
+  autoVerified?: boolean;
 }
 
 interface BookingAuditEntry {
@@ -102,10 +107,18 @@ const BOOKING_STATUS_TONE: Record<string, BadgeTone> = {
   completed: 'brand',
 };
 
-const SLIP_OK_STATUS_TONE: Record<string, BadgeTone> = {
+// One tone per locked `slipok_status`, plus the two pre-lock values old rows
+// still carry. Desk-facing, so unlike the guest badge these stay distinct.
+// Keyed by the locked vocabulary, not `string`, so a status added to
+// `SLIPOK_STATUSES` breaks this build instead of showing the desk "Pending"
+// for a slip the machine has already rejected.
+const SLIP_OK_STATUS_TONE: Record<SlipOkStatusValue, BadgeTone> = {
   verified: 'success',
-  failed: 'error',
   pending: 'warning',
+  shadow_pass: 'info',
+  manual: 'warning',
+  unavailable: 'neutral',
+  failed: 'error',
   quota_exceeded: 'warning',
 };
 
@@ -305,23 +318,33 @@ const BookingManagement: React.FC = () => {
   };
 
   const SlipOkStatusBadge: React.FC<{ status: string }> = ({ status }) => {
-    const icons: Record<string, React.ReactNode> = {
+    const icons: Record<SlipOkStatusValue, React.ReactNode> = {
       verified: <FiCheck className="h-3 w-3" aria-hidden="true" />,
-      failed: <FiAlertTriangle className="h-3 w-3" aria-hidden="true" />,
       pending: <FiClock className="h-3 w-3" aria-hidden="true" />,
+      shadow_pass: <FiCheck className="h-3 w-3" aria-hidden="true" />,
+      manual: <FiAlertTriangle className="h-3 w-3" aria-hidden="true" />,
+      unavailable: <FiAlertTriangle className="h-3 w-3" aria-hidden="true" />,
+      failed: <FiAlertTriangle className="h-3 w-3" aria-hidden="true" />,
       quota_exceeded: <FiAlertTriangle className="h-3 w-3" aria-hidden="true" />,
     };
-    const labels: Record<string, string> = {
+    const labels: Record<SlipOkStatusValue, string> = {
       verified: t('admin.booking.bookingManagement.slipStatus.verified'),
-      failed: t('admin.booking.bookingManagement.slipStatus.failed'),
       pending: t('admin.booking.bookingManagement.slipStatus.pending'),
+      shadow_pass: t('admin.booking.bookingManagement.slipStatus.shadowPass'),
+      manual: t('admin.booking.bookingManagement.slipStatus.manual'),
+      unavailable: t('admin.booking.bookingManagement.slipStatus.unavailable'),
+      failed: t('admin.booking.bookingManagement.slipStatus.failed'),
       quota_exceeded: t('admin.booking.bookingManagement.slipStatus.quotaExceeded'),
     };
 
+    // A status this bundle predates still renders — as "pending" — rather
+    // than as a blank badge.
+    const known = deskSlipOkStatus(status);
+
     return (
-      <Badge tone={SLIP_OK_STATUS_TONE[status] ?? 'warning'}>
-        {icons[status] ?? icons.pending}
-        {labels[status] ?? labels.pending}
+      <Badge tone={SLIP_OK_STATUS_TONE[known]}>
+        {icons[known]}
+        {labels[known]}
       </Badge>
     );
   };

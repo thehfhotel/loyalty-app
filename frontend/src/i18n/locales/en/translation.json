@@ -787,7 +787,10 @@
           "verified": "Verified",
           "failed": "Failed",
           "pending": "Pending",
-          "quotaExceeded": "Quota Exceeded"
+          "quotaExceeded": "Quota Exceeded",
+          "shadowPass": "System pass (awaiting admin)",
+          "manual": "Manual check needed",
+          "unavailable": "Auto-check unavailable"
         },
         "adminStatus": {
           "verified": "Verified",
@@ -818,7 +821,10 @@
           "noSlip": "No slip uploaded",
           "auditSummary": "Recent Activity",
           "viewFullHistory": "View Full History",
-          "noAuditHistory": "No activity history"
+          "noAuditHistory": "No activity history",
+          "slipokReason": "Reason",
+          "slipokCheckedAt": "Checked",
+          "autoVerifier": "SlipOK"
         },
         "modals": {
           "needsAction": {
@@ -1804,10 +1810,25 @@
     "uploadError": "Failed to upload slip. Please try again.",
     "qrFallback": "Showing fallback QR code. Please confirm the amount before paying.",
     "slipok": {
-      "pending": "Pending",
-      "verified": "Verified",
-      "failed": "Failed",
-      "quota_exceeded": "Manual Check"
+      "status": {
+        "pending": "Being checked",
+        "verified": "Confirmed",
+        "shadow_pass": "Being checked",
+        "manual": "Being checked",
+        "unavailable": "Being checked"
+      },
+      "reason": {
+        "amount_mismatch": "Transferred amount does not match the booking",
+        "receiver_mismatch": "Transferred to a different account",
+        "duplicate": "This slip has already been used",
+        "slip_invalid": "The slip could not be read",
+        "booking_not_payable": "This booking cannot take a payment right now",
+        "confirm_failed": "The check result could not be saved",
+        "quota_exceeded": "Automatic checking quota is used up",
+        "api_error": "The checking service returned an error",
+        "not_configured": "Automatic checking is not set up",
+        "timeout": "The check did not answer in time"
+      }
     },
     "admin": {
       "pending": "Pending",
