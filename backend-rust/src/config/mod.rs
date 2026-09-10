@@ -1072,6 +1072,32 @@ impl Settings {
 mod tests {
     use super::*;
 
+    /// `SLIPOK_AUTO_VERIFY` arrives from the environment as a *string*
+    /// override on a `bool` field. If the config layer refused to coerce it,
+    /// setting the variable would fail `Settings::new()` at boot — i.e. the
+    /// kill switch would take the service down instead of turning the
+    /// feature on. This pins the coercion (and the false default).
+    #[test]
+    fn slipok_auto_verify_parses_from_a_string_override() {
+        fn load(value: Option<&str>) -> SlipokConfig {
+            let mut builder = ::config::Config::builder()
+                .set_default("slipok.auto_verify", false)
+                .expect("default");
+            builder = builder
+                .set_override_option("slipok.auto_verify", value.map(str::to_string))
+                .expect("override");
+            builder
+                .build()
+                .expect("build config")
+                .get::<SlipokConfig>("slipok")
+                .expect("deserialise slipok config")
+        }
+
+        assert!(!load(None).auto_verify, "unset must default to off");
+        assert!(load(Some("true")).auto_verify);
+        assert!(!load(Some("false")).auto_verify);
+    }
+
     #[test]
     fn test_admin_bootstrap_email_list_parsing() {
         // Unset = off
