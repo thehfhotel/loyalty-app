@@ -20,6 +20,22 @@ const {
   mockMarkSlipNeedsAction: vi.fn(),
 }));
 
+const { mockListLinks } = vi.hoisted(() => ({ mockListLinks: vi.fn() }));
+
+// The links surface talks to the backend only through this service. Without
+// the mock, clicking its tab reaches for axios.
+vi.mock('../../../services/depositLinkService', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../../services/depositLinkService')>();
+  return {
+    ...actual,
+    depositLinkService: {
+      ...actual.depositLinkService,
+      listLinks: mockListLinks,
+    },
+  };
+});
+
 vi.mock('../../../services/adminBookingService', () => ({
   adminBookingService: {
     listBookings: mockListBookings,
@@ -147,9 +163,14 @@ vi.mock('react-i18next', () => ({
         'common.refresh': 'Refresh',
         'common.previous': 'Previous',
         'common.next': 'Next',
+        'admin.booking.bookingManagement.surfaceBookings': 'Bookings',
+        'depositLink.admin.list.tab': 'Deposit links',
       };
       return translations[key] ?? key;
     },
+    // The links panel formats its relative times against the active
+    // language, so the stub has to carry one.
+    i18n: { language: 'th' },
   }),
 }));
 
@@ -176,6 +197,10 @@ vi.mock('../../../components/admin/SlipViewerSidebar', () => ({
   }) => (
     <div data-testid="slip-viewer-sidebar">
       Slip Viewer
+      {/* Uncontrolled on purpose: its value lives in the DOM node, so it
+          survives a re-render and dies with an unmount — exactly the
+          half-typed verification note the tab strip must not throw away. */}
+      <input data-testid="sidebar-note" defaultValue="" />
       {booking && (
         <button type="button" onClick={() => onVerify(booking.id)}>
           sidebar-verify
@@ -213,6 +238,7 @@ describe('BookingManagement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockListBookings.mockResolvedValue(EMPTY_LIST);
+    mockListLinks.mockResolvedValue({ links: [], total: 0 });
     mockGetBooking.mockResolvedValue({ ...BOOKING, auditHistory: [] });
     mockVerifySlip.mockResolvedValue({ id: SLIP.id, adminStatus: 'verified' });
     // `getSlip` is not reached from this file (SlipViewerSidebar is mocked
@@ -240,6 +266,43 @@ describe('BookingManagement', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  describe('The two surfaces', () => {
+    it('shows the deposit-link panel on its tab, and hides the bookings table', async () => {
+      const user = userEvent.setup();
+      render(<BookingManagement />, { wrapper });
+
+      await screen.findByPlaceholderText('Search bookings...');
+
+      await user.click(screen.getByRole('tab', { name: 'Deposit links' }));
+
+      expect(await screen.findByTestId('deposit-link-list-panel')).toBeInTheDocument();
+      // Hidden, not unmounted — but out of the accessibility tree, so the
+      // desk cannot tab into a surface it is not looking at.
+      expect(
+        screen.queryByRole('table', { name: 'Booking Management' }),
+      ).not.toBeInTheDocument();
+      expect(mockListLinks).toHaveBeenCalled();
+    });
+
+    it('keeps the slip sidebar mounted across a tab switch', async () => {
+      const user = userEvent.setup();
+      mockListBookings.mockResolvedValue(ONE_BOOKING_LIST);
+      render(<BookingManagement />, { wrapper });
+
+      const note = await screen.findByTestId('sidebar-note');
+      await user.type(note, 'Transfer is 500 short');
+
+      await user.click(screen.getByRole('tab', { name: 'Deposit links' }));
+      await screen.findByTestId('deposit-link-list-panel');
+      await user.click(screen.getByRole('tab', { name: 'Bookings' }));
+
+      // Reception flipped to the links tab mid-phone-call to check whether
+      // the guest ever opened their link. The note they were part-way
+      // through typing is still there.
+      expect(screen.getByTestId('sidebar-note')).toHaveValue('Transfer is 500 short');
+    });
   });
 
   describe('Basic Rendering', () => {

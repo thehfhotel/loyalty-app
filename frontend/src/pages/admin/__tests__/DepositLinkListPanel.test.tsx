@@ -104,6 +104,20 @@ function action(testId: string): HTMLElement {
   return element;
 }
 
+/**
+ * Reissue is confirmed like revoke — it revokes every live link on the
+ * booking — so every reissue in this file goes through the dialog.
+ */
+async function reissueThroughDialog(
+  user: ReturnType<typeof userEvent.setup>,
+  testId: string,
+) {
+  await user.click(action(testId));
+  const dialog = await screen.findByRole('dialog');
+  await user.click(within(dialog).getByTestId('deposit-link-reissue-confirm'));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+}
+
 function renderPanel() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -231,7 +245,13 @@ describe('DepositLinkListPanel', () => {
         'Somchai Sooksan',
       );
 
-      await user.click(within(dialog).getByRole('button', { name: 'ยกเลิก' }));
+      // No button in this dialog may be plain "ยกเลิก": that is Thai for
+      // Cancel *and* the verb in "ยกเลิกลิงก์" (revoke link), and the desk
+      // reads the shorter of two adjacent ยกเลิก buttons as "cancel the
+      // link".
+      expect(within(dialog).queryByRole('button', { name: 'ยกเลิก' })).not.toBeInTheDocument();
+
+      await user.click(within(dialog).getByTestId('deposit-link-confirm-keep'));
 
       expect(mockRevokeLink).not.toHaveBeenCalled();
     });
@@ -250,6 +270,79 @@ describe('DepositLinkListPanel', () => {
       await user.click(within(dialog).getByTestId('deposit-link-revoke-confirm'));
 
       await waitFor(() => expect(mockRevokeLink).toHaveBeenCalledWith('link-1'));
+    });
+
+    it('does not also claim there are no links when the load failed', async () => {
+      mockListLinks.mockRejectedValue(new Error('boom'));
+
+      renderPanel();
+
+      await waitFor(() =>
+        expect(screen.getByTestId('deposit-link-list-error')).toBeInTheDocument(),
+      );
+      // "Could not load" and "there are no deposit links yet" are two
+      // different statements about the same data, and the second one is the
+      // dangerous one when the desk is checking whether a link is live.
+      expect(screen.queryByText('ยังไม่มีลิงก์มัดจำ')).not.toBeInTheDocument();
+    });
+
+    it('hangs the count on the filter that is actually showing', async () => {
+      const user = userEvent.setup();
+      mockListLinks.mockResolvedValue({ links: [row()], total: 3 });
+
+      renderPanel();
+
+      // `total` counts through the active status filter, so on the open tab
+      // it is the number of OPEN links — never the total of everything.
+      const openTab = await screen.findByRole('tab', { name: /ที่ยังใช้งานอยู่/ });
+      await waitFor(() => expect(openTab).toHaveTextContent('3'));
+      expect(screen.getByRole('tab', { name: /ทั้งหมด/ })).not.toHaveTextContent('3');
+
+      mockListLinks.mockResolvedValue({ links: [row()], total: 50 });
+      await user.click(screen.getByRole('tab', { name: /ทั้งหมด/ }));
+
+      await waitFor(() =>
+        expect(screen.getByRole('tab', { name: /ทั้งหมด/ })).toHaveTextContent('50'),
+      );
+    });
+
+    it('follows the list back to a page that exists when it shrinks under a poll', async () => {
+      const user = userEvent.setup();
+      mockListLinks.mockResolvedValue({ links: [row()], total: 60 });
+
+      renderPanel();
+
+      await waitFor(() => expect(screen.getByText(/หน้า 1 จาก 3/)).toBeInTheDocument());
+      await user.click(screen.getByRole('button', { name: 'ถัดไป' }));
+      await waitFor(() => expect(screen.getByText(/หน้า 2 จาก 3/)).toBeInTheDocument());
+
+      // A batch of links gets confirmed; the open list is now one page long
+      // while the desk is standing on page 2.
+      mockListLinks.mockResolvedValue({ links: [row()], total: 12 });
+      await user.click(screen.getByTestId('deposit-link-refresh'));
+
+      await waitFor(() =>
+        expect(mockListLinks).toHaveBeenLastCalledWith({
+          status: 'open',
+          page: 1,
+          limit: 20,
+        }),
+      );
+      expect(screen.queryByTestId('deposit-link-list-error')).not.toBeInTheDocument();
+    });
+
+    it('renders a row whose guest name and property came back null without leaking the key', async () => {
+      mockListLinks.mockResolvedValue({
+        links: [row({ guestName: null, property: null })],
+        total: 1,
+      });
+
+      renderPanel();
+
+      await waitFor(() =>
+        expect(screen.getAllByText('(ไม่ระบุชื่อ)').length).toBeGreaterThan(0),
+      );
+      expect(screen.queryByText('property.null')).not.toBeInTheDocument();
     });
 
     it('offers no revoke on a link that is already dead or already paid', async () => {
@@ -288,6 +381,44 @@ describe('DepositLinkListPanel', () => {
       expiresAt: '2026-10-02T05:00:00.000Z',
     };
 
+    it('asks before minting, because reissue kills the guest link the same way revoke does', async () => {
+      const user = userEvent.setup();
+      renderPanel();
+
+      await waitFor(() =>
+        expect(screen.getAllByText('Somchai Sooksan').length).toBeGreaterThan(0),
+      );
+      await user.click(action('deposit-link-reissue-link-1'));
+
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).getByTestId('deposit-link-reissue-confirm-body')).toHaveTextContent(
+        'Somchai Sooksan',
+      );
+
+      await user.click(within(dialog).getByTestId('deposit-link-confirm-keep'));
+
+      expect(mockReissueLink).not.toHaveBeenCalled();
+    });
+
+    it('warns when the guest it would cut off has already uploaded a slip', async () => {
+      const user = userEvent.setup();
+      mockListLinks.mockResolvedValue({
+        links: [row({ state: 'checking' })],
+        total: 1,
+      });
+      renderPanel();
+
+      await waitFor(() =>
+        expect(screen.getAllByText('Somchai Sooksan').length).toBeGreaterThan(0),
+      );
+      await user.click(action('deposit-link-reissue-link-1'));
+
+      const dialog = await screen.findByRole('dialog');
+      expect(
+        within(dialog).getByTestId('deposit-link-reissue-checking-warning'),
+      ).toBeInTheDocument();
+    });
+
     it('swaps the link on screen for the one the reissue minted', async () => {
       const user = userEvent.setup();
       mockReissueLink
@@ -304,7 +435,7 @@ describe('DepositLinkListPanel', () => {
         expect(screen.getAllByText('Somchai Sooksan').length).toBeGreaterThan(0),
       );
 
-      await user.click(action('deposit-link-reissue-link-1'));
+      await reissueThroughDialog(user, 'deposit-link-reissue-link-1');
 
       const shown = await screen.findByTestId('issued-deposit-link-url');
       expect(shown).toHaveTextContent(`/d#${OLD_TOKEN}`);
@@ -312,7 +443,7 @@ describe('DepositLinkListPanel', () => {
       // A second reissue replaces it rather than stacking a second panel:
       // the first token is dead, and two live-looking links on one screen
       // is how the wrong one gets sent.
-      await user.click(action('deposit-link-reissue-link-1'));
+      await reissueThroughDialog(user, 'deposit-link-reissue-link-1');
 
       await waitFor(() =>
         expect(screen.getByTestId('issued-deposit-link-url')).toHaveTextContent(
@@ -349,7 +480,7 @@ describe('DepositLinkListPanel', () => {
       expect(action('deposit-link-copy-link-1')).toBeDisabled();
       expect(screen.queryByTestId('deposit-link-share-link-1')).not.toBeInTheDocument();
 
-      await user.click(action('deposit-link-reissue-link-1'));
+      await reissueThroughDialog(user, 'deposit-link-reissue-link-1');
 
       // The reissue minted link-2's token in this session.
       await waitFor(() =>
@@ -370,7 +501,7 @@ describe('DepositLinkListPanel', () => {
         expect(screen.getAllByText('Somchai Sooksan').length).toBeGreaterThan(0),
       );
 
-      await user.click(action('deposit-link-reissue-link-1'));
+      await reissueThroughDialog(user, 'deposit-link-reissue-link-1');
       await screen.findByTestId('issued-deposit-link-url');
 
       // The reissue is addressed by link id, never by token: a token in a

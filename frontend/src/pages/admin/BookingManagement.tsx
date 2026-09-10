@@ -98,6 +98,10 @@ const BookingManagement: React.FC = () => {
   // guest never opened theirs, and which one needs killing. They are one
   // page because they are one job — the desk moves between them mid-call.
   const [surface, setSurface] = useState<'bookings' | 'links'>('bookings');
+  // The links panel is mounted on first visit and then stays mounted (see
+  // the render below), so it is not built until the desk actually asks for
+  // it — and it never re-runs its first load on the way back.
+  const [linksVisited, setLinksVisited] = useState(false);
 
   const pageSize = 10;
   const totalPages = Math.ceil(totalBookings / pageSize);
@@ -702,11 +706,30 @@ const BookingManagement: React.FC = () => {
         aria-label={t('admin.booking.bookingManagement.title')}
         items={surfaceTabItems}
         value={surface}
-        onChange={(value) => setSurface(value === 'links' ? 'links' : 'bookings')}
+        onChange={(value) => {
+          const next = value === 'links' ? 'links' : 'bookings';
+          if (next === 'links') {
+            setLinksVisited(true);
+          }
+          setSurface(next);
+        }}
         className="mb-6"
       />
 
-      {surface === 'links' ? <DepositLinkListPanel /> : bookingsSurface}
+      {/* HIDE, do not swap. Conditionally rendering one surface unmounts the
+          other, and the slip sidebar keeps the note reception is half-way
+          through typing, the slip they are part-way through the carousel of,
+          and the fullscreen they opened in its OWN state. Flipping to
+          "ลิงก์มัดจำ" mid-phone-call to check whether the guest ever opened
+          their link used to throw all of that away — the exact loss the tab
+          strip exists to avoid. The panel is told when it is hidden so it
+          stops polling. */}
+      <div hidden={surface !== 'bookings'}>{bookingsSurface}</div>
+      {linksVisited && (
+        <div hidden={surface !== 'links'}>
+          <DepositLinkListPanel active={surface === 'links'} />
+        </div>
+      )}
 
       <DepositLinkModal
         open={showDepositLinkModal}

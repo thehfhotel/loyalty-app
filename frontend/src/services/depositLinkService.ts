@@ -135,8 +135,14 @@ export type DepositLinkListFilter = 'open' | 'paid' | 'expired' | 'revoked';
 export interface DepositLinkListItem {
   linkId: string;
   bookingId: string;
-  property: Property;
-  guestName: string;
+  /**
+   * Nullable on the wire: the backend serialises both of these as
+   * `Option<String>` (the columns are nullable), and create-time validation
+   * is the only thing keeping them filled today. Typed honestly so the
+   * table renders a gap rather than the literal string `property.null`.
+   */
+  property: Property | null;
+  guestName: string | null;
   amountDueNow: number;
   state: DepositLinkState;
   expiresAt: string;

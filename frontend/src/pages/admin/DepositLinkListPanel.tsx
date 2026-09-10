@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-hot-toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -70,7 +70,28 @@ const STATE_TONE: Record<DepositLinkState, BadgeTone> = {
 /** A live link is one a guest could still pay against. */
 const LIVE_STATES: readonly DepositLinkState[] = ['awaiting_payment', 'checking'];
 
-export default function DepositLinkListPanel() {
+/**
+ * The row an action is being confirmed for.
+ *
+ * Reissue shares this dialog with revoke: it revokes *every* live link on
+ * the booking and moves the booking's hold, so to the guest holding the old
+ * URL it is exactly as destructive as a revoke — and the two controls sit
+ * side by side in the row. One unconfirmed click on an icon was enough to
+ * kill the link of a guest who had already uploaded a slip.
+ */
+type PendingAction = { kind: 'revoke' | 'reissue'; row: DepositLinkListItem };
+
+export interface DepositLinkListPanelProps {
+  /**
+   * False while the panel sits behind another tab. BookingManagement keeps
+   * this component mounted across a surface switch (so the slip sidebar's
+   * half-typed note survives), and a panel nobody can see must not keep
+   * polling the list every 30 s.
+   */
+  active?: boolean;
+}
+
+export default function DepositLinkListPanel({ active = true }: DepositLinkListPanelProps) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
 
@@ -85,14 +106,14 @@ export default function DepositLinkListPanel() {
   /** The link whose URL is currently on screen; a reissue replaces it. */
   const [revealedLinkId, setRevealedLinkId] = useState<string | null>(null);
   /**
-   * The row a revoke is being confirmed for.
+   * The row a revoke or a reissue is being confirmed for.
    *
-   * A dialog rather than `window.confirm`: revoke is destructive and
-   * irreversible — the guest's page stops working the moment it lands — and
-   * a native confirm on the desk's tablet is an unstyled, untranslatable
+   * A dialog rather than `window.confirm`: both are destructive and
+   * irreversible — the guest's page stops working the moment either lands —
+   * and a native confirm on the desk's tablet is an unstyled, untranslatable
    * box that some kiosk browsers suppress outright.
    */
-  const [pendingRevoke, setPendingRevoke] = useState<DepositLinkListItem | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const listParams = useMemo(
     () => ({
@@ -109,14 +130,29 @@ export default function DepositLinkListPanel() {
     // up here without either component knowing about the other.
     queryKey: ['admin', 'deposit-links', listParams],
     queryFn: () => depositLinkService.listLinks(listParams),
-    refetchInterval: POLL_INTERVAL_MS,
-    refetchOnWindowFocus: true,
+    refetchInterval: active ? POLL_INTERVAL_MS : false,
+    refetchOnWindowFocus: active,
   });
 
   const links = linksQuery.data?.links ?? [];
   const total = linksQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const revealedLink = revealedLinkId ? (sessionLinks[revealedLinkId] ?? null) : null;
+
+  /**
+   * The 30 s poll can shrink the result set under the desk's feet — a batch
+   * of open links gets confirmed while reception is on page 3 — and a page
+   * number past the end asks the backend for rows that do not exist, which
+   * renders as "there are no deposit links at all". Follow the data back.
+   */
+  useEffect(() => {
+    // Only once a response is in hand: while the next page is in flight
+    // there is no `data`, `total` reads 0, and clamping on that would bounce
+    // the desk back to page 1 every time they pressed Next.
+    if (linksQuery.data && page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [linksQuery.data, page, totalPages]);
 
   const invalidate = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['admin', 'deposit-links'] });
@@ -182,13 +218,27 @@ export default function DepositLinkListPanel() {
     [t],
   );
 
-  const confirmRevoke = useCallback(() => {
-    if (!pendingRevoke) {
+  const confirmPendingAction = useCallback(() => {
+    if (!pendingAction) {
       return;
     }
-    revokeMutation.mutate(pendingRevoke.linkId);
-    setPendingRevoke(null);
-  }, [pendingRevoke, revokeMutation]);
+    if (pendingAction.kind === 'revoke') {
+      revokeMutation.mutate(pendingAction.row.linkId);
+    } else {
+      reissueMutation.mutate(pendingAction.row.linkId);
+    }
+    setPendingAction(null);
+  }, [pendingAction, reissueMutation, revokeMutation]);
+
+  /**
+   * `guestName` and `property` are nullable on the wire. A hole where the
+   * guest's name should be is worst inside a destructive confirm — a dialog
+   * that names nobody — so name the gap instead of rendering nothing.
+   */
+  const guestLabel = useCallback(
+    (row: DepositLinkListItem) => row.guestName ?? t('depositLink.admin.list.unknownGuest'),
+    [t],
+  );
 
   const handleFilterChange = useCallback((value: string) => {
     setFilter(value === 'all' ? 'all' : 'open');
@@ -274,17 +324,21 @@ export default function DepositLinkListPanel() {
             </a>
           ) : null}
 
+          {/* The two destructive controls carry their label in words, not
+              as an icon plus an `sr-only` span: they sit next to each other,
+              they do different irreversible things to the same guest's link,
+              and reception aims at them mid-phone-call. */}
           <Button
             type="button"
             variant="secondary"
             size="sm"
             disabled={!live || busy}
-            onClick={() => setPendingRevoke(row)}
+            onClick={() => setPendingAction({ kind: 'revoke', row })}
             title={t('depositLink.admin.list.revoke')}
             data-testid={`deposit-link-revoke-${row.linkId}`}
           >
             <FiSlash className="h-4 w-4" aria-hidden="true" />
-            <span className="sr-only">{t('depositLink.admin.list.revoke')}</span>
+            <span>{t('depositLink.admin.list.revoke')}</span>
           </Button>
 
           <Button
@@ -292,12 +346,12 @@ export default function DepositLinkListPanel() {
             variant="secondary"
             size="sm"
             disabled={row.state === 'confirmed' || busy}
-            onClick={() => reissueMutation.mutate(row.linkId)}
+            onClick={() => setPendingAction({ kind: 'reissue', row })}
             title={t('depositLink.admin.list.reissue')}
             data-testid={`deposit-link-reissue-${row.linkId}`}
           >
             <FiRotateCcw className="h-4 w-4" aria-hidden="true" />
-            <span className="sr-only">{t('depositLink.admin.list.reissue')}</span>
+            <span>{t('depositLink.admin.list.reissue')}</span>
           </Button>
         </div>
       );
@@ -311,8 +365,10 @@ export default function DepositLinkListPanel() {
       header: t('depositLink.admin.list.table.guest'),
       cell: (row) => (
         <div>
-          <p className="text-body font-semibold text-ink">{row.guestName}</p>
-          <p className="text-fine text-ink-muted">{t(`property.${row.property}`)}</p>
+          <p className="text-body font-semibold text-ink">{guestLabel(row)}</p>
+          {row.property ? (
+            <p className="text-fine text-ink-muted">{t(`property.${row.property}`)}</p>
+          ) : null}
         </div>
       ),
     },
@@ -360,9 +416,21 @@ export default function DepositLinkListPanel() {
     },
   ];
 
+  // `total` is the total of the CURRENT query — the backend counts through
+  // the same status filter as the page — so it belongs on whichever tab is
+  // selected. Hung on "All" it read "ทั้งหมด 3" while 50 links existed,
+  // and it was wrong in exactly the state the panel opens in.
   const filterTabs: TabItem[] = [
-    { value: 'open', label: t('depositLink.admin.list.filter.open') },
-    { value: 'all', label: t('depositLink.admin.list.filter.all'), count: total },
+    {
+      value: 'open',
+      label: t('depositLink.admin.list.filter.open'),
+      count: filter === 'open' ? total : undefined,
+    },
+    {
+      value: 'all',
+      label: t('depositLink.admin.list.filter.all'),
+      count: filter === 'all' ? total : undefined,
+    },
   ];
 
   return (
@@ -421,72 +489,124 @@ export default function DepositLinkListPanel() {
         </p>
       ) : null}
 
-      <Table<DepositLinkListItem>
-        aria-label={t('depositLink.admin.list.heading')}
-        columns={columns}
-        rows={links}
-        rowKey={(row) => row.linkId}
-        loading={linksQuery.isLoading}
-        empty={<EmptyState title={t('depositLink.admin.list.empty')} />}
-        mobileCard={(row) => (
-          <div className="space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-body font-semibold text-ink">{row.guestName}</p>
-                <p className="text-fine text-ink-muted">{t(`property.${row.property}`)}</p>
+      {/* One statement about the data at a time. A failed load used to
+          render the alert *above* an empty state reading "no deposit links
+          yet" — the desk checking whether a guest's link is still live read
+          the second sentence as fact. Rows that a failed refetch left on
+          screen still show: they are real, just possibly stale. */}
+      {linksQuery.isError && links.length === 0 ? null : (
+        <Table<DepositLinkListItem>
+          aria-label={t('depositLink.admin.list.heading')}
+          columns={columns}
+          rows={links}
+          rowKey={(row) => row.linkId}
+          loading={linksQuery.isLoading}
+          empty={<EmptyState title={t('depositLink.admin.list.empty')} />}
+          mobileCard={(row) => (
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-body font-semibold text-ink">{guestLabel(row)}</p>
+                  {row.property ? (
+                    <p className="text-fine text-ink-muted">{t(`property.${row.property}`)}</p>
+                  ) : null}
+                </div>
+                <StateBadge state={row.state} />
               </div>
-              <StateBadge state={row.state} />
+              <div className="flex items-center justify-between text-caption text-ink-muted">
+                <span>{t('depositLink.admin.list.table.expiresAt')}</span>
+                <ExpiryCell row={row} />
+              </div>
+              <div className="flex items-center justify-between text-caption text-ink-muted">
+                <span>{t('depositLink.admin.list.table.lastOpenedAt')}</span>
+                <LastOpenedCell row={row} />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-caption text-ink-muted">{row.issuedByName}</span>
+                <span className="text-caption font-semibold text-ink">
+                  {`${Number(row.amountDueNow).toLocaleString()} ${t('depositLink.currency')}`}
+                </span>
+              </div>
+              <div className="flex justify-end pt-1">
+                <RowActions row={row} />
+              </div>
             </div>
-            <div className="flex items-center justify-between text-caption text-ink-muted">
-              <span>{t('depositLink.admin.list.table.expiresAt')}</span>
-              <ExpiryCell row={row} />
-            </div>
-            <div className="flex items-center justify-between text-caption text-ink-muted">
-              <span>{t('depositLink.admin.list.table.lastOpenedAt')}</span>
-              <LastOpenedCell row={row} />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-caption text-ink-muted">{row.issuedByName}</span>
-              <span className="text-caption font-semibold text-ink">
-                {`${Number(row.amountDueNow).toLocaleString()} ${t('depositLink.currency')}`}
-              </span>
-            </div>
-            <div className="flex justify-end pt-1">
-              <RowActions row={row} />
-            </div>
-          </div>
-        )}
-      />
+          )}
+        />
+      )}
 
+      {/* The safe button is deliberately NOT `common.cancel`: in Thai that
+          is "ยกเลิก", the same verb that opens "ยกเลิกลิงก์" (revoke). Two
+          adjacent buttons both starting "ยกเลิก" is the one dialog the desk
+          must not have to read twice. */}
       <Modal
-        open={pendingRevoke !== null}
-        onClose={() => setPendingRevoke(null)}
+        open={pendingAction !== null}
+        onClose={() => setPendingAction(null)}
         size="sm"
-        title={t('depositLink.admin.list.revoke')}
+        title={
+          pendingAction?.kind === 'reissue'
+            ? t('depositLink.admin.list.reissue')
+            : t('depositLink.admin.list.revoke')
+        }
       >
         <div className="space-y-6">
-          <p className="text-body text-ink" data-testid="deposit-link-revoke-confirm-body">
-            {t('depositLink.admin.list.confirmRevoke', {
-              guest: pendingRevoke?.guestName ?? '',
-            })}
-          </p>
+          {pendingAction?.kind === 'reissue' ? (
+            <div className="space-y-2">
+              <p className="text-body text-ink" data-testid="deposit-link-reissue-confirm-body">
+                {t('depositLink.admin.list.confirmReissue', {
+                  guest: guestLabel(pendingAction.row),
+                })}
+              </p>
+              {/* A guest in `checking` has already transferred and uploaded
+                  a slip that is sitting in the verify queue. Reissuing on
+                  them revokes the link they are watching. */}
+              {pendingAction.row.state === 'checking' ? (
+                <p
+                  className="text-caption font-semibold text-warning-700"
+                  data-testid="deposit-link-reissue-checking-warning"
+                >
+                  {t('depositLink.admin.list.reissueCheckingWarning')}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-body text-ink" data-testid="deposit-link-revoke-confirm-body">
+              {t('depositLink.admin.list.confirmRevoke', {
+                guest: pendingAction ? guestLabel(pendingAction.row) : '',
+              })}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setPendingRevoke(null)}>
-              {t('common.cancel')}
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setPendingAction(null)}
+              data-testid="deposit-link-confirm-keep"
+            >
+              {t('depositLink.admin.list.keepLink')}
             </Button>
             <Button
               type="button"
               variant="destructive"
-              onClick={confirmRevoke}
-              data-testid="deposit-link-revoke-confirm"
+              onClick={confirmPendingAction}
+              data-testid={
+                pendingAction?.kind === 'reissue'
+                  ? 'deposit-link-reissue-confirm'
+                  : 'deposit-link-revoke-confirm'
+              }
             >
-              {t('depositLink.admin.list.revoke')}
+              {pendingAction?.kind === 'reissue'
+                ? t('depositLink.admin.list.confirmReissueAction')
+                : t('depositLink.admin.list.confirmRevokeAction')}
             </Button>
           </div>
         </div>
       </Modal>
 
-      {totalPages > 1 && (
+      {/* `page > 1` keeps Previous reachable after the list shrinks under a
+          poll: without it the whole pager unmounts at totalPages === 1 and
+          strands the desk on a page that no longer exists. */}
+      {(totalPages > 1 || page > 1) && (
         <div className="flex items-center justify-between">
           <span className="text-caption text-ink-muted">
             {t('depositLink.admin.list.pagination', { current: page, total: totalPages })}
