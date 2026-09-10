@@ -268,7 +268,7 @@ async fn audit_rows(pool: &sqlx::PgPool, booking_id: Uuid) -> Vec<(String, Uuid,
     sqlx::query_as(
         r#"
         SELECT action, admin_id, reason FROM booking_audit_log
-        WHERE booking_id = $1 ORDER BY created_at
+        WHERE booking_id = $1 ORDER BY occurred_at
         "#,
     )
     .bind(booking_id)
