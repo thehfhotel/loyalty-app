@@ -946,13 +946,19 @@ async fn record_slipok_result(
 ///
 /// [`crate::services::slip_confirm::confirm_slip`] commits the slip's
 /// `admin_status` before it calls the PMS, so a PMS failure on the automatic
-/// path would otherwise leave a slip that claims to be verified — by nobody,
-/// since `admin_verified_by` is NULL for a machine verify — against a
-/// booking that never got confirmed. Put it back in the admin's queue and
-/// say why.
+/// path would otherwise leave a slip that claims to be verified — by the
+/// SlipOK system actor, since a machine verify stamps
+/// [`crate::services::slip_confirm::SLIPOK_SYSTEM_USER_ID`] on
+/// `admin_verified_by` — against a booking that never got confirmed. Put it
+/// back in the admin's queue and say why.
 ///
-/// Deliberately guarded on `admin_verified_by IS NULL`: it must never undo
-/// an admin's own verification, only the machine's.
+/// Deliberately guarded on `admin_verified_by` being either NULL or the
+/// system actor: it must never undo an admin's own verification, only the
+/// machine's. (NULL is still accepted so a slip verified by an older build,
+/// before the system actor existed, can also be reverted.) The stamp is
+/// cleared along with `admin_verified_at`, so a slip back in the queue does
+/// not read as verified-by-anyone; the `booking_audit_log` row naming the
+/// machine survives, which is where the attempt stays on the record.
 ///
 /// Runtime query, like [`record_slipok_result`], so the new `slipok_*`
 /// columns need no `.sqlx` offline cache entry.
@@ -962,17 +968,19 @@ async fn revert_auto_confirm(db: &PgPool, slip_id: Uuid) -> AppResult<()> {
         UPDATE booking_slips
         SET admin_status      = 'pending',
             admin_verified_at = NULL,
+            admin_verified_by = NULL,
             slipok_status     = $1,
             slipok_reason     = $2,
             slipok_trans_ref  = NULL,
             slipok_checked_at = NOW()
         WHERE id = $3
-          AND admin_verified_by IS NULL
+          AND (admin_verified_by IS NULL OR admin_verified_by = $4)
         "#,
     )
     .bind(SLIPOK_STATUS_MANUAL)
     .bind(crate::services::slip_match::REASON_CONFIRM_FAILED)
     .bind(slip_id)
+    .bind(crate::services::slip_confirm::SLIPOK_SYSTEM_USER_ID)
     .execute(db)
     .await?;
     Ok(())

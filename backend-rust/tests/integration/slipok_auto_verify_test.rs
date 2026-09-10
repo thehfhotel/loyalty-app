@@ -8,7 +8,8 @@
 //! What is asserted, per the rollout plan:
 //!
 //! - flag on + everything matches  → slip verified, channel booking
-//!   confirmed and the PMS told, exactly as the admin path would leave it;
+//!   confirmed and the PMS told, exactly as the admin path would leave it,
+//!   with the decision audited against the SlipOK system actor;
 //! - flag off + everything matches → `shadow_pass`, `admin_status` still
 //!   `pending` (this is the state we ship in);
 //! - amount mismatch               → `manual` / `amount_mismatch`;
@@ -31,6 +32,8 @@ use tower::ServiceExt;
 use uuid::Uuid;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+use loyalty_backend::services::slip_confirm::SLIPOK_SYSTEM_USER_ID;
 
 use crate::common::{generate_test_token_with_role, TestApp, TestUser};
 
@@ -303,14 +306,34 @@ async fn auto_verify_confirms_a_matching_slip() {
         "the channel booking should be confirmed by the payment event"
     );
 
-    // No audit row: an automatic verify has no admin to attribute it to.
-    let audit_rows: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM booking_audit_log WHERE booking_id = $1")
-            .bind(booking_id)
+    // An automatic verify is a money decision, so it is audited like any
+    // other — attributed to the SlipOK system actor rather than to nobody.
+    let (audit_admin_id, audit_action, audit_reason): (Uuid, String, Option<String>) =
+        sqlx::query_as(
+            "SELECT admin_id, action, reason FROM booking_audit_log WHERE booking_id = $1",
+        )
+        .bind(booking_id)
+        .fetch_one(app.db())
+        .await
+        .expect("exactly one audit row for the automatic verify");
+    assert_eq!(audit_admin_id, SLIPOK_SYSTEM_USER_ID);
+    assert_eq!(audit_action, "slip_verified");
+    assert!(
+        audit_reason
+            .as_deref()
+            .is_some_and(|r| r.contains("AUTOVERIFY0001")),
+        "the audit row should carry the bank reference: {audit_reason:?}"
+    );
+
+    // ...and the slip row says the same thing, so the human-touch count is a
+    // single column comparison.
+    let verified_by: Option<Uuid> =
+        sqlx::query_scalar("SELECT admin_verified_by FROM booking_slips WHERE id = $1")
+            .bind(slip_id)
             .fetch_one(app.db())
             .await
-            .expect("count audit rows");
-    assert_eq!(audit_rows, 0);
+            .expect("read admin_verified_by");
+    assert_eq!(verified_by, Some(SLIPOK_SYSTEM_USER_ID));
 
     app.cleanup().await.ok();
 }
@@ -647,6 +670,163 @@ async fn a_cancelled_booking_is_never_auto_confirmed() {
     );
     assert_eq!(admin_status.as_deref(), Some("pending"));
     assert_eq!(booking_status(app.db(), booking_id).await, "cancelled");
+
+    app.cleanup().await.ok();
+}
+
+/// (g) The machine's decision is attributable through the admin API, not
+/// just in the database.
+///
+/// This is what makes an automatic verify auditable at the desk and the
+/// human-touch KPI countable: reception opening the booking sees the
+/// verification attributed to a named actor ("SlipOK"), and the admin slip
+/// read reports `autoVerified: true` until a human touches the slip — at
+/// which point the same field flips to `false`, because the admin mutation
+/// re-stamps `admin_verified_by` with the acting admin.
+#[tokio::test]
+async fn an_automatic_verify_is_attributed_to_the_system_actor_in_the_admin_api() {
+    let slipok_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(format!("/{}", BRANCH_ID)))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(slipok_success_body(
+                "ACTOR0001",
+                SLIP_AMOUNT,
+                MASKED_RECEIVER,
+            )),
+        )
+        .expect(1)
+        .mount(&slipok_mock)
+        .await;
+
+    // Two payment events: one from the automatic confirm, one from the
+    // admin's deliberate re-verify at the end of the case. Both sides are
+    // idempotent, which is why the human path is allowed to re-post it.
+    let pms_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/channel/bookings/PMS-ACTOR-1/payment-verified"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "ok": true })))
+        .expect(2)
+        .mount(&pms_mock)
+        .await;
+
+    let slipok_uri = slipok_mock.uri();
+    let pms_uri = pms_mock.uri();
+    let mutate = move |cfg: &mut loyalty_backend::Settings| {
+        cfg.slipok.api_key = Some("test-key".to_string());
+        cfg.slipok.branch_id = Some(BRANCH_ID.to_string());
+        cfg.slipok.api_url = Some(slipok_uri.clone());
+        cfg.slipok.auto_verify = true;
+        cfg.promptpay.hf_id = Some(RECEIVING_ID.to_string());
+        cfg.pms.base_url = Some(pms_uri.clone());
+        cfg.pms.channel_token = Some("test-channel-token".to_string());
+    };
+
+    let app = TestApp::new_with_config(&mutate)
+        .await
+        .expect("create test app");
+
+    let user = TestUser::new("slipok-actor-guest@test.com");
+    user.insert(app.db()).await.expect("insert user");
+    let admin = TestUser::admin("slipok-actor-admin@test.com");
+    admin.insert(app.db()).await.expect("insert admin");
+
+    let booking_id = seed_channel_booking(app.db(), user.id, "1500.00", "PMS-ACTOR-1").await;
+
+    // `GET /api/admin/bookings/:id` inner-joins `room_types`, so the booking
+    // this case reads back through the admin API needs one. Nothing else in
+    // the flow touches it: `room_id` stays NULL, as it is for every channel
+    // booking.
+    let room_type_id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO room_types (id, name, description, price_per_night, max_guests, is_active)
+        VALUES ($1, $2, 'slipok actor fixture', 1500.00, 2, TRUE)
+        "#,
+    )
+    .bind(room_type_id)
+    .bind(format!("SlipOkActorRT-{}", Uuid::new_v4()))
+    .execute(app.db())
+    .await
+    .expect("insert room type fixture");
+    sqlx::query("UPDATE bookings SET room_type_id = $1 WHERE id = $2")
+        .bind(room_type_id)
+        .bind(booking_id)
+        .execute(app.db())
+        .await
+        .expect("attach the room type to the channel booking");
+
+    let slip_url = upload_slip(&app, &user).await;
+
+    let guest = app.authenticated_client(&user.id, &user.email);
+    let response = guest
+        .post(
+            &format!("/api/bookings/{}/slips", booking_id),
+            &json!({ "slipUrl": slip_url }),
+        )
+        .await;
+    response.assert_status(201);
+    let body: Value = response.json().expect("slip response is JSON");
+    let slip_id: Uuid = body["id"].as_str().expect("slip id").parse().expect("uuid");
+
+    let admin_client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    // The admin slip read reports the machine as the decider.
+    let slip_response = admin_client
+        .get(&format!("/api/admin/bookings/slips/{}", slip_id))
+        .await;
+    slip_response.assert_status(200);
+    let slip: Value = slip_response.json().expect("admin slip response is JSON");
+    assert_eq!(slip["adminStatus"].as_str(), Some("verified"));
+    assert_eq!(
+        slip["adminVerifiedBy"].as_str(),
+        Some(SLIPOK_SYSTEM_USER_ID.to_string()).as_deref()
+    );
+    assert_eq!(
+        slip["autoVerified"].as_bool(),
+        Some(true),
+        "a slip the machine verified must report autoVerified"
+    );
+
+    // And the booking's audit history names the actor, so the desk reads
+    // "SlipOK" rather than an opaque uuid or an empty cell.
+    let detail_response = admin_client
+        .get(&format!("/api/admin/bookings/{}", booking_id))
+        .await;
+    detail_response.assert_status(200);
+    let detail: Value = detail_response.json().expect("booking detail is JSON");
+    let entries = detail["auditHistory"]
+        .as_array()
+        .expect("booking detail carries an audit history");
+    let entry = entries
+        .iter()
+        .find(|e| e["action"].as_str() == Some("slip_verified"))
+        .expect("the automatic verify is in the audit history");
+    assert_eq!(
+        entry["adminId"].as_str(),
+        Some(SLIPOK_SYSTEM_USER_ID.to_string()).as_deref()
+    );
+    assert_eq!(
+        entry["adminName"].as_str().map(str::trim),
+        Some("SlipOK"),
+        "the seeded profile is what makes the audit row readable at the desk"
+    );
+
+    // A human re-verifying takes the slip over: the same field flips to
+    // false, which is exactly what the human-touch count needs.
+    let reverify = admin_client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/verify", slip_id),
+            &json!({ "adminNotes": "Double-checked against the bank app" }),
+        )
+        .await;
+    reverify.assert_status(200);
+    let reverified: Value = reverify.json().expect("verify response is JSON");
+    assert_eq!(reverified["autoVerified"].as_bool(), Some(false));
+    assert_eq!(
+        reverified["adminVerifiedBy"].as_str(),
+        Some(admin.id.to_string()).as_deref()
+    );
 
     app.cleanup().await.ok();
 }
