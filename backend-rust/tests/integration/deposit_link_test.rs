@@ -676,6 +676,19 @@ async fn auto_verify_confirms_a_deposit_link_booking_without_touching_the_pms() 
          the whole payment event"
     );
 
+    // The two columns that decide whether the PMS is called at all.
+    // `slip_confirm` looks for `pms_booking_id IS NOT NULL` to find a
+    // channel booking, and flips a non-channel one only when
+    // `booking_source = 'deposit_link'`. The `.expect(0)` on the PMS mock
+    // above is the outcome; this is the state that produced it, asserted so
+    // a future writer of this row cannot make the mock pass by accident.
+    let booking = read_booking_shape(app.db(), booking_id).await;
+    assert_eq!(
+        booking.pms_booking_id, None,
+        "a deposit-link booking holds no PMS reference, so nothing addresses the PMS"
+    );
+    assert_eq!(booking.booking_source.as_deref(), Some("deposit_link"));
+
     // The `slip_verified` row is attributed to the SlipOK actor. The
     // `deposit_link_issued` row from the create call is the admin's.
     let (audit_admin_id, audit_reason): (Uuid, Option<String>) = sqlx::query_as(

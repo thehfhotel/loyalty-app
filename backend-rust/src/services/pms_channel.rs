@@ -6,6 +6,7 @@
 //! contract is locked in docs/launch-plan.md.
 
 use chrono::{DateTime, NaiveDate, Utc};
+use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +25,89 @@ use crate::types::Property;
 /// `routes::bookings` budgets the inline slip check against this constant,
 /// so raising it means raising that budget too.
 pub const PMS_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Longest `pms_booking_id` this client will ever put in a URL.
+///
+/// The PMS channel API issues short opaque references; 64 is generous for
+/// every shape it has ever returned and small enough that nothing
+/// interesting fits. It is a ceiling, not a format — the character rule
+/// below is what actually decides.
+const MAX_PMS_BOOKING_ID_LEN: usize = 64;
+
+/// Characters that survive into the path segment untouched.
+///
+/// The allow-list in [`validate_pms_booking_id`] has already rejected
+/// everything outside `[A-Za-z0-9_-]`, so for an id this client accepts the
+/// encoder is a no-op and the request on the wire is byte-for-byte what it
+/// was before. It stays because a URL built by `format!` has no encoder of
+/// its own, and a second pair of hands on this file should not have to
+/// re-derive that the id was checked three functions ago.
+const PMS_PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'_');
+
+/// Why a `pms_booking_id` was refused before it could reach a URL.
+///
+/// A booking id is not ours: it arrives from the PMS, is stored on
+/// `bookings.pms_booking_id`, and is read back much later by the
+/// hold-expiry sweep and by the slip-verification path — and since the
+/// deposit-link work (B1) the row that carries it can be written by more
+/// than one flow. A value that is not what we think it is must never be
+/// pasted into a URL: `../../`, a `//host` authority, a `?` or `#`, or a
+/// newline would each aim the request somewhere the PMS is not.
+///
+/// This is deliberately its own type rather than an `AppError`: the caller
+/// decides what to log and what (if anything) to tell the client, and the
+/// rejected value never travels with the error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum PmsBookingIdError {
+    /// Empty or whitespace-only — there is no booking to address.
+    #[error("PMS booking id is empty")]
+    Empty,
+    /// Longer than [`MAX_PMS_BOOKING_ID_LEN`].
+    #[error("PMS booking id is too long")]
+    TooLong,
+    /// Contains something outside `[A-Za-z0-9_-]`.
+    #[error("PMS booking id contains a character outside [A-Za-z0-9_-]")]
+    IllegalCharacter,
+}
+
+/// Accept a `pms_booking_id` only if it is a short, plain, ASCII token.
+///
+/// A strict allow-list, not a deny-list: everything is refused unless it is
+/// an ASCII letter, digit, `_` or `-`. That rules out every path,
+/// authority, query and fragment character in one rule, and leaves nothing
+/// to reason about per-character.
+pub fn validate_pms_booking_id(id: &str) -> Result<&str, PmsBookingIdError> {
+    if id.is_empty() {
+        return Err(PmsBookingIdError::Empty);
+    }
+    if id.len() > MAX_PMS_BOOKING_ID_LEN {
+        return Err(PmsBookingIdError::TooLong);
+    }
+    if !id
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return Err(PmsBookingIdError::IllegalCharacter);
+    }
+    Ok(id)
+}
+
+/// The per-booking action URL, or the reason the id may not be used in one.
+///
+/// Split out of [`PmsChannelClient::post_action`] so the validation and the
+/// encoding are one testable step: there is no way to reach the `format!`
+/// without having gone through `validate_pms_booking_id` first.
+fn action_url(
+    base_url: &str,
+    pms_booking_id: &str,
+    action: &str,
+) -> Result<String, PmsBookingIdError> {
+    let id = validate_pms_booking_id(pms_booking_id)?;
+    let segment = utf8_percent_encode(id, PMS_PATH_SEGMENT);
+    Ok(format!(
+        "{base_url}/api/channel/bookings/{segment}/{action}"
+    ))
+}
 
 /// One bookable room type as reported by the PMS.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,10 +248,27 @@ impl PmsChannelClient {
         action: &str,
         body: Option<serde_json::Value>,
     ) -> AppResult<()> {
-        let url = format!(
-            "{}/api/channel/bookings/{}/{}",
-            self.base_url, pms_booking_id, action
-        );
+        // Validate *before* anything is formatted: a booking id that is not a
+        // plain token cannot be allowed to steer where this request goes.
+        let url = match action_url(&self.base_url, pms_booking_id, action) {
+            Ok(url) => url,
+            Err(e) => {
+                // Logged here and nowhere else. The rejected value is not in
+                // the log line (an id that reached this branch is untrusted
+                // text, and log lines are read by people and by grep) and
+                // not in the error: the caller gets an opaque internal
+                // error, so a probe learns nothing from the response.
+                tracing::error!(
+                    action = %action,
+                    reason = %e,
+                    id_len = pms_booking_id.len(),
+                    "refusing to call the PMS: the booking id is not a valid token"
+                );
+                return Err(AppError::Internal(
+                    "PMS booking id failed validation".to_string(),
+                ));
+            },
+        };
         let mut request = self.http.post(&url).bearer_auth(&self.token);
         if let Some(body) = body {
             request = request.json(&body);
@@ -292,5 +393,107 @@ fn pms_unreachable(e: reqwest::Error) -> AppError {
         AppError::ExternalServiceTimeout(format!("PMS channel API timed out: {e}"))
     } else {
         AppError::ExternalServiceUnavailable(format!("PMS channel API unreachable: {e}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BASE: &str = "https://pms.example.com";
+
+    /// Every shape the PMS has been seen to issue, plus the boundary.
+    #[test]
+    fn accepts_a_plain_booking_token() {
+        for id in [
+            "ABC123",
+            "hf-2026-000417",
+            "booking_00042",
+            "a",
+            "0",
+            "-",
+            "_",
+            &"A".repeat(MAX_PMS_BOOKING_ID_LEN),
+        ] {
+            assert_eq!(
+                validate_pms_booking_id(id),
+                Ok(id),
+                "{id} is a plain token and must be accepted"
+            );
+        }
+    }
+
+    /// The allow-list, stated as the things it keeps out. Each of these
+    /// would aim the request somewhere the PMS is not, or split it in two.
+    #[test]
+    fn rejects_anything_that_could_steer_the_request() {
+        for (id, expected) in [
+            ("", PmsBookingIdError::Empty),
+            ("   ", PmsBookingIdError::IllegalCharacter),
+            ("../../admin/keys", PmsBookingIdError::IllegalCharacter),
+            ("..%2F..%2Fadmin", PmsBookingIdError::IllegalCharacter),
+            ("/etc/passwd", PmsBookingIdError::IllegalCharacter),
+            ("evil.example.com", PmsBookingIdError::IllegalCharacter),
+            ("//evil.example.com", PmsBookingIdError::IllegalCharacter),
+            (
+                "https://evil.example.com/x",
+                PmsBookingIdError::IllegalCharacter,
+            ),
+            ("abc?x=1", PmsBookingIdError::IllegalCharacter),
+            ("abc#frag", PmsBookingIdError::IllegalCharacter),
+            ("abc@evil.example.com", PmsBookingIdError::IllegalCharacter),
+            ("abc:8080", PmsBookingIdError::IllegalCharacter),
+            ("abc def", PmsBookingIdError::IllegalCharacter),
+            ("abc\nGET /x", PmsBookingIdError::IllegalCharacter),
+            ("abc\r\nHost: evil", PmsBookingIdError::IllegalCharacter),
+            ("abc\u{0}", PmsBookingIdError::IllegalCharacter),
+            ("จอง123", PmsBookingIdError::IllegalCharacter),
+            (
+                "\u{ff21}\u{ff22}\u{ff23}", // full-width ABC
+                PmsBookingIdError::IllegalCharacter,
+            ),
+            (
+                &"A".repeat(MAX_PMS_BOOKING_ID_LEN + 1),
+                PmsBookingIdError::TooLong,
+            ),
+        ] {
+            assert_eq!(
+                validate_pms_booking_id(id),
+                Err(expected),
+                "{id:?} must be refused"
+            );
+        }
+    }
+
+    /// The whole point of the type: a rejected id never reaches a URL.
+    #[test]
+    fn a_rejected_id_produces_no_url() {
+        assert_eq!(
+            action_url(BASE, "../../admin/keys", "release"),
+            Err(PmsBookingIdError::IllegalCharacter)
+        );
+        assert_eq!(
+            action_url(BASE, "//evil.example.com", "payment-verified"),
+            Err(PmsBookingIdError::IllegalCharacter)
+        );
+        assert_eq!(
+            action_url(BASE, "", "release"),
+            Err(PmsBookingIdError::Empty)
+        );
+    }
+
+    /// Behaviour for a valid id is byte-for-byte what it was before the
+    /// allow-list existed — the encoder touches nothing the allow-list
+    /// admits.
+    #[test]
+    fn a_valid_id_builds_exactly_the_url_it_always_did() {
+        assert_eq!(
+            action_url(BASE, "hf-2026-000417", "payment-verified").unwrap(),
+            "https://pms.example.com/api/channel/bookings/hf-2026-000417/payment-verified"
+        );
+        assert_eq!(
+            action_url(BASE, "booking_00042", "release").unwrap(),
+            "https://pms.example.com/api/channel/bookings/booking_00042/release"
+        );
     }
 }
