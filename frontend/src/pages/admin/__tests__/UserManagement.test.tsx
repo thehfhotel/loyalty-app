@@ -185,7 +185,7 @@ describe('UserManagement', () => {
       render(<UserManagement />);
 
       const table = await screen.findByRole('table');
-      expect(within(table).getByText('John')).toBeInTheDocument();
+      expect(await within(table).findByText('John')).toBeInTheDocument();
     });
 
     it('renders name when only lastName is available', async () => {
@@ -202,7 +202,7 @@ describe('UserManagement', () => {
       render(<UserManagement />);
 
       const table = await screen.findByRole('table');
-      expect(within(table).getByText('Doe')).toBeInTheDocument();
+      expect(await within(table).findByText('Doe')).toBeInTheDocument();
     });
 
     it('renders "-" when membershipId is null', async () => {
@@ -296,14 +296,14 @@ describe('UserManagement', () => {
       render(<UserManagement />);
 
       const table = await screen.findByRole('table');
-      expect(within(table).getByText('John Doe')).toBeInTheDocument();
+      expect(await within(table).findByText('John Doe')).toBeInTheDocument();
     });
 
     it('renders email', async () => {
       render(<UserManagement />);
 
       const table = await screen.findByRole('table');
-      expect(within(table).getByText('john.doe@example.com')).toBeInTheDocument();
+      expect(await within(table).findByText('john.doe@example.com')).toBeInTheDocument();
     });
 
     it('renders phone when present', async () => {
@@ -316,14 +316,14 @@ describe('UserManagement', () => {
       render(<UserManagement />);
 
       const table = await screen.findByRole('table');
-      expect(within(table).getByText('MEM001')).toBeInTheDocument();
+      expect(await within(table).findByText('MEM001')).toBeInTheDocument();
     });
 
     it('renders active status badge', async () => {
       render(<UserManagement />);
 
       const table = await screen.findByRole('table');
-      expect(within(table).getByText('Active')).toBeInTheDocument();
+      expect(await within(table).findByText('Active')).toBeInTheDocument();
     });
   });
 
