@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE bookings\n            SET status = 'confirmed', updated_at = NOW()\n            WHERE id = $1\n              AND status = 'pending'\n              AND pms_booking_id IS NULL\n              AND (hold_expires_at IS NULL OR hold_expires_at > NOW())\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "21ca1240d3e75b5d09b328a7dea533d5da26898ba2e2a3e5e080c8a21885772e"
+}
