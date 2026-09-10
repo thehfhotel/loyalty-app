@@ -31,6 +31,24 @@ vi.mock('react-hot-toast', () => ({
   },
 }));
 
+// The modal talks to the backend only through this service.
+const { mockListRoomTypes, mockUpdateBooking, mockApplyDiscount, mockCancelBooking } =
+  vi.hoisted(() => ({
+    mockListRoomTypes: vi.fn(),
+    mockUpdateBooking: vi.fn(),
+    mockApplyDiscount: vi.fn(),
+    mockCancelBooking: vi.fn(),
+  }));
+
+vi.mock('../../../services/adminBookingService', () => ({
+  adminBookingService: {
+    listRoomTypes: mockListRoomTypes,
+    updateBooking: mockUpdateBooking,
+    applyDiscount: mockApplyDiscount,
+    cancelBooking: mockCancelBooking,
+  },
+}));
+
 // Mock data for testing
 const mockBookingBase = {
   id: 'booking-1',
@@ -120,6 +138,14 @@ import BookingEditModal from '../BookingEditModal';
 describe('BookingEditModal - Cancel Tab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockListRoomTypes.mockResolvedValue([{ id: 'room-type-1', name: 'Deluxe Suite' }]);
+    mockUpdateBooking.mockResolvedValue({ ...mockBookingBase, auditHistory: [] });
+    mockApplyDiscount.mockResolvedValue({ ...mockBookingBase, auditHistory: [] });
+    mockCancelBooking.mockResolvedValue({
+      ...mockBookingBase,
+      status: 'cancelled',
+      auditHistory: [],
+    });
   });
 
   describe('Cancel tab rendering', () => {
@@ -261,13 +287,7 @@ describe('BookingEditModal - Cancel Tab', () => {
   });
 
   describe('Cancellation mutation', () => {
-    it('should attempt to cancel when form is submitted', async () => {
-      // The component's handleCancelBooking uses mutateAsync without try/catch,
-      // so the rejection propagates as an unhandled rejection. Suppress it here.
-      const originalListeners = process.listeners('unhandledRejection');
-      process.removeAllListeners('unhandledRejection');
-      process.on('unhandledRejection', () => { /* suppress */ });
-
+    async function fillAndSubmitCancelForm() {
       const user = userEvent.setup();
       render(
         <BookingEditModal
@@ -289,13 +309,36 @@ describe('BookingEditModal - Cancel Tab', () => {
       const checkbox = screen.getByRole('checkbox');
       await user.click(checkbox);
 
-      // Click cancel button - the stub mutation will throw, triggering error toast
-      const cancelButton = screen.getByRole('button', { name: 'Cancel Booking' });
-      await user.click(cancelButton);
+      await user.click(screen.getByRole('button', { name: 'Cancel Booking' }));
+    }
 
-      // The stub mutationFn throws, so the error handler should fire
+    it('should cancel through the admin cancel endpoint', async () => {
+      await fillAndSubmitCancelForm();
+
       await waitFor(() => {
-        expect(mockToastError).toHaveBeenCalled();
+        expect(mockCancelBooking).toHaveBeenCalledWith('booking-1', {
+          reason: 'Guest requested cancellation',
+        });
+      });
+      await waitFor(() => {
+        expect(mockOnSave).toHaveBeenCalled();
+      });
+      expect(mockToastSuccess).toHaveBeenCalledWith('Booking cancelled successfully');
+    });
+
+    it('should surface a failed cancel as an error toast', async () => {
+      // handleCancelBooking calls mutateAsync without a try/catch, so the
+      // rejection surfaces as an unhandled rejection. Suppress it here.
+      const originalListeners = process.listeners('unhandledRejection');
+      process.removeAllListeners('unhandledRejection');
+      process.on('unhandledRejection', () => { /* suppress */ });
+
+      mockCancelBooking.mockRejectedValue(new Error('409 already cancelled'));
+
+      await fillAndSubmitCancelForm();
+
+      await waitFor(() => {
+        expect(mockToastError).toHaveBeenCalledWith('Failed to cancel booking');
       });
 
       // Restore original listeners
@@ -303,6 +346,27 @@ describe('BookingEditModal - Cancel Tab', () => {
       for (const listener of originalListeners) {
         process.on('unhandledRejection', listener as (...args: unknown[]) => void);
       }
+    });
+  });
+
+  describe('Room type dropdown', () => {
+    it('should populate the dropdown from the admin room-types endpoint', async () => {
+      render(
+        <BookingEditModal
+          booking={mockBookingBase}
+          isOpen={true}
+          onClose={mockOnClose}
+          onSave={mockOnSave}
+        />,
+        { wrapper }
+      );
+
+      await waitFor(() => {
+        expect(mockListRoomTypes).toHaveBeenCalled();
+      });
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'Deluxe Suite' })).toBeInTheDocument();
+      });
     });
   });
 
