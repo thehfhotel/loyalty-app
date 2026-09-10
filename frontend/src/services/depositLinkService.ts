@@ -1,6 +1,7 @@
 import axios from 'axios';
 import api from './authService';
 import { API_BASE_URL } from '../utils/apiConfig';
+import { DEPOSIT_TOKEN_HEADER } from '../utils/depositToken';
 import type { Property } from './channelBookingService';
 import type { SlipOkStatusValue } from '../types/slipok';
 
@@ -8,9 +9,16 @@ import type { SlipOkStatusValue } from '../types/slipok';
  * Deposit request links (B1).
  *
  * Reception issues one link for a booking it already took by phone, LINE or
- * at the desk. The guest opens `https://loyalty.saichon.com/d/<token>`, sees
+ * at the desk. The guest opens `https://loyalty.saichon.com/d#<token>`, sees
  * the amount and a PromptPay QR, and uploads the slip. No login: the token
  * is the capability.
+ *
+ * The token travels in the `X-Deposit-Token` **header**, never in the path
+ * or the query string, and the link carries it in a **fragment**, which the
+ * browser never sends. Both halves exist for one reason: a path is written
+ * to the nginx access log and to Cloudflare's HTTP logs on every request,
+ * and a bearer credential for a payment sitting in two log stores is a
+ * payment page anyone with log access can open. See `utils/depositToken`.
  *
  * Every shape here is hand-written against the locked API contract in
  * `hf-tasks/tasks/direct-booking-designs/b1-deposit-link-spec.md` §2 — the
@@ -58,7 +66,7 @@ export function isTerminalDepositLinkState(state: DepositLinkState | undefined |
   return state ? TERMINAL_DEPOSIT_LINK_STATES.includes(state) : false;
 }
 
-/** `GET /api/deposit/:token` — public, no session. */
+/** `GET /api/deposit` with `X-Deposit-Token` — public, no session. */
 export interface DepositPage {
   property: Property;
   /** Given name only. The contract carries no phone, email or booking id. */
@@ -79,7 +87,7 @@ export interface DepositPage {
   slipokReason: string | null;
 }
 
-/** `POST /api/deposit/:token/slip` — public, multipart, field `file`. */
+/** `POST /api/deposit/slip` with `X-Deposit-Token` — multipart, `file`. */
 export interface DepositSlipUploadResult {
   slipId: string;
   state: DepositLinkState;
@@ -159,7 +167,7 @@ export interface DepositLinkRoomType {
  *
  * Deliberately NOT the shared `api` from `authService`: that one carries the
  * auth-token interceptor, and the global response interceptor redirects a
- * 401 to `/login`. A guest on `/d/:token` has no account, so any redirect
+ * 401 to `/login`. A guest on `/d` has no account, so any redirect
  * dance would drop them out of a payment page. Interceptors registered on
  * `axios.interceptors` do not apply to instances made with `axios.create`,
  * so this instance stays clean.
@@ -175,19 +183,18 @@ export const depositLinkService = {
   // --- public, no session -------------------------------------------------
 
   async getDepositPage(token: string): Promise<DepositPage> {
-    const response = await publicApi.get<DepositPage>(
-      `/deposit/${encodeURIComponent(token)}`,
-    );
+    const response = await publicApi.get<DepositPage>('/deposit', {
+      headers: { [DEPOSIT_TOKEN_HEADER]: token },
+    });
     return response.data;
   },
 
   async uploadSlip(token: string, file: File): Promise<DepositSlipUploadResult> {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await publicApi.post<DepositSlipUploadResult>(
-      `/deposit/${encodeURIComponent(token)}/slip`,
-      formData,
-    );
+    const response = await publicApi.post<DepositSlipUploadResult>('/deposit/slip', formData, {
+      headers: { [DEPOSIT_TOKEN_HEADER]: token },
+    });
     return response.data;
   },
 

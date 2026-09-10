@@ -125,6 +125,8 @@ pub struct DepositLinkCreatedResponse {
     pub booking_id: Uuid,
     /// Shown to the issuing admin once and never again.
     pub token: String,
+    /// `https://<FRONTEND_URL>/d#<token>` — the token in the fragment, so
+    /// no server on the way ever sees it. See [`guest_link_url`].
     pub url: String,
     /// Pre-composed LINE share intent, Thai-first and with no vendor name.
     pub line_share_url: String,
@@ -908,11 +910,20 @@ fn build_created_response(
     }
 }
 
-/// `https://loyalty.saichon.com/d/<token>` in production — the SPA's
-/// public route. Built from `FRONTEND_URL` so staging links point at
-/// staging.
+/// `https://loyalty.saichon.com/d#<token>` in production — the SPA's
+/// public route with the token in the **fragment**. Built from
+/// `FRONTEND_URL` so staging links point at staging.
+///
+/// The `#` is the whole point and is not a style choice. A fragment is
+/// never sent to a server: not to our nginx, not to Cloudflare, not in a
+/// `Referer` header. A token in the path instead would be written into the
+/// frontend container's access log and Cloudflare's HTTP logs on every
+/// single page load, and a bearer capability for a payment that is sitting
+/// in two log stores is a payment page anyone with log access can open.
+/// `routes::deposit_links` explains the matching header decision on the
+/// API side.
 fn guest_link_url(frontend_url: &str, token: &str) -> String {
-    format!("{}/d/{}", frontend_url.trim_end_matches('/'), token)
+    format!("{}/d#{}", frontend_url.trim_end_matches('/'), token)
 }
 
 /// A LINE share intent reception can tap straight from the modal.
@@ -1158,12 +1169,20 @@ mod tests {
     fn guest_link_url_is_the_locked_shape() {
         assert_eq!(
             guest_link_url("https://loyalty.saichon.com", "abc123"),
-            "https://loyalty.saichon.com/d/abc123"
+            "https://loyalty.saichon.com/d#abc123"
         );
-        // A trailing slash in FRONTEND_URL must not produce `//d/`.
+        // A trailing slash in FRONTEND_URL must not produce `//d#`.
         assert_eq!(
             guest_link_url("https://loyalty.saichon.com/", "abc123"),
-            "https://loyalty.saichon.com/d/abc123"
+            "https://loyalty.saichon.com/d#abc123"
+        );
+        // The token must be in the fragment, never in the path: a path is
+        // logged by every hop, a fragment is sent to none of them.
+        let url = guest_link_url("https://loyalty.saichon.com", "abc123");
+        let (before_hash, _) = url.split_once('#').expect("the token is a fragment");
+        assert!(
+            !before_hash.contains("abc123"),
+            "no part of the URL a server sees may carry the token: {url}"
         );
     }
 
@@ -1173,11 +1192,11 @@ mod tests {
             Property::Hfville,
             dec!(1500.00),
             dec!(3000.00),
-            "https://loyalty.saichon.com/d/tok",
+            "https://loyalty.saichon.com/d#tok",
         );
         assert!(url.starts_with("https://line.me/R/share?text="));
         // The URL itself has to survive encoding intact.
-        assert!(url.contains("https%3A%2F%2Floyalty.saichon.com%2Fd%2Ftok"));
+        assert!(url.contains("https%3A%2F%2Floyalty.saichon.com%2Fd%23tok"));
         // No vendor ever appears in guest-facing copy.
         assert!(!url.to_lowercase().contains("slipok"));
         // A half payment is a มัดจำ, and the balance line goes with it.
@@ -1194,7 +1213,7 @@ mod tests {
             Property::Hf,
             dec!(4500.00),
             dec!(4500.00),
-            "https://loyalty.saichon.com/d/tok",
+            "https://loyalty.saichon.com/d#tok",
         );
         assert!(url.contains(&percent_encode("กรุณาชำระยอดเต็ม 4,500 บาท")));
         assert!(

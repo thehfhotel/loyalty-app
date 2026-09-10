@@ -54,7 +54,7 @@ use crate::state::AppState;
 /// - /api/membership -> membership ID management routes
 /// - /api/payments -> payment QR code generation routes (PromptPay)
 /// - /api/slips -> payment slip upload routes
-/// - /api/deposit -> PUBLIC deposit-request-link routes (no auth; the token is the capability)
+/// - /api/deposit -> PUBLIC deposit-request-link routes (no auth; the `X-Deposit-Token` header is the capability)
 /// - /api/analytics -> analytics tracking routes
 /// - /api/translation -> content translation routes
 /// - /api/docs -> Swagger UI for API documentation
@@ -113,33 +113,15 @@ pub fn create_router(state: AppState) -> Router {
     };
 
     // Public deposit-request links (B1). Unauthenticated by design — the
-    // 43-character token in the path is the capability — so the whole
-    // sub-router carries its own limiter, layered the same way the strict
-    // auth limiter is above: 30 requests per minute, production only. The
-    // guest page polls the read endpoint every 5 seconds after an upload
-    // (12/min), so a well-behaved page sits at well under half the budget.
-    //
-    // The subject is the **link**, not the client IP, and that is not a
-    // detail: `get_client_ip` reads the TCP peer, and in production every
-    // request arrives from the nginx container, so a per-IP budget here
-    // would be a single global bucket that three guests paying at once
-    // would exhaust between them — a 429 in the middle of a payment. The
-    // per-IP global limiter below still stands as the coarse backstop.
-    //
-    // The upload's tighter budgets (5 stored slips per hour per link, 30
-    // attempts, 20 per hour per IP) live inside the handler, for the same
-    // reason.
-    let deposit_routes = match &rate_limiters {
-        Some(_) => deposit_links::routes().layer(middleware::from_fn_with_state(
-            RedisRateLimiter::new(
-                state.redis(),
-                deposit_links::public_read_rate_limit(),
-                "deposit_public",
-            ),
-            deposit_links::deposit_link_rate_limit_middleware,
-        )),
-        None => deposit_links::routes(),
-    };
+    // token in the `X-Deposit-Token` header is the capability — so the two
+    // routes carry their own layered limiter: one global bucket per route,
+    // then per client IP, then per link. All three run in every
+    // environment, unlike the production-only limiters above: an endpoint
+    // with no authentication at all does not get to be unbudgeted in
+    // staging. `deposit_links::routes` builds those layers, because the
+    // budgets and the trusted-proxy list belong next to the handlers they
+    // protect.
+    let deposit_routes = deposit_links::routes(state.clone());
 
     let app = Router::new()
         .nest("/api/health", health::routes())

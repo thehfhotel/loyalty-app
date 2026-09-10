@@ -1519,15 +1519,21 @@ pub mod paths {
     // agent builds against by hand.
 
     /// Read a deposit request link (public — the token is the capability)
+    ///
+    /// The token travels in `X-Deposit-Token`, never in the path or query
+    /// string: a path is written to the nginx and Cloudflare access logs
+    /// on every request, and this token is a bearer credential for a
+    /// payment. The guest link is `https://<frontend>/d#<token>`, whose
+    /// fragment no server ever sees.
     #[utoipa::path(
         get,
-        path = "/deposit/{token}",
+        path = "/deposit",
         tag = "deposit-links",
-        params(("token" = String, Path, description = "The 43-character link token")),
+        params(("X-Deposit-Token" = String, Header, description = "The 43-character link token")),
         responses(
             (status = 200, description = "The guest page payload. `state` is one of awaiting_payment | checking | confirmed | expired | revoked"),
-            (status = 404, description = "No link matches this token"),
-            (status = 429, description = "Rate limited (30/min per IP, production only)")
+            (status = 404, description = "No link matches this token, or the header is absent or malformed — the same response either way, carrying no detail"),
+            (status = 429, description = "Rate limited: one global bucket per route, 30/min per client IP, 30/min per link")
         )
     )]
     pub async fn deposit_link_public_get() {}
@@ -1535,17 +1541,17 @@ pub mod paths {
     /// Upload a payment slip against a deposit request link (public)
     #[utoipa::path(
         post,
-        path = "/deposit/{token}/slip",
+        path = "/deposit/slip",
         tag = "deposit-links",
-        params(("token" = String, Path, description = "The 43-character link token")),
+        params(("X-Deposit-Token" = String, Header, description = "The 43-character link token")),
         request_body(content = String, description = "multipart/form-data with a `file` part (JPEG or PNG, 10 MB max)", content_type = "multipart/form-data"),
         responses(
             (status = 201, description = "Slip stored; `state` and `slipokStatus` reflect the decision already made"),
             (status = 400, description = "Not a JPEG or PNG, or no file part"),
-            (status = 404, description = "No link matches this token"),
+            (status = 404, description = "No link matches this token, or the header is absent or malformed"),
             (status = 409, description = "The link has been revoked"),
             (status = 413, description = "File larger than 10 MB"),
-            (status = 429, description = "Rate limited (5/hour per link, 20/hour per IP)")
+            (status = 429, description = "Rate limited: 5 stored slips/hour and 30 attempts/hour per link, 20/hour per client IP, plus the global bucket. Nothing is written to storage when the budget refuses")
         )
     )]
     pub async fn deposit_link_public_slip() {}
@@ -1557,7 +1563,7 @@ pub mod paths {
         tag = "deposit-links",
         security(("bearer_auth" = [])),
         responses(
-            (status = 201, description = "Booking and link created. The token is returned ONCE and never again"),
+            (status = 201, description = "Booking and link created. The token is returned ONCE and never again; `url` is `https://<FRONTEND_URL>/d#<token>` and `lineShareUrl` carries the same link"),
             (status = 400, description = "Validation failed, or this property has no PromptPay receiving account configured so the link would have no QR"),
             (status = 403, description = "Admin access required")
         )

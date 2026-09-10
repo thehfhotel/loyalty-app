@@ -28,11 +28,18 @@ pub const PMS_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 
 /// Longest `pms_booking_id` this client will ever put in a URL.
 ///
-/// The PMS channel API issues short opaque references; 64 is generous for
-/// every shape it has ever returned and small enough that nothing
-/// interesting fits. It is a ceiling, not a format — the character rule
-/// below is what actually decides.
-const MAX_PMS_BOOKING_ID_LEN: usize = 64;
+/// **100, because `bookings.pms_booking_id` is `VARCHAR(100)`** (migration
+/// `20260710000000_property_line_channel.sql`). A ceiling below the
+/// column's is not a stricter safety net, it is a trap: the database would
+/// accept a 90-character reference the PMS issued, the row would store it,
+/// and then every call about that booking — the payment-verified
+/// write-back, the hold-expiry release — would fail validation forever
+/// with the booking already in the PMS. The two numbers are one decision;
+/// if the column is ever widened, widen this with it.
+///
+/// It is a ceiling, not a format — the character rule below is what
+/// actually decides.
+const MAX_PMS_BOOKING_ID_LEN: usize = 100;
 
 /// Characters that survive into the path segment untouched.
 ///
@@ -356,6 +363,49 @@ pub async fn release_expired_holds(db: &sqlx::PgPool, settings: &Settings) -> u6
         let Some(pms_booking_id) = row.pms_booking_id else {
             continue;
         };
+
+        // A reference this client will never be able to call with is a
+        // dead end, not a transient failure: the sweep re-selects the same
+        // row every time it runs and would log the same refusal forever,
+        // burying every real failure in the noise. Stop it here — logged
+        // once, at ERROR (a booking is stranded and a person has to look),
+        // and the row taken out of the sweep's selection by the same
+        // cancellation the successful path applies.
+        //
+        // Cancelling without the PMS acknowledging is safe *only* in this
+        // one branch: no call was made, because none could be built. The
+        // PMS runs its own expiry sweep over the same holds
+        // (docs/launch-plan.md), which is what actually releases this one.
+        if let Err(e) = validate_pms_booking_id(&pms_booking_id) {
+            // The rejected value is not in the log line: it is untrusted
+            // text and log lines are read by people and by grep.
+            tracing::error!(
+                booking_id = %row.id,
+                reason = %e,
+                id_len = pms_booking_id.len(),
+                "expired hold has an unusable PMS booking id; cancelling locally \
+                 and leaving the PMS-side release to the PMS's own sweep"
+            );
+            match sqlx::query!(
+                r#"
+                UPDATE bookings
+                SET status = 'cancelled', cancelled_at = NOW(),
+                    cancellation_reason = 'Payment window expired; PMS reference unusable',
+                    updated_at = NOW()
+                WHERE id = $1 AND status = 'pending'
+                "#,
+                row.id
+            )
+            .execute(db)
+            .await
+            {
+                Ok(_) => {},
+                Err(e) => tracing::error!(error = %e, booking_id = %row.id,
+                    "failed to cancel a booking with an unusable PMS booking id"),
+            }
+            continue;
+        }
+
         // Release the PMS side FIRST; only cancel locally once the PMS
         // acknowledged, so a failed release retries on the next sweep.
         if let Err(e) = client.release(&pms_booking_id).await {
@@ -463,6 +513,25 @@ mod tests {
                 "{id:?} must be refused"
             );
         }
+    }
+
+    /// The ceiling is the column's width, and the two must stay equal.
+    ///
+    /// `bookings.pms_booking_id` is `VARCHAR(100)`. A shorter ceiling here
+    /// would let the database store a reference this client then refuses
+    /// to call with — the booking would sit in the PMS with no way to
+    /// release it or mark it paid.
+    #[test]
+    fn the_length_ceiling_is_the_column_width() {
+        assert_eq!(
+            MAX_PMS_BOOKING_ID_LEN, 100,
+            "must equal VARCHAR(100) on bookings.pms_booking_id"
+        );
+        assert!(validate_pms_booking_id(&"A".repeat(100)).is_ok());
+        assert_eq!(
+            validate_pms_booking_id(&"A".repeat(101)),
+            Err(PmsBookingIdError::TooLong)
+        );
     }
 
     /// The whole point of the type: a rejected id never reaches a URL.

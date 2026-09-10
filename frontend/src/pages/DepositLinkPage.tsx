@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useParams } from 'react-router';
+import { Link } from 'react-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import QRCode from 'qrcode';
 import { FiCheckCircle, FiClock, FiDownload, FiPhone, FiUpload } from 'react-icons/fi';
@@ -14,6 +14,7 @@ import {
   type Property,
 } from '../services/depositLinkService';
 import { depositPollIntervalMs } from '../utils/depositPolling';
+import { depositFragmentUrl, readDepositToken } from '../utils/depositToken';
 import { deskPhone, deskPhoneHref } from '../utils/deskContact';
 import { guestSlipOkStatusKey } from '../types/slipok';
 import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../utils/dateFormatter';
@@ -22,10 +23,16 @@ import { logger } from '../utils/logger';
 /**
  * The public deposit page (B1 §3 and §4).
  *
- * `https://loyalty.saichon.com/d/<token>` — no login, no app shell, no tab
+ * `https://loyalty.saichon.com/d#<token>` — no login, no app shell, no tab
  * bar. Tapped in a LINE chat it opens in LINE's in-app browser and renders
  * this SPA route; nothing here needs the LIFF SDK, because nothing here
- * needs an identity. The token in the path is the whole capability.
+ * needs an identity. The token in the **fragment** is the whole capability.
+ *
+ * The fragment is load-bearing, not cosmetic: it is the one part of a URL
+ * a browser never sends, so the token cannot reach the frontend
+ * container's access log, Cloudflare's HTTP logs, or a `Referer` header.
+ * `utils/depositToken` holds the rule and the `/d/<token>` grace-period
+ * rewrite; the page below only asks it for a token.
  *
  * Thai first with one English line under each heading: most of these guests
  * booked by phone in Thai, and the rest must still be able to pay. The two
@@ -92,7 +99,10 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 export default function DepositLinkPage() {
-  const { token } = useParams<{ token: string }>();
+  // The URL is read once per navigation rather than through the router:
+  // the token lives in the fragment, which react-router does not route on.
+  const [resolved, setResolved] = useState(() => readDepositToken(window.location));
+  const token = resolved.token;
   const { i18n } = useTranslation();
   const th = useMemo(() => i18n.getFixedT('th'), [i18n]);
   const en = useMemo(() => i18n.getFixedT('en'), [i18n]);
@@ -103,6 +113,27 @@ export default function DepositLinkPage() {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [engagedAt, setEngagedAt] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // A link already sent to a guest may still carry the old `/d/<token>`
+  // shape. Rewrite it to `/d#<token>` in place: `replaceState` changes the
+  // address bar and the history entry without making a request, so the
+  // token stops being in the URL and never reaches a log on the way out.
+  // Only the page load that started this session ever carried it.
+  useEffect(() => {
+    if (resolved.fromLegacyPath && resolved.token) {
+      window.history.replaceState(null, '', depositFragmentUrl(resolved.token));
+      setResolved({ token: resolved.token, fromLegacyPath: false });
+    }
+  }, [resolved]);
+
+  // A reissued link pasted into the same tab changes only the fragment, so
+  // the browser fires `hashchange` and never reloads. Without this the
+  // guest would sit on the dead link's page.
+  useEffect(() => {
+    const onHashChange = () => setResolved(readDepositToken(window.location));
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   const depositQuery = useQuery<DepositPage>({
     queryKey: ['deposit-link', token],

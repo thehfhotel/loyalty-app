@@ -4,7 +4,7 @@ import {
 } from '../services/depositLinkService';
 
 /**
- * How often `/d/:token` re-reads `GET /api/deposit/:token`.
+ * How often `/d#<token>` re-reads `GET /api/deposit`.
  *
  * The page has no session, so it cannot hold an SSE stream the way the admin
  * booking list does (`useAdminBookingSSE`) — it polls. B1 §3 fixes the

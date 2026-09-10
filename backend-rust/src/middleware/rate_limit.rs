@@ -188,6 +188,175 @@ fn get_client_ip(request: &Request) -> IpAddr {
         })
 }
 
+/// The hops whose `X-Forwarded-For` this process is willing to believe.
+///
+/// Parsed once from `SecurityConfig::trusted_proxies` (a comma-separated
+/// list of bare IPs and CIDR blocks) and then asked, per request, whether
+/// the TCP peer is one of them.
+///
+/// The rule this type exists to keep honest: **a forwarding header is
+/// evidence only about the hop that wrote it.** [`get_client_ip`] answers
+/// the general case by refusing to read those headers at all (HIGH-2), and
+/// that stays right for every authenticated route, where the peer being
+/// nginx costs nothing — the limiter has a user id to count.
+///
+/// The public deposit routes have no user id. Their subject *is* the
+/// client address, and behind nginx the peer is the nginx container for
+/// every request on earth, so keying on the peer would put every guest in
+/// the world in one bucket: three people paying at once would 429 each
+/// other in the middle of a payment. There the header has to be read — and
+/// [`resolve_client_ip`] reads it only when this type says the peer is a
+/// hop we put there ourselves.
+#[derive(Debug, Clone, Default)]
+pub struct TrustedProxies {
+    /// (network address, prefix length). An entry with no `/len` is stored
+    /// as a full-width prefix, i.e. that single address.
+    nets: Vec<(IpAddr, u8)>,
+}
+
+impl TrustedProxies {
+    /// Parse a comma-separated list of IPs and CIDR blocks.
+    ///
+    /// The literal `none` (any case, alone or as an entry) trusts nothing.
+    /// An entry that does not parse is dropped with a warning rather than
+    /// failing startup: a typo in one CIDR must not take the service down,
+    /// and dropping it fails in the safe direction (one fewer trusted hop).
+    pub fn parse(list: &str) -> Self {
+        let mut nets = Vec::new();
+        for raw in list.split(',') {
+            let entry = raw.trim();
+            if entry.is_empty() || entry.eq_ignore_ascii_case("none") {
+                continue;
+            }
+            match parse_cidr(entry) {
+                Some(net) => nets.push(net),
+                None => tracing::warn!(
+                    entry = %entry,
+                    "ignoring an unparseable TRUSTED_PROXIES entry"
+                ),
+            }
+        }
+        Self { nets }
+    }
+
+    /// Is this address one of the hops we trust to have set the header?
+    pub fn contains(&self, ip: IpAddr) -> bool {
+        self.nets
+            .iter()
+            .any(|&(net, bits)| ip_in_net(ip, net, bits))
+    }
+
+    /// True when nothing is trusted, i.e. every limiter keys on the peer.
+    pub fn is_empty(&self) -> bool {
+        self.nets.is_empty()
+    }
+}
+
+/// `a.b.c.d`, `a.b.c.d/len`, `::1` or `2001:db8::/32`.
+fn parse_cidr(entry: &str) -> Option<(IpAddr, u8)> {
+    let (addr, bits) = match entry.split_once('/') {
+        Some((addr, len)) => (addr, Some(len.parse::<u8>().ok()?)),
+        None => (entry, None),
+    };
+    let addr: IpAddr = addr.parse().ok()?;
+    let width = if addr.is_ipv4() { 32 } else { 128 };
+    let bits = bits.unwrap_or(width);
+    if bits > width {
+        return None;
+    }
+    Some((addr, bits))
+}
+
+/// Prefix comparison. Mixed families never match — an IPv4-mapped IPv6
+/// peer is deliberately not unwrapped, because a proxy that presents one
+/// is not the deployment this list describes.
+fn ip_in_net(ip: IpAddr, net: IpAddr, bits: u8) -> bool {
+    match (ip, net) {
+        (IpAddr::V4(a), IpAddr::V4(b)) => prefix_eq(&a.octets(), &b.octets(), bits),
+        (IpAddr::V6(a), IpAddr::V6(b)) => prefix_eq(&a.octets(), &b.octets(), bits),
+        _ => false,
+    }
+}
+
+fn prefix_eq(a: &[u8], b: &[u8], bits: u8) -> bool {
+    let bits = (bits as usize).min(a.len() * 8);
+    let whole = bits / 8;
+    if a[..whole] != b[..whole] {
+        return false;
+    }
+    let rest = bits % 8;
+    if rest == 0 {
+        return true;
+    }
+    let mask = 0xffu8 << (8 - rest);
+    (a[whole] & mask) == (b[whole] & mask)
+}
+
+/// The header nginx writes the client address into (`$remote_addr`, and it
+/// **replaces** rather than appends — see nginx/nginx.conf).
+const X_FORWARDED_FOR: &str = "x-forwarded-for";
+/// Cloudflare's own client-address header, used as the fallback when the
+/// trusted hop forwarded nothing.
+const CF_CONNECTING_IP: &str = "cf-connecting-ip";
+
+/// The address a public, unauthenticated route should count against.
+///
+/// - Peer not trusted (or nothing trusted): **the peer**, full stop. That
+///   is [`get_client_ip`]'s rule and it is what protects the budget from a
+///   client that invents its own `X-Forwarded-For`.
+/// - Peer trusted: the **first** address in `X-Forwarded-For` — the one
+///   furthest from us, i.e. the original client, as our own nginx writes
+///   it. Falling back to `CF-Connecting-IP` when the header is absent or
+///   unparseable, and to the peer when neither is usable.
+///
+/// The first entry is the right one *because* the trusted hop replaces the
+/// header rather than appending to it. If nginx is ever changed back to
+/// `proxy_add_x_forwarded_for`, the leftmost value becomes client-supplied
+/// again and this function becomes a way to mint a fresh bucket per
+/// request — the nginx config and this function are one decision, not two.
+pub fn resolve_client_ip(
+    peer: Option<IpAddr>,
+    headers: &axum::http::HeaderMap,
+    trusted: &TrustedProxies,
+) -> IpAddr {
+    let peer = peer.unwrap_or_else(|| {
+        "127.0.0.1"
+            .parse()
+            .expect("127.0.0.1 is a valid IPv4 literal")
+    });
+
+    if !trusted.contains(peer) {
+        return peer;
+    }
+
+    let forwarded = headers
+        .get(X_FORWARDED_FOR)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .and_then(|first| first.trim().parse::<IpAddr>().ok());
+    if let Some(ip) = forwarded {
+        return ip;
+    }
+
+    headers
+        .get(CF_CONNECTING_IP)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<IpAddr>().ok())
+        .unwrap_or(peer)
+}
+
+/// The TCP peer, when the connection info is available.
+///
+/// Separate from [`get_client_ip`] because [`resolve_client_ip`] has to
+/// tell "no peer known" from "the peer is loopback": the first has no
+/// forwarding hop to trust, the second may well have one.
+pub fn peer_ip(request: &Request) -> Option<IpAddr> {
+    request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(addr)| addr.ip())
+}
+
 /// Rate limiting middleware
 ///
 /// # Usage
@@ -569,6 +738,159 @@ mod tests {
 
         let ip = get_client_ip(&req);
         assert_eq!(ip, "127.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    // ----------------------------------------------------------------
+    // TrustedProxies / resolve_client_ip
+    //
+    // The public deposit routes count per client IP, and behind nginx the
+    // TCP peer is the same container for every guest on earth. These
+    // tests pin the two halves of the rule: the header is read ONLY when
+    // the peer is a hop we put there, and when it is read it is the first
+    // address (our nginx replaces the header rather than appending).
+    // ----------------------------------------------------------------
+
+    fn ip(s: &str) -> IpAddr {
+        s.parse().expect("test IP literal")
+    }
+
+    fn headers(pairs: &[(&str, &str)]) -> axum::http::HeaderMap {
+        let mut map = axum::http::HeaderMap::new();
+        for (name, value) in pairs {
+            map.insert(
+                axum::http::HeaderName::from_bytes(name.as_bytes()).expect("header name"),
+                axum::http::HeaderValue::from_str(value).expect("header value"),
+            );
+        }
+        map
+    }
+
+    fn compose_default() -> TrustedProxies {
+        TrustedProxies::parse("127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
+    }
+
+    #[test]
+    fn trusted_proxies_matches_cidr_blocks_and_bare_addresses() {
+        let trusted = compose_default();
+        assert!(trusted.contains(ip("172.18.0.7")), "compose bridge network");
+        assert!(trusted.contains(ip("127.0.0.1")));
+        assert!(trusted.contains(ip("10.1.2.3")));
+        assert!(trusted.contains(ip("192.168.1.9")));
+        assert!(trusted.contains(ip("::1")));
+        // Outside every listed block.
+        assert!(!trusted.contains(ip("203.0.113.9")));
+        assert!(!trusted.contains(ip("172.32.0.1")), "just past 172.16/12");
+        assert!(!trusted.contains(ip("2001:db8::1")));
+
+        let single = TrustedProxies::parse(" 203.0.113.7 ");
+        assert!(single.contains(ip("203.0.113.7")));
+        assert!(!single.contains(ip("203.0.113.8")));
+    }
+
+    #[test]
+    fn trusted_proxies_none_and_junk_trust_nothing() {
+        assert!(TrustedProxies::parse("none").is_empty());
+        assert!(TrustedProxies::parse("NONE").is_empty());
+        assert!(TrustedProxies::parse("").is_empty());
+        assert!(TrustedProxies::parse("   ,  ").is_empty());
+        // A typo drops that entry and keeps the rest.
+        let mixed = TrustedProxies::parse("172.16.0.0/12,not-an-ip,10.0.0.0/99");
+        assert!(mixed.contains(ip("172.20.0.1")));
+        assert!(!mixed.contains(ip("10.0.0.1")), "/99 is not a v4 prefix");
+    }
+
+    #[test]
+    fn resolve_client_ip_reads_the_forwarded_client_behind_a_trusted_hop() {
+        let trusted = compose_default();
+        let resolved = resolve_client_ip(
+            Some(ip("172.18.0.5")),
+            &headers(&[("x-forwarded-for", "203.0.113.9")]),
+            &trusted,
+        );
+        assert_eq!(resolved, ip("203.0.113.9"));
+    }
+
+    #[test]
+    fn resolve_client_ip_takes_the_first_forwarded_address() {
+        // If a hop ever appends instead of replacing, the leftmost value
+        // is the original client — and the one this function must use.
+        let resolved = resolve_client_ip(
+            Some(ip("172.18.0.5")),
+            &headers(&[("x-forwarded-for", " 203.0.113.9 , 10.0.0.4 ")]),
+            &compose_default(),
+        );
+        assert_eq!(resolved, ip("203.0.113.9"));
+    }
+
+    #[test]
+    fn resolve_client_ip_ignores_the_header_from_an_untrusted_peer() {
+        // The whole HIGH-2 lesson: a client that opens a connection to us
+        // directly can claim any address it likes, and must not be
+        // believed.
+        let resolved = resolve_client_ip(
+            Some(ip("203.0.113.42")),
+            &headers(&[
+                ("x-forwarded-for", "1.1.1.1"),
+                ("cf-connecting-ip", "9.9.9.9"),
+            ]),
+            &compose_default(),
+        );
+        assert_eq!(resolved, ip("203.0.113.42"));
+
+        // ...and with nothing trusted at all, not even the compose peer.
+        let resolved = resolve_client_ip(
+            Some(ip("172.18.0.5")),
+            &headers(&[("x-forwarded-for", "1.1.1.1")]),
+            &TrustedProxies::parse("none"),
+        );
+        assert_eq!(resolved, ip("172.18.0.5"));
+    }
+
+    #[test]
+    fn resolve_client_ip_falls_back_to_cf_connecting_ip_then_to_the_peer() {
+        let trusted = compose_default();
+        assert_eq!(
+            resolve_client_ip(
+                Some(ip("172.18.0.5")),
+                &headers(&[("cf-connecting-ip", "198.51.100.7")]),
+                &trusted,
+            ),
+            ip("198.51.100.7"),
+            "no XFF, so Cloudflare's header is the next best evidence"
+        );
+        assert_eq!(
+            resolve_client_ip(
+                Some(ip("172.18.0.5")),
+                &headers(&[
+                    ("x-forwarded-for", "unknown"),
+                    ("cf-connecting-ip", "198.51.100.7"),
+                ]),
+                &trusted,
+            ),
+            ip("198.51.100.7"),
+            "an unparseable XFF is no evidence at all"
+        );
+        assert_eq!(
+            resolve_client_ip(Some(ip("172.18.0.5")), &headers(&[]), &trusted),
+            ip("172.18.0.5"),
+            "nothing forwarded: the peer is all we know"
+        );
+    }
+
+    #[test]
+    fn resolve_client_ip_without_connect_info_reads_the_header() {
+        // The test harness drives the router with `oneshot`, which
+        // inserts no `ConnectInfo`. Treating "no peer" as loopback keeps
+        // that path on the trusted side, so a test can present two
+        // clients by setting the header — exactly what production does.
+        assert_eq!(
+            resolve_client_ip(
+                None,
+                &headers(&[("x-forwarded-for", "203.0.113.9")]),
+                &compose_default(),
+            ),
+            ip("203.0.113.9")
+        );
     }
 
     // Redis rate limiter tests require a running Redis instance

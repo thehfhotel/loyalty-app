@@ -681,6 +681,43 @@ pub struct SecurityConfig {
     /// Maximum requests per rate limit window
     #[serde(default = "default_rate_limit_max")]
     pub rate_limit_max_requests: u32,
+
+    /// Peers whose `X-Forwarded-For` may be believed, as a comma-separated
+    /// list of bare IPs and CIDR blocks (`TRUSTED_PROXIES`).
+    ///
+    /// Every limiter that counts per client IP has to answer one question
+    /// first: *which* address is the client? Behind nginx the TCP peer is
+    /// the nginx container for every request on earth, so a per-IP budget
+    /// keyed on the peer is a single global bucket. The forwarding header
+    /// is the only thing that carries the real address — and it is
+    /// attacker-supplied unless the hop that set it is one we put there.
+    ///
+    /// So: believe the header only when the peer is on this list. The
+    /// default is the private ranges a compose network is built from. The
+    /// backend port is not published to the host in any deployment, so
+    /// nothing outside that network can open a connection to it in the
+    /// first place; a public deployment that fronts the backend directly
+    /// must set `TRUSTED_PROXIES=none`, which trusts no hop and keys every
+    /// limiter on the TCP peer. A *blank* value is read as unset (every
+    /// compose file passes optional settings as `VAR: ${VAR:-}`), so the
+    /// literal `none` is the only way to say "trust nobody".
+    #[serde(default = "default_trusted_proxies")]
+    pub trusted_proxies: String,
+
+    /// Prefix prepended to every rate-limit bucket key.
+    ///
+    /// Empty in every real deployment, and deliberately: replicas of the
+    /// same service must share one bucket per subject, or the budget is
+    /// multiplied by the replica count.
+    ///
+    /// It exists for the test harness. Redis is *not* isolated per test
+    /// the way the database is — one server backs the whole suite — so
+    /// two tests that both drive an always-on limiter would otherwise
+    /// share its buckets and fail in whichever order they happened to
+    /// run. `TestApp` sets a fresh namespace per app, which gives the
+    /// limiters the same per-test isolation the database already has.
+    #[serde(default)]
+    pub rate_limit_namespace: String,
 }
 
 fn default_max_file_size() -> usize {
@@ -695,12 +732,20 @@ fn default_rate_limit_max() -> u32 {
     10_000
 }
 
+/// Loopback plus the RFC1918 ranges docker compose builds its networks
+/// from. See [`SecurityConfig::trusted_proxies`].
+fn default_trusted_proxies() -> String {
+    "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16".to_string()
+}
+
 impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
             max_file_size: default_max_file_size(),
             rate_limit_window_ms: default_rate_limit_window(),
             rate_limit_max_requests: default_rate_limit_max(),
+            trusted_proxies: default_trusted_proxies(),
+            rate_limit_namespace: String::new(),
         }
     }
 }
@@ -865,6 +910,8 @@ impl Settings {
             .set_default("security.max_file_size", 5_242_880)?
             .set_default("security.rate_limit_window_ms", 900_000)?
             .set_default("security.rate_limit_max_requests", 10_000)?
+            .set_default("security.trusted_proxies", default_trusted_proxies())?
+            .set_default("security.rate_limit_namespace", "")?
             .set_default("slipok.auto_verify", false)?
             .set_default("cf_access.enabled", true)?
             .set_default("cf_access.aud", DEFAULT_CF_ACCESS_AUD)?
@@ -926,6 +973,14 @@ impl Settings {
             .set_override_option("slipok.api_key", env_present("SLIPOK_API_KEY"))?
             .set_override_option("slipok.api_url", env_present("SLIPOK_API_URL"))?
             .set_override_option("slipok.auto_verify", env_present("SLIPOK_AUTO_VERIFY"))?
+            // Which hop's `X-Forwarded-For` the per-IP limiters believe.
+            // `env_present` so the `${VAR:-}` blank a compose file passes
+            // reads as "unset" and keeps the default rather than trusting
+            // nobody by accident.
+            .set_override_option(
+                "security.trusted_proxies",
+                env_present("TRUSTED_PROXIES"),
+            )?
             .set_override_option("promptpay.tax_id", env_present("PROMPTPAY_TAX_ID"))?
             .set_override_option("promptpay.hf_id", env_present("PROMPTPAY_HF_ID"))?
             .set_override_option(

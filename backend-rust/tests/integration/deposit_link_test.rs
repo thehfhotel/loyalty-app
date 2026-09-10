@@ -42,7 +42,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use loyalty_backend::services::slip_confirm::SLIPOK_SYSTEM_USER_ID;
 
-use crate::common::{TestApp, TestUser};
+use crate::common::{TestApp, TestResponse, TestUser};
 
 /// The property's receiving PromptPay ID for these tests. Deliberately
 /// different from anything `PROMPTPAY_TAX_ID` would hold, so a QR built
@@ -133,6 +133,28 @@ async fn issue_link(app: &TestApp, admin: &TestUser, room_type_id: Uuid, total: 
     response.json().expect("create response is JSON")
 }
 
+/// The header the public routes take their capability in. Never a path
+/// segment: a path is written to the nginx and Cloudflare access logs, and
+/// this value is a bearer credential for a payment.
+const TOKEN_HEADER: &str = "X-Deposit-Token";
+
+/// GET the guest page for a token.
+async fn read_link(app: &TestApp, token: &str) -> TestResponse {
+    app.client()
+        .with_header(TOKEN_HEADER, token)
+        .get("/api/deposit")
+        .await
+}
+
+/// GET the guest page as a particular client behind the trusted proxy.
+async fn read_link_from(app: &TestApp, token: &str, client_ip: &str) -> TestResponse {
+    app.client()
+        .with_header(TOKEN_HEADER, token)
+        .with_header("X-Forwarded-For", client_ip)
+        .get("/api/deposit")
+        .await
+}
+
 /// POST a slip through the public endpoint. Returns (status, body).
 async fn upload_slip_to_token(app: &TestApp, token: &str) -> (u16, Value) {
     upload_file_to_token(app, token, "slip.jpg", "image/jpeg", &jpeg_bytes()).await
@@ -151,7 +173,8 @@ async fn upload_file_to_token(
 
     let req = Request::builder()
         .method("POST")
-        .uri(format!("/api/deposit/{}/slip", token))
+        .uri("/api/deposit/slip")
+        .header(TOKEN_HEADER, token)
         .header(
             header::CONTENT_TYPE,
             format!("multipart/form-data; boundary={}", boundary),
@@ -264,7 +287,19 @@ async fn admin_create_issues_a_link_against_a_deposit_link_booking() {
     // The token is 32 bytes of base64url, and it is here and nowhere else.
     let token = body["token"].as_str().expect("token in create response");
     assert_eq!(token.len(), 43);
-    assert!(body["url"].as_str().expect("url").ends_with(token));
+    // ...and it is in the URL's **fragment**, which no server on the way
+    // ever sees. A token in the path would be written into the frontend
+    // nginx access log and Cloudflare's HTTP logs on every page load.
+    let url = body["url"].as_str().expect("url");
+    assert!(
+        url.ends_with(&format!("/d#{token}")),
+        "guest link shape: {url}"
+    );
+    let (before_fragment, _) = url.split_once('#').expect("the token is a fragment");
+    assert!(
+        !before_fragment.contains(token),
+        "no part of the URL a server sees may carry the token: {url}"
+    );
     assert!(body["lineShareUrl"]
         .as_str()
         .expect("lineShareUrl")
@@ -355,7 +390,7 @@ async fn the_public_page_shows_the_amount_and_a_property_scoped_qr() {
     let created = issue_link(&app, &admin, room_type_id, "3000.00").await;
     let token = created["token"].as_str().expect("token").to_string();
 
-    let response = app.client().get(&format!("/api/deposit/{}", token)).await;
+    let response = read_link(&app, &token).await;
     response.assert_status(200);
     let body: Value = response.json().expect("public response is JSON");
 
@@ -408,15 +443,73 @@ async fn an_unknown_token_is_a_bare_404() {
         .await
         .expect("create test app");
 
-    let response = app
-        .client()
-        .get("/api/deposit/ZmFrZS10b2tlbi10aGF0LW5ldmVyLWV4aXN0ZWQtaGVyZQ")
-        .await;
+    let response = read_link(&app, "ZmFrZS10b2tlbi10aGF0LW5ldmVyLWV4aXN0ZWQtaGVyZQ").await;
     response.assert_status(404);
 
     let (status, _) =
         upload_slip_to_token(&app, "ZmFrZS10b2tlbi10aGF0LW5ldmVyLWV4aXN0ZWQtaGVyZQ").await;
     assert_eq!(status, 404);
+
+    app.cleanup().await.ok();
+}
+
+/// A missing or malformed `X-Deposit-Token` answers exactly what an
+/// unknown token answers: 404, with nothing in the body that separates
+/// the cases.
+///
+/// The point is not the status code, it is that all four responses are
+/// **identical**. A scanner that could tell "no header" from "bad header"
+/// from "no such link" would have an oracle for guessing tokens.
+#[tokio::test]
+async fn a_missing_or_malformed_token_header_is_the_same_404_as_an_unknown_token() {
+    let app = TestApp::new_with_config(&promptpay_only)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "deposit-header@test.com").await;
+    let room_type_id = seed_room_type(app.db(), "Deposit Header Deluxe").await;
+    let created = issue_link(&app, &admin, room_type_id, "2000.00").await;
+    let token = created["token"].as_str().expect("token").to_string();
+
+    // The live token works, so the fixture is real.
+    read_link(&app, &token).await.assert_status(200);
+
+    // No header at all.
+    let bare = app.client().get("/api/deposit").await;
+    bare.assert_status(404);
+    let bare_body: Value = bare.json().unwrap_or(Value::Null);
+
+    // Malformed: empty, too short, and carrying characters outside the
+    // base64url alphabet (a path traversal, a space, a newline).
+    for bad in [
+        "",
+        "short",
+        "../../etc/passwd",
+        "has spaces in it here",
+        "carriage
+return
+injected",
+        "!!!!!!!!!!!!!!!!!!!!",
+    ] {
+        let response = read_link(&app, bad).await;
+        assert_eq!(
+            response.status, 404,
+            "a malformed token header must be a 404: {bad:?}"
+        );
+        let body: Value = response.json().unwrap_or(Value::Null);
+        assert_eq!(
+            body, bare_body,
+            "every failure on this route must answer identically: {bad:?}"
+        );
+
+        let (status, _) = upload_slip_to_token(&app, bad).await;
+        assert_eq!(status, 404, "and the same on the upload: {bad:?}");
+    }
+
+    // An unknown but *well-formed* token is the same answer again.
+    let unknown = read_link(&app, "ZmFrZS10b2tlbi10aGF0LW5ldmVyLWV4aXN0ZWQtaGVyZQ").await;
+    unknown.assert_status(404);
+    let unknown_body: Value = unknown.json().unwrap_or(Value::Null);
+    assert_eq!(unknown_body, bare_body);
 
     app.cleanup().await.ok();
 }
@@ -475,7 +568,7 @@ async fn an_upload_creates_a_slip_row_and_records_a_decision() {
     );
 
     // The public page now reports the same thing the row says.
-    let page = app.client().get(&format!("/api/deposit/{}", token)).await;
+    let page = read_link(&app, &token).await;
     page.assert_status(200);
     let page: Value = page.json().expect("page JSON");
     assert_eq!(page["state"].as_str(), Some("checking"));
@@ -707,7 +800,7 @@ async fn auto_verify_confirms_a_deposit_link_booking_without_touching_the_pms() 
         .is_some_and(|r| r.contains("DEPOSITLINK0001")));
 
     // The page has moved on, and no longer offers a QR to pay again.
-    let page = app.client().get(&format!("/api/deposit/{}", token)).await;
+    let page = read_link(&app, &token).await;
     page.assert_status(200);
     let page: Value = page.json().expect("page JSON");
     assert_eq!(page["state"].as_str(), Some("confirmed"));
@@ -780,7 +873,7 @@ async fn a_slip_uploaded_after_the_link_expired_lands_in_the_manual_queue() {
         .await
         .expect("age the booking");
 
-    let page = app.client().get(&format!("/api/deposit/{}", token)).await;
+    let page = read_link(&app, &token).await;
     page.assert_status(200);
     let page: Value = page.json().expect("page JSON");
     assert_eq!(page["state"].as_str(), Some("expired"));
@@ -903,7 +996,7 @@ async fn a_revoked_link_reads_revoked_and_refuses_uploads() {
     let revoked: Value = response.json().expect("revoke response");
     assert_eq!(revoked["state"].as_str(), Some("revoked"));
 
-    let page = app.client().get(&format!("/api/deposit/{}", token)).await;
+    let page = read_link(&app, &token).await;
     page.assert_status(200);
     let page: Value = page.json().expect("page JSON");
     assert_eq!(
@@ -961,10 +1054,7 @@ async fn reissue_kills_the_old_token_and_mints_a_new_one() {
     assert_eq!(reissued["amountDueNow"].as_f64(), Some(1500.0));
 
     // The old token is dead...
-    let page = app
-        .client()
-        .get(&format!("/api/deposit/{}", old_token))
-        .await;
+    let page = read_link(&app, &old_token).await;
     page.assert_status(200);
     let page: Value = page.json().expect("page JSON");
     assert_eq!(page["state"].as_str(), Some("revoked"));
@@ -972,10 +1062,7 @@ async fn reissue_kills_the_old_token_and_mints_a_new_one() {
     assert_eq!(status, 409);
 
     // ...and the new one is live.
-    let page = app
-        .client()
-        .get(&format!("/api/deposit/{}", new_token))
-        .await;
+    let page = read_link(&app, &new_token).await;
     page.assert_status(200);
     let page: Value = page.json().expect("page JSON");
     assert_eq!(page["state"].as_str(), Some("awaiting_payment"));
@@ -1064,13 +1151,7 @@ async fn reissuing_the_same_link_twice_hands_back_a_link_not_a_500() {
     );
 
     // The link the FIRST reissue minted is dead, and its page says so.
-    let page = app
-        .client()
-        .get(&format!(
-            "/api/deposit/{}",
-            first["token"].as_str().expect("token")
-        ))
-        .await;
+    let page = read_link(&app, first["token"].as_str().expect("token")).await;
     page.assert_status(200);
     let page: Value = page.json().expect("page JSON");
     assert_eq!(page["state"].as_str(), Some("revoked"));
@@ -1209,4 +1290,222 @@ async fn the_admin_list_reports_state_and_filters_on_it() {
         .assert_status(400);
 
     app.cleanup().await.ok();
+}
+
+// ============================================================================
+// The public limiter: whose bucket is it?
+// ============================================================================
+//
+// These endpoints have no authentication, so their budgets are the only
+// thing standing between a leaked token and the storage volume. Three
+// layers, and each one is here because the other two cannot do its job:
+//
+// - per client IP, resolved from `X-Forwarded-For` because behind nginx
+//   the TCP peer is the same container for every guest on earth;
+// - one global bucket per route, because a caller who varies the token
+//   mints a fresh per-token bucket every time;
+// - per link, because a phone that changes IP mid-payment is still one
+//   guest and one link.
+
+/// Two guests behind the same nginx get **separate** budgets, and the one
+/// that overruns is the only one refused.
+///
+/// This is the whole reason the limiter reads `X-Forwarded-For` at all. If
+/// it keyed on the TCP peer, both guests below would share one bucket:
+/// the first to poll would spend it and the second would meet a 429 in the
+/// middle of paying, having done nothing wrong.
+#[tokio::test]
+async fn two_clients_behind_the_same_proxy_get_separate_ip_budgets() {
+    const NOISY: &str = "203.0.113.10";
+    const QUIET: &str = "198.51.100.20";
+    // Must match `deposit_links::READ_PER_IP`.
+    const READ_PER_IP: usize = 30;
+
+    let app = TestApp::new_with_config(&promptpay_only)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "deposit-iplimit@test.com").await;
+    let room_type_id = seed_room_type(app.db(), "Deposit IpLimit Deluxe").await;
+
+    // Two links, so the per-link budget can never be the thing that fires
+    // below: each token is asked for far fewer times than its own budget.
+    let first = issue_link(&app, &admin, room_type_id, "3000.00").await;
+    let second = issue_link(&app, &admin, room_type_id, "4000.00").await;
+    let first_token = first["token"].as_str().expect("token").to_string();
+    let second_token = second["token"].as_str().expect("token").to_string();
+
+    // The noisy client spends its whole per-IP budget on one link.
+    for request in 1..=READ_PER_IP {
+        let response = read_link_from(&app, &first_token, NOISY).await;
+        assert_eq!(
+            response.status, 200,
+            "read {request} of {READ_PER_IP} is inside the budget"
+        );
+    }
+
+    // One more from the same client — on a *different* link, whose own
+    // bucket has been touched once. Only the per-IP bucket is over, so a
+    // 429 here can mean nothing else.
+    let over = read_link_from(&app, &second_token, NOISY).await;
+    assert_eq!(
+        over.status, 429,
+        "the client that overran its budget is refused"
+    );
+
+    // The quiet client, arriving through the same nginx on the same TCP
+    // connection as far as the backend can see, is untouched.
+    let unaffected = read_link_from(&app, &second_token, QUIET).await;
+    assert_eq!(
+        unaffected.status, 200,
+        "a second guest behind the same proxy must have their own bucket"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// The global bucket is one bucket, and varying the token does not mint a
+/// second one.
+///
+/// Sized so that it never fires for real traffic, so what is asserted here
+/// is its *key*: two requests that differ in both token and client address
+/// land on the same counter. Were the global subject to include either,
+/// the layer would be worthless — rotating tokens is exactly what a
+/// scanner does.
+#[tokio::test]
+async fn the_global_bucket_counts_every_caller_on_one_key() {
+    use redis::AsyncCommands;
+
+    let app = TestApp::new_with_config(&promptpay_only)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "deposit-global@test.com").await;
+    let room_type_id = seed_room_type(app.db(), "Deposit Global Deluxe").await;
+    let first = issue_link(&app, &admin, room_type_id, "3000.00").await;
+    let second = issue_link(&app, &admin, room_type_id, "4000.00").await;
+
+    read_link_from(
+        &app,
+        first["token"].as_str().expect("token"),
+        "203.0.113.10",
+    )
+    .await
+    .assert_status(200);
+    read_link_from(
+        &app,
+        second["token"].as_str().expect("token"),
+        "198.51.100.20",
+    )
+    .await
+    .assert_status(200);
+    // A caller with no usable token pays the global budget too: it reached
+    // a public endpoint and cost us the work of answering.
+    read_link_from(&app, "not-a-real-token-shape!!", "192.0.2.30")
+        .await
+        .assert_status(404);
+
+    let mut redis = app.redis();
+    let keys: Vec<String> = redis
+        .keys(format!(
+            "rate_limit:{}:deposit_global:*",
+            app.rate_limit_namespace()
+        ))
+        .await
+        .expect("list global buckets");
+    assert_eq!(
+        keys.len(),
+        1,
+        "three callers, three tokens, three addresses — one global bucket: {keys:?}"
+    );
+    let count: i64 = redis.get(&keys[0]).await.expect("read the global bucket");
+    assert_eq!(count, 3, "every public read is counted on it");
+
+    app.cleanup().await.ok();
+}
+
+/// A caller over the stored-slip budget leaves **nothing on disk**.
+///
+/// Storage is a shared volume with a retention job over it and this
+/// endpoint has no authentication at all. An implementation that writes
+/// the file first and charges the budget afterwards answers 429 while
+/// still accepting the bytes — so a token holder fills the volume five
+/// slips at a time and the budget only changes the status code.
+#[tokio::test]
+async fn a_slip_over_the_budget_is_never_written_to_storage() {
+    let app = TestApp::new_with_config(&promptpay_only)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "deposit-nowrite@test.com").await;
+    let room_type_id = seed_room_type(app.db(), "Deposit NoWrite Deluxe").await;
+    let created = issue_link(&app, &admin, room_type_id, "3000.00").await;
+    let token = created["token"].as_str().expect("token").to_string();
+
+    // Spend the five-slips-an-hour budget.
+    for attempt in 1..=5 {
+        let (status, body) = upload_slip_to_token(&app, &token).await;
+        assert_eq!(status, 201, "upload {attempt} is inside the budget: {body}");
+    }
+
+    // The sixth is a perfectly valid JPEG carrying a marker no other test
+    // could have written. Files are named by UUID, so the marker is how
+    // this test recognises its own bytes on the shared volume.
+    let marker = format!("over-budget-{}", Uuid::new_v4());
+    let mut payload = vec![0xFF, 0xD8, 0xFF, 0xE0];
+    payload.extend_from_slice(marker.as_bytes());
+
+    let (status, _) = upload_file_to_token(&app, &token, "slip.jpg", "image/jpeg", &payload).await;
+    assert_eq!(status, 429, "the sixth stored slip is over the budget");
+
+    assert!(
+        !slip_storage_contains(marker.as_bytes()),
+        "a refused upload must not leave its bytes in slip storage"
+    );
+
+    // ...and no row either, so nothing downstream ever sees it.
+    let slips: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM booking_slips WHERE booking_id = $1")
+        .bind(
+            Uuid::parse_str(created["bookingId"].as_str().expect("bookingId"))
+                .expect("booking uuid"),
+        )
+        .fetch_one(app.db())
+        .await
+        .expect("count slips");
+    assert_eq!(slips, 5, "five stored, and the refused one stored nowhere");
+
+    app.cleanup().await.ok();
+}
+
+/// Does any file in slip storage contain these bytes?
+///
+/// The suite shares one storage directory (`STORAGE_PATH` is per process,
+/// not per test), so a test can only ask about bytes it made unique.
+/// Slips are tiny; anything large is somebody else's fixture and skipped.
+fn slip_storage_contains(needle: &[u8]) -> bool {
+    let base = std::env::var("STORAGE_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                .join("storage")
+        })
+        .join("slips");
+
+    let Ok(entries) = std::fs::read_dir(&base) else {
+        // No directory at all is the strongest possible "not written".
+        return false;
+    };
+
+    for entry in entries.flatten() {
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if !metadata.is_file() || metadata.len() > 4096 {
+            continue;
+        }
+        if let Ok(bytes) = std::fs::read(entry.path()) {
+            if bytes.windows(needle.len()).any(|window| window == needle) {
+                return true;
+            }
+        }
+    }
+    false
 }

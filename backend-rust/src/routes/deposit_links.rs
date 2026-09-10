@@ -8,8 +8,14 @@
 //!
 //! ## Endpoints
 //!
-//! - `GET  /api/deposit/:token`      — what the guest page renders
-//! - `POST /api/deposit/:token/slip` — the slip upload (multipart, `file`)
+//! - `GET  /api/deposit`      — what the guest page renders
+//! - `POST /api/deposit/slip` — the slip upload (multipart, `file`)
+//!
+//! Both take the link token in the **`X-Deposit-Token` request header**,
+//! never in the path or the query string. See "the token is never in a
+//! URL" below — that is the single most load-bearing decision in this
+//! module and the easiest one to undo by "simplifying" the route back to
+//! `/api/deposit/:token`.
 //!
 //! ## No login, and the reason
 //!
@@ -26,20 +32,47 @@
 //! `slipok_check`, `slip_match::decide`, `record_slipok_result` and
 //! `slip_confirm::confirm_slip` are untouched.
 //!
+//! ## The token is never in a URL
+//!
+//! A URL path is written down in more places than anyone can revoke: the
+//! frontend container's nginx access log, Cloudflare's HTTP logs, a
+//! `Referer` header on any outbound link, a browser's history sync, the
+//! LINE in-app browser's own telemetry. The token is a bearer capability
+//! for a payment, so putting it in a path means every one of those becomes
+//! a place a stranger can pick up a live payment page.
+//!
+//! Two halves keep it out of all of them:
+//!
+//! - **The guest link is `https://<frontend>/d#<token>`.** A URL fragment
+//!   is not sent to the server at all, so it cannot appear in any access
+//!   log on the way. The SPA reads `window.location.hash`.
+//! - **The API takes `X-Deposit-Token`.** Headers are not part of the
+//!   request line, so the default nginx `combined` format never writes
+//!   them, and no proxy on the path logs them by default.
+//!
+//! `/d/:token` still resolves in the SPA for links already sent, but only
+//! as a client-side rewrite to `/d#<token>`; it makes no request carrying
+//! the token.
+//!
 //! ## Security notes that are easy to undo by accident
 //!
 //! - The token is 32 CSPRNG bytes, base64url, and only its SHA-256 ever
 //!   reaches the database. Lookup is by hash: no timing oracle, and a
 //!   database leak yields no live links.
-//! - **Never log the token.** Log `link_id` and `booking_id`. The same
-//!   goes for rate-limit keys, which is why the per-token bucket is keyed
-//!   on the hex of the hash rather than on the token.
+//! - **Never log the token, and never log the header.** Log `link_id` and
+//!   `booking_id`. The same goes for rate-limit keys, which is why the
+//!   per-token bucket is keyed on the hex of the hash rather than on the
+//!   token.
+//! - A missing or malformed `X-Deposit-Token` answers **404 with no
+//!   detail** — the same response an unknown token gets. A scanner must
+//!   not be able to tell "you sent no header" from "that link does not
+//!   exist" from "that link was revoked".
 //! - The response carries the guest's *given name only*: no phone, no
 //!   email, no membership id, no booking UUID.
 
 use axum::{
-    extract::{ConnectInfo, DefaultBodyLimit, Multipart, Path, State},
-    http::StatusCode,
+    extract::{DefaultBodyLimit, Multipart, State},
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
 };
@@ -49,11 +82,12 @@ use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::net::{IpAddr, SocketAddr};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::middleware::rate_limit::{RateLimitConfig, RateLimitError, RedisRateLimiter};
+use crate::middleware::rate_limit::{
+    peer_ip, resolve_client_ip, RateLimitConfig, RateLimitError, RedisRateLimiter, TrustedProxies,
+};
 use crate::services::promptpay::PromptPayService;
 use crate::state::AppState;
 
@@ -100,6 +134,64 @@ pub(crate) fn generate_token() -> String {
 /// SHA-256 of a token, which is all the database ever sees.
 pub(crate) fn token_hash(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
+}
+
+/// The request header the link token travels in.
+///
+/// Not a path segment and not a query parameter: see the module docs. The
+/// name is part of the cross-repo interface — `depositLinkService.ts`
+/// sends it — so changing it breaks every live link at once.
+pub const DEPOSIT_TOKEN_HEADER: &str = "X-Deposit-Token";
+
+/// Shortest and longest header value that could be a token we minted.
+///
+/// A real token is exactly [`TOKEN_BYTES`] base64url characters (43). The
+/// bounds are a little wider so that a future token length is not an
+/// outage, and narrow enough that nothing large gets hashed on the way to
+/// a 404.
+const TOKEN_MIN_LEN: usize = 16;
+const TOKEN_MAX_LEN: usize = 128;
+
+/// The one 404 every failed lookup on this router answers with.
+///
+/// Missing header, malformed header, unknown token, revoked-and-purged
+/// token: all the same response, carrying nothing that separates them. A
+/// scanner holding a guessed token learns only that it does not work.
+fn not_found() -> AppError {
+    AppError::NotFound("Deposit link".to_string())
+}
+
+/// Read the link token out of [`DEPOSIT_TOKEN_HEADER`].
+///
+/// Rejects — as an indistinguishable [`not_found`] — anything that is not
+/// plausibly a token we minted: absent, non-ASCII, wrong length, or
+/// carrying a character outside the base64url alphabet. The charset check
+/// is not decoration: it is what guarantees the value is safe to put in a
+/// Redis key and in a `hex::encode` argument without any further
+/// escaping, and it keeps a header full of newlines or control characters
+/// from ever reaching either.
+///
+/// The value itself is never logged, never returned in an error, and never
+/// used anywhere but [`token_hash`].
+fn token_from_headers(headers: &HeaderMap) -> AppResult<String> {
+    let value = headers
+        .get(DEPOSIT_TOKEN_HEADER)
+        .ok_or_else(not_found)?
+        .to_str()
+        .map_err(|_| not_found())?
+        .trim();
+
+    if !(TOKEN_MIN_LEN..=TOKEN_MAX_LEN).contains(&value.len()) {
+        return Err(not_found());
+    }
+    if !value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err(not_found());
+    }
+
+    Ok(value.to_string())
 }
 
 // ============================================================================
@@ -169,79 +261,161 @@ pub(crate) fn derive_state(
 // ============================================================================
 // Rate limits
 // ============================================================================
+//
+// Three layers on every public request, in this order:
+//
+// 1. **One global bucket per route.** Keyed on the route and nothing else,
+//    so it is the same bucket for everyone. It is the only layer a caller
+//    cannot escape: a token holder who rotates tokens mints a fresh
+//    per-token bucket every time and a botnet mints a fresh per-IP bucket
+//    every time, and the global bucket counts both anyway. Sized so that
+//    it is the *last* thing a legitimate load meets, never the first.
+// 2. **Per client IP**, resolved through the trusted-proxy rule
+//    (`middleware::rate_limit::resolve_client_ip`), never the raw TCP
+//    peer. Behind nginx the peer is the nginx container for every guest on
+//    earth, so a peer-keyed budget is one bucket that three people paying
+//    at once would exhaust between them — a 429 in the middle of a
+//    payment.
+// 3. **Per link**, keyed on the hex SHA-256 of the token (never the
+//    token: the key reaches Redis and the warning log on a Redis
+//    failure). This is the layer that speaks about a guest, and it is what
+//    survives a phone changing IP between attempts.
+//
+// All three run in every environment. The public deposit endpoints have no
+// authentication at all, so their budgets are a property of the capability
+// rather than a production-only convenience; the test harness keeps its
+// buckets apart with `security.rate_limit_namespace` instead of by turning
+// the limiters off.
 
-/// 30 requests per minute **per link**, layered on the public sub-router
-/// in `routes::mod` the way the strict auth limiter is layered —
-/// production only, like every other limiter in this codebase.
-///
 /// The guest page polls the read endpoint every 5 seconds for two minutes
-/// after an upload (12/min), so the budget is a little over double what a
-/// well-behaved page asks for.
-///
-/// **Per link, not per IP, and that is the point.** `get_client_ip` reads
-/// the TCP peer and deliberately ignores `X-Forwarded-For` (HIGH-2), but
-/// in production `/api` is served through nginx, so the peer is the nginx
-/// container for every request on earth. A per-IP budget here would be
-/// one global bucket: three guests paying at once, at 12 polls a minute
-/// each, would exhaust 30/min between them and a paying guest's page
-/// would start answering 429 in the middle of a payment. The link is the
-/// subject that actually matters on this router, exactly as it already is
-/// for the upload budget below.
-pub fn public_read_rate_limit() -> RateLimitConfig {
-    RateLimitConfig::new(30, 60)
-}
+/// after an upload (12/min), so 30/min is a little over double what a
+/// well-behaved page asks for — per link and per client, independently.
+const READ_PER_TOKEN: (u32, u64) = (30, 60);
+const READ_PER_IP: (u32, u64) = (30, 60);
 
-/// Rate-limit the public deposit endpoints on the **link** rather than on
-/// the client address; see [`public_read_rate_limit`] for why.
-///
-/// The bucket key is the hex SHA-256 of the token, never the token: the
-/// key reaches Redis and, on a Redis failure, the warning log line.
-pub async fn deposit_link_rate_limit_middleware(
-    State(limiter): State<RedisRateLimiter>,
-    Path(token): Path<String>,
-    request: axum::extract::Request,
-    next: axum::middleware::Next,
-) -> Result<axum::response::Response, crate::middleware::rate_limit::RateLimitError> {
-    limiter
-        .check_subject(&hex::encode(token_hash(&token)))
-        .await?;
-    Ok(next.run(request).await)
-}
+/// The global read budget. Deliberately far above any real day: reception
+/// issues a handful of links a day and each one polls at 12/min while a
+/// guest is paying, so 600/min is roughly fifty guests paying at the same
+/// second. It exists to bound a scanner, not to shape traffic.
+const READ_GLOBAL: (u32, u64) = (600, 60);
 
 /// 5 **stored** slips per hour per link.
 ///
-/// Unlike every other limiter here this one runs in *all* environments,
-/// and deliberately: the public upload has no authentication at all, so
-/// the per-link budget is a property of the capability rather than a
-/// production-only convenience. It is safe to leave on in tests because
-/// the bucket key is the token hash, which is unique per test.
-///
-/// Charged **after** the file has validated and been written, never on an
-/// attempt. A guest who has already transferred the money and then picks
-/// the wrong file five times — a WebP screenshot from an Android gallery,
-/// a PDF out of a bank app, a HEIC iOS did not transcode, a truncated
-/// upload on a flaky mobile connection — would otherwise be locked out
-/// for an hour from the only page that lets them show proof of payment.
+/// Charged after the file has validated and **before** it is written, so a
+/// guest who has already transferred the money and then picks the wrong
+/// file five times — a WebP screenshot from an Android gallery, a PDF out
+/// of a bank app, a HEIC iOS did not transcode, a truncated upload on a
+/// flaky mobile connection — is not locked out for an hour from the only
+/// page that lets them show proof of payment, and a caller over the budget
+/// leaves nothing on disk.
 const UPLOAD_PER_TOKEN: (u32, u64) = (5, 3600);
 
 /// 30 upload *attempts* per hour per link, charged before the body is
-/// read.
-///
-/// This is the anti-flood budget [`UPLOAD_PER_TOKEN`] used to be, split
-/// off so that the strict budget can count stored slips instead. Loose
-/// enough that a guest fumbling with their gallery never meets it, tight
-/// enough that a token holder cannot make us parse 10 MB bodies all day.
+/// read. Loose enough that a guest fumbling with their gallery never meets
+/// it, tight enough that a token holder cannot make us parse 10 MB bodies
+/// all day.
 const UPLOAD_ATTEMPTS_PER_TOKEN: (u32, u64) = (30, 3600);
 
-/// 20 uploads per hour per IP. Production only — in tests every request
-/// comes from 127.0.0.1, so an always-on IP bucket would leak between test
-/// cases and make the suite flaky in a way that says nothing about the
-/// code.
-///
-/// Behind nginx this is effectively one global bucket (see
-/// [`public_read_rate_limit`]), so treat it as the coarse backstop it is:
-/// the per-link budgets above are the ones that speak about a guest.
+/// 20 upload attempts per hour per client IP.
 const UPLOAD_PER_IP: (u32, u64) = (20, 3600);
+
+/// The global upload budget — see [`READ_GLOBAL`] for the reasoning.
+const UPLOAD_GLOBAL: (u32, u64) = (300, 3600);
+
+/// Which public route a limiter layer guards.
+///
+/// The variant is the global bucket's whole key, which is the point: it
+/// contains no token and no address, so nothing a caller controls can mint
+/// a second one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PublicDepositRoute {
+    /// `GET /api/deposit`
+    Read,
+    /// `POST /api/deposit/slip`
+    Slip,
+}
+
+impl PublicDepositRoute {
+    /// The global bucket's subject. Stable across restarts and replicas.
+    fn global_subject(self) -> &'static str {
+        match self {
+            Self::Read => "GET /api/deposit",
+            Self::Slip => "POST /api/deposit/slip",
+        }
+    }
+
+    /// Namespace component so the three routes do not share buckets.
+    fn slug(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Slip => "slip",
+        }
+    }
+
+    fn budgets(self) -> RouteBudgets {
+        match self {
+            Self::Read => RouteBudgets {
+                global: READ_GLOBAL,
+                per_ip: READ_PER_IP,
+                per_token: READ_PER_TOKEN,
+            },
+            Self::Slip => RouteBudgets {
+                global: UPLOAD_GLOBAL,
+                per_ip: UPLOAD_PER_IP,
+                per_token: UPLOAD_ATTEMPTS_PER_TOKEN,
+            },
+        }
+    }
+}
+
+struct RouteBudgets {
+    global: (u32, u64),
+    per_ip: (u32, u64),
+    per_token: (u32, u64),
+}
+
+/// State for [`deposit_public_rate_limit`]: the app (for Redis and the
+/// trusted-proxy list) and which route this layer sits on.
+#[derive(Clone)]
+pub struct DepositRateLimit {
+    state: AppState,
+    route: PublicDepositRoute,
+    trusted: std::sync::Arc<TrustedProxies>,
+}
+
+impl DepositRateLimit {
+    pub fn new(state: AppState, route: PublicDepositRoute) -> Self {
+        // Parsed once at router build time rather than per request: the
+        // list is a handful of CIDRs and never changes at runtime.
+        let trusted = std::sync::Arc::new(TrustedProxies::parse(
+            &state.config().security.trusted_proxies,
+        ));
+        Self {
+            state,
+            route,
+            trusted,
+        }
+    }
+}
+
+/// Build a limiter whose Redis keys are namespaced for this deployment.
+///
+/// `security.rate_limit_namespace` is empty everywhere but the test
+/// harness, so in production every replica shares one bucket per subject —
+/// which is the only way a budget means what it says.
+fn limiter(state: &AppState, key: &str, budget: (u32, u64)) -> RedisRateLimiter {
+    let namespace = &state.config().security.rate_limit_namespace;
+    let prefix = if namespace.is_empty() {
+        key.to_string()
+    } else {
+        format!("{namespace}:{key}")
+    };
+    RedisRateLimiter::new(
+        state.redis(),
+        RateLimitConfig::new(budget.0, budget.1),
+        prefix,
+    )
+}
 
 /// Turn a limiter refusal into a 429 that tells the truth about *when* to
 /// come back.
@@ -256,52 +430,56 @@ fn too_many_requests(err: RateLimitError) -> AppError {
     AppError::TooManyRequests(retry_after as u64)
 }
 
-/// Charge one upload *attempt*, before the multipart body is read.
+/// The layered limiter for one public deposit route.
 ///
-/// Deliberately does not touch [`UPLOAD_PER_TOKEN`]: that budget counts
-/// slips we actually stored, and is charged by
-/// [`charge_stored_slip_budget`] once the file has validated.
-async fn charge_upload_attempt_budgets(
-    state: &AppState,
-    token_hash_hex: &str,
-    client_ip: Option<IpAddr>,
-) -> AppResult<()> {
-    let attempts = RedisRateLimiter::new(
-        state.redis(),
-        RateLimitConfig::new(UPLOAD_ATTEMPTS_PER_TOKEN.0, UPLOAD_ATTEMPTS_PER_TOKEN.1),
-        "deposit_upload_attempt",
-    );
-    if let Err(e) = attempts.check_subject(token_hash_hex).await {
-        return Err(too_many_requests(e));
+/// Runs before the handler and before the multipart body is read, so a
+/// flood costs a Redis round trip rather than 10 MB of buffering.
+///
+/// A request with no usable token still pays the global and per-IP
+/// budgets: it reached a public endpoint and cost us work, and skipping
+/// the charge would make "send a junk header" the cheapest way to probe.
+/// It simply has no third bucket to be charged against.
+pub async fn deposit_public_rate_limit(
+    State(guard): State<DepositRateLimit>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> AppResult<axum::response::Response> {
+    let budgets = guard.route.budgets();
+    let slug = guard.route.slug();
+
+    limiter(&guard.state, "deposit_global", budgets.global)
+        .check_subject(guard.route.global_subject())
+        .await
+        .map_err(too_many_requests)?;
+
+    let client_ip = resolve_client_ip(peer_ip(&request), request.headers(), &guard.trusted);
+    limiter(&guard.state, &format!("deposit_ip_{slug}"), budgets.per_ip)
+        .check_subject(&client_ip.to_string())
+        .await
+        .map_err(too_many_requests)?;
+
+    if let Ok(token) = token_from_headers(request.headers()) {
+        limiter(
+            &guard.state,
+            &format!("deposit_token_{slug}"),
+            budgets.per_token,
+        )
+        .check_subject(&hex::encode(token_hash(&token)))
+        .await
+        .map_err(too_many_requests)?;
     }
 
-    if state.is_production() {
-        if let Some(ip) = client_ip {
-            let per_ip = RedisRateLimiter::new(
-                state.redis(),
-                RateLimitConfig::new(UPLOAD_PER_IP.0, UPLOAD_PER_IP.1),
-                "deposit_upload_ip",
-            );
-            if let Err(e) = per_ip.check(ip).await {
-                return Err(too_many_requests(e));
-            }
-        }
-    }
-
-    Ok(())
+    Ok(next.run(request).await)
 }
 
 /// Charge one **stored** slip against the strict per-link budget.
+///
+/// Called after the upload has validated and before a byte reaches disk.
 async fn charge_stored_slip_budget(state: &AppState, token_hash_hex: &str) -> AppResult<()> {
-    let per_token = RedisRateLimiter::new(
-        state.redis(),
-        RateLimitConfig::new(UPLOAD_PER_TOKEN.0, UPLOAD_PER_TOKEN.1),
-        "deposit_upload_token",
-    );
-    match per_token.check_subject(token_hash_hex).await {
-        Ok(()) => Ok(()),
-        Err(e) => Err(too_many_requests(e)),
-    }
+    limiter(state, "deposit_upload_token", UPLOAD_PER_TOKEN)
+        .check_subject(token_hash_hex)
+        .await
+        .map_err(too_many_requests)
 }
 
 // ============================================================================
@@ -376,8 +554,9 @@ struct LinkRow {
 
 /// Find a link by the hash of its token.
 ///
-/// An unknown token is a plain 404 carrying no detail: the response must
-/// not tell a scanner whether a token was well-formed, recently revoked or
+/// An unknown token is a plain 404 carrying no detail — the *same* 404 a
+/// missing or malformed header gets ([`not_found`]): the response must not
+/// tell a scanner whether a token was well-formed, recently revoked or
 /// never existed.
 async fn find_link_by_token(db: &sqlx::PgPool, token: &str) -> AppResult<LinkRow> {
     let hash = token_hash(token);
@@ -405,7 +584,7 @@ async fn find_link_by_token(db: &sqlx::PgPool, token: &str) -> AppResult<LinkRow
     )
     .fetch_optional(db)
     .await?
-    .ok_or_else(|| AppError::NotFound("Deposit link".to_string()))?;
+    .ok_or_else(not_found)?;
 
     Ok(LinkRow {
         link_id: row.link_id,
@@ -461,15 +640,18 @@ async fn read_slip_facts(
 // Handlers
 // ============================================================================
 
-/// `GET /api/deposit/:token`
+/// `GET /api/deposit`, token in `X-Deposit-Token`.
 ///
 /// 200 for every *known* token, including an expired or revoked one: the
 /// guest holding a dead link needs to be told to call the desk, and a 404
-/// there would look like a broken page. 404 only when no link matches.
+/// there would look like a broken page. 404 only when no link matches —
+/// or when the header is absent or malformed, which is deliberately the
+/// same answer.
 async fn get_deposit_link(
     State(state): State<AppState>,
-    Path(token): Path<String>,
+    headers: HeaderMap,
 ) -> AppResult<Json<DepositLinkPublicResponse>> {
+    let token = token_from_headers(&headers)?;
     let link = find_link_by_token(state.db(), &token).await?;
     let (slips, slipok_status, slipok_reason) =
         read_slip_facts(state.db(), link.booking_id).await?;
@@ -545,7 +727,7 @@ async fn get_deposit_link(
     }))
 }
 
-/// `POST /api/deposit/:token/slip`
+/// `POST /api/deposit/slip`, token in `X-Deposit-Token`.
 ///
 /// Multipart, field `file` (or `slip`), JPEG or PNG, 10 MB.
 ///
@@ -560,10 +742,10 @@ async fn get_deposit_link(
 /// link", and the reissued one is where the slip belongs.
 async fn upload_deposit_slip(
     State(state): State<AppState>,
-    Path(token): Path<String>,
-    connect_info: Option<ConnectInfo<SocketAddr>>,
+    headers: HeaderMap,
     multipart: Multipart,
 ) -> AppResult<(StatusCode, Json<DepositSlipUploadResponse>)> {
+    let token = token_from_headers(&headers)?;
     let link = find_link_by_token(state.db(), &token).await?;
     let token_hash_hex = hex::encode(token_hash(&token));
 
@@ -576,25 +758,30 @@ async fn upload_deposit_slip(
         ));
     }
 
-    // The *attempt* budget is charged before the body is read, so a flood
-    // costs us a lookup rather than 10 MB of buffering per request. The
-    // strict five-slips-an-hour budget is charged further down, once the
-    // file has actually validated.
-    charge_upload_attempt_budgets(
-        &state,
-        &token_hash_hex,
-        connect_info.map(|ConnectInfo(addr)| addr.ip()),
-    )
-    .await?;
+    // The global, per-IP and per-link *attempt* budgets were charged by
+    // `deposit_public_rate_limit` before the body was read, so a flood
+    // costs a Redis round trip rather than 10 MB of buffering.
 
-    // The same writer `POST /api/slips/upload` uses: same 10 MB cap, same
-    // JPEG/PNG magic-byte check, same `STORAGE_PATH/slips/<uuid>` target,
-    // so F2's retention and access logging cover this with no special case.
-    // Everything it rejects — wrong format, oversize, truncated body — is
-    // rejected before the strict budget below is touched.
-    let slip_url = crate::routes::slips::store_slip_upload(multipart).await?;
+    // Read and validate through the same code `POST /api/slips/upload`
+    // uses: same 10 MB cap, same JPEG/PNG magic-byte check. Everything it
+    // rejects — wrong format, oversize, truncated body — is rejected
+    // before the strict budget below is touched, so a guest who picks the
+    // wrong file out of their gallery is not charged for it.
+    let slip = crate::routes::slips::read_slip_upload(multipart).await?;
 
+    // Budget, then storage — never the other way round. Storage is a
+    // shared disk with a retention job over it and this endpoint has no
+    // authentication, so a caller over the budget must leave nothing
+    // behind. Writing first and counting second would let a token holder
+    // fill the volume five slips at a time and get a 429 for their
+    // trouble.
     charge_stored_slip_budget(&state, &token_hash_hex).await?;
+
+    // Same target as the authenticated path (`STORAGE_PATH/slips/<uuid>`),
+    // so F2's retention and access logging cover this with no special
+    // case.
+    let slip_bytes = slip.len();
+    let slip_url = crate::routes::slips::write_slip_to_storage(&slip).await?;
 
     let mut tx = state.db().begin().await?;
     let slip = crate::routes::bookings::insert_booking_slip_tx(
@@ -610,6 +797,7 @@ async fn upload_deposit_slip(
         link_id = %link.link_id,
         booking_id = %link.booking_id,
         slip_id = %slip.id,
+        bytes = slip_bytes,
         "deposit-link slip uploaded"
     );
 
@@ -729,17 +917,44 @@ fn given_name(guest_name: Option<&str>) -> String {
 
 /// Public deposit-link routes, mounted at `/api/deposit` with **no auth
 /// middleware** — that is the whole design (see the module docs).
-pub fn routes() -> Router<AppState> {
-    Router::new().route("/:token", get(get_deposit_link)).route(
-        "/:token/slip",
-        post(upload_deposit_slip)
+///
+/// Neither route has a path parameter: the token travels in
+/// `X-Deposit-Token`, so `/api/deposit` and `/api/deposit/slip` are the
+/// complete URLs and there is nothing in them worth logging or leaking.
+///
+/// The limiter is layered per route (rather than once over the sub-router)
+/// because the read and the upload have different budgets and different
+/// global buckets. `from_fn_with_state` here takes [`DepositRateLimit`],
+/// not `AppState`, so the trusted-proxy list is parsed once at build time.
+pub fn routes(state: AppState) -> Router<AppState> {
+    // One sub-router per route so each gets its own budgets, merged at the
+    // end. `route_layer` rather than `layer`: the limiter runs only for a
+    // request that actually matched one of these two routes, so a 404 on
+    // `/api/deposit/anything-else` costs no Redis round trip.
+    let read = Router::new().route("/", get(get_deposit_link)).route_layer(
+        axum::middleware::from_fn_with_state(
+            DepositRateLimit::new(state.clone(), PublicDepositRoute::Read),
+            deposit_public_rate_limit,
+        ),
+    );
+
+    let slip = Router::new()
+        .route(
+            "/slip",
+            post(upload_deposit_slip)
                 // Same per-route body cap as `POST /api/slips/upload`, for
                 // the same reason: reject oversize bodies at the
                 // body-extraction layer rather than buffering them first.
                 .layer(DefaultBodyLimit::max(
                     crate::routes::slips::SLIP_UPLOAD_BODY_LIMIT_BYTES,
                 )),
-    )
+        )
+        .route_layer(axum::middleware::from_fn_with_state(
+            DepositRateLimit::new(state, PublicDepositRoute::Slip),
+            deposit_public_rate_limit,
+        ));
+
+    read.merge(slip)
 }
 
 #[cfg(test)]

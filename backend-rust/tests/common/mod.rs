@@ -494,6 +494,9 @@ pub struct TestApp {
     pool: PgPool,
     /// Redis connection manager
     redis: ConnectionManager,
+    /// This app's private rate-limit bucket namespace, so a test can look
+    /// its own buckets up in the Redis every test shares.
+    rate_limit_namespace: String,
     /// Per-test database name (for cleanup)
     db_name: String,
 }
@@ -602,6 +605,7 @@ impl TestApp {
         if let Some(mutate) = mutate {
             mutate(&mut config);
         }
+        let rate_limit_namespace = config.security.rate_limit_namespace.clone();
         let state = loyalty_backend::AppState::new(pool.clone(), redis.clone(), config);
         let router = loyalty_backend::routes::create_router(state);
 
@@ -610,6 +614,7 @@ impl TestApp {
             pool,
             redis,
             db_name,
+            rate_limit_namespace,
         })
     }
 
@@ -622,6 +627,12 @@ impl TestApp {
     #[allow(dead_code)]
     pub fn redis(&self) -> ConnectionManager {
         self.redis.clone()
+    }
+
+    /// The prefix every rate-limit key this app writes carries.
+    #[allow(dead_code)]
+    pub fn rate_limit_namespace(&self) -> &str {
+        &self.rate_limit_namespace
     }
 
     /// Get a TestClient for making HTTP requests.
@@ -729,7 +740,16 @@ fn create_test_config() -> loyalty_backend::Settings {
         email: EmailConfig::default(),
         slipok: SlipokConfig::default(),
         promptpay: PromptPayConfig::default(),
-        security: SecurityConfig::default(),
+        // Redis is shared by the whole suite (one server, no per-test
+        // database), so a limiter that runs in tests would otherwise carry
+        // its buckets from one test into the next. A fresh namespace per
+        // app gives the limiters the isolation the database already has;
+        // it is empty in every real deployment, where replicas must share
+        // buckets. See `SecurityConfig::rate_limit_namespace`.
+        security: SecurityConfig {
+            rate_limit_namespace: format!("test-{}", Uuid::new_v4().simple()),
+            ..SecurityConfig::default()
+        },
         cf_access: CfAccessConfig::default(),
         line_messaging: LineMessagingConfig::default(),
         pms: PmsConfig::default(),
@@ -1144,6 +1164,12 @@ pub struct TestClient {
     /// Optional `Cookie` request header value (e.g. `"refresh_token=abc"`).
     /// Used by tests that need to exercise cookie-based auth flows.
     cookie_header: Option<String>,
+    /// Extra request headers applied to every request this client makes.
+    ///
+    /// Needed by anything whose credential is not a bearer token: the
+    /// public deposit-link routes take their capability in
+    /// `X-Deposit-Token`, and the per-IP limiters read `X-Forwarded-For`.
+    extra_headers: Vec<(String, String)>,
 }
 
 impl TestClient {
@@ -1153,7 +1179,16 @@ impl TestClient {
             router,
             auth_token: None,
             cookie_header: None,
+            extra_headers: Vec::new(),
         }
+    }
+
+    /// Attach an arbitrary request header to every subsequent request.
+    #[allow(dead_code)]
+    pub fn with_header(mut self, name: &str, value: &str) -> Self {
+        self.extra_headers
+            .push((name.to_string(), value.to_string()));
+        self
     }
 
     /// Set the authentication token
@@ -1183,6 +1218,9 @@ impl TestClient {
         }
         if let Some(cookie) = &self.cookie_header {
             builder = builder.header("Cookie", cookie);
+        }
+        for (name, value) in &self.extra_headers {
+            builder = builder.header(name, value);
         }
         builder
     }

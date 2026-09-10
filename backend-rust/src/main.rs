@@ -555,16 +555,20 @@ fn make_http_span(request: &Request) -> tracing::Span {
 /// The value logged as the span's `uri`: the **matched route pattern**,
 /// never the raw path.
 ///
-/// This is a security control, not a cosmetic one. Some paths carry a
-/// bearer capability in a path segment — `GET /api/deposit/:token` and
-/// `POST /api/deposit/:token/slip` (workstream B1) put a 43-character
-/// live payment token there. The span built here wraps `DefaultOnResponse`
-/// (INFO) and `DefaultOnFailure` (ERROR), and production runs the JSON
-/// formatter with `with_span_list(true)`, so a raw path would write that
-/// token verbatim into every log record for the request — one per page
-/// load, one per 5-second poll, one per upload — and from there into the
-/// log shipper and everything downstream of it. Anyone with log read
-/// access would be able to open a stranger's payment page.
+/// This is a security control, not a cosmetic one. The span built here
+/// wraps `DefaultOnResponse` (INFO) and `DefaultOnFailure` (ERROR), and
+/// production runs the JSON formatter with `with_span_list(true)`, so
+/// whatever goes in this field is written into every log record for the
+/// request and from there into the log shipper and everything downstream
+/// of it.
+///
+/// Workstream B1 is why it is the matched route. Its guest links are a
+/// bearer capability for a payment, and the design keeps them out of every
+/// URL — `X-Deposit-Token` on the API, a `/d#<token>` fragment in the link
+/// — precisely because paths are logged in this many places. This function
+/// is the belt to that: a route added later that does put a secret in a
+/// path segment leaks it to no log here, and the `/d/<token>` links still
+/// in circulation during the grace period are covered too.
 ///
 /// `MatchedPath` is inserted by axum's router before the route service
 /// runs, and every layer in `create_app` is applied with `Router::layer`
@@ -744,10 +748,12 @@ mod tests {
         recorded.clone()
     }
 
-    /// Regression guard for the deposit-link token leak: the request span
-    /// must carry the matched route, never the raw path. A 43-character
-    /// bearer token sits in `/api/deposit/:token`, and the span wraps
-    /// every INFO response log and ERROR failure log for the request.
+    /// Regression guard for the token-in-a-path leak: the request span
+    /// must carry the matched route, never the raw path. The span wraps
+    /// every INFO response log and ERROR failure log for the request, so
+    /// a raw path would put anything in it into the log store. The route
+    /// used here is a stand-in for any capability-carrying path — the
+    /// deposit endpoints no longer have one, and this is part of why.
     #[test]
     fn the_http_span_logs_the_matched_route_not_the_capability_in_the_path() {
         const TOKEN: &str = "a-live-payment-capability-nobody-may-log";

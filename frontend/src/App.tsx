@@ -283,10 +283,25 @@ function App() {
           path="/privacy"
           element={<PrivacyPage />}
         />
-        {/* Public deposit page (B1). No session, no app shell: the token in
-            the path is the whole capability, and reception's guests arrive
-            from a LINE message with no account at all. Kept a plain SPA path
-            (not a LIFF deep link) so a guest who is not on LINE can pay. */}
+        {/* Public deposit page (B1). No session, no app shell: reception's
+            guests arrive from a LINE message with no account at all. Kept a
+            plain SPA path (not a LIFF deep link) so a guest who is not on
+            LINE can pay.
+
+            The link is `/d#<token>`: the token is in the FRAGMENT, which a
+            browser never sends, so it cannot land in the frontend nginx
+            access log or in Cloudflare's. The route therefore carries no
+            path parameter — the page reads `window.location.hash` itself
+            (`utils/depositToken`).
+
+            `/d/:token` stays only as a grace period for links already sent.
+            It renders the same page, which rewrites the URL to `/d#<token>`
+            with `history.replaceState` — no request, no redirect round
+            trip. Delete it once the longest issued expiry has passed. */}
+        <Route
+          path="/d"
+          element={<DepositLinkPage />}
+        />
         <Route
           path="/d/:token"
           element={<DepositLinkPage />}
