@@ -313,6 +313,58 @@ pub async fn confirm_slip_with_notes(
             pms_booking_id = %pms_booking_id,
             "channel booking confirmed after slip verification"
         );
+    } else {
+        // Deposit request links (B1). There is no PMS booking to tell, so
+        // the verified slip IS the whole payment event: flip the booking
+        // here or the guest pays and their page never leaves `checking`.
+        //
+        // Narrow on purpose. The guard is `pms_booking_id IS NULL AND
+        // booking_source = 'deposit_link'`, not "every non-channel
+        // booking", because this file also confirms slips attached to
+        // ordinary in-app bookings whose lifecycle nothing in B1 owns.
+        // A11 generalises the block to every non-channel booking and
+        // rebases onto this.
+        //
+        // `status = 'pending'` in the WHERE makes it idempotent: an admin
+        // re-verifying an already-confirmed booking updates no row and
+        // reports `booking_confirmed = false`, which is the truth — this
+        // call confirmed nothing.
+        let flipped = sqlx::query!(
+            r#"
+            UPDATE bookings
+            SET status = 'confirmed', updated_at = NOW()
+            WHERE id = $1
+              AND status = 'pending'
+              AND pms_booking_id IS NULL
+              AND booking_source = $2
+            "#,
+            row.booking_id,
+            crate::routes::deposit_links::BOOKING_SOURCE_DEPOSIT_LINK,
+        )
+        .execute(state.db())
+        .await?;
+
+        if flipped.rows_affected() > 0 {
+            booking_confirmed = true;
+            tracing::info!(
+                booking_id = %row.booking_id,
+                "deposit-link booking confirmed after slip verification"
+            );
+
+            // The desk email for this confirmation (B0) is *not* fired here,
+            // and deliberately so. Every caller of this function already
+            // fires `BookingNotifyEvent::DepositVerified { slip_id }` after
+            // it returns — the admin's Verify in `routes::admin_slips`, and
+            // the automatic path via the event `run_slipok_check` hands back
+            // to whichever upload handler ran it (`routes::bookings` and,
+            // for a deposit link, `routes::deposit_links`). A second call in
+            // here would be the same dedup key twice, and worse: the
+            // automatic path runs this function *inside* the SlipOK latency
+            // budget, and `notify` claims the event in `booking_notify_log`
+            // before it spawns the send. A deadline landing between the
+            // claim and the spawn is exactly the dropped message B0 moved
+            // the call out of the budget to prevent.
+        }
     }
 
     debug_assert_eq!(

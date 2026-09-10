@@ -1895,6 +1895,7 @@ dependencies = [
  "lettre",
  "oauth2",
  "once_cell",
+ "percent-encoding",
  "promptpay-rs",
  "qrcode",
  "rand 0.8.6",

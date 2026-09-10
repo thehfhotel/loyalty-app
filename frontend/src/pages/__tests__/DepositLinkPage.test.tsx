@@ -33,9 +33,21 @@ vi.mock('qrcode', () => ({
 }));
 
 vi.mock('react-router', () => ({
-  useParams: () => ({ token: 'test-token' }),
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
 }));
+
+/**
+ * Put the browser on a deposit URL.
+ *
+ * The page reads `window.location` itself rather than going through the
+ * router, because the token lives in the fragment and react-router does not
+ * route on fragments. jsdom lets both halves be set directly.
+ */
+function goTo(pathname: string, hash: string) {
+  window.history.replaceState(null, '', `${pathname}${hash}`);
+}
+
+const TOKEN = 'test-token-aaaaaaaaaaaaaaa';
 
 import DepositLinkPage from '../DepositLinkPage';
 
@@ -107,6 +119,7 @@ describe('DepositLinkPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetDepositPage.mockResolvedValue(BASE_PAGE);
+    goTo('/d', `#${TOKEN}`);
   });
 
   describe('the five states', () => {
@@ -248,7 +261,7 @@ describe('DepositLinkPage', () => {
         await Promise.resolve();
       });
 
-      expect(mockUploadSlip).toHaveBeenCalledWith('test-token', slip);
+      expect(mockUploadSlip).toHaveBeenCalledWith(TOKEN, slip);
     });
   });
 
@@ -337,6 +350,66 @@ describe('DepositLinkPage', () => {
       });
 
       expect(mockGetDepositPage.mock.calls.length).toBeGreaterThan(1);
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Where the token lives
+  //
+  // The token is a bearer capability for a payment. A URL path is written
+  // to the frontend container's nginx access log and to Cloudflare's HTTP
+  // logs on every request; a fragment is sent to neither. These tests are
+  // the guard on that: the page must take its token from the fragment, and
+  // must never put it back into a path.
+  // ------------------------------------------------------------------
+  describe('the token never travels in a URL a server sees', () => {
+    it('reads the token from the fragment', async () => {
+      goTo('/d', '#fragment-token-bbbbbbbbbb');
+      await renderSettled();
+
+      expect(mockGetDepositPage).toHaveBeenCalledWith('fragment-token-bbbbbbbbbb');
+    });
+
+    it('shows the not-found card when the fragment carries no token', async () => {
+      goTo('/d', '');
+      renderPage();
+
+      await waitFor(() =>
+        expect(screen.getByTestId('deposit-notFound')).toBeInTheDocument(),
+      );
+      expect(mockGetDepositPage).not.toHaveBeenCalled();
+    });
+
+    it('ignores a token in the path — only the fragment is read', async () => {
+      // There is no `/d/<token>` route and no link was ever issued in that
+      // shape. A URL that carries one anyway is a URL with no token: the
+      // page must not fetch anything, because honouring it would mean
+      // accepting a payment capability out of a request line that nginx
+      // and Cloudflare both write to disk.
+      goTo('/d/path-shaped-cccccccccccc', '');
+      renderPage();
+
+      await waitFor(() =>
+        expect(screen.getByTestId('deposit-notFound')).toBeInTheDocument(),
+      );
+      expect(mockGetDepositPage).not.toHaveBeenCalled();
+    });
+
+    it('follows the fragment when a reissued link is pasted into the same tab', async () => {
+      // Changing only the fragment is a same-document navigation: the
+      // browser fires `hashchange` and never reloads, so without a listener
+      // the guest would sit on the dead link's page.
+      await renderSettled();
+      expect(mockGetDepositPage).toHaveBeenCalledWith(TOKEN);
+
+      await act(async () => {
+        goTo('/d', '#reissued-token-ddddddddddd');
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      });
+
+      await waitFor(() =>
+        expect(mockGetDepositPage).toHaveBeenCalledWith('reissued-token-ddddddddddd'),
+      );
     });
   });
 });

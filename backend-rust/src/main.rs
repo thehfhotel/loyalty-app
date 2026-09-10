@@ -6,7 +6,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use axum::extract::{DefaultBodyLimit, Request};
+use axum::extract::{DefaultBodyLimit, MatchedPath, Request};
 use axum::http::HeaderName;
 use axum::Router;
 use tokio::net::TcpListener;
@@ -547,9 +547,40 @@ fn make_http_span(request: &Request) -> tracing::Span {
     tracing::info_span!(
         "http_request",
         method = %request.method(),
-        uri = %request.uri().path(),
+        uri = %span_uri(request),
         request_id = %request_id,
     )
+}
+
+/// The value logged as the span's `uri`: the **matched route pattern**,
+/// never the raw path.
+///
+/// This is a security control, not a cosmetic one. The span built here
+/// wraps `DefaultOnResponse` (INFO) and `DefaultOnFailure` (ERROR), and
+/// production runs the JSON formatter with `with_span_list(true)`, so
+/// whatever goes in this field is written into every log record for the
+/// request and from there into the log shipper and everything downstream
+/// of it.
+///
+/// Workstream B1 is why it is the matched route. Its guest links are a
+/// bearer capability for a payment, and the design keeps them out of every
+/// URL — `X-Deposit-Token` on the API, a `/d#<token>` fragment in the link
+/// — precisely because paths are logged in this many places. This function
+/// is the belt to that pair of braces: a route added later that does put a
+/// secret in a path segment leaks it to no log here.
+///
+/// `MatchedPath` is inserted by axum's router before the route service
+/// runs, and every layer in `create_app` is applied with `Router::layer`
+/// (i.e. *inside* routing), so it is present for every request that
+/// matched a route. It is absent only for a request that matched nothing,
+/// which by definition holds no capability we minted, and there the raw
+/// path is the useful thing to log.
+fn span_uri(request: &Request) -> &str {
+    request
+        .extensions()
+        .get::<MatchedPath>()
+        .map(MatchedPath::as_str)
+        .unwrap_or_else(|| request.uri().path())
 }
 
 /// Build CORS layer based on configuration
@@ -644,6 +675,115 @@ fn has_empty_password_segment(database_url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Collects the `uri` field of every span opened while it is installed.
+    #[derive(Clone, Default)]
+    struct CapturedUris(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+    struct UriVisitor<'a>(&'a mut Option<String>);
+
+    impl tracing::field::Visit for UriVisitor<'_> {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            if field.name() == "uri" {
+                *self.0 = Some(format!("{:?}", value));
+            }
+        }
+
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            if field.name() == "uri" {
+                *self.0 = Some(value.to_string());
+            }
+        }
+    }
+
+    impl<S> tracing_subscriber::Layer<S> for CapturedUris
+    where
+        S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    {
+        fn on_new_span(
+            &self,
+            attrs: &tracing::span::Attributes<'_>,
+            _id: &tracing::span::Id,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let mut uri = None;
+            attrs.record(&mut UriVisitor(&mut uri));
+            if let Some(uri) = uri {
+                self.0.lock().expect("uri capture mutex").push(uri);
+            }
+        }
+    }
+
+    /// Drive one request through a router laid out like the real one and
+    /// return every `uri` the tracing span recorded.
+    fn captured_span_uris(route: &'static str, request_uri: &'static str) -> Vec<String> {
+        use tower::ServiceExt;
+
+        let captured = CapturedUris::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+
+        let app = Router::new()
+            .route(route, axum::routing::get(|| async { "ok" }))
+            // Exactly how `create_app` attaches it: `Router::layer`, so the
+            // layer runs *inside* routing and `MatchedPath` is populated.
+            .layer(TraceLayer::new_for_http().make_span_with(make_http_span));
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build current-thread runtime");
+
+        tracing::subscriber::with_default(subscriber, || {
+            runtime.block_on(async {
+                let request = Request::builder()
+                    .uri(request_uri)
+                    .body(axum::body::Body::empty())
+                    .expect("build request");
+                app.oneshot(request).await.expect("oneshot");
+            });
+        });
+
+        let recorded = captured.0.lock().expect("uri capture mutex");
+        recorded.clone()
+    }
+
+    /// Regression guard for the token-in-a-path leak: the request span
+    /// must carry the matched route, never the raw path. The span wraps
+    /// every INFO response log and ERROR failure log for the request, so
+    /// a raw path would put anything in it into the log store. The route
+    /// used here is a stand-in for any capability-carrying path — the
+    /// deposit endpoints no longer have one, and this is part of why.
+    #[test]
+    fn the_http_span_logs_the_matched_route_not_the_capability_in_the_path() {
+        const TOKEN: &str = "a-live-payment-capability-nobody-may-log";
+
+        let uris = captured_span_uris(
+            "/api/deposit/:token",
+            "/api/deposit/a-live-payment-capability-nobody-may-log",
+        );
+
+        assert!(
+            uris.iter().any(|uri| uri == "/api/deposit/:token"),
+            "the span should record the matched route: {uris:?}"
+        );
+        assert!(
+            !uris.iter().any(|uri| uri.contains(TOKEN)),
+            "no span may carry the token: {uris:?}"
+        );
+    }
+
+    /// A request that matched no route has no `MatchedPath`, and there the
+    /// raw path is both safe (we never minted it) and the useful thing to
+    /// see in the log.
+    #[test]
+    fn the_http_span_falls_back_to_the_raw_path_when_nothing_matched() {
+        let uris = captured_span_uris("/api/health", "/api/definitely-not-a-route");
+
+        assert!(
+            uris.iter().any(|uri| uri == "/api/definitely-not-a-route"),
+            "an unmatched request should still log its path: {uris:?}"
+        );
+    }
 
     #[test]
     fn enforce_safe_database_url_rejects_legacy_loyalty_pass_in_production() {

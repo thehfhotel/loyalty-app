@@ -36,7 +36,7 @@ vi.mock('react-hot-toast', () => ({
 
 import DepositLinkModal from '../DepositLinkModal';
 
-const GUEST_URL = `https://loyalty.saichon.com/d/${'a'.repeat(43)}`;
+const GUEST_URL = `https://loyalty.saichon.com/d#${'a'.repeat(43)}`;
 
 const ISSUED = {
   linkId: 'link-1',
