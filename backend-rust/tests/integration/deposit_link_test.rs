@@ -1314,9 +1314,12 @@ async fn the_admin_list_reports_state_and_filters_on_it() {
     );
 
     // Open it as the guest would, and the desk can see that they did.
-    read_link(&app, open["token"].as_str().expect("token in create response"))
-        .await
-        .assert_status(200);
+    read_link(
+        &app,
+        open["token"].as_str().expect("token in create response"),
+    )
+    .await
+    .assert_status(200);
 
     let response = client.get("/api/admin/deposit-links?status=open").await;
     response.assert_status(200);
