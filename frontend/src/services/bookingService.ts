@@ -1,4 +1,5 @@
 import api from './authService';
+import type { SlipOkStatusValue } from '../types/slipok';
 
 export interface RoomTypeAvailability {
   id: string;
@@ -16,7 +17,11 @@ export interface BookingSlip {
   id: string;
   slipUrl: string;
   uploadedAt: string | Date;
-  slipokStatus: 'pending' | 'verified' | 'failed' | 'quota_exceeded' | null;
+  slipokStatus: SlipOkStatusValue | null;
+  /** Locked `SlipOkReason` value in practice; typed loosely because the
+   *  wire may carry a reason this bundle predates. */
+  slipokReason?: string | null;
+  slipokCheckedAt?: string | Date | null;
   adminStatus: 'pending' | 'verified' | 'needs_action' | null;
 }
 
@@ -35,10 +40,22 @@ export interface Booking {
   createdAt: string | Date;
   paymentType?: 'deposit' | 'full' | null;
   paymentAmount?: number;
+  /**
+   * Slip fields — NOT SERVED BY `GET /api/bookings` YET.
+   *
+   * `BookingResponse` (`backend-rust/src/models/booking.rs`) carries no slip
+   * data at all, so on a live guest device `slips`, `slipOkStatus` and
+   * `adminVerificationStatus` are all `undefined` and every guest-facing slip
+   * badge stays dark. Adding them to that response is A6/A7 backend work;
+   * until it lands, the guest badges are exercised by tests only. Anything
+   * relying on them rendering in production must wait for that change — and
+   * whoever makes it should assert this shape against the real response so
+   * the two cannot drift apart again.
+   */
   slips?: BookingSlip[];
   slipUrl?: string;
   slipUploadedAt?: string | Date;
-  slipOkStatus?: 'pending' | 'verified' | 'failed' | 'quota_exceeded' | null;
+  slipOkStatus?: SlipOkStatusValue | null;
   adminVerificationStatus?: 'pending' | 'verified' | 'needs_action' | null;
   verifiedAt?: string | Date;
   verifiedBy?: string;

@@ -348,6 +348,12 @@ struct BookingRow {
     slip_admin_status: Option<String>,
     slip_admin_verified_at: Option<DateTime<Utc>>,
     slip_admin_verified_by: Option<Uuid>,
+    /// Built the same way as `fetch_audit_history`'s `admin_name`:
+    /// COALESCE + NULLIF + TRIM over the profile name, falling back to the
+    /// verifier's email. A bare `first_name || ' ' || last_name` would render
+    /// the SlipOK system actor as `"SlipOK "` (its seeded `last_name` is the
+    /// empty string) and would collapse the whole cell to NULL for any
+    /// verifier whose `last_name` is NULL.
     slip_admin_verified_by_name: Option<String>,
 }
 
@@ -555,7 +561,9 @@ async fn list_bookings(
             s.admin_status                  AS "slip_admin_status?",
             s.admin_verified_at             AS "slip_admin_verified_at?",
             s.admin_verified_by             AS "slip_admin_verified_by?",
-            (vup.first_name || ' ' || vup.last_name) AS "slip_admin_verified_by_name?"
+            COALESCE(NULLIF(TRIM(COALESCE(vup.first_name, '') || ' ' || COALESCE(vup.last_name, '')), ''),
+                     vu.email)
+                AS "slip_admin_verified_by_name?"
           FROM bookings b
           JOIN room_types rt              ON rt.id = b.room_type_id
           LEFT JOIN users u               ON u.id = b.user_id
@@ -568,6 +576,7 @@ async fn list_bookings(
                LIMIT 1
           ) s ON TRUE
           LEFT JOIN user_profiles vup     ON vup.user_id = s.admin_verified_by
+          LEFT JOIN users vu              ON vu.id = s.admin_verified_by
          WHERE ($1::text[] IS NULL OR b.status = ANY($1))
            AND (
              $2::text IS NULL
@@ -697,7 +706,9 @@ async fn get_booking_detail(
             s.admin_status                  AS "slip_admin_status?",
             s.admin_verified_at             AS "slip_admin_verified_at?",
             s.admin_verified_by             AS "slip_admin_verified_by?",
-            (vup.first_name || ' ' || vup.last_name) AS "slip_admin_verified_by_name?"
+            COALESCE(NULLIF(TRIM(COALESCE(vup.first_name, '') || ' ' || COALESCE(vup.last_name, '')), ''),
+                     vu.email)
+                AS "slip_admin_verified_by_name?"
           FROM bookings b
           JOIN room_types rt              ON rt.id = b.room_type_id
           LEFT JOIN users u               ON u.id = b.user_id
@@ -710,6 +721,7 @@ async fn get_booking_detail(
                LIMIT 1
           ) s ON TRUE
           LEFT JOIN user_profiles vup     ON vup.user_id = s.admin_verified_by
+          LEFT JOIN users vu              ON vu.id = s.admin_verified_by
          WHERE b.id = $1
         "#,
         booking_id,
@@ -1173,7 +1185,9 @@ async fn read_detail_after_mutation(
             s.admin_status                  AS "slip_admin_status?",
             s.admin_verified_at             AS "slip_admin_verified_at?",
             s.admin_verified_by             AS "slip_admin_verified_by?",
-            (vup.first_name || ' ' || vup.last_name) AS "slip_admin_verified_by_name?"
+            COALESCE(NULLIF(TRIM(COALESCE(vup.first_name, '') || ' ' || COALESCE(vup.last_name, '')), ''),
+                     vu.email)
+                AS "slip_admin_verified_by_name?"
           FROM bookings b
           JOIN room_types rt              ON rt.id = b.room_type_id
           LEFT JOIN users u               ON u.id = b.user_id
@@ -1186,6 +1200,7 @@ async fn read_detail_after_mutation(
                LIMIT 1
           ) s ON TRUE
           LEFT JOIN user_profiles vup     ON vup.user_id = s.admin_verified_by
+          LEFT JOIN users vu              ON vu.id = s.admin_verified_by
          WHERE b.id = $1
         "#,
         booking_id,

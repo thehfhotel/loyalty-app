@@ -1,0 +1,56 @@
+# =============================================================================
+# cargo-nextest configuration
+#
+# nextest reads `.config/nextest.toml` relative to the CARGO WORKSPACE ROOT.
+# `backend-rust/` is that root (this crate is a single package, not a virtual
+# workspace), and both CI invocations run with `working-directory: ./backend-rust`
+# — `cargo nextest run --lib --bins` and `cargo nextest run --test '*'` — so this
+# file applies to both without any workflow flag.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SLOW-TEST GUARDRAIL
+#
+# nextest's default `slow-timeout` only PRINTS a warning; with no
+# `terminate-after` it never kills the test. On run 34475250785 that meant
+# `integration::deposit_link_test::a_slip_upload_is_refused_when_the_limiter_cannot_reach_redis`
+# hung while nextest logged
+#
+#     SLOW [>  60.000s] ...
+#     SLOW [> 120.000s] ...
+#     ... every 60s, up to ...
+#     SLOW [>1440.000s] ...
+#
+# for 24 minutes and then PASSED. The suite reported
+# `352 tests run: 352 passed (1 slow)` — green — while the job sat at 1707s and
+# the whole deploy pipeline sat behind it at 1852s. A test that hangs must fail
+# the run, not silently hold production back.
+#
+# `terminate-after = 3` kills and FAILS a test after 3 × 60s = 3 minutes. It is
+# not a skip and not a masked failure: the test is reported as a failure and the
+# run goes red, which is exactly what should have happened.
+#
+# Headroom: the healthy suite runs all 352 tests in 47-119s TOTAL (runs
+# 34464652379 / 34462821099 / 34458570005 / 34454537550), and the only test that
+# has ever tripped even the 60s SLOW warning is the one above — now fixed in
+# `fix/limiter-redis-timeout`. A single test would have to be ~90x slower than
+# the entire current suite's per-test average to hit this ceiling.
+#
+# If a test legitimately needs longer, give that test its own override rather
+# than raising this ceiling, e.g.
+#
+#     [[profile.default.overrides]]
+#     filter = 'test(name_of_the_slow_test)'
+#     slow-timeout = { period = "60s", terminate-after = 10 }
+# -----------------------------------------------------------------------------
+
+[profile.default]
+slow-timeout = { period = "60s", terminate-after = 3 }
+
+# Nothing passes `--profile ci` today (both CI invocations use the default
+# profile). This is here so that if someone later adds `--profile ci` or sets
+# NEXTEST_PROFILE=ci, the guardrail comes with it instead of being silently
+# dropped — a nextest profile inherits unset keys from `default`, but an
+# explicit value can never be lost to a future edit of `default`.
+[profile.ci]
+slow-timeout = { period = "60s", terminate-after = 3 }

@@ -11,6 +11,12 @@
 services:
   postgres:
     container_name: loyalty_postgres_dev
+    # Staging (unlike this base override's default of "no") must survive an
+    # evergreen daemon/host restart unattended — see the incident on
+    # 2026-08-27 where all five dev containers stayed down after two host
+    # restarts until someone started them by hand. Production already sets
+    # this in docker-compose.prod.yml; mirror it here for staging only.
+    restart: unless-stopped
     ports:
       # Bind to localhost only — backend reaches postgres via the docker network.
       # Host port mapping exists for ad-hoc DBA access from the host (via SSH tunnel).
@@ -29,12 +35,14 @@ services:
 
   redis:
     container_name: loyalty_redis_dev
+    restart: unless-stopped
     ports:
       # Bind to localhost only — backend reaches redis via the docker network.
       - "127.0.0.1:6380:6379"  # Dev port 6380 (prod uses 6379)
 
   backend:
     container_name: loyalty_backend_dev
+    restart: unless-stopped
     environment:
       RUST_ENV: staging
       NODE_ENV: staging
@@ -67,6 +75,11 @@ services:
       # From address for outgoing mail. Falls back to SMTP_USER when unset,
       # and must be an address the mailbox genuinely OWNS (issue #352).
       SMTP_FROM: ${SMTP_FROM:-}
+      # Property mailboxes that get one short email per new booking and per
+      # verified deposit (B0). Blank = off for that property; the backend
+      # reads a blank as "unset" so `${VAR:-}` cannot mean "send to nobody".
+      BOOKING_NOTIFY_EMAIL_HF: ${BOOKING_NOTIFY_EMAIL_HF:-}
+      BOOKING_NOTIFY_EMAIL_HFVILLE: ${BOOKING_NOTIFY_EMAIL_HFVILLE:-}
       IMAP_HOST: ${IMAP_HOST:-}
       IMAP_PORT: ${IMAP_PORT:-993}
       IMAP_USER: ${IMAP_USER:-}
@@ -78,6 +91,7 @@ services:
 
   frontend:
     container_name: loyalty_frontend_dev
+    restart: unless-stopped
     # NOTE: VITE_API_URL is build-time only (baked into the image during docker build).
     # NODE_ENV is not consumed by the alpine nginx serving the built SPA.
     # Neither belongs in runtime env for the GHCR frontend image.
@@ -88,6 +102,7 @@ services:
 
   nginx:
     container_name: loyalty_nginx_dev
+    restart: unless-stopped
     ports:
       - "5001:80"  # Dev port 5001 (prod uses 4001)
     volumes:

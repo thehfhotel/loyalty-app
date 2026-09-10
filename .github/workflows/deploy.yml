@@ -228,6 +228,22 @@ jobs:
           IMAP_PORT:            ${{ secrets.IMAP_PORT }}
           IMAP_USER:            ${{ secrets.IMAP_USER }}
           IMAP_PASS:            ${{ secrets.IMAP_PASS }}
+          # SlipOK slip verification (PR #399): API key + branch id as secrets.
+          # Leaving them unset keeps every slip on manual verify.
+          SLIPOK_API_KEY:       ${{ secrets.SLIPOK_API_KEY }}
+          SLIPOK_BRANCH_ID:     ${{ secrets.SLIPOK_BRANCH_ID }}
+          # Receiving PromptPay IDs per property (repository *variables*, not
+          # secrets: a tax id is printed on every receipt). The QR endpoint
+          # answers "not configured" for a property whose id is unset.
+          PROMPTPAY_HF_ID:      ${{ vars.PROMPTPAY_HF_ID }}
+          PROMPTPAY_HFVILLE_ID: ${{ vars.PROMPTPAY_HFVILLE_ID }}
+          # Property mailboxes for the new-booking / deposit-received email
+          # (B0). Repository *variables*, not secrets: a mailbox address is
+          # not a secret, and a variable is readable in the UI, which is what
+          # the owner needs to check who is actually being told. Unset = the
+          # notification is off for that property.
+          BOOKING_NOTIFY_EMAIL_HF:      ${{ vars.BOOKING_NOTIFY_EMAIL_HF }}
+          BOOKING_NOTIFY_EMAIL_HFVILLE: ${{ vars.BOOKING_NOTIFY_EMAIL_HFVILLE }}
         run: |
           set -euo pipefail
 
@@ -251,6 +267,12 @@ jobs:
             docker-compose.yml docker-compose.ghcr.yml docker-compose.prod.yml \
             nginx/nginx.conf
 
+          # NOTE: the jq program below is a single-quoted shell string. Never put
+          # comments inside it (an apostrophe in a comment ends the quote and the
+          # step dies with a shell syntax error, 2026-09-10 09:56Z). Optional keys
+          # (SLIPOK_*, PROMPTPAY_*_ID, BOOKING_NOTIFY_EMAIL_*) are merged only when
+          # non-empty: the backend reads an empty value as set, which would mint a
+          # QR with no receiving id, call SlipOK with no key, or mail nobody.
           jq -n \
             --arg commit_sha           "$COMMIT_SHA" \
             --arg deploy_payload_b64   "$(base64 -w0 < /tmp/deploy.tar.gz)" \
@@ -280,6 +302,12 @@ jobs:
             --arg IMAP_PORT            "${IMAP_PORT:-993}" \
             --arg IMAP_USER            "${IMAP_USER:-}" \
             --arg IMAP_PASS            "${IMAP_PASS:-}" \
+            --arg SLIPOK_API_KEY       "${SLIPOK_API_KEY:-}" \
+            --arg SLIPOK_BRANCH_ID     "${SLIPOK_BRANCH_ID:-}" \
+            --arg PROMPTPAY_HF_ID      "${PROMPTPAY_HF_ID:-}" \
+            --arg PROMPTPAY_HFVILLE_ID "${PROMPTPAY_HFVILLE_ID:-}" \
+            --arg BOOKING_NOTIFY_EMAIL_HF      "${BOOKING_NOTIFY_EMAIL_HF:-}" \
+            --arg BOOKING_NOTIFY_EMAIL_HFVILLE "${BOOKING_NOTIFY_EMAIL_HFVILLE:-}" \
             '{
               commit_sha: $commit_sha,
               deploy_payload_b64: $deploy_payload_b64,
@@ -315,7 +343,12 @@ jobs:
                 IMAP_USER:            $IMAP_USER,
                 IMAP_PASS:            $IMAP_PASS
               }
-            }' \
+            }
+            | .env += ({ SLIPOK_API_KEY: $SLIPOK_API_KEY, SLIPOK_BRANCH_ID: $SLIPOK_BRANCH_ID,
+                         PROMPTPAY_HF_ID: $PROMPTPAY_HF_ID, PROMPTPAY_HFVILLE_ID: $PROMPTPAY_HFVILLE_ID,
+                         BOOKING_NOTIFY_EMAIL_HF: $BOOKING_NOTIFY_EMAIL_HF,
+                         BOOKING_NOTIFY_EMAIL_HFVILLE: $BOOKING_NOTIFY_EMAIL_HFVILLE }
+                       | with_entries(select(.value != "")))' \
           | ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile=~/.ssh/known_hosts \

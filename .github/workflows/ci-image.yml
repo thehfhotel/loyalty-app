@@ -1,0 +1,111 @@
+name: CI Runner Image
+
+# Builds ghcr.io/thehfhotel/loyalty-app/ci-rust, the container the two Rust
+# jobs in "CI Build & Deploy" run inside. See .github/ci-image/Dockerfile for
+# what it contains and why.
+#
+# The tag is derived from the Dockerfile's content hash, so:
+#   - editing the Dockerfile selects a new tag automatically; nothing to bump
+#   - the weekly run re-pushes the SAME tag to pick up base-image and apt
+#     security updates
+#
+# ci-build-e2e.yml does NOT depend on this workflow having run. Its
+# `ensure-ci-image` job builds and pushes the tag itself if it is missing, so
+# a first run, a GHCR retention sweep, or a brand-new fork all self-heal.
+# This workflow exists so that cost is paid off the deploy critical path.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/ci-image/**'
+      - '.github/workflows/ci-image.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/ci-image/**'
+      - '.github/workflows/ci-image.yml'
+  schedule:
+    # Weekly, Monday 03:17 UTC. Off-hours and off a round number so it does not
+    # pile onto the top-of-hour scheduling spike.
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: thehfhotel/loyalty-app/ci-rust
+  RUST_VERSION: '1.93'
+
+jobs:
+  build-ci-image:
+    name: "Build & Push CI Runner Image"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        with:
+          persist-credentials: false
+
+      # Identical tag derivation to `ensure-ci-image` in ci-build-e2e.yml.
+      # If these two ever disagree, the pipeline builds its own image on every
+      # run and this workflow's output is ignored — wasteful but not broken.
+      - name: Compute image tag
+        id: tag
+        run: |
+          set -euo pipefail
+          HASH="${{ hashFiles('.github/ci-image/Dockerfile') }}"
+          echo "tag=${RUST_VERSION}-${HASH:0:12}" >> "$GITHUB_OUTPUT"
+          echo "Image tag: ${RUST_VERSION}-${HASH:0:12}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: ./.github/ci-image
+          file: ./.github/ci-image/Dockerfile
+          # Push from main, the weekly cron and manual dispatch. A
+          # pull_request build is a verification only — it must not be able to
+          # move a tag the deploy pipeline consumes.
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha,scope=ci-rust
+          cache-to: type=gha,mode=max,scope=ci-rust
+          platforms: linux/amd64
+
+      - name: Summary
+        run: |
+          {
+            echo "## CI Runner Image"
+            echo ""
+            echo '```'
+            echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}"
+            echo '```'
+            echo ""
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "Built for verification only — not pushed (pull_request event)."
+            else
+              echo "Pushed."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -40,6 +40,95 @@ env:
 
 jobs:
   # =============================================================================
+  # ENSURE THE PRE-BAKED CI RUNNER IMAGE EXISTS
+  #
+  # Resolves the tag that `build-backend-release` and `test-backend-integration`
+  # run inside, and builds+pushes it if GHCR does not have it yet.
+  #
+  # The tag is derived from the CONTENT of .github/ci-image/Dockerfile, so
+  # editing that file automatically points the two Rust jobs at a new tag and
+  # this job builds it on first use. There is nothing to bump by hand and no
+  # committed lockfile to drift.
+  #
+  # Normally ci-image.yml has already pushed the tag (it runs on changes to the
+  # Dockerfile and weekly), so this job is a single registry HEAD request and
+  # exits in seconds. It exists so the pipeline SELF-HEALS: a first run, a fork,
+  # a GHCR retention sweep, or a Dockerfile edit that lands in the same push as
+  # a code change all still work instead of failing on an unpullable container.
+  #
+  # It is a serial hop in front of the two Rust jobs, so its cost is charged to
+  # the deploy critical path — see the before/after table in the PR. It is kept
+  # because the alternative (hard-coding a tag) turns any missing image into a
+  # red pipeline that cannot fix itself.
+  # =============================================================================
+
+  ensure-ci-image:
+    name: "Ensure CI Runner Image"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.resolve.outputs.image }}
+      tag: ${{ steps.resolve.outputs.tag }}
+
+    steps:
+      # Only the Dockerfile is needed to compute the tag, so skip the rest of
+      # the tree. Keeps this job's checkout to well under a second.
+      - name: Checkout CI image definition
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/ci-image
+          sparse-checkout-cone-mode: false
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve tag and check GHCR
+        id: resolve
+        run: |
+          set -euo pipefail
+          # Keep this derivation IDENTICAL to ci-image.yml's "Compute image tag".
+          HASH="${{ hashFiles('.github/ci-image/Dockerfile') }}"
+          TAG="${RUST_VERSION}-${HASH:0:12}"
+          IMAGE="${REGISTRY}/${IMAGE_OWNER}/${IMAGE_REPO}/ci-rust:${TAG}"
+
+          echo "tag=${TAG}"     >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "Resolved: ${IMAGE}"
+
+          if docker buildx imagetools inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "Image already published — nothing to build."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${IMAGE} is not in GHCR yet; building it now."
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.resolve.outputs.present != 'true'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build and push the CI runner image
+        if: steps.resolve.outputs.present != 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: ./.github/ci-image
+          file: ./.github/ci-image/Dockerfile
+          push: true
+          tags: ${{ steps.resolve.outputs.image }}
+          cache-from: type=gha,scope=ci-rust
+          cache-to: type=gha,mode=max,scope=ci-rust
+          platforms: linux/amd64
+
+  # =============================================================================
   # LINT BACKEND (Rust) - fail-fast fmt + clippy on bare ubuntu, separate cache
   # =============================================================================
 
@@ -69,6 +158,10 @@ jobs:
           workspaces: "backend-rust -> target"
           cache-on-failure: true
           prefix-key: "v0-rust-lint"
+          # See the note on `build-backend-release`'s cache step: saving from
+          # non-main refs is what pushes this repo over the 10 GB Actions cache
+          # quota and evicts main's entries. PR runs still RESTORE from main.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check formatting
         working-directory: ./backend-rust
@@ -87,11 +180,19 @@ jobs:
   #
   # `test-backend-integration` keeps the rust:1.93-bookworm container plus
   # Postgres + Redis services and runs only the integration suite
-  # (`cargo nextest run --test '*'`). It shares the `v0-rust-container` cache
-  # prefix with `build-backend-release`, so both jobs reuse the same `target/`
-  # artifacts — which is also why the unit job can't share that prefix: native
-  # ubuntu glibc and the bookworm container produce incompatible `target/`
-  # layouts.
+  # (`cargo nextest run --test '*'`).
+  #
+  # It shares the `v0-rust-container` PREFIX with `build-backend-release`, but
+  # NOT the cache entry — rust-cache defaults to `add-job-id-key: true`, so the
+  # job name is part of the key and the two jobs write separate entries:
+  #   v0-rust-container-build-backend-release-Linux-x64-<env>-<lock>   (~514 MB)
+  #   v0-rust-container-test-backend-integration-Linux-x64-<env>-<lock> (~870 MB)
+  # (verified against the repo's live cache list, 2026-09-10). The prefix still
+  # matters for a different reason: it keeps both container jobs' entries apart
+  # from the two BARE-UBUNTU jobs, because native ubuntu glibc (2.39) and the
+  # bookworm container (2.36) produce incompatible `target/` layouts. Sharing
+  # one entry between the two container jobs would need an explicit
+  # `shared-key:`, which nothing here sets.
   #
   # `regression-api` and `deploy-staging` gate on BOTH test jobs so we never
   # burn regression/deploy time on a red backend.
@@ -100,7 +201,21 @@ jobs:
   test-backend-unit:
     name: "Test Backend Unit (Rust)"
     runs-on: ubuntu-latest
-    needs: [lint-backend]
+    # Deliberately NO `needs: [lint-backend]`, for the same reason
+    # build-backend-release dropped it: nothing here consumes clippy/rustfmt
+    # output, so the edge was pure fail-fast — and it charged lint's entire
+    # wall-clock (measured 51-65s across runs 34454537550/34458570005/
+    # 34462821099/34464652379/34475250785) to the deploy critical path on every
+    # GREEN run, because `regression-api` waits on this job.
+    #
+    # The GATE IS UNCHANGED. `lint-backend` was never a direct `needs:` of
+    # anything that ships; it blocked staging only transitively, through these
+    # two test jobs. It is now listed EXPLICITLY on `deploy-staging` and
+    # `promote-latest` instead, so a clippy/rustfmt failure still blocks the
+    # staging deploy, still blocks the `latest` retag, still turns the run red,
+    # and therefore still blocks deploy.yml's production deploy (which gates on
+    # this workflow's conclusion). The only behaviour change is that the tests
+    # no longer idle for a minute waiting to learn whether the formatter is happy.
     timeout-minutes: 15
 
     steps:
@@ -127,6 +242,8 @@ jobs:
           # rust:1.93-bookworm (glibc 2.36). Sharing the cache between them
           # would surface as link-time / runtime ABI failures.
           prefix-key: "v0-rust-unit"
+          # See the note on `build-backend-release`'s cache step.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Cache cargo-nextest
         id: cache-nextest
@@ -163,10 +280,28 @@ jobs:
   test-backend-integration:
     name: "Test Backend Integration (Rust)"
     runs-on: ubuntu-latest
-    needs: [lint-backend]
+    # No `needs: [lint-backend]` — see the long note on `test-backend-unit`.
+    # This job is the one that matters: on a healthy run it is the LAST of
+    # `regression-api`'s three prerequisites to finish, so lint's wall-clock
+    # was landing directly on the deploy critical path here.
     timeout-minutes: 30
+    needs: [ensure-ci-image]
     container:
-      image: rust:1.93-bookworm
+      # Pre-baked: rust:1.93-bookworm + pkg-config/libssl-dev/libpq-dev/
+      # postgresql-client + sccache + cargo-nextest + sqlx-cli. Replaces an
+      # apt-get, a nextest cache-restore and an sqlx-cli download that used to
+      # run on every single CI run. See .github/ci-image/Dockerfile.
+      image: ${{ needs.ensure-ci-image.outputs.image }}
+      # GHCR packages default to private, and this one is only ever pulled by
+      # CI, so it is not made public just to avoid three lines. `packages: read`
+      # is granted at job level below.
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    permissions:
+      contents: read
+      packages: read
 
     defaults:
       run:
@@ -200,16 +335,22 @@ jobs:
       PGPASSWORD: loyalty_test_pass
 
     steps:
-      - name: Install system dependencies
-        run: |
-          apt-get update && apt-get install -y --no-install-recommends \
-            pkg-config libssl-dev libpq-dev postgresql-client
-
+      # No "Install system dependencies", no "Setup sccache", no
+      # "Cache cargo-nextest" / "Install cargo-nextest", no "Install sqlx-cli":
+      # all of it is baked into the container above.
       - name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
         with:
           persist-credentials: false
 
+      # KEPT even though sccache is baked into the image. This action's real
+      # job is not the download — it exports ACTIONS_RESULTS_URL and
+      # ACTIONS_RUNTIME_TOKEN into the step environment, which is what lets
+      # sccache's `ghac` backend authenticate. Drop the action and
+      # `RUSTC_WRAPPER: sccache` (set at workflow level) points at a wrapper
+      # that cannot reach its backend, which fails the compile rather than
+      # silently degrading. Removing sccache properly means removing
+      # RUSTC_WRAPPER too, which changes every rust-cache key — a separate PR.
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
 
@@ -219,28 +360,17 @@ jobs:
           workspaces: "backend-rust -> target"
           cache-on-failure: true
           prefix-key: "v0-rust-container"
-
-      - name: Cache cargo-nextest
-        id: cache-nextest
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          # In the rust:1.93-bookworm container, cargo lives at
-          # /usr/local/cargo, so cargo-installed binaries land in
-          # /usr/local/cargo/bin. Distinct key from the unit-job cache
-          # because the container glibc (2.36) differs from native
-          # ubuntu (2.39) and the binary is glibc-linked.
-          path: /usr/local/cargo/bin/cargo-nextest
-          key: cargo-nextest-${{ env.RUST_VERSION }}-${{ runner.os }}-container
-
-      - name: Install cargo-nextest
-        if: steps.cache-nextest.outputs.cache-hit != 'true'
-        # Pinned to the released `v2` SHA, not the moving `nextest` alias tag:
-        # Dependabot resolves a SHA pin's version from the trailing comment, so
-        # "# nextest tag" meant this pin could never receive security updates.
-        # The alias only presets `tool: nextest`, which is set explicitly below.
-        uses: taiki-e/install-action@3d7d7cd5ac7f994c1892ae0c06165095b9139094 # v2
-        with:
-          tool: nextest
+          # Shared with `sqlx-check`, which restores this same entry and never
+          # saves. Without `shared-key` rust-cache folds the job name into the
+          # key, so that job would need a second ~870 MB entry of its own.
+          #
+          # NOTE: adding this changes the key, so the first main run after merge
+          # takes a prefix-match restore and one real save.
+          shared-key: "container-test"
+          # See the note on `build-backend-release`'s cache step. This job owns
+          # the largest cache entry in the repo (~870 MB), so it is the biggest
+          # single contributor to the quota pressure described there.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Grant CREATEDB for per-test database isolation
         run: |
@@ -297,21 +427,12 @@ jobs:
           "
           echo "Test data seeded successfully"
 
-      - name: Install sqlx-cli
-        # Download a prebuilt sqlx-cli binary instead of `cargo install` from
-        # source. The from-source install is slow and flaky (transient
-        # crates.io / network failures during the dependency compile), and it
-        # recompiles on every Rust-version bump because the toolchain change
-        # invalidates the build cache. taiki-e/install-action fetches a
-        # prebuilt binary (same approach used by cargo-audit.yml) — fast and
-        # reliable, and it provides both `sqlx` and `cargo-sqlx`.
-        uses: taiki-e/install-action@3d7d7cd5ac7f994c1892ae0c06165095b9139094 # v2
-        with:
-          tool: sqlx-cli
-
-      - name: Verify SQLx query cache
-        working-directory: ./backend-rust
-        run: cargo sqlx prepare --check
+      # `Install sqlx-cli` and `Verify SQLx query cache` used to sit here. The
+      # CLI is now baked into the container, and the check itself has moved to
+      # the `sqlx-check` job so its compile runs in PARALLEL instead of adding
+      # 18s to the critical path (measured on main run 34485429412). The gate is
+      # unchanged: `sqlx-check` is a `needs:` of deploy-staging and
+      # promote-latest, so a stale .sqlx/ cache still blocks the deploy.
 
       - name: Run integration tests
         working-directory: ./backend-rust
@@ -330,9 +451,133 @@ jobs:
           LINE_CALLBACK_URL: http://localhost:4001/api/oauth/line/callback
           FRONTEND_URL: http://localhost:3000
 
+      # Diagnostic, kept: the integration job's rust-cache entry is the largest
+      # in the repo (~870 MB vs the release job's ~514 MB) and its restore is
+      # correspondingly the slowest (54s vs 25s on main run 34485429412). This
+      # prints where that size actually lives so the next person tuning it is
+      # working from numbers instead of guesses. Costs well under a second.
+      - name: Report target/ size breakdown
+        if: always()
+        working-directory: ./backend-rust
+        run: |
+          set -uo pipefail
+          echo "## Integration target/ breakdown" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          du -sh target 2>/dev/null | tee -a "$GITHUB_STEP_SUMMARY"
+          du -sh target/* 2>/dev/null | sort -rh | head -10 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "-- debug/ subdirs --" | tee -a "$GITHUB_STEP_SUMMARY"
+          du -sh target/debug/* 2>/dev/null | sort -rh | head -12 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Show sccache stats
         if: always()
         run: sccache --show-stats || true
+
+  # =============================================================================
+  # VERIFY THE SQLx OFFLINE QUERY CACHE
+  #
+  # `cargo sqlx prepare --check` used to be a step inside
+  # test-backend-integration, where it cost 18s (main run 34485429412) of
+  # critical path: it compiles the crate against a live database to prove
+  # backend-rust/.sqlx/ still matches the code, and the integration job cannot
+  # start its tests until it finishes.
+  #
+  # It needs a migrated Postgres, so it cannot simply move to lint-backend
+  # without giving that job a database too. As its own job it runs in PARALLEL
+  # from T+0 and its wall-clock stops mattering, as long as it finishes before
+  # regression-api — which it does comfortably.
+  #
+  # THE GATE IS UNCHANGED. This job is listed in `needs:` on deploy-staging and
+  # promote-latest, so a stale .sqlx/ cache still fails the run and still blocks
+  # both the staging deploy and the `latest` retag, exactly as when it was a
+  # step inside the integration job.
+  #
+  # It deliberately does NOT get its own rust-cache entry: it shares
+  # test-backend-integration's via `shared-key`, and never saves. A fourth
+  # ~870 MB entry would add more to the cache quota than this job saves in time.
+  # =============================================================================
+
+  sqlx-check:
+    name: "Verify SQLx Query Cache"
+    runs-on: ubuntu-latest
+    needs: [ensure-ci-image]
+    timeout-minutes: 20
+    container:
+      image: ${{ needs.ensure-ci-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    permissions:
+      contents: read
+      packages: read
+
+    defaults:
+      run:
+        shell: bash
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: loyalty_test
+          POSTGRES_PASSWORD: loyalty_test_pass
+          POSTGRES_DB: loyalty_test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://loyalty_test:loyalty_test_pass@postgres:5432/loyalty_test_db
+      PGPASSWORD: loyalty_test_pass
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        with:
+          persist-credentials: false
+
+      # KEPT even though sccache is baked into the image. This action's real
+      # job is not the download — it exports ACTIONS_RESULTS_URL and
+      # ACTIONS_RUNTIME_TOKEN into the step environment, which is what lets
+      # sccache's `ghac` backend authenticate. Drop the action and
+      # `RUSTC_WRAPPER: sccache` (set at workflow level) points at a wrapper
+      # that cannot reach its backend, which fails the compile rather than
+      # silently degrading. Removing sccache properly means removing
+      # RUSTC_WRAPPER too, which changes every rust-cache key — a separate PR.
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: "backend-rust -> target"
+          cache-on-failure: true
+          prefix-key: "v0-rust-container"
+          # Shares ONE cache entry with test-backend-integration instead of
+          # creating a second ~870 MB one. `shared-key` drops the job-name
+          # component from the key, which is what lets two different jobs
+          # address the same entry.
+          shared-key: "container-test"
+          # Never saves: test-backend-integration owns this entry. Two jobs
+          # racing to save the same key wastes minutes and the loser's save is
+          # discarded anyway.
+          save-if: false
+
+      - name: Run database migrations
+        run: |
+          set -euo pipefail
+          for f in backend-rust/migrations/*.sql; do
+            psql -h postgres -p 5432 -U loyalty_test -d loyalty_test_db \
+              -v ON_ERROR_STOP=1 -f "$f" >/dev/null
+          done
+          echo "Migrations applied"
+
+      - name: Verify SQLx query cache
+        working-directory: ./backend-rust
+        run: cargo sqlx prepare --check
 
   build-backend-release:
     name: "Build Backend Release"
@@ -349,24 +594,41 @@ jobs:
     # So a clippy failure still turns the run red and still blocks the deploy;
     # the only cost is building an image nobody references on an already-red push.
     timeout-minutes: 25
+    # The ONLY new edge on this job. It still does not wait for lint or tests.
+    needs: [ensure-ci-image]
     container:
-      image: rust:1.93-bookworm
+      # Same pre-baked image as test-backend-integration. It MUST remain a
+      # bookworm base: this binary is COPYed into distroless cc-debian12
+      # (glibc 2.36) by Dockerfile.ci, and a newer glibc produces a binary that
+      # cannot be loaded — issue #360.
+      image: ${{ needs.ensure-ci-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    permissions:
+      contents: read
+      packages: read
 
     defaults:
       run:
         shell: bash
 
     steps:
-      - name: Install system dependencies
-        run: |
-          apt-get update && apt-get install -y --no-install-recommends \
-            pkg-config libssl-dev libpq-dev
-
+      # "Install system dependencies" is gone — baked into the image.
       - name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
         with:
           persist-credentials: false
 
+      # KEPT even though sccache is baked into the image. This action's real
+      # job is not the download — it exports ACTIONS_RESULTS_URL and
+      # ACTIONS_RUNTIME_TOKEN into the step environment, which is what lets
+      # sccache's `ghac` backend authenticate. Drop the action and
+      # `RUSTC_WRAPPER: sccache` (set at workflow level) points at a wrapper
+      # that cannot reach its backend, which fails the compile rather than
+      # silently degrading. Removing sccache properly means removing
+      # RUSTC_WRAPPER too, which changes every rust-cache key — a separate PR.
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
 
@@ -376,6 +638,26 @@ jobs:
           workspaces: "backend-rust -> target"
           cache-on-failure: true
           prefix-key: "v0-rust-container"
+          # SAVE ONLY FROM main — this is a critical-path fix, not a tidy-up.
+          #
+          # The four Rust jobs hold ~2.4 GB of cache per (ref, Cargo.lock)
+          # generation, and every PR ref saves its OWN copy that main can never
+          # read. Measured 2026-09-10: 10193 MB of 10240 MB quota used across
+          # 113 entries, including 2393 MB scoped to a single `refs/pull/*/merge`
+          # and two full generations on main. At the cap GitHub evicts LRU, so
+          # main's entry keeps disappearing; the restore then falls back to a
+          # PREFIX match ("full match: false" in run 34475250785) and rust-cache
+          # must perform a real save in the POST step — which GitHub runs BEFORE
+          # marking the job complete, so every dependent job waits on it.
+          #
+          # That is where the cache-save time on the critical path comes from:
+          # 69s here and 112s in test-backend-integration on run 34475250785,
+          # versus 0-1s on the four runs around it, where the key matched
+          # exactly and rust-cache skipped the save entirely.
+          #
+          # PR runs still RESTORE from main's cache (base-branch fallback), so
+          # they lose nothing but the right to evict it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # `healthcheck` is built HERE, alongside the backend, so the binary that
       # ships is the one compiled from src/bin/healthcheck.rs — the source CI
@@ -409,15 +691,28 @@ jobs:
         run: sccache --show-stats || true
 
   # =============================================================================
-  # BUILD AND PUSH DOCKER IMAGES TO GHCR
+  # BUILD AND PUSH DOCKER IMAGES TO GHCR — one job per image, on purpose.
+  #
+  # These were a single job. The frontend image is built entirely from
+  # `frontend/` (npm ci -> vite build -> nginx) and consumes NOTHING the Rust
+  # pipeline produces, but it sat behind `needs: [build-backend-release]` with
+  # the backend image and so could not start until the release binary existed.
+  # Measured on run 34475250785: "Build and push frontend" was 36s of that
+  # job's 80s, all of it serialised after a 294s release build for no reason.
+  #
+  # Split, the frontend image starts at T+0 alongside the release build and is
+  # finished long before anything needs it, while the backend image job shrinks
+  # to just the steps that genuinely depend on the binary. Every consumer that
+  # needed "both images pushed" now lists both jobs, so nothing can run against
+  # a half-published pair.
   # =============================================================================
 
-  build-and-push:
-    name: "Build & Push to GHCR"
+  build-and-push-backend:
+    name: "Build & Push Backend to GHCR"
     runs-on: ubuntu-latest
     # Only the binary artifact is required; release build runs in parallel
-    # with the two test-backend jobs, so build-and-push can start as soon
-    # as the binary is ready without waiting for the test suite.
+    # with the two test-backend jobs, so this can start as soon as the binary
+    # is ready without waiting for the test suite.
     needs: [build-backend-release]
     timeout-minutes: 15
     permissions:
@@ -426,7 +721,6 @@ jobs:
 
     outputs:
       backend-image: ${{ steps.meta-backend.outputs.tags }}
-      frontend-image: ${{ steps.meta-frontend.outputs.tags }}
       image-tag: ${{ github.sha }}
 
     steps:
@@ -590,16 +884,61 @@ jobs:
 
           echo "OK: shipped /app/healthcheck loaded, ran, and refused cleanly (exit 1)."
 
-      # -------------------------------------------------------------------------
-      # Frontend Image
-      # -------------------------------------------------------------------------
+      - name: Summary
+        run: |
+          echo "## Backend Image Built" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Backend (Rust)" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta-backend.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # =============================================================================
+  # FRONTEND IMAGE — no `needs:`, so it starts at T+0.
+  #
+  # Built from ./frontend only (npm ci -> vite build -> nginx). It shares no
+  # input with the Rust release build, so nothing is gained by making it wait
+  # for one. Publishing it early is safe: both automated consumers address
+  # images by the immutable commit-SHA tag, and both now `needs:` BOTH image
+  # jobs, so no consumer can start against a backend/frontend pair where only
+  # one half has been pushed.
+  # =============================================================================
+
+  build-and-push-frontend:
+    name: "Build & Push Frontend to GHCR"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      frontend-image: ${{ steps.meta-frontend.outputs.tags }}
+      image-tag: ${{ github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract frontend metadata
         id: meta-frontend
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ env.IMAGE_REPO }}/frontend
-          # Same scoping as the backend metadata above: immutable SHA tag
-          # always, mutable branch tag only on the default branch.
+          # Same scoping as the backend metadata: immutable SHA tag always,
+          # mutable branch tag only on the default branch.
           tags: |
             type=sha,format=long,prefix=
             type=ref,event=branch,enable={{is_default_branch}}
@@ -614,20 +953,16 @@ jobs:
           labels: ${{ steps.meta-frontend.outputs.labels }}
           build-args: |
             VITE_API_URL=${{ vars.VITE_API_URL || 'https://loyalty.saichon.com/api' }}
+            VITE_DESK_PHONE_HF=${{ vars.DESK_PHONE_HF }}
+            VITE_DESK_PHONE_HFVILLE=${{ vars.DESK_PHONE_HFVILLE }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
           platforms: linux/amd64
 
       - name: Summary
         run: |
-          echo "## Docker Images Built" >> $GITHUB_STEP_SUMMARY
+          echo "## Frontend Image Built" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Backend (Rust)" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.meta-backend.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Frontend" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.meta-frontend.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
@@ -659,7 +994,12 @@ jobs:
     # staging deploy means: backend gate AND frontend lint/unit tests green.
     # Without it, `latest` could advance past a commit whose frontend tests
     # failed — precisely the "safe to roll back to" claim it is supposed to carry.
-    needs: [build-and-push, test-backend-unit, test-backend-integration, regression-api, wait-for-frontend-checks]
+    # `lint-backend` is listed EXPLICITLY now. It used to reach this job only
+    # transitively, through the two test jobs' `needs: [lint-backend]`; those
+    # edges were removed to get lint off the critical path, so the gate is
+    # re-anchored here. A red clippy/rustfmt must never leave `latest` pointing
+    # at the commit that caused it.
+    needs: [lint-backend, sqlx-check, build-and-push-backend, build-and-push-frontend, test-backend-unit, test-backend-integration, regression-api, wait-for-frontend-checks]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     timeout-minutes: 5
     # CRITICAL: never let a cosmetic retag fail the workflow run. deploy.yml,
@@ -735,7 +1075,10 @@ jobs:
     # cdn.playwright.dev browser-download dependency — reliable enough to
     # block deploys. The full browser E2E suite runs separately in e2e.yml,
     # which does NOT gate deployment.
-    needs: [build-and-push, test-backend-unit, test-backend-integration]
+    # Both image jobs: start-app-stack pulls the backend AND frontend images
+    # for this SHA, so waiting on only one of them could race a half-published
+    # pair.
+    needs: [build-and-push-backend, build-and-push-frontend, test-backend-unit, test-backend-integration]
     timeout-minutes: 15
     # Keyed per ref. A constant group here was repo-global: GitHub allows only
     # ONE pending entry per group, so a third queued run evicted (cancelled) the
@@ -849,7 +1192,14 @@ jobs:
   wait-for-frontend-checks:
     name: "Wait for Frontend Checks"
     runs-on: ubuntu-latest
-    needs: [build-and-push]
+    # No `needs:`. This job polls a DIFFERENT workflow (ci-test.yml) for the
+    # same commit and consumes nothing this workflow builds, so the old
+    # `needs: [build-and-push]` only delayed the poll until after the image
+    # build — which meant a runner acquisition sitting downstream of the
+    # release build for a check that ci-test.yml had already finished minutes
+    # earlier (measured: this job ran 2-5s and spent all of it confirming an
+    # already-green result). Starting at T+0 lets it overlap the whole Rust
+    # pipeline; the 72-attempt/10s poll loop already handles "no run yet".
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     timeout-minutes: 15
 
@@ -910,7 +1260,13 @@ jobs:
     # from this list, so it ran in PARALLEL with the deploy instead of before it
     # — staging shipped while the API regression suite was still running, and on
     # run 30143612958 staging deployed even though the gate had been cancelled.
-    needs: [test-backend-unit, test-backend-integration, build-and-push, wait-for-frontend-checks, regression-api]
+    #
+    # `lint-backend` is listed EXPLICITLY. It used to gate this deploy only
+    # transitively, via the two test jobs' `needs: [lint-backend]`; removing
+    # those edges took lint off the critical path, and this line is what keeps
+    # the gate itself intact — a clippy or rustfmt failure still stops the
+    # staging deploy, exactly as before.
+    needs: [lint-backend, sqlx-check, test-backend-unit, test-backend-integration, build-and-push-backend, build-and-push-frontend, wait-for-frontend-checks, regression-api]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     timeout-minutes: 10
     # `GHCR_TOKEN` below is this job's GITHUB_TOKEN; the remote shim on evergreen
@@ -1042,7 +1398,7 @@ jobs:
   # verified.
   #
   # `revision` is baked into the image at build time (ARG/ENV GIT_SHA in
-  # Dockerfile.ci, build-arg set in build-and-push) — NOT injected by the
+  # Dockerfile.ci, build-arg set in build-and-push-backend) — NOT injected by the
   # deploy host. That is deliberate: the remote shim on evergreen cannot be
   # edited from this repo, and the deploy key carries a forced command, so
   # neither `ssh ... docker inspect` nor a shim change was available. An image
@@ -1173,7 +1529,7 @@ jobs:
     needs: [verify-staging]
     # A bare `failure()` in a job-level `if` is true when ANY job in the needs
     # ANCESTRY failed — here that is the whole pipeline (lint-backend, both test
-    # jobs, build-and-push, wait-for-frontend-checks, deploy-staging). So a
+    # jobs, both image jobs, wait-for-frontend-checks, deploy-staging). So a
     # clippy failure on main, which skips deploy-staging and verify-staging
     # entirely, still filed an issue asserting staging had been deployed and was
     # unhealthy. Nothing had been deployed; and since this job comments on the

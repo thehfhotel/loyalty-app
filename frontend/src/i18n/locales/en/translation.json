@@ -787,7 +787,10 @@
           "verified": "Verified",
           "failed": "Failed",
           "pending": "Pending",
-          "quotaExceeded": "Quota Exceeded"
+          "quotaExceeded": "Quota Exceeded",
+          "shadowPass": "System pass (awaiting admin)",
+          "manual": "Manual check needed",
+          "unavailable": "Auto-check unavailable"
         },
         "adminStatus": {
           "verified": "Verified",
@@ -804,7 +807,8 @@
           "needsAction": "Needs Action",
           "edit": "Edit Booking",
           "replaceSlip": "Replace Slip",
-          "enterNotes": "Enter notes for this action:"
+          "enterNotes": "Enter notes for this action:",
+          "legacyMigrating": "This action is being migrated to the new backend"
         },
         "slipViewer": {
           "title": "Slip Viewer",
@@ -818,7 +822,10 @@
           "noSlip": "No slip uploaded",
           "auditSummary": "Recent Activity",
           "viewFullHistory": "View Full History",
-          "noAuditHistory": "No activity history"
+          "noAuditHistory": "No activity history",
+          "slipokReason": "Reason",
+          "slipokCheckedAt": "Checked",
+          "autoVerifier": "SlipOK"
         },
         "modals": {
           "needsAction": {
@@ -901,7 +908,8 @@
           "discountReasonRequired": "Discount reason is required",
           "invalidFileType": "Please select a valid image file",
           "fileTooLarge": "File size must be less than 5MB"
-        }
+        },
+        "surfaceBookings": "Bookings"
       },
       "availability": {
         "title": "Room Availability",
@@ -1804,10 +1812,25 @@
     "uploadError": "Failed to upload slip. Please try again.",
     "qrFallback": "Showing fallback QR code. Please confirm the amount before paying.",
     "slipok": {
-      "pending": "Pending",
-      "verified": "Verified",
-      "failed": "Failed",
-      "quota_exceeded": "Manual Check"
+      "status": {
+        "pending": "Being checked",
+        "verified": "Confirmed",
+        "shadow_pass": "Being checked",
+        "manual": "Being checked",
+        "unavailable": "Being checked"
+      },
+      "reason": {
+        "amount_mismatch": "Transferred amount does not match the booking",
+        "receiver_mismatch": "Transferred to a different account",
+        "duplicate": "This slip has already been used",
+        "slip_invalid": "The slip could not be read",
+        "booking_not_payable": "This booking cannot take a payment right now",
+        "confirm_failed": "The check result could not be saved",
+        "quota_exceeded": "Automatic checking quota is used up",
+        "api_error": "The checking service returned an error",
+        "not_configured": "Automatic checking is not set up",
+        "timeout": "The check did not answer in time"
+      }
     },
     "admin": {
       "pending": "Pending",
@@ -1888,5 +1911,162 @@
     "bookings": "Bookings",
     "transactions": "Transactions",
     "email": "Email"
+  },
+  "depositLink": {
+    "title": "Pay your deposit",
+    "loading": "Loading",
+    "stay": {
+      "heading": "Your stay",
+      "checkIn": "Check-in",
+      "checkOut": "Check-out",
+      "nights": "Nights",
+      "nightsValue": "{{count}} nights",
+      "roomType": "Room",
+      "total": "Booking total",
+      "guest": "Guest"
+    },
+    "amountDueNow": "Amount to pay now",
+    "balanceDue": "Balance due at check-in",
+    "currency": "THB",
+    "qr": {
+      "heading": "Pay by PromptPay",
+      "hint": "Scan this QR with your bank app. The amount is already filled in.",
+      "alt": "PromptPay QR for the deposit payment",
+      "save": "Save QR image",
+      "unavailable": "The QR cannot be shown right now. Please contact the front desk."
+    },
+    "upload": {
+      "heading": "Upload your transfer slip",
+      "hint": "After you transfer, pick the slip image from your phone and send it.",
+      "submit": "Send slip",
+      "sending": "Sending",
+      "previewAlt": "Selected slip image",
+      "invalidType": "Please choose a JPG or PNG image",
+      "tooLarge": "The file must be 10MB or smaller",
+      "failed": "We could not send the slip. Please try again.",
+      "rateLimited": "You have sent the slip too many times. Please wait a moment before trying again, or contact the front desk.",
+      "linkClosed": "This link can no longer be used. Please contact the front desk."
+    },
+    "expiresAt": "This link works until {{time}}",
+    "checking": {
+      "heading": "Checking your slip",
+      "body": "We're checking your transfer slip. We'll let you know as soon as it's done."
+    },
+    "confirmed": {
+      "heading": "Booking confirmed",
+      "body": "Your slip is checked. Your booking is confirmed.",
+      "notReceipt": "This is a booking confirmation, not a receipt. If you need a receipt, please ask at the front desk when you check in."
+    },
+    "expired": {
+      "heading": "This link has expired",
+      "body": "This deposit link has expired. Please contact the front desk for a new one."
+    },
+    "revoked": {
+      "heading": "This link was cancelled",
+      "body": "This deposit link no longer works. Please contact the front desk."
+    },
+    "notFound": {
+      "heading": "Link not found",
+      "body": "This link is not valid or has been cancelled. Please contact the front desk."
+    },
+    "loadFailed": {
+      "heading": "We could not open this page",
+      "body": "Please try again, or contact the front desk.",
+      "retry": "Try again"
+    },
+    "desk": {
+      "withPhone": "Call the front desk, open 24 hours, on {{phone}}",
+      "withoutPhone": "Please contact the front desk of the hotel you booked."
+    },
+    "privacyNote": "We use the slip image only to check and confirm this deposit payment. A slip may show the name and account number of whoever sent the money, which may not be the guest who booked.",
+    "privacyLink": "Read the privacy notice",
+    "state": {
+      "awaiting_payment": "Awaiting payment",
+      "checking": "Being checked",
+      "confirmed": "Confirmed",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    },
+    "admin": {
+      "open": "Send deposit link",
+      "modalTitle": "Send deposit link",
+      "modalSubtitle": "Issue a link the guest opens to pay the deposit and upload the slip",
+      "form": {
+        "property": "Property",
+        "selectProperty": "Select a property",
+        "guestName": "Guest name",
+        "guestPhone": "Guest phone",
+        "checkIn": "Check-in",
+        "checkOut": "Check-out",
+        "guests": "Guests",
+        "roomType": "Room type",
+        "selectRoomType": "Select a room type",
+        "totalPrice": "Booking total (THB)",
+        "amountDueNow": "Deposit to collect (THB)",
+        "amountDueNowHint": "Defaults to 50% of the total. Editable between 1 and the full amount.",
+        "expiresIn": "Link expires in",
+        "hours": "{{count}} hours",
+        "pmsRef": "iHOTEL booking number",
+        "note": "Internal note",
+        "submit": "Issue link",
+        "cancel": "Cancel"
+      },
+      "errors": {
+        "required": "Please fill in every required field",
+        "dates": "Check-out must be after check-in",
+        "totalPrice": "The booking total must be greater than 0",
+        "amountDueNow": "The deposit must be between 1 and the booking total",
+        "createFailed": "Could not issue the link"
+      },
+      "issued": {
+        "heading": "Link issued",
+        "warning": "This link is shown once. Copy or send it to the guest now — if it is lost you must reissue.",
+        "linkLabel": "Guest link",
+        "copy": "Copy link",
+        "copied": "Link copied",
+        "copyFailed": "Could not copy the link",
+        "shareLine": "Share on LINE",
+        "amountDueNow": "Deposit",
+        "expiresAt": "Expires",
+        "done": "Done",
+        "shareMessage": "Here is the link to pay your booking deposit"
+      },
+      "list": {
+        "heading": "Deposit links",
+        "subtitle": "Track the links issued to guests: opened or not, paid or not, and when each one expires.",
+        "tab": "Deposit links",
+        "filter": {
+          "open": "Open only",
+          "all": "All"
+        },
+        "table": {
+          "guest": "Guest",
+          "amountDueNow": "Deposit",
+          "state": "State",
+          "expiresAt": "Expires",
+          "issuedBy": "Issued by",
+          "lastOpenedAt": "Last opened",
+          "actions": "Actions"
+        },
+        "neverOpened": "Never opened",
+        "linkNotHeld": "The link is shown only once when it is issued. To send it again, reissue it.",
+        "revoke": "Revoke link",
+        "reissue": "Reissue link",
+        "confirmRevoke": "Revoke the deposit link for {{guest}}? Their existing link stops working and you will have to reissue one.",
+        "confirmRevokeAction": "Yes, revoke the link",
+        "confirmReissue": "Issue a new deposit link for {{guest}}? Their current link stops working the moment this lands, so send them the new one.",
+        "confirmReissueAction": "Yes, issue a new link",
+        "reissueCheckingWarning": "This guest has already uploaded a slip and is waiting for it to be checked. Reissuing kills the link they are watching.",
+        "keepLink": "No, keep the link",
+        "unknownGuest": "(no name)",
+        "revoked": "Link revoked",
+        "revokeFailed": "Could not revoke the link",
+        "reissued": "New link issued — the old one no longer works",
+        "reissueFailed": "Could not reissue the link",
+        "empty": "No deposit links yet",
+        "loadFailed": "Could not load the deposit links",
+        "pagination": "Page {{current}} of {{total}}"
+      }
+    }
   }
 }
