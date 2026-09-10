@@ -614,9 +614,17 @@ impl TestApp {
             .connect(&test_url)
             .await?;
 
-        // Initialize test Redis
+        // Initialize test Redis. Built with the production reconnect
+        // config, so a test that takes Redis away sees the same bounded
+        // behaviour a deployment would.
         let redis = match redis_url {
-            Some(url) => ConnectionManager::new(redis::Client::open(url)?).await?,
+            Some(url) => {
+                ConnectionManager::new_with_config(
+                    redis::Client::open(url)?,
+                    loyalty_backend::redis::connection_manager_config(),
+                )
+                .await?
+            },
             None => init_test_redis().await?,
         };
 
@@ -1595,6 +1603,21 @@ pub fn hash_test_password(password: &str) -> String {
 // Redis Test Helpers
 // ============================================================================
 
+/// What the relay is currently doing to the traffic it carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RelayMode {
+    /// Bytes flow both ways: a healthy Redis.
+    Pass,
+    /// Sockets stay open and carry nothing. This is the failure a
+    /// connection-refused test cannot reach — the server is *there*, the
+    /// TCP handshake succeeds, the command is accepted, and no answer
+    /// ever comes. Nothing in the client stack times this out by itself.
+    BlackHole,
+    /// Every socket is dropped and the port stops accepting: reconnects
+    /// are refused.
+    Cut,
+}
+
 /// A TCP relay in front of the shared test Redis, so a test can take
 /// Redis away in the middle of a run.
 ///
@@ -1602,13 +1625,17 @@ pub fn hash_test_password(password: &str) -> String {
 /// eagerly, so an app pointed straight at a dead port cannot be built at
 /// all — which is not the failure worth testing. What production actually
 /// does is lose a Redis that was working, so that is what this reproduces.
-/// Build the app against [`RedisRelay::url`], then call
-/// [`RedisRelay::cut`]: open connections are dropped and the port stops
-/// accepting, so every later command fails and every reconnect is
-/// refused.
+/// Build the app against [`RedisRelay::url`], then pick the failure:
+///
+/// - [`RedisRelay::cut`] — open connections are dropped and the port stops
+///   accepting, so every later command fails and every reconnect is
+///   refused. The *fast* failure.
+/// - [`RedisRelay::black_hole`] — connections stay open and carry nothing,
+///   so a command is accepted and never answered. The *slow* failure, and
+///   the one only a client-side deadline can end.
 pub struct RedisRelay {
     url: String,
-    stop: tokio::sync::watch::Sender<bool>,
+    mode: tokio::sync::watch::Sender<RelayMode>,
     accept: tokio::task::JoinHandle<()>,
 }
 
@@ -1618,14 +1645,14 @@ impl RedisRelay {
         let upstream = redis_host_port();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
-        let (stop, stop_rx) = tokio::sync::watch::channel(false);
+        let (mode, mode_rx) = tokio::sync::watch::channel(RelayMode::Pass);
 
         let accept = tokio::spawn(async move {
             loop {
                 let accepted = {
-                    let mut rx = stop_rx.clone();
+                    let mut rx = mode_rx.clone();
                     tokio::select! {
-                        _ = rx.wait_for(|stopped| *stopped) => break,
+                        _ = rx.wait_for(|mode| *mode == RelayMode::Cut) => break,
                         accepted = listener.accept() => accepted,
                     }
                 };
@@ -1633,23 +1660,39 @@ impl RedisRelay {
                     break;
                 };
                 let upstream = upstream.clone();
-                let stop_rx = stop_rx.clone();
+                let mut rx = mode_rx.clone();
                 tokio::spawn(async move {
-                    let Ok(mut outbound) = tokio::net::TcpStream::connect(&upstream).await else {
+                    if *rx.borrow_and_update() == RelayMode::Pass {
+                        let Ok(mut outbound) = tokio::net::TcpStream::connect(&upstream).await
+                        else {
+                            return;
+                        };
+                        tokio::select! {
+                            _ = rx.wait_for(|mode| *mode != RelayMode::Pass) => {},
+                            _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound) => return,
+                        }
+                        if *rx.borrow_and_update() == RelayMode::Cut {
+                            // Dropping both sockets here is the cut: the
+                            // client's connection dies at once.
+                            return;
+                        }
+                        // Black-holing: hold both ends open and move no
+                        // bytes, so whatever the client writes is accepted
+                        // by the kernel and answered by nobody.
+                        let _ = rx.wait_for(|mode| *mode == RelayMode::Cut).await;
                         return;
-                    };
-                    let mut rx = stop_rx.clone();
-                    tokio::select! {
-                        _ = rx.wait_for(|stopped| *stopped) => {},
-                        _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound) => {},
                     }
+                    // Accepted while black-holing: never reach upstream,
+                    // never answer, keep the socket open.
+                    let _ = rx.wait_for(|mode| *mode == RelayMode::Cut).await;
+                    drop(inbound);
                 });
             }
         });
 
         Ok(Self {
             url: relay_url(addr),
-            stop,
+            mode,
             accept,
         })
     }
@@ -1662,8 +1705,15 @@ impl RedisRelay {
     /// Take Redis away: cut every relayed connection and stop listening,
     /// so reconnects are refused too.
     pub fn cut(&self) {
-        let _ = self.stop.send(true);
+        let _ = self.mode.send(RelayMode::Cut);
         self.accept.abort();
+    }
+
+    /// Turn Redis into a black hole: connections stay up, commands are
+    /// accepted, nothing is ever answered — and new connections are
+    /// accepted and black-holed too, so a reconnect does not escape it.
+    pub fn black_hole(&self) {
+        let _ = self.mode.send(RelayMode::BlackHole);
     }
 }
 
@@ -1713,7 +1763,8 @@ fn relay_url(addr: SocketAddr) -> String {
 /// Initialize test Redis connection
 pub async fn init_test_redis() -> Result<ConnectionManager, redis::RedisError> {
     let client = redis::Client::open(test_redis_url())?;
-    ConnectionManager::new(client).await
+    ConnectionManager::new_with_config(client, loyalty_backend::redis::connection_manager_config())
+        .await
 }
 
 /// Clean up Redis test data

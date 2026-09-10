@@ -444,6 +444,41 @@ pub fn strict_rate_limit_layer() -> RateLimiter {
 /// // Check if request is allowed
 /// limiter.check("192.168.1.1".parse().unwrap()).await?;
 /// ```
+/// The longest a single Redis round trip may take before the limiter
+/// stops waiting and treats the budget as unevaluable.
+///
+/// **Why a limiter needs its own deadline.** `ConnectionManager` shares
+/// one reconnect future between every caller, and a command issued while
+/// that reconnect is in flight simply awaits it. The crate's default
+/// backoff runs to about five minutes per cycle (see
+/// [`crate::redis::connection_manager_config`] for the exact arithmetic),
+/// and a black-holed server — one that accepts the connection and then
+/// answers nothing — has no deadline at all. Either way the caller is a
+/// guest on a payment page holding a bank slip, and a guest who waits
+/// minutes for an answer has been failed more thoroughly than one told
+/// in two seconds to try again.
+///
+/// A timeout means exactly what a Redis error means here: *no budget was
+/// evaluated*. It is handled identically — the fail-closed routes refuse
+/// with [`RateLimitError::Unavailable`], the fail-open ones allow. Two
+/// seconds is far above a healthy round trip (sub-millisecond on the
+/// deployment's own network) and far below a guest's patience.
+pub const REDIS_CALL_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// The error a blown [`REDIS_CALL_TIMEOUT`] is reported as.
+///
+/// Deliberately a `redis::RedisError`: "Redis did not answer in time" and
+/// "Redis answered with an error" are the same fact about a budget, and
+/// giving them one representation keeps one decision — fail closed or
+/// fail open — instead of two that could drift apart.
+fn timed_out() -> redis::RedisError {
+    redis::RedisError::from((
+        redis::ErrorKind::IoError,
+        "rate limit Redis call timed out",
+        format!("no answer within {REDIS_CALL_TIMEOUT:?}"),
+    ))
+}
+
 #[derive(Clone)]
 pub struct RedisRateLimiter {
     /// Redis connection manager (handles reconnection automatically)
@@ -514,7 +549,10 @@ impl RedisRateLimiter {
     /// # Returns
     /// - `Ok(())` if the request is allowed
     /// - `Err(RateLimitError::TooManyRequests)` if the limit is exceeded
-    /// - `Err(RateLimitError::RedisError)` if Redis communication fails
+    /// - `Err(RateLimitError::Unavailable)` if the budget could not be
+    ///   evaluated — Redis errored, or did not answer within
+    ///   [`REDIS_CALL_TIMEOUT`] — **and** this limiter is fail-closed;
+    ///   a fail-open limiter returns `Ok(())` in that case
     pub async fn check(&self, ip: IpAddr) -> Result<(), RateLimitError> {
         self.check_subject(&ip.to_string()).await
     }
@@ -549,11 +587,14 @@ impl RedisRateLimiter {
             "#,
         );
 
-        let result: Result<(i64, i64), redis::RedisError> = script
-            .key(&key)
-            .arg(window_secs)
-            .invoke_async(&mut conn)
-            .await;
+        // Bounded: a budget that cannot be read *in time* is a budget that
+        // cannot be read. See `REDIS_CALL_TIMEOUT`.
+        let result: Result<(i64, i64), redis::RedisError> = tokio::time::timeout(
+            REDIS_CALL_TIMEOUT,
+            script.key(&key).arg(window_secs).invoke_async(&mut conn),
+        )
+        .await
+        .unwrap_or_else(|_elapsed| Err(timed_out()));
 
         match result {
             Ok((count, ttl)) => {
@@ -598,7 +639,10 @@ impl RedisRateLimiter {
         let key = format!("rate_limit:{}:{}", self.key_prefix, ip);
         let mut conn = self.redis.clone();
 
-        match conn.get::<_, Option<u32>>(&key).await {
+        match tokio::time::timeout(REDIS_CALL_TIMEOUT, conn.get::<_, Option<u32>>(&key))
+            .await
+            .unwrap_or_else(|_elapsed| Err(timed_out()))
+        {
             Ok(Some(count)) => Ok(count),
             Ok(None) => Ok(0),
             Err(e) => {
@@ -615,8 +659,12 @@ impl RedisRateLimiter {
         let key = format!("rate_limit:{}:{}", self.key_prefix, ip);
         let mut conn = self.redis.clone();
 
-        let result: Result<(), redis::RedisError> =
-            redis::cmd("DEL").arg(&key).query_async(&mut conn).await;
+        let result: Result<(), redis::RedisError> = tokio::time::timeout(
+            REDIS_CALL_TIMEOUT,
+            redis::cmd("DEL").arg(&key).query_async(&mut conn),
+        )
+        .await
+        .unwrap_or_else(|_elapsed| Err(timed_out()));
 
         if let Err(e) = result {
             tracing::warn!("Redis reset failed: {}", e);
