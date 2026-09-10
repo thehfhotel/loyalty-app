@@ -232,7 +232,7 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
    * vocabulary lock.
    */
   const SlipStatusBadge: React.FC<{
-    status: string;
+    status: string | null;
     verifiedAt: string | null;
     reason?: string | null;
     checkedAt?: string | null;
@@ -283,7 +283,7 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
   };
 
   const AdminStatusBadge: React.FC<{
-    status: string;
+    status: string | null;
     verifiedAt: string | null;
     verifiedByName?: string | null;
     autoVerified?: boolean;
@@ -294,7 +294,9 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
       pending: { tone: 'warning', text: t('admin.booking.bookingManagement.adminStatus.pending') }
     };
 
-    const badge = badges[status] ?? badges.pending;
+    // NULL on a legacy row, or a value this bundle predates: both read as
+    // "pending" rather than as a blank badge.
+    const badge = (status ? badges[status] : undefined) ?? badges.pending;
     // A machine verify is attributed to the SlipOK system actor, never to a
     // human admin — that attribution is what makes the human-touch KPI
     // countable, so it has to be visible at the desk too.

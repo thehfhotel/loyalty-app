@@ -9,11 +9,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const {
   mockListBookings,
   mockGetBooking,
+  mockGetSlip,
   mockVerifySlip,
   mockMarkSlipNeedsAction,
 } = vi.hoisted(() => ({
   mockListBookings: vi.fn(),
   mockGetBooking: vi.fn(),
+  mockGetSlip: vi.fn(),
   mockVerifySlip: vi.fn(),
   mockMarkSlipNeedsAction: vi.fn(),
 }));
@@ -22,6 +24,7 @@ vi.mock('../../../services/adminBookingService', () => ({
   adminBookingService: {
     listBookings: mockListBookings,
     getBooking: mockGetBooking,
+    getSlip: mockGetSlip,
     verifySlip: mockVerifySlip,
     markSlipNeedsAction: mockMarkSlipNeedsAction,
   },
@@ -99,10 +102,15 @@ function wrapper({ children }: { children: React.ReactNode }) {
 }
 
 // Mock toast
+const { mockToastSuccess, mockToastError } = vi.hoisted(() => ({
+  mockToastSuccess: vi.fn(),
+  mockToastError: vi.fn(),
+}));
+
 vi.mock('react-hot-toast', () => ({
   toast: {
-    success: vi.fn(),
-    error: vi.fn(),
+    success: mockToastSuccess,
+    error: mockToastError,
   },
 }));
 
@@ -155,9 +163,26 @@ vi.mock('../../../components/layout/AppShell', () => ({
   ),
 }));
 
-// Mock SlipViewerSidebar
+// Mock SlipViewerSidebar. It forwards `onVerify` so the page's
+// "this booking has no slip" guard — unreachable through the row button,
+// which is disabled and guarded again in its onClick — stays testable.
 vi.mock('../../../components/admin/SlipViewerSidebar', () => ({
-  default: () => <div data-testid="slip-viewer-sidebar">Slip Viewer</div>,
+  default: ({
+    booking,
+    onVerify,
+  }: {
+    booking: { id: string } | null;
+    onVerify: (bookingId: string) => void;
+  }) => (
+    <div data-testid="slip-viewer-sidebar">
+      Slip Viewer
+      {booking && (
+        <button type="button" onClick={() => onVerify(booking.id)}>
+          sidebar-verify
+        </button>
+      )}
+    </div>
+  ),
 }));
 
 // Mock BookingEditModal
@@ -190,7 +215,27 @@ describe('BookingManagement', () => {
     mockListBookings.mockResolvedValue(EMPTY_LIST);
     mockGetBooking.mockResolvedValue({ ...BOOKING, auditHistory: [] });
     mockVerifySlip.mockResolvedValue({ id: SLIP.id, adminStatus: 'verified' });
+    // `getSlip` is not reached from this file (SlipViewerSidebar is mocked
+    // out below), but the service mock is the page's whole seam — leaving a
+    // method off it turns any future call into a swallowed query error
+    // rather than a failing test.
     mockMarkSlipNeedsAction.mockResolvedValue({ id: SLIP.id, adminStatus: 'needs_action' });
+    mockGetSlip.mockResolvedValue({
+      id: SLIP.id,
+      bookingId: BOOKING.id,
+      slipUrl: SLIP.imageUrl,
+      uploadedAt: SLIP.uploadedAt,
+      adminStatus: 'pending',
+      adminVerifiedAt: null,
+      adminVerifiedBy: null,
+      adminNotes: null,
+      slipokStatus: SLIP.slipokStatus,
+      slipokReason: null,
+      slipokTransRef: null,
+      slipokCheckedAt: null,
+      slipokVerifiedAt: null,
+      autoVerified: false,
+    });
   });
 
   afterEach(() => {
@@ -333,6 +378,63 @@ describe('BookingManagement', () => {
       await waitFor(() => {
         expect(mockListBookings.mock.calls.length).toBeGreaterThan(1);
       });
+    });
+
+    it('seeds the per-slip cache the open sidebar reads, so one verify has one verdict', async () => {
+      mockListBookings.mockResolvedValue(ONE_BOOKING_LIST);
+      // A client this test holds, so the seeded entry can be read back. The
+      // shared `wrapper` builds a fresh one per render and hands it to
+      // nobody.
+      const queryClient = createTestQueryClient();
+      const user = userEvent.setup();
+      render(
+        <QueryClientProvider client={queryClient}>
+          <BookingManagement />
+        </QueryClientProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getAllByTitle('Verify').length).toBeGreaterThan(0);
+      });
+
+      await user.click(first(screen.getAllByTitle('Verify'), 'Verify button'));
+
+      // The sidebar renders `['admin','slip',id]` on top of the list row and
+      // `refreshBooking()` never touches that key (staleTime is 5 min,
+      // refetchOnWindowFocus is off). Without the seed a verify from the
+      // table leaves the open sidebar showing "Pending" beside the row's
+      // fresh "Verified" badge.
+      await waitFor(() => {
+        expect(queryClient.getQueryData(['admin', 'slip', 'slip-1'])).toEqual(
+          expect.objectContaining({ id: 'slip-1', adminStatus: 'verified' })
+        );
+      });
+    });
+
+    it('tells the desk the booking has no slip, not that anything is migrating', async () => {
+      const slipless = { ...BOOKING, slip: null };
+      mockListBookings.mockResolvedValue({ ...ONE_BOOKING_LIST, bookings: [slipless] });
+      mockGetBooking.mockResolvedValue({ ...slipless, auditHistory: [] });
+      const user = userEvent.setup();
+      render(<BookingManagement />, { wrapper });
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Somchai Sooksan').length).toBeGreaterThan(0);
+      });
+
+      // Select the booking so the sidebar has one, then take its verify
+      // action — the guard's only reachable caller.
+      await user.click(first(screen.getAllByText('Somchai Sooksan'), 'booking row'));
+      await user.click(await screen.findByRole('button', { name: 'sidebar-verify' }));
+
+      // Nothing is migrating: this booking simply has no slip.
+      await waitFor(() => {
+        expect(mockToastError).toHaveBeenCalledWith('No slip');
+      });
+      expect(mockToastError).not.toHaveBeenCalledWith(
+        'This action is being migrated to the new backend'
+      );
+      expect(mockVerifySlip).not.toHaveBeenCalled();
     });
 
     it('marks the row\'s primary slip as needing action with the notes the admin typed', async () => {

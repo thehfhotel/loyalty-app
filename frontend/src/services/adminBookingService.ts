@@ -15,6 +15,14 @@
  * names of the Rust DTOs. Keep them in step with the handlers; the shapes
  * are asserted in `backend-rust`'s own serialisation tests.
  *
+ * **Money is a string on the wire.** `backend-rust` pins `rust_decimal` with
+ * only the `serde` feature (no `serde-float`), so a `Decimal` serialises via
+ * `serialize_str` — `totalPrice` / `paymentAmount` / `discountAmount` arrive
+ * as `"6000.00"`, not `6000`. `bookingService.ts` already types the guest
+ * side that way; these mirror it. Coerce with `Number(...)` before any
+ * arithmetic, comparison or `.toLocaleString()`, and before POSTing a value
+ * back into a handler that deserialises `f64` (`ApplyDiscountRequest`).
+ *
  * Endpoints deliberately absent here because no Rust handler exists yet
  * (see `docs/admin-backend-gaps.md`):
  *   - `POST /api/admin/bookings/:id/verify-slip`   (legacy booking-scoped verify)
@@ -58,11 +66,14 @@ export interface AdminBookingSlipSummary {
   id: string;
   imageUrl: string;
   uploadedAt: string;
-  slipokStatus: SlipOkStatusValue;
+  /** `Option<String>` on the wire — NULL on legacy rows, so nullable here.
+   *  `deskSlipOkStatus` is the only place that null becomes a badge. */
+  slipokStatus: SlipOkStatusValue | null;
   slipokVerifiedAt: string | null;
   slipokReason?: string | null;
   slipokCheckedAt?: string | null;
-  adminStatus: 'pending' | 'verified' | 'needs_action';
+  /** `Option<String>` on the wire; readers fall back to `pending`. */
+  adminStatus: 'pending' | 'verified' | 'needs_action' | null;
   adminVerifiedAt: string | null;
   adminVerifiedBy: string | null;
   adminVerifiedByName: string | null;
@@ -76,11 +87,11 @@ export interface AdminBookingSlip {
   slipUrl: string;
   uploadedAt: string;
   uploadedBy?: string;
-  slipokStatus: SlipOkStatusValue;
+  slipokStatus: SlipOkStatusValue | null;
   slipokVerifiedAt: string | null;
   slipokReason?: string | null;
   slipokCheckedAt?: string | null;
-  adminStatus: 'pending' | 'verified' | 'needs_action';
+  adminStatus: 'pending' | 'verified' | 'needs_action' | null;
   adminVerifiedAt: string | null;
   adminVerifiedBy: string | null;
   adminVerifiedByName?: string | null;
@@ -109,10 +120,12 @@ export interface AdminBooking {
   checkInDate: string;
   checkOutDate: string;
   numberOfGuests: number;
-  totalPrice: number;
-  paymentType: 'full' | 'deposit';
-  paymentAmount: number | null;
-  discountAmount: number | null;
+  /** `Decimal` — a string on the wire (see the module note). */
+  totalPrice: number | string;
+  /** `Option<String>` on the wire. */
+  paymentType: 'full' | 'deposit' | null;
+  paymentAmount: number | string | null;
+  discountAmount: number | string | null;
   discountReason: string | null;
   status: 'confirmed' | 'cancelled' | 'completed';
   notes: string | null;
@@ -180,6 +193,8 @@ export interface UpdateAdminBookingRequest {
   numberOfGuests?: number;
   roomTypeId?: string;
   notes?: string;
+  /** Absent means "keep current" to the handler, so send `''` — not
+   *  `undefined` — when the admin clears the box, or the delete is lost. */
   adminNotes?: string;
   totalPrice?: number;
   paymentType?: 'full' | 'deposit';
@@ -204,7 +219,7 @@ export interface AdminSlip {
   bookingId: string;
   slipUrl: string;
   uploadedAt: string;
-  adminStatus: 'pending' | 'verified' | 'needs_action';
+  adminStatus: 'pending' | 'verified' | 'needs_action' | null;
   adminVerifiedAt: string | null;
   adminVerifiedBy: string | null;
   adminNotes: string | null;

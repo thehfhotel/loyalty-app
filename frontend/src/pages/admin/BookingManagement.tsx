@@ -20,7 +20,7 @@ import SlipViewerSidebar from '../../components/admin/SlipViewerSidebar';
 import BookingEditModal from './BookingEditModal';
 import DepositLinkModal from './DepositLinkModal';
 import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../../utils/dateFormatter';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAdminBookingSSE } from '../../hooks/useAdminBookingSSE';
 import { deskSlipOkStatus, type SlipOkStatusValue } from '../../types/slipok';
 import { adminBookingService } from '../../services/adminBookingService';
@@ -161,6 +161,8 @@ const BookingManagement: React.FC = () => {
     return detail;
   }, [selectedBooking, bookingDetailQuery.data]);
 
+  const queryClient = useQueryClient();
+
   const refreshBooking = useCallback(() => {
     bookingsQuery.refetch();
     if (selectedBookingId) {bookingDetailQuery.refetch();}
@@ -176,7 +178,13 @@ const BookingManagement: React.FC = () => {
   // so the desk never reaches for it.
   const verifySlipMutation = useMutation({
     mutationFn: (data: { slipId: string }) => adminBookingService.verifySlip(data.slipId),
-    onSuccess: () => {
+    onSuccess: (slip) => {
+      // The sidebar renders the per-slip read on top of the list row, and
+      // `refreshBooking` never touches that key (staleTime is 5 min and
+      // refetchOnWindowFocus is off). Without this seed a verify done from
+      // the table leaves the open sidebar showing "Pending" beside a
+      // "Verified" badge — two verdicts for one slip.
+      queryClient.setQueryData(['admin', 'slip', slip.id], slip);
       toast.success(t('admin.booking.bookingManagement.messages.slipVerified'));
       refreshBooking();
     },
@@ -189,7 +197,8 @@ const BookingManagement: React.FC = () => {
   const markNeedsActionMutation = useMutation({
     mutationFn: (data: { slipId: string; notes: string }) =>
       adminBookingService.markSlipNeedsAction(data.slipId, { notes: data.notes }),
-    onSuccess: () => {
+    onSuccess: (slip) => {
+      queryClient.setQueryData(['admin', 'slip', slip.id], slip);
       toast.success(t('admin.booking.bookingManagement.messages.markedNeedsAction'));
       refreshBooking();
     },
@@ -251,7 +260,8 @@ const BookingManagement: React.FC = () => {
   const handleVerifySlip = async (bookingId: string) => {
     const slipId = primarySlipId(bookingId);
     if (!slipId) {
-      toast.error(t('admin.booking.bookingManagement.actions.legacyMigrating'));
+      // Not a migration — this booking simply has no slip to act on.
+      toast.error(t('admin.booking.bookingManagement.noSlip'));
       return;
     }
     await verifySlipMutation.mutateAsync({ slipId });
@@ -260,7 +270,7 @@ const BookingManagement: React.FC = () => {
   const handleNeedsAction = async (bookingId: string, notes: string) => {
     const slipId = primarySlipId(bookingId);
     if (!slipId) {
-      toast.error(t('admin.booking.bookingManagement.actions.legacyMigrating'));
+      toast.error(t('admin.booking.bookingManagement.noSlip'));
       return;
     }
     await markNeedsActionMutation.mutateAsync({ slipId, notes });
@@ -301,7 +311,7 @@ const BookingManagement: React.FC = () => {
     );
   };
 
-  const SlipOkStatusBadge: React.FC<{ status: string }> = ({ status }) => {
+  const SlipOkStatusBadge: React.FC<{ status: string | null }> = ({ status }) => {
     const icons: Record<SlipOkStatusValue, React.ReactNode> = {
       verified: <FiCheck className="h-3 w-3" aria-hidden="true" />,
       pending: <FiClock className="h-3 w-3" aria-hidden="true" />,
@@ -333,7 +343,7 @@ const BookingManagement: React.FC = () => {
     );
   };
 
-  const AdminStatusBadge: React.FC<{ status: string }> = ({ status }) => {
+  const AdminStatusBadge: React.FC<{ status: string | null }> = ({ status }) => {
     const icons: Record<string, React.ReactNode> = {
       verified: <FiCheck className="h-3 w-3" aria-hidden="true" />,
       needs_action: <FiAlertTriangle className="h-3 w-3" aria-hidden="true" />,
@@ -345,10 +355,14 @@ const BookingManagement: React.FC = () => {
       pending: t('admin.booking.bookingManagement.adminStatus.pending'),
     };
 
+    // A NULL `admin_status` on a legacy row reads as "pending", the same
+    // way an unknown value does.
+    const known = status ?? 'pending';
+
     return (
-      <Badge tone={ADMIN_STATUS_TONE[status] ?? 'warning'}>
-        {icons[status] ?? icons.pending}
-        {labels[status] ?? labels.pending}
+      <Badge tone={ADMIN_STATUS_TONE[known] ?? 'warning'}>
+        {icons[known] ?? icons.pending}
+        {labels[known] ?? labels.pending}
       </Badge>
     );
   };
@@ -465,7 +479,7 @@ const BookingManagement: React.FC = () => {
               : t('admin.booking.bookingManagement.paymentType.deposit')}
           </p>
           <p className="font-semibold text-ink">
-            {booking.paymentAmount !== null ? `${booking.paymentAmount.toLocaleString()} THB` : '-'}
+            {booking.paymentAmount !== null ? `${Number(booking.paymentAmount).toLocaleString()} THB` : '-'}
           </p>
         </div>
       ),
@@ -615,7 +629,7 @@ const BookingManagement: React.FC = () => {
                       <span className="text-fine text-ink-faint">{t('admin.booking.bookingManagement.noSlip')}</span>
                     )}
                     <span className="ml-auto text-caption font-semibold text-ink">
-                      {booking.paymentAmount !== null ? `${booking.paymentAmount.toLocaleString()} THB` : '-'}
+                      {booking.paymentAmount !== null ? `${Number(booking.paymentAmount).toLocaleString()} THB` : '-'}
                     </span>
                   </div>
                   <div className="flex justify-end gap-1 pt-1">{rowActionButtons(booking)}</div>
