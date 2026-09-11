@@ -20,6 +20,7 @@ import SlipViewerSidebar from '../../components/admin/SlipViewerSidebar';
 import BookingEditModal from './BookingEditModal';
 import DepositLinkModal from './DepositLinkModal';
 import DepositLinkListPanel from './DepositLinkListPanel';
+import type { IssuedDepositLink } from '../../services/depositLinkService';
 import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAdminBookingSSE } from '../../hooks/useAdminBookingSSE';
@@ -102,6 +103,15 @@ const BookingManagement: React.FC = () => {
   // the render below), so it is not built until the desk actually asks for
   // it — and it never re-runs its first load on the way back.
   const [linksVisited, setLinksVisited] = useState(false);
+  // The last link the issue modal minted, held here so it survives the modal
+  // closing and reaches the links panel whenever the desk gets there.
+  //
+  // The create response is the ONLY sighting of the plain token — the
+  // backend keeps its SHA-256 and nothing else — so a link issued from the
+  // modal used to land in the panel as a row with Copy and LINE share
+  // greyed out, curable only by a reload, which is the one action that
+  // loses the token for good. This is the hand-off that fixes it.
+  const [issuedLink, setIssuedLink] = useState<IssuedDepositLink | null>(null);
 
   const pageSize = 10;
   const totalPages = Math.ceil(totalBookings / pageSize);
@@ -727,13 +737,14 @@ const BookingManagement: React.FC = () => {
       <div hidden={surface !== 'bookings'}>{bookingsSurface}</div>
       {linksVisited && (
         <div hidden={surface !== 'links'}>
-          <DepositLinkListPanel active={surface === 'links'} />
+          <DepositLinkListPanel active={surface === 'links'} issuedLink={issuedLink} />
         </div>
       )}
 
       <DepositLinkModal
         open={showDepositLinkModal}
         onClose={() => setShowDepositLinkModal(false)}
+        onIssued={setIssuedLink}
       />
 
       {/* Edit Modal */}

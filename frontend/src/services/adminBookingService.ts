@@ -254,6 +254,25 @@ export interface AdminSlip {
   slipokVerifiedAt: string | null;
   /** True when `adminVerifiedBy` is the SlipOK system actor. */
   autoVerified: boolean;
+  /**
+   * Whether this verify moved the booking to `confirmed` (A11).
+   *
+   * **Only meaningful on the verify / needs-action responses.**
+   * `GET /admin/bookings/slips/:id` hard-codes it to `false` and
+   * `bookingNotConfirmedReason` to `null` (`admin_slips.rs`, "a read decides
+   * nothing"), so a reader must not conclude "not confirmed" from a plain
+   * read — see `SlipViewerSidebar`, which remembers the mutation's answer
+   * rather than reading it back.
+   */
+  bookingConfirmed?: boolean;
+  /**
+   * Set only when a verified slip was refused the booking it pays for —
+   * today only `booking_not_payable`, from the automatic path meeting a hold
+   * that lapsed during the SlipOK round-trip. One of the locked
+   * `SLIPOK_REASONS`, so the desk renders it with the `payment.slipok.*`
+   * wording the badge already uses.
+   */
+  bookingNotConfirmedReason?: string | null;
 }
 
 export interface VerifySlipRequest {

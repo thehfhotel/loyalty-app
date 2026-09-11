@@ -843,7 +843,10 @@
           "noAuditHistory": "ไม่มีประวัติกิจกรรม",
           "slipokReason": "เหตุผล",
           "slipokCheckedAt": "ตรวจสอบเมื่อ",
-          "autoVerifier": "SlipOK"
+          "autoVerifier": "SlipOK",
+          "bookingNotConfirmed": "ยืนยันสลิปแล้ว แต่การจองยังไม่ได้รับการยืนยัน: {{reason}}",
+          "bookingNotConfirmedHint": "เงินเข้าแล้วแต่การจองยังอยู่สถานะรอยืนยัน กดยืนยันสลิปอีกครั้งเพื่อยืนยันการจองด้วยตนเอง หรือแก้ไขการจองก่อนแจ้งแขก",
+          "bookingNotConfirmedReasonUnknown": "ไม่ได้บันทึกสาเหตุไว้"
         },
         "modals": {
           "needsAction": {
@@ -904,7 +907,9 @@
           "bookingUpdated": "อัปเดตการจอง",
           "discountApplied": "ใช้ส่วนลด",
           "paymentUpdated": "อัปเดตการชำระเงิน",
-          "bookingCancelled": "ยกเลิกการจอง"
+          "bookingCancelled": "ยกเลิกการจอง",
+          "bookingNotConfirmed": "ยังไม่ได้ยืนยันการจอง",
+          "slipVerifyReverted": "ย้อนการยืนยันสลิปอัตโนมัติ"
         },
         "by": "โดย",
         "messages": {
@@ -2106,7 +2111,13 @@
         "reissueFailed": "ออกลิงก์ใหม่ไม่สำเร็จ",
         "empty": "ยังไม่มีลิงก์มัดจำ",
         "loadFailed": "โหลดรายการลิงก์ไม่สำเร็จ",
-        "pagination": "หน้า {{current}} จาก {{total}}"
+        "pagination": "หน้า {{current}} จาก {{total}}",
+        "searchLabel": "ค้นหาผู้จอง",
+        "searchPlaceholder": "ค้นหาชื่อผู้จอง",
+        "searchClear": "ล้างคำค้นหา",
+        "searchPageScope": "ค้นหาเฉพาะลิงก์ในหน้านี้ ถ้าไม่พบ ให้เปลี่ยนหน้าแล้วค้นหาอีกครั้ง",
+        "searchNoPhone": "รายการนี้ไม่มีเบอร์โทรของแขก ค้นหาด้วยชื่อผู้จองแทน",
+        "searchEmpty": "ไม่พบลิงก์ที่ตรงกับคำค้นหา"
       }
     }
   }
