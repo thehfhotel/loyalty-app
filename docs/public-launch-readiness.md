@@ -73,11 +73,18 @@ Legend:
   Integration test
   (`backend-rust/tests/integration/auth_test.rs::test_login_rate_limit_returns_429`)
   pins the contract.
-- [x] **booking_audit_log retention policy** (HIGH-5) — currently
-  "retain indefinitely" pending legal review. Revisit before disk
-  pressure (rule of thumb: when `pg_total_relation_size('booking_audit_log')`
-  exceeds 20% of the data volume, partition or trim). Tracked as a
-  follow-up rather than a launch blocker.
+- [x] **booking_audit_log retention policy** (HIGH-5) — **implemented
+  (F10).** A batched, time-based prune
+  (`backend-rust/src/services/audit_retention.rs`) covers
+  `booking_audit_log` and the far busier `slip_access_log`, on the same
+  hourly-timer pattern as the F2 slip sweep. **Off until the owner names a
+  window** (`AUDIT_LOG_RETENTION_DAYS`,
+  `SLIP_ACCESS_LOG_RETENTION_DAYS` — repository variables, blank = off),
+  and the windows are floored at **365 days** and **90 days**
+  respectively: a value below the floor is refused and logged at startup,
+  never clamped. Nothing belonging to a booking that is still open is
+  ever pruned. The legal-review question is now only *which* number, not
+  whether a mechanism exists.
 
 ## Still open before public launch
 
@@ -126,9 +133,19 @@ the owner has signed off on; revisit them at the ~90-day re-audit.
   Grafana dashboard, or point a hosted agent (Better Stack, Honeycomb)
   at it. There's no request-rate/error-rate/p99 *dashboard* until that
   scraper is wired.
-- [ ] **`booking_audit_log` retention partitioning** (HIGH-5) —
-  if disk pressure emerges, range-partition by `occurred_at` (year)
-  so old partitions can be detached cheaply.
+- [x] **`booking_audit_log` retention partitioning** (HIGH-5) —
+  **considered and deliberately not done (F10).** Retention ships as a
+  batched prune instead. Range partitioning by `occurred_at` only pays
+  off when the table is *read* by time, and neither of these tables is:
+  `admin_bookings::fetch_audit_history` reads `WHERE booking_id = $1` and
+  `admin_slips::get_slip_access_log` reads `WHERE slip_id = $1`. With no
+  time predicate the planner can prune no partition, so every one of
+  those reads would fan out across every partition that exists. Adopting
+  it on the live tables would also mean a rewrite under `ACCESS
+  EXCLUSIVE` (the partition key has to join the primary key), which
+  blocks writes — the thing the prune was required not to do. Reasoning
+  in full: `backend-rust/src/services/audit_retention.rs` module docs and
+  `backend-rust/migrations/20260913000000_audit_log_retention.sql`.
 - [ ] **Re-audit lens** — run the three audit lenses again ~90 days
   after public launch. Real traffic + real users almost always
   surface findings the read-only audit missed.

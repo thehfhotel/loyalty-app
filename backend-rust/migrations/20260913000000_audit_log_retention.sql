@@ -1,0 +1,64 @@
+-- =====================================================
+-- Migration: retention support for booking_audit_log + slip_access_log (F10)
+-- =====================================================
+-- Both tables are unbounded today. `docs/public-launch-readiness.md`
+-- carries HIGH-5 ("booking_audit_log retention policy — currently retain
+-- indefinitely") and a follow-up row proposing range partitioning by
+-- `occurred_at`; `docs/privacy/2026-09-pdpa-data-map.md` §8 item 11 repeats
+-- that proposal. F10 implements the retention itself and **declines the
+-- partitioning**, for reasons that are visible in the query patterns rather
+-- than in the table sizes:
+--
+--   * `routes::admin_bookings::fetch_audit_history` reads
+--     `WHERE al.booking_id = $1 ORDER BY al.occurred_at DESC, al.id DESC`.
+--   * `routes::admin_slips::get_slip_access_log` reads
+--     `WHERE sal.slip_id = $1` twice — once as `COUNT(*)`, once paginated.
+--
+-- Neither read carries a time predicate. Under `PARTITION BY RANGE
+-- (occurred_at)` the planner has nothing to prune with, so a single index
+-- scan becomes an Append over every partition that exists — sixty of them at
+-- a monthly grain and a five-year window. Partitioning would therefore make
+-- the only two read paths these tables have *slower*, to solve a delete
+-- problem a batched `DELETE` already solves. Converting the two live tables
+-- would also mean a table rewrite under `ACCESS EXCLUSIVE` (the partition key
+-- has to join the primary key), which is exactly the "blocks writes" outcome
+-- the task rules out, and sqlx does not wrap a migration in a transaction, so
+-- a mid-rewrite failure would leave a half-partitioned table behind.
+--
+-- So the only schema change retention needs is one index.
+--
+-- ## Why this index
+--
+-- The prune walks *oldest first*: `WHERE accessed_at < NOW() - interval ...
+-- ORDER BY accessed_at LIMIT <batch>`.
+--
+-- `slip_access_log` has two indexes today (`20260912020000`), both leading
+-- with a different column: `(slip_id, accessed_at DESC)` and `(admin_id,
+-- accessed_at DESC)`. Neither can drive a scan keyed on time alone —
+-- `slip_id` is nullable, so it cannot even be an index-only skip scan — and
+-- without this index every sweep pass is a sequential scan of the largest
+-- table in the privacy set. It is the volume table: the admin bookings list
+-- writes one row per slip per page load, at up to 200 rows a page
+-- (`routes::admin_bookings::list_bookings`, `limit.clamp(1, 200)`).
+--
+-- `booking_audit_log` deliberately gets **no** new index.
+-- `idx_booking_audit_log_occurred_at (occurred_at DESC)` already exists
+-- (`20260512020000`) and Postgres scans a DESC btree backwards at the same
+-- cost, so the oldest-first prune is already served.
+--
+-- Plain `CREATE INDEX`, not `CONCURRENTLY`: no migration in this tree uses
+-- CONCURRENTLY, it cannot run inside a transaction block, and the table was
+-- created two days ago (`20260912020000`) so the exclusive lock is on
+-- something close to empty.
+--
+-- ## Idempotency
+--
+-- `CREATE INDEX IF NOT EXISTS` per CLAUDE.md — a partial application during a
+-- failed deploy must not wedge the next attempt.
+-- =====================================================
+
+CREATE INDEX IF NOT EXISTS "idx_slip_access_log_accessed_at"
+    ON "public"."slip_access_log" ("accessed_at");
+
+COMMENT ON INDEX "public"."idx_slip_access_log_accessed_at"
+    IS 'Drives the F10 retention prune, which walks oldest-first on accessed_at alone. The (slip_id, ...) and (admin_id, ...) indexes cannot: both lead with a different column, and slip_id is nullable.';
