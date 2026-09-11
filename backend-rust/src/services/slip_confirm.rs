@@ -67,6 +67,49 @@
 //! `booking_not_payable` and is reported back on the outcome — see
 //! [`booking_not_payable_reason`].
 //!
+//! ## A15: the channel branch fails loudly now, for both actors
+//!
+//! A11 fixed the *non*-PMS shape. The PMS-channel shape above it still
+//! failed open, and B8 (race 2.4) is exact about how: the booking was
+//! selected with **no `status` filter**, so a slip verified after the hold
+//! lapsed fired `payment_verified` at a `pms_booking_id` the hold-expiry
+//! sweep had already released; the guarded local `UPDATE … WHERE status =
+//! 'pending'` then matched **zero** rows, `rows_affected()` was never read,
+//! `booking_confirmed` was set to `true` unconditionally and the INFO line
+//! said *"channel booking confirmed"*. The guest had paid and had no room,
+//! and every surface said the opposite.
+//!
+//! Three changes close it, and they apply to the admin's Verify and to the
+//! automatic path alike:
+//!
+//! 1. **A payability pre-check, before the slip is stamped.** A channel
+//!    booking that is not `pending`-with-a-live-hold (or already
+//!    `confirmed`, which is the ordinary idempotent re-verify) is refused
+//!    before the transaction opens, so no slip ever reads `verified`
+//!    against it.
+//! 2. **A PMS refusal is a refusal, not an outage.** `payment_verified` now
+//!    answers [`PmsActionError::Refused`] for a 4xx — the documented 409 for
+//!    a released hold (`new-hotel/docs/loyalty-channel.md:78-86`) — which is
+//!    definitive and must not be retried. A 5xx or a timeout still surfaces
+//!    as before so the action *is* retried.
+//! 3. **`rows_affected()` is read wherever a guarded update decides an
+//!    outcome.** Zero rows is never "confirmed" any more: it is either the
+//!    idempotent replay against an already-`confirmed` booking, or a
+//!    divergence loud enough to stop the call.
+//!
+//! All three land in the same place — [`refuse_channel_confirmation`]: the
+//! booking is left untouched, the slip goes to `admin_status = needs_action`
+//! carrying `slipok_reason = booking_not_payable` (the vocabulary
+//! `routes::bookings::slipok_check` already writes for this exact
+//! situation), an audit row records the PMS's own answer, and the caller
+//! gets a **409**, never a 200.
+//!
+//! Unlike the non-PMS shape, an admin's Verify does **not** override here.
+//! A deposit link that lapsed is a piece of paperwork a human can finish; a
+//! PMS hold that lapsed is a *room* the PMS may already have sold to
+//! somebody else, and no button in this app can take it back. The honest
+//! answer to reception is "this booking is gone, re-book it at the desk".
+//!
 //! ## sqlx note
 //!
 //! The extraction that created this module **moved** its compile-time
@@ -79,10 +122,12 @@
 //! is a runtime `sqlx::query` on purpose.
 
 use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::services::pms_channel::PmsActionError;
 use crate::state::AppState;
 
 /// The one user row every automatic slip verification is attributed to.
@@ -183,6 +228,36 @@ pub async fn confirm_slip_with_notes(
     actor: Option<Uuid>,
     admin_notes: Option<String>,
 ) -> Result<ConfirmOutcome, AppError> {
+    let actor_id = actor.unwrap_or(SLIPOK_SYSTEM_USER_ID);
+
+    // A15 — the payability pre-check for a PMS-channel booking, run before
+    // anything is written. The PMS owns the room; if it has let the hold go
+    // there is nothing a verified slip can confirm, and stamping the slip
+    // first would leave it reading `verified` against a booking that never
+    // moved. Read once here and reused for the payment event below: the only
+    // thing between the two is this function's own transaction, and the PMS
+    // is the authority on anything that moves inside it.
+    let channel = read_channel_booking(state.db(), booking_id).await?;
+    if let Some(channel) = &channel {
+        if let ChannelPayability::Refused { detail } = channel.payability() {
+            return Err(refuse_channel_confirmation(
+                state.db(),
+                booking_id,
+                slip_id,
+                actor_id,
+                ChannelRefusal {
+                    booking_status: channel.status.clone(),
+                    hold_expires_at: channel.hold_expires_at,
+                    pms_booking_id: channel.pms_booking_id.clone(),
+                    pms_status: None,
+                    pms_body: None,
+                    detail,
+                },
+            )
+            .await);
+        }
+    }
+
     let mut tx = state.db().begin().await?;
 
     // Capture the previous state *before* the UPDATE so the audit row
@@ -355,39 +430,100 @@ pub async fn confirm_slip_with_notes(
     // unreachable this returns an error so the admin retries the verify
     // action (idempotent on both sides) rather than leaving money received
     // against a hold that would silently expire.
-    let channel_row = sqlx::query!(
-        r#"
-        SELECT pms_booking_id AS "pms_booking_id!",
-               COALESCE(amount_due_now, total_price) AS "amount_received!"
-        FROM bookings WHERE id = $1 AND pms_booking_id IS NOT NULL
-        "#,
-        row.booking_id
-    )
-    .fetch_optional(state.db())
-    .await?;
-
     let mut booking_confirmed = false;
     let mut booking_not_confirmed_reason: Option<&'static str> = None;
-    if let Some(channel) = channel_row {
-        let pms_booking_id = channel.pms_booking_id;
+    if let Some(channel) = channel {
         let pms = crate::services::pms_channel::PmsChannelClient::from_settings(state.config())?;
         // The PMS needs the received amount — it doesn't persist the
         // guest's deposit50/full choice.
-        pms.payment_verified(&pms_booking_id, channel.amount_received)
-            .await?;
-        sqlx::query!(
+        match pms
+            .payment_verified(&channel.pms_booking_id, channel.amount_received)
+            .await
+        {
+            Ok(()) => {},
+            // The PMS answered and said no — a 409 for a hold it has already
+            // released, per docs/loyalty-channel.md. Retrying cannot change
+            // that answer, so this is the end of the line for this booking:
+            // refuse loudly instead of dressing an outage up as one.
+            Err(PmsActionError::Refused { status, body }) => {
+                return Err(refuse_channel_confirmation(
+                    state.db(),
+                    row.booking_id,
+                    slip_id,
+                    actor_id,
+                    ChannelRefusal {
+                        booking_status: channel.status.clone(),
+                        hold_expires_at: channel.hold_expires_at,
+                        pms_booking_id: channel.pms_booking_id.clone(),
+                        pms_status: Some(status),
+                        pms_body: Some(body),
+                        detail: "the PMS refused the payment event".to_string(),
+                    },
+                )
+                .await);
+            },
+            // Unchanged: the PMS could not answer. Surfacing the error is
+            // what makes the admin press Verify again, and what makes the
+            // automatic path run `revert_auto_confirm`.
+            Err(e) => return Err(AppError::from(e)),
+        }
+
+        let flipped = sqlx::query!(
             r#"UPDATE bookings SET status = 'confirmed', updated_at = NOW()
                WHERE id = $1 AND status = 'pending'"#,
             row.booking_id
         )
         .execute(state.db())
         .await?;
-        booking_confirmed = true;
-        tracing::info!(
-            booking_id = %row.booking_id,
-            pms_booking_id = %pms_booking_id,
-            "channel booking confirmed after slip verification"
-        );
+
+        // B8 2.4, the line that made this fail open: `booking_confirmed` used
+        // to be set to `true` here without ever reading `rows_affected()`,
+        // and the INFO line below announced a confirmation the guarded
+        // UPDATE had refused to make.
+        if flipped.rows_affected() == 0 {
+            let current = current_booking_status(state.db(), row.booking_id).await?;
+            if current.as_deref() == Some("confirmed") {
+                // The ordinary idempotent re-verify: the booking was already
+                // confirmed and the PMS took the payment event as a replay
+                // (`already_confirmed: true`). Nothing moved, and reporting
+                // `booking_confirmed = false` is the truth about *this* call.
+                tracing::info!(
+                    booking_id = %row.booking_id,
+                    pms_booking_id = %channel.pms_booking_id,
+                    "channel booking was already confirmed; the payment event was a replay"
+                );
+            } else {
+                // The PMS accepted the payment and the local row is neither
+                // `pending` nor `confirmed` — it moved under us, most likely
+                // cancelled by the hold-expiry sweep between the pre-check
+                // and now. Money received against a booking nobody can
+                // serve: refuse, and put it in front of a human.
+                return Err(refuse_channel_confirmation(
+                    state.db(),
+                    row.booking_id,
+                    slip_id,
+                    actor_id,
+                    ChannelRefusal {
+                        booking_status: current.unwrap_or_else(|| "unknown".to_string()),
+                        hold_expires_at: channel.hold_expires_at,
+                        pms_booking_id: channel.pms_booking_id.clone(),
+                        pms_status: None,
+                        pms_body: None,
+                        detail: "the PMS accepted the payment but the local booking was no \
+                                 longer pending"
+                            .to_string(),
+                    },
+                )
+                .await);
+            }
+        } else {
+            booking_confirmed = true;
+            tracing::info!(
+                booking_id = %row.booking_id,
+                pms_booking_id = %channel.pms_booking_id,
+                "channel booking confirmed after slip verification"
+            );
+        }
     } else {
         // Every booking with no PMS hold behind it (A11): deposit request
         // links (B1) and ordinary in-app bookings alike. There is no PMS
@@ -474,26 +610,22 @@ pub async fn confirm_slip_with_notes(
             // unwinding a verification that was never the thing that broke.
             // Losing the bookkeeping row is the smaller failure, and it is
             // loud: the ERROR below, plus the WARN the helper logs.
-            booking_not_confirmed_reason = match booking_not_payable_reason(
-                state.db(),
-                row.booking_id,
-                slip_id,
-                actor.unwrap_or(SLIPOK_SYSTEM_USER_ID),
-            )
-            .await
-            {
-                Ok(reason) => reason,
-                Err(e) => {
-                    tracing::error!(
-                        slip_id = %slip_id,
-                        booking_id = %row.booking_id,
-                        error = %e,
-                        "could not record why a verified slip did not confirm \
-                         its booking; the verify itself stands"
-                    );
-                    None
-                },
-            };
+            booking_not_confirmed_reason =
+                match booking_not_payable_reason(state.db(), row.booking_id, slip_id, actor_id)
+                    .await
+                {
+                    Ok(reason) => reason,
+                    Err(e) => {
+                        tracing::error!(
+                            slip_id = %slip_id,
+                            booking_id = %row.booking_id,
+                            error = %e,
+                            "could not record why a verified slip did not confirm \
+                             its booking; the verify itself stands"
+                        );
+                        None
+                    },
+                };
         } else {
             booking_confirmed = true;
             tracing::info!(
@@ -536,6 +668,284 @@ pub async fn confirm_slip_with_notes(
         booking_confirmed,
         booking_not_confirmed_reason,
     })
+}
+
+/// The PMS-channel facts a confirmation needs, read in one go.
+///
+/// `status` and `hold_expires_at` are the two columns B8 found missing from
+/// the old select (`admin_slips.rs:235-244`, now here): without them the
+/// confirm path could not tell a live hold from one the sweep had already
+/// released, and fired the payment event at both.
+#[derive(Debug, Clone)]
+struct ChannelBooking {
+    pms_booking_id: String,
+    /// What the guest was asked to pay now — the PMS does not persist the
+    /// deposit50/full choice, so the amount travels with the event.
+    amount_received: Decimal,
+    status: String,
+    hold_expires_at: Option<DateTime<Utc>>,
+}
+
+/// Whether a channel booking may still be told about a payment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ChannelPayability {
+    /// `pending` with a hold that has not run out — post the payment event
+    /// and flip the local row.
+    Payable,
+    /// Already `confirmed`. The payment event is a replay (the PMS answers
+    /// `already_confirmed: true`) and the local flip moves nothing; this is
+    /// the ordinary re-verify, and it is not an error.
+    AlreadyConfirmed,
+    /// Nothing may be posted. `detail` says why, in one clause, and lands on
+    /// the audit row a human reads.
+    Refused { detail: String },
+}
+
+impl ChannelBooking {
+    fn payability(&self) -> ChannelPayability {
+        match self.status.as_str() {
+            "confirmed" => ChannelPayability::AlreadyConfirmed,
+            "pending" => match self.hold_expires_at {
+                Some(expires) if expires <= Utc::now() => ChannelPayability::Refused {
+                    detail: format!("the PMS hold expired at {expires}"),
+                },
+                _ => ChannelPayability::Payable,
+            },
+            other => ChannelPayability::Refused {
+                detail: format!("the booking is '{other}', which cannot take a payment"),
+            },
+        }
+    }
+}
+
+/// Read the channel facts for a booking, or `None` when it is not a channel
+/// booking at all (`pms_booking_id IS NULL` — deposit links and ordinary
+/// in-app bookings, handled by the branch below).
+///
+/// A runtime query on purpose: it needs no `.sqlx` offline-cache entry, and
+/// the columns it adds over the query it replaces are plain reads.
+async fn read_channel_booking(
+    db: &sqlx::PgPool,
+    booking_id: Uuid,
+) -> AppResult<Option<ChannelBooking>> {
+    let row: Option<(String, Decimal, String, Option<DateTime<Utc>>)> = sqlx::query_as(
+        r#"
+        SELECT pms_booking_id,
+               COALESCE(amount_due_now, total_price),
+               status,
+               hold_expires_at
+        FROM bookings
+        WHERE id = $1 AND pms_booking_id IS NOT NULL
+        "#,
+    )
+    .bind(booking_id)
+    .fetch_optional(db)
+    .await?;
+
+    Ok(row.map(
+        |(pms_booking_id, amount_received, status, hold_expires_at)| ChannelBooking {
+            pms_booking_id,
+            amount_received,
+            status,
+            hold_expires_at,
+        },
+    ))
+}
+
+/// The booking's status right now, for telling apart the reasons a guarded
+/// `UPDATE` matched nothing.
+async fn current_booking_status(db: &sqlx::PgPool, booking_id: Uuid) -> AppResult<Option<String>> {
+    Ok(
+        sqlx::query_scalar::<_, String>("SELECT status FROM bookings WHERE id = $1")
+            .bind(booking_id)
+            .fetch_optional(db)
+            .await?,
+    )
+}
+
+/// Everything a refusal has to put on the record.
+#[derive(Debug, Clone)]
+struct ChannelRefusal {
+    booking_status: String,
+    hold_expires_at: Option<DateTime<Utc>>,
+    pms_booking_id: String,
+    /// The HTTP status the PMS answered with, when the PMS is what refused.
+    pms_status: Option<u16>,
+    /// The PMS's response body, truncated by the client.
+    pms_body: Option<String>,
+    /// One clause saying which of the refusal shapes this is.
+    detail: String,
+}
+
+/// Refuse to confirm a PMS-channel booking, and make the refusal impossible
+/// to miss.
+///
+/// Four things happen, in this order, and the error is returned even if the
+/// bookkeeping half fails — the one outcome that must never occur is a
+/// caller reading 200 for a booking that did not move:
+///
+/// 1. **The booking is left exactly as it was.** No status write, no
+///    `updated_at` touch. The room is the PMS's to give back, not ours.
+/// 2. **The slip goes back to the desk** — `admin_status = 'needs_action'`
+///    with `slipok_reason = booking_not_payable`, the same word
+///    `routes::bookings::slipok_check` writes when it refuses to act on a
+///    perfect slip against a dead booking, so reception reads one word for
+///    one situation. `slipok_trans_ref` is deliberately **kept**: unlike the
+///    PMS-outage revert (where the same booking will be retried and the
+///    guest may legitimately re-upload), this booking is finished, and the
+///    bank reference is the only link between the money that arrived and the
+///    refusal. A `shadow_pass` keeps its `slipok_status` too — that column is
+///    what the shadow-window agreement report counts, and a refusal is not a
+///    machine decision about the slip.
+/// 3. **An audit row** (`booking_not_confirmed`) carrying the booking's
+///    state and, when the PMS is what refused, its status code and body.
+/// 4. **A WARN**, and a 409 to the caller.
+async fn refuse_channel_confirmation(
+    db: &sqlx::PgPool,
+    booking_id: Uuid,
+    slip_id: Uuid,
+    actor_id: Uuid,
+    refusal: ChannelRefusal,
+) -> AppError {
+    let reason = crate::services::slip_match::REASON_BOOKING_NOT_PAYABLE;
+
+    if let Err(e) =
+        record_channel_refusal(db, booking_id, slip_id, actor_id, &refusal, reason).await
+    {
+        // The refusal itself still stands — the caller gets the 409 below and
+        // the booking was never touched. What is lost is the desk's copy of
+        // it, which is worth an ERROR and is not worth turning into a
+        // different error for the admin.
+        tracing::error!(
+            slip_id = %slip_id,
+            booking_id = %booking_id,
+            error = %e,
+            "could not record a refused channel confirmation; the refusal stands \
+             but the slip may still read verified"
+        );
+    }
+
+    tracing::warn!(
+        slip_id = %slip_id,
+        booking_id = %booking_id,
+        pms_booking_id = %refusal.pms_booking_id,
+        booking_status = %refusal.booking_status,
+        hold_expires_at = ?refusal.hold_expires_at,
+        pms_status = ?refusal.pms_status,
+        reason = %reason,
+        detail = %refusal.detail,
+        "refusing to confirm a PMS channel booking from a verified slip; the \
+         booking was left untouched and the slip needs a human"
+    );
+
+    AppError::Conflict(format!(
+        "{reason}: {} — the booking was not confirmed and the slip is back in the \
+         admin queue as needs_action. The room has to be re-booked at the desk.",
+        refusal.detail
+    ))
+}
+
+/// The write half of [`refuse_channel_confirmation`], in one transaction.
+///
+/// Runtime queries: the `slipok_*` columns are new in migration
+/// `20260910000000_booking_slips_slipok.sql` and need no `.sqlx` entry.
+async fn record_channel_refusal(
+    db: &sqlx::PgPool,
+    booking_id: Uuid,
+    slip_id: Uuid,
+    actor_id: Uuid,
+    refusal: &ChannelRefusal,
+    reason: &'static str,
+) -> AppResult<()> {
+    use sqlx::Row;
+
+    let mut tx = db.begin().await?;
+
+    let before = sqlx::query(
+        r#"
+        SELECT admin_status, admin_verified_by, slipok_status, slipok_reason
+        FROM booking_slips
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(slip_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Slip".to_string()))?;
+
+    let before_admin_status: Option<String> = before.try_get("admin_status")?;
+    let before_verified_by: Option<Uuid> = before.try_get("admin_verified_by")?;
+    let before_slipok_status: Option<String> = before.try_get("slipok_status")?;
+    let before_slipok_reason: Option<String> = before.try_get("slipok_reason")?;
+
+    let after = sqlx::query(
+        r#"
+        UPDATE booking_slips
+        SET admin_status      = 'needs_action',
+            admin_verified_at = NOW(),
+            admin_verified_by = $1,
+            slipok_status     = CASE
+                                  WHEN slipok_status = $2 THEN slipok_status
+                                  ELSE $3
+                                END,
+            slipok_reason     = $4,
+            slipok_checked_at = NOW()
+        WHERE id = $5
+        RETURNING admin_status, slipok_status
+        "#,
+    )
+    .bind(actor_id)
+    .bind(crate::services::slip_match::SLIPOK_STATUS_SHADOW_PASS)
+    .bind(crate::services::slip_match::SLIPOK_STATUS_MANUAL)
+    .bind(reason)
+    .bind(slip_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let (reason_th, reason_en) =
+        crate::services::booking_notify::reason_wording(reason).unwrap_or((reason, reason));
+
+    insert_slip_audit_row(
+        &mut *tx,
+        booking_id,
+        actor_id,
+        ACTION_BOOKING_NOT_CONFIRMED,
+        Some(json!({
+            "status": refusal.booking_status,
+            "holdExpiresAt": refusal.hold_expires_at,
+            "adminStatus": before_admin_status,
+            "adminVerifiedBy": before_verified_by,
+            "slipokStatus": before_slipok_status,
+            "slipokReason": before_slipok_reason,
+        })),
+        Some(json!({
+            "status": refusal.booking_status,
+            "holdExpiresAt": refusal.hold_expires_at,
+            "slipId": slip_id,
+            "reason": reason,
+            "adminStatus": after.try_get::<Option<String>, _>("admin_status")?,
+            "slipokStatus": after.try_get::<Option<String>, _>("slipok_status")?,
+            "pmsBookingId": refusal.pms_booking_id,
+            "pmsStatus": refusal.pms_status,
+            "pmsResponse": refusal.pms_body,
+            "detail": refusal.detail,
+        })),
+        Some(format!(
+            "{reason_th} ({detail_th}) / {reason_en} ({reason}: {detail}{pms})",
+            detail_th = "ยืนยันการจองกับระบบโรงแรมไม่สำเร็จ ตรวจสอบสลิปแล้วแต่ยังไม่ยืนยันการจอง",
+            detail = refusal.detail,
+            pms = match (refusal.pms_status, refusal.pms_body.as_deref()) {
+                (Some(status), Some(body)) => format!("; PMS answered {status} {body}"),
+                (Some(status), None) => format!("; PMS answered {status}"),
+                _ => String::new(),
+            },
+        )),
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
 }
 
 /// The audit action written when a verified slip could not confirm the
@@ -687,6 +1097,24 @@ pub async fn revert_auto_confirm(db: &sqlx::PgPool, slip_id: Uuid) -> AppResult<
     let before_verified_by: Option<Uuid> = before.try_get("admin_verified_by")?;
     let before_slipok_status: Option<String> = before.try_get("slipok_status")?;
     let before_trans_ref: Option<String> = before.try_get("slipok_trans_ref")?;
+
+    // Nothing to take back. A15 made `confirm_slip` able to fail *without*
+    // leaving the slip verified — a channel booking whose hold had lapsed is
+    // refused before the transaction opens, and a PMS 409 puts the slip on
+    // `needs_action` with `booking_not_payable` itself. The automatic path
+    // calls this on any `Err`, and reverting one of those would overwrite a
+    // refusal that is already correct with `pending` / `confirm_failed`,
+    // erasing the reason the desk needs.
+    if before_admin_status.as_deref() != Some("verified") {
+        tx.rollback().await?;
+        tracing::info!(
+            slip_id = %slip_id,
+            booking_id = %booking_id,
+            admin_status = ?before_admin_status,
+            "nothing to revert: the slip was never left verified"
+        );
+        return Ok(false);
+    }
 
     // Never undo an admin's own verification, only the machine's. NULL is
     // accepted too, so a slip verified by an older build — before the system
