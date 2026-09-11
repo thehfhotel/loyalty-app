@@ -800,8 +800,56 @@ pub async fn read_slip_bytes(slip_url: &str) -> AppResult<Bytes> {
     Ok(Bytes::from(data))
 }
 
+/// Erase a slip image from disk. Returns `true` when a file was actually
+/// removed, `false` when there was nothing there.
+///
+/// This is the only code in the repo that deletes a slip image, and it is
+/// what makes F2's retention sweep an *erase* rather than a database edit
+/// that leaves the photograph on the volume (see
+/// `docs/privacy/2026-09-pdpa-data-map.md` §1, "Deletion today: **None.**").
+///
+/// **Idempotent by design.** A missing file is `Ok(false)`, not an error:
+/// the sweep may crash between removing the file and writing the tombstone,
+/// and the next pass must be able to finish the job instead of logging the
+/// same failure forever.
+///
+/// Path handling matches [`read_slip_bytes`] exactly — only the file name is
+/// used and it goes through [`sanitize_filename`], so a `../` that somehow
+/// reached `booking_slips.slip_url` cannot make this delete outside the
+/// slips directory.
+pub async fn delete_slip_file(slip_url: &str) -> AppResult<bool> {
+    delete_slip_file_in(&slips_base_dir(), slip_url).await
+}
+
+/// [`delete_slip_file`] against an explicit slips directory.
+///
+/// The production entry point resolves the directory from `STORAGE_PATH`,
+/// which is process-global; tests need a `tempdir` per test and must not
+/// mutate the environment out from under a suite that shares one process.
+pub async fn delete_slip_file_in(slips_dir: &Path, slip_url: &str) -> AppResult<bool> {
+    let file_name = slip_url
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| AppError::BadRequest(format!("Malformed slip URL: {}", slip_url)))?;
+
+    let path = slips_dir.join(sanitize_filename(file_name));
+
+    match fs::remove_file(&path).await {
+        Ok(()) => {
+            info!("Erased slip image {:?}", path);
+            Ok(true)
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(AppError::Internal(format!(
+            "Failed to erase slip file {:?}: {}",
+            path, e
+        ))),
+    }
+}
+
 /// Directory slips are written to by `routes::slips::upload_slip`.
-fn slips_base_dir() -> PathBuf {
+pub(crate) fn slips_base_dir() -> PathBuf {
     let base_dir = env::var("STORAGE_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {

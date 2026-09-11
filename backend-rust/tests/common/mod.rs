@@ -949,6 +949,10 @@ fn create_test_config() -> loyalty_backend::Settings {
         // No property mailbox: the booking notification is off unless a test
         // sets one through `TestApp::new_with_config`.
         booking_notify: BookingNotifyConfig::default(),
+        // Retention off, like production until the owner sets a window.
+        // A test that wants the sweep calls it directly with an explicit
+        // number of days rather than flipping a process-global.
+        retention: RetentionConfig::default(),
     }
 }
 

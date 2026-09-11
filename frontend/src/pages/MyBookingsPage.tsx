@@ -21,6 +21,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { bookingService } from '../services/bookingService';
+import { SlipErasedNotice } from '../components/SlipErasedNotice';
 import type { Booking } from '../services/bookingService';
 import { guestSlipOkStatusKey, isSlipOkStatus, type SlipOkStatus } from '../types/slipok';
 import companyQRCode from '../assets/company-promptpay-qr.png';
@@ -651,12 +652,22 @@ export default function MyBookingsPage() {
                   <div className="grid grid-cols-2 gap-3">
                     {selectedBooking.slips?.map((slip, index) => (
                       <div key={slip.id} className="group relative">
-                        <img
-                          src={slip.slipUrl}
-                          alt={`${t('payment.slipPreview')} ${index + 1}`}
-                          className="h-32 w-full cursor-pointer rounded-lg border border-hairline object-cover transition-opacity hover:opacity-90"
-                          onClick={() => window.open(slip.slipUrl, '_blank')}
-                        />
+                        {/* F2: once retention has erased the image, `slipUrl`
+                            is null. Show what happened instead of a broken
+                            <img>, and drop the open-in-a-tab action — there is
+                            nothing behind it. */}
+                        {slip.slipUrl ? (
+                          <img
+                            src={slip.slipUrl}
+                            alt={`${t('payment.slipPreview')} ${index + 1}`}
+                            className="h-32 w-full cursor-pointer rounded-lg border border-hairline object-cover transition-opacity hover:opacity-90"
+                            onClick={() => window.open(slip.slipUrl as string, '_blank')}
+                          />
+                        ) : (
+                          <div className="h-32 w-full">
+                            <SlipErasedNotice deletedAt={slip.deletedAt} compact />
+                          </div>
+                        )}
                         {/* Status badge overlay */}
                         <div className="absolute bottom-1 right-1">
                           {slip.slipokStatus && (
@@ -865,12 +876,20 @@ export default function MyBookingsPage() {
                 <div className="grid grid-cols-2 gap-3">
                   {slipUploadBooking.slips?.map((slip, index) => (
                     <div key={slip.id} className="group relative">
-                      <img
-                        src={slip.slipUrl}
-                        alt={`${t('payment.slipPreview')} ${index + 1}`}
-                        className="h-32 w-full cursor-pointer rounded-lg border border-hairline object-cover transition-opacity hover:opacity-90"
-                        onClick={() => window.open(slip.slipUrl, '_blank')}
-                      />
+                      {/* See the details modal above: an erased slip renders
+                          the tombstone, not a dead image. */}
+                      {slip.slipUrl ? (
+                        <img
+                          src={slip.slipUrl}
+                          alt={`${t('payment.slipPreview')} ${index + 1}`}
+                          className="h-32 w-full cursor-pointer rounded-lg border border-hairline object-cover transition-opacity hover:opacity-90"
+                          onClick={() => window.open(slip.slipUrl as string, '_blank')}
+                        />
+                      ) : (
+                        <div className="h-32 w-full">
+                          <SlipErasedNotice deletedAt={slip.deletedAt} compact />
+                        </div>
+                      )}
                       {/* Status badge overlay */}
                       <div className="absolute bottom-1 right-1">
                         {slip.slipokStatus && (

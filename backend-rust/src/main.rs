@@ -210,6 +210,50 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Slip-image retention sweep (F2, docs/privacy/2026-09-pdpa-data-map.md
+    // §8 gap 1). Off unless `SLIP_RETENTION_DAYS` names a positive number of
+    // days: the 90 days in the data map is a proposal the owner has not
+    // signed off, and a job that starts erasing guests' payment photographs
+    // on a built-in default would be this process deciding a policy question
+    // on their behalf.
+    //
+    // Hourly rather than the hold sweep's five minutes — the window is
+    // measured in days, so anything finer just wakes the process up.
+    match config.retention.slip_retention_days() {
+        Some(days) => {
+            info!(
+                "Slip retention sweep: enabled ({} days, erasing under {:?})",
+                days,
+                loyalty_backend::services::slip_retention::configured_slips_dir()
+            );
+            let sweep_state = state.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(3600));
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                loop {
+                    interval.tick().await;
+                    loyalty_backend::services::slip_retention::sweep_expired_slips(
+                        sweep_state.db(),
+                        sweep_state.config(),
+                    )
+                    .await;
+                }
+            });
+        },
+        None => match config.retention.slip_days_error() {
+            // A typo must not read as "retention is off on purpose". `{:?}`
+            // keeps a stray newline in the value from forging a log line.
+            Some(raw) => error!(
+                "SLIP_RETENTION_DAYS is set to {:?}, which is not a positive whole \
+                 number of days — the slip retention sweep is OFF and no slip \
+                 image will ever be erased. Set it to a number of days, or clear \
+                 it to turn retention off deliberately.",
+                raw
+            ),
+            None => info!("Slip retention sweep: disabled (SLIP_RETENTION_DAYS unset)"),
+        },
+    }
+
     // Build the application router with all routes and middleware
     let app = create_app(state, &config);
 

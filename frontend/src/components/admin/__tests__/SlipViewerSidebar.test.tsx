@@ -43,6 +43,9 @@ const translations: Record<string, string> = {
   'admin.booking.bookingManagement.slipViewer.auditSummary': 'Recent Activity',
   'admin.booking.bookingManagement.slipViewer.slipImage': 'Payment slip image',
   'admin.booking.bookingManagement.slipViewer.fullscreen': 'View fullscreen',
+  'payment.slipErased': 'Erased under the retention policy on {{date}}',
+  'payment.slipErasedNote': 'The payment record itself is unchanged.',
+  'payment.slipUnavailable': 'No slip image',
   'admin.booking.bookingManagement.by': 'By',
   'admin.booking.bookingManagement.actions.verify': 'Verify',
   'admin.booking.bookingManagement.actions.needsAction': 'Needs Action',
@@ -82,7 +85,10 @@ function slipResponse(overrides: Record<string, unknown> = {}) {
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => translations[key] ?? key,
+    t: (key: string, opts?: Record<string, unknown>) =>
+      (translations[key] ?? key).replace(/\{\{(\w+)\}\}/g, (_, name: string) =>
+        String(opts?.[name] ?? `{{${name}}}`)
+      ),
   }),
 }));
 
@@ -91,6 +97,8 @@ vi.mock('react-hot-toast', () => ({
 }));
 
 type SlipOverrides = {
+  slipUrl?: string | null;
+  deletedAt?: string | null;
   slipokStatus?: string;
   slipokReason?: string | null;
   slipokCheckedAt?: string | null;
@@ -405,6 +413,35 @@ describe('SlipViewerSidebar wired calls', () => {
     await waitFor(() => {
       expect(onRefresh).toHaveBeenCalled();
     });
+  });
+
+  it('shows an erased slip as a tombstone instead of a broken image, with no way to open it', async () => {
+    // The per-slip read is what F2 makes authoritative for the tombstone, so
+    // the detail says erased even though the list row still carries a URL —
+    // exactly the stale-list case the sidebar has to get right.
+    mockGetSlip.mockResolvedValue(
+      slipResponse({ slipUrl: null, deletedAt: '2027-06-01T10:00:00Z', deletionReason: 'retention_sweep' })
+    );
+
+    renderSidebar();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Erased under the retention policy on 01/06/2027')
+      ).toBeInTheDocument();
+    });
+
+    // The payment record survived, and the panel says so.
+    expect(screen.getByText('The payment record itself is unchanged.')).toBeInTheDocument();
+
+    // No image element, and the action that would open it is gone — not
+    // merely disabled: there is nothing behind it to open.
+    expect(
+      screen.queryByAltText('Payment slip image')
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'View fullscreen' })
+    ).not.toBeInTheDocument();
   });
 
   it('leaves the booking-scoped fallbacks disabled while their routes are missing', () => {

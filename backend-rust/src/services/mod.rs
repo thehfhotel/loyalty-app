@@ -3,7 +3,8 @@
 //! Contains the service logic the route handlers delegate to: email, the
 //! property booking notification in `booking_notify`, OAuth,
 //! slip verification (the SlipOK client, the pure decision rules in
-//! `slip_match`, and the shared confirm path in `slip_confirm`), storage,
+//! `slip_match`, and the shared confirm path in `slip_confirm`), the slip
+//! privacy pair from F2 (`slip_access_log`, `slip_retention`), storage,
 //! SSE, PromptPay, and request idempotency.
 //! Domain CRUD lives directly in the `routes/` handlers via `sqlx` rather
 //! than behind a service trait.
@@ -16,8 +17,10 @@ pub mod line;
 pub mod oauth;
 pub mod pms_channel;
 pub mod promptpay;
+pub mod slip_access_log;
 pub mod slip_confirm;
 pub mod slip_match;
+pub mod slip_retention;
 pub mod slipok;
 pub mod sse;
 pub mod storage;

@@ -15,7 +15,11 @@ export interface RoomTypeAvailability {
 
 export interface BookingSlip {
   id: string;
-  slipUrl: string;
+  /** `null` once the image has been erased under the retention policy (F2).
+   *  Never an empty string — an empty `src` resolves to the page itself. */
+  slipUrl: string | null;
+  /** When the image was erased, or `null` while it is still on disk. */
+  deletedAt?: string | null;
   uploadedAt: string | Date;
   slipokStatus: SlipOkStatusValue | null;
   /** Locked `SlipOkReason` value in practice; typed loosely because the

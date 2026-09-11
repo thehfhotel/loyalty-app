@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO slip_access_log (slip_id, admin_id, route, request_id)\n        SELECT slip_id, $2, $3, $4\n        FROM UNNEST($1::uuid[]) AS t(slip_id)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a68a953180468c6a29d40483ad7aceb95e3c16e673f57b956600be0e19cd2079"
+}

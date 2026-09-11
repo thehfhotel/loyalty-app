@@ -64,7 +64,14 @@ export interface AdminBookingRoomType {
  */
 export interface AdminBookingSlipSummary {
   id: string;
-  imageUrl: string;
+  /** `null` once the image has been erased under the retention policy (F2),
+   *  and on a legacy row with no URL. Never an empty string: an empty `src`
+   *  resolves to the page itself and renders as a broken image. Read it
+   *  together with `deletedAt`. */
+  imageUrl: string | null;
+  /** When the image was erased under the retention policy, or `null` while it
+   *  is still on disk. The payment record itself is unchanged either way. */
+  deletedAt: string | null;
   uploadedAt: string;
   /** `Option<String>` on the wire — NULL on legacy rows, so nullable here.
    *  `deskSlipOkStatus` is the only place that null becomes a badge. */
@@ -84,7 +91,12 @@ export interface AdminBookingSlipSummary {
 /** One slip in the viewer's multi-slip gallery. */
 export interface AdminBookingSlip {
   id: string;
-  slipUrl: string;
+  /** `null` once the image has been erased under the retention policy (F2). */
+  slipUrl: string | null;
+  /** When the image was erased, or `null` while it is still on disk. */
+  deletedAt?: string | null;
+  /** Why it was erased — `retention_sweep` today. */
+  deletionReason?: string | null;
   uploadedAt: string;
   uploadedBy?: string;
   slipokStatus: SlipOkStatusValue | null;
@@ -217,7 +229,12 @@ export interface CancelAdminBookingRequest {
 export interface AdminSlip {
   id: string;
   bookingId: string;
-  slipUrl: string;
+  /** `null` once the image has been erased under the retention policy (F2). */
+  slipUrl: string | null;
+  /** When the image was erased, or `null` while it is still on disk. */
+  deletedAt: string | null;
+  /** Why it was erased — `retention_sweep` today. */
+  deletionReason: string | null;
   uploadedAt: string;
   adminStatus: 'pending' | 'verified' | 'needs_action' | null;
   adminVerifiedAt: string | null;

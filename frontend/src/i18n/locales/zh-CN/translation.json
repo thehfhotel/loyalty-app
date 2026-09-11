@@ -1234,7 +1234,10 @@
     "holdExpiresIn": "请在 {{time}} 内付款——房间将为您保留至该时间",
     "holdExpired": "付款时间已过，房间保留已释放。请重新预订。",
     "startOver": "重新预订",
-    "propertyAccount": "款项将支付到{{property}}的账户"
+    "propertyAccount": "款项将支付到{{property}}的账户",
+    "slipErased": "已于 {{date}} 按数据保留政策删除",
+    "slipErasedNote": "付款记录本身未受影响。",
+    "slipUnavailable": "无转账凭证图片"
   },
   "nav": {
     "home": "首页",

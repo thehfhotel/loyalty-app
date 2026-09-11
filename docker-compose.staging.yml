@@ -91,6 +91,11 @@ services:
       IMAP_PORT: ${IMAP_PORT:-993}
       IMAP_USER: ${IMAP_USER:-}
       IMAP_PASS: ${IMAP_PASS:-}
+      # Slip-image retention (F2). Days after a booking closes before the
+      # slip photograph is erased from STORAGE_PATH/slips. Blank = OFF: the
+      # backend reads a blank as unset (config::env_present), and there is
+      # deliberately no default, because the window is the owner's decision.
+      SLIP_RETENTION_DAYS: ${SLIP_RETENTION_DAYS:-}
     # No source code bind mounts - uses GHCR image with built Rust binary
     volumes:
       - backend_dev_logs:/app/logs
