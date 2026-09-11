@@ -2034,19 +2034,26 @@ async fn create_channel_booking(
 
     let pms = PmsChannelClient::from_settings(state.config())?;
     let created = pms
-        .create_booking(&PmsCreateBookingRequest {
-            property: payload.property,
-            room_type_id: payload.room_type_id.clone(),
-            check_in: payload.check_in,
-            check_out: payload.check_out,
-            guests: payload.guests,
-            guest: PmsGuest {
-                name: guest_name.to_string(),
-                phone: guest_phone.to_string(),
+        .create_booking(
+            &PmsCreateBookingRequest {
+                property: payload.property,
+                room_type_id: payload.room_type_id.clone(),
+                check_in: payload.check_in,
+                check_out: payload.check_out,
+                guests: payload.guests,
+                guest: PmsGuest {
+                    name: guest_name.to_string(),
+                    phone: guest_phone.to_string(),
+                },
+                membership_id,
+                payment: payload.payment_option.clone(),
             },
-            membership_id,
-            payment: payload.payment_option.clone(),
-        })
+            // The app's own Redis connection manager, not one the PMS client
+            // opens for itself: the one-in-flight hold guard is a two-command
+            // side trip on a path that already holds a pooled, bounded-
+            // reconnect connection (#416).
+            state.redis(),
+        )
         .await?;
 
     let balance_due = created.total - created.amount_due_now;

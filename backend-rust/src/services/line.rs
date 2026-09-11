@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use crate::config::Settings;
 use crate::error::{AppError, AppResult};
+use crate::services::http::outbound;
 use crate::types::Property;
 
 const LINE_VERIFY_URL: &str = "https://api.line.me/oauth2/v2.1/verify";
@@ -35,8 +36,9 @@ pub struct LineIdTokenClaims {
 /// Verify a LIFF ID token with LINE. `client_id` is the LINE Login channel
 /// ID (the LIFF app is attached to that channel).
 pub async fn verify_liff_id_token(id_token: &str, client_id: &str) -> AppResult<LineIdTokenClaims> {
-    let client = reqwest::Client::new();
-    let response = client
+    // Bounded and shared: an unbounded client here parks a silent-enrollment
+    // login until the router's own timeout fires. See `services::http`.
+    let response = outbound()
         .post(LINE_VERIFY_URL)
         .form(&[("id_token", id_token), ("client_id", client_id)])
         .send()
@@ -70,12 +72,11 @@ pub fn verify_line_signature(channel_secret: &str, body: &[u8], signature_b64: &
 
 /// Push a plain-text message to one LINE user via one OA's channel token.
 pub async fn push_text(access_token: &str, to: &str, text: &str) -> AppResult<()> {
-    let client = reqwest::Client::new();
     let body = serde_json::json!({
         "to": to,
         "messages": [{ "type": "text", "text": text }],
     });
-    let response = client
+    let response = outbound()
         .post(LINE_PUSH_URL)
         .bearer_auth(access_token)
         .json(&body)

@@ -206,6 +206,15 @@ pub struct DepositLinkSummary {
     pub booking_id: Uuid,
     pub property: Option<String>,
     pub guest_name: Option<String>,
+    /// The number reception dialled to take the booking, or `null` for a
+    /// row that predates the column being filled.
+    ///
+    /// On the wire because the desk searches by phone: it is what the guest
+    /// gave on the call and what the issue form asked for, so it is what
+    /// reception types into the panel's search box an hour later. Without
+    /// it the list could only be searched by name, and a phone-shaped query
+    /// had to be answered with an apology instead of a row.
+    pub guest_phone: Option<String>,
     pub amount_due_now: f64,
     pub state: String,
     pub expires_at: DateTime<Utc>,
@@ -487,6 +496,7 @@ async fn list_deposit_links(
                    l.last_opened_at AS last_opened_at,
                    b.property     AS property,
                    b.guest_name   AS guest_name,
+                   b.guest_phone  AS guest_phone,
                    COALESCE(b.amount_due_now, b.total_price) AS amount_due_now,
                    s.latest_slipok_status AS latest_slipok_status,
                    CASE
@@ -511,6 +521,7 @@ async fn list_deposit_links(
                ls.booking_id     AS "booking_id!",
                ls.property,
                ls.guest_name,
+               ls.guest_phone,
                ls.amount_due_now AS "amount_due_now!",
                ls.state          AS "state!",
                ls.expires_at     AS "expires_at!",
@@ -571,6 +582,7 @@ async fn list_deposit_links(
             booking_id: r.booking_id,
             property: r.property,
             guest_name: r.guest_name,
+            guest_phone: r.guest_phone,
             amount_due_now: r.amount_due_now.to_f64().unwrap_or(0.0),
             state: r.state,
             expires_at: r.expires_at,

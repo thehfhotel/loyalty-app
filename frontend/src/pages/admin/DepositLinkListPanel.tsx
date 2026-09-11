@@ -82,6 +82,18 @@ function looksLikePhone(query: string): boolean {
 }
 
 /**
+ * Everything but the digits, thrown away.
+ *
+ * Applied to *both* sides of a phone comparison: reception types the number
+ * the way they say it out loud ("081-234-5678", "081 234 5678") and the
+ * booking stores whatever was typed into the issue form, so comparing the
+ * strings as written would miss the row for a dash.
+ */
+function digitsOnly(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+/**
  * The row an action is being confirmed for.
  *
  * Reissue shares this dialog with revoke: it revokes *every* live link on
@@ -128,7 +140,8 @@ export default function DepositLinkListPanel({
   const [filter, setFilter] = useState<DepositLinkFilter>('open');
   const [page, setPage] = useState(1);
   /**
-   * Guest-name search, applied in the browser over the page already loaded.
+   * Guest name / phone search, applied in the browser over the page already
+   * loaded.
    *
    * Deliberately client-side: the list endpoint takes `status`, `page` and
    * `limit` and no search parameter, and at a desk issuing a handful of
@@ -180,30 +193,48 @@ export default function DepositLinkListPanel({
   const revealedLink = revealedLinkId ? (sessionLinks[revealedLinkId] ?? null) : null;
 
   const query = search.trim().toLocaleLowerCase();
+  /**
+   * The digits of a query that is plainly a phone number rather than a name.
+   *
+   * Reception's muscle memory is the phone number — it is what the guest
+   * gave on the call and what the issue form asked for — so it is what they
+   * type here. Only a phone-shaped query is matched against the number, so
+   * a name search stays a name search: "ห้อง 3" must not pull in every
+   * guest whose phone happens to contain a 3.
+   */
+  const phoneQuery = query.length > 0 && looksLikePhone(query) ? digitsOnly(query) : '';
   const visibleLinks = useMemo(
     () =>
       query.length === 0
         ? links
-        : // Guest name is the whole of the searchable text, because it is
-          // the whole of what the row carries: `DepositLinkSummary`
-          // (`routes/admin_deposit_links.rs`) has no phone field, so a
-          // number typed here can never match — `looksLikePhone` below is
-          // how the desk is told that rather than left staring at an empty
-          // table. A row with no name (nullable on the wire) matches
-          // nothing, which is the honest answer to "find Somchai".
-          links.filter((row) => (row.guestName ?? '').toLocaleLowerCase().includes(query)),
-    [links, query],
+        : // Name or phone — the two things a row carries that reception
+          // knows the guest by. Both sides of the phone comparison are
+          // reduced to digits, because "081-234-5678" and "0812345678" are
+          // the same number typed by two people. A row with neither (both
+          // are nullable on the wire) matches nothing, which is the honest
+          // answer to "find Somchai".
+          links.filter(
+            (row) =>
+              (row.guestName ?? '').toLocaleLowerCase().includes(query) ||
+              (phoneQuery.length > 0 &&
+                digitsOnly(row.guestPhone ?? '').includes(phoneQuery)),
+          ),
+    [links, query, phoneQuery],
   );
 
   /**
-   * True for a query that is plainly a phone number rather than a name.
+   * True only when a phone-shaped query has nothing on this page it could
+   * ever match: not one loaded row carries a number.
    *
-   * Reception's muscle memory is the phone number — it is what the guest
-   * gave on the call and what the issue form asked for — so they will type
-   * it here, and the list cannot answer. Saying why beats an empty table
-   * that reads as "this guest has no link".
+   * The rows do carry `guestPhone` now, so the ordinary case is a search
+   * that works and this notice stays silent. It survives for the case it
+   * was written for — a row set with no phone in it at all, where an empty
+   * table would otherwise read as "this guest has no link".
    */
-  const searchingByPhone = query.length > 0 && looksLikePhone(query);
+  const searchingByPhone =
+    phoneQuery.length > 0 &&
+    links.length > 0 &&
+    links.every((row) => digitsOnly(row.guestPhone ?? '').length === 0);
 
   /**
    * Merge a link minted by the issue modal into this session's token map.

@@ -2011,24 +2011,32 @@ fn pms_client(pms_uri: &str) -> PmsChannelClient {
     let mut settings = test_app_state_config();
     settings.pms.base_url = Some(pms_uri.to_string());
     settings.pms.channel_token = Some("test-channel-token".to_string());
-    settings.redis.url = test_redis_url();
     PmsChannelClient::from_settings(&settings).expect("build PMS client")
 }
 
 /// A hold request for a guest nobody else in the suite shares, so parallel
 /// tests cannot collide on the shared Redis.
-/// Fail loudly when Redis is not there.
+/// The connection the guard takes its lock on, and a loud failure when
+/// Redis is not there.
 ///
-/// `acquire_hold_guard` stands down when it cannot reach Redis — the right
-/// production behaviour (a Redis outage must not stop the property taking
-/// bookings) and a trap for tests: every *positive* lock assertion below
-/// would pass vacuously, proving nothing. So the positive tests state the
-/// precondition instead of assuming it.
-async fn require_redis() {
+/// Production hands `create_booking` `AppState`'s own `ConnectionManager`
+/// (`state.redis()`), so these tests build the same thing the same way —
+/// `connection_manager_config` and all, which is the bounded reconnect from
+/// #416 rather than the five-minute default.
+///
+/// It PINGs before returning because `acquire_hold_guard` stands down when
+/// it cannot reach Redis — the right production behaviour (a Redis outage
+/// must not stop the property taking bookings) and a trap for tests: every
+/// *positive* lock assertion below would pass vacuously, proving nothing.
+/// So the tests state the precondition instead of assuming it.
+async fn hold_guard_redis() -> redis::aio::ConnectionManager {
     let client = redis::Client::open(test_redis_url()).expect("test Redis URL parses");
     let mut conn = tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        client.get_multiplexed_async_connection(),
+        redis::aio::ConnectionManager::new_with_config(
+            client,
+            loyalty_backend::redis::connection_manager_config(),
+        ),
     )
     .await
     .expect("Redis connection did not time out")
@@ -2038,6 +2046,7 @@ async fn require_redis() {
         .await
         .expect("Redis answers PING");
     assert_eq!(pong, "PONG");
+    conn
 }
 
 fn hold_request(phone: &str) -> PmsCreateBookingRequest {
@@ -2093,9 +2102,10 @@ async fn a_create_4xx_that_is_our_fault_is_an_outage_not_a_bad_request() {
             .await;
 
         let client = pms_client(&pms_mock.uri());
+        let redis = hold_guard_redis().await;
         let phone = format!("0870000{}", &Uuid::new_v4().simple().to_string()[..6]);
         let err = client
-            .create_booking(&hold_request(&phone))
+            .create_booking(&hold_request(&phone), redis)
             .await
             .expect_err("the PMS refused");
 
@@ -2121,9 +2131,10 @@ async fn a_create_4xx_that_is_our_fault_is_an_outage_not_a_bad_request() {
         .await;
 
     let client = pms_client(&pms_mock.uri());
+    let redis = hold_guard_redis().await;
     let phone = format!("0880000{}", &Uuid::new_v4().simple().to_string()[..6]);
     let err = client
-        .create_booking(&hold_request(&phone))
+        .create_booking(&hold_request(&phone), redis)
         .await
         .expect_err("sold out");
     assert!(
@@ -2161,16 +2172,16 @@ async fn a_retried_hold_create_cannot_produce_two_holds() {
         .mount(&pms_mock)
         .await;
 
-    require_redis().await;
+    let redis = hold_guard_redis().await;
     let client = pms_client(&pms_mock.uri());
     let phone = format!("0810000{}", &Uuid::new_v4().simple().to_string()[..6]);
     let request = hold_request(&phone);
 
-    let (first, second) = tokio::join!(client.create_booking(&request), async {
+    let (first, second) = tokio::join!(client.create_booking(&request, redis.clone()), async {
         // Give the first call time to take the lock before the retry
         // lands — this is the retry, not a tie.
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        client.create_booking(&request).await
+        client.create_booking(&request, redis.clone()).await
     });
 
     assert!(first.is_ok(), "the first hold must go through: {first:?}");
@@ -2202,17 +2213,17 @@ async fn the_guard_is_released_once_the_hold_exists() {
         .mount(&pms_mock)
         .await;
 
-    require_redis().await;
+    let redis = hold_guard_redis().await;
     let client = pms_client(&pms_mock.uri());
     let phone = format!("0820000{}", &Uuid::new_v4().simple().to_string()[..6]);
     let request = hold_request(&phone);
 
     client
-        .create_booking(&request)
+        .create_booking(&request, redis.clone())
         .await
         .expect("the first hold goes through");
     client
-        .create_booking(&request)
+        .create_booking(&request, redis.clone())
         .await
         .expect("a deliberate second hold is not blocked by the first");
 }
@@ -2234,16 +2245,16 @@ async fn the_guard_is_kept_when_the_outcome_is_unknown() {
         .mount(&pms_mock)
         .await;
 
-    require_redis().await;
+    let redis = hold_guard_redis().await;
     let client = pms_client(&pms_mock.uri());
     let phone = format!("0860000{}", &Uuid::new_v4().simple().to_string()[..6]);
     let request = hold_request(&phone);
 
-    let first = client.create_booking(&request).await;
+    let first = client.create_booking(&request, redis.clone()).await;
     assert!(first.is_err(), "the PMS never gave an answer");
 
     let rendered = client
-        .create_booking(&request)
+        .create_booking(&request, redis.clone())
         .await
         .expect_err("the retry is refused while the outcome is unknown")
         .to_string();
@@ -2266,14 +2277,14 @@ async fn a_rejected_hold_create_gives_the_lock_straight_back() {
         .mount(&pms_mock)
         .await;
 
-    require_redis().await;
+    let redis = hold_guard_redis().await;
     let client = pms_client(&pms_mock.uri());
     let phone = format!("0830000{}", &Uuid::new_v4().simple().to_string()[..6]);
     let request = hold_request(&phone);
 
-    let first = client.create_booking(&request).await;
+    let first = client.create_booking(&request, redis.clone()).await;
     assert!(first.is_err(), "the PMS said no");
-    let second = client.create_booking(&request).await;
+    let second = client.create_booking(&request, redis.clone()).await;
 
     // Refused again by the *PMS*, not by the guard: the second call reached
     // the mock, which is what `.expect(2)` proves.
@@ -2300,7 +2311,7 @@ async fn the_guard_is_per_guest_not_per_stay() {
         .mount(&pms_mock)
         .await;
 
-    require_redis().await;
+    let redis = hold_guard_redis().await;
     let client = pms_client(&pms_mock.uri());
     let suffix = Uuid::new_v4().simple().to_string();
     let one = hold_request(&format!("0840000{}", &suffix[..6]));
@@ -2312,11 +2323,11 @@ async fn the_guard_is_per_guest_not_per_stay() {
         "different guests must not share a lock"
     );
     client
-        .create_booking(&one)
+        .create_booking(&one, redis.clone())
         .await
         .expect("first guest's hold");
     client
-        .create_booking(&two)
+        .create_booking(&two, redis.clone())
         .await
         .expect("second guest is not blocked by the first");
 }

@@ -46,12 +46,20 @@ pub const PMS_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 /// waits seconds rather than minutes.
 pub const HOLD_GUARD_TTL: std::time::Duration = std::time::Duration::from_secs(20);
 
-/// Ceiling on reaching Redis for the hold guard.
+/// Ceiling on every Redis call the hold guard makes.
 ///
 /// The guard is a safety net, not a dependency: a Redis that does not answer
 /// promptly must not add its latency to a booking. See
 /// [`PmsChannelClient::acquire_hold_guard`] for what happens when it does
 /// not answer at all.
+///
+/// It bounds the *command*, because the connection now arrives from the
+/// caller as `AppState`'s shared `ConnectionManager`. That manager retries a
+/// lost connection behind the scenes and every command issued meanwhile
+/// awaits the same reconnect future, so without this ceiling a Redis outage
+/// would add the whole reconnect cycle to a guest's booking — the hang #416
+/// found in the rate limiter, arriving here by the same route. Same value,
+/// and the same reason, as [`crate::middleware::rate_limit::REDIS_CALL_TIMEOUT`].
 const HOLD_GUARD_REDIS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Longest `pms_booking_id` this client will ever put in a URL.
@@ -306,13 +314,6 @@ pub struct PmsChannelClient {
     base_url: String,
     token: String,
     http: reqwest::Client,
-    /// Where the one-in-flight hold guard takes its lock.
-    ///
-    /// Carried as a URL rather than a live connection because the client is
-    /// built per request from `Settings` and `redis::Client::open` does no
-    /// I/O — the connection is opened only when a hold is actually being
-    /// created, which is a handful of times a day.
-    redis_url: String,
 }
 
 impl PmsChannelClient {
@@ -336,7 +337,6 @@ impl PmsChannelClient {
                 .map_err(|e| {
                     AppError::Internal(format!("Failed to build the PMS HTTP client: {e}"))
                 })?,
-            redis_url: settings.redis.url.clone(),
         })
     }
 
@@ -392,11 +392,25 @@ impl PmsChannelClient {
     /// If Redis cannot be reached the guard steps aside and the booking
     /// proceeds unguarded, loudly. A guard is a narrowing of a rare race; a
     /// Redis outage must not stop the property taking bookings.
+    ///
+    /// ## Why the connection is a parameter
+    ///
+    /// `redis` is the application's own `ConnectionManager` — `state.redis()`
+    /// — rather than a connection this client opens for itself. One shared,
+    /// pooled, automatically-reconnecting manager with the bounded reconnect
+    /// config from #416 is what the rest of the app already talks to Redis
+    /// through, and the guard has no business opening a second one per
+    /// booking. It is an argument and not a field because the client is
+    /// built per request from `Settings`, and a required argument is what
+    /// stops a future caller quietly creating holds with no guard at all.
     pub async fn create_booking(
         &self,
         request: &PmsCreateBookingRequest,
+        redis: redis::aio::ConnectionManager,
     ) -> AppResult<PmsBookingCreated> {
-        let guard = self.acquire_hold_guard(&hold_guard_key(request)).await?;
+        let guard = self
+            .acquire_hold_guard(&hold_guard_key(request), redis)
+            .await?;
         let outcome = self.create_booking_unguarded(request).await;
 
         // The lock is held for **the ambiguous case only**.
@@ -446,26 +460,41 @@ impl PmsChannelClient {
     ///
     /// Redis being unreachable is **not** an error here. The guard logs and
     /// stands down, because refusing bookings for the whole property to
-    /// prevent a rare duplicate hold is the worse failure.
-    async fn acquire_hold_guard(&self, key: &str) -> AppResult<HoldGuard> {
-        let Some(mut conn) = self.hold_guard_connection().await else {
-            return Ok(HoldGuard::stood_down());
-        };
+    /// prevent a rare duplicate hold is the worse failure. That includes
+    /// Redis being *slow*: the call is bounded by
+    /// [`HOLD_GUARD_REDIS_TIMEOUT`], and a lock that takes longer than that
+    /// to take is abandoned rather than charged to the guest's booking.
+    async fn acquire_hold_guard(
+        &self,
+        key: &str,
+        mut conn: redis::aio::ConnectionManager,
+    ) -> AppResult<HoldGuard> {
         let token = uuid::Uuid::new_v4().to_string();
 
-        let acquired: Option<String> = match redis::cmd("SET")
-            .arg(key)
-            .arg(&token)
-            .arg("NX")
-            .arg("PX")
-            .arg(HOLD_GUARD_TTL.as_millis() as u64)
-            .query_async(&mut conn)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
+        let attempt = tokio::time::timeout(
+            HOLD_GUARD_REDIS_TIMEOUT,
+            redis::cmd("SET")
+                .arg(key)
+                .arg(&token)
+                .arg("NX")
+                .arg("PX")
+                .arg(HOLD_GUARD_TTL.as_millis() as u64)
+                .query_async(&mut conn),
+        )
+        .await;
+
+        let acquired: Option<String> = match attempt {
+            Ok(Ok(v)) => v,
+            Ok(Err(e)) => {
                 tracing::warn!(error = %e,
                     "PMS hold guard could not take its lock; creating the hold unguarded");
+                return Ok(HoldGuard::stood_down());
+            },
+            Err(_) => {
+                tracing::warn!(
+                    timeout_ms = HOLD_GUARD_REDIS_TIMEOUT.as_millis() as u64,
+                    "PMS hold guard timed out taking its lock; creating the hold unguarded"
+                );
                 return Ok(HoldGuard::stood_down());
             },
         };
@@ -485,39 +514,6 @@ impl PmsChannelClient {
             key: key.to_string(),
             token,
         })
-    }
-
-    /// One short-lived Redis connection for the guard, or `None` if Redis is
-    /// not there within [`HOLD_GUARD_REDIS_TIMEOUT`].
-    async fn hold_guard_connection(&self) -> Option<redis::aio::MultiplexedConnection> {
-        let client = match redis::Client::open(self.redis_url.as_str()) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(error = %e,
-                    "PMS hold guard has no usable Redis URL; creating the hold unguarded");
-                return None;
-            },
-        };
-        match tokio::time::timeout(
-            HOLD_GUARD_REDIS_TIMEOUT,
-            client.get_multiplexed_async_connection(),
-        )
-        .await
-        {
-            Ok(Ok(conn)) => Some(conn),
-            Ok(Err(e)) => {
-                tracing::warn!(error = %e,
-                    "PMS hold guard could not reach Redis; creating the hold unguarded");
-                None
-            },
-            Err(_) => {
-                tracing::warn!(
-                    timeout_ms = HOLD_GUARD_REDIS_TIMEOUT.as_millis() as u64,
-                    "PMS hold guard timed out reaching Redis; creating the hold unguarded"
-                );
-                None
-            },
-        }
     }
 
     /// Mark the deposit received. The PMS requires the received amount in
@@ -778,17 +774,17 @@ pub fn hold_guard_key(request: &PmsCreateBookingRequest) -> String {
 
 /// A held one-in-flight lock, or the absence of one.
 ///
-/// `conn: None` is the stood-down guard: Redis was unreachable, the booking
-/// went ahead unguarded, and dropping it must do nothing.
+/// `conn: None` is the stood-down guard: Redis did not answer in time (or at
+/// all), the booking went ahead unguarded, and dropping it must do nothing.
 struct HoldGuard {
-    conn: Option<redis::aio::MultiplexedConnection>,
+    conn: Option<redis::aio::ConnectionManager>,
     key: String,
     token: String,
 }
 
 impl HoldGuard {
-    /// The guard that isn't: Redis was not reachable, so nothing was locked
-    /// and nothing has to be unlocked.
+    /// The guard that isn't: Redis did not answer, so nothing was locked and
+    /// nothing has to be unlocked.
     fn stood_down() -> Self {
         Self {
             conn: None,
@@ -816,15 +812,30 @@ impl HoldGuard {
             "if redis.call('get', KEYS[1]) == ARGV[1] then \
                return redis.call('del', KEYS[1]) else return 0 end",
         );
-        if let Err(e) = script
-            .key(&self.key)
-            .arg(&self.token)
-            .invoke_async::<i64>(conn)
-            .await
+        // Bounded like the acquire: this runs *after* the PMS has answered,
+        // on the guest's own request, so a Redis that has gone away must not
+        // add its reconnect cycle to a booking that already succeeded.
+        match tokio::time::timeout(
+            HOLD_GUARD_REDIS_TIMEOUT,
+            script
+                .key(&self.key)
+                .arg(&self.token)
+                .invoke_async::<i64>(conn),
+        )
+        .await
         {
+            Ok(Ok(_)) => {},
             // Harmless: the lock expires on its own in HOLD_GUARD_TTL. Worth
             // a line, because a guest who corrected their dates now waits.
-            tracing::warn!(error = %e, "PMS hold guard could not release its lock early");
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, "PMS hold guard could not release its lock early");
+            },
+            Err(_) => {
+                tracing::warn!(
+                    timeout_ms = HOLD_GUARD_REDIS_TIMEOUT.as_millis() as u64,
+                    "PMS hold guard timed out releasing its lock early"
+                );
+            },
         }
     }
 }

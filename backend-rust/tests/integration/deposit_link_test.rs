@@ -1295,6 +1295,14 @@ async fn the_admin_list_reports_state_and_filters_on_it() {
     assert_eq!(links[0]["state"].as_str(), Some("awaiting_payment"));
     assert_eq!(links[0]["amountDueNow"].as_f64(), Some(1500.0));
     assert_eq!(links[0]["property"].as_str(), Some("hf"));
+    // The number reception dialled. On the row because the desk searches by
+    // phone — it is what the guest gave on the call — and a list that only
+    // carried the name could answer that search with nothing but an apology.
+    assert_eq!(
+        links[0]["guestPhone"].as_str(),
+        Some("0812345678"),
+        "the list row carries the guest's phone so reception can search for it"
+    );
     assert_eq!(
         links[0]["issuedByName"].as_str(),
         Some("deposit-list@test.com"),

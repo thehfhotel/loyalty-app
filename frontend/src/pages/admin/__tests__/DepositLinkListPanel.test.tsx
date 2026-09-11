@@ -56,6 +56,9 @@ function row(overrides: Partial<DepositLinkListItem> = {}): DepositLinkListItem 
     bookingId: 'booking-1',
     property: 'hf',
     guestName: 'Somchai Sooksan',
+    // Written the way reception says it out loud, not the way it is stored:
+    // the search has to survive the separators on both sides.
+    guestPhone: '081-234-5678',
     amountDueNow: 1500,
     state: 'awaiting_payment',
     // 2026-10-01 05:00Z is 12:00 in Bangkok — a deliberate cross-noon
@@ -665,8 +668,55 @@ describe('DepositLinkListPanel', () => {
       expect(screen.queryByText('ยังไม่มีลิงก์มัดจำ')).not.toBeInTheDocument();
     });
 
-    it('tells the desk a phone number cannot be searched here', async () => {
+    it('finds the guest by the phone number reception dialled', async () => {
       const user = userEvent.setup();
+      mockListLinks.mockResolvedValue({
+        links: [
+          row(),
+          row({ linkId: 'link-2', guestName: 'Malee Chaiyo', guestPhone: '089 999 0000' }),
+        ],
+        total: 2,
+      });
+
+      renderPanel();
+      await waitFor(() => expect(screen.getAllByText('Malee Chaiyo').length).toBeGreaterThan(0));
+
+      // Typed without separators against a row that stores them: both sides
+      // are reduced to digits, so the dashes cannot hide the match.
+      await user.type(screen.getByTestId('deposit-link-search'), '0812345678');
+
+      await waitFor(() => expect(screen.queryByText('Malee Chaiyo')).not.toBeInTheDocument());
+      expect(screen.getAllByText('Somchai Sooksan').length).toBeGreaterThan(0);
+      // A search that works needs no apology.
+      expect(screen.queryByTestId('deposit-link-search-no-phone')).not.toBeInTheDocument();
+    });
+
+    it('matches a phone number typed with the separators reception uses', async () => {
+      const user = userEvent.setup();
+      mockListLinks.mockResolvedValue({
+        links: [
+          row({ guestPhone: '0812345678' }),
+          row({ linkId: 'link-2', guestName: 'Malee Chaiyo', guestPhone: '0899990000' }),
+        ],
+        total: 2,
+      });
+
+      renderPanel();
+      await waitFor(() => expect(screen.getAllByText('Malee Chaiyo').length).toBeGreaterThan(0));
+
+      await user.type(screen.getByTestId('deposit-link-search'), '081-234-5678');
+
+      await waitFor(() => expect(screen.queryByText('Malee Chaiyo')).not.toBeInTheDocument());
+      expect(screen.getAllByText('Somchai Sooksan').length).toBeGreaterThan(0);
+    });
+
+    it('tells the desk when not one loaded row carries a phone number', async () => {
+      const user = userEvent.setup();
+      mockListLinks.mockResolvedValue({
+        links: [row({ guestPhone: null })],
+        total: 1,
+      });
+
       renderPanel();
       await waitFor(() =>
         expect(screen.getAllByText('Somchai Sooksan').length).toBeGreaterThan(0),
@@ -674,8 +724,8 @@ describe('DepositLinkListPanel', () => {
 
       await user.type(screen.getByTestId('deposit-link-search'), '0812345678');
 
-      // The list row carries no phone number, so an empty table would read
-      // as "this guest has no link" — which is a different, wrong answer.
+      // Nothing on this page could ever match, and an empty table would read
+      // as "this guest has no link" — a different, wrong answer.
       await waitFor(() =>
         expect(screen.getByTestId('deposit-link-search-no-phone')).toBeInTheDocument(),
       );
@@ -685,6 +735,27 @@ describe('DepositLinkListPanel', () => {
       await waitFor(() =>
         expect(screen.queryByTestId('deposit-link-search-no-phone')).not.toBeInTheDocument(),
       );
+    });
+
+    it('does not let a digit in a name search drag in every phone number', async () => {
+      const user = userEvent.setup();
+      mockListLinks.mockResolvedValue({
+        links: [
+          row({ guestName: 'Somchai 8' }),
+          row({ linkId: 'link-2', guestName: 'Malee Chaiyo', guestPhone: '0899998888' }),
+        ],
+        total: 2,
+      });
+
+      renderPanel();
+      await waitFor(() => expect(screen.getAllByText('Malee Chaiyo').length).toBeGreaterThan(0));
+
+      // "8" is not phone-shaped, so it stays a name search — otherwise every
+      // guest whose number contains an 8 would answer it.
+      await user.type(screen.getByTestId('deposit-link-search'), '8');
+
+      await waitFor(() => expect(screen.queryByText('Malee Chaiyo')).not.toBeInTheDocument());
+      expect(screen.getAllByText('Somchai 8').length).toBeGreaterThan(0);
     });
 
     it('admits it is only searching this page once there is more than one', async () => {
@@ -727,7 +798,7 @@ describe('DepositLinkListPanel', () => {
     it('does not match a row whose guest name came back null', async () => {
       const user = userEvent.setup();
       mockListLinks.mockResolvedValue({
-        links: [row({ linkId: 'anon', guestName: null })],
+        links: [row({ linkId: 'anon', guestName: null, guestPhone: null })],
         total: 1,
       });
 
