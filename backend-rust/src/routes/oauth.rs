@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::middleware::auth::{auth_middleware, build_refresh_cookie_header, AuthUser};
+use crate::services::http::outbound;
 use crate::state::AppState;
 
 // =============================================================================
@@ -673,8 +674,7 @@ async fn exchange_google_code(state: &AppState, code: &str) -> AppResult<OAuthTo
         ("client_secret", client_secret),
     ];
 
-    let client = reqwest::Client::new();
-    let response = client
+    let response = outbound()
         .post("https://oauth2.googleapis.com/token")
         .form(&params)
         .send()
@@ -698,8 +698,7 @@ async fn exchange_google_code(state: &AppState, code: &str) -> AppResult<OAuthTo
 
 /// Get user info from Google using access token
 async fn get_google_user_info(access_token: &str) -> AppResult<GoogleUserInfo> {
-    let client = reqwest::Client::new();
-    let response = client
+    let response = outbound()
         .get("https://www.googleapis.com/oauth2/v2/userinfo")
         .bearer_auth(access_token)
         .send()
@@ -1232,8 +1231,7 @@ async fn exchange_line_code(state: &AppState, code: &str) -> AppResult<OAuthToke
         ("client_secret", client_secret),
     ];
 
-    let client = reqwest::Client::new();
-    let response = client
+    let response = outbound()
         .post("https://api.line.me/oauth2/v2.1/token")
         .header("Content-Type", "application/x-www-form-urlencoded")
         .header("User-Agent", "loyalty-app/1.0")
@@ -1259,8 +1257,7 @@ async fn exchange_line_code(state: &AppState, code: &str) -> AppResult<OAuthToke
 
 /// Get user profile from LINE using access token
 async fn get_line_profile(access_token: &str) -> AppResult<LineProfile> {
-    let client = reqwest::Client::new();
-    let response = client
+    let response = outbound()
         .get("https://api.line.me/v2/profile")
         .bearer_auth(access_token)
         .header("User-Agent", "loyalty-app/1.0")

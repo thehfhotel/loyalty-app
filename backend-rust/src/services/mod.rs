@@ -6,7 +6,8 @@
 //! `slip_match`, and the shared confirm path in `slip_confirm`), the slip
 //! privacy pair from F2 (`slip_access_log`, `slip_retention`), the audit-log
 //! retention prune from F10 (`audit_retention`), storage,
-//! SSE, PromptPay, and request idempotency.
+//! SSE, PromptPay, request idempotency, and the shared bounded outbound
+//! HTTP client in `http`.
 //! Domain CRUD lives directly in the `routes/` handlers via `sqlx` rather
 //! than behind a service trait.
 
@@ -14,6 +15,7 @@ pub mod audit_retention;
 pub mod booking_notify;
 pub mod cf_access;
 pub mod email;
+pub mod http;
 pub mod idempotency;
 pub mod line;
 pub mod oauth;

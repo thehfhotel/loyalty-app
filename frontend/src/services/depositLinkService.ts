@@ -143,6 +143,16 @@ export interface DepositLinkListItem {
    */
   property: Property | null;
   guestName: string | null;
+  /**
+   * The number reception dialled to take the booking, or `null` for a row
+   * whose booking never carried one.
+   *
+   * On the wire so the panel's search can answer a phone-shaped query — the
+   * number is what the guest gave on the call and what reception types an
+   * hour later. Matched on digits only, because what is stored and what is
+   * typed disagree about spaces and dashes.
+   */
+  guestPhone: string | null;
   amountDueNow: number;
   state: DepositLinkState;
   expiresAt: string;

@@ -23,6 +23,7 @@ use crate::middleware::auth::{
 };
 use crate::services::cf_access;
 use crate::services::email::{EmailService, EmailServiceImpl};
+use crate::services::http::outbound;
 
 /// Application state type alias for auth routes
 /// Uses the main state from crate::state or a compatible state type
@@ -956,8 +957,10 @@ async fn cf_exchange(
         AppError::Unauthorized("No Cloudflare Access token presented".to_string())
     })?;
 
-    let http_client = reqwest::Client::new();
-    let jwks = cf_access::get_cached_jwks(&http_client, &config.cf_access.jwks_url)
+    // Shared and bounded: a JWKS endpoint that accepts the connection and
+    // then stalls used to hold this admin login open until the router's own
+    // timeout cut it. See `services::http`.
+    let jwks = cf_access::get_cached_jwks(outbound(), &config.cf_access.jwks_url)
         .await
         .map_err(cf_access_error_to_app_error)?;
 
