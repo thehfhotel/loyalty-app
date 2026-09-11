@@ -17,8 +17,14 @@ import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { Badge, Button, type BadgeTone } from '../ui';
-import { deskSlipOkStatus, slipOkReasonKey, type SlipOkStatusValue } from '../../types/slipok';
+import {
+  deskSlipOkStatus,
+  slipOkReasonKey,
+  SLIPOK_REASONS,
+  type SlipOkStatusValue
+} from '../../types/slipok';
 import { adminBookingService } from '../../services/adminBookingService';
+import { ApiError } from '../../utils/axiosInterceptor';
 import { SlipErasedNotice } from '../SlipErasedNotice';
 import type {
   AdminBooking as Booking,
@@ -71,6 +77,28 @@ const ACTION_BOOKING_NOT_CONFIRMED = 'booking_not_confirmed';
  * notice exists to make.
  */
 const BOOKING_REFUSAL_CURE_ACTIONS = new Set(['slip_verified', 'booking_updated']);
+
+/**
+ * The locked `slipok_reason` key a 409 refusal message leads with.
+ *
+ * Named for the message it parses, not for the key it returns: a local
+ * `refusalReasonKey` (the audit-row path) already exists inside the
+ * component.
+ *
+ * `refuse_channel_confirmation` builds its message as `"{reason}: {detail}…"`,
+ * so the key is everything up to the first colon. Returned only when it is
+ * one the UI actually has wording for — an unrecognised key must fall back
+ * to the generic sentence rather than render a raw identifier at a Thai
+ * desk.
+ */
+function reasonKeyFromRefusalMessage(message: string | undefined): string | null {
+  if (!message) {
+    return null;
+  }
+  const match = /^([a-z_]+):/.exec(message.trim());
+  const key = match?.[1];
+  return key && (SLIPOK_REASONS as readonly string[]).includes(key) ? key : null;
+}
 
 /**
  * The locked reason key out of a `booking_not_confirmed` audit row.
@@ -179,7 +207,36 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
       toast.success(t('admin.booking.bookingManagement.messages.slipVerified'));
       onRefresh();
     },
-    onError: () => {
+    // A15: the two failures the desk has to tell apart. A 409 is the hotel
+    // system refusing this booking — pressing the button again will not help,
+    // and the backend sends a sentence saying which refusal it is. A 5xx (or
+    // anything else) is the hotel system not answering: nothing was changed
+    // and retrying is exactly right. Swallowing both into "Failed to verify
+    // slip" left reception re-pressing a button that could never work.
+    onError: (error: Error) => {
+      const api = error instanceof ApiError ? error : null;
+      if (api?.status === 409) {
+        // N9: render the refusal in the desk's own language. The backend's
+        // `detail` is an English sentence, and interpolating it into a Thai
+        // string gave a Thai-first desk half a Thai line and half an English
+        // one. The message is prefixed with the machine reason key
+        // (`slip_confirm.rs`: `format!("{reason}: …")`), which is a locked
+        // vocabulary the UI already has wording for — so use the key and
+        // drop the sentence.
+        const key = reasonKeyFromRefusalMessage(api.detail ?? api.message);
+        toast.error(
+          t('admin.booking.bookingManagement.errors.verifyRefused', {
+            detail: key
+              ? t(`payment.slipok.reason.${key}`)
+              : t('admin.booking.bookingManagement.slipViewer.bookingNotConfirmedReasonUnknown')
+          })
+        );
+        return;
+      }
+      if (api?.status !== undefined && api.status >= 500) {
+        toast.error(t('admin.booking.bookingManagement.errors.verifyUnavailable'));
+        return;
+      }
       toast.error(t('admin.booking.bookingManagement.errors.verifyFailed'));
     }
   });
@@ -301,9 +358,20 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     await onVerify(booking.id);
   };
 
-  // Multi-slip verify handler
+  // Multi-slip verify handler.
+  //
+  // `mutateAsync` rejects on failure and this is the end of the chain — an
+  // uncaught rejection here escapes the click handler and lands in the
+  // browser console as an unhandled promise rejection, on top of whatever
+  // the user sees. `onError` on the mutation is what reports the failure to
+  // the desk (including A15's 409-vs-5xx split), so the only thing left to
+  // do here is stop it propagating.
   const handleVerifySlip = async (slipId: string) => {
-    await verifySlipByIdMutation.mutateAsync({ slipId });
+    try {
+      await verifySlipByIdMutation.mutateAsync({ slipId });
+    } catch {
+      // Reported by the mutation's onError; nothing further to do.
+    }
   };
 
   const handleNeedsActionClick = (slipId?: string) => {
@@ -315,11 +383,18 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     if (!booking || !notesInput.trim()) {return;}
 
     if (activeSlipId) {
-      // Multi-slip: mark specific slip
-      await markSlipNeedsActionMutation.mutateAsync({
-        slipId: activeSlipId,
-        notes: notesInput.trim()
-      });
+      // Multi-slip: mark specific slip. Same shape as `handleVerifySlip`:
+      // the rejection is already reported by `onError`, and letting it
+      // escape would both log an unhandled rejection and leave the modal
+      // open with the notes still in it and no explanation.
+      try {
+        await markSlipNeedsActionMutation.mutateAsync({
+          slipId: activeSlipId,
+          notes: notesInput.trim()
+        });
+      } catch {
+        return;
+      }
     } else {
       // Legacy: mark booking
       await onNeedsAction(booking.id, notesInput.trim());

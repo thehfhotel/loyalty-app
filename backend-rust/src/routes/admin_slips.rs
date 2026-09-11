@@ -139,6 +139,7 @@ pub struct AdminSlipResponse {
     /// Why the machine landed on that status — one of the locked
     /// `slipok_reason` keys (`amount_mismatch`, `receiver_mismatch`,
     /// `duplicate`, `slip_invalid`, `booking_not_payable`, `confirm_failed`,
+    /// `confirm_refused` (audit rows only — never written to this column),
     /// `quota_exceeded`, `api_error`, `not_configured`, `timeout`), or null
     /// when the check passed.
     ///
@@ -338,7 +339,21 @@ fn admin_user_id(user: &AuthUser) -> AppResult<Uuid> {
 /// `docs/audits/correctness-2026-05-13.md` (MED #3) for the audit
 /// write-up.
 ///
-/// Returns 200 with the updated slip row; 404 if the slip doesn't exist.
+/// Returns 200 with the updated slip row; 404 if the slip doesn't exist;
+/// **409 when the booking could not take the payment** (A15).
+///
+/// That last one is the case B8 called race 2.4. For a PMS-channel booking
+/// the room belongs to the PMS, and a hold it has already released cannot be
+/// confirmed by anybody — so a Verify against one answers `Conflict` carrying
+/// `confirm_refused`, leaves the booking untouched, and puts the slip
+/// back in this queue as `needs_action`. Reception's next step is to re-book
+/// the room at the desk, not to press the button again; a **503** (the PMS
+/// could not be reached) is the one that means "try again".
+///
+/// A lapsed *deposit link* is the opposite case and still answers 200: that
+/// hold is paperwork, not a room, and finishing it by hand is what the
+/// manual queue exists for. See `services::slip_confirm` for why the two
+/// diverge.
 async fn verify_slip(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,

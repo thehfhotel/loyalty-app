@@ -205,6 +205,77 @@ describe('axiosInterceptor - Auth Refresh Loop Prevention', () => {
       expect(error.message).toBe('Test error');
       expect(error.code).toBeUndefined();
     });
+
+    it('carries the HTTP status and the backend sentence', () => {
+      const error = new ApiError('conflict', 'conflict', 409, 'the room is gone');
+
+      expect(error.status).toBe(409);
+      expect(error.detail).toBe('the room is gone');
+    });
+  });
+
+  // A15 (N8): `createApiError` is what every non-401 failure in the app goes
+  // through, and this round widened it — it now always returns an `ApiError`
+  // and carries `status` + `detail`. `.message` resolution is deliberately
+  // unchanged, because every existing toast reads it; these tests pin both
+  // halves of that promise.
+  describe('createApiError (via the response interceptor)', () => {
+    async function reject(status: number, data: unknown): Promise<unknown> {
+      // Capture the rejection handler `setupAxiosInterceptors` registers,
+      // then drive it directly — no network, and no dependence on axios
+      // being module-mocked.
+      let onRejected:
+        | ((error: AxiosError) => Promise<unknown>)
+        | undefined;
+      const useSpy = vi
+        .spyOn(axios.interceptors.response, 'use')
+        .mockImplementation((_onFulfilled, rejected) => {
+          onRejected = rejected as (error: AxiosError) => Promise<unknown>;
+          return 0;
+        });
+      setupAxiosInterceptors();
+      useSpy.mockRestore();
+
+      const error = {
+        isAxiosError: true,
+        response: { status, data },
+        config: { url: '/api/admin/bookings/slips/x/verify' },
+        message: 'Request failed'
+      } as unknown as AxiosError;
+      return onRejected?.(error).then(
+        () => null,
+        (e: unknown) => e
+      );
+    }
+
+    it('keeps .message on the backend error code, and adds status + detail', async () => {
+      const rejected = (await reject(409, {
+        error: 'conflict',
+        message: 'confirm_refused: the PMS refused the payment event'
+      })) as ApiError;
+
+      expect(rejected).toBeInstanceOf(ApiError);
+      // Unchanged resolution order: `data.error` wins for `.message`.
+      expect(rejected.message).toBe('conflict');
+      expect(rejected.status).toBe(409);
+      expect(rejected.detail).toBe('confirm_refused: the PMS refused the payment event');
+    });
+
+    it('falls back to data.error for the code when data.code is absent', async () => {
+      const rejected = (await reject(503, { error: 'external_service_unavailable' })) as ApiError;
+
+      expect(rejected.code).toBe('external_service_unavailable');
+      expect(rejected.status).toBe(503);
+    });
+
+    it('prefers an explicit data.code over data.error', async () => {
+      const rejected = (await reject(400, {
+        error: 'validation_error',
+        code: 'EMAIL_ALREADY_REGISTERED'
+      })) as ApiError;
+
+      expect(rejected.code).toBe('EMAIL_ALREADY_REGISTERED');
+    });
   });
 
   describe('Auth page bypass', () => {

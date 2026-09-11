@@ -57,6 +57,27 @@ pub const REASON_BOOKING_NOT_PAYABLE: &str = "booking_not_payable";
 /// the PMS refused the payment event). Also written by the caller.
 pub const REASON_CONFIRM_FAILED: &str = "confirm_failed";
 
+/// A confirmation **was attempted and refused**: the booking is gone and the
+/// room has to be re-booked at the desk.
+///
+/// Deliberately not [`REASON_BOOKING_NOT_PAYABLE`], which the two used to
+/// share. They are different events and they ask the desk for different
+/// things:
+///
+/// * `booking_not_payable` — *the machine declined to act*. `slipok_check`
+///   read the booking, saw a state it will not confirm automatically, and
+///   stood aside. Nothing was attempted, nothing is lost, and **a human can
+///   still finish it**. It lands on `booking_slips.slipok_reason`.
+/// * `confirm_refused` — *a confirmation was tried and came back no*. The
+///   PMS refused the payment event, or the booking was already cancelled
+///   locally. The room is gone; pressing Verify again cannot bring it back.
+///   It lands on the `booking_not_confirmed` audit row, never on the slip.
+///
+/// One word for both made the desk read "the room is gone" where the truth
+/// was "please take a look", which is the opposite of what the shared
+/// vocabulary is for.
+pub const REASON_CONFIRM_REFUSED: &str = "confirm_refused";
+
 /// Minimum number of *visible* digits a masked receiver value must carry
 /// before it can be trusted to identify our account.
 ///

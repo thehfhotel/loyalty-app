@@ -52,6 +52,11 @@ export const SLIPOK_REASONS = [
   'slip_invalid',
   'booking_not_payable',
   'confirm_failed',
+  // Written only onto a `booking_not_confirmed` audit row, never onto a
+  // slip: a confirmation was attempted and the PMS (or a local cancel) said
+  // no. Distinct from `booking_not_payable`, which is the machine declining
+  // to act on a slip a human can still finish.
+  'confirm_refused',
   'quota_exceeded',
   'api_error',
   'not_configured',
