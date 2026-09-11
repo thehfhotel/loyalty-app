@@ -1836,6 +1836,7 @@
         "slip_invalid": "The slip could not be read",
         "booking_not_payable": "This booking cannot take a payment right now",
         "confirm_failed": "The check result could not be saved",
+        "confirm_refused": "The booking could not be confirmed; the room has been released and must be re-booked at the desk",
         "quota_exceeded": "Automatic checking quota is used up",
         "api_error": "The checking service returned an error",
         "not_configured": "Automatic checking is not set up",

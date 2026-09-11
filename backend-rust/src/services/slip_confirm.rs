@@ -104,8 +104,14 @@
 //! booking is left untouched, the slip goes to `admin_status = needs_action`
 //! (and gives up its `slipok_trans_ref`, so the guest can re-upload the same
 //! transfer against the re-booking), an audit row carrying
-//! `booking_not_payable` and the PMS's own answer records why, and the
-//! caller gets a **409**, never a 200.
+//! `confirm_refused`, the reference that was freed and the PMS's own answer
+//! records why, and the caller gets a **409**, never a 200.
+//!
+//! `confirm_refused` is deliberately *not* `booking_not_payable`. The latter
+//! is what `routes::bookings::slipok_check` writes when the machine declines
+//! to act on a slip — "a human should look", and a human still can. This one
+//! means a confirmation was tried and came back no: the room is gone, and
+//! pressing Verify again cannot bring it back.
 //!
 //! What the refusal pointedly does **not** touch is `slipok_status` /
 //! `slipok_reason` / `slipok_checked_at`. Those are the machine's record of
@@ -725,9 +731,39 @@ enum ChannelPayability {
 /// branch after it. They were written separately once and immediately
 /// drifted — the pre-check accepted a checked-in guest and the post-check
 /// did not, so a balance slip sailed past the first and was refused by the
-/// second. Mirrors `new-hotel`'s own replay arm
-/// (`"confirmed" | "checkedin" | "completed"`), which differs from this
-/// vocabulary by spelling only.
+/// second.
+///
+/// # This is *not* the PMS's list, and the difference is load-bearing
+///
+/// `new-hotel`'s replay arm is `"confirmed" | "checkedin" | "completed"`
+/// (`hotel-backend/src/service/channel.rs`) — **three** entries, and
+/// `checkedin` carries no underscore. So:
+///
+/// | local status | PMS answer to `payment-verified` |
+/// |---|---|
+/// | `confirmed`   | 200, `already_confirmed: true` |
+/// | `completed`   | 200, `already_confirmed: true` |
+/// | `checked_out` | 200 (the PMS calls that state `completed`) |
+/// | `checked_in`  | **409** in the common case — see below |
+///
+/// `ht_bookings.book_status` has no CHECK constraint and two writers with
+/// different spellings for one state: the PG-native check-in writes
+/// `checkedin`, while the Change-Tracking sync mapper writes `checked_in`
+/// and rewrites the column every cycle. `checked_in` is therefore the steady
+/// state, and it falls into the PMS's `other =>` arm, which is a 409.
+///
+/// Keeping `checked_in` here anyway is deliberate. This list decides only
+/// whether *we* refuse before asking; the PMS remains the authority, and if
+/// it answers 409 the refusal path handles that loudly and correctly.
+/// Refusing locally instead would be the B2 mistake again — pre-judging a
+/// booking the PMS might well have honoured.
+///
+/// **Latent today:** nothing in this repo writes `checked_in` or
+/// `checked_out` to `bookings.status`, so `payability` cannot observe them
+/// yet. The cross-repo fix — teaching new-hotel's replay arm both spellings,
+/// one line on the side that has two writers for one state — is filed as a
+/// follow-up on the PR rather than done from here, because it is a different
+/// repo with its own review route for the sync path.
 const SETTLED_STATUSES: [&str; 4] = ["confirmed", "checked_in", "checked_out", "completed"];
 
 /// True when a payment event against this status is a replay.
@@ -851,19 +887,23 @@ struct ChannelRefusal {
 ///
 /// 1. **The booking is left exactly as it was.** No status write, no
 ///    `updated_at` touch. The room is the PMS's to give back, not ours.
-/// 2. **The slip goes back to the desk** — `admin_status = 'needs_action'`
-///    with `slipok_reason = booking_not_payable`, the same word
-///    `routes::bookings::slipok_check` writes when it refuses to act on a
-///    perfect slip against a dead booking, so reception reads one word for
-///    one situation. `slipok_trans_ref` is deliberately **kept**: unlike the
-///    PMS-outage revert (where the same booking will be retried and the
-///    guest may legitimately re-upload), this booking is finished, and the
-///    bank reference is the only link between the money that arrived and the
-///    refusal. A `shadow_pass` keeps its `slipok_status` too — that column is
-///    what the shadow-window agreement report counts, and a refusal is not a
-///    machine decision about the slip.
+/// 2. **The slip goes back to the desk** — `admin_status = 'needs_action'`,
+///    and `slipok_trans_ref` is **cleared** so the guest can upload the same
+///    transfer again against the re-booking instead of colliding with the
+///    partial unique index. The reference is not lost: it is copied onto the
+///    audit row's `before_data` first, which is where a chargeback question
+///    months later will look for it.
+///
+///    `slipok_status`, `slipok_reason` and `slipok_checked_at` are **not
+///    written at all**. They are the machine's verdict on the *slip* and the
+///    sample the shadow-window agreement report counts; this is a verdict on
+///    the *booking*. `admin_verified_by` / `_at` are not re-stamped either —
+///    nobody verified anything here.
 /// 3. **An audit row** (`booking_not_confirmed`) carrying the booking's
-///    state and, when the PMS is what refused, its status code and body.
+///    state, the reason `slip_match::REASON_CONFIRM_REFUSED`, the slip's
+///    prior `slipok_*` values including the bank reference, and — when the
+///    PMS is what refused — its status code and sanitised body. This row is
+///    the whole record of the refusal, which is why it carries everything.
 /// 4. **A WARN**, and a 409 to the caller.
 async fn refuse_channel_confirmation(
     db: &sqlx::PgPool,
@@ -872,7 +912,12 @@ async fn refuse_channel_confirmation(
     actor_id: Uuid,
     refusal: ChannelRefusal,
 ) -> AppError {
-    let reason = crate::services::slip_match::REASON_BOOKING_NOT_PAYABLE;
+    // N12 — *not* `booking_not_payable`. That word belongs to
+    // `routes::bookings::slipok_check` standing aside ("the machine declined,
+    // a human can still finish this"); this is a confirmation that was
+    // attempted and came back no ("the room is gone, re-book at the desk").
+    // See `slip_match::REASON_CONFIRM_REFUSED`.
+    let reason = crate::services::slip_match::REASON_CONFIRM_REFUSED;
 
     if let Err(e) =
         record_channel_refusal(db, booking_id, slip_id, actor_id, &refusal, reason).await
@@ -933,33 +978,7 @@ const MAX_PMS_BODY_IN_REASON: usize = 200;
 /// never rendered as markup, and a reader who wants the whole answer reads
 /// it there.
 fn reason_safe_pms_body(body: &str) -> String {
-    let cleaned: String = body
-        .chars()
-        .map(|c| if c.is_whitespace() { ' ' } else { c })
-        .filter(|c| !matches!(c, '<' | '>' | '"' | '\'' | '`' | '\\'))
-        .collect();
-
-    // One space between words, none at the ends.
-    let mut collapsed = String::with_capacity(cleaned.len());
-    let mut last_was_space = true;
-    for c in cleaned.chars() {
-        if c == ' ' {
-            if !last_was_space {
-                collapsed.push(c);
-            }
-            last_was_space = true;
-        } else {
-            collapsed.push(c);
-            last_was_space = false;
-        }
-    }
-    let collapsed = collapsed.trim_end();
-
-    if collapsed.chars().count() <= MAX_PMS_BODY_IN_REASON {
-        return collapsed.to_string();
-    }
-    let kept: String = collapsed.chars().take(MAX_PMS_BODY_IN_REASON).collect();
-    format!("{kept}… (truncated)")
+    crate::services::pms_channel::sanitize_pms_body(body, MAX_PMS_BODY_IN_REASON)
 }
 
 /// The write half of [`refuse_channel_confirmation`], in one transaction.
@@ -980,7 +999,8 @@ async fn record_channel_refusal(
 
     let before = sqlx::query(
         r#"
-        SELECT admin_status, admin_verified_by, slipok_status, slipok_reason
+        SELECT admin_status, admin_verified_by, slipok_status, slipok_reason,
+               slipok_trans_ref
         FROM booking_slips
         WHERE id = $1
         FOR UPDATE
@@ -995,6 +1015,13 @@ async fn record_channel_refusal(
     let before_verified_by: Option<Uuid> = before.try_get("admin_verified_by")?;
     let before_slipok_status: Option<String> = before.try_get("slipok_status")?;
     let before_slipok_reason: Option<String> = before.try_get("slipok_reason")?;
+    // N2: read *before* the UPDATE nulls it, so the bank reference survives
+    // on the audit row. `migrations/20260912020000_slip_retention_access_log.sql`
+    // keeps `slipok_trans_ref` through image erasure precisely because it is
+    // payment evidence and "a chargeback question arrives long after the
+    // picture stops being useful" — and a refusal is the event class most
+    // likely to produce one: money received, booking not honoured.
+    let before_trans_ref: Option<String> = before.try_get("slipok_trans_ref")?;
 
     // Exactly two columns move, and the restraint is the point.
     //
@@ -1054,6 +1081,7 @@ async fn record_channel_refusal(
             "adminVerifiedBy": before_verified_by,
             "slipokStatus": before_slipok_status,
             "slipokReason": before_slipok_reason,
+            "slipokTransRef": before_trans_ref,
         })),
         Some(json!({
             "status": refusal.booking_status,

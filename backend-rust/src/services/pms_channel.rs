@@ -244,6 +244,14 @@ pub enum PmsActionError {
 /// that means the same thing to us. Nothing else does.
 const REFUSAL_STATUSES: [u16; 2] = [409, 410];
 
+/// 4xx statuses that are about *us*, not about what the caller asked for.
+///
+/// A rotated channel token, a disabled write gate and an unmounted router
+/// are all operational faults on our side of the wire. Reporting them to a
+/// guest as "PMS rejected your booking" sends them off to change dates that
+/// were never the problem.
+const NOT_THE_CALLERS_FAULT: [u16; 3] = [401, 403, 404];
+
 /// Longest PMS response body kept on a refusal.
 ///
 /// The body is written verbatim onto a `booking_audit_log` row, so it is
@@ -586,9 +594,13 @@ impl PmsChannelClient {
                 body: truncate_refusal_body(&detail),
             });
         }
+        // Sanitised exactly like the refusal arm: this string is rendered
+        // verbatim to the admin (`error.rs`, `ExternalServiceUnavailable`),
+        // and since B1 this arm carries the HTML-heavy answers.
         Err(PmsActionError::Unavailable(
             AppError::ExternalServiceUnavailable(format!(
-                "PMS {action} for booking {pms_booking_id} failed: {status} {detail}"
+                "PMS {action} for booking {pms_booking_id} failed: {status} {}",
+                truncate_refusal_body(&detail)
             )),
         ))
     }
@@ -600,15 +612,24 @@ impl PmsChannelClient {
         let status = response.status();
         if !status.is_success() {
             let detail = response.text().await.unwrap_or_default();
-            // 4xx from the PMS (sold out, bad dates) surfaces as a client
-            // error; 5xx as service-unavailable.
-            return if status.is_client_error() {
+            // The same split B1 drew one function over. A 4xx that is about
+            // the *request* — sold out, bad dates, a room type that no
+            // longer exists — is the guest's to fix, so it surfaces as a
+            // client error. A 401 (rotated `LOYALTY_CHANNEL_TOKEN`), a 403
+            // (`HFVILLE_WRITES_ENABLED` off) or a 404 (channel router not
+            // mounted, which is what a PMS with a dead PG pool looks like
+            // from out here) is *ours*, and telling the guest "bad request"
+            // about our own expired credential is both wrong and unhelpful.
+            return if status.is_client_error() && !NOT_THE_CALLERS_FAULT.contains(&status.as_u16())
+            {
                 Err(AppError::BadRequest(format!(
-                    "PMS rejected {what}: {detail}"
+                    "PMS rejected {what}: {}",
+                    truncate_refusal_body(&detail)
                 )))
             } else {
                 Err(AppError::ExternalServiceUnavailable(format!(
-                    "PMS {what} failed: {status} {detail}"
+                    "PMS {what} failed: {status} {}",
+                    truncate_refusal_body(&detail)
                 )))
             };
         }
@@ -618,18 +639,55 @@ impl PmsChannelClient {
     }
 }
 
-/// Keep a PMS refusal body short enough to live on an audit row.
+/// Make a PMS response body safe to put in front of a person, and bound it.
 ///
-/// Truncates on a character boundary — the body is whatever the PMS sent and
-/// may well be UTF-8 Thai — and says so, so a reader never mistakes a cut
-/// body for the whole answer.
-fn truncate_refusal_body(body: &str) -> String {
-    let body = body.trim();
-    if body.chars().count() <= MAX_PMS_REFUSAL_BODY {
-        return body.to_string();
+/// The body is whatever the PMS — or something in front of it — chose to
+/// send. A Cloudflare Access challenge answers a multi-kilobyte HTML page, an
+/// nginx error page answers markup, a panicking service answers a stack
+/// trace, and any of them may carry newlines that shred a log line or an
+/// audit row, or angle brackets a future renderer trusts.
+///
+/// So: collapse every run of whitespace to one space, drop the characters
+/// that could open a tag or a quote, then cut to `max_chars` **characters** —
+/// the body may well be Thai, and counting bytes would split a codepoint.
+/// A cut body says so, so a reader never mistakes it for the whole answer.
+///
+/// Used by **both** arms of [`PmsChannelClient::post_action`]. The refusal
+/// arm always sanitised; the `Unavailable` arm did not, and narrowing
+/// [`REFUSAL_STATUSES`] to `[409, 410]` moved 401/403/404/415/422 and every
+/// 5xx into it — i.e. precisely the Cloudflare and error-page bodies this
+/// exists for. `AppError::ExternalServiceUnavailable` renders verbatim into
+/// the admin's browser, so an unsanitised arm there is the same bug with a
+/// bigger audience.
+pub fn sanitize_pms_body(body: &str, max_chars: usize) -> String {
+    let mut collapsed = String::with_capacity(body.len().min(max_chars * 4));
+    let mut last_was_space = true;
+    for c in body.chars() {
+        if c.is_whitespace() {
+            if !last_was_space {
+                collapsed.push(' ');
+            }
+            last_was_space = true;
+            continue;
+        }
+        if matches!(c, '<' | '>' | '"' | '\'' | '`' | '\\') {
+            continue;
+        }
+        collapsed.push(c);
+        last_was_space = false;
     }
-    let kept: String = body.chars().take(MAX_PMS_REFUSAL_BODY).collect();
+    let collapsed = collapsed.trim_end();
+
+    if collapsed.chars().count() <= max_chars {
+        return collapsed.to_string();
+    }
+    let kept: String = collapsed.chars().take(max_chars).collect();
     format!("{kept}… (truncated)")
+}
+
+/// [`sanitize_pms_body`] at the size a `booking_audit_log` row will hold.
+fn truncate_refusal_body(body: &str) -> String {
+    sanitize_pms_body(body, MAX_PMS_REFUSAL_BODY)
 }
 
 /// Normalise a phone number so two spellings of one number are one key.
@@ -765,7 +823,38 @@ impl HoldGuard {
 /// then cancel the local channel row. Runs periodically from main.rs; the
 /// PMS also runs its own expiry sweep, so both sides are belt-and-braces
 /// (docs/launch-plan.md). Never panics/errors — failures log and retry on
-/// the next sweep. Returns how many holds were released.
+/// the next sweep.
+///
+/// # What the return value counts
+///
+/// **Holds the PMS released *and* this sweep then cancelled locally** — both
+/// halves, every time. It is the number of room-nights this run actually
+/// handed back, which is the only number worth putting in a log line the
+/// desk might read.
+///
+/// It deliberately does **not** count the local-only cancellations, because
+/// those released nothing at the PMS:
+///
+/// * a `pms_booking_id` this client can never build a URL with (no call is
+///   possible, so the PMS's own sweep is what frees the room);
+/// * a guarded cancel that matched no row (something else moved the booking
+///   first).
+///
+/// Those are reported separately as `retired` on the closing log line, so
+/// one tally never means two things. An earlier version incremented
+/// `released` on one of them and not the other with nothing to explain the
+/// difference.
+///
+/// # Why a 404 does not retire a row
+///
+/// A 404 from `release` is ambiguous in a way a sweep must not guess at: it
+/// is either an id the PMS has never heard of (permanent) or the channel
+/// router not being mounted because the PMS's canonical pool is down
+/// (transient, and the row is a perfectly good hold). Cancelling on the
+/// second reading would throw away live bookings during a PMS outage, which
+/// is strictly worse than the re-selection it would save. Such rows do keep
+/// coming back every run — logged each time, at WARN — and that is the
+/// intended pressure: a stuck row should be visible, not quietly cancelled.
 pub async fn release_expired_holds(db: &sqlx::PgPool, settings: &Settings) -> u64 {
     let expired = match sqlx::query!(
         r#"
@@ -803,7 +892,9 @@ pub async fn release_expired_holds(db: &sqlx::PgPool, settings: &Settings) -> u6
         },
     };
 
+    // Two tallies, two meanings — see the doc comment.
     let mut released = 0u64;
+    let mut retired = 0u64;
     for row in expired {
         let Some(pms_booking_id) = row.pms_booking_id else {
             continue;
@@ -853,7 +944,7 @@ pub async fn release_expired_holds(db: &sqlx::PgPool, settings: &Settings) -> u6
                     "expired hold with an unusable PMS booking id was no longer \
                      pending; nothing cancelled"
                 ),
-                Ok(_) => {},
+                Ok(_) => retired += 1,
                 Err(e) => tracing::error!(error = %e, booking_id = %row.id,
                     "failed to cancel a booking with an unusable PMS booking id"),
             }
@@ -863,29 +954,48 @@ pub async fn release_expired_holds(db: &sqlx::PgPool, settings: &Settings) -> u6
         // Release the PMS side FIRST; only cancel locally once the PMS
         // acknowledged, so a failed release retries on the next sweep.
         //
-        // A **refusal** is not a failure to retry, and this is the
-        // distinction that keeps the sweep alive. The PMS answers 409 for a
-        // hold it has already cancelled — which is exactly the state this
-        // sweep wants the hold to be in. Treating that as retryable left the
-        // row `pending` forever, so every run re-selected it, and with
-        // `LIMIT 50` a handful of such rows starve the sweep of the capacity
-        // to release holds that really are outstanding.
+        // **A 409 from `release` does not mean "already gone".** This is
+        // worth spelling out because an earlier version of this sweep
+        // assumed it did and cancelled on it, which would have cancelled
+        // guests' paid bookings. Read from `new-hotel`
+        // (`hotel-backend/src/service/channel.rs::release`, route
+        // `routes/channel.rs`, mapper `ServiceError::Conflict => CONFLICT`):
+        //
+        // | PMS `book_status` | answer |
+        // |---|---|
+        // | `cancelled`  | **200** `{"already_released": true}`  — idempotent replay |
+        // | `pending`    | **200** `{"already_released": false}` — just released it |
+        // | `confirmed` / `checkedin` / … | **409** `"… (payment already verified?); refusing to release"` |
+        // | 0 rows matched | **409** `"… changed state during release; retry"` |
+        // | unknown id / not a loyalty row | **404** `"loyalty-channel booking … not found"` |
+        //
+        // So the "already gone" case is a **success** and is handled by the
+        // `Ok` path below, which cancels locally exactly as it should. Both
+        // 409s mean the opposite of gone:
+        //
+        // * the first says the hold became a **confirmed, paid booking** —
+        //   cancelling it locally would strand a guest who has a room in the
+        //   PMS and no booking with us. That is a divergence for a person,
+        //   never for a sweep;
+        // * the second says *retry* in so many words.
+        //
+        // Neither is something to cancel on, so a refusal logs loudly and
+        // leaves the row alone.
         if let Err(e) = client.release(&pms_booking_id).await {
-            if !e.is_refusal() {
+            if e.is_refusal() {
+                tracing::error!(
+                    booking_id = %row.id,
+                    pms_booking_id = %pms_booking_id,
+                    detail = %e,
+                    "PMS refused to release this hold — it may already be a \
+                     confirmed, paid booking. The local row is left untouched \
+                     and needs reconciling by hand; this sweep will not cancel it."
+                );
+            } else {
                 tracing::warn!(error = %e, pms_booking_id = %pms_booking_id,
                     "PMS hold release failed; will retry next sweep");
-                continue;
             }
-            // Logged once, at INFO: the PMS and we agree about where this
-            // hold ended up, and the local cancel below is what stops the
-            // row coming back.
-            tracing::info!(
-                pms_booking_id = %pms_booking_id,
-                booking_id = %row.id,
-                detail = %e,
-                "PMS says this hold is already gone; cancelling locally and \
-                 taking it out of the sweep"
-            );
+            continue;
         }
         match sqlx::query!(
             r#"
@@ -927,8 +1037,14 @@ pub async fn release_expired_holds(db: &sqlx::PgPool, settings: &Settings) -> u6
             },
         }
     }
-    if released > 0 {
-        tracing::info!(released, "released expired channel-booking holds");
+    if released > 0 || retired > 0 {
+        tracing::info!(
+            released,
+            retired,
+            "expired channel-booking holds: released = the PMS let the room go \
+             and we cancelled locally; retired = cancelled locally with no PMS \
+             release possible"
+        );
     }
     released
 }
@@ -1185,6 +1301,40 @@ mod tests {
                 "{retryable} is retryable, not a refusal"
             );
         }
+    }
+
+    /// N10/N11 — the sanitiser both arms now share, on the body that
+    /// motivated it: a Cloudflare Access challenge. Markup must not reach an
+    /// audit row or the admin's browser, and newlines must not shred a log
+    /// line into fragments.
+    #[test]
+    fn an_html_challenge_page_comes_out_as_one_safe_line() {
+        let challenge = "<!DOCTYPE html>\n<html>\n  <head><title>Just a moment…</title></head>\n\
+                         <body onload=\"go()\">\n    Checking your browser\n  </body>\n</html>";
+        let safe = sanitize_pms_body(challenge, 500);
+
+        for banned in ['<', '>', '"', '\'', '`', '\\'] {
+            assert!(!safe.contains(banned), "{banned:?} survived: {safe}");
+        }
+        assert!(!safe.contains('\n'), "newlines must be collapsed: {safe}");
+        assert!(!safe.contains("  "), "runs of space must collapse: {safe}");
+        assert!(
+            safe.contains("Checking your browser"),
+            "the words a human needs must survive: {safe}"
+        );
+    }
+
+    /// Thai bodies are real (the PMS speaks Thai to its own users), so the
+    /// cut counts characters, and it says that it cut.
+    #[test]
+    fn a_long_body_is_cut_on_a_character_boundary_and_says_so() {
+        let long = "ก".repeat(600);
+        let safe = sanitize_pms_body(&long, 200);
+        assert!(safe.ends_with("… (truncated)"), "{safe}");
+        assert_eq!(safe.chars().count(), 200 + "… (truncated)".chars().count());
+
+        // Short bodies come back whole, trimmed, unmarked.
+        assert_eq!(sanitize_pms_body("  hold released  ", 200), "hold released");
     }
 
     /// The refusal body lands on an audit row a person reads. A PMS that

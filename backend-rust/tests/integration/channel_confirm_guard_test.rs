@@ -46,7 +46,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use loyalty_backend::services::pms_channel::{
     hold_guard_key, PmsChannelClient, PmsCreateBookingRequest, PmsGuest,
 };
-use loyalty_backend::services::slip_confirm::ACTION_BOOKING_NOT_CONFIRMED;
+use loyalty_backend::services::slip_confirm::{revert_auto_confirm, ACTION_BOOKING_NOT_CONFIRMED};
 use loyalty_backend::types::Property;
 
 use crate::common::{
@@ -544,7 +544,7 @@ async fn a_pms_409_refuses_the_admins_verify_and_records_what_the_pms_said() {
         "the PMS refused, so nothing local may move"
     );
 
-    let (admin_status, _verified_by, slipok_status, slipok_reason) =
+    let (admin_status, _verified_by, slipok_status, _slipok_reason) =
         slip_state(app.db(), slip_id).await;
     assert_eq!(admin_status.as_deref(), Some("needs_action"));
 
@@ -557,10 +557,9 @@ async fn a_pms_409_refuses_the_admins_verify_and_records_what_the_pms_said() {
         Some("shadow_pass"),
         "a refusal judges the booking, not the slip"
     );
-    assert_eq!(
-        slipok_reason, None,
-        "the machine had no complaint about this slip and still has none"
-    );
+    // (A `slipok_reason` that can actually change is asserted in the no_show
+    // case, which seeds a real `manual` / `amount_mismatch` verdict — this
+    // shadow_pass row has none to preserve.)
     assert_eq!(
         slipok_checked_at(app.db(), slip_id).await,
         checked_at_before,
@@ -890,24 +889,106 @@ async fn a_pms_5xx_is_retryable_and_never_refuses_the_booking() {
     app.cleanup().await.ok();
 }
 
-/// A balance slip against a guest who has already checked in.
+/// A balance slip against a booking the PMS has already settled.
 ///
-/// `checked_in` is not a refusal. The PMS's own replay arm accepts
-/// `"confirmed" | "checkedin" | "completed"` and answers 200 with
-/// `already_confirmed: true` — receiving the rest of the money from a guest
-/// in the room is an ordinary thing, not an error. What must be true is that
-/// the local flip moves nothing and the response says so.
+/// `completed` is in the PMS's own replay arm
+/// (`"confirmed" | "checkedin" | "completed"`), so `payment-verified` answers
+/// 200 with `already_confirmed: true` — receiving the rest of the money from
+/// a guest whose stay is done is an ordinary thing, not an error. What must
+/// be true is that the local flip moves nothing and the response says so.
 #[tokio::test]
-async fn a_balance_slip_on_a_checked_in_booking_is_a_replay_not_a_refusal() {
+async fn a_balance_slip_on_a_settled_booking_is_a_replay_not_a_refusal() {
     let pms_mock = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path(
-            "/api/channel/bookings/PMS-A15-CHECKEDIN/payment-verified",
-        ))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({ "success": true, "already_confirmed": true })),
+        .and(path("/api/channel/bookings/hf-4201/payment-verified"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true,
+            "pms_booking_id": "hf-4201",
+            "status": "confirmed",
+            "deposit_recorded": 1500.0,
+            "balance_due": 1500.0,
+            "already_confirmed": true
+        })))
+        .expect(1)
+        .mount(&pms_mock)
+        .await;
+
+    let pms_uri = pms_mock.uri();
+    let mutate = move |cfg: &mut loyalty_backend::Settings| {
+        cfg.promptpay.hf_id = Some(RECEIVING_ID.to_string());
+        cfg.pms.base_url = Some(pms_uri.clone());
+        cfg.pms.channel_token = Some("test-channel-token".to_string());
+    };
+
+    let app = TestApp::new_with_config(&mutate)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "a15-admin-settled@test.com").await;
+    let guest = seed_guest(&app, "a15-guest-settled@test.com").await;
+
+    let booking_id = seed_channel_booking(
+        app.db(),
+        guest.id,
+        "hf-4201",
+        "completed",
+        Some(Utc::now() - Duration::hours(30)),
+    )
+    .await;
+    let slip_id = seed_pending_slip(app.db(), booking_id, guest.id).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let response = client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/verify", slip_id),
+            &json!({}),
         )
+        .await;
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("verify response is JSON");
+    assert_eq!(body["adminStatus"].as_str(), Some("verified"));
+    assert_eq!(
+        body["bookingConfirmed"].as_bool(),
+        Some(false),
+        "nothing moved — the stay had already settled: {body}"
+    );
+    assert!(body["bookingNotConfirmedReason"].is_null());
+
+    assert_eq!(
+        booking_status(app.db(), booking_id).await,
+        "completed",
+        "a payment must never walk a stay backwards to 'confirmed'"
+    );
+
+    let rows = audit_rows(app.db(), booking_id).await;
+    assert!(
+        !rows
+            .iter()
+            .any(|(action, _, _)| action == ACTION_BOOKING_NOT_CONFIRMED),
+        "a replay is not a refusal: {rows:?}"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// `checked_in` is in our settled list but **not** in the PMS's replay arm.
+///
+/// The PMS's arm is `"confirmed" | "checkedin" | "completed"`, and the CT
+/// sync mapper rewrites `book_status` to `checked_in` (with the underscore)
+/// every cycle — so the steady state falls into the PMS's `other =>` arm and
+/// answers 409. Keeping `checked_in` local-settled is deliberate: we do not
+/// pre-judge, we ask, and the refusal path handles the answer. This pins
+/// that end-to-end so the cross-repo gap is visible rather than assumed
+/// away.
+#[tokio::test]
+async fn a_checked_in_booking_the_pms_refuses_is_refused_loudly() {
+    let pms_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/channel/bookings/hf-4202/payment-verified"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(json!({
+            "success": false,
+            "error": "booking 4202 is 'checked_in' and cannot be confirmed"
+        })))
         .expect(1)
         .mount(&pms_mock)
         .await;
@@ -928,9 +1009,237 @@ async fn a_balance_slip_on_a_checked_in_booking_is_a_replay_not_a_refusal() {
     let booking_id = seed_channel_booking(
         app.db(),
         guest.id,
-        "PMS-A15-CHECKEDIN",
+        "hf-4202",
         "checked_in",
         Some(Utc::now() - Duration::hours(30)),
+    )
+    .await;
+    let slip_id = seed_pending_slip(app.db(), booking_id, guest.id).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/verify", slip_id),
+            &json!({}),
+        )
+        .await
+        .assert_status(409);
+
+    assert_eq!(
+        booking_status(app.db(), booking_id).await,
+        "checked_in",
+        "refused, and the stay is left exactly as it was"
+    );
+    let rows = audit_rows(app.db(), booking_id).await;
+    let (_, _, after) = refusal_row(&rows);
+    assert_eq!(
+        after.as_ref().expect("after_data")["pmsStatus"].as_u64(),
+        Some(409)
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// `no_show` is a refusal we make ourselves, without asking.
+///
+/// It also pins M1 where it is observable: a slip carrying a real machine
+/// verdict (`manual` / `amount_mismatch`) keeps every one of those columns
+/// through the refusal.
+#[tokio::test]
+async fn a_no_show_booking_is_refused_locally_and_the_machine_verdict_survives() {
+    let pms_mock = MockServer::start().await;
+    let pms_uri = pms_mock.uri();
+    let mutate = move |cfg: &mut loyalty_backend::Settings| {
+        cfg.promptpay.hf_id = Some(RECEIVING_ID.to_string());
+        cfg.pms.base_url = Some(pms_uri.clone());
+        cfg.pms.channel_token = Some("test-channel-token".to_string());
+    };
+
+    let app = TestApp::new_with_config(&mutate)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "a15-admin-noshow@test.com").await;
+    let guest = seed_guest(&app, "a15-guest-noshow@test.com").await;
+
+    let booking_id = seed_channel_booking(
+        app.db(),
+        guest.id,
+        "hf-4203",
+        "no_show",
+        Some(Utc::now() - Duration::hours(30)),
+    )
+    .await;
+    let slip_id = seed_pending_slip(app.db(), booking_id, guest.id).await;
+    // A verdict with real content in BOTH columns, so preservation is
+    // observable rather than vacuously true.
+    stamp_machine_decision(
+        app.db(),
+        slip_id,
+        "manual",
+        Some("amount_mismatch"),
+        Some("A15NOSHOW"),
+    )
+    .await;
+    let checked_at_before = slipok_checked_at(app.db(), slip_id).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/verify", slip_id),
+            &json!({}),
+        )
+        .await
+        .assert_status(409);
+
+    assert_eq!(booking_status(app.db(), booking_id).await, "no_show");
+
+    let (admin_status, _verified_by, slipok_status, slipok_reason) =
+        slip_state(app.db(), slip_id).await;
+    assert_eq!(admin_status.as_deref(), Some("needs_action"));
+    assert_eq!(
+        slipok_status.as_deref(),
+        Some("manual"),
+        "the machine's verdict on the slip is untouched"
+    );
+    assert_eq!(
+        slipok_reason.as_deref(),
+        Some("amount_mismatch"),
+        "including a non-null reason — this is the assertion that can fail"
+    );
+    assert_eq!(
+        slipok_checked_at(app.db(), slip_id).await,
+        checked_at_before
+    );
+
+    // N2: the bank reference is freed from the slip but kept on the record.
+    assert_eq!(slipok_trans_ref(app.db(), slip_id).await, None);
+    let rows = audit_rows(app.db(), booking_id).await;
+    let (_, _, after) = refusal_row(&rows);
+    assert_eq!(
+        after.as_ref().expect("after_data")["reason"].as_str(),
+        Some("confirm_refused"),
+        "N12: a refused confirmation has its own word, not the machine's"
+    );
+    let before: Option<Value> = sqlx::query_scalar(
+        "SELECT before_data FROM booking_audit_log WHERE booking_id = $1 AND action = $2",
+    )
+    .bind(booking_id)
+    .bind(ACTION_BOOKING_NOT_CONFIRMED)
+    .fetch_one(app.db())
+    .await
+    .expect("read before_data");
+    assert_eq!(
+        before.expect("before_data")["slipokTransRef"].as_str(),
+        Some("A15NOSHOW"),
+        "the reference is payment evidence and must outlive the slip column"
+    );
+
+    assert!(
+        pms_mock
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .is_empty(),
+        "a no_show is ours to refuse; the PMS is not asked"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// A 410 Gone — the other half of `REFUSAL_STATUSES`, driven through
+/// `post_action` rather than asserted against the constant.
+#[tokio::test]
+async fn a_pms_410_is_a_refusal_like_a_409() {
+    let pms_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/channel/bookings/hf-4204/payment-verified"))
+        .respond_with(ResponseTemplate::new(410).set_body_string("hold 4204 is gone"))
+        .expect(1)
+        .mount(&pms_mock)
+        .await;
+
+    let pms_uri = pms_mock.uri();
+    let mutate = move |cfg: &mut loyalty_backend::Settings| {
+        cfg.promptpay.hf_id = Some(RECEIVING_ID.to_string());
+        cfg.pms.base_url = Some(pms_uri.clone());
+        cfg.pms.channel_token = Some("test-channel-token".to_string());
+    };
+
+    let app = TestApp::new_with_config(&mutate)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "a15-admin-410@test.com").await;
+    let guest = seed_guest(&app, "a15-guest-410@test.com").await;
+
+    let booking_id = seed_channel_booking(
+        app.db(),
+        guest.id,
+        "hf-4204",
+        "pending",
+        Some(Utc::now() + Duration::hours(2)),
+    )
+    .await;
+    let slip_id = seed_pending_slip(app.db(), booking_id, guest.id).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    client
+        .post(
+            &format!("/api/admin/bookings/slips/{}/verify", slip_id),
+            &json!({}),
+        )
+        .await
+        .assert_status(409);
+
+    assert_eq!(booking_status(app.db(), booking_id).await, "pending");
+    let (admin_status, _, _, _) = slip_state(app.db(), slip_id).await;
+    assert_eq!(admin_status.as_deref(), Some("needs_action"));
+    let rows = audit_rows(app.db(), booking_id).await;
+    assert_eq!(
+        refusal_row(&rows).2.as_ref().expect("after_data")["pmsStatus"].as_u64(),
+        Some(410)
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// A PMS that accepts the connection and then says nothing.
+///
+/// Distinct from a 5xx: it maps to `ExternalServiceTimeout` → **504**, not
+/// 503, and like every outage it must leave the slip verified and the
+/// booking untouched.
+#[tokio::test]
+async fn a_pms_timeout_is_a_gateway_timeout_and_refuses_nothing() {
+    let pms_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/channel/bookings/hf-4205/payment-verified"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "success": true }))
+                // Past PMS_REQUEST_TIMEOUT (10s), so the client gives up.
+                .set_delay(std::time::Duration::from_secs(13)),
+        )
+        .mount(&pms_mock)
+        .await;
+
+    let pms_uri = pms_mock.uri();
+    let mutate = move |cfg: &mut loyalty_backend::Settings| {
+        cfg.promptpay.hf_id = Some(RECEIVING_ID.to_string());
+        cfg.pms.base_url = Some(pms_uri.clone());
+        cfg.pms.channel_token = Some("test-channel-token".to_string());
+    };
+
+    let app = TestApp::new_with_config(&mutate)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "a15-admin-timeout@test.com").await;
+    let guest = seed_guest(&app, "a15-guest-timeout@test.com").await;
+
+    let booking_id = seed_channel_booking(
+        app.db(),
+        guest.id,
+        "hf-4205",
+        "pending",
+        Some(Utc::now() + Duration::hours(2)),
     )
     .await;
     let slip_id = seed_pending_slip(app.db(), booking_id, guest.id).await;
@@ -942,29 +1251,110 @@ async fn a_balance_slip_on_a_checked_in_booking_is_a_replay_not_a_refusal() {
             &json!({}),
         )
         .await;
-    response.assert_status(200);
 
-    let body: Value = response.json().expect("verify response is JSON");
-    assert_eq!(body["adminStatus"].as_str(), Some("verified"));
     assert_eq!(
-        body["bookingConfirmed"].as_bool(),
-        Some(false),
-        "nothing moved — the guest was already in the room: {body}"
+        response.status, 504,
+        "a timeout is its own thing, not a 5xx: {}",
+        response.body
     );
-    assert!(body["bookingNotConfirmedReason"].is_null());
+    assert_eq!(booking_status(app.db(), booking_id).await, "pending");
+    let (admin_status, _, _, _) = slip_state(app.db(), slip_id).await;
+    assert_eq!(
+        admin_status.as_deref(),
+        Some("verified"),
+        "an outage never pushes the slip to needs_action"
+    );
+    let rows = audit_rows(app.db(), booking_id).await;
+    assert!(!rows
+        .iter()
+        .any(|(action, _, _)| action == ACTION_BOOKING_NOT_CONFIRMED));
 
+    app.cleanup().await.ok();
+}
+
+/// The third refusal site: the PMS **accepted** the payment and the local
+/// row had moved on.
+///
+/// Reached by racing the confirm against a cancellation — the shape the
+/// hold-expiry sweep produces. It is the only refusal written after a
+/// *successful* PMS call, so it carries no `pmsStatus`, and it is the one
+/// that says money was taken against a booking nobody can serve.
+#[tokio::test]
+async fn a_local_row_that_moved_under_a_successful_payment_is_refused() {
+    let pms_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/channel/bookings/hf-4206/payment-verified"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "success": true }))
+                .set_delay(std::time::Duration::from_millis(900)),
+        )
+        .expect(1)
+        .mount(&pms_mock)
+        .await;
+
+    let pms_uri = pms_mock.uri();
+    let mutate = move |cfg: &mut loyalty_backend::Settings| {
+        cfg.promptpay.hf_id = Some(RECEIVING_ID.to_string());
+        cfg.pms.base_url = Some(pms_uri.clone());
+        cfg.pms.channel_token = Some("test-channel-token".to_string());
+    };
+
+    let app = TestApp::new_with_config(&mutate)
+        .await
+        .expect("create test app");
+    let admin = seed_admin(&app, "a15-admin-raced@test.com").await;
+    let guest = seed_guest(&app, "a15-guest-raced@test.com").await;
+
+    let booking_id = seed_channel_booking(
+        app.db(),
+        guest.id,
+        "hf-4206",
+        "pending",
+        Some(Utc::now() + Duration::hours(2)),
+    )
+    .await;
+    let slip_id = seed_pending_slip(app.db(), booking_id, guest.id).await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let verify = async {
+        client
+            .post(
+                &format!("/api/admin/bookings/slips/{}/verify", slip_id),
+                &json!({}),
+            )
+            .await
+    };
+    let interleave = async {
+        // While the payment event is in flight, the sweep cancels the hold.
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        sqlx::query("UPDATE bookings SET status = 'cancelled' WHERE id = $1")
+            .bind(booking_id)
+            .execute(app.db())
+            .await
+            .expect("cancel mid-flight");
+    };
+    let (response, ()) = tokio::join!(verify, interleave);
+
+    response.assert_status(409);
     assert_eq!(
         booking_status(app.db(), booking_id).await,
-        "checked_in",
-        "a payment must never walk a stay backwards to 'confirmed'"
+        "cancelled",
+        "the refusal must not resurrect the booking either"
     );
 
     let rows = audit_rows(app.db(), booking_id).await;
+    let (_, _, after) = refusal_row(&rows);
+    let after = after.as_ref().expect("after_data");
     assert!(
-        !rows
-            .iter()
-            .any(|(action, _, _)| action == ACTION_BOOKING_NOT_CONFIRMED),
-        "a replay is not a refusal: {rows:?}"
+        after["pmsStatus"].is_null(),
+        "the PMS said yes; there is no refusal status to record: {after}"
+    );
+    assert!(
+        after["detail"]
+            .as_str()
+            .is_some_and(|d| d.contains("no longer pending")),
+        "and the detail says which refusal this is: {after}"
     );
 
     app.cleanup().await.ok();
@@ -1183,6 +1573,63 @@ async fn auto_verify_in_shadow_mode_records_the_refusal_and_calls_no_pms() {
     app.cleanup().await.ok();
 }
 
+/// M2's other half: a failure that happened **before** the slip transaction
+/// committed still reverts.
+///
+/// `record_slipok_result` writes `slipok_status = 'verified'` and stores the
+/// bank reference *before* `confirm_slip` runs. If confirmation then fails
+/// without reaching the refusal path — a pool timeout, a PMS outage, any
+/// error before the commit — the slip sits on `admin_status = 'pending'`
+/// carrying a `slipok_trans_ref` nobody would ever clear, and the guest's
+/// perfectly good re-upload comes back `duplicate` against the partial
+/// unique index.
+///
+/// An earlier guard tested `admin_status != 'verified'` and skipped exactly
+/// this case. The guard now tests the refusal's own signature
+/// (`needs_action`), so this reverts as it must.
+#[tokio::test]
+async fn a_failure_before_the_commit_still_reverts_and_frees_the_reference() {
+    let app = TestApp::new().await.expect("create test app");
+    let guest = seed_guest(&app, "a15-precommit-revert@test.com").await;
+    let booking_id = seed_channel_booking(
+        app.db(),
+        guest.id,
+        "hf-4301",
+        "pending",
+        Some(Utc::now() + Duration::hours(2)),
+    )
+    .await;
+    let slip_id = seed_pending_slip(app.db(), booking_id, guest.id).await;
+
+    // Exactly what `record_slipok_result` leaves behind in live mode, before
+    // `confirm_slip` has stamped anything.
+    stamp_machine_decision(app.db(), slip_id, "verified", None, Some("A15PRECOMMIT")).await;
+
+    let reverted = revert_auto_confirm(app.db(), slip_id)
+        .await
+        .expect("revert runs");
+
+    assert!(
+        reverted,
+        "a slip that was never left verified still has a stored reference to \
+         give back — skipping it is what stranded the guest's re-upload"
+    );
+
+    let (admin_status, verified_by, slipok_status, slipok_reason) =
+        slip_state(app.db(), slip_id).await;
+    assert_eq!(admin_status.as_deref(), Some("pending"));
+    assert_eq!(verified_by, None);
+    assert_eq!(slipok_status.as_deref(), Some("manual"));
+    assert_eq!(slipok_reason.as_deref(), Some("confirm_failed"));
+    assert_eq!(
+        slipok_trans_ref(app.db(), slip_id).await,
+        None,
+        "the reference is freed so the guest can re-upload the same transfer"
+    );
+
+    app.cleanup().await.ok();
+}
+
 // ============================================================================
 // 3. The hold-expiry sweep
 // ============================================================================
@@ -1197,31 +1644,35 @@ fn sweep_settings(pms_uri: &str) -> loyalty_backend::Settings {
     settings
 }
 
-/// The PMS answers 409 on release: the hold is already gone.
+/// The PMS's real "already gone" answer: **200** with
+/// `already_released: true`.
 ///
-/// That is the state the sweep wants, not a failure to retry. Treating it as
-/// retryable left the local row `pending` forever, so every run re-selected
-/// it — and with `LIMIT 50` a handful of such rows starve the sweep of the
-/// capacity to release holds that really are outstanding.
+/// Taken verbatim from `new-hotel/hotel-backend/src/routes/channel.rs`
+/// (`ReleaseResponse`) via `service/channel.rs::release`, whose `cancelled`
+/// arm is an idempotent replay, not an error. This is the success path, so
+/// the local cancel follows and the row leaves the sweep's selection.
 #[tokio::test]
-async fn the_sweep_takes_a_pms_409_as_done_and_stops_re_selecting_the_hold() {
+async fn an_already_released_hold_answers_200_and_is_cancelled_locally() {
     let pms_mock = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/channel/bookings/PMS-A15-SWEEP409/release"))
-        .respond_with(
-            ResponseTemplate::new(409).set_body_json(json!({ "error": "already released" })),
-        )
+        .and(path("/api/channel/bookings/hf-4101/release"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true,
+            "pms_booking_id": "hf-4101",
+            "status": "cancelled",
+            "already_released": true
+        })))
         // Exactly once: a second sweep must not find this row again.
         .expect(1)
         .mount(&pms_mock)
         .await;
 
     let app = TestApp::new().await.expect("create test app");
-    let guest = seed_guest(&app, "a15-sweep-409@test.com").await;
+    let guest = seed_guest(&app, "a15-sweep-replay@test.com").await;
     let booking_id = seed_channel_booking(
         app.db(),
         guest.id,
-        "PMS-A15-SWEEP409",
+        "hf-4101",
         "pending",
         Some(Utc::now() - Duration::hours(3)),
     )
@@ -1231,19 +1682,147 @@ async fn the_sweep_takes_a_pms_409_as_done_and_stops_re_selecting_the_hold() {
     let released =
         loyalty_backend::services::pms_channel::release_expired_holds(app.db(), &settings).await;
 
-    assert_eq!(released, 1, "the local cancel is what the sweep achieved");
-    assert_eq!(
-        booking_status(app.db(), booking_id).await,
-        "cancelled",
-        "a hold the PMS says is gone must be cancelled locally, or it comes \
-         back on every run forever"
-    );
+    assert_eq!(released, 1, "the hold was let go and we cancelled locally");
+    assert_eq!(booking_status(app.db(), booking_id).await, "cancelled");
 
-    // The proof it is out of the selection: a second run finds nothing, so
-    // the mock is never called again.
     let released_again =
         loyalty_backend::services::pms_channel::release_expired_holds(app.db(), &settings).await;
-    assert_eq!(released_again, 0);
+    assert_eq!(released_again, 0, "and it is out of the selection");
+
+    app.cleanup().await.ok();
+}
+
+/// **The one that matters.** A 409 from `release` does *not* mean "already
+/// gone" — it means the PMS is refusing to release a booking whose payment
+/// was verified.
+///
+/// `new-hotel/hotel-backend/src/service/channel.rs::release` answers this for
+/// `confirmed` / `checkedin` / anything outside `pending`/`cancelled`. An
+/// earlier round of this PR read that 409 as "already cancelled" and
+/// cancelled the local row on it, which would have **cancelled a guest's paid
+/// booking** while the PMS held them confirmed with a room.
+///
+/// The sweep must leave the row alone and put it in front of a human.
+#[tokio::test]
+async fn a_release_409_never_cancels_the_local_booking() {
+    let pms_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/channel/bookings/hf-4102/release"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(json!({
+            "success": false,
+            "error": "booking 4102 is 'confirmed' (payment already verified?); refusing to release"
+        })))
+        .expect(1)
+        .mount(&pms_mock)
+        .await;
+
+    let app = TestApp::new().await.expect("create test app");
+    let guest = seed_guest(&app, "a15-sweep-409@test.com").await;
+    let booking_id = seed_channel_booking(
+        app.db(),
+        guest.id,
+        "hf-4102",
+        "pending",
+        Some(Utc::now() - Duration::hours(3)),
+    )
+    .await;
+
+    let settings = sweep_settings(&pms_mock.uri());
+    let released =
+        loyalty_backend::services::pms_channel::release_expired_holds(app.db(), &settings).await;
+
+    assert_eq!(released, 0, "nothing was released");
+    assert_eq!(
+        booking_status(app.db(), booking_id).await,
+        "pending",
+        "a booking the PMS says is paid must NOT be cancelled by a sweep — \
+         that would strand a guest who has a room in the PMS and no booking \
+         with us"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// The PMS's other 409: `"changed state during release; retry"`. It says
+/// retry in its own words, so the row stays and the next sweep tries again.
+#[tokio::test]
+async fn a_release_409_that_says_retry_leaves_the_row_for_the_next_sweep() {
+    let pms_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/channel/bookings/hf-4103/release"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(json!({
+            "success": false,
+            "error": "hold 4103 changed state during release; retry"
+        })))
+        // Twice: the row is still selectable on the next run, which is the
+        // whole point of not retiring it.
+        .expect(2)
+        .mount(&pms_mock)
+        .await;
+
+    let app = TestApp::new().await.expect("create test app");
+    let guest = seed_guest(&app, "a15-sweep-retry@test.com").await;
+    let booking_id = seed_channel_booking(
+        app.db(),
+        guest.id,
+        "hf-4103",
+        "pending",
+        Some(Utc::now() - Duration::hours(3)),
+    )
+    .await;
+
+    let settings = sweep_settings(&pms_mock.uri());
+    for _ in 0..2 {
+        let released =
+            loyalty_backend::services::pms_channel::release_expired_holds(app.db(), &settings)
+                .await;
+        assert_eq!(released, 0);
+    }
+    assert_eq!(booking_status(app.db(), booking_id).await, "pending");
+
+    app.cleanup().await.ok();
+}
+
+/// A 404 — unknown id, or the channel router not mounted because the PMS's
+/// canonical pool is down — is ambiguous, so the sweep does **not** retire
+/// the row.
+///
+/// Cancelling on the second reading would throw away live bookings during a
+/// PMS outage. The row keeps coming back, loudly, which is the intended
+/// pressure.
+#[tokio::test]
+async fn a_release_404_is_not_treated_as_terminal() {
+    let pms_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/channel/bookings/hf-4104/release"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "success": false,
+            "error": "loyalty-channel booking 4104 not found"
+        })))
+        .expect(2)
+        .mount(&pms_mock)
+        .await;
+
+    let app = TestApp::new().await.expect("create test app");
+    let guest = seed_guest(&app, "a15-sweep-404@test.com").await;
+    let booking_id = seed_channel_booking(
+        app.db(),
+        guest.id,
+        "hf-4104",
+        "pending",
+        Some(Utc::now() - Duration::hours(3)),
+    )
+    .await;
+
+    let settings = sweep_settings(&pms_mock.uri());
+    for _ in 0..2 {
+        loyalty_backend::services::pms_channel::release_expired_holds(app.db(), &settings).await;
+    }
+    assert_eq!(
+        booking_status(app.db(), booking_id).await,
+        "pending",
+        "an ambiguous 404 must not cancel a hold that may be perfectly live"
+    );
 
     app.cleanup().await.ok();
 }
@@ -1252,7 +1831,8 @@ async fn the_sweep_takes_a_pms_409_as_done_and_stops_re_selecting_the_hold() {
 ///
 /// No PMS call is possible, so the row is cancelled locally and taken out of
 /// the sweep's selection — otherwise it is re-selected on every run forever.
-/// It is deliberately **not** counted as released: nothing was released.
+/// It is deliberately **not** counted in `released`: nothing was released at
+/// the PMS. That tally means one thing (see `release_expired_holds`).
 #[tokio::test]
 async fn the_sweep_retires_a_hold_whose_reference_it_can_never_call_with() {
     let pms_mock = MockServer::start().await;
@@ -1306,12 +1886,14 @@ async fn the_sweep_retires_a_hold_whose_reference_it_can_never_call_with() {
 async fn the_sweep_never_counts_a_cancel_that_moved_no_row() {
     let pms_mock = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path_regex(
-            r"^/api/channel/bookings/PMS-A15-RACE-[12]/release$",
-        ))
+        .and(path_regex(r"^/api/channel/bookings/hf-410[56]/release$"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_json(json!({ "success": true }))
+                .set_body_json(json!({
+                    "success": true,
+                    "status": "cancelled",
+                    "already_released": false
+                }))
                 // Wide enough that the interleave below is deterministic.
                 .set_delay(std::time::Duration::from_millis(900)),
         )
@@ -1324,7 +1906,7 @@ async fn the_sweep_never_counts_a_cancel_that_moved_no_row() {
     let first = seed_channel_booking(
         app.db(),
         guest.id,
-        "PMS-A15-RACE-1",
+        "hf-4105",
         "pending",
         Some(Utc::now() - Duration::hours(3)),
     )
@@ -1332,7 +1914,7 @@ async fn the_sweep_never_counts_a_cancel_that_moved_no_row() {
     let second = seed_channel_booking(
         app.db(),
         guest.id,
-        "PMS-A15-RACE-2",
+        "hf-4106",
         "pending",
         Some(Utc::now() - Duration::hours(3)),
     )
@@ -1389,6 +1971,29 @@ fn pms_client(pms_uri: &str) -> PmsChannelClient {
 
 /// A hold request for a guest nobody else in the suite shares, so parallel
 /// tests cannot collide on the shared Redis.
+/// Fail loudly when Redis is not there.
+///
+/// `acquire_hold_guard` stands down when it cannot reach Redis — the right
+/// production behaviour (a Redis outage must not stop the property taking
+/// bookings) and a trap for tests: every *positive* lock assertion below
+/// would pass vacuously, proving nothing. So the positive tests state the
+/// precondition instead of assuming it.
+async fn require_redis() {
+    let client = redis::Client::open(test_redis_url()).expect("test Redis URL parses");
+    let mut conn = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        client.get_multiplexed_async_connection(),
+    )
+    .await
+    .expect("Redis connection did not time out")
+    .expect("the hold guard needs Redis; without it this test proves nothing");
+    let pong: String = redis::cmd("PING")
+        .query_async(&mut conn)
+        .await
+        .expect("Redis answers PING");
+    assert_eq!(pong, "PONG");
+}
+
 fn hold_request(phone: &str) -> PmsCreateBookingRequest {
     let today = Utc::now().date_naive();
     PmsCreateBookingRequest {
@@ -1439,6 +2044,7 @@ async fn a_retried_hold_create_cannot_produce_two_holds() {
         .mount(&pms_mock)
         .await;
 
+    require_redis().await;
     let client = pms_client(&pms_mock.uri());
     let phone = format!("0810000{}", &Uuid::new_v4().simple().to_string()[..6]);
     let request = hold_request(&phone);
@@ -1479,6 +2085,7 @@ async fn the_guard_is_released_once_the_hold_exists() {
         .mount(&pms_mock)
         .await;
 
+    require_redis().await;
     let client = pms_client(&pms_mock.uri());
     let phone = format!("0820000{}", &Uuid::new_v4().simple().to_string()[..6]);
     let request = hold_request(&phone);
@@ -1510,6 +2117,7 @@ async fn the_guard_is_kept_when_the_outcome_is_unknown() {
         .mount(&pms_mock)
         .await;
 
+    require_redis().await;
     let client = pms_client(&pms_mock.uri());
     let phone = format!("0860000{}", &Uuid::new_v4().simple().to_string()[..6]);
     let request = hold_request(&phone);
@@ -1541,6 +2149,7 @@ async fn a_rejected_hold_create_gives_the_lock_straight_back() {
         .mount(&pms_mock)
         .await;
 
+    require_redis().await;
     let client = pms_client(&pms_mock.uri());
     let phone = format!("0830000{}", &Uuid::new_v4().simple().to_string()[..6]);
     let request = hold_request(&phone);
@@ -1574,6 +2183,7 @@ async fn the_guard_is_per_guest_not_per_stay() {
         .mount(&pms_mock)
         .await;
 
+    require_redis().await;
     let client = pms_client(&pms_mock.uri());
     let suffix = Uuid::new_v4().simple().to_string();
     let one = hold_request(&format!("0840000{}", &suffix[..6]));

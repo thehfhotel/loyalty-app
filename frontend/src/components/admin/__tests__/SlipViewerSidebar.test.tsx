@@ -48,6 +48,13 @@ const translations: Record<string, string> = {
   'payment.slipUnavailable': 'No slip image',
   'admin.booking.bookingManagement.by': 'By',
   'admin.booking.bookingManagement.actions.verify': 'Verify',
+  'admin.booking.bookingManagement.errors.verifyFailed': 'Failed to verify slip',
+  'admin.booking.bookingManagement.errors.verifyRefused': 'Not confirmed: {{detail}}',
+  'admin.booking.bookingManagement.errors.verifyUnavailable':
+    'Could not reach the hotel system. Nothing was changed.',
+  'payment.slipok.reason.confirm_refused': 'The room has been released; re-book at the desk',
+  'admin.booking.bookingManagement.slipViewer.bookingNotConfirmedReasonUnknown':
+    'reason not recorded',
   'admin.booking.bookingManagement.actions.needsAction': 'Needs Action',
   'admin.booking.bookingManagement.actions.replaceSlip': 'Replace Slip',
   'admin.booking.bookingManagement.actions.edit': 'Edit',
@@ -615,4 +622,80 @@ describe('SlipViewerSidebar booking-not-confirmed notice', () => {
     expect(screen.getByText('Booking not confirmed')).toBeInTheDocument();
     expect(screen.queryByText('booking_not_confirmed')).not.toBeInTheDocument();
   });
+
+  // A15 (N8/N9): the desk has to tell "this booking is gone, re-book it"
+  // from "the hotel system did not answer, press it again". Swallowing both
+  // into one message left reception re-pressing a button that could never
+  // work — and interpolating the backend's English sentence into the Thai
+  // string gave a Thai-first desk half a line in each language.
+  describe('verify failures', () => {
+    async function pressVerify() {
+      const user = userEvent.setup();
+      renderSidebar({ adminStatus: 'pending' });
+      const button = await screen.findByRole('button', { name: 'Verify' });
+      await user.click(button);
+    }
+
+    it('renders a 409 in the desk language, from the reason key not the sentence', async () => {
+      const { ApiError } = await import('../../../utils/axiosInterceptor');
+      mockVerifySlip.mockRejectedValue(
+        new ApiError(
+          'conflict',
+          'conflict',
+          409,
+          'confirm_refused: the PMS refused the payment event — the booking was not confirmed'
+        )
+      );
+
+      await pressVerify();
+
+      const { toast } = await import('react-hot-toast');
+      await waitFor(() => expect(toast.error).toHaveBeenCalled());
+      const message = vi.mocked(toast.error).mock.calls.at(-1)?.[0];
+      expect(message).toBe('Not confirmed: The room has been released; re-book at the desk');
+      // The backend's English clause must not reach the desk verbatim.
+      expect(String(message)).not.toContain('payment event');
+    });
+
+    it('falls back to the generic reason when the key is not one we render', async () => {
+      const { ApiError } = await import('../../../utils/axiosInterceptor');
+      mockVerifySlip.mockRejectedValue(
+        new ApiError('conflict', 'conflict', 409, 'something_unmapped: who knows')
+      );
+
+      await pressVerify();
+
+      const { toast } = await import('react-hot-toast');
+      await waitFor(() => expect(toast.error).toHaveBeenCalled());
+      expect(vi.mocked(toast.error).mock.calls.at(-1)?.[0]).toBe(
+        'Not confirmed: reason not recorded'
+      );
+    });
+
+    it('tells the admin to retry on a 5xx rather than calling the booking dead', async () => {
+      const { ApiError } = await import('../../../utils/axiosInterceptor');
+      mockVerifySlip.mockRejectedValue(
+        new ApiError('external_service_unavailable', 'external_service_unavailable', 503, 'PMS down')
+      );
+
+      await pressVerify();
+
+      const { toast } = await import('react-hot-toast');
+      await waitFor(() => expect(toast.error).toHaveBeenCalled());
+      expect(vi.mocked(toast.error).mock.calls.at(-1)?.[0]).toBe(
+        'Could not reach the hotel system. Nothing was changed.'
+      );
+    });
+
+    it('keeps the generic message for a failure with no status at all', async () => {
+      mockVerifySlip.mockRejectedValue(new Error('network down'));
+
+      await pressVerify();
+
+      const { toast } = await import('react-hot-toast');
+      await waitFor(() => expect(toast.error).toHaveBeenCalled());
+      expect(vi.mocked(toast.error).mock.calls.at(-1)?.[0]).toBe('Failed to verify slip');
+    });
+  });
+
 });

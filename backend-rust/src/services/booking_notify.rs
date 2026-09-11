@@ -684,6 +684,10 @@ pub(crate) fn reason_wording(reason: &str) -> Option<(&'static str, &'static str
             "บันทึกผลการตรวจสอบไม่สำเร็จ",
             "The check result could not be saved",
         ),
+        "confirm_refused" => (
+            "ยืนยันการจองไม่สำเร็จ ห้องถูกปล่อยแล้ว ต้องจองใหม่ที่เคาน์เตอร์",
+            "The booking could not be confirmed; the room has been released and must be re-booked at the desk",
+        ),
         "quota_exceeded" => (
             "โควตาการตรวจสอบอัตโนมัติหมดแล้ว",
             "Automatic checking quota is used up",

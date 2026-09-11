@@ -17,7 +17,12 @@ import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { Badge, Button, type BadgeTone } from '../ui';
-import { deskSlipOkStatus, slipOkReasonKey, type SlipOkStatusValue } from '../../types/slipok';
+import {
+  deskSlipOkStatus,
+  slipOkReasonKey,
+  SLIPOK_REASONS,
+  type SlipOkStatusValue
+} from '../../types/slipok';
 import { adminBookingService } from '../../services/adminBookingService';
 import { ApiError } from '../../utils/axiosInterceptor';
 import { SlipErasedNotice } from '../SlipErasedNotice';
@@ -72,6 +77,24 @@ const ACTION_BOOKING_NOT_CONFIRMED = 'booking_not_confirmed';
  * notice exists to make.
  */
 const BOOKING_REFUSAL_CURE_ACTIONS = new Set(['slip_verified', 'booking_updated']);
+
+/**
+ * The locked `slipok_reason` key a 409 refusal message leads with.
+ *
+ * `refuse_channel_confirmation` builds its message as `"{reason}: {detail}…"`,
+ * so the key is everything up to the first colon. Returned only when it is
+ * one the UI actually has wording for — an unrecognised key must fall back
+ * to the generic sentence rather than render a raw identifier at a Thai
+ * desk.
+ */
+function refusalReasonKey(message: string | undefined): string | null {
+  if (!message) {
+    return null;
+  }
+  const match = /^([a-z_]+):/.exec(message.trim());
+  const key = match?.[1];
+  return key && (SLIPOK_REASONS as readonly string[]).includes(key) ? key : null;
+}
 
 /**
  * The locked reason key out of a `booking_not_confirmed` audit row.
@@ -189,9 +212,19 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     onError: (error: Error) => {
       const api = error instanceof ApiError ? error : null;
       if (api?.status === 409) {
+        // N9: render the refusal in the desk's own language. The backend's
+        // `detail` is an English sentence, and interpolating it into a Thai
+        // string gave a Thai-first desk half a Thai line and half an English
+        // one. The message is prefixed with the machine reason key
+        // (`slip_confirm.rs`: `format!("{reason}: …")`), which is a locked
+        // vocabulary the UI already has wording for — so use the key and
+        // drop the sentence.
+        const key = refusalReasonKey(api.detail ?? api.message);
         toast.error(
           t('admin.booking.bookingManagement.errors.verifyRefused', {
-            detail: api.detail ?? api.message
+            detail: key
+              ? t(`payment.slipok.reason.${key}`)
+              : t('admin.booking.bookingManagement.slipViewer.bookingNotConfirmedReasonUnknown')
           })
         );
         return;
