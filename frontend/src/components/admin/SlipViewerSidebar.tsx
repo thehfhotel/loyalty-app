@@ -81,13 +81,17 @@ const BOOKING_REFUSAL_CURE_ACTIONS = new Set(['slip_verified', 'booking_updated'
 /**
  * The locked `slipok_reason` key a 409 refusal message leads with.
  *
+ * Named for the message it parses, not for the key it returns: a local
+ * `refusalReasonKey` (the audit-row path) already exists inside the
+ * component.
+ *
  * `refuse_channel_confirmation` builds its message as `"{reason}: {detail}…"`,
  * so the key is everything up to the first colon. Returned only when it is
  * one the UI actually has wording for — an unrecognised key must fall back
  * to the generic sentence rather than render a raw identifier at a Thai
  * desk.
  */
-function refusalReasonKey(message: string | undefined): string | null {
+function reasonKeyFromRefusalMessage(message: string | undefined): string | null {
   if (!message) {
     return null;
   }
@@ -219,7 +223,7 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
         // (`slip_confirm.rs`: `format!("{reason}: …")`), which is a locked
         // vocabulary the UI already has wording for — so use the key and
         // drop the sentence.
-        const key = refusalReasonKey(api.detail ?? api.message);
+        const key = reasonKeyFromRefusalMessage(api.detail ?? api.message);
         toast.error(
           t('admin.booking.bookingManagement.errors.verifyRefused', {
             detail: key
@@ -354,9 +358,20 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     await onVerify(booking.id);
   };
 
-  // Multi-slip verify handler
+  // Multi-slip verify handler.
+  //
+  // `mutateAsync` rejects on failure and this is the end of the chain — an
+  // uncaught rejection here escapes the click handler and lands in the
+  // browser console as an unhandled promise rejection, on top of whatever
+  // the user sees. `onError` on the mutation is what reports the failure to
+  // the desk (including A15's 409-vs-5xx split), so the only thing left to
+  // do here is stop it propagating.
   const handleVerifySlip = async (slipId: string) => {
-    await verifySlipByIdMutation.mutateAsync({ slipId });
+    try {
+      await verifySlipByIdMutation.mutateAsync({ slipId });
+    } catch {
+      // Reported by the mutation's onError; nothing further to do.
+    }
   };
 
   const handleNeedsActionClick = (slipId?: string) => {
@@ -368,11 +383,18 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     if (!booking || !notesInput.trim()) {return;}
 
     if (activeSlipId) {
-      // Multi-slip: mark specific slip
-      await markSlipNeedsActionMutation.mutateAsync({
-        slipId: activeSlipId,
-        notes: notesInput.trim()
-      });
+      // Multi-slip: mark specific slip. Same shape as `handleVerifySlip`:
+      // the rejection is already reported by `onError`, and letting it
+      // escape would both log an unhandled rejection and leave the modal
+      // open with the notes still in it and no explanation.
+      try {
+        await markSlipNeedsActionMutation.mutateAsync({
+          slipId: activeSlipId,
+          notes: notesInput.trim()
+        });
+      } catch {
+        return;
+      }
     } else {
       // Legacy: mark booking
       await onNeedsAction(booking.id, notesInput.trim());

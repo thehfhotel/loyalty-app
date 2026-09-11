@@ -53,8 +53,6 @@ const translations: Record<string, string> = {
   'admin.booking.bookingManagement.errors.verifyUnavailable':
     'Could not reach the hotel system. Nothing was changed.',
   'payment.slipok.reason.confirm_refused': 'The room has been released; re-book at the desk',
-  'admin.booking.bookingManagement.slipViewer.bookingNotConfirmedReasonUnknown':
-    'reason not recorded',
   'admin.booking.bookingManagement.actions.needsAction': 'Needs Action',
   'admin.booking.bookingManagement.actions.replaceSlip': 'Replace Slip',
   'admin.booking.bookingManagement.actions.edit': 'Edit',
@@ -628,6 +626,19 @@ describe('SlipViewerSidebar booking-not-confirmed notice', () => {
   // into one message left reception re-pressing a button that could never
   // work — and interpolating the backend's English sentence into the Thai
   // string gave a Thai-first desk half a line in each language.
+  /** The message of the most recent `toast.error` call. */
+  async function lastToastError(): Promise<unknown> {
+    const { toast } = await import('react-hot-toast');
+    const calls = vi.mocked(toast.error).mock.calls;
+    return calls[calls.length - 1]?.[0];
+  }
+
+  /** Resolves once the component has reported a failure. */
+  async function waitForToastError(): Promise<void> {
+    const { toast } = await import('react-hot-toast');
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+  }
+
   describe('verify failures', () => {
     async function pressVerify() {
       const user = userEvent.setup();
@@ -649,9 +660,8 @@ describe('SlipViewerSidebar booking-not-confirmed notice', () => {
 
       await pressVerify();
 
-      const { toast } = await import('react-hot-toast');
-      await waitFor(() => expect(toast.error).toHaveBeenCalled());
-      const message = vi.mocked(toast.error).mock.calls.at(-1)?.[0];
+      await waitForToastError();
+      const message = await lastToastError();
       expect(message).toBe('Not confirmed: The room has been released; re-book at the desk');
       // The backend's English clause must not reach the desk verbatim.
       expect(String(message)).not.toContain('payment event');
@@ -665,9 +675,8 @@ describe('SlipViewerSidebar booking-not-confirmed notice', () => {
 
       await pressVerify();
 
-      const { toast } = await import('react-hot-toast');
-      await waitFor(() => expect(toast.error).toHaveBeenCalled());
-      expect(vi.mocked(toast.error).mock.calls.at(-1)?.[0]).toBe(
+      await waitForToastError();
+      expect(await lastToastError()).toBe(
         'Not confirmed: reason not recorded'
       );
     });
@@ -680,9 +689,8 @@ describe('SlipViewerSidebar booking-not-confirmed notice', () => {
 
       await pressVerify();
 
-      const { toast } = await import('react-hot-toast');
-      await waitFor(() => expect(toast.error).toHaveBeenCalled());
-      expect(vi.mocked(toast.error).mock.calls.at(-1)?.[0]).toBe(
+      await waitForToastError();
+      expect(await lastToastError()).toBe(
         'Could not reach the hotel system. Nothing was changed.'
       );
     });
@@ -692,9 +700,8 @@ describe('SlipViewerSidebar booking-not-confirmed notice', () => {
 
       await pressVerify();
 
-      const { toast } = await import('react-hot-toast');
-      await waitFor(() => expect(toast.error).toHaveBeenCalled());
-      expect(vi.mocked(toast.error).mock.calls.at(-1)?.[0]).toBe('Failed to verify slip');
+      await waitForToastError();
+      expect(await lastToastError()).toBe('Failed to verify slip');
     });
   });
 
