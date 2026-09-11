@@ -78,6 +78,13 @@ services:
       # Database & Redis
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # One storage root for BOTH resolvers: slip uploads write to STORAGE_PATH/slips
+      # (routes/slips.rs) while the file-serving service reads UPLOAD_DIR, else
+      # STORAGE_PATH, else ./uploads (services/storage.rs). With neither set the
+      # backend wrote slips to /app/storage (the persistent volume) and served them
+      # from /app/uploads, so every slip image was a 404 and avatars landed on
+      # ephemeral container storage. Fixed 2026-09-10; keep this in every env.
+      STORAGE_PATH: /app/storage
 
       # URLs
       FRONTEND_URL: ${FRONTEND_URL}
