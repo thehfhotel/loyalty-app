@@ -95,6 +95,18 @@ BEGIN
         EXECUTE 'CREATE UNIQUE INDEX "uq_booking_slips_slip_url_live" '
                 'ON "public"."booking_slips" ("slip_url") '
                 'WHERE "deleted_at" IS NULL';
+
+        -- Only now is the column's comment allowed to promise uniqueness.
+        -- On the skip paths it keeps the wording 20260912020000 gave it,
+        -- because an operator reading `\d+ booking_slips` on a database
+        -- where this index was skipped must not be told the invariant holds.
+        EXECUTE 'COMMENT ON COLUMN "public"."booking_slips"."slip_url" IS '
+                '''Path the upload endpoint returned, e.g. /storage/slips/<uuid>.jpg. '
+                'NULL once the image has been erased under retention — read it together '
+                'with deleted_at. Unique across live rows '
+                '(uq_booking_slips_slip_url_live): one image backs at most one '
+                'un-tombstoned slip.''';
+
         RAISE NOTICE 'Created uq_booking_slips_slip_url_live: one live slip row per image.';
     EXCEPTION
         WHEN unique_violation OR duplicate_table THEN
@@ -106,6 +118,3 @@ BEGIN
     END;
 END
 $$;
-
-COMMENT ON COLUMN "public"."booking_slips"."slip_url"
-    IS 'Path the upload endpoint returned, e.g. /storage/slips/<uuid>.jpg. NULL once the image has been erased under retention — read it together with deleted_at. Unique across live rows (uq_booking_slips_slip_url_live): one image backs at most one un-tombstoned slip.';

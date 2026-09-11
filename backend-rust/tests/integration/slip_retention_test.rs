@@ -186,11 +186,18 @@ async fn seed_slip_full(
 /// Attach a **second** live `booking_slips` row to a file some other row
 /// already points at.
 ///
-/// Deliberately a raw insert rather than `POST /api/bookings/:id/slips`: that
-/// route answers 409 for exactly this, and
-/// `uq_booking_slips_slip_url_live` makes the database refuse it too. The
-/// shared-file rules still have to be exercised, because rows created before
-/// either guard existed are the reason those rules are there.
+/// Two live rows on one `slip_url` cannot be created any more: `POST
+/// /api/bookings/:id/slips` answers 409, and
+/// `uq_booking_slips_slip_url_live` makes the database refuse the insert
+/// outright. Both of those are the point of F2b — and both are exactly why
+/// the sweep's shared-file rules still need testing, because rows written
+/// before either guard existed are the ones those rules exist for.
+///
+/// So the fixture manufactures the legacy shape the only way it can: it drops
+/// the unique index in **this test's own database** (`TestApp` builds one per
+/// test from a template, so nothing else sees it) and then writes the row
+/// directly. `attaching_an_already_attached_slip_url_is_refused` covers the
+/// live rule on an untouched database.
 async fn seed_sharing_row(
     pool: &sqlx::PgPool,
     booking_id: Uuid,
@@ -198,6 +205,11 @@ async fn seed_sharing_row(
     admin_status: &str,
     file_name: &str,
 ) -> Uuid {
+    sqlx::query("DROP INDEX IF EXISTS \"public\".\"uq_booking_slips_slip_url_live\"")
+        .execute(pool)
+        .await
+        .expect("drop the unique index to manufacture a pre-F2b duplicate");
+
     let slip_id = Uuid::new_v4();
 
     sqlx::query(
