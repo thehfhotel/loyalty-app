@@ -139,6 +139,7 @@ pub struct AdminSlipResponse {
     /// Why the machine landed on that status — one of the locked
     /// `slipok_reason` keys (`amount_mismatch`, `receiver_mismatch`,
     /// `duplicate`, `slip_invalid`, `booking_not_payable`, `confirm_failed`,
+    /// `confirm_refused` (audit rows only — never written to this column),
     /// `quota_exceeded`, `api_error`, `not_configured`, `timeout`), or null
     /// when the check passed.
     ///
@@ -344,7 +345,7 @@ fn admin_user_id(user: &AuthUser) -> AppResult<Uuid> {
 /// That last one is the case B8 called race 2.4. For a PMS-channel booking
 /// the room belongs to the PMS, and a hold it has already released cannot be
 /// confirmed by anybody — so a Verify against one answers `Conflict` carrying
-/// `booking_not_payable`, leaves the booking untouched, and puts the slip
+/// `confirm_refused`, leaves the booking untouched, and puts the slip
 /// back in this queue as `needs_action`. Reception's next step is to re-book
 /// the room at the desk, not to press the button again; a **503** (the PMS
 /// could not be reached) is the one that means "try again".

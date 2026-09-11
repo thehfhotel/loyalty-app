@@ -14,7 +14,7 @@
 //! alike:
 //!
 //! - **expired hold + human Verify** → 409, the slip is back in the queue as
-//!   `needs_action` / `booking_not_payable`, the booking is untouched, an
+//!   `needs_action`, the booking is untouched, an
 //!   audit row explains it, and the PMS is never called at all;
 //! - **PMS 409 + human Verify** → the same end state, with the PMS's own
 //!   status code and body on the audit row;
@@ -24,7 +24,8 @@
 //!   now reports `bookingConfirmed = false`, because this call confirmed
 //!   nothing (the `rows_affected()` fix, seen from the API);
 //! - **auto-verify, live mode, PMS 409** → `needs_action` /
-//!   `booking_not_payable`, and the refusal survives `revert_auto_confirm`
+//!   a `confirm_refused` audit row, and the refusal survives
+//!   `revert_auto_confirm`
 //!   rather than being overwritten with `pending` / `confirm_failed`;
 //! - **auto-verify, shadow mode, expired hold** → recorded as `manual` /
 //!   `booking_not_payable` with no PMS call and no slip stamped, which is
@@ -345,9 +346,10 @@ async fn a_cancelled_channel_booking_refuses_without_calling_the_pms() {
     let body: Value = response.json().expect("error response is JSON");
     let rendered = body.to_string();
     assert!(
-        rendered.contains("booking_not_payable"),
+        rendered.contains("confirm_refused"),
         "the admin is told which refusal this is, in the vocabulary the UI \
-         already renders: {rendered}"
+         already renders — and it is the *refusal* word, not the machine's \
+         `booking_not_payable`: {rendered}"
     );
 
     assert_eq!(
@@ -373,11 +375,11 @@ async fn a_cancelled_channel_booking_refuses_without_calling_the_pms() {
     assert!(
         reason
             .as_deref()
-            .is_some_and(|r| r.contains("booking_not_payable")),
+            .is_some_and(|r| r.contains("confirm_refused")),
         "the audit row says why in both languages: {reason:?}"
     );
     let after = after.as_ref().expect("refusal row carries after_data");
-    assert_eq!(after["reason"].as_str(), Some("booking_not_payable"));
+    assert_eq!(after["reason"].as_str(), Some("confirm_refused"));
     assert_eq!(after["pmsBookingId"].as_str(), Some("PMS-A15-CANCELLED"));
     assert!(
         after["pmsStatus"].is_null(),
@@ -592,7 +594,7 @@ async fn a_pms_409_refuses_the_admins_verify_and_records_what_the_pms_said() {
     assert!(
         reason
             .as_deref()
-            .is_some_and(|r| r.contains("409") && r.contains("booking_not_payable")),
+            .is_some_and(|r| r.contains("409") && r.contains("confirm_refused")),
         "the human-readable reason carries both: {reason:?}"
     );
 
@@ -1368,7 +1370,8 @@ async fn a_local_row_that_moved_under_a_successful_payment_is_refused() {
 /// PMS answers 409 when the payment event arrives.
 ///
 /// Two things have to hold. The refusal must land (`needs_action` /
-/// `booking_not_payable`), and it must **survive**: `slipok_check` calls
+/// `confirm_refused` on the audit row), and it must **survive**:
+/// `slipok_check` calls
 /// `revert_auto_confirm` on any `Err` from `confirm_slip`, and that function
 /// used to flip any slip it found back to `pending` / `confirm_failed` —
 /// overwriting the reason the desk needs with a vaguer one.
