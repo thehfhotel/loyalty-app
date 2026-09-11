@@ -103,7 +103,7 @@ CMD ["cargo", "watch", "-x", "run"]
 #   (no shell, no curl). Replaced by the dedicated `healthcheck` binary
 #   built from `src/bin/healthcheck.rs` in the builder stage above. The
 #   docker-compose.prod.yml healthcheck calls `/app/healthcheck` directly.
-FROM gcr.io/distroless/cc-debian12@sha256:e8e7ee4b8b106d4c5fde9e422a321b2b8a2d5cca546c97adcce927f3e1d36e36 AS runner
+FROM gcr.io/distroless/cc-debian12@sha256:6e1871c34683dc9ee996d13084497783fd98ac0200213d0826625f4e9d4be1d0 AS runner
 
 WORKDIR /app
 
