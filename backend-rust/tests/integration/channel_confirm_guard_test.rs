@@ -811,17 +811,24 @@ async fn a_non_409_4xx_is_retryable_and_never_refuses_the_booking() {
     // answer, and `ExternalServiceUnavailable` renders verbatim into the
     // admin's browser — so it has to go through `sanitize_pms_body` too.
     // This is the only test that proves that wiring.
-    for banned in ['<', '>', '"'] {
+    //
+    // Asserted on the `message` field, not the whole response: the envelope
+    // is JSON and its own quotes are not the PMS's markup.
+    let error_body: Value = response.json().expect("error response is JSON");
+    let message = error_body["message"].as_str().expect("a message field");
+    for banned in ['<', '>', '"', '\''] {
         assert!(
-            !response.body.contains(banned),
-            "the PMS's markup must not reach the admin: {}",
-            response.body
+            !message.contains(banned),
+            "the PMS's markup must not reach the admin: {message}"
         );
     }
     assert!(
-        response.body.contains("HF Ville writes are disabled"),
-        "and the words a human needs must survive the sanitiser: {}",
-        response.body
+        !message.contains('\n') && !message.contains("  "),
+        "and it must stay one line, not shred the admin's toast: {message}"
+    );
+    assert!(
+        message.contains("HF Ville writes are disabled"),
+        "while the words a human needs survive the sanitiser: {message}"
     );
 
     assert_eq!(
