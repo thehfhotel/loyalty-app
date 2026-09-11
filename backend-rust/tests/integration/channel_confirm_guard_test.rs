@@ -40,7 +40,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 use uuid::Uuid;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use loyalty_backend::services::pms_channel::{
@@ -1248,24 +1248,71 @@ async fn the_sweep_takes_a_pms_409_as_done_and_stops_re_selecting_the_hold() {
     app.cleanup().await.ok();
 }
 
-/// Both guarded cancels in the sweep are `WHERE status = 'pending'`, and
-/// neither may be counted when it moves no row.
+/// A reference this client can never build a URL with.
+///
+/// No PMS call is possible, so the row is cancelled locally and taken out of
+/// the sweep's selection — otherwise it is re-selected on every run forever.
+/// It is deliberately **not** counted as released: nothing was released.
+#[tokio::test]
+async fn the_sweep_retires_a_hold_whose_reference_it_can_never_call_with() {
+    let pms_mock = MockServer::start().await;
+
+    let app = TestApp::new().await.expect("create test app");
+    let guest = seed_guest(&app, "a15-sweep-unusable@test.com").await;
+    let booking_id = seed_channel_booking(
+        app.db(),
+        guest.id,
+        "pms/../../evil",
+        "pending",
+        Some(Utc::now() - Duration::hours(3)),
+    )
+    .await;
+
+    let settings = sweep_settings(&pms_mock.uri());
+    let released =
+        loyalty_backend::services::pms_channel::release_expired_holds(app.db(), &settings).await;
+
+    assert_eq!(
+        released, 0,
+        "nothing was released — the PMS was never reachable for this row"
+    );
+    assert_eq!(
+        booking_status(app.db(), booking_id).await,
+        "cancelled",
+        "but it must leave the sweep's selection, or it comes back every run"
+    );
+    assert!(
+        pms_mock
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .is_empty(),
+        "an id that fails validation must never reach a URL"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// The local cancel is `WHERE status = 'pending'`, and it must never be
+/// counted when it moves no row.
 ///
 /// Driven by racing the sweep the way production does: the batch is selected
-/// up front, and while the *first* row's release is in flight a
-/// confirmation lands on the *second*. Both of the second row's cancel
-/// branches then match zero rows — the unusable-id branch here — and the
-/// sweep must report it as not-released rather than claiming a cancellation
-/// that never happened.
+/// up front, and while it is parked in the first release a confirmation
+/// lands on the bookings. Both rows are confirmed mid-flight, so whichever
+/// order the batch came back in — the sweep's SELECT has no `ORDER BY` —
+/// every guarded cancel matches zero rows and the sweep must report nothing
+/// released rather than claiming cancellations that never happened.
 #[tokio::test]
 async fn the_sweep_never_counts_a_cancel_that_moved_no_row() {
     let pms_mock = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/api/channel/bookings/PMS-A15-SLOW/release"))
+        .and(path_regex(
+            r"^/api/channel/bookings/PMS-A15-RACE-[12]/release$",
+        ))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_json(json!({ "success": true }))
-                // Wide enough for the interleave below to be deterministic.
+                // Wide enough that the interleave below is deterministic.
                 .set_delay(std::time::Duration::from_millis(900)),
         )
         .mount(&pms_mock)
@@ -1274,21 +1321,18 @@ async fn the_sweep_never_counts_a_cancel_that_moved_no_row() {
     let app = TestApp::new().await.expect("create test app");
     let guest = seed_guest(&app, "a15-sweep-zero@test.com").await;
 
-    // Row 1: a normal expired hold whose release the mock holds open.
-    let slow_id = seed_channel_booking(
+    let first = seed_channel_booking(
         app.db(),
         guest.id,
-        "PMS-A15-SLOW",
+        "PMS-A15-RACE-1",
         "pending",
         Some(Utc::now() - Duration::hours(3)),
     )
     .await;
-    // Row 2: an expired hold whose reference this client can never call
-    // with, so it takes the "cancel locally" branch with no PMS round trip.
-    let unusable_id = seed_channel_booking(
+    let second = seed_channel_booking(
         app.db(),
         guest.id,
-        "pms/../../evil",
+        "PMS-A15-RACE-2",
         "pending",
         Some(Utc::now() - Duration::hours(3)),
     )
@@ -1301,28 +1345,26 @@ async fn the_sweep_never_counts_a_cancel_that_moved_no_row() {
         loyalty_backend::services::pms_channel::release_expired_holds(&pool, &settings).await
     };
     let interleave = async {
-        // While row 1's release is parked in the mock, confirm row 2 — the
-        // exact shape of an admin verifying a slip mid-sweep.
+        // Inside the first release's delay: an admin verifies both slips.
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        sqlx::query("UPDATE bookings SET status = 'confirmed' WHERE id = $1")
-            .bind(unusable_id)
+        sqlx::query("UPDATE bookings SET status = 'confirmed' WHERE id = ANY($1)")
+            .bind(vec![first, second])
             .execute(app.db())
             .await
-            .expect("confirm the second row mid-sweep");
+            .expect("confirm both bookings mid-sweep");
     };
     let (released, ()) = tokio::join!(sweep, interleave);
 
     assert_eq!(
-        released, 1,
-        "only the row that actually moved may be counted"
+        released, 0,
+        "the guarded cancel matched no row, so the sweep released nothing"
     );
-    assert_eq!(booking_status(app.db(), slow_id).await, "cancelled");
     assert_eq!(
-        booking_status(app.db(), unusable_id).await,
+        booking_status(app.db(), first).await,
         "confirmed",
-        "the guarded cancel must lose cleanly to the confirmation, not \
-         overwrite it"
+        "the cancel must lose cleanly to the confirmation, not overwrite it"
     );
+    assert_eq!(booking_status(app.db(), second).await, "confirmed");
 
     app.cleanup().await.ok();
 }

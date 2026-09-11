@@ -491,15 +491,22 @@ pub async fn confirm_slip_with_notes(
         // UPDATE had refused to make.
         if flipped.rows_affected() == 0 {
             let current = current_booking_status(state.db(), row.booking_id).await?;
-            if current.as_deref() == Some("confirmed") {
-                // The ordinary idempotent re-verify: the booking was already
-                // confirmed and the PMS took the payment event as a replay
+            if current.as_deref().is_some_and(is_settled) {
+                // The ordinary idempotent re-verify, or a balance slip from
+                // a guest already in the room: the booking had already taken
+                // its payment decision and the PMS took the event as a replay
                 // (`already_confirmed: true`). Nothing moved, and reporting
                 // `booking_confirmed = false` is the truth about *this* call.
+                //
+                // Note this must accept every `SETTLED_STATUSES` value, not
+                // just `confirmed` — a `checked_in` booking never matches the
+                // `status = 'pending'` guard above, and treating that as a
+                // divergence refused a payment the PMS had just accepted.
                 tracing::info!(
                     booking_id = %row.booking_id,
                     pms_booking_id = %channel.pms_booking_id,
-                    "channel booking was already confirmed; the payment event was a replay"
+                    status = current.as_deref().unwrap_or("unknown"),
+                    "channel booking had already settled; the payment event was a replay"
                 );
             } else {
                 // The PMS accepted the payment and the local row is neither
@@ -710,6 +717,24 @@ enum ChannelPayability {
     Refused { detail: String },
 }
 
+/// The statuses in which a channel booking has already taken its payment
+/// decision, so a payment event is a **replay** rather than a change.
+///
+/// One list, used by both places that have to agree about it:
+/// [`ChannelBooking::payability`] before the PMS call, and the zero-row
+/// branch after it. They were written separately once and immediately
+/// drifted — the pre-check accepted a checked-in guest and the post-check
+/// did not, so a balance slip sailed past the first and was refused by the
+/// second. Mirrors `new-hotel`'s own replay arm
+/// (`"confirmed" | "checkedin" | "completed"`), which differs from this
+/// vocabulary by spelling only.
+const SETTLED_STATUSES: [&str; 4] = ["confirmed", "checked_in", "checked_out", "completed"];
+
+/// True when a payment event against this status is a replay.
+fn is_settled(status: &str) -> bool {
+    SETTLED_STATUSES.contains(&status)
+}
+
 impl ChannelBooking {
     /// Decide locally **only what the PMS cannot tell us**, and ask the PMS
     /// about everything else.
@@ -749,9 +774,7 @@ impl ChannelBooking {
             // Mirrors new-hotel's replay arm one-for-one. Note the
             // vocabularies differ by spelling only: this repo writes
             // `checked_in` / `checked_out`, the PMS writes `checkedin`.
-            "confirmed" | "checked_in" | "checked_out" | "completed" => {
-                ChannelPayability::AlreadyConfirmed
-            },
+            settled if is_settled(settled) => ChannelPayability::AlreadyConfirmed,
             "pending" => ChannelPayability::Payable,
             other => ChannelPayability::Refused {
                 detail: format!("the local booking is '{other}', which cannot take a payment"),
