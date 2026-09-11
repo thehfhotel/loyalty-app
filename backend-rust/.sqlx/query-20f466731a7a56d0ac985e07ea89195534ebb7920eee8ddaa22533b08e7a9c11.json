@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE booking_slips\n        SET slip_url        = NULL,\n            deleted_at      = NOW(),\n            deletion_reason = $2\n        WHERE id = ANY($1)\n          AND deleted_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "20f466731a7a56d0ac985e07ea89195534ebb7920eee8ddaa22533b08e7a9c11"
+}

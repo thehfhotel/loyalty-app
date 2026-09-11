@@ -183,6 +183,106 @@ async fn seed_slip_full(
     (slip_id, file_name)
 }
 
+/// Attach a **second** live `booking_slips` row to a file some other row
+/// already points at.
+///
+/// Two live rows on one `slip_url` cannot be created any more: `POST
+/// /api/bookings/:id/slips` answers 409, and
+/// `uq_booking_slips_slip_url_live` makes the database refuse the insert
+/// outright. Both of those are the point of F2b — and both are exactly why
+/// the sweep's shared-file rules still need testing, because rows written
+/// before either guard existed are the ones those rules exist for.
+///
+/// So the fixture manufactures the legacy shape the only way it can: it drops
+/// the unique index in **this test's own database** (`TestApp` builds one per
+/// test from a template, so nothing else sees it) and then writes the row
+/// directly. `attaching_an_already_attached_slip_url_is_refused` covers the
+/// live rule on an untouched database.
+async fn seed_sharing_row(
+    pool: &sqlx::PgPool,
+    booking_id: Uuid,
+    uploaded_by: Uuid,
+    admin_status: &str,
+    file_name: &str,
+) -> Uuid {
+    sqlx::query("DROP INDEX IF EXISTS \"public\".\"uq_booking_slips_slip_url_live\"")
+        .execute(pool)
+        .await
+        .expect("drop the unique index to manufacture a pre-F2b duplicate");
+
+    let slip_id = Uuid::new_v4();
+
+    sqlx::query(
+        r#"
+        INSERT INTO booking_slips (id, booking_id, slip_url, uploaded_by, admin_status)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+    )
+    .bind(slip_id)
+    .bind(booking_id)
+    .bind(format!("/storage/slips/{}", file_name))
+    .bind(uploaded_by)
+    .bind(admin_status)
+    .execute(pool)
+    .await
+    .expect("seed a second live row sharing one file");
+
+    slip_id
+}
+
+/// Move a booking into a closed state without disturbing the window: the
+/// stay's end and `updated_at` both stay where the fixture put them.
+async fn close_booking(pool: &sqlx::PgPool, booking_id: Uuid, status: &str, ended_days_ago: i64) {
+    let closed_at = chrono::Utc::now() - chrono::Duration::days(ended_days_ago);
+
+    sqlx::query("UPDATE bookings SET status = $2, updated_at = $3 WHERE id = $1")
+        .bind(booking_id)
+        .bind(status)
+        .bind(closed_at)
+        .execute(pool)
+        .await
+        .expect("close the booking");
+}
+
+/// Stamp `updated_at` to now, leaving the stay's dates alone — the shape the
+/// `GREATEST(...)` window exists to catch.
+async fn touch_booking(pool: &sqlx::PgPool, booking_id: Uuid) {
+    sqlx::query("UPDATE bookings SET updated_at = NOW() WHERE id = $1")
+        .bind(booking_id)
+        .execute(pool)
+        .await
+        .expect("touch the booking");
+}
+
+/// The tombstone triple: `(slip_url, deleted_at, deletion_reason)`.
+async fn slip_tombstone(
+    pool: &sqlx::PgPool,
+    slip_id: Uuid,
+) -> (
+    Option<String>,
+    Option<chrono::DateTime<chrono::Utc>>,
+    Option<String>,
+) {
+    sqlx::query_as("SELECT slip_url, deleted_at, deletion_reason FROM booking_slips WHERE id = $1")
+        .bind(slip_id)
+        .fetch_one(pool)
+        .await
+        .expect("the metadata row outlives the image")
+}
+
+/// Assert a slip carries a retention tombstone: no path, a stamp, our reason.
+/// Returns the `deleted_at`, so a caller can compare two rows' stamps.
+async fn assert_tombstoned(
+    pool: &sqlx::PgPool,
+    slip_id: Uuid,
+    why: &str,
+) -> chrono::DateTime<chrono::Utc> {
+    let (slip_url, deleted_at, reason) = slip_tombstone(pool, slip_id).await;
+    assert_eq!(slip_url, None, "{}: the stored path is nulled", why);
+    assert_eq!(reason.as_deref(), Some("retention_sweep"), "{}", why);
+    deleted_at.unwrap_or_else(|| panic!("{}: deleted_at is stamped", why))
+}
+
 /// Is this slip still un-erased — file on disk and no tombstone?
 async fn slip_is_intact(pool: &sqlx::PgPool, slip_id: Uuid, path: &std::path::Path) -> bool {
     let row: (Option<String>, Option<chrono::DateTime<chrono::Utc>>) =
@@ -219,13 +319,34 @@ async fn get_slip_image(
     role: &str,
     file_name: &str,
 ) -> (u16, Vec<u8>) {
+    get_slip_image_with_request_id(app, user_id, email, role, file_name, None).await
+}
+
+/// [`get_slip_image`] with an explicit `x-request-id`.
+///
+/// The header is what ties an access-log row back to the request's tracing
+/// span, and in production `SetRequestIdLayer` puts a UUID on any request
+/// that arrives without one. The test router has no such layer, so whatever
+/// is passed here is exactly what the handler sees.
+async fn get_slip_image_with_request_id(
+    app: &TestApp,
+    user_id: &Uuid,
+    email: &str,
+    role: &str,
+    file_name: &str,
+    request_id: Option<&str>,
+) -> (u16, Vec<u8>) {
     let token = generate_test_token_with_role(user_id, email, role);
-    let request = Request::builder()
+    let mut builder = Request::builder()
         .method("GET")
         .uri(format!("/api/storage/slips/{}", file_name))
-        .header(header::AUTHORIZATION, format!("Bearer {}", token))
-        .body(Body::empty())
-        .expect("build request");
+        .header(header::AUTHORIZATION, format!("Bearer {}", token));
+
+    if let Some(request_id) = request_id {
+        builder = builder.header("x-request-id", request_id);
+    }
+
+    let request = builder.body(Body::empty()).expect("build request");
 
     let response = app
         .router()
@@ -388,6 +509,54 @@ async fn the_admin_slip_detail_is_logged_and_the_log_reads_back() {
     app.cleanup().await.ok();
 }
 
+/// `x-request-id` is the thread from an access-log row back to the request's
+/// log lines, and `slip_access_log.request_id` is the only column that
+/// carries it. Unit-tested header parsing proves the *reader* works; this
+/// proves the value actually survives the route, the recorder and the insert.
+#[tokio::test]
+async fn the_requests_x_request_id_lands_on_the_access_log_row() {
+    let app = TestApp::new().await.expect("create test app");
+
+    let guest = TestUser::new("retention-guest-reqid@test.com");
+    guest.insert(app.db()).await.expect("insert guest");
+    let admin = TestUser::admin("retention-admin-reqid@test.com");
+    admin.insert(app.db()).await.expect("insert admin");
+
+    let dir = served_slips_dir();
+    let booking_id = seed_booking(app.db(), guest.id, "confirmed", 0).await;
+    let (slip_id, file_name) = seed_slip(app.db(), booking_id, guest.id, "pending", &dir).await;
+
+    // Unique per run, so the assertion cannot pass on somebody else's row.
+    let request_id = format!("req-{}", Uuid::new_v4());
+
+    let (status, _) = get_slip_image_with_request_id(
+        &app,
+        &admin.id,
+        &admin.email,
+        "admin",
+        &file_name,
+        Some(&request_id),
+    )
+    .await;
+    assert_eq!(status, 200);
+
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT request_id FROM slip_access_log WHERE slip_id = $1")
+            .bind(slip_id)
+            .fetch_one(app.db())
+            .await
+            .expect("one access row for the admin's view");
+
+    assert_eq!(
+        stored.as_deref(),
+        Some(request_id.as_str()),
+        "the access-log row carries the request's x-request-id verbatim"
+    );
+
+    let _ = std::fs::remove_file(dir.join(&file_name));
+    app.cleanup().await.ok();
+}
+
 // ============================================================================
 // Retention sweep
 // ============================================================================
@@ -465,25 +634,15 @@ async fn the_sweep_erases_only_what_every_rule_agrees_on() {
     )
     .await;
 
-    // ---- two rows, one file: erasing for A would destroy B's evidence ----
+    // ---- two rows, one file, and B's booking is still open --------------
+    // A is eligible; B is not. Erasing for A would destroy the evidence
+    // behind a live booking, so the whole group defers.
     let shared_a = seed_booking(app.db(), guest.id, "checked_out", 200).await;
     let (shared_a_slip, shared_file) =
         seed_slip(app.db(), shared_a, guest.id, "verified", &slips_dir).await;
     let shared_b = seed_booking(app.db(), guest.id, "confirmed", 200).await;
-    let shared_b_slip = Uuid::new_v4();
-    sqlx::query(
-        r#"
-        INSERT INTO booking_slips (id, booking_id, slip_url, uploaded_by, admin_status)
-        VALUES ($1, $2, $3, $4, 'verified')
-        "#,
-    )
-    .bind(shared_b_slip)
-    .bind(shared_b)
-    .bind(format!("/storage/slips/{}", shared_file))
-    .bind(guest.id)
-    .execute(app.db())
-    .await
-    .expect("seed a second live row sharing one file");
+    let shared_b_slip =
+        seed_sharing_row(app.db(), shared_b, guest.id, "verified", &shared_file).await;
 
     let erased =
         loyalty_backend::services::slip_retention::sweep_expired_slips_in(app.db(), 90, &slips_dir)
@@ -552,7 +711,7 @@ async fn the_sweep_erases_only_what_every_rule_agrees_on() {
         (
             shared_a_slip,
             shared_file.clone(),
-            "a second live row shares this file",
+            "an *ineligible* live row shares this file",
         ),
     ] {
         assert!(
@@ -578,69 +737,232 @@ async fn the_sweep_erases_only_what_every_rule_agrees_on() {
     app.cleanup().await.ok();
 }
 
-/// Once the last live row sharing a file becomes eligible, the file does go.
-/// Otherwise the shared-file guard above would be a permanent leak rather
-/// than a deferral.
+/// **The F2b fix.** Two closed, eligible bookings whose slip rows share one
+/// image: under the first cut of the shared-file guard each saw the other as
+/// a live referrer and deferred to it, so the image was never erased — a
+/// permanent leak wearing a safety rule's clothes.
+///
+/// The sweep now decides per *file*: every live row pointing at the image is
+/// eligible in this pass, so it unlinks once and tombstones both rows
+/// together.
 #[tokio::test]
-async fn a_shared_file_is_erased_once_the_last_row_sharing_it_is_eligible() {
+async fn two_eligible_rows_sharing_one_file_are_erased_together() {
     let app = TestApp::new().await.expect("create test app");
     let temp = tempfile::tempdir().expect("tempdir");
     let slips_dir = temp.path().join("slips");
 
-    let guest = TestUser::new("retention-shared@test.com");
+    let guest = TestUser::new("retention-shared-both@test.com");
     guest.insert(app.db()).await.expect("insert guest");
 
     let first = seed_booking(app.db(), guest.id, "checked_out", 200).await;
     let (first_slip, file_name) =
         seed_slip(app.db(), first, guest.id, "verified", &slips_dir).await;
 
-    let second = seed_booking(app.db(), guest.id, "checked_out", 200).await;
-    let second_slip = Uuid::new_v4();
-    sqlx::query(
-        r#"
-        INSERT INTO booking_slips (id, booking_id, slip_url, uploaded_by, admin_status)
-        VALUES ($1, $2, $3, $4, 'verified')
-        "#,
-    )
-    .bind(second_slip)
-    .bind(second)
-    .bind(format!("/storage/slips/{}", file_name))
-    .bind(guest.id)
-    .execute(app.db())
-    .await
-    .expect("seed the second row sharing one file");
+    let second = seed_booking(app.db(), guest.id, "completed", 200).await;
+    let second_slip = seed_sharing_row(app.db(), second, guest.id, "verified", &file_name).await;
 
-    // Both rows are eligible on every other rule, and each blocks the other.
+    let erased =
+        loyalty_backend::services::slip_retention::sweep_expired_slips_in(app.db(), 90, &slips_dir)
+            .await;
+
+    // One *image*, not one row: the return value counts files unlinked, and
+    // the file backing both rows was unlinked exactly once.
+    assert_eq!(
+        erased, 1,
+        "one image erased, however many rows were evidence for it"
+    );
+    assert!(
+        !slips_dir.join(&file_name).exists(),
+        "the shared image must actually leave the volume"
+    );
+
+    let first_stamp = assert_tombstoned(app.db(), first_slip, "the first sharer").await;
+    let second_stamp = assert_tombstoned(app.db(), second_slip, "the second sharer").await;
+
+    // `NOW()` is the transaction's start time, so identical stamps are proof
+    // the two rows were retired by one statement. A row left un-tombstoned
+    // beside a deleted file is the state the erase-then-tombstone ordering
+    // exists to avoid, and half a group is exactly that state.
+    assert_eq!(
+        first_stamp, second_stamp,
+        "both rows were tombstoned in the same transaction"
+    );
+
+    let again =
+        loyalty_backend::services::slip_retention::sweep_expired_slips_in(app.db(), 90, &slips_dir)
+            .await;
+    assert_eq!(again, 0, "nothing left to do on a second pass");
+
+    app.cleanup().await.ok();
+}
+
+/// The other side of that coin, and the reason the group rule is not simply
+/// "erase whatever is old": one sharer whose booking is still open keeps the
+/// image, and keeps the *eligible* row's tombstone unwritten too. Its
+/// `slip_url` must still resolve, because the file is still there.
+#[tokio::test]
+async fn one_open_sharer_defers_the_whole_group() {
+    let app = TestApp::new().await.expect("create test app");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let slips_dir = temp.path().join("slips");
+
+    let guest = TestUser::new("retention-shared-open@test.com");
+    guest.insert(app.db()).await.expect("insert guest");
+
+    let closed = seed_booking(app.db(), guest.id, "checked_out", 200).await;
+    let (closed_slip, file_name) =
+        seed_slip(app.db(), closed, guest.id, "verified", &slips_dir).await;
+
+    // Still checked in: the stay is not over, so this row is not eligible on
+    // any reading, and the image is live evidence for it.
+    let open = seed_booking(app.db(), guest.id, "checked_in", 200).await;
+    let open_slip = seed_sharing_row(app.db(), open, guest.id, "verified", &file_name).await;
+
     let erased =
         loyalty_backend::services::slip_retention::sweep_expired_slips_in(app.db(), 90, &slips_dir)
             .await;
     assert_eq!(
         erased, 0,
-        "neither row may unlink a file the other still uses"
+        "an open booking's evidence is not collateral for someone else's window"
     );
-    assert!(slips_dir.join(&file_name).exists());
 
-    // Retire one of them the way the guest delete route would, and the file
-    // is no longer shared.
-    sqlx::query("DELETE FROM booking_slips WHERE id = $1")
-        .bind(second_slip)
-        .execute(app.db())
-        .await
-        .expect("retire the second row");
+    for (slip_id, why) in [
+        (closed_slip, "the eligible row defers with the group"),
+        (open_slip, "the open booking's row is untouched"),
+    ] {
+        assert!(
+            slip_is_intact(app.db(), slip_id, &slips_dir.join(&file_name)).await,
+            "must be kept: {}",
+            why
+        );
+    }
+
+    app.cleanup().await.ok();
+}
+
+/// Deferral has to be a delay, not a life sentence: once the last sharer
+/// closes and ages past the window, the same pair is erased. Without this the
+/// group rule would be the old mutual-deferral bug with extra steps.
+#[tokio::test]
+async fn a_deferred_group_is_erased_once_its_last_sharer_becomes_eligible() {
+    let app = TestApp::new().await.expect("create test app");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let slips_dir = temp.path().join("slips");
+
+    let guest = TestUser::new("retention-shared-later@test.com");
+    guest.insert(app.db()).await.expect("insert guest");
+
+    let closed = seed_booking(app.db(), guest.id, "checked_out", 200).await;
+    let (closed_slip, file_name) =
+        seed_slip(app.db(), closed, guest.id, "verified", &slips_dir).await;
+
+    let open = seed_booking(app.db(), guest.id, "confirmed", 200).await;
+    let open_slip = seed_sharing_row(app.db(), open, guest.id, "verified", &file_name).await;
 
     let erased =
         loyalty_backend::services::slip_retention::sweep_expired_slips_in(app.db(), 90, &slips_dir)
             .await;
-    assert_eq!(erased, 1, "the last row standing may now erase the file");
-    assert!(!slips_dir.join(&file_name).exists());
+    assert_eq!(erased, 0, "deferred while one sharer is still open");
+    assert!(slips_dir.join(&file_name).exists());
 
-    let deleted_at: Option<chrono::DateTime<chrono::Utc>> =
-        sqlx::query_scalar("SELECT deleted_at FROM booking_slips WHERE id = $1")
-            .bind(first_slip)
-            .fetch_one(app.db())
-            .await
-            .expect("row still present");
-    assert!(deleted_at.is_some());
+    // The booking finally closes, and closed long enough ago to be past the
+    // window itself — the only thing that changes between the two sweeps.
+    close_booking(app.db(), open, "checked_out", 200).await;
+
+    let erased =
+        loyalty_backend::services::slip_retention::sweep_expired_slips_in(app.db(), 90, &slips_dir)
+            .await;
+    assert_eq!(erased, 1, "the group is erasable now that every sharer is");
+    assert!(
+        !slips_dir.join(&file_name).exists(),
+        "the deferral was a delay, not a leak"
+    );
+
+    assert_tombstoned(app.db(), closed_slip, "the originally eligible row").await;
+    assert_tombstoned(app.db(), open_slip, "the late sharer").await;
+
+    app.cleanup().await.ok();
+}
+
+/// `GREATEST(check_out_date, cancelled_at, updated_at)` is the window's
+/// closing moment, and this is the arm that is easy to leave untested: a stay
+/// that ended 200 days ago but whose row was written *today*.
+///
+/// Something touched that booking recently — a correction, an admin note, a
+/// late reconciliation — so its retention clock restarts. The sweep errs
+/// towards deleting late rather than early, and a control fixture in the same
+/// pass proves the sweep ran at all.
+#[tokio::test]
+async fn a_recent_updated_at_holds_an_old_stay_inside_the_window() {
+    let app = TestApp::new().await.expect("create test app");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let slips_dir = temp.path().join("slips");
+
+    let guest = TestUser::new("retention-touched@test.com");
+    guest.insert(app.db()).await.expect("insert guest");
+
+    let touched = seed_booking(app.db(), guest.id, "checked_out", 200).await;
+    let (touched_slip, touched_file) =
+        seed_slip(app.db(), touched, guest.id, "verified", &slips_dir).await;
+    touch_booking(app.db(), touched).await;
+
+    // Identical in every way except that nobody has touched it.
+    let control = seed_booking(app.db(), guest.id, "checked_out", 200).await;
+    let (control_slip, control_file) =
+        seed_slip(app.db(), control, guest.id, "verified", &slips_dir).await;
+
+    let erased =
+        loyalty_backend::services::slip_retention::sweep_expired_slips_in(app.db(), 90, &slips_dir)
+            .await;
+    assert_eq!(erased, 1, "the control was erased, so the sweep did run");
+    assert!(!slips_dir.join(&control_file).exists());
+    assert_tombstoned(app.db(), control_slip, "the untouched control").await;
+
+    assert!(
+        slip_is_intact(app.db(), touched_slip, &slips_dir.join(&touched_file)).await,
+        "a stay that ended 200 days ago but was written today is still inside the window"
+    );
+
+    app.cleanup().await.ok();
+}
+
+/// `completed` and `no_show` are closed states the module claims to sweep,
+/// and until now only `checked_out` and `cancelled` had fixtures. A status
+/// list is exactly the kind of thing that loses an entry in a refactor
+/// without a test noticing.
+#[tokio::test]
+async fn completed_and_no_show_bookings_are_swept_too() {
+    let app = TestApp::new().await.expect("create test app");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let slips_dir = temp.path().join("slips");
+
+    let guest = TestUser::new("retention-closed-states@test.com");
+    guest.insert(app.db()).await.expect("insert guest");
+
+    let completed = seed_booking(app.db(), guest.id, "completed", 200).await;
+    let (completed_slip, completed_file) =
+        seed_slip(app.db(), completed, guest.id, "verified", &slips_dir).await;
+
+    let no_show = seed_booking(app.db(), guest.id, "no_show", 200).await;
+    let (no_show_slip, no_show_file) =
+        seed_slip(app.db(), no_show, guest.id, "verified", &slips_dir).await;
+
+    let erased =
+        loyalty_backend::services::slip_retention::sweep_expired_slips_in(app.db(), 90, &slips_dir)
+            .await;
+    assert_eq!(erased, 2, "both closed states are swept");
+
+    for (slip_id, file, status) in [
+        (completed_slip, completed_file, "completed"),
+        (no_show_slip, no_show_file, "no_show"),
+    ] {
+        assert!(
+            !slips_dir.join(&file).exists(),
+            "a {} booking's slip image must be erased",
+            status
+        );
+        assert_tombstoned(app.db(), slip_id, status).await;
+    }
 
     app.cleanup().await.ok();
 }
