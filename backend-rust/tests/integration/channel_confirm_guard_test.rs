@@ -807,6 +807,23 @@ async fn a_non_409_4xx_is_retryable_and_never_refuses_the_booking() {
         response.body
     );
 
+    // The `Unavailable` arm is where B1's narrowing sent every HTML-heavy
+    // answer, and `ExternalServiceUnavailable` renders verbatim into the
+    // admin's browser — so it has to go through `sanitize_pms_body` too.
+    // This is the only test that proves that wiring.
+    for banned in ['<', '>', '"'] {
+        assert!(
+            !response.body.contains(banned),
+            "the PMS's markup must not reach the admin: {}",
+            response.body
+        );
+    }
+    assert!(
+        response.body.contains("HF Ville writes are disabled"),
+        "and the words a human needs must survive the sanitiser: {}",
+        response.body
+    );
+
     assert_eq!(
         booking_status(app.db(), booking_id).await,
         "pending",
@@ -1148,14 +1165,21 @@ async fn a_no_show_booking_is_refused_locally_and_the_machine_verdict_survives()
     app.cleanup().await.ok();
 }
 
-/// A 410 Gone — the other half of `REFUSAL_STATUSES`, driven through
-/// `post_action` rather than asserted against the constant.
+/// A 410 Gone is **retryable**, not a refusal.
+///
+/// `new-hotel` never emits Gone from `/api/channel/*` — `StatusCode::GONE`
+/// appears only in `routes/hk.rs` and `routes/new_maintenance.rs` — so a 410
+/// here cannot be the PMS's verdict on the booking. It can only have come
+/// from something between us and it (a proxy retiring an endpoint, an edge
+/// serving a cached tombstone), which is an outage. Calling it definitive
+/// would tell reception the room is gone because a load balancer was
+/// reconfigured.
 #[tokio::test]
-async fn a_pms_410_is_a_refusal_like_a_409() {
+async fn a_pms_410_is_retryable_because_the_pms_never_sends_one() {
     let pms_mock = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/channel/bookings/hf-4204/payment-verified"))
-        .respond_with(ResponseTemplate::new(410).set_body_string("hold 4204 is gone"))
+        .respond_with(ResponseTemplate::new(410).set_body_string("endpoint retired"))
         .expect(1)
         .mount(&pms_mock)
         .await;
@@ -1184,21 +1208,31 @@ async fn a_pms_410_is_a_refusal_like_a_409() {
     let slip_id = seed_pending_slip(app.db(), booking_id, guest.id).await;
 
     let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
-    client
+    let response = client
         .post(
             &format!("/api/admin/bookings/slips/{}/verify", slip_id),
             &json!({}),
         )
-        .await
-        .assert_status(409);
+        .await;
 
+    assert_eq!(
+        response.status, 503,
+        "a 410 from an intermediary is an outage, not a dead booking: {}",
+        response.body
+    );
     assert_eq!(booking_status(app.db(), booking_id).await, "pending");
     let (admin_status, _, _, _) = slip_state(app.db(), slip_id).await;
-    assert_eq!(admin_status.as_deref(), Some("needs_action"));
-    let rows = audit_rows(app.db(), booking_id).await;
     assert_eq!(
-        refusal_row(&rows).2.as_ref().expect("after_data")["pmsStatus"].as_u64(),
-        Some(410)
+        admin_status.as_deref(),
+        Some("verified"),
+        "the verify stands and the admin retries it"
+    );
+    let rows = audit_rows(app.db(), booking_id).await;
+    assert!(
+        !rows
+            .iter()
+            .any(|(action, _, _)| action == ACTION_BOOKING_NOT_CONFIRMED),
+        "nothing was refused: {rows:?}"
     );
 
     app.cleanup().await.ok();
@@ -1495,8 +1529,10 @@ async fn auto_verify_in_live_mode_records_a_pms_refusal_and_keeps_it() {
 ///
 /// The machine records its decision and touches nothing: no PMS call, no
 /// stamp on the slip, no movement on the booking. `booking_not_payable` is
-/// written by `slipok_check` itself, which is the same word the confirm path
-/// uses, so the two cannot drift.
+/// written by `slipok_check` itself, and it is **deliberately a different
+/// word** from the `confirm_refused` the confirm path writes: this one means
+/// "the machine declined to act, a human can still finish it", not "a
+/// confirmation was tried and the room is gone".
 #[tokio::test]
 async fn auto_verify_in_shadow_mode_records_the_refusal_and_calls_no_pms() {
     let slipok_mock = MockServer::start().await;
@@ -1591,7 +1627,7 @@ async fn auto_verify_in_shadow_mode_records_the_refusal_and_calls_no_pms() {
 /// this case. The guard now tests the refusal's own signature
 /// (`needs_action`), so this reverts as it must.
 #[tokio::test]
-async fn a_failure_before_the_commit_still_reverts_and_frees_the_reference() {
+async fn revert_auto_confirm_still_reverts_a_slip_left_on_pending() {
     let app = TestApp::new().await.expect("create test app");
     let guest = seed_guest(&app, "a15-precommit-revert@test.com").await;
     let booking_id = seed_channel_booking(
@@ -2021,6 +2057,77 @@ fn created_body(pms_booking_id: &str) -> Value {
         "amount_due_now": 1500.0,
         "hold_expires_at": (Utc::now() + Duration::hours(2)).to_rfc3339(),
     })
+}
+
+/// N7: a 4xx on the **create** path that is about us, not about the guest.
+///
+/// `parse_json` used to map every 4xx to `AppError::BadRequest`, so a rotated
+/// `LOYALTY_CHANNEL_TOKEN` (401), a disabled HF Ville write gate (403) or an
+/// unmounted channel router (404 — what a PMS with a dead PG pool looks like
+/// from out here) reached the guest as "PMS rejected create booking". That
+/// sends someone off to change dates that were never the problem. All three
+/// are ours, and all three are 503.
+///
+/// A genuine guest-side 4xx — sold out, bad dates — stays a client error,
+/// which the last case pins.
+#[tokio::test]
+async fn a_create_4xx_that_is_our_fault_is_an_outage_not_a_bad_request() {
+    for (status, body) in [
+        (401u16, "invalid channel token"),
+        (403, "HF Ville writes are disabled"),
+        (404, "not found"),
+    ] {
+        let pms_mock = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/channel/bookings"))
+            .respond_with(ResponseTemplate::new(status).set_body_string(body))
+            .expect(1)
+            .mount(&pms_mock)
+            .await;
+
+        let client = pms_client(&pms_mock.uri());
+        let phone = format!("0870000{}", &Uuid::new_v4().simple().to_string()[..6]);
+        let err = client
+            .create_booking(&hold_request(&phone))
+            .await
+            .expect_err("the PMS refused");
+
+        assert_eq!(
+            err.status_code(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "{status} is our problem, so the guest is told to try again, not \
+             that their booking was rejected: {err}"
+        );
+        assert!(
+            !matches!(err, loyalty_backend::AppError::BadRequest(_)),
+            "{status} must not surface as a client error: {err}"
+        );
+    }
+
+    // The contrast: a 4xx that really is about what was asked for.
+    let pms_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/channel/bookings"))
+        .respond_with(ResponseTemplate::new(400).set_body_string("no rooms of that type"))
+        .expect(1)
+        .mount(&pms_mock)
+        .await;
+
+    let client = pms_client(&pms_mock.uri());
+    let phone = format!("0880000{}", &Uuid::new_v4().simple().to_string()[..6]);
+    let err = client
+        .create_booking(&hold_request(&phone))
+        .await
+        .expect_err("sold out");
+    assert!(
+        matches!(err, loyalty_backend::AppError::BadRequest(_)),
+        "a genuine guest-side refusal stays a client error: {err}"
+    );
+    assert_eq!(
+        err.status_code(),
+        axum::http::StatusCode::BAD_REQUEST,
+        "{err}"
+    );
 }
 
 /// Two identical hold creates at once — the guest whose first request hung

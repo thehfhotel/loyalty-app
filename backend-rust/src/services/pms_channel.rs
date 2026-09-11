@@ -202,8 +202,8 @@ pub struct PmsBookingCreated {
 /// the slip behind it has to stop claiming the booking was confirmed.
 #[derive(Debug)]
 pub enum PmsActionError {
-    /// The PMS answered **409 Conflict** (or 410 Gone) about the booking
-    /// itself. Definitive: the hold is gone and no retry brings it back.
+    /// The PMS answered **409 Conflict** about the booking itself.
+    /// Definitive: the hold is gone and no retry brings it back.
     ///
     /// Deliberately NOT "any 4xx" — that was this type's first shape and it
     /// was wrong. Most 4xx answers on this path are *our* problem, not the
@@ -234,15 +234,25 @@ pub enum PmsActionError {
     Unavailable(AppError),
 }
 
-/// The only statuses that mean "this booking cannot take this action".
+/// The only status that means "this booking cannot take this action".
 ///
-/// **409** is what `new-hotel`'s `ChannelService::confirm_payment` answers
-/// for a hold it has already released or cancelled
-/// (`service/channel.rs`: `ServiceError::conflict`), and what
-/// `docs/loyalty-channel.md:78-86` documents. **410** is included because a
-/// PMS that ever starts hard-deleting expired holds would answer Gone, and
-/// that means the same thing to us. Nothing else does.
-const REFUSAL_STATUSES: [u16; 2] = [409, 410];
+/// **409, and nothing else.** It is what `new-hotel`'s
+/// `ChannelService::confirm_payment` answers for a hold it has already
+/// released or cancelled (`service/channel.rs`: `ServiceError::conflict`,
+/// mapped by `routes/channel.rs` to `StatusCode::CONFLICT`), and what
+/// `docs/loyalty-channel.md:78-86` documents.
+///
+/// **410 was here and has been removed.** It was speculative — "a PMS that
+/// ever starts hard-deleting expired holds would answer Gone" — and the
+/// speculation does not hold: `StatusCode::GONE` appears in `new-hotel`
+/// only in `routes/hk.rs` and `routes/new_maintenance.rs`, neither of which
+/// is reachable from `/api/channel/*`. So a 410 on this path cannot have
+/// come from the PMS's own logic; it can only have come from something
+/// between us and it — a proxy retiring an endpoint, an edge returning a
+/// cached tombstone — which is an outage, not a verdict about the booking.
+/// Treating it as definitive would send a slip to reception reading "the
+/// room is gone" because a load balancer was reconfigured.
+const REFUSAL_STATUSES: [u16; 1] = [409];
 
 /// 4xx statuses that are about *us*, not about what the caller asked for.
 ///
@@ -654,7 +664,7 @@ impl PmsChannelClient {
 ///
 /// Used by **both** arms of [`PmsChannelClient::post_action`]. The refusal
 /// arm always sanitised; the `Unavailable` arm did not, and narrowing
-/// [`REFUSAL_STATUSES`] to `[409, 410]` moved 401/403/404/415/422 and every
+/// [`REFUSAL_STATUSES`] to `[409]` moved 401/403/404/410/415/422 and every
 /// 5xx into it — i.e. precisely the Cloudflare and error-page bodies this
 /// exists for. `AppError::ExternalServiceUnavailable` renders verbatim into
 /// the admin's browser, so an unsanitised arm there is the same bug with a
@@ -1294,8 +1304,10 @@ mod tests {
     /// slip to reception with the wrong story.
     #[test]
     fn only_a_conflict_is_a_refusal() {
-        assert_eq!(REFUSAL_STATUSES, [409, 410]);
-        for retryable in [400u16, 401, 403, 404, 415, 422, 429, 500, 502, 503] {
+        assert_eq!(REFUSAL_STATUSES, [409]);
+        // 410 is in this list on purpose: `new-hotel` never emits Gone from
+        // `/api/channel/*`, so one can only have come from an intermediary.
+        for retryable in [400u16, 401, 403, 404, 410, 415, 422, 429, 500, 502, 503] {
             assert!(
                 !REFUSAL_STATUSES.contains(&retryable),
                 "{retryable} is retryable, not a refusal"
