@@ -53,14 +53,49 @@ POST /api/loyalty/stays          auth: Authorization: Bearer <LOYALTY_SERVICE_TO
 GET  /api/channel/availability?property&check_in&check_out&guests
      → room types with nightly prices and bookable counts
 POST /api/channel/bookings
+     Idempotency-Key: <1..255 printable ASCII>   — scoped per caller token +
+                                                   property (new-hotel #305)
      { property, room_type, check_in, check_out, guest{name,phone},
        membership_id?, payment: "deposit50" | "full" }
      → { pms_booking_id, total, amount_due_now, hold_expires_at }
+       replay of a stored key → the same body + `Idempotency-Replayed: true`
+       same key, different body → 422
 POST /api/channel/bookings/{pms_booking_id}/payment-verified
      { "amount": <THB received> }   — required: the PMS doesn't persist the
                                       guest's deposit50/full choice
 POST /api/channel/bookings/{pms_booking_id}/release            (hold expired)
 ```
+
+#### Who mints the hold-create idempotency key (A16)
+
+**The browser does, once per booking attempt.** A key only earns its keep
+when a *retry of one attempt* carries the same value, and a key minted
+server-side per HTTP request cannot do that — the retry is a second request
+and would get a second key, so the PMS would see two unrelated creates and
+hold two rooms.
+
+`frontend/src/services/channelBookingService.ts` therefore mints a UUID v4
+per `createBooking()` call and sends it as `Idempotency-Key`. That value
+survives the one retry this app really performs: `axiosInterceptor` replays
+`error.config` — the same object, headers included — after a 401 refresh.
+(It was worth checking: the booking mutation itself does **not** retry, so
+the 401 replay is the whole client-side retry surface today.)
+
+`routes::bookings::create_channel_booking` accepts that header (and an
+`idempotencyKey` body field, for a caller that cannot set headers), and
+**mints its own UUID v4 when neither is present** — an older bundle still
+live in a guest's LIFF webview, a curl from the desk. A server-minted key
+gives those callers everything except cross-request replay: a duplicate
+*delivery* of one request still collapses. Sending no key at all would be
+strictly worse, and there is no third option. A malformed client key is
+warned about and replaced rather than rejected, because a client bug must
+not read as "your booking failed" to a guest who did nothing wrong.
+
+The app's own one-in-flight Redis hold guard still runs alongside it, behind
+`PMS_HOLD_GUARD` (default **on**). That flag is the retirement lever: once
+the keyed path has run in production long enough to trust, set it to `false`
+to drop the lock without a deploy. It does not turn idempotency off — the
+key is sent either way.
 
 Implementation notes from the PMS side (feat/loyalty-channel in new-hotel):
 `pms_booking_id` is `"{hf|hfville}-{book_id}"` (per-site DBs have

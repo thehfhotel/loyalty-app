@@ -60,6 +60,15 @@ fn build(connect: Duration, total: Duration) -> reqwest::Result<reqwest::Client>
         .build()
 }
 
+/// [`build`], plus `redirect(Policy::none())`. See [`outbound_no_redirect`].
+fn build_no_redirect(connect: Duration, total: Duration) -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .connect_timeout(connect)
+        .timeout(total)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+}
+
 /// The shared client, built on first use.
 ///
 /// `expect` rather than a fallback: the only way `build` fails is that the
@@ -72,12 +81,41 @@ static OUTBOUND: Lazy<reqwest::Client> = Lazy::new(|| {
         .expect("the outbound HTTP client could not be built (TLS backend unavailable)")
 });
 
+/// The shared redirect-refusing client, built on first use.
+///
+/// Separate `Lazy` rather than a per-call rebuild for the reason in the
+/// module note: a `reqwest::Client` owns a connection pool, and the OAuth
+/// token and userinfo endpoints are hosts we talk to on every login.
+static OUTBOUND_NO_REDIRECT: Lazy<reqwest::Client> = Lazy::new(|| {
+    build_no_redirect(OUTBOUND_CONNECT_TIMEOUT, OUTBOUND_TOTAL_TIMEOUT).expect(
+        "the redirect-refusing outbound HTTP client could not be built (TLS backend unavailable)",
+    )
+});
+
 /// The app's shared outbound HTTP client: connect ≤ 5 s, request ≤ 10 s.
 ///
 /// Reuse it rather than calling `reqwest::Client::new()`; see the module
 /// note for why both halves of that matter.
 pub fn outbound() -> &'static reqwest::Client {
     &OUTBOUND
+}
+
+/// The same client, for callers that must not follow redirects.
+///
+/// One caller, and it is not a style preference: `oauth2` v5 requires the
+/// client used for a token exchange to refuse redirects, as an SSRF
+/// mitigation (upstream's v4→v5 upgrade guide). `services::oauth` built its
+/// own `reqwest::Client` for exactly that reason — and got no timeouts with
+/// it, because `Client::builder()` starts from none, so a hung Google or
+/// LINE token endpoint held a guest's login open until the router's 30 s
+/// `TimeoutLayer` turned it into a 408.
+///
+/// Handing that call site [`outbound`] would have bounded it and silently
+/// dropped the redirect policy, so the fix is this: same constants, same
+/// built-once sharing, one behavioural difference that the caller actually
+/// needs. Redirect policy is the *only* thing that differs.
+pub fn outbound_no_redirect() -> &'static reqwest::Client {
+    &OUTBOUND_NO_REDIRECT
 }
 
 #[cfg(test)]
@@ -132,6 +170,58 @@ mod tests {
             "the request must end as a timeout, not some other failure: {error}"
         );
         accept.abort();
+    }
+
+    /// The redirect-refusing client is shared too, and is not the same
+    /// object as the ordinary one: a caller that asked for no redirects
+    /// must never be handed a client that follows them.
+    #[test]
+    fn the_no_redirect_client_is_its_own_shared_client() {
+        assert!(
+            std::ptr::eq(outbound_no_redirect(), outbound_no_redirect()),
+            "every caller must get the same redirect-refusing client"
+        );
+        assert!(
+            !std::ptr::eq(outbound(), outbound_no_redirect()),
+            "the two clients differ in redirect policy, so they cannot be one object"
+        );
+    }
+
+    /// And it really refuses: a 302 comes back as a 302, not as whatever
+    /// was at the other end. This is the SSRF mitigation `oauth2` v5 asks
+    /// for, so it is asserted rather than assumed from the builder call.
+    #[tokio::test]
+    async fn the_no_redirect_client_hands_back_the_redirect_itself() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind a local listener");
+        let addr = listener.local_addr().expect("listener address");
+
+        let server = tokio::spawn(async move {
+            if let Ok((mut socket, _)) = listener.accept().await {
+                use tokio::io::AsyncWriteExt;
+                let _ = socket
+                    .write_all(
+                        b"HTTP/1.1 302 Found\r\nLocation: http://169.254.169.254/\r\n\
+                          Content-Length: 0\r\nConnection: close\r\n\r\n",
+                    )
+                    .await;
+                let _ = socket.flush().await;
+            }
+        });
+
+        let response = outbound_no_redirect()
+            .get(format!("http://{addr}/token"))
+            .send()
+            .await
+            .expect("the request itself succeeds");
+
+        assert_eq!(
+            response.status().as_u16(),
+            302,
+            "the redirect must be returned, not followed to the Location host"
+        );
+        server.abort();
     }
 
     /// And the production constants are the ones the rest of the app was

@@ -16,6 +16,8 @@ import {
 } from '../services/channelBookingService';
 import { useAuthStore } from '../store/authStore';
 import { logger } from '../utils/logger';
+import { isPmsOutage } from '../utils/pmsOutage';
+import PmsOutageNotice from '../components/booking/PmsOutageNotice';
 import toast from 'react-hot-toast';
 
 // The booking flow is a CHANNEL into the PMS (ADR-0003): availability is
@@ -65,6 +67,10 @@ export default function BookingPage() {
   const [guestPhone, setGuestPhone] = useState(user?.phone ?? '');
   const [paymentOption, setPaymentOption] = useState<PaymentOption>('deposit50');
   const [currentStep, setCurrentStep] = useState(1);
+  // The booking system could not be reached on the last attempt (A17).
+  // Sticky, not a toast: a guest who has to phone reception needs the
+  // number to still be on screen while they find their phone.
+  const [pmsOutage, setPmsOutage] = useState(false);
 
   // Payment state
   const [createdBooking, setCreatedBooking] = useState<ChannelBookingResponse | null>(null);
@@ -122,10 +128,20 @@ export default function BookingPage() {
     onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: ['bookings'] });
       toast.success(t('booking.bookingSuccess'));
+      setPmsOutage(false);
       setCreatedBooking(data);
       setCurrentStep(4);
     },
     onError: (error: Error) => {
+      // The hold create fails closed, so "the PMS could not answer" is a
+      // distinct outcome from "the PMS said no" — and it is the one where
+      // the guest can still get a room, by phoning the desk. It gets the
+      // panel below rather than a toast carrying the backend's words.
+      if (isPmsOutage(error)) {
+        setPmsOutage(true);
+        return;
+      }
+      setPmsOutage(false);
       toast.error(error.message || t('booking.bookingError'));
     },
   });
@@ -688,6 +704,8 @@ export default function BookingPage() {
               </div>
             </Card>
           </div>
+
+          {pmsOutage && <PmsOutageNotice property={property} />}
 
           <div className={STICKY_CTA_CLASSES}>
             <span className="text-body font-semibold text-ink">฿{totalPrice.toLocaleString()}</span>

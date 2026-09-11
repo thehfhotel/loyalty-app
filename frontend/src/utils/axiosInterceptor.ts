@@ -21,26 +21,41 @@ interface ApiErrorResponse {
 // Custom error class to preserve error code from backend
 export class ApiError extends Error {
   constructor(
+    /**
+     * What a person should be shown: the backend's `message` sentence when
+     * there is one, and only then the machine `error` key.
+     *
+     * **This order was the other way round until A17**, and it is why a PMS
+     * outage reached a guest as the word `external_service_unavailable`.
+     * `ErrorResponse` is `{error, message}` — `error` is a machine key
+     * (`"conflict"`, `"external_service_unavailable"`), `message` is the
+     * sentence written for a human — and the app's toasts, nearly all of
+     * which fall back to `error.message`, were therefore rendering the key.
+     * Every caller that needs the key reads `.code`, which still carries it
+     * (see below), so nothing that *branches* on the machine value changed.
+     */
     message: string,
+    /**
+     * The machine key, for callers that branch on it: `data.code` when the
+     * backend sends one, otherwise `data.error`. Unchanged by A17 — this
+     * has always been the field to test against, and it is now the only
+     * one, rather than one of two.
+     */
     public code?: string,
     /**
      * HTTP status of the failed response, when there was one.
      *
      * A handler that must tell "the server refused this" from "the server
-     * could not answer" has nothing else to go on: `message` below is
-     * historically the backend's machine `error` field, and every other
-     * caller depends on that staying exactly as it is.
+     * could not answer" has nothing else to go on.
      */
     public status?: number,
     /**
      * The backend's human-readable `message` field, verbatim.
      *
-     * Separate from `message` on purpose. `ErrorResponse` is
-     * `{error, message}` where `error` is the machine code
-     * (`"conflict"`) and `message` is the sentence meant for a person;
-     * `message` on this class has always carried the former, and changing
-     * that would rewrite every toast in the app. New callers that want the
-     * sentence read this.
+     * Kept as its own field even though `message` now prefers it: a caller
+     * that wants the backend's sentence *and only if there was one* can
+     * still tell it apart from an axios transport message like
+     * `"Network Error"`.
      */
     public detail?: string
   ) {
@@ -52,8 +67,11 @@ export class ApiError extends Error {
 // Helper to create error with code preserved
 function createApiError(error: AxiosError): Error {
   const data = error.response?.data as ApiErrorResponse | undefined;
-  // Unchanged resolution order — every existing consumer reads `.message`.
-  const message = data?.error ?? data?.message ?? error.message;
+  // The human sentence first — see `ApiError`'s `message` doc for why this
+  // is the way round it is. `error.message` is the last resort: for a
+  // request that never got a response there is no body to read, and axios's
+  // own text ("Network Error", "timeout of 0ms exceeded") is all there is.
+  const message = data?.message ?? data?.error ?? error.message;
   // `data.code` is the documented field; the backend actually ships the
   // machine key as `data.error`, so fall back to it rather than losing it.
   const code = data?.code ?? data?.error;

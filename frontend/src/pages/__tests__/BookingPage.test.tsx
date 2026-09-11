@@ -77,6 +77,13 @@ vi.mock('react-i18next', () => ({
       }
       return key;
     },
+    // `PmsOutageNotice` renders Thai-first through `getFixedT`. The shipped
+    // Thai and English copy is asserted against the real bundles in that
+    // component's own test; here the language-tagged key is enough to prove
+    // the page chose the right line.
+    i18n: {
+      getFixedT: (lng: string) => (key: string) => `${lng}:${key}`,
+    },
   }),
 }));
 
@@ -107,6 +114,7 @@ vi.mock('../../components/layout/AppShell', () => ({
 
 // Import the component AFTER all mocks are registered.
 import BookingPage from '../BookingPage';
+import { ApiError } from '../../utils/axiosInterceptor';
 
 // ============================================================================
 // Test helpers
@@ -324,5 +332,110 @@ describe('BookingPage — channel flow (property → rooms → confirm → payme
     });
     // addSlip must NOT be called when uploadSlip itself fails.
     expect(mockAddSlip).not.toHaveBeenCalled();
+  });
+
+  // ==========================================================================
+  // A17 — the PMS-outage path
+  // ==========================================================================
+
+  /**
+   * Walk to the confirm step and press the button, without asserting that
+   * anything succeeded — the outage cases deliberately do not reach step 4.
+   */
+  async function confirmBooking(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByTestId('property-hf'));
+    fireEvent.change(screen.getByTestId('check-in-date'), { target: { value: '2030-01-01' } });
+    fireEvent.change(screen.getByTestId('check-out-date'), { target: { value: '2030-01-03' } });
+    await user.click(screen.getByTestId('continue-to-rooms'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId(`room-type-${SAMPLE_ROOM_TYPE.room_type_id}`)).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId(`room-type-${SAMPLE_ROOM_TYPE.room_type_id}`));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('confirm-booking')).toBeInTheDocument();
+    });
+    await act(async () => {
+      await user.click(screen.getByTestId('confirm-booking'));
+    });
+  }
+
+  /**
+   * The hold create fails closed, so a guest whose booking hit a PMS outage
+   * has no room — and one useful next step, which is to phone the desk.
+   * Before A17 they got a toast reading `external_service_unavailable`.
+   */
+  it('shows the desk-contact notice when the booking system cannot be reached', async () => {
+    const user = userEvent.setup();
+    mockCreateChannelBooking.mockRejectedValue(
+      new ApiError('PMS is temporarily unavailable', 'external_service_unavailable', 503),
+    );
+    render(<BookingPage />, { wrapper });
+
+    await confirmBooking(user);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pms-outage-notice')).toBeInTheDocument();
+    });
+    // No toast at all on this path: the guest needs the number to stay on
+    // screen while they go and find their phone.
+    expect(mockToastError).not.toHaveBeenCalled();
+    // And the machine key never reaches the page.
+    expect(document.body.textContent).not.toContain('external_service_unavailable');
+  });
+
+  it('treats a timed-out request with no response as an outage too', async () => {
+    const user = userEvent.setup();
+    mockCreateChannelBooking.mockRejectedValue(new ApiError('Network Error'));
+    render(<BookingPage />, { wrapper });
+
+    await confirmBooking(user);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pms-outage-notice')).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * The other direction, which matters just as much: an answer the PMS
+   * actually gave is not an outage, and routing it to "phone reception"
+   * would send guests to the desk over a date they can fix themselves.
+   */
+  it('still toasts an ordinary refusal instead of sending the guest to the desk', async () => {
+    const user = userEvent.setup();
+    mockCreateChannelBooking.mockRejectedValue(
+      new ApiError('No rooms of that type are available', 'bad_request', 400),
+    );
+    render(<BookingPage />, { wrapper });
+
+    await confirmBooking(user);
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith('No rooms of that type are available');
+    });
+    expect(screen.queryByTestId('pms-outage-notice')).not.toBeInTheDocument();
+  });
+
+  it('clears the outage notice once a retry succeeds', async () => {
+    const user = userEvent.setup();
+    mockCreateChannelBooking.mockRejectedValueOnce(
+      new ApiError('PMS is temporarily unavailable', 'external_service_unavailable', 503),
+    );
+    render(<BookingPage />, { wrapper });
+
+    await confirmBooking(user);
+    await waitFor(() => {
+      expect(screen.getByTestId('pms-outage-notice')).toBeInTheDocument();
+    });
+
+    mockCreateChannelBooking.mockResolvedValue(SAMPLE_BOOKING);
+    await act(async () => {
+      await user.click(screen.getByTestId('confirm-booking'));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('pms-outage-notice')).not.toBeInTheDocument();
+    });
   });
 });

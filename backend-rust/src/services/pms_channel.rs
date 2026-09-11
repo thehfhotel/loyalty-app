@@ -152,6 +152,90 @@ fn action_url(
     ))
 }
 
+/// The header `new-hotel` reads the idempotency key from (its #305).
+pub const IDEMPOTENCY_KEY_HEADER: &str = "Idempotency-Key";
+
+/// The header the PMS sets when it answered from its key store instead of
+/// creating anything: `Idempotency-Replayed: true`.
+pub const IDEMPOTENCY_REPLAYED_HEADER: &str = "Idempotency-Replayed";
+
+/// Longest key the PMS accepts (its contract: 1..255 printable ASCII).
+pub const MAX_IDEMPOTENCY_KEY_LEN: usize = 255;
+
+/// Why a caller-supplied idempotency key cannot be used.
+///
+/// Its own type rather than an `AppError` for the same reason
+/// [`PmsBookingIdError`] is: the caller decides what to log, and the
+/// rejected value never travels with the error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum IdempotencyKeyError {
+    /// Empty or whitespace-only.
+    #[error("idempotency key is empty")]
+    Empty,
+    /// Longer than [`MAX_IDEMPOTENCY_KEY_LEN`].
+    #[error("idempotency key is longer than 255 characters")]
+    TooLong,
+    /// Contains a byte outside printable ASCII (`0x20..=0x7E`).
+    #[error("idempotency key contains a character outside printable ASCII")]
+    IllegalCharacter,
+}
+
+/// A key the PMS will accept: 1..=255 printable-ASCII bytes.
+///
+/// Constructed, never parsed from thin air — a `PmsChannelClient` takes one
+/// of these rather than a `&str` so there is no way to put an unvalidated
+/// string in the header. A key that fails the PMS's own rule would come
+/// back as a 400 *after* the request had been sent, which on a create means
+/// a guest told "booking failed" because a header was malformed.
+///
+/// ## Why the value is a UUID v4 by default
+///
+/// The key's only job is to be the same on a retry of one booking attempt
+/// and different for every other attempt. A v4 satisfies both with no
+/// coordination and no information in it — deliberately *not* a hash of the
+/// request, which would collapse a guest's genuine second booking for the
+/// same nights into the first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdempotencyKey(String);
+
+impl IdempotencyKey {
+    /// A fresh random key — one booking attempt's worth.
+    pub fn new_v4() -> Self {
+        Self(uuid::Uuid::new_v4().to_string())
+    }
+
+    /// Accept a caller-supplied key, or say why it cannot be used.
+    ///
+    /// ASCII whitespace is trimmed first: a key arrives in an HTTP header,
+    /// where surrounding whitespace is not part of the value, and a client
+    /// that sends `" abc "` means `abc`. After the trim the rule is the
+    /// PMS's, byte for byte — length in *bytes*, because that is what the
+    /// header carries and what the PMS counts.
+    pub fn parse(raw: &str) -> Result<Self, IdempotencyKeyError> {
+        let trimmed = raw.trim_matches(|c: char| c.is_ascii_whitespace());
+        if trimmed.is_empty() {
+            return Err(IdempotencyKeyError::Empty);
+        }
+        if trimmed.len() > MAX_IDEMPOTENCY_KEY_LEN {
+            return Err(IdempotencyKeyError::TooLong);
+        }
+        if !trimmed.bytes().all(|b| (0x20..=0x7E).contains(&b)) {
+            return Err(IdempotencyKeyError::IllegalCharacter);
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for IdempotencyKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// One bookable room type as reported by the PMS.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PmsRoomType {
@@ -198,6 +282,22 @@ pub struct PmsBookingCreated {
     pub total: Decimal,
     pub amount_due_now: Decimal,
     pub hold_expires_at: DateTime<Utc>,
+    /// True when the PMS answered `Idempotency-Replayed: true` — this
+    /// request created nothing and the body is the stored answer from an
+    /// earlier one carrying the same key.
+    ///
+    /// **A replay is a success**, and the fields above are the real hold:
+    /// that is the entire point of sending a key. It is carried out of the
+    /// client anyway because it changes what the *caller* may safely do —
+    /// see `routes::bookings::create_channel_booking`, which must not
+    /// release a replayed hold when its own insert fails, because the hold
+    /// may already belong to a booking row the guest can see.
+    ///
+    /// `skip` rather than a field name: the PMS puts this in a header, not
+    /// in the body, so there is nothing for serde to read and the default
+    /// (`false`) is the honest starting value.
+    #[serde(skip)]
+    pub replayed: bool,
 }
 
 /// What the PMS said when it would not perform an action.
@@ -314,6 +414,10 @@ pub struct PmsChannelClient {
     base_url: String,
     token: String,
     http: reqwest::Client,
+    /// Whether [`create_booking`](PmsChannelClient::create_booking) takes
+    /// the one-in-flight Redis lock (`PMS_HOLD_GUARD`, default on). See
+    /// [`crate::config::PmsConfig::hold_guard`] for why it is a flag.
+    hold_guard: bool,
 }
 
 impl PmsChannelClient {
@@ -330,6 +434,7 @@ impl PmsChannelClient {
         Ok(Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             token,
+            hold_guard: settings.pms.hold_guard,
             http: reqwest::Client::builder()
                 .timeout(PMS_REQUEST_TIMEOUT)
                 .connect_timeout(PMS_CONNECT_TIMEOUT)
@@ -407,11 +512,23 @@ impl PmsChannelClient {
         &self,
         request: &PmsCreateBookingRequest,
         redis: redis::aio::ConnectionManager,
+        idempotency_key: &IdempotencyKey,
     ) -> AppResult<PmsBookingCreated> {
-        let guard = self
-            .acquire_hold_guard(&hold_guard_key(request), redis)
-            .await?;
-        let outcome = self.create_booking_unguarded(request).await;
+        // `PMS_HOLD_GUARD=false` retires the lock, not the key: the header
+        // below is sent either way, so the PMS's own per-key store is what
+        // a retry collapses onto. `stood_down` is the same no-op guard a
+        // Redis outage produces, so there is exactly one unguarded path to
+        // reason about rather than two.
+        let guard = if self.hold_guard {
+            self.acquire_hold_guard(&hold_guard_key(request), redis)
+                .await?
+        } else {
+            tracing::debug!("PMS_HOLD_GUARD is off; relying on the PMS idempotency key alone");
+            HoldGuard::stood_down()
+        };
+        let outcome = self
+            .create_booking_unguarded(request, idempotency_key)
+            .await;
 
         // The lock is held for **the ambiguous case only**.
         //
@@ -436,20 +553,64 @@ impl PmsChannelClient {
         outcome
     }
 
+    /// The create call itself: key on the way out, replay flag on the way
+    /// back, and the one status that is about the key rather than the stay.
     async fn create_booking_unguarded(
         &self,
         request: &PmsCreateBookingRequest,
+        idempotency_key: &IdempotencyKey,
     ) -> AppResult<PmsBookingCreated> {
         let url = format!("{}/api/channel/bookings", self.base_url);
         let response = self
             .http
             .post(&url)
             .bearer_auth(&self.token)
+            .header(IDEMPOTENCY_KEY_HEADER, idempotency_key.as_str())
             .json(request)
             .send()
             .await
             .map_err(pms_unreachable)?;
-        Self::parse_json(response, "create booking").await
+
+        // Read before `parse_json` consumes the response.
+        let replayed = replay_header_says_yes(response.headers());
+
+        // 422 is the PMS's answer to "this key has already been used, with
+        // a *different* body" (new-hotel #305). It is the only status on
+        // this path that is about the key rather than the stay, and it is
+        // definitive: no retry of this request can succeed, because the
+        // stored request for this key will never match this one.
+        //
+        // Intercepted here rather than left to `parse_json`, which would
+        // render it as `BadRequest("PMS rejected create booking: …")` — the
+        // PMS's raw body in front of a guest, explaining nothing and
+        // inviting exactly the retry that cannot work.
+        if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            let detail = response.text().await.unwrap_or_default();
+            tracing::error!(
+                idempotency_key = %idempotency_key,
+                detail = %truncate_refusal_body(&detail),
+                "PMS refused the create: this idempotency key was already used with a different \
+                 booking. Something re-used a key across two different stays."
+            );
+            return Err(AppError::Conflict(
+                IDEMPOTENCY_KEY_REUSED_MESSAGE.to_string(),
+            ));
+        }
+
+        let mut created: PmsBookingCreated = Self::parse_json(response, "create booking").await?;
+        created.replayed = replayed;
+        if replayed {
+            // Not a warning: this is the feature working. It is logged
+            // because it is also the fingerprint of a guest who retried,
+            // and the rate of it is how we will know the keyed path is
+            // carrying its weight before `PMS_HOLD_GUARD` is turned off.
+            tracing::info!(
+                idempotency_key = %idempotency_key,
+                pms_booking_id = %created.pms_booking_id,
+                "PMS replayed an existing hold for this idempotency key; no second hold was created"
+            );
+        }
+        Ok(created)
     }
 
     /// Take the one-in-flight lock for this guest and stay, or refuse.
@@ -643,6 +804,31 @@ impl PmsChannelClient {
             AppError::ExternalServiceUnavailable(format!("PMS {what} response malformed: {e}"))
         })
     }
+}
+
+/// What a guest is told when the PMS refuses a create with 422.
+///
+/// Guest-facing verbatim: `AppError::Conflict` renders its message straight
+/// through (`error.rs::safe_message`). It has to say the one useful thing —
+/// *do not retry this, start again* — without mentioning keys, headers or
+/// the PMS, none of which mean anything to the person reading it.
+pub const IDEMPOTENCY_KEY_REUSED_MESSAGE: &str =
+    "This booking request has already been sent with different details. \
+     Please start a new booking rather than trying this one again.";
+
+/// Did the PMS answer from its idempotency store?
+///
+/// Deliberately tolerant about the *value* and strict about nothing else:
+/// the contract says `true`, and a header that is absent, unparseable, or
+/// says anything else is read as "not a replay". Getting this wrong in the
+/// permissive direction would mark a genuinely new hold as a replay, which
+/// is what stops the caller releasing it on a later failure — so the
+/// default has to be `false`.
+fn replay_header_says_yes(headers: &reqwest::header::HeaderMap) -> bool {
+    headers
+        .get(IDEMPOTENCY_REPLAYED_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
 }
 
 /// Make a PMS response body safe to put in front of a person, and bound it.
@@ -1412,6 +1598,119 @@ mod tests {
             "the guard has to outlive the call it wraps, or the retry it \
              exists to catch arrives after the lock is gone"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Idempotency keys (A16)
+    // ------------------------------------------------------------------
+
+    /// A minted key is one the PMS will take: the validator and the minter
+    /// must not be able to disagree.
+    #[test]
+    fn a_minted_key_satisfies_the_rule_the_pms_enforces() {
+        for _ in 0..64 {
+            let key = IdempotencyKey::new_v4();
+            IdempotencyKey::parse(key.as_str())
+                .expect("a key we mint must be a key we would accept");
+        }
+        assert_ne!(
+            IdempotencyKey::new_v4(),
+            IdempotencyKey::new_v4(),
+            "two attempts must not share a key, or a guest's second, genuine \
+             booking would collapse into their first"
+        );
+    }
+
+    /// The PMS's rule, at both ends: 1..=255 bytes of printable ASCII.
+    #[test]
+    fn the_key_rule_is_the_pms_rule() {
+        assert_eq!(
+            IdempotencyKey::parse("").unwrap_err(),
+            IdempotencyKeyError::Empty
+        );
+        assert_eq!(
+            IdempotencyKey::parse("   ").unwrap_err(),
+            IdempotencyKeyError::Empty,
+            "whitespace is trimmed first, so a blank header is empty"
+        );
+        assert_eq!(
+            IdempotencyKey::parse("k")
+                .expect("one byte is enough")
+                .as_str(),
+            "k"
+        );
+
+        let longest = "k".repeat(MAX_IDEMPOTENCY_KEY_LEN);
+        assert_eq!(
+            IdempotencyKey::parse(&longest)
+                .expect("255 is inside the rule")
+                .as_str(),
+            longest
+        );
+        assert_eq!(
+            IdempotencyKey::parse(&"k".repeat(MAX_IDEMPOTENCY_KEY_LEN + 1)).unwrap_err(),
+            IdempotencyKeyError::TooLong
+        );
+    }
+
+    /// Anything that is not printable ASCII is refused — and the two cases
+    /// that matter most are a header separator and a non-ASCII character,
+    /// because either would be rejected by the PMS *after* the request went
+    /// out, i.e. as a failed booking.
+    #[test]
+    fn a_key_that_is_not_printable_ascii_never_leaves_the_process() {
+        for bad in ["key\nwith-newline", "key\rwith-cr", "กุญแจ", "key\u{0}nul"] {
+            assert_eq!(
+                IdempotencyKey::parse(bad).unwrap_err(),
+                IdempotencyKeyError::IllegalCharacter,
+                "{bad:?} must be refused here, not by the PMS"
+            );
+        }
+    }
+
+    /// Surrounding whitespace is not part of a header value, so it is not
+    /// part of the key — a client sending `" abc "` and one sending `"abc"`
+    /// must land on the same stored request.
+    #[test]
+    fn a_key_is_trimmed_the_way_a_header_value_is() {
+        assert_eq!(
+            IdempotencyKey::parse("  abc-123  ")
+                .expect("trims")
+                .as_str(),
+            "abc-123"
+        );
+    }
+
+    /// The replay header is read strictly, and everything that is not
+    /// `true` means "this is a fresh hold".
+    ///
+    /// The permissive direction is the dangerous one: a fresh hold wrongly
+    /// marked as replayed is one the route will refuse to release when its
+    /// own insert fails, leaving a room held for nobody.
+    #[test]
+    fn only_a_true_replay_header_counts_as_a_replay() {
+        fn headers(value: Option<&str>) -> reqwest::header::HeaderMap {
+            let mut map = reqwest::header::HeaderMap::new();
+            if let Some(value) = value {
+                map.insert(
+                    reqwest::header::HeaderName::from_static("idempotency-replayed"),
+                    reqwest::header::HeaderValue::from_str(value).expect("header value"),
+                );
+            }
+            map
+        }
+
+        assert!(replay_header_says_yes(&headers(Some("true"))));
+        assert!(
+            replay_header_says_yes(&headers(Some("True"))),
+            "HTTP header values are not case-normalised, so neither is this read"
+        );
+        assert!(replay_header_says_yes(&headers(Some(" true "))));
+
+        assert!(!replay_header_says_yes(&headers(None)));
+        assert!(!replay_header_says_yes(&headers(Some("false"))));
+        assert!(!replay_header_says_yes(&headers(Some(""))));
+        assert!(!replay_header_says_yes(&headers(Some("1"))));
     }
 
     /// Behaviour for a valid id is byte-for-byte what it was before the
