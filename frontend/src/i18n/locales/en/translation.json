@@ -905,6 +905,8 @@
         "errors": {
           "loadFailed": "Failed to load bookings",
           "verifyFailed": "Failed to verify slip",
+          "verifyRefused": "Not confirmed: this booking can no longer take a payment. Re-book the room at the desk. ({{detail}})",
+          "verifyUnavailable": "Could not reach the hotel system. Nothing was changed — please try again in a moment.",
           "markFailed": "Failed to mark as needs action",
           "needsActionFailed": "Failed to mark as needs action",
           "replaceFailed": "Failed to replace slip",

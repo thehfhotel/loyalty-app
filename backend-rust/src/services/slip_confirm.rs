@@ -82,11 +82,14 @@
 //! Three changes close it, and they apply to the admin's Verify and to the
 //! automatic path alike:
 //!
-//! 1. **A payability pre-check, before the slip is stamped.** A channel
-//!    booking that is not `pending`-with-a-live-hold (or already
-//!    `confirmed`, which is the ordinary idempotent re-verify) is refused
-//!    before the transaction opens, so no slip ever reads `verified`
-//!    against it.
+//! 1. **A pre-check for what the PMS cannot be asked about.** A booking we
+//!    have already given up on locally (`cancelled` / `no_show`) is refused
+//!    before the transaction opens, so no slip ever reads `verified` against
+//!    it and no payment event resurrects it. Note what this deliberately
+//!    does *not* do: it does not judge the hold clock. See
+//!    [`ChannelBooking::payability`] — the PMS never reads
+//!    `book_hold_expires_at` either, and a lapsed-but-unswept hold is one it
+//!    will happily confirm.
 //! 2. **A PMS refusal is a refusal, not an outage.** `payment_verified` now
 //!    answers [`PmsActionError::Refused`] for a 4xx — the documented 409 for
 //!    a released hold (`new-hotel/docs/loyalty-channel.md:78-86`) — which is
@@ -99,10 +102,16 @@
 //!
 //! All three land in the same place — [`refuse_channel_confirmation`]: the
 //! booking is left untouched, the slip goes to `admin_status = needs_action`
-//! carrying `slipok_reason = booking_not_payable` (the vocabulary
-//! `routes::bookings::slipok_check` already writes for this exact
-//! situation), an audit row records the PMS's own answer, and the caller
-//! gets a **409**, never a 200.
+//! (and gives up its `slipok_trans_ref`, so the guest can re-upload the same
+//! transfer against the re-booking), an audit row carrying
+//! `booking_not_payable` and the PMS's own answer records why, and the
+//! caller gets a **409**, never a 200.
+//!
+//! What the refusal pointedly does **not** touch is `slipok_status` /
+//! `slipok_reason` / `slipok_checked_at`. Those are the machine's record of
+//! what it made of the *slip*, and they are the sample the shadow-window
+//! agreement report counts; a refusal is a judgement about the *booking*.
+//! The audit row carries everything a human needs.
 //!
 //! Unlike the non-PMS shape, an admin's Verify does **not** override here.
 //! A deposit link that lapsed is a piece of paperwork a human can finish; a
@@ -702,17 +711,50 @@ enum ChannelPayability {
 }
 
 impl ChannelBooking {
+    /// Decide locally **only what the PMS cannot tell us**, and ask the PMS
+    /// about everything else.
+    ///
+    /// The first cut of this refused on `hold_expires_at` before calling the
+    /// PMS, and that was wrong in a way that mattered: `new-hotel`'s
+    /// `ChannelService::confirm_payment` matches on `book_status` and
+    /// **never reads `book_hold_expires_at`**
+    /// (`hotel-backend/src/service/channel.rs`). A hold whose clock has run
+    /// out but which the PMS's own 5-minute sweep
+    /// (`scheduler/jobs.rs:250`) has not reached yet is still `pending`
+    /// there, and `payment-verified` confirms it with a 200. Refusing that
+    /// locally threw away a booking the PMS was perfectly willing to
+    /// honour — reception would have been told to re-book a room the guest
+    /// already had.
+    ///
+    /// So the local clock decides nothing. The PMS is the authority on its
+    /// own hold, and its 409 is the refusal (see
+    /// `crate::services::pms_channel::PmsActionError::Refused`).
+    ///
+    /// What the local row *does* decide is the case where calling the PMS
+    /// would be wrong regardless of its answer:
+    ///
+    /// * **`cancelled` / `no_show`** — we have already given this booking up.
+    ///   Posting a payment event could only resurrect a deposit against a
+    ///   booking nobody is holding. Refuse, without a call.
+    /// * **`confirmed` / `checked_in` / `checked_out` / `completed`** — the
+    ///   payment event is a replay, and the PMS says so itself: its
+    ///   `"confirmed" | "checkedin" | "completed"` arm returns
+    ///   `already_confirmed: true` with a 200. A balance slip against a
+    ///   guest who is already in the room is an ordinary thing to receive,
+    ///   not an error. The local flip then matches no row, which is the
+    ///   truth about *this* call.
+    /// * **`pending`** — ask the PMS.
     fn payability(&self) -> ChannelPayability {
         match self.status.as_str() {
-            "confirmed" => ChannelPayability::AlreadyConfirmed,
-            "pending" => match self.hold_expires_at {
-                Some(expires) if expires <= Utc::now() => ChannelPayability::Refused {
-                    detail: format!("the PMS hold expired at {expires}"),
-                },
-                _ => ChannelPayability::Payable,
+            // Mirrors new-hotel's replay arm one-for-one. Note the
+            // vocabularies differ by spelling only: this repo writes
+            // `checked_in` / `checked_out`, the PMS writes `checkedin`.
+            "confirmed" | "checked_in" | "checked_out" | "completed" => {
+                ChannelPayability::AlreadyConfirmed
             },
+            "pending" => ChannelPayability::Payable,
             other => ChannelPayability::Refused {
-                detail: format!("the booking is '{other}', which cannot take a payment"),
+                detail: format!("the local booking is '{other}', which cannot take a payment"),
             },
         }
     }
@@ -845,6 +887,58 @@ async fn refuse_channel_confirmation(
     ))
 }
 
+/// Longest PMS body allowed inside the *human-readable* audit reason.
+///
+/// Shorter than the 500 the structured `after_data.pmsResponse` keeps,
+/// because this string is rendered as one line in the booking's history
+/// list next to a Thai sentence. The full body is one field away for anyone
+/// who needs it.
+const MAX_PMS_BODY_IN_REASON: usize = 200;
+
+/// Make a PMS response body safe to paste into a rendered audit line.
+///
+/// The body is whatever the PMS (or something in front of it) chose to send:
+/// a Cloudflare Access challenge answers HTML, an nginx error page answers
+/// markup, and either could carry a newline that breaks the history list
+/// into pieces or an angle bracket a future renderer trusts. So: collapse
+/// every run of whitespace (newlines and tabs included) to one space, drop
+/// the characters that could open a tag or a quote, then cut to
+/// [`MAX_PMS_BODY_IN_REASON`] **characters** — the body may well be Thai, so
+/// counting bytes would split a codepoint.
+///
+/// The structured `after_data.pmsResponse` is unaffected: it is JSON, it is
+/// never rendered as markup, and a reader who wants the whole answer reads
+/// it there.
+fn reason_safe_pms_body(body: &str) -> String {
+    let cleaned: String = body
+        .chars()
+        .map(|c| if c.is_whitespace() { ' ' } else { c })
+        .filter(|c| !matches!(c, '<' | '>' | '"' | '\'' | '`' | '\\'))
+        .collect();
+
+    // One space between words, none at the ends.
+    let mut collapsed = String::with_capacity(cleaned.len());
+    let mut last_was_space = true;
+    for c in cleaned.chars() {
+        if c == ' ' {
+            if !last_was_space {
+                collapsed.push(c);
+            }
+            last_was_space = true;
+        } else {
+            collapsed.push(c);
+            last_was_space = false;
+        }
+    }
+    let collapsed = collapsed.trim_end();
+
+    if collapsed.chars().count() <= MAX_PMS_BODY_IN_REASON {
+        return collapsed.to_string();
+    }
+    let kept: String = collapsed.chars().take(MAX_PMS_BODY_IN_REASON).collect();
+    format!("{kept}… (truncated)")
+}
+
 /// The write half of [`refuse_channel_confirmation`], in one transaction.
 ///
 /// Runtime queries: the `slipok_*` columns are new in migration
@@ -879,26 +973,45 @@ async fn record_channel_refusal(
     let before_slipok_status: Option<String> = before.try_get("slipok_status")?;
     let before_slipok_reason: Option<String> = before.try_get("slipok_reason")?;
 
+    // Exactly two columns move, and the restraint is the point.
+    //
+    // **`admin_status`** — the slip goes back to the desk queue. This is the
+    // whole operational signal, and it is also the flag
+    // `revert_auto_confirm` reads to know the refusal already dealt with
+    // this slip.
+    //
+    // **`slipok_trans_ref`** — cleared. This booking is finished; reception
+    // re-books the room, and the guest will upload the same transfer against
+    // the new booking. Leaving the reference behind would make that upload
+    // collide with the partial unique index and come back `duplicate`,
+    // sending a guest who did nothing wrong into the manual queue a second
+    // time. The reference is not lost: the audit row below carries the whole
+    // story, and `booking_slips` keeps the amount and the decision.
+    //
+    // **`slipok_status` / `slipok_reason` / `slipok_checked_at` are left
+    // alone**, and that is deliberate rather than an oversight. Those three
+    // are the *machine's* record of what it thought of the slip, and they
+    // are the sample the shadow-window agreement report counts. A refusal is
+    // not a judgement about the slip — the money did arrive, the reference
+    // did match — it is a judgement about the booking. Overwriting a
+    // `shadow_pass` with `manual` / `booking_not_payable` would silently
+    // move a row from the "machine and human agreed" column to the "machine
+    // sent it to a human" column and quietly bias the decision to flip
+    // `SLIPOK_AUTO_VERIFY`.
+    //
+    // `admin_verified_at` / `admin_verified_by` are not re-stamped either:
+    // nobody verified anything here. On the PMS-409 path the slip
+    // transaction has already stamped them, and that stamp is true — it
+    // records the verify that then failed to confirm.
     let after = sqlx::query(
         r#"
         UPDATE booking_slips
-        SET admin_status      = 'needs_action',
-            admin_verified_at = NOW(),
-            admin_verified_by = $1,
-            slipok_status     = CASE
-                                  WHEN slipok_status = $2 THEN slipok_status
-                                  ELSE $3
-                                END,
-            slipok_reason     = $4,
-            slipok_checked_at = NOW()
-        WHERE id = $5
-        RETURNING admin_status, slipok_status
+        SET admin_status     = 'needs_action',
+            slipok_trans_ref = NULL
+        WHERE id = $1
+        RETURNING admin_status, slipok_status, slipok_reason
         "#,
     )
-    .bind(actor_id)
-    .bind(crate::services::slip_match::SLIPOK_STATUS_SHADOW_PASS)
-    .bind(crate::services::slip_match::SLIPOK_STATUS_MANUAL)
-    .bind(reason)
     .bind(slip_id)
     .fetch_one(&mut *tx)
     .await?;
@@ -936,7 +1049,9 @@ async fn record_channel_refusal(
             detail_th = "ยืนยันการจองกับระบบโรงแรมไม่สำเร็จ ตรวจสอบสลิปแล้วแต่ยังไม่ยืนยันการจอง",
             detail = refusal.detail,
             pms = match (refusal.pms_status, refusal.pms_body.as_deref()) {
-                (Some(status), Some(body)) => format!("; PMS answered {status} {body}"),
+                (Some(status), Some(body)) => {
+                    format!("; PMS answered {status} {}", reason_safe_pms_body(body))
+                },
                 (Some(status), None) => format!("; PMS answered {status}"),
                 _ => String::new(),
             },
@@ -1063,8 +1178,10 @@ pub const ACTION_SLIP_VERIFY_REVERTED: &str = "slip_verify_reverted";
 /// `pub` is also what lets the integration suite drive the admin-won-the-race
 /// branch directly, which no HTTP-level fixture can reach.
 ///
-/// Returns `true` when the slip was reverted, `false` when an admin had
-/// verified it in the meantime and their decision was left standing.
+/// Returns `true` when the slip was reverted, and `false` in the two cases
+/// where there is nothing to take back: an admin had verified the slip in
+/// the meantime and their decision stands, or a channel refusal had already
+/// moved it to `needs_action` and said why.
 ///
 /// Runtime queries, like the rest of the `slipok_*` writes: those columns are
 /// new in migration `20260910000000_booking_slips_slipok.sql` and a runtime
@@ -1080,7 +1197,7 @@ pub async fn revert_auto_confirm(db: &sqlx::PgPool, slip_id: Uuid) -> AppResult<
     let before = sqlx::query(
         r#"
         SELECT booking_id, admin_status, admin_verified_at, admin_verified_by,
-               slipok_status, slipok_trans_ref
+               slipok_status, slipok_reason, slipok_trans_ref
         FROM booking_slips
         WHERE id = $1
         FOR UPDATE
@@ -1096,22 +1213,44 @@ pub async fn revert_auto_confirm(db: &sqlx::PgPool, slip_id: Uuid) -> AppResult<
     let before_verified_at: Option<DateTime<Utc>> = before.try_get("admin_verified_at")?;
     let before_verified_by: Option<Uuid> = before.try_get("admin_verified_by")?;
     let before_slipok_status: Option<String> = before.try_get("slipok_status")?;
+    let before_slipok_reason: Option<String> = before.try_get("slipok_reason")?;
     let before_trans_ref: Option<String> = before.try_get("slipok_trans_ref")?;
 
-    // Nothing to take back. A15 made `confirm_slip` able to fail *without*
-    // leaving the slip verified — a channel booking whose hold had lapsed is
-    // refused before the transaction opens, and a PMS 409 puts the slip on
-    // `needs_action` with `booking_not_payable` itself. The automatic path
-    // calls this on any `Err`, and reverting one of those would overwrite a
-    // refusal that is already correct with `pending` / `confirm_failed`,
-    // erasing the reason the desk needs.
-    if before_admin_status.as_deref() != Some("verified") {
+    // Stand aside for a refusal that has already put this slip right — and
+    // for **nothing else**.
+    //
+    // `slipok_check` calls this on *any* `Err` from `confirm_slip`, and
+    // those errors are not all alike:
+    //
+    // * **A channel refusal** (`refuse_channel_confirmation`) has already
+    //   moved the slip to `needs_action` and cleared `slipok_trans_ref`, and
+    //   wrote a `booking_not_confirmed` audit row saying why. Reverting on
+    //   top of that would reset it to `pending` / `confirm_failed` and
+    //   replace a precise reason with a vague one. Skip.
+    // * **Everything else** — a PMS outage, a pool timeout, a failure
+    //   *before* the slip transaction committed — must still be reverted,
+    //   and this is the case an earlier version of this guard got wrong. It
+    //   tested `admin_status != 'verified'` and skipped, which quietly left
+    //   the pre-commit failure behind: `record_slipok_result` had already
+    //   written `slipok_status = 'verified'` and stored the bank reference,
+    //   so the slip sat on `pending` with a `slipok_trans_ref` nobody would
+    //   ever clear — and the guest's perfectly good re-upload came back
+    //   `duplicate` against the partial unique index.
+    //
+    // So the test is the refusal's own signature, not the absence of a
+    // verify. `admin_status = 'needs_action'` is what
+    // `refuse_channel_confirmation` writes and the only way a slip reaches
+    // this function in that state; an admin who marked it by hand did not
+    // come through `slipok_check`, and standing aside for them is right
+    // anyway.
+    if before_admin_status.as_deref() == Some("needs_action") {
         tx.rollback().await?;
         tracing::info!(
             slip_id = %slip_id,
             booking_id = %booking_id,
-            admin_status = ?before_admin_status,
-            "nothing to revert: the slip was never left verified"
+            slipok_reason = ?before_slipok_reason,
+            "nothing to revert: the slip is already on needs_action, which is \
+             where the channel refusal put it"
         );
         return Ok(false);
     }

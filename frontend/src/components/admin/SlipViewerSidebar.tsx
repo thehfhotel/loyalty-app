@@ -19,6 +19,7 @@ import { toast } from 'react-hot-toast';
 import { Badge, Button, type BadgeTone } from '../ui';
 import { deskSlipOkStatus, slipOkReasonKey, type SlipOkStatusValue } from '../../types/slipok';
 import { adminBookingService } from '../../services/adminBookingService';
+import { ApiError } from '../../utils/axiosInterceptor';
 import { SlipErasedNotice } from '../SlipErasedNotice';
 import type {
   AdminBooking as Booking,
@@ -179,7 +180,26 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
       toast.success(t('admin.booking.bookingManagement.messages.slipVerified'));
       onRefresh();
     },
-    onError: () => {
+    // A15: the two failures the desk has to tell apart. A 409 is the hotel
+    // system refusing this booking — pressing the button again will not help,
+    // and the backend sends a sentence saying which refusal it is. A 5xx (or
+    // anything else) is the hotel system not answering: nothing was changed
+    // and retrying is exactly right. Swallowing both into "Failed to verify
+    // slip" left reception re-pressing a button that could never work.
+    onError: (error: Error) => {
+      const api = error instanceof ApiError ? error : null;
+      if (api?.status === 409) {
+        toast.error(
+          t('admin.booking.bookingManagement.errors.verifyRefused', {
+            detail: api.detail ?? api.message
+          })
+        );
+        return;
+      }
+      if (api?.status !== undefined && api.status >= 500) {
+        toast.error(t('admin.booking.bookingManagement.errors.verifyUnavailable'));
+        return;
+      }
       toast.error(t('admin.booking.bookingManagement.errors.verifyFailed'));
     }
   });

@@ -202,8 +202,26 @@ pub struct PmsBookingCreated {
 /// the slip behind it has to stop claiming the booking was confirmed.
 #[derive(Debug)]
 pub enum PmsActionError {
-    /// The PMS answered and refused (4xx). Definitive: the booking cannot
-    /// take this action, now or later.
+    /// The PMS answered **409 Conflict** (or 410 Gone) about the booking
+    /// itself. Definitive: the hold is gone and no retry brings it back.
+    ///
+    /// Deliberately NOT "any 4xx" — that was this type's first shape and it
+    /// was wrong. Most 4xx answers on this path are *our* problem, not the
+    /// booking's, and every one of them is fixed by someone and then
+    /// retried:
+    ///
+    /// * **401** — `PMS_CHANNEL_TOKEN` rotated out from under us.
+    /// * **403** — `HFVILLE_WRITES_ENABLED=false` refusing an HF Ville
+    ///   mutation (`new-hotel/routes/channel.rs::channel_service_for`).
+    /// * **404** — the channel router is not mounted, which is what a PMS
+    ///   with a dead PG pool looks like from out here.
+    /// * **400 / 415 / 422** — body drift between the two repos.
+    /// * **A Cloudflare Access HTML challenge**, which arrives as a 302/401
+    ///   or a 403 full of markup and is a network-edge problem.
+    ///
+    /// Treating any of those as definitive would send a slip to the desk as
+    /// "this booking is dead" when the truth is "a token expired". They are
+    /// all [`Unavailable`](Self::Unavailable).
     Refused {
         /// The HTTP status the PMS answered with (409 for a released hold).
         status: u16,
@@ -215,6 +233,16 @@ pub enum PmsActionError {
     /// action may well succeed on a retry.
     Unavailable(AppError),
 }
+
+/// The only statuses that mean "this booking cannot take this action".
+///
+/// **409** is what `new-hotel`'s `ChannelService::confirm_payment` answers
+/// for a hold it has already released or cancelled
+/// (`service/channel.rs`: `ServiceError::conflict`), and what
+/// `docs/loyalty-channel.md:78-86` documents. **410** is included because a
+/// PMS that ever starts hard-deleting expired holds would answer Gone, and
+/// that means the same thing to us. Nothing else does.
+const REFUSAL_STATUSES: [u16; 2] = [409, 410];
 
 /// Longest PMS response body kept on a refusal.
 ///
@@ -353,17 +381,23 @@ impl PmsChannelClient {
         let guard = self.acquire_hold_guard(&hold_guard_key(request)).await?;
         let outcome = self.create_booking_unguarded(request).await;
 
-        // Release only when the PMS *answered and refused* (`parse_json`
-        // maps a 4xx to `BadRequest`): then we know for certain no hold was
-        // created and the guest may correct their dates and retry at once.
-        // Every other failure — a timeout, an unreachable host, a 5xx, a
-        // malformed body — leaves it genuinely unknown whether a hold now
-        // exists, which is exactly the case the lock is for: hold it to its
-        // TTL so a retry cannot create the second one. A success holds it
-        // too, because the guest's retry usually arrives *after* the hold
-        // they could not see being created.
+        // The lock is held for **the ambiguous case only**.
+        //
+        // * **Success** — release at once. The caller now has a
+        //   `pms_booking_id` and writes a local `bookings` row the guest can
+        //   see, so a retry is no longer blind; holding the lock past that
+        //   only punishes a guest who genuinely wants a second room for the
+        //   same nights.
+        // * **The PMS answered and refused** (`parse_json` maps a 4xx to
+        //   `BadRequest`: sold out, bad dates) — release. Nothing was
+        //   created, and the guest may correct their input and retry now.
+        // * **Anything else** — a timeout, an unreachable host, a 5xx, a
+        //   malformed body — *keep* it to its TTL. This is the only branch
+        //   where it is genuinely unknown whether a hold now exists, and it
+        //   is precisely B8 race 2.3: the guest gives up on a hung request
+        //   and taps "book" again.
         match &outcome {
-            Err(AppError::BadRequest(_)) => guard.release().await,
+            Ok(_) | Err(AppError::BadRequest(_)) => guard.release().await,
             _ => guard.keep(),
         }
 
@@ -420,10 +454,10 @@ impl PmsChannelClient {
 
         if acquired.is_none() {
             tracing::warn!(
-                "refusing a duplicate PMS hold: an identical hold for this guest and                  stay is already being created"
+                "refusing a duplicate PMS hold: an identical hold for this guest and stay is already being created"
             );
             return Err(AppError::Conflict(
-                "A booking for these dates is already being created. Please wait a                  moment before trying again."
+                "A booking for these dates is already being created. Please wait a moment before trying again."
                     .to_string(),
             ));
         }
@@ -489,10 +523,15 @@ impl PmsChannelClient {
         .await
     }
 
-    pub async fn release(&self, pms_booking_id: &str) -> AppResult<()> {
-        self.post_action(pms_booking_id, "release", None)
-            .await
-            .map_err(AppError::from)
+    /// Release a hold. Returns [`PmsActionError::Refused`] when the PMS says
+    /// the hold is already gone — which is a *success* for a sweep, not
+    /// something to retry.
+    ///
+    /// Callers that only log the failure keep working unchanged:
+    /// `PmsActionError` implements `Display`, and `?` still converts it
+    /// through `From<PmsActionError> for AppError`.
+    pub async fn release(&self, pms_booking_id: &str) -> Result<(), PmsActionError> {
+        self.post_action(pms_booking_id, "release", None).await
     }
 
     async fn post_action(
@@ -536,11 +575,12 @@ impl PmsChannelClient {
         let status = response.status();
         let detail = response.text().await.unwrap_or_default();
 
-        // The split that matters: the PMS answering "no" is a decision about
-        // the booking, and the PMS not answering is an outage. Before this,
-        // both became `ExternalServiceUnavailable` and every caller read a
-        // refused payment event as something to retry.
-        if status.is_client_error() {
+        // The split that matters: the PMS answering "no **about this
+        // booking**" is a decision, and everything else — including most of
+        // the 4xx range — is something a human fixes and then retries. See
+        // `PmsActionError::Refused` for why an allow-list of two codes beats
+        // `status.is_client_error()`.
+        if REFUSAL_STATUSES.contains(&status.as_u16()) {
             return Err(PmsActionError::Refused {
                 status: status.as_u16(),
                 body: truncate_refusal_body(&detail),
@@ -592,19 +632,60 @@ fn truncate_refusal_body(body: &str) -> String {
     format!("{kept}… (truncated)")
 }
 
+/// Normalise a phone number so two spellings of one number are one key.
+///
+/// Digits only, then the last 9 — which is a Thai subscriber number without
+/// the trunk `0` or the `+66` country code, so `081-234-5678`,
+/// `0812345678` and `+66812345678` all collapse to the same thing. Without
+/// this the guard is defeated by the guest's keyboard: a retry typed with a
+/// dash would hash differently and sail straight past the lock.
+fn normalise_phone(phone: &str) -> String {
+    let digits: String = phone.chars().filter(char::is_ascii_digit).collect();
+    let keep = digits.len().saturating_sub(9);
+    digits[keep..].to_string()
+}
+
 /// The Redis key for "this guest is creating this exact hold right now".
 ///
-/// The identity half is the membership id when the guest has one and their
-/// phone otherwise — both are already on the request, which is what lets the
-/// guard sit inside the client with no change at the call site. The stay
-/// half is property + room type + both dates, so a guest booking a *second,
-/// different* room or a different set of nights is never held up by the
-/// first.
+/// ## The identity half
 ///
-/// Hashed rather than spelled out: a phone number is personal data and Redis
-/// keys turn up in `KEYS`, in slow logs and in metrics. The digest is stable
-/// across processes, which is the whole point — the retry that has to be
-/// caught usually lands on a different worker.
+/// The membership id when the guest has one, their normalised phone
+/// otherwise. Both are already on the request, which is what lets the guard
+/// sit inside the client with no change at the call site.
+///
+/// **The phone fallback is the weak half and it is worth being honest about
+/// it.** Two different guests who share a phone number — a couple, a family,
+/// a company secretary booking for colleagues — hash to the same identity,
+/// and if they book the same room type for the same nights at the same
+/// moment, the second is refused. Three things bound that:
+///
+/// * it needs a *simultaneous* pair, because the lock is now released the
+///   moment the first hold succeeds (see [`PmsChannelClient::create_booking`]);
+/// * the refusal is a 409 saying "wait a moment and try again", not a lost
+///   booking;
+/// * every member — which is who this channel is for — has a membership id
+///   and never reaches the fallback at all.
+///
+/// The real fix is a key the *caller* mints per attempt (this repo already
+/// has `services::idempotency` for exactly that shape) and, better still, a
+/// PMS-side idempotency key. Both are filed as follow-ups; wiring either one
+/// means editing `routes::bookings`, which is owned elsewhere this round.
+///
+/// ## The stay half
+///
+/// Property + room type + both dates. Deliberately **not** `guests` or
+/// `payment`: neither changes which room-night is being held, and including
+/// them would hand a guest a trivial way around the guard — resubmit the
+/// same stay with `payment` flipped from `deposit50` to `full` and take a
+/// second room. A guest booking a genuinely *different* room type or
+/// different nights already gets a different key and is never held up.
+///
+/// ## Why it is hashed
+///
+/// A phone number is personal data and Redis keys turn up in `KEYS`, in slow
+/// logs and in metrics. The digest is stable across processes, which is the
+/// whole point — the retry that has to be caught usually lands on a
+/// different worker.
 pub fn hold_guard_key(request: &PmsCreateBookingRequest) -> String {
     let identity = request
         .membership_id
@@ -612,7 +693,7 @@ pub fn hold_guard_key(request: &PmsCreateBookingRequest) -> String {
         .map(str::trim)
         .filter(|m| !m.is_empty())
         .map(|m| format!("member:{m}"))
-        .unwrap_or_else(|| format!("phone:{}", request.guest.phone.trim()));
+        .unwrap_or_else(|| format!("phone:{}", normalise_phone(&request.guest.phone)));
 
     let material = format!(
         "{identity}|{}|{}|{}|{}",
@@ -781,10 +862,30 @@ pub async fn release_expired_holds(db: &sqlx::PgPool, settings: &Settings) -> u6
 
         // Release the PMS side FIRST; only cancel locally once the PMS
         // acknowledged, so a failed release retries on the next sweep.
+        //
+        // A **refusal** is not a failure to retry, and this is the
+        // distinction that keeps the sweep alive. The PMS answers 409 for a
+        // hold it has already cancelled — which is exactly the state this
+        // sweep wants the hold to be in. Treating that as retryable left the
+        // row `pending` forever, so every run re-selected it, and with
+        // `LIMIT 50` a handful of such rows starve the sweep of the capacity
+        // to release holds that really are outstanding.
         if let Err(e) = client.release(&pms_booking_id).await {
-            tracing::warn!(error = %e, pms_booking_id = %pms_booking_id,
-                "PMS hold release failed; will retry next sweep");
-            continue;
+            if !e.is_refusal() {
+                tracing::warn!(error = %e, pms_booking_id = %pms_booking_id,
+                    "PMS hold release failed; will retry next sweep");
+                continue;
+            }
+            // Logged once, at INFO: the PMS and we agree about where this
+            // hold ended up, and the local cancel below is what stops the
+            // row coming back.
+            tracing::info!(
+                pms_booking_id = %pms_booking_id,
+                booking_id = %row.id,
+                detail = %e,
+                "PMS says this hold is already gone; cancelling locally and \
+                 taking it out of the sweep"
+            );
         }
         match sqlx::query!(
             r#"
@@ -802,10 +903,17 @@ pub async fn release_expired_holds(db: &sqlx::PgPool, settings: &Settings) -> u6
                 // The PMS released the hold, but the local row was no longer
                 // `pending` — an admin cancelled it, or a slip confirmed it
                 // in the same breath. Counting it as released would report a
-                // cancellation that never happened, and a booking that now
-                // reads `confirmed` against a hold the PMS has let go is
-                // exactly the divergence a person has to look at.
-                tracing::error!(
+                // cancellation that never happened.
+                //
+                // WARN, not ERROR: the sweep and the confirm path race by
+                // design (both are guarded on `status = 'pending'` so exactly
+                // one wins), and the common outcome here is the benign one —
+                // an admin cancelled it a moment earlier. The genuinely bad
+                // shape, a booking reading `confirmed` against a released
+                // hold, is caught by the confirm path's own refusal, which
+                // *is* loud. Paging on this one would page on the ordinary
+                // race.
+                tracing::warn!(
                     booking_id = %row.id,
                     pms_booking_id = %pms_booking_id,
                     "PMS hold released but the local booking was no longer pending; \
@@ -1019,6 +1127,64 @@ mod tests {
             "a blank membership id is no membership id, not a third identity"
         );
         assert_ne!(with_member_a, no_member);
+    }
+
+    /// The guard is defeated by the guest's keyboard if a retry typed with
+    /// dashes, spaces or a country code hashes differently from the first
+    /// attempt.
+    #[test]
+    fn one_phone_number_is_one_identity_however_it_was_typed() {
+        let canonical = hold_guard_key(&hold_request("0812345678", None));
+        for spelling in [
+            "081-234-5678",
+            "081 234 5678",
+            "+66812345678",
+            "+66 81 234 5678",
+            "(081) 234-5678",
+            "66812345678",
+        ] {
+            assert_eq!(
+                hold_guard_key(&hold_request(spelling, None)),
+                canonical,
+                "{spelling} is the same number as 0812345678"
+            );
+        }
+
+        assert_ne!(
+            canonical,
+            hold_guard_key(&hold_request("0899999999", None)),
+            "a genuinely different number is still a different identity"
+        );
+    }
+
+    /// `guests` and `payment` are deliberately out of the key: neither
+    /// changes which room-night is being held, and including them would let
+    /// a guest walk round the guard by flipping deposit50 to full.
+    #[test]
+    fn the_lock_ignores_what_does_not_change_the_room_night() {
+        let base = hold_request("0812345678", None);
+        let mut more_guests = hold_request("0812345678", None);
+        more_guests.guests = base.guests + 1;
+        let mut paid_in_full = hold_request("0812345678", None);
+        paid_in_full.payment = "full".to_string();
+
+        assert_eq!(hold_guard_key(&base), hold_guard_key(&more_guests));
+        assert_eq!(hold_guard_key(&base), hold_guard_key(&paid_in_full));
+    }
+
+    /// B1 — the allow-list, stated as the answers it must NOT treat as
+    /// definitive. Each of these is somebody's config or deploy problem,
+    /// fixed and then retried; calling any of them a dead booking sends a
+    /// slip to reception with the wrong story.
+    #[test]
+    fn only_a_conflict_is_a_refusal() {
+        assert_eq!(REFUSAL_STATUSES, [409, 410]);
+        for retryable in [400u16, 401, 403, 404, 415, 422, 429, 500, 502, 503] {
+            assert!(
+                !REFUSAL_STATUSES.contains(&retryable),
+                "{retryable} is retryable, not a refusal"
+            );
+        }
     }
 
     /// The refusal body lands on an audit row a person reads. A PMS that
