@@ -107,6 +107,14 @@ services:
       # backend reads a blank as unset (config::env_present), and there is
       # deliberately no default, because the window is the owner's decision.
       SLIP_RETENTION_DAYS: ${SLIP_RETENTION_DAYS:-}
+      # Audit-log retention (F10). Days a booking_audit_log / slip_access_log
+      # row is kept. Blank = OFF, same convention as above. These two have a
+      # FLOOR as well as a ceiling — 365 days and 90 days — and a smaller
+      # value is refused (logged at startup, prune stays off), never clamped:
+      # too short a window here destroys the evidence trail behind a
+      # confirmation, or the record of who read a guest's payer's bank details.
+      AUDIT_LOG_RETENTION_DAYS: ${AUDIT_LOG_RETENTION_DAYS:-}
+      SLIP_ACCESS_LOG_RETENTION_DAYS: ${SLIP_ACCESS_LOG_RETENTION_DAYS:-}
       # Rust-specific logging
       RUST_LOG: ${RUST_LOG:-info}
     # VOLUMES: Source mounts (./backend-rust:/app) are in docker-compose.dev.yml ONLY

@@ -254,6 +254,82 @@ async fn main() -> anyhow::Result<()> {
         },
     }
 
+    // Audit-log retention prune (F10, docs/public-launch-readiness.md HIGH-5
+    // and docs/privacy/2026-09-pdpa-data-map.md §8 item 11). Two unbounded
+    // tables — `booking_audit_log` and the far busier `slip_access_log` — get
+    // a time-based, batched DELETE rather than the range partitioning the
+    // readiness doc proposed; the reasoning is in
+    // `services::audit_retention`'s module docs, and it comes down to neither
+    // table ever being *read* by time.
+    //
+    // Off unless the operator names a window, and a window below the PDPA
+    // floor is refused rather than raised — a prune nobody chose is the one
+    // mistake here that cannot be undone.
+    //
+    // Hourly, like the slip sweep: the windows are months long, so a finer
+    // tick only wakes the process up.
+    {
+        let audit_days = config.retention.audit_log_retention_days();
+        let access_days = config.retention.slip_access_log_retention_days();
+
+        // A refused value must never read as "retention is off on purpose".
+        // `{:?}` keeps a stray newline in the value from forging a log line.
+        if let Some(raw) = config.retention.audit_log_days_error() {
+            error!(
+                "AUDIT_LOG_RETENTION_DAYS is set to {:?}, which is not a whole number of \
+                 days between {} and {} — the booking_audit_log prune is OFF and the table \
+                 keeps growing. The lower bound is a floor on purpose: this table is the \
+                 evidence trail behind every confirmation, discount and cancellation.",
+                raw,
+                loyalty_backend::config::AUDIT_LOG_RETENTION_MIN_DAYS,
+                loyalty_backend::config::AUDIT_LOG_RETENTION_MAX_DAYS,
+            );
+        }
+        if let Some(raw) = config.retention.slip_access_log_days_error() {
+            error!(
+                "SLIP_ACCESS_LOG_RETENTION_DAYS is set to {:?}, which is not a whole number \
+                 of days between {} and {} — the slip_access_log prune is OFF and the table \
+                 keeps growing. The lower bound is a floor on purpose: this log is how we \
+                 answer who read a guest's payer's bank details.",
+                raw,
+                loyalty_backend::config::SLIP_ACCESS_LOG_RETENTION_MIN_DAYS,
+                loyalty_backend::config::SLIP_ACCESS_LOG_RETENTION_MAX_DAYS,
+            );
+        }
+
+        match (audit_days, access_days) {
+            (None, None) => info!(
+                "Audit log retention prune: disabled (AUDIT_LOG_RETENTION_DAYS and \
+                 SLIP_ACCESS_LOG_RETENTION_DAYS unset)"
+            ),
+            (audit, access) => {
+                info!(
+                    "Audit log retention prune: enabled (booking_audit_log {}, \
+                     slip_access_log {})",
+                    audit
+                        .map(|d| format!("{} days", d))
+                        .unwrap_or_else(|| "off".to_string()),
+                    access
+                        .map(|d| format!("{} days", d))
+                        .unwrap_or_else(|| "off".to_string()),
+                );
+                let prune_state = state.clone();
+                tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(Duration::from_secs(3600));
+                    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                    loop {
+                        interval.tick().await;
+                        loyalty_backend::services::audit_retention::sweep_expired_audit_logs(
+                            prune_state.db(),
+                            prune_state.config(),
+                        )
+                        .await;
+                    }
+                });
+            },
+        }
+    }
+
     // Build the application router with all routes and middleware
     let app = create_app(state, &config);
 

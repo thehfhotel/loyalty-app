@@ -6,6 +6,7 @@
 //! # Test Organization
 //!
 //! - `admin_test` - Admin panel tests (/api/admin/*)
+//! - `audit_retention_test` - F10: booking_audit_log + slip_access_log retention
 //! - `health_test` - Health check endpoint tests (/api/health/*)
 //! - `auth_test` - Authentication tests (/api/auth/*)
 //! - `booking_notify_test` - Property booking-notification email (B0)
@@ -38,6 +39,7 @@
 
 pub mod admin_bootstrap_test;
 pub mod admin_test;
+pub mod audit_retention_test;
 pub mod auth_test;
 pub mod booking_notify_test;
 pub mod booking_test;

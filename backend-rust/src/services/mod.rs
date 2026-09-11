@@ -4,11 +4,13 @@
 //! property booking notification in `booking_notify`, OAuth,
 //! slip verification (the SlipOK client, the pure decision rules in
 //! `slip_match`, and the shared confirm path in `slip_confirm`), the slip
-//! privacy pair from F2 (`slip_access_log`, `slip_retention`), storage,
+//! privacy pair from F2 (`slip_access_log`, `slip_retention`), the audit-log
+//! retention prune from F10 (`audit_retention`), storage,
 //! SSE, PromptPay, and request idempotency.
 //! Domain CRUD lives directly in the `routes/` handlers via `sqlx` rather
 //! than behind a service trait.
 
+pub mod audit_retention;
 pub mod booking_notify;
 pub mod cf_access;
 pub mod email;

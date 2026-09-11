@@ -242,6 +242,14 @@ jobs:
           # not a secret: a retention period is policy, not a credential.
           # Unset keeps the sweep off and no slip image is ever erased.
           SLIP_RETENTION_DAYS:  ${{ vars.SLIP_RETENTION_DAYS }}
+          # Audit-log retention windows in days (F10). Repository *variables*
+          # for the same reason: a retention period is policy, not a
+          # credential, and the owner needs to read it back in the UI. Unset
+          # keeps each prune off. Both are floored in the backend (365 days
+          # for booking_audit_log, 90 for slip_access_log) and a smaller value
+          # is refused at startup rather than clamped.
+          AUDIT_LOG_RETENTION_DAYS:       ${{ vars.AUDIT_LOG_RETENTION_DAYS }}
+          SLIP_ACCESS_LOG_RETENTION_DAYS: ${{ vars.SLIP_ACCESS_LOG_RETENTION_DAYS }}
           # Property mailboxes for the new-booking / deposit-received email
           # (B0). Repository *variables*, not secrets: a mailbox address is
           # not a secret, and a variable is readable in the UI, which is what
@@ -275,7 +283,8 @@ jobs:
           # NOTE: the jq program below is a single-quoted shell string. Never put
           # comments inside it (an apostrophe in a comment ends the quote and the
           # step dies with a shell syntax error, 2026-09-10 09:56Z). Optional keys
-          # (SLIPOK_*, PROMPTPAY_*_ID, BOOKING_NOTIFY_EMAIL_*, SLIP_RETENTION_DAYS)
+          # (SLIPOK_*, PROMPTPAY_*_ID, BOOKING_NOTIFY_EMAIL_*, SLIP_RETENTION_DAYS,
+          # AUDIT_LOG_RETENTION_DAYS, SLIP_ACCESS_LOG_RETENTION_DAYS)
           # are merged only when non-empty: the backend reads an empty value as
           # set, which would mint a QR with no receiving id, call SlipOK with no
           # key, mail nobody, or run a retention sweep on a window nobody chose.
@@ -316,6 +325,8 @@ jobs:
             --arg BOOKING_NOTIFY_EMAIL_HF      "${BOOKING_NOTIFY_EMAIL_HF:-}" \
             --arg BOOKING_NOTIFY_EMAIL_HFVILLE "${BOOKING_NOTIFY_EMAIL_HFVILLE:-}" \
             --arg SLIP_RETENTION_DAYS          "${SLIP_RETENTION_DAYS:-}" \
+            --arg AUDIT_LOG_RETENTION_DAYS       "${AUDIT_LOG_RETENTION_DAYS:-}" \
+            --arg SLIP_ACCESS_LOG_RETENTION_DAYS "${SLIP_ACCESS_LOG_RETENTION_DAYS:-}" \
             '{
               commit_sha: $commit_sha,
               deploy_payload_b64: $deploy_payload_b64,
@@ -357,7 +368,9 @@ jobs:
                          BOOKING_NOTIFY_EMAIL_HF: $BOOKING_NOTIFY_EMAIL_HF,
                          BOOKING_NOTIFY_EMAIL_HFVILLE: $BOOKING_NOTIFY_EMAIL_HFVILLE,
                          SLIPOK_AUTO_VERIFY: $SLIPOK_AUTO_VERIFY,
-                         SLIP_RETENTION_DAYS: $SLIP_RETENTION_DAYS }
+                         SLIP_RETENTION_DAYS: $SLIP_RETENTION_DAYS,
+                         AUDIT_LOG_RETENTION_DAYS: $AUDIT_LOG_RETENTION_DAYS,
+                         SLIP_ACCESS_LOG_RETENTION_DAYS: $SLIP_ACCESS_LOG_RETENTION_DAYS }
                        | with_entries(select(.value != "")))' \
           | ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=yes \

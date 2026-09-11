@@ -183,7 +183,7 @@ question, not a coding one.
 
 **P3 — after the flip**
 
-11. **`booking_audit_log` partitioning and a written window** (F10, depends on this map): 5 years, partitioned by `occurred_at` year.
+11. **`booking_audit_log` partitioning and a written window** (F10, depends on this map): 5 years, partitioned by `occurred_at` year. **Shipped as a batched prune, not partitioning** — `services/audit_retention.rs` also covers `slip_access_log`, which this map gained in F2 and which grows far faster (one row per slip per admin booking-list page load). Partitioning was rejected on the query patterns: both tables are read by `booking_id` / `slip_id` and never by time, so no partition could ever be pruned by the planner and every read would fan out across all of them. The window itself is still the owner's to set (`AUDIT_LOG_RETENTION_DAYS`, `SLIP_ACCESS_LOG_RETENTION_DAYS`; blank = off), floored at 365 days and 90 days so it cannot be set below what §8 gap 2 and PDPA s.30–s.32 need.
 12. **Backup expiry vs erasure**: state the backup retention window in the notice so "deleted" has a defined meaning (an erase is complete when the last backup holding it expires).
 13. **Re-audit the single-site backup decision** now that the database holds payment evidence and photographs of bank transfers (F13).
 

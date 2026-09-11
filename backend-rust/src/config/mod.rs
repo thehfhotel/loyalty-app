@@ -529,6 +529,16 @@ pub struct RetentionConfig {
     /// compose convention is that a blank arrives as a *string*, and no other
     /// setting in this file goes through an `Option<u32>` parse path.
     pub slip_days: Option<String>,
+
+    /// Days a `booking_audit_log` row is kept before the F10 prune removes it
+    /// (`AUDIT_LOG_RETENTION_DAYS`). Blank or unset means the prune never
+    /// runs. Floored at [`AUDIT_LOG_RETENTION_MIN_DAYS`].
+    pub audit_log_days: Option<String>,
+
+    /// Days a `slip_access_log` row is kept before the F10 prune removes it
+    /// (`SLIP_ACCESS_LOG_RETENTION_DAYS`). Blank or unset means the prune
+    /// never runs. Floored at [`SLIP_ACCESS_LOG_RETENTION_MIN_DAYS`].
+    pub slip_access_log_days: Option<String>,
 }
 
 /// Smallest accepted slip-retention window, in days.
@@ -545,6 +555,49 @@ pub const SLIP_RETENTION_MIN_DAYS: u32 = 1;
 /// `docs/privacy/2026-09-pdpa-data-map.md` §1, so no legitimate setting is
 /// excluded.
 pub const SLIP_RETENTION_MAX_DAYS: u32 = 3650;
+
+/// Smallest accepted `booking_audit_log` window, in days — **one year**.
+///
+/// Unlike [`SLIP_RETENTION_MIN_DAYS`], this floor exists to stop an operator
+/// setting the window *too short*. `booking_audit_log` is the evidence trail
+/// behind every confirmation, discount, cancellation and slip decision
+/// (`docs/privacy/2026-09-pdpa-data-map.md` §7), including the ones attributed
+/// to the non-loginable SlipOK actor. PDPA's storage-limitation principle asks
+/// us not to keep personal data longer than the purpose needs — it does not
+/// ask us to destroy the record of what we did to a booking, and s.24(5)
+/// legitimate interest plus the ordinary Thai limitation period for a contract
+/// claim both reach well past a year. A guest disputing "you cancelled my
+/// booking" or "you never confirmed my deposit" arrives months later, not days,
+/// and a chargeback or tax question later still.
+///
+/// One year is the *floor*, not the recommendation. The data map's proposal
+/// (§8 item 11) is five years; nothing here pushes an operator down to 365.
+pub const AUDIT_LOG_RETENTION_MIN_DAYS: u32 = 365;
+
+/// Largest accepted `booking_audit_log` window, in days (ten years).
+///
+/// Same bound and the same reason as [`SLIP_RETENTION_MAX_DAYS`]: the window
+/// reaches Postgres as `make_interval(days => $1)` over an `i32`.
+pub const AUDIT_LOG_RETENTION_MAX_DAYS: u32 = 3650;
+
+/// Smallest accepted `slip_access_log` window, in days — **90 days**.
+///
+/// This table answers one question: *who looked at this guest's payer's bank
+/// details* (`docs/privacy/2026-09-pdpa-data-map.md` §8 gap 2). The answer has
+/// to still exist when the question is asked, and the questions are statutory:
+/// PDPA s.30–s.32 give a controller **30 days** to answer a data-subject
+/// access or erasure request, and s.37(4) starts a 72-hour clock to the PDPC
+/// on a breach — a breach that is typically noticed well after it happened.
+/// A window shorter than a quarter means a rights request filed on day 1 can
+/// outlive the very log that answers it.
+///
+/// 90 days is three times the statutory answer window and matches the slip
+/// *image* proposal in §1, so the record of who viewed an image cannot expire
+/// before the image itself does.
+pub const SLIP_ACCESS_LOG_RETENTION_MIN_DAYS: u32 = 90;
+
+/// Largest accepted `slip_access_log` window, in days (ten years).
+pub const SLIP_ACCESS_LOG_RETENTION_MAX_DAYS: u32 = 3650;
 
 impl RetentionConfig {
     /// The configured slip-image retention window in days, or `None` when
@@ -572,6 +625,56 @@ impl RetentionConfig {
     pub fn slip_days_error(&self) -> Option<&str> {
         match present(&self.slip_days) {
             Some(raw) if self.slip_retention_days().is_none() => Some(raw),
+            _ => None,
+        }
+    }
+
+    /// The configured `booking_audit_log` window in days, or `None` when the
+    /// prune is off.
+    ///
+    /// Accepted range is `365..=3650`. A value **below the floor is refused,
+    /// not raised to it** — the same rule the slip window applies to an
+    /// out-of-range value, for the same reason in the opposite direction.
+    /// Quietly promoting `30` to `365` would run a retention policy the
+    /// operator did not choose; quietly honouring `30` would shred the
+    /// evidence trail behind eleven months of confirmations. Refusing leaves
+    /// the data where it is and says so at startup, which is the only one of
+    /// the three that is reversible.
+    pub fn audit_log_retention_days(&self) -> Option<u32> {
+        present(&self.audit_log_days)
+            .and_then(|raw| raw.parse::<u32>().ok())
+            .filter(|days| {
+                (AUDIT_LOG_RETENTION_MIN_DAYS..=AUDIT_LOG_RETENTION_MAX_DAYS).contains(days)
+            })
+    }
+
+    /// `Some(raw)` when `AUDIT_LOG_RETENTION_DAYS` was set to something this
+    /// config refuses — a typo, or a window outside `365..=3650` — so startup
+    /// can say so out loud instead of silently running with the prune off.
+    pub fn audit_log_days_error(&self) -> Option<&str> {
+        match present(&self.audit_log_days) {
+            Some(raw) if self.audit_log_retention_days().is_none() => Some(raw),
+            _ => None,
+        }
+    }
+
+    /// The configured `slip_access_log` window in days, or `None` when the
+    /// prune is off. Accepted range is `90..=3650`; below the floor is
+    /// refused, not raised — see [`RetentionConfig::audit_log_retention_days`].
+    pub fn slip_access_log_retention_days(&self) -> Option<u32> {
+        present(&self.slip_access_log_days)
+            .and_then(|raw| raw.parse::<u32>().ok())
+            .filter(|days| {
+                (SLIP_ACCESS_LOG_RETENTION_MIN_DAYS..=SLIP_ACCESS_LOG_RETENTION_MAX_DAYS)
+                    .contains(days)
+            })
+    }
+
+    /// `Some(raw)` when `SLIP_ACCESS_LOG_RETENTION_DAYS` was set to something
+    /// this config refuses.
+    pub fn slip_access_log_days_error(&self) -> Option<&str> {
+        match present(&self.slip_access_log_days) {
+            Some(raw) if self.slip_access_log_retention_days().is_none() => Some(raw),
             _ => None,
         }
     }
@@ -1074,6 +1177,18 @@ impl Settings {
                 "retention.slip_days",
                 env_present("SLIP_RETENTION_DAYS"),
             )?
+            // Audit-log retention (F10). Same convention, same "no default"
+            // rule: both prunes are off until an operator names a window, and
+            // a window below the floor is refused rather than raised — see
+            // `RetentionConfig::audit_log_retention_days`.
+            .set_override_option(
+                "retention.audit_log_days",
+                env_present("AUDIT_LOG_RETENTION_DAYS"),
+            )?
+            .set_override_option(
+                "retention.slip_access_log_days",
+                env_present("SLIP_ACCESS_LOG_RETENTION_DAYS"),
+            )?
             .set_override_option("promptpay.tax_id", env_present("PROMPTPAY_TAX_ID"))?
             .set_override_option("promptpay.hf_id", env_present("PROMPTPAY_HF_ID"))?
             .set_override_option(
@@ -1323,6 +1438,7 @@ mod tests {
         fn cfg(raw: Option<&str>) -> RetentionConfig {
             RetentionConfig {
                 slip_days: raw.map(str::to_string),
+                ..RetentionConfig::default()
             }
         }
 
@@ -1376,6 +1492,133 @@ mod tests {
         assert_eq!(cfg(Some("90")).slip_days_error(), None);
         assert_eq!(cfg(None).slip_days_error(), None);
         assert_eq!(cfg(Some("")).slip_days_error(), None);
+    }
+
+    /// F10's floors. These windows are bounded from **below** as well as
+    /// above, which is the opposite direction to the slip-image window, and
+    /// the reason is the direction of the harm: too short a window here
+    /// destroys the only record of what staff did to a booking, or of who
+    /// read a guest's payer's bank details, while the request that needed it
+    /// was still in time to be filed.
+    ///
+    /// A refused value must be **off and reported**, never clamped to the
+    /// floor: clamping would run a retention policy nobody chose, and it is
+    /// the one outcome that cannot be undone once rows are gone.
+    #[test]
+    fn audit_log_retention_floors_refuse_a_too_short_window() {
+        fn cfg(audit: Option<&str>, access: Option<&str>) -> RetentionConfig {
+            RetentionConfig {
+                audit_log_days: audit.map(str::to_string),
+                slip_access_log_days: access.map(str::to_string),
+                ..RetentionConfig::default()
+            }
+        }
+
+        // Off by default, and off on the blank every compose file passes.
+        assert_eq!(cfg(None, None).audit_log_retention_days(), None, "unset");
+        assert_eq!(
+            cfg(Some(""), Some("")).audit_log_retention_days(),
+            None,
+            "blank is off"
+        );
+        assert_eq!(
+            cfg(Some("   "), Some("   ")).slip_access_log_retention_days(),
+            None,
+            "whitespace is off"
+        );
+        assert_eq!(cfg(None, None).audit_log_days_error(), None);
+        assert_eq!(cfg(Some(""), Some("")).slip_access_log_days_error(), None);
+
+        // booking_audit_log: floor 365.
+        for below in ["1", "30", "90", "180", "364", "0"] {
+            assert_eq!(
+                cfg(Some(below), None).audit_log_retention_days(),
+                None,
+                "{} is below the audit floor and must be refused",
+                below
+            );
+            assert_eq!(
+                cfg(Some(below), None).audit_log_days_error(),
+                Some(below),
+                "{} must be reported, not silently ignored",
+                below
+            );
+        }
+        assert_eq!(
+            cfg(Some("365"), None).audit_log_retention_days(),
+            Some(365),
+            "the floor itself is accepted"
+        );
+        assert_eq!(
+            cfg(Some(" 1825 "), None).audit_log_retention_days(),
+            Some(1825)
+        );
+        assert_eq!(
+            cfg(Some("3650"), None).audit_log_retention_days(),
+            Some(3650)
+        );
+        assert_eq!(
+            cfg(Some("3651"), None).audit_log_retention_days(),
+            None,
+            "and the ceiling still holds"
+        );
+        assert_eq!(cfg(Some("3651"), None).audit_log_days_error(), Some("3651"));
+        assert_eq!(
+            cfg(Some("five years"), None).audit_log_retention_days(),
+            None
+        );
+        assert_eq!(
+            cfg(Some("-5"), None).audit_log_retention_days(),
+            None,
+            "a negative window is off, not a panic"
+        );
+        assert_eq!(
+            cfg(Some(&u32::MAX.to_string()), None).audit_log_retention_days(),
+            None,
+            "a value past i32::MAX must never reach make_interval"
+        );
+
+        // slip_access_log: floor 90.
+        for below in ["1", "7", "30", "89", "0"] {
+            assert_eq!(
+                cfg(None, Some(below)).slip_access_log_retention_days(),
+                None,
+                "{} is below the access-log floor and must be refused",
+                below
+            );
+            assert_eq!(
+                cfg(None, Some(below)).slip_access_log_days_error(),
+                Some(below)
+            );
+        }
+        assert_eq!(
+            cfg(None, Some("90")).slip_access_log_retention_days(),
+            Some(90),
+            "the floor itself is accepted"
+        );
+        assert_eq!(
+            cfg(None, Some(" 365 ")).slip_access_log_retention_days(),
+            Some(365)
+        );
+        assert_eq!(
+            cfg(None, Some("3650")).slip_access_log_retention_days(),
+            Some(3650)
+        );
+        assert_eq!(
+            cfg(None, Some("3651")).slip_access_log_retention_days(),
+            None
+        );
+        assert_eq!(
+            cfg(None, Some(&u32::MAX.to_string())).slip_access_log_retention_days(),
+            None
+        );
+
+        // The two windows are independent: configuring one must not turn the
+        // other on, which is the mistake a shared field would invite.
+        let only_audit = cfg(Some("365"), None);
+        assert_eq!(only_audit.audit_log_retention_days(), Some(365));
+        assert_eq!(only_audit.slip_access_log_retention_days(), None);
+        assert_eq!(only_audit.slip_retention_days(), None);
     }
 
     /// `SLIPOK_AUTO_VERIFY` arrives from the environment as a *string*
