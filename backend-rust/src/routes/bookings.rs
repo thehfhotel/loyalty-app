@@ -5,7 +5,7 @@
 
 use axum::{
     extract::{Extension, Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     middleware,
     routing::{delete, get, post, put},
     Json, Router,
@@ -20,7 +20,9 @@ use validator::Validate;
 use crate::error::{AppError, AppResult};
 use crate::middleware::auth::{auth_middleware, has_role, AuthUser};
 use crate::models::booking::{BookingResponse, BookingStatus, RoomType};
-use crate::services::pms_channel::{PmsChannelClient, PmsCreateBookingRequest, PmsGuest};
+use crate::services::pms_channel::{
+    IdempotencyKey, PmsChannelClient, PmsCreateBookingRequest, PmsGuest, IDEMPOTENCY_KEY_HEADER,
+};
 use crate::services::promptpay::PromptPayService;
 use crate::state::AppState;
 use crate::types::Property;
@@ -1963,6 +1965,65 @@ pub struct CreateChannelBookingRequest {
     pub guest_phone: String,
     /// "deposit50" | "full" — 50% deposit or pay in full (guest's choice).
     pub payment_option: String,
+    /// Optional client-minted idempotency key, for a caller that cannot set
+    /// headers. The `Idempotency-Key` **header** is the canonical form and
+    /// wins when both are present; see
+    /// [`resolve_idempotency_key`] for the whole rule.
+    #[serde(default, alias = "idempotencyKey")]
+    pub idempotency_key: Option<String>,
+}
+
+/// The key this booking attempt will carry to the PMS.
+///
+/// ## Who mints it, and why it is the client when the client can
+///
+/// A key is only worth anything if a **retry of one attempt** carries the
+/// same value. A key minted here, per HTTP request, cannot do that: the
+/// retry is a second HTTP request and would get a second key, and the two
+/// creates would look unrelated to the PMS. So the frontend mints one per
+/// `createBooking()` call (`frontend/src/services/channelBookingService.ts`)
+/// and it rides in the `Idempotency-Key` header — which means it survives
+/// the one retry the app really does perform: `axiosInterceptor` replays
+/// the *same config object* after a 401 refresh, headers and all.
+///
+/// ## And why the server mints one anyway when it is absent
+///
+/// Not every caller is that frontend — an older bundle still in a guest's
+/// LIFF webview, a curl from the desk, a future integration. A server-side
+/// UUID v4 gives those callers everything except cross-request replay: the
+/// PMS still stores the request against a key, so a duplicate *delivery*
+/// of the same request (a proxy retry, a dropped ACK) collapses instead of
+/// creating a second hold. Sending no key at all would be strictly worse
+/// than sending a fresh one, and there is no third option.
+///
+/// ## A malformed client key is not the guest's problem
+///
+/// It is warned about and replaced, not rejected. A client bug that put a
+/// newline or a 400-character string in the header would otherwise turn
+/// into "your booking failed" for a guest who did nothing wrong, and the
+/// fallback still leaves the request idempotent for the delivery case.
+fn resolve_idempotency_key(headers: &HeaderMap, from_body: Option<&str>) -> IdempotencyKey {
+    let from_header = headers
+        .get(IDEMPOTENCY_KEY_HEADER)
+        .and_then(|value| value.to_str().ok());
+
+    let Some(raw) = from_header.or(from_body) else {
+        return IdempotencyKey::new_v4();
+    };
+
+    match IdempotencyKey::parse(raw) {
+        Ok(key) => key,
+        Err(e) => {
+            // The rejected value is not logged: it is untrusted client text
+            // heading for a log line people read and grep.
+            tracing::warn!(
+                reason = %e,
+                source = if from_header.is_some() { "header" } else { "body" },
+                "ignoring a malformed client idempotency key; minting one instead"
+            );
+            IdempotencyKey::new_v4()
+        },
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -1982,6 +2043,7 @@ pub struct ChannelBookingResponse {
 async fn create_channel_booking(
     State(state): State<AppState>,
     Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
     Json(payload): Json<CreateChannelBookingRequest>,
 ) -> AppResult<(StatusCode, Json<ChannelBookingResponse>)> {
     use rust_decimal::prelude::ToPrimitive;
@@ -2032,6 +2094,8 @@ async fn create_channel_booking(
     .fetch_optional(state.db())
     .await?;
 
+    let idempotency_key = resolve_idempotency_key(&headers, payload.idempotency_key.as_deref());
+
     let pms = PmsChannelClient::from_settings(state.config())?;
     let created = pms
         .create_booking(
@@ -2053,6 +2117,7 @@ async fn create_channel_booking(
             // side trip on a path that already holds a pooled, bounded-
             // reconnect connection (#416).
             state.redis(),
+            &idempotency_key,
         )
         .await?;
 
@@ -2096,6 +2161,31 @@ async fn create_channel_booking(
     .await;
 
     if let Err(e) = inserted {
+        // A replayed hold is NOT ours to release.
+        //
+        // `bookings.pms_booking_id` is uniquely indexed
+        // (`20260710000000_property_line_channel.sql`), so the way an insert
+        // fails right after a replay is that the row is already there — the
+        // earlier attempt with this key got all the way through, and the
+        // guest can already see the booking. Releasing here would cancel a
+        // live, paid-for hold because a duplicate request arrived late. So
+        // the hold is left alone and the guest is told the booking exists.
+        if created.replayed {
+            tracing::warn!(
+                error = %e,
+                pms_booking_id = %created.pms_booking_id,
+                "insert failed after a replayed PMS hold; leaving the hold alone — it belongs to \
+                 the booking this key already created"
+            );
+            return Err(match &e {
+                sqlx::Error::Database(db) if db.is_unique_violation() => AppError::Conflict(
+                    "This booking has already been created. Check My Bookings — it is there."
+                        .to_string(),
+                ),
+                _ => e.into(),
+            });
+        }
+
         tracing::error!(error = %e, pms_booking_id = %created.pms_booking_id,
             "channel record insert failed; releasing PMS hold");
         if let Err(release_err) = pms.release(&created.pms_booking_id).await {
@@ -2110,6 +2200,7 @@ async fn create_channel_booking(
         pms_booking_id = %created.pms_booking_id,
         property = %payload.property,
         payment_option = %payload.payment_option,
+        idempotency_replayed = created.replayed,
         "channel booking held"
     );
 

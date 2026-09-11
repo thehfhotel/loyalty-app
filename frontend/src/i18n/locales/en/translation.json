@@ -1770,7 +1770,13 @@
     "guestName": "Guest name",
     "guestPhone": "Phone number",
     "guestPhonePlaceholder": "e.g. 081-234-5678",
-    "guestDetailsRequired": "Please fill in the guest name and phone number"
+    "guestDetailsRequired": "Please fill in the guest name and phone number",
+    "outage": {
+      "heading": "The booking system is temporarily unavailable",
+      "withPhone": "Our booking system is temporarily unavailable. Please contact the front desk on {{phone}}.",
+      "withoutPhone": "Our booking system is temporarily unavailable. Please contact the front desk.",
+      "notCharged": "No booking was made and you have not been charged."
+    }
   },
   "payment": {
     "title": "Payment",

@@ -1,4 +1,13 @@
 import api from './authService';
+import { newIdempotencyKey } from '../utils/idempotency';
+
+/**
+ * The header the backend forwards to the PMS's channel hold-create.
+ *
+ * Exported so tests name it once and a rename cannot silently stop the key
+ * being sent.
+ */
+export const IDEMPOTENCY_KEY_HEADER = 'Idempotency-Key';
 
 // Booking-channel contract (docs/launch-plan.md — "Locked interface
 // contracts"). The backend proxies availability from the PMS and creates
@@ -64,8 +73,27 @@ export const channelBookingService = {
     return response.data;
   },
 
-  async createBooking(data: CreateChannelBookingRequest): Promise<ChannelBookingResponse> {
-    const response = await api.post<ChannelBookingResponse>('/bookings/channel', data);
+  /**
+   * Create the held booking, carrying one idempotency key for this attempt.
+   *
+   * The key is minted per call, not per HTTP request: the backend forwards
+   * it to the PMS, which collapses a repeat of the same key into the hold
+   * it already made rather than holding a second room (new-hotel #305). The
+   * retry that matters is `axiosInterceptor`'s — after a 401 refresh it
+   * replays the same config object, so the header set here goes out again
+   * unchanged and the two sends are one attempt to the PMS.
+   *
+   * A caller that is itself retrying a failed attempt (rather than starting
+   * a new one) can pass the previous `idempotencyKey` to get the same
+   * collapsing behaviour.
+   */
+  async createBooking(
+    data: CreateChannelBookingRequest,
+    idempotencyKey: string = newIdempotencyKey(),
+  ): Promise<ChannelBookingResponse> {
+    const response = await api.post<ChannelBookingResponse>('/bookings/channel', data, {
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+    });
     return response.data;
   },
 };

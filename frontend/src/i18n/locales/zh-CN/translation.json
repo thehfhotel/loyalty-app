@@ -1226,7 +1226,13 @@
     "guestName": "入住人姓名",
     "guestPhone": "电话号码",
     "guestPhonePlaceholder": "例如 081-234-5678",
-    "guestDetailsRequired": "请填写入住人姓名和电话号码"
+    "guestDetailsRequired": "请填写入住人姓名和电话号码",
+    "outage": {
+      "heading": "预订系统暂时无法使用",
+      "withPhone": "预订系统暂时无法使用，请致电前台 {{phone}}。",
+      "withoutPhone": "预订系统暂时无法使用，请联系前台。",
+      "notCharged": "系统未创建预订，也未向您收取任何费用。"
+    }
   },
   "payment": {
     "browseFiles": "浏览文件",

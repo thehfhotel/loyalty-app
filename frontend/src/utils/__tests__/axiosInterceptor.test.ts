@@ -214,11 +214,16 @@ describe('axiosInterceptor - Auth Refresh Loop Prevention', () => {
     });
   });
 
-  // A15 (N8): `createApiError` is what every non-401 failure in the app goes
-  // through, and this round widened it — it now always returns an `ApiError`
-  // and carries `status` + `detail`. `.message` resolution is deliberately
-  // unchanged, because every existing toast reads it; these tests pin both
-  // halves of that promise.
+  // A15 (N8) widened `createApiError` — every non-401 failure in the app
+  // goes through it, and it now always returns an `ApiError` carrying
+  // `status` + `detail`.
+  //
+  // A17 then flipped `.message`. It used to resolve `data.error` first,
+  // which is the backend's *machine key*, so a PMS outage reached a guest
+  // as a toast reading `external_service_unavailable`. It now prefers
+  // `data.message`, the sentence the backend wrote for a person, and every
+  // caller that branches on the machine value reads `.code` — which is
+  // unchanged. These tests pin both halves.
   describe('createApiError (via the response interceptor)', () => {
     async function reject(status: number, data: unknown): Promise<unknown> {
       // Capture the rejection handler `setupAxiosInterceptors` registers,
@@ -248,17 +253,58 @@ describe('axiosInterceptor - Auth Refresh Loop Prevention', () => {
       );
     }
 
-    it('keeps .message on the backend error code, and adds status + detail', async () => {
+    it('puts the human sentence on .message and keeps the key on .code', async () => {
       const rejected = (await reject(409, {
         error: 'conflict',
         message: 'confirm_refused: the PMS refused the payment event'
       })) as ApiError;
 
       expect(rejected).toBeInstanceOf(ApiError);
-      // Unchanged resolution order: `data.error` wins for `.message`.
-      expect(rejected.message).toBe('conflict');
+      // A17: `data.message` wins for `.message` — this is what every toast
+      // in the app renders, and it must be readable by a person.
+      expect(rejected.message).toBe('confirm_refused: the PMS refused the payment event');
+      // The machine key is still available to callers that branch on it.
+      expect(rejected.code).toBe('conflict');
       expect(rejected.status).toBe(409);
       expect(rejected.detail).toBe('confirm_refused: the PMS refused the payment event');
+    });
+
+    /**
+     * The regression A17 exists to stop, stated as a test: a guest must
+     * never be shown `external_service_unavailable`.
+     */
+    it('never surfaces the machine key as the displayed message', async () => {
+      const rejected = (await reject(503, {
+        error: 'external_service_unavailable',
+        message: 'PMS is temporarily unavailable'
+      })) as ApiError;
+
+      expect(rejected.message).toBe('PMS is temporarily unavailable');
+      expect(rejected.message).not.toBe('external_service_unavailable');
+      expect(rejected.code).toBe('external_service_unavailable');
+    });
+
+    /**
+     * A body with only the key in it still has to say *something*. The key
+     * is a poor sentence, but it beats an empty toast, and the case only
+     * arises for endpoints that predate `ErrorResponse`.
+     */
+    it('falls back to the key when the backend sent no sentence', async () => {
+      const rejected = (await reject(400, { error: 'validation_error' })) as ApiError;
+
+      expect(rejected.message).toBe('validation_error');
+      expect(rejected.detail).toBeUndefined();
+    });
+
+    /**
+     * And with no body at all — the request never got a response — axios's
+     * own text is all there is.
+     */
+    it('falls back to the axios message when there is no response body', async () => {
+      const rejected = (await reject(503, undefined)) as ApiError;
+
+      expect(rejected.message).toBe('Request failed');
+      expect(rejected.code).toBeUndefined();
     });
 
     it('falls back to data.error for the code when data.code is absent', async () => {

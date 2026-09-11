@@ -720,12 +720,49 @@ impl LineMessagingConfig {
 /// PMS booking-channel client configuration (ADR-0003: the loyalty app is
 /// a booking channel into the PMS; availability and booking creation live
 /// there).
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct PmsConfig {
     /// Base URL of the PMS channel API (e.g. https://pms.internal).
     pub base_url: Option<String>,
     /// Bearer token for outbound calls to the PMS channel API.
     pub channel_token: Option<String>,
+    /// Master switch for the one-in-flight Redis hold guard
+    /// (`PMS_HOLD_GUARD`, default **on**).
+    ///
+    /// The guard exists because `POST /api/channel/bookings` used to have
+    /// no idempotency of its own: a guest who gave up on a hung request and
+    /// tapped "book" again got two holds on two rooms (B8 race 2.3). Since
+    /// new-hotel #305 the PMS accepts an `Idempotency-Key` per caller token
+    /// and property, which collapses that same retry into one hold on the
+    /// PMS's own side — the place that can actually make the guarantee.
+    ///
+    /// Both run for now, on purpose. The guard is a Redis lock we can watch
+    /// and reason about; the PMS's key store is new. This flag is the
+    /// retirement lever: once the keyed path has run in production long
+    /// enough to trust, `PMS_HOLD_GUARD=false` turns the guard off without
+    /// a deploy, and the code comes out in a later change. Turning it off
+    /// does **not** turn idempotency off — the key is sent either way.
+    #[serde(default = "default_pms_hold_guard")]
+    pub hold_guard: bool,
+}
+
+/// The hold guard is on unless somebody deliberately turns it off.
+///
+/// A missing `PMS_HOLD_GUARD` must never read as "off": that would retire
+/// the duplicate-hold protection by accident, on a stack whose operator
+/// never asked for it.
+fn default_pms_hold_guard() -> bool {
+    true
+}
+
+impl Default for PmsConfig {
+    fn default() -> Self {
+        Self {
+            base_url: None,
+            channel_token: None,
+            hold_guard: default_pms_hold_guard(),
+        }
+    }
 }
 
 impl PmsConfig {
@@ -1101,6 +1138,7 @@ impl Settings {
             .set_default("security.trusted_proxies", default_trusted_proxies())?
             .set_default("security.rate_limit_namespace", "")?
             .set_default("slipok.auto_verify", false)?
+            .set_default("pms.hold_guard", true)?
             .set_default("cf_access.enabled", true)?
             .set_default("cf_access.aud", DEFAULT_CF_ACCESS_AUD)?
             .set_default("cf_access.issuer", default_cf_access_issuer())?
@@ -1224,6 +1262,11 @@ impl Settings {
             )?
             .set_override_option("pms.base_url", env::var("PMS_BASE_URL").ok())?
             .set_override_option("pms.channel_token", env::var("PMS_CHANNEL_TOKEN").ok())?
+            // Blank-means-absent (`env_present`), not `env::var`: every
+            // compose file passes optional settings as `VAR: ${VAR:-}`, so
+            // an unset flag arrives as `Some("")` — which the config layer
+            // cannot coerce to a bool, and which would fail the whole load.
+            .set_override_option("pms.hold_guard", env_present("PMS_HOLD_GUARD"))?
             .set_override_option(
                 "loyalty_service.token",
                 env::var("LOYALTY_SERVICE_TOKEN").ok(),
@@ -1645,6 +1688,39 @@ mod tests {
         assert!(!load(None).auto_verify, "unset must default to off");
         assert!(load(Some("true")).auto_verify);
         assert!(!load(Some("false")).auto_verify);
+    }
+
+    /// `PMS_HOLD_GUARD` is the retirement lever for the Redis hold guard,
+    /// and the direction of its default is the whole point: an unset or
+    /// blank variable must leave the guard **on**.
+    ///
+    /// Same string-override coercion as `SLIPOK_AUTO_VERIFY` — the value
+    /// reaches a `bool` field as text from the environment — plus the case
+    /// that flag cannot have: `PmsConfig::default()`, which the test suite
+    /// builds directly and which a derived `Default` would have quietly set
+    /// to `false`.
+    #[test]
+    fn the_pms_hold_guard_is_on_unless_it_is_explicitly_turned_off() {
+        fn load(value: Option<&str>) -> PmsConfig {
+            ::config::Config::builder()
+                .set_default("pms.hold_guard", true)
+                .expect("default")
+                .set_override_option("pms.hold_guard", value.map(str::to_string))
+                .expect("override")
+                .build()
+                .expect("build config")
+                .get::<PmsConfig>("pms")
+                .expect("deserialise pms config")
+        }
+
+        assert!(load(None).hold_guard, "unset must leave the guard on");
+        assert!(load(Some("true")).hold_guard);
+        assert!(!load(Some("false")).hold_guard, "and off when asked");
+        assert!(
+            PmsConfig::default().hold_guard,
+            "a PmsConfig built in code, not from the environment, still \
+             carries the guard: a derived Default would have said false"
+        );
     }
 
     #[test]

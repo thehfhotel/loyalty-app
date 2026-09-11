@@ -267,10 +267,17 @@ impl OAuthServiceImpl {
         // reject redirects (SSRF mitigation per the upstream upgrade guide).
         // The same client is reused for plain userinfo GETs — userinfo
         // endpoints normally respond 200 directly without redirects.
-        let http_client = HttpClient::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .unwrap_or_else(|_| HttpClient::new());
+        //
+        // It is the app's shared client (#434) rather than one built here.
+        // The one built here had **no timeouts at all** —
+        // `reqwest::Client::builder()` starts from none and only the
+        // redirect policy was set — so a Google or LINE token endpoint that
+        // accepted the connection and then said nothing held a guest's
+        // login open until the router's own 30 s `TimeoutLayer` turned it
+        // into a 408. `outbound_no_redirect()` is that policy with the
+        // shared connect/total budget and one connection pool for the whole
+        // process, instead of a fresh pool per `OAuthServiceImpl`.
+        let http_client = crate::services::http::outbound_no_redirect().clone();
 
         Self {
             state,
