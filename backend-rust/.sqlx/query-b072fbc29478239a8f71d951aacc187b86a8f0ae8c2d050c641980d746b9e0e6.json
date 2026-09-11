@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_audit_log\n           SET ip_address = NULL, user_agent = NULL\n           WHERE user_id = $1\n             AND (ip_address IS NOT NULL OR user_agent IS NOT NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b072fbc29478239a8f71d951aacc187b86a8f0ae8c2d050c641980d746b9e0e6"
+}

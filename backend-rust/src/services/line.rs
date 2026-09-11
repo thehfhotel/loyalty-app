@@ -94,24 +94,69 @@ pub async fn push_text(access_token: &str, to: &str, text: &str) -> AppResult<()
     Ok(())
 }
 
+/// Why a push did or did not reach LINE.
+///
+/// Every non-delivery here is a normal situation, not an error — but each
+/// one is a *different* normal situation, and "the member deleted their
+/// account" must be distinguishable from "LINE is misconfigured" in the
+/// logs. A bare `false` could not tell them apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PushOutcome {
+    /// A message was accepted by one OA's Messaging API.
+    Delivered,
+    /// No row in `push_targets` with a LINE identity for this user id.
+    /// Either the account never signed in with LINE, **or it has been
+    /// erased (`users.deleted_at`) or deactivated** — the view hides
+    /// both, which is what makes an erased member unreachable.
+    NoPushTarget,
+    /// A LINE identity exists but is not friends with any property OA.
+    NoFriendship,
+    /// Friended, but no friended OA has a usable channel token, or every
+    /// attempt was rejected by LINE.
+    NoChannel,
+}
+
+impl PushOutcome {
+    /// Stable, log-safe reason string. Contains no personal data.
+    pub fn reason(self) -> &'static str {
+        match self {
+            Self::Delivered => "delivered",
+            Self::NoPushTarget => "no_push_target",
+            Self::NoFriendship => "no_friendship",
+            Self::NoChannel => "no_channel",
+        }
+    }
+
+    /// `true` only when LINE accepted the message.
+    pub fn delivered(self) -> bool {
+        matches!(self, Self::Delivered)
+    }
+}
+
 /// Property-affinity push routing (docs/launch-plan.md):
 /// the event property's OA speaks if the member is its friend; otherwise
 /// any other friended OA; otherwise no push. For program-wide events
 /// (`event_property = None`) the property of the most recent stay leads.
 ///
-/// Returns `Ok(true)` if a message was delivered to LINE, `Ok(false)` if the
-/// member has no LINE identity / no friendship / no configured channel —
-/// those are normal situations, not errors.
+/// Returns the [`PushOutcome`] — `Delivered`, or the reason nothing was
+/// sent. An erased or deactivated account resolves to
+/// [`PushOutcome::NoPushTarget`] because the `push_targets` view does not
+/// contain it (migration `20260914020000`; PDPA data map §6 / §8 gap P1-3).
 pub async fn push_to_member(
     db: &PgPool,
     settings: &Settings,
     user_id: Uuid,
     event_property: Option<Property>,
     text: &str,
-) -> AppResult<bool> {
+) -> AppResult<PushOutcome> {
     // Resolve the member's LINE userId (LINE Login / LIFF identity).
+    //
+    // `push_targets`, never `users`: the view excludes erased accounts
+    // (`users.deleted_at`) and deactivated ones by construction, so this
+    // query cannot forget the predicate and neither can the next dispatch
+    // path somebody adds. Migration 20260914020000; PDPA data map §6.
     let line_user_id: Option<String> = sqlx::query_scalar!(
-        r#"SELECT oauth_provider_id FROM users WHERE id = $1 AND oauth_provider = 'line'"#,
+        r#"SELECT oauth_provider_id FROM push_targets WHERE id = $1 AND oauth_provider = 'line'"#,
         user_id
     )
     .fetch_optional(db)
@@ -119,7 +164,7 @@ pub async fn push_to_member(
     .flatten();
 
     let Some(line_user_id) = line_user_id else {
-        return Ok(false);
+        return Ok(PushOutcome::NoPushTarget);
     };
 
     // Which OAs is this LINE user currently a friend of?
@@ -131,7 +176,7 @@ pub async fn push_to_member(
     .await?;
 
     if friended.is_empty() {
-        return Ok(false);
+        return Ok(PushOutcome::NoFriendship);
     }
 
     // Lead OA: the event's property, or for program-wide events the
@@ -170,7 +215,7 @@ pub async fn push_to_member(
             continue;
         };
         match push_text(token, &line_user_id, text).await {
-            Ok(()) => return Ok(true),
+            Ok(()) => return Ok(PushOutcome::Delivered),
             Err(e) => {
                 // Fall through to the next friended OA rather than failing
                 // the caller — push is best-effort by design.
@@ -179,7 +224,7 @@ pub async fn push_to_member(
         }
     }
 
-    Ok(false)
+    Ok(PushOutcome::NoChannel)
 }
 
 #[cfg(test)]

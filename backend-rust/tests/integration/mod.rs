@@ -5,6 +5,7 @@
 //!
 //! # Test Organization
 //!
+//! - `account_deletion_test` - F3: PDPA account erasure (DELETE /api/users/account)
 //! - `admin_test` - Admin panel tests (/api/admin/*)
 //! - `audit_retention_test` - F10: booking_audit_log + slip_access_log retention
 //! - `health_test` - Health check endpoint tests (/api/health/*)
@@ -39,6 +40,7 @@
 //! TEST_DATABASE_URL=postgresql://... TEST_REDIS_URL=redis://... cargo test --test integration
 //! ```
 
+pub mod account_deletion_test;
 pub mod admin_bootstrap_test;
 pub mod admin_test;
 pub mod audit_retention_test;

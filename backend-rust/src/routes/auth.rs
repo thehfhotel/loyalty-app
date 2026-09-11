@@ -376,7 +376,10 @@ async fn get_user_profile(db: &sqlx::PgPool, user_id: &Uuid) -> Result<UserRespo
             up.phone,
             up.avatar_url,
             up.membership_id
-        FROM users u
+        -- `login_identities`, never `users`: once the account is erased
+        -- (`users.deleted_at`) the still-valid JWT must resolve to nothing
+        -- rather than to a blanked profile. Migration 20260914020000.
+        FROM login_identities u
         LEFT JOIN user_profiles up ON u.id = up.user_id
         WHERE u.id = $1
         "#,
@@ -698,7 +701,11 @@ async fn login(
     let user_row: Option<UserRow> = sqlx::query_as(
         r#"
         SELECT id, email, password_hash, role, is_active, email_verified, created_at, updated_at
-        FROM users
+        -- `login_identities`, never `users`: the view hides rows whose
+        -- `users.deleted_at` is set, so an erased account can never be
+        -- resolved, resurrected or logged into again. Migration
+        -- 20260914020000; PDPA data map §6.
+        FROM login_identities
         WHERE email = $1
         "#,
     )
@@ -981,7 +988,11 @@ async fn cf_exchange(
     let user_row: Option<UserRow> = sqlx::query_as(
         r#"
         SELECT id, email, password_hash, role, is_active, email_verified, created_at, updated_at
-        FROM users
+        -- `login_identities`, never `users`: the view hides rows whose
+        -- `users.deleted_at` is set, so an erased account can never be
+        -- resolved, resurrected or logged into again. Migration
+        -- 20260914020000; PDPA data map §6.
+        FROM login_identities
         WHERE lower(email) = lower($1)
           AND role::text IN ('admin', 'super_admin')
           AND is_active
@@ -1160,7 +1171,11 @@ async fn refresh(
     let user_row: Option<UserRow> = sqlx::query_as(
         r#"
         SELECT id, email, password_hash, role, is_active, email_verified, created_at, updated_at
-        FROM users
+        -- `login_identities`, never `users`: the view hides rows whose
+        -- `users.deleted_at` is set, so an erased account can never be
+        -- resolved, resurrected or logged into again. Migration
+        -- 20260914020000; PDPA data map §6.
+        FROM login_identities
         WHERE id = $1 AND is_active = true
         "#,
     )
@@ -1238,9 +1253,16 @@ async fn forgot_password(
 
     let db = state.db();
 
-    // Find user by email (don't reveal if email exists)
+    // Find user by email (don't reveal if email exists).
+    //
+    // `push_targets`, never `users`: a reset email is a send, and the view
+    // excludes erased and deactivated accounts by construction. An erased
+    // account also has `email = NULL`, so it could not match anyway — the
+    // view is the guarantee, the NULL is the belt. The response stays
+    // generic either way, so this changes nothing an attacker can observe.
+    // Migration 20260914020000; PDPA data map §6.
     let user_row: Option<(Uuid, String)> =
-        sqlx::query_as("SELECT id, email FROM users WHERE email = $1")
+        sqlx::query_as("SELECT id, email FROM push_targets WHERE email = $1")
             .bind(&payload.email)
             .fetch_optional(db)
             .await

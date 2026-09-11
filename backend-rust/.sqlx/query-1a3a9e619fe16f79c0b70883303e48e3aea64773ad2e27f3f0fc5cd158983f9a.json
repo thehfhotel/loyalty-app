@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_profiles\n           SET first_name    = NULL,\n               last_name     = NULL,\n               phone         = NULL,\n               date_of_birth = NULL,\n               avatar_url    = NULL,\n               preferences   = '{}'::jsonb,\n               updated_at    = NOW()\n           WHERE user_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1a3a9e619fe16f79c0b70883303e48e3aea64773ad2e27f3f0fc5cd158983f9a"
+}

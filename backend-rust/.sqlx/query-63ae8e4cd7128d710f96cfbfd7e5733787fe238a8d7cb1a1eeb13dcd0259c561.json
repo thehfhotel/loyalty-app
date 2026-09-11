@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_deletions (\n               user_id, requested_by, actor, anonymised_fields, oauth_provider,\n               line_friendships_severed, refresh_tokens_revoked,\n               notifications_purged, audit_rows_depersonalised\n           )\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "TextArray",
+        "Varchar",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "63ae8e4cd7128d710f96cfbfd7e5733787fe238a8d7cb1a1eeb13dcd0259c561"
+}

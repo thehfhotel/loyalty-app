@@ -1094,10 +1094,17 @@ async fn broadcast_notification(
     // operator literals come from `BroadcastFilter` and are `&'static
     // str`s, so a future refactor can't accidentally let user input
     // become a SQL identifier.
+    // `push_targets`, never `users`: the view drops erased accounts
+    // (`users.deleted_at`) and deactivated ones by construction, so a
+    // broadcast cannot reach an erased member even with `active_only:
+    // false`. The view's columns mirror `users`, so the `u.` fragments
+    // from `build_broadcast_where_clause` are unchanged — `active_only`
+    // is now a redundant narrowing filter rather than the only guard.
+    // Migration 20260914020000; PDPA data map §6.
     let query_str = format!(
         r#"
         SELECT u.id
-        FROM users u
+        FROM push_targets u
         LEFT JOIN user_loyalty ul ON u.id = ul.user_id
         WHERE {}
         "#,
