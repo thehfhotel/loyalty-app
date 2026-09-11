@@ -143,6 +143,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Migration versions must be unique
+        # Two migration files sharing a version prefix pass every PR check
+        # (each PR is tested before the other merges) and then break every
+        # fresh-database boot on main with "duplicate key value violates unique
+        # constraint _sqlx_migrations_pkey" (2026-09-10 #409/#410, 2026-09-11
+        # #429/#430). Fail here, in the fastest job, instead.
+        run: |
+          set -euo pipefail
+          dups=$(ls backend-rust/migrations/*.sql | xargs -n1 basename | cut -c1-14 | sort | uniq -d || true)
+          if [ -n "$dups" ]; then
+            echo "::error::migration version collision: $dups"; ls backend-rust/migrations/ | grep -E "^($(echo "$dups" | paste -sd'|' -))"; exit 1
+          fi
+          echo "migration versions unique ($(ls backend-rust/migrations/*.sql | wc -l | tr -d ' ') files)"
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch (toolchain set via with:)
         with:
