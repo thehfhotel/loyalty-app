@@ -106,6 +106,16 @@ const BATCH_LIMIT: i64 = 2_000;
 /// hourly ticks instead of hammering the database once.
 const MAX_BATCHES_PER_PASS: u32 = 50;
 
+/// A bounded batch is the whole reason this job cannot block writes, so the
+/// bound is a **compile-time** assertion rather than a test: a future edit
+/// that turns the batch into an unbounded delete should not build at all.
+const _: () = {
+    assert!(BATCH_LIMIT > 0);
+    assert!(MAX_BATCHES_PER_PASS > 0);
+    // Past this, one statement stops being a short transaction.
+    assert!(BATCH_LIMIT <= 10_000);
+};
+
 /// What one pass did, for the INFO line and for tests.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct SweepSummary {
@@ -357,17 +367,6 @@ mod tests {
         for closed in ["checked_out", "completed", "cancelled", "no_show"] {
             assert!(CLOSED_STATUSES.contains(&closed), "{} is closed", closed);
         }
-    }
-
-    /// A bounded batch is the whole reason this job cannot block writes.
-    #[test]
-    fn the_batch_budget_is_bounded_and_positive() {
-        assert!(BATCH_LIMIT > 0);
-        assert!(MAX_BATCHES_PER_PASS > 0);
-        assert!(
-            BATCH_LIMIT <= 10_000,
-            "a batch this large stops being a short transaction"
-        );
     }
 
     #[test]
