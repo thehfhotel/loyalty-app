@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT slip_url AS \"slip_url!\", COUNT(*) AS \"live!\"\n        FROM booking_slips\n        WHERE slip_url = ANY($1)\n          AND deleted_at IS NULL\n        GROUP BY slip_url\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "slip_url!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "live!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "319583ee143d5904ff0c1ce1a5331444515a056e59f48079441dfe7d8faf5dc3"
+}

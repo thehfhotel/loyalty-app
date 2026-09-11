@@ -626,12 +626,16 @@ async fn add_booking_slip(
     // unlinking on behalf of one row would destroy the other booking's
     // payment evidence while leaving its row claiming the image is present.
     //
-    // Rejected here rather than by a unique index because `booking_slips`
-    // already exists in production and a migration that failed on
-    // pre-existing duplicates would wedge the deploy. The sweep tolerates any
-    // duplicates already out there with a `NOT EXISTS` guard; this stops new
-    // ones being created. Tombstoned rows are excluded — their `slip_url` is
-    // NULL, so they cannot collide anyway.
+    // Belt and braces with `uq_booking_slips_slip_url_live`
+    // (`20260913000000_booking_slips_slip_url_unique.sql`), which makes the
+    // same rule a database invariant. The check stays here because it is what
+    // turns the race into a clean 409 with a message a guest can act on
+    // rather than a 500 out of a constraint violation — and because that
+    // index is written to skip itself if production ever turns out to hold
+    // duplicates, so it cannot be relied on to exist. The retention sweep
+    // tolerates any duplicates already out there by grouping candidates on
+    // `slip_url`; this stops new ones being created. Tombstoned rows are
+    // excluded — their `slip_url` is NULL, so they cannot collide anyway.
     //
     // Deliberately **inside** the transaction and **after** the idempotency
     // replay above. A retry carrying the same `Idempotency-Key` replays the
