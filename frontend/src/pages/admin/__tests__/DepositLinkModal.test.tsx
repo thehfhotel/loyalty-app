@@ -170,4 +170,39 @@ describe('DepositLinkModal', () => {
     fireEvent.click(screen.getByTestId('copy-deposit-link'));
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(GUEST_URL));
   });
+
+  // B2 follow-up. The create response is the only sighting of the plain
+  // token, so a caller that does not get handed it here can never offer Copy
+  // or LINE share on the row this link becomes.
+  it('hands the issued link — id, url and LINE share url — to onIssued', async () => {
+    mockCreateLink.mockResolvedValue(ISSUED);
+    const onIssued = vi.fn();
+    renderWithClient(<DepositLinkModal open onClose={vi.fn()} onIssued={onIssued} />);
+
+    await fillRequiredFields();
+    setValue(screen.getByTestId('deposit-link-total'), '4000');
+    fireEvent.click(screen.getByTestId('deposit-link-submit'));
+
+    await waitFor(() => expect(onIssued).toHaveBeenCalledTimes(1));
+    expect(onIssued).toHaveBeenCalledWith(
+      expect.objectContaining({
+        linkId: 'link-1',
+        url: GUEST_URL,
+        lineShareUrl: ISSUED.lineShareUrl,
+      }),
+    );
+  });
+
+  it('does not call onIssued when the create fails', async () => {
+    mockCreateLink.mockRejectedValue(new Error('Request failed with status code 500'));
+    const onIssued = vi.fn();
+    renderWithClient(<DepositLinkModal open onClose={vi.fn()} onIssued={onIssued} />);
+
+    await fillRequiredFields();
+    setValue(screen.getByTestId('deposit-link-total'), '4000');
+    fireEvent.click(screen.getByTestId('deposit-link-submit'));
+
+    await waitFor(() => expect(screen.getByTestId('deposit-link-error')).toBeInTheDocument());
+    expect(onIssued).not.toHaveBeenCalled();
+  });
 });

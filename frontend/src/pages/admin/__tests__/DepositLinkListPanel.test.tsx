@@ -44,6 +44,7 @@ import DepositLinkListPanel from '../DepositLinkListPanel';
 import type {
   DepositLinkListItem,
   DepositLinkState,
+  IssuedDepositLink,
 } from '../../../services/depositLinkService';
 
 const OLD_TOKEN = 'a'.repeat(43);
@@ -118,14 +119,14 @@ async function reissueThroughDialog(
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 }
 
-function renderPanel() {
+function renderPanel(props: { issuedLink?: IssuedDepositLink | null } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  return render(<DepositLinkListPanel />, { wrapper });
+  return render(<DepositLinkListPanel issuedLink={props.issuedLink ?? null} />, { wrapper });
 }
 
 describe('DepositLinkListPanel', () => {
@@ -530,6 +531,216 @@ describe('DepositLinkListPanel', () => {
         expect(isCopyField || isShareIntent).toBe(true);
       }
       expect(carriers.length).toBeGreaterThan(0);
+    });
+  });
+
+  /**
+   * The B2 follow-up. Before `issuedLink`, a link issued from the modal
+   * arrived here as a row with no token: Copy disabled, no share intent,
+   * and the only apparent cure a reload — which is the one action that
+   * destroys the token for good.
+   */
+  describe('a link just issued from the modal', () => {
+    const ISSUED: IssuedDepositLink = {
+      linkId: 'link-1',
+      bookingId: 'booking-1',
+      token: OLD_TOKEN,
+      url: `https://loyalty.saichon.com/d#${OLD_TOKEN}`,
+      lineShareUrl: `https://line.me/R/share?text=${encodeURIComponent(
+        `https://loyalty.saichon.com/d#${OLD_TOKEN}`,
+      )}`,
+      totalAmount: 3000,
+      amountDueNow: 1500,
+      expiresAt: '2026-10-01T05:00:00.000Z',
+    };
+
+    it('can be copied and shared straight away, with no reload', async () => {
+      const user = userEvent.setup();
+      const writeText = installClipboardSpy();
+
+      renderPanel({ issuedLink: ISSUED });
+      await waitFor(() => expect(action('deposit-link-copy-link-1')).toBeEnabled());
+
+      await user.click(action('deposit-link-copy-link-1'));
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith(ISSUED.url));
+
+      expect(action('deposit-link-share-link-1')).toHaveAttribute('href', ISSUED.lineShareUrl);
+    });
+
+    it('leaves every other row exactly as it was', async () => {
+      mockListLinks.mockResolvedValue({
+        links: [row(), row({ linkId: 'link-9', guestName: 'Malee' })],
+        total: 2,
+      });
+
+      renderPanel({ issuedLink: ISSUED });
+      await waitFor(() => expect(action('deposit-link-copy-link-1')).toBeEnabled());
+
+      expect(action('deposit-link-copy-link-9')).toBeDisabled();
+      expect(screen.queryByTestId('deposit-link-share-link-9')).not.toBeInTheDocument();
+    });
+
+    it('holds the token without printing it under the table', async () => {
+      renderPanel({ issuedLink: ISSUED });
+      await waitFor(() => expect(action('deposit-link-copy-link-1')).toBeEnabled());
+
+      // The modal has already shown this URL once. Re-printing it here
+      // would leave a live payment credential on a shared desk screen
+      // after reception closed the dialog on it.
+      expect(screen.queryByTestId('issued-deposit-link-url')).not.toBeInTheDocument();
+    });
+
+    it('does not resurrect a link the desk has since revoked', async () => {
+      const user = userEvent.setup();
+      mockRevokeLink.mockResolvedValue({ state: 'revoked' });
+
+      renderPanel({ issuedLink: ISSUED });
+      await waitFor(() => expect(action('deposit-link-copy-link-1')).toBeEnabled());
+
+      await user.click(action('deposit-link-revoke-link-1'));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByTestId('deposit-link-revoke-confirm'));
+
+      await waitFor(() => expect(action('deposit-link-copy-link-1')).toBeDisabled());
+    });
+  });
+
+  /**
+   * Guest search. Client-side over the loaded page: the list endpoint takes
+   * `status`, `page` and `limit` and nothing else.
+   */
+  describe('guest search', () => {
+    it('narrows the table to the matching guest without asking the backend again', async () => {
+      const user = userEvent.setup();
+      mockListLinks.mockResolvedValue({
+        links: [row(), row({ linkId: 'link-2', guestName: 'Malee Chaiyo' })],
+        total: 2,
+      });
+
+      renderPanel();
+      await waitFor(() => expect(screen.getAllByText('Malee Chaiyo').length).toBeGreaterThan(0));
+      const callsBefore = mockListLinks.mock.calls.length;
+
+      await user.type(screen.getByTestId('deposit-link-search'), 'malee');
+
+      await waitFor(() =>
+        expect(screen.queryByText('Somchai Sooksan')).not.toBeInTheDocument(),
+      );
+      expect(screen.getAllByText('Malee Chaiyo').length).toBeGreaterThan(0);
+      expect(mockListLinks.mock.calls.length).toBe(callsBefore);
+    });
+
+    it('matches a Thai name typed in Thai, and part of one', async () => {
+      const user = userEvent.setup();
+      mockListLinks.mockResolvedValue({
+        links: [
+          row({ linkId: 'th-1', guestName: 'สมชาย สุขสันต์' }),
+          row({ linkId: 'th-2', guestName: 'มาลี ใจดี' }),
+        ],
+        total: 2,
+      });
+
+      renderPanel();
+      await waitFor(() => expect(screen.getAllByText('มาลี ใจดี').length).toBeGreaterThan(0));
+
+      await user.type(screen.getByTestId('deposit-link-search'), 'สมชาย');
+
+      await waitFor(() => expect(screen.queryByText('มาลี ใจดี')).not.toBeInTheDocument());
+      expect(screen.getAllByText('สมชาย สุขสันต์').length).toBeGreaterThan(0);
+    });
+
+    it('says nothing matched rather than "no deposit links yet"', async () => {
+      const user = userEvent.setup();
+      renderPanel();
+      await waitFor(() =>
+        expect(screen.getAllByText('Somchai Sooksan').length).toBeGreaterThan(0),
+      );
+
+      await user.type(screen.getByTestId('deposit-link-search'), 'zzzz');
+
+      // Desktop table and mobile card both render the empty state.
+      await waitFor(() =>
+        expect(screen.getAllByText('ไม่พบลิงก์ที่ตรงกับคำค้นหา').length).toBeGreaterThan(0),
+      );
+      expect(screen.queryByText('ยังไม่มีลิงก์มัดจำ')).not.toBeInTheDocument();
+    });
+
+    it('tells the desk a phone number cannot be searched here', async () => {
+      const user = userEvent.setup();
+      renderPanel();
+      await waitFor(() =>
+        expect(screen.getAllByText('Somchai Sooksan').length).toBeGreaterThan(0),
+      );
+
+      await user.type(screen.getByTestId('deposit-link-search'), '0812345678');
+
+      // The list row carries no phone number, so an empty table would read
+      // as "this guest has no link" — which is a different, wrong answer.
+      await waitFor(() =>
+        expect(screen.getByTestId('deposit-link-search-no-phone')).toBeInTheDocument(),
+      );
+
+      await user.clear(screen.getByTestId('deposit-link-search'));
+      await user.type(screen.getByTestId('deposit-link-search'), 'Somchai');
+      await waitFor(() =>
+        expect(screen.queryByTestId('deposit-link-search-no-phone')).not.toBeInTheDocument(),
+      );
+    });
+
+    it('admits it is only searching this page once there is more than one', async () => {
+      const user = userEvent.setup();
+      mockListLinks.mockResolvedValue({ links: [row()], total: 60 });
+
+      renderPanel();
+      await waitFor(() => expect(screen.getByText(/หน้า 1 จาก 3/)).toBeInTheDocument());
+      expect(screen.queryByTestId('deposit-link-search-scope')).not.toBeInTheDocument();
+
+      await user.type(screen.getByTestId('deposit-link-search'), 'Somchai');
+
+      await waitFor(() =>
+        expect(screen.getByTestId('deposit-link-search-scope')).toBeInTheDocument(),
+      );
+    });
+
+    it('clears back to the whole page', async () => {
+      const user = userEvent.setup();
+      mockListLinks.mockResolvedValue({
+        links: [row(), row({ linkId: 'link-2', guestName: 'Malee Chaiyo' })],
+        total: 2,
+      });
+
+      renderPanel();
+      await waitFor(() => expect(screen.getAllByText('Malee Chaiyo').length).toBeGreaterThan(0));
+
+      await user.type(screen.getByTestId('deposit-link-search'), 'malee');
+      await waitFor(() =>
+        expect(screen.queryByText('Somchai Sooksan')).not.toBeInTheDocument(),
+      );
+
+      await user.click(screen.getByTestId('deposit-link-search-clear'));
+
+      await waitFor(() =>
+        expect(screen.getAllByText('Somchai Sooksan').length).toBeGreaterThan(0),
+      );
+    });
+
+    it('does not match a row whose guest name came back null', async () => {
+      const user = userEvent.setup();
+      mockListLinks.mockResolvedValue({
+        links: [row({ linkId: 'anon', guestName: null })],
+        total: 1,
+      });
+
+      renderPanel();
+      await waitFor(() =>
+        expect(screen.getAllByText('(ไม่ระบุชื่อ)').length).toBeGreaterThan(0),
+      );
+
+      await user.type(screen.getByTestId('deposit-link-search'), 'somchai');
+
+      await waitFor(() =>
+        expect(screen.getAllByText('ไม่พบลิงก์ที่ตรงกับคำค้นหา').length).toBeGreaterThan(0),
+      );
     });
   });
 });

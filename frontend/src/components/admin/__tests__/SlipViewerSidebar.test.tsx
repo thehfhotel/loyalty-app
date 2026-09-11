@@ -60,6 +60,17 @@ const translations: Record<string, string> = {
   'admin.booking.bookingManagement.messages.slipVerified': 'Slip verified successfully',
   'admin.booking.bookingManagement.messages.needsActionMarked': 'Marked as needs action',
   'common.cancel': 'Cancel',
+  // A11
+  'payment.slipok.reason.booking_not_payable': 'This booking cannot take a payment right now',
+  'admin.booking.bookingManagement.slipViewer.bookingNotConfirmed':
+    'Slip verified, but the booking was not confirmed: {{reason}}',
+  'admin.booking.bookingManagement.slipViewer.bookingNotConfirmedHint':
+    'The money arrived but the booking is still pending.',
+  'admin.booking.bookingManagement.slipViewer.bookingNotConfirmedReasonUnknown':
+    'reason not recorded',
+  'admin.booking.bookingManagement.auditActions.bookingNotConfirmed': 'Booking not confirmed',
+  'admin.booking.bookingManagement.auditActions.slipVerifyReverted':
+    'Automatic slip verification reverted',
 };
 
 /** An `AdminSlipResponse` as `admin_slips.rs` serialises it. */
@@ -79,6 +90,10 @@ function slipResponse(overrides: Record<string, unknown> = {}) {
     slipokCheckedAt: null,
     slipokVerifiedAt: null,
     autoVerified: false,
+    // `GET /admin/bookings/slips/:id` hard-codes both — "a read decides
+    // nothing" — so this is what a plain read of any slip looks like.
+    bookingConfirmed: false,
+    bookingNotConfirmedReason: null,
     ...overrides,
   };
 }
@@ -109,7 +124,22 @@ type SlipOverrides = {
   autoVerified?: boolean;
 };
 
-function makeBooking(overrides: SlipOverrides = {}) {
+type BookingOverrides = {
+  auditHistory?: AuditEntry[];
+};
+
+type AuditEntry = {
+  id: string;
+  action: string;
+  adminId: string;
+  adminName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  notes: string | null;
+  createdAt: string;
+};
+
+function makeBooking(overrides: SlipOverrides = {}, booking: BookingOverrides = {}) {
   return {
     id: 'booking-1',
     userId: 'user-1',
@@ -152,7 +182,7 @@ function makeBooking(overrides: SlipOverrides = {}) {
       },
     ],
     slip: null,
-    auditHistory: [],
+    auditHistory: booking.auditHistory ?? [],
     createdAt: '2027-06-01T09:00:00Z',
     updatedAt: '2027-06-01T09:00:00Z',
   };
@@ -166,7 +196,7 @@ beforeEach(() => {
 
 function renderSidebar(
   overrides: SlipOverrides = {},
-  props: { onRefresh?: () => void } = {}
+  props: { onRefresh?: () => void; booking?: BookingOverrides } = {}
 ) {
   // By default the per-slip read agrees with the row the list rendered, so
   // the badge assertions below stay about the data under test rather than
@@ -193,7 +223,7 @@ function renderSidebar(
   return render(
     <QueryClientProvider client={queryClient}>
       <SlipViewerSidebar
-        booking={makeBooking(overrides) as never}
+        booking={makeBooking(overrides, props.booking ?? {}) as never}
         onVerify={vi.fn()}
         onNeedsAction={vi.fn()}
         onEdit={vi.fn()}
@@ -454,5 +484,135 @@ describe('SlipViewerSidebar wired calls', () => {
     expect(screen.getByRole('button', { name: 'Needs Action' })).toBeDisabled();
     // Slip replacement has no admin upload route at all.
     expect(screen.getByRole('button', { name: 'Replace Slip' })).toBeDisabled();
+  });
+});
+
+/**
+ * A11 — a verified slip whose booking never moved.
+ *
+ * `slip_confirm.rs` writes the `booking_not_confirmed` audit row when a
+ * verified slip meets a hold that lapsed during the SlipOK round-trip. The
+ * money arrived, both badges read "verified", and the booking is still
+ * pending — the desk has to be told in words.
+ */
+describe('SlipViewerSidebar booking-not-confirmed notice', () => {
+  const REFUSAL: AuditEntry = {
+    id: 'audit-1',
+    action: 'booking_not_confirmed',
+    adminId: '00000000-0000-4000-8000-0000005110b1',
+    adminName: 'SlipOK',
+    oldValue: JSON.stringify({ status: 'pending', holdExpiresAt: '2027-06-01T09:00:00Z' }),
+    newValue: JSON.stringify({
+      status: 'pending',
+      holdExpiresAt: '2027-06-01T09:00:00Z',
+      slipId: 'slip-1',
+      reason: 'booking_not_payable',
+    }),
+    notes:
+      'การจองนี้ยังรับชำระเงินไม่ได้ในตอนนี้ (หมดเวลาถือห้องแล้ว ...) / ' +
+      'This booking cannot take a payment right now (booking_not_payable: ...)',
+    createdAt: '2027-06-01T10:05:00Z',
+  };
+
+  it('states it in one line, with the badge wording for the reason', async () => {
+    renderSidebar(
+      { slipokStatus: 'verified', adminStatus: 'verified' },
+      { booking: { auditHistory: [REFUSAL] } }
+    );
+
+    const notice = await screen.findByTestId('booking-not-confirmed-notice');
+    expect(notice).toHaveTextContent(
+      'Slip verified, but the booking was not confirmed: This booking cannot take a payment right now'
+    );
+    // Never the raw enum: the desk reads Thai, and `booking_not_payable`
+    // is not a sentence in any language.
+    expect(notice).not.toHaveTextContent('booking_not_payable');
+  });
+
+  it('says "reason not recorded" rather than nothing when the snapshot carries no reason', async () => {
+    renderSidebar(
+      { slipokStatus: 'verified', adminStatus: 'verified' },
+      { booking: { auditHistory: [{ ...REFUSAL, newValue: 'not json at all' }] } }
+    );
+
+    const notice = await screen.findByTestId('booking-not-confirmed-notice');
+    expect(notice).toHaveTextContent('reason not recorded');
+  });
+
+  it('stays quiet on a booking whose slip verified normally', () => {
+    renderSidebar({ slipokStatus: 'verified', adminStatus: 'verified' });
+
+    expect(screen.queryByTestId('booking-not-confirmed-notice')).not.toBeInTheDocument();
+  });
+
+  it('clears once a newer verify or edit has cured it', () => {
+    // A human's Verify overrides the lapsed hold and flips the booking, so a
+    // `slip_verified` row newer than the refusal means it is dealt with —
+    // and the booking DTO cannot say so itself, because `status` normalises
+    // `pending` to `confirmed` on the wire.
+    renderSidebar(
+      { slipokStatus: 'verified', adminStatus: 'verified' },
+      {
+        booking: {
+          auditHistory: [
+            {
+              ...REFUSAL,
+              id: 'audit-2',
+              action: 'slip_verified',
+              newValue: null,
+              createdAt: '2027-06-01T11:00:00Z',
+            },
+            REFUSAL,
+          ],
+        },
+      }
+    );
+
+    expect(screen.queryByTestId('booking-not-confirmed-notice')).not.toBeInTheDocument();
+  });
+
+  it('appears the moment the verify response refuses the booking, before any refetch', async () => {
+    const user = userEvent.setup();
+    // The refusal reaches the frontend live only here: the per-slip GET
+    // reports `bookingConfirmed: false` and no reason for every slip.
+    mockVerifySlip.mockResolvedValue(
+      slipResponse({
+        adminStatus: 'verified',
+        bookingConfirmed: false,
+        bookingNotConfirmedReason: 'booking_not_payable',
+      })
+    );
+    renderSidebar();
+
+    expect(screen.queryByTestId('booking-not-confirmed-notice')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+
+    const notice = await screen.findByTestId('booking-not-confirmed-notice');
+    expect(notice).toHaveTextContent('This booking cannot take a payment right now');
+  });
+
+  it('says nothing when the verify confirmed the booking', async () => {
+    const user = userEvent.setup();
+    mockVerifySlip.mockResolvedValue(
+      slipResponse({ adminStatus: 'verified', bookingConfirmed: true })
+    );
+    renderSidebar();
+
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+
+    await waitFor(() => expect(mockVerifySlip).toHaveBeenCalled());
+    expect(screen.queryByTestId('booking-not-confirmed-notice')).not.toBeInTheDocument();
+  });
+
+  it('names the audit row in words instead of the raw action key', async () => {
+    renderSidebar(
+      { slipokStatus: 'verified', adminStatus: 'verified' },
+      { booking: { auditHistory: [REFUSAL] } }
+    );
+
+    await screen.findByTestId('booking-not-confirmed-notice');
+    expect(screen.getByText('Booking not confirmed')).toBeInTheDocument();
+    expect(screen.queryByText('booking_not_confirmed')).not.toBeInTheDocument();
   });
 });

@@ -22,6 +22,7 @@ import { adminBookingService } from '../../services/adminBookingService';
 import { SlipErasedNotice } from '../SlipErasedNotice';
 import type {
   AdminBooking as Booking,
+  AdminBookingAuditEntry,
   AdminBookingSlip as BookingSlip,
 } from '../../services/adminBookingService';
 
@@ -41,6 +42,91 @@ interface SlipViewerSidebarProps {
 const ICON_BUTTON_CLASSES =
   'flex h-11 w-11 items-center justify-center rounded-full bg-ink/50 text-white transition hover:bg-ink/70 disabled:opacity-30 disabled:cursor-not-allowed';
 
+/**
+ * A11 — "the slip verified, the booking did not move".
+ *
+ * `slip_confirm.rs` writes this audit action when a verified slip could not
+ * confirm the booking it pays for: in practice the automatic SlipOK path
+ * meeting a hold that lapsed during the round-trip. The money arrived, the
+ * slip says `verified`, and the booking is still `pending` — the one state
+ * where the desk must act and nothing on screen used to say so.
+ *
+ * The audit row is the durable record, and the only one a reload can read:
+ * the refusal reaches the frontend live on the verify *response*
+ * (`bookingNotConfirmedReason`), but that is the rare human case, and
+ * `GET /admin/bookings/slips/:id` deliberately reports neither field.
+ */
+const ACTION_BOOKING_NOT_CONFIRMED = 'booking_not_confirmed';
+
+/**
+ * Audit actions that mean the refusal above has been dealt with.
+ *
+ * A human's Verify overrides the lapsed hold and flips the booking
+ * (`slip_confirm.rs`: `admin_override = actor.is_some()`), and an edit
+ * rewrites the booking; either writes a row strictly newer than the refusal
+ * (a separate transaction, so `occurred_at` strictly increases). Without
+ * this the warning would be permanent, because the desk cannot read the
+ * booking's real status back: `AdminBookingListItem.status` normalises
+ * `pending` to `confirmed` on the wire, which is the very distinction this
+ * notice exists to make.
+ */
+const BOOKING_REFUSAL_CURE_ACTIONS = new Set(['slip_verified', 'booking_updated']);
+
+/**
+ * The locked reason key out of a `booking_not_confirmed` audit row.
+ *
+ * `after_data` is `{status, holdExpiresAt, slipId, reason}` — the structured
+ * half. Deliberately NOT `notes`: that field is one bilingual sentence built
+ * for the history list, and pulling a machine key out of prose is how a desk
+ * ends up reading half an English paragraph inside a Thai line.
+ */
+function auditReasonKey(entry: AdminBookingAuditEntry): string | null {
+  if (!entry.newValue) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(entry.newValue);
+    const reason = (parsed as { reason?: unknown } | null)?.reason;
+    return typeof reason === 'string' ? reason : null;
+  } catch {
+    // A snapshot that will not parse still proves the refusal happened; the
+    // caller then says so without naming a reason, which beats saying
+    // nothing about a booking nobody confirmed.
+    return null;
+  }
+}
+
+/**
+ * The newest unresolved `booking_not_confirmed` row on this booking, or
+ * `null` when there is none (or it has since been cured).
+ */
+function unresolvedBookingRefusal(
+  history: AdminBookingAuditEntry[] | undefined
+): { reason: string | null; at: string } | null {
+  if (!history || history.length === 0) {
+    return null;
+  }
+  // Newest first is what the API promises, but the decision here turns on
+  // "is anything newer than this row", so compare instants rather than
+  // trusting an array order a future caller could re-sort. Parsed, not
+  // string-compared: RFC 3339 with and without fractional seconds does not
+  // order lexicographically ('.' sorts before 'Z').
+  const at = (entry: AdminBookingAuditEntry) => Date.parse(entry.createdAt);
+  const refusal = history
+    .filter((entry) => entry.action === ACTION_BOOKING_NOT_CONFIRMED)
+    .reduce<AdminBookingAuditEntry | null>(
+      (newest, entry) => (newest === null || at(entry) > at(newest) ? entry : newest),
+      null
+    );
+  if (!refusal) {
+    return null;
+  }
+  const cured = history.some(
+    (entry) => BOOKING_REFUSAL_CURE_ACTIONS.has(entry.action) && at(entry) > at(refusal)
+  );
+  return cured ? null : { reason: auditReasonKey(refusal), at: refusal.createdAt };
+}
+
 const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
   booking,
   onVerify,
@@ -57,6 +143,19 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [currentSlipIndex, setCurrentSlipIndex] = useState(0);
+  /**
+   * The refusal the verify response just reported, if any (A11).
+   *
+   * Kept in state rather than read back off the slip: `bookingConfirmed` and
+   * `bookingNotConfirmedReason` are populated only on the verify /
+   * needs-action responses, and the per-slip GET hard-codes them — so a
+   * refetch would erase the very line the desk needs. Keyed by slip id so
+   * moving through the gallery does not carry one slip's verdict onto
+   * another's.
+   */
+  const [verifyRefusal, setVerifyRefusal] = useState<{ slipId: string; reason: string } | null>(
+    null
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -69,6 +168,14 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
       // it: without this the viewer would keep rendering the pre-verify read
       // (the booking refetch below does not touch that key).
       queryClient.setQueryData(['admin', 'slip', slip.id], slip);
+      // A11: the verify response is the only place a refused confirmation is
+      // reported in real time. `bookingConfirmed === false` alone is not it —
+      // the GET sends that for every slip — the reason is the signal.
+      setVerifyRefusal(
+        slip.bookingConfirmed === false && slip.bookingNotConfirmedReason
+          ? { slipId: slip.id, reason: slip.bookingNotConfirmedReason }
+          : null
+      );
       toast.success(t('admin.booking.bookingManagement.messages.slipVerified'));
       onRefresh();
     },
@@ -163,6 +270,30 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
       autoVerified: detail.autoVerified,
     };
   }, [listSlip, slipDetailQuery.data]);
+
+  /**
+   * "The slip is verified, the booking is not" — the A11 line.
+   *
+   * Two sources, because neither alone covers the desk's day. The audit row
+   * is the durable one and the only one that survives a reload, and it is
+   * the one that fires for the case this actually happens in (SlipOK
+   * auto-verify against a lapsed hold, decided while nobody was looking).
+   * The verify response covers the seconds before the booking refetch lands,
+   * and the rarer human verify. When both speak, the live one wins: it is
+   * about the slip on screen.
+   */
+  const auditRefusal = React.useMemo(
+    () => unresolvedBookingRefusal(booking?.auditHistory),
+    [booking?.auditHistory]
+  );
+  const liveRefusal = verifyRefusal?.slipId === currentSlip?.id ? verifyRefusal : null;
+  const bookingRefused = Boolean(liveRefusal ?? auditRefusal);
+  const refusalReasonKey = slipOkReasonKey(liveRefusal?.reason ?? auditRefusal?.reason);
+  // Never the raw key: an unrecognised or missing reason reads as "not
+  // recorded" in the desk's own language rather than as an enum value.
+  const refusalReasonText = refusalReasonKey
+    ? t(refusalReasonKey)
+    : t('admin.booking.bookingManagement.slipViewer.bookingNotConfirmedReasonUnknown');
 
   // Legacy verify handler (for backward compatibility)
   const handleLegacyVerifyClick = async () => {
@@ -340,7 +471,12 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
       booking_created: t('admin.booking.bookingManagement.auditActions.bookingCreated'),
       booking_updated: t('admin.booking.bookingManagement.auditActions.bookingUpdated'),
       discount_applied: t('admin.booking.bookingManagement.auditActions.discountApplied'),
-      payment_updated: t('admin.booking.bookingManagement.auditActions.paymentUpdated')
+      payment_updated: t('admin.booking.bookingManagement.auditActions.paymentUpdated'),
+      // A11. Without these two the desk reads the raw English identifier in
+      // a Thai-first history — and these are exactly the rows that mean
+      // "money arrived and the booking did not move".
+      booking_not_confirmed: t('admin.booking.bookingManagement.auditActions.bookingNotConfirmed'),
+      slip_verify_reverted: t('admin.booking.bookingManagement.auditActions.slipVerifyReverted')
     };
     return actionMap[action] ?? action;
   };
@@ -406,6 +542,31 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
               autoVerified={currentSlip.autoVerified ?? false}
             />
           </div>
+        </div>
+      )}
+
+      {/* A11. Two green badges and a booking that never moved is the one
+          screen reception can misread into doing nothing, so this says it in
+          a sentence rather than leaving it to be inferred from a badge pair.
+          `role="status"`, not `alert`: it is a standing fact about the
+          booking, announced when it appears, not an interruption. */}
+      {bookingRefused && (
+        <div
+          role="status"
+          className="border-b border-hairline bg-warning-50 p-4"
+          data-testid="booking-not-confirmed-notice"
+        >
+          <p className="flex items-start gap-2 text-caption font-semibold text-warning-700">
+            <FiClock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>
+              {t('admin.booking.bookingManagement.slipViewer.bookingNotConfirmed', {
+                reason: refusalReasonText
+              })}
+            </span>
+          </p>
+          <p className="mt-1 text-fine text-ink-muted">
+            {t('admin.booking.bookingManagement.slipViewer.bookingNotConfirmedHint')}
+          </p>
         </div>
       )}
 

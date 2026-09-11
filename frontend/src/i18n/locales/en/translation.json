@@ -825,7 +825,10 @@
           "noAuditHistory": "No activity history",
           "slipokReason": "Reason",
           "slipokCheckedAt": "Checked",
-          "autoVerifier": "SlipOK"
+          "autoVerifier": "SlipOK",
+          "bookingNotConfirmed": "Slip verified, but the booking was not confirmed: {{reason}}",
+          "bookingNotConfirmedHint": "The money arrived but the booking is still pending. Press Verify again to confirm it by hand, or edit the booking, before telling the guest.",
+          "bookingNotConfirmedReasonUnknown": "reason not recorded"
         },
         "modals": {
           "needsAction": {
@@ -886,7 +889,9 @@
           "bookingUpdated": "Booking Updated",
           "discountApplied": "Discount Applied",
           "paymentUpdated": "Payment Updated",
-          "bookingCancelled": "Booking Cancelled"
+          "bookingCancelled": "Booking Cancelled",
+          "bookingNotConfirmed": "Booking not confirmed",
+          "slipVerifyReverted": "Automatic slip verification reverted"
         },
         "by": "By",
         "messages": {
@@ -2068,7 +2073,13 @@
         "reissueFailed": "Could not reissue the link",
         "empty": "No deposit links yet",
         "loadFailed": "Could not load the deposit links",
-        "pagination": "Page {{current}} of {{total}}"
+        "pagination": "Page {{current}} of {{total}}",
+        "searchLabel": "Search guests",
+        "searchPlaceholder": "Search by guest name",
+        "searchClear": "Clear the search",
+        "searchPageScope": "Only the links on this page are searched. If you cannot find one, change page and search again.",
+        "searchNoPhone": "This list carries no phone numbers — search by guest name instead.",
+        "searchEmpty": "No deposit link matches that search"
       }
     }
   }

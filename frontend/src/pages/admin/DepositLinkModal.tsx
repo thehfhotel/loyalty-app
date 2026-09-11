@@ -39,9 +39,21 @@ function defaultDepositAmount(totalPrice: number): number {
 export interface DepositLinkModalProps {
   open: boolean;
   onClose: () => void;
+  /**
+   * Hands the freshly minted link — id, plain `url` and `lineShareUrl` — to
+   * the surrounding page the moment the backend answers.
+   *
+   * The backend stores only the SHA-256 of the token, so this callback fires
+   * on the *one* response that ever carries the plain link. Without it the
+   * B2 list panel sees the new row (the query key it polls is invalidated
+   * below) but holds no token for it, so Copy and LINE share sit disabled
+   * on a link reception issued thirty seconds ago and stay that way until a
+   * full page reload. Passing the link up is what closes that gap.
+   */
+  onIssued?: (link: IssuedDepositLink) => void;
 }
 
-export default function DepositLinkModal({ open, onClose }: DepositLinkModalProps) {
+export default function DepositLinkModal({ open, onClose, onIssued }: DepositLinkModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const formId = useId();
@@ -107,6 +119,10 @@ export default function DepositLinkModal({ open, onClose }: DepositLinkModalProp
     onSuccess: async (link) => {
       setIssued(link);
       setError(null);
+      // Before the invalidate, deliberately: this is the only response that
+      // will ever carry the plain token, and a refetch that throws must not
+      // be what decides whether the desk can still copy the link.
+      onIssued?.(link);
       await queryClient.invalidateQueries({ queryKey: ['admin', 'deposit-links'] });
     },
     onError: (mutationError: Error) => {

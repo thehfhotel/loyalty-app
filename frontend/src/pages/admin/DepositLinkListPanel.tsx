@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-hot-toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FiCopy, FiExternalLink, FiRefreshCw, FiRotateCcw, FiSlash } from 'react-icons/fi';
-import { Badge, Button, Card, EmptyState, Modal, TabNav, Table } from '../../components/ui';
+import { FiCopy, FiExternalLink, FiRefreshCw, FiRotateCcw, FiSearch, FiSlash, FiX } from 'react-icons/fi';
+import { Badge, Button, Card, EmptyState, Input, Modal, TabNav, Table } from '../../components/ui';
 import type { BadgeTone, TabItem, TableColumn } from '../../components/ui';
 import IssuedDepositLinkPanel from './IssuedDepositLinkPanel';
 import {
@@ -71,6 +71,17 @@ const STATE_TONE: Record<DepositLinkState, BadgeTone> = {
 const LIVE_STATES: readonly DepositLinkState[] = ['awaiting_payment', 'checking'];
 
 /**
+ * Digits and the punctuation Thai phone numbers are written with, four
+ * characters or more — "081", "081-234-5678", "+66 81 234 5678". A guest
+ * name never looks like this, in Thai or in English.
+ */
+const PHONE_SHAPED = /^[\d\s()+-]{4,}$/;
+
+function looksLikePhone(query: string): boolean {
+  return PHONE_SHAPED.test(query);
+}
+
+/**
  * The row an action is being confirmed for.
  *
  * Reissue shares this dialog with revoke: it revokes *every* live link on
@@ -89,14 +100,43 @@ export interface DepositLinkListPanelProps {
    * polling the list every 30 s.
    */
   active?: boolean;
+  /**
+   * A link minted elsewhere on this page in this browser session — the issue
+   * modal's `onIssued`.
+   *
+   * The modal's create response is the only place the plain token ever
+   * exists, and until this prop the panel never saw it: reception issued a
+   * link, switched to this tab, and found Copy and LINE share greyed out on
+   * the row they had just created, curable only by reloading the page (the
+   * *one* thing that loses the token for good). Merged into `sessionLinks`
+   * on arrival, so the row lights up the same way a reissue's does.
+   *
+   * Not revealed, only held: the modal has already shown this URL once, and
+   * re-printing it under the table would leave a live payment credential on
+   * a shared desk screen after reception had closed the dialog on it.
+   */
+  issuedLink?: IssuedDepositLink | null;
 }
 
-export default function DepositLinkListPanel({ active = true }: DepositLinkListPanelProps) {
+export default function DepositLinkListPanel({
+  active = true,
+  issuedLink = null,
+}: DepositLinkListPanelProps) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
 
   const [filter, setFilter] = useState<DepositLinkFilter>('open');
   const [page, setPage] = useState(1);
+  /**
+   * Guest-name search, applied in the browser over the page already loaded.
+   *
+   * Deliberately client-side: the list endpoint takes `status`, `page` and
+   * `limit` and no search parameter, and at a desk issuing a handful of
+   * links a day one page IS the list. The caption under the box says so
+   * whenever there is more than one page, because "no rows" and "no rows on
+   * this page" are the same picture and only one of them is an answer.
+   */
+  const [search, setSearch] = useState('');
 
   /**
    * Links minted in this browser session, keyed by link id. The only rows
@@ -134,10 +174,54 @@ export default function DepositLinkListPanel({ active = true }: DepositLinkListP
     refetchOnWindowFocus: active,
   });
 
-  const links = linksQuery.data?.links ?? [];
+  const links = useMemo(() => linksQuery.data?.links ?? [], [linksQuery.data]);
   const total = linksQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const revealedLink = revealedLinkId ? (sessionLinks[revealedLinkId] ?? null) : null;
+
+  const query = search.trim().toLocaleLowerCase();
+  const visibleLinks = useMemo(
+    () =>
+      query.length === 0
+        ? links
+        : // Guest name is the whole of the searchable text, because it is
+          // the whole of what the row carries: `DepositLinkSummary`
+          // (`routes/admin_deposit_links.rs`) has no phone field, so a
+          // number typed here can never match — `looksLikePhone` below is
+          // how the desk is told that rather than left staring at an empty
+          // table. A row with no name (nullable on the wire) matches
+          // nothing, which is the honest answer to "find Somchai".
+          links.filter((row) => (row.guestName ?? '').toLocaleLowerCase().includes(query)),
+    [links, query],
+  );
+
+  /**
+   * True for a query that is plainly a phone number rather than a name.
+   *
+   * Reception's muscle memory is the phone number — it is what the guest
+   * gave on the call and what the issue form asked for — so they will type
+   * it here, and the list cannot answer. Saying why beats an empty table
+   * that reads as "this guest has no link".
+   */
+  const searchingByPhone = query.length > 0 && looksLikePhone(query);
+
+  /**
+   * Merge a link minted by the issue modal into this session's token map.
+   *
+   * Identity-keyed on the prop, so a revoke that drops the link back out of
+   * `sessionLinks` is not immediately undone by this effect: it re-runs only
+   * when the parent hands over a *different* link.
+   */
+  useEffect(() => {
+    if (!issuedLink) {
+      return;
+    }
+    setSessionLinks((previous) =>
+      previous[issuedLink.linkId] === issuedLink
+        ? previous
+        : { ...previous, [issuedLink.linkId]: issuedLink },
+    );
+  }, [issuedLink]);
 
   /**
    * The 30 s poll can shrink the result set under the desk's feet — a batch
@@ -463,6 +547,53 @@ export default function DepositLinkListPanel({ active = true }: DepositLinkListP
         onChange={handleFilterChange}
       />
 
+      {/* Guest search. No <form>: there is nothing to submit — the filter is
+          applied on every keystroke in the browser — and a form here would
+          reload the admin page on Enter, which is the one key reception
+          presses after typing a name. */}
+      <div className="space-y-2">
+        <label className="sr-only" htmlFor="deposit-link-search">
+          {t('depositLink.admin.list.searchLabel')}
+        </label>
+        <Input
+          id="deposit-link-search"
+          type="search"
+          shape="pill"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder={t('depositLink.admin.list.searchPlaceholder')}
+          leadingIcon={<FiSearch aria-hidden="true" />}
+          trailingSlot={
+            search ? (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="mr-1 flex h-11 w-11 items-center justify-center rounded-full text-ink-faint hover:text-ink"
+                data-testid="deposit-link-search-clear"
+              >
+                <FiX className="h-4 w-4" aria-hidden="true" />
+                <span className="sr-only">{t('depositLink.admin.list.searchClear')}</span>
+              </button>
+            ) : undefined
+          }
+          data-testid="deposit-link-search"
+        />
+        {/* The list endpoint has no search parameter, so this filters the
+            page already on screen. Silent on a single page, where that is a
+            distinction without a difference; said out loud the moment there
+            is a second page for a guest to be hiding on. */}
+        {search.trim() && totalPages > 1 ? (
+          <p className="text-fine text-ink-muted" data-testid="deposit-link-search-scope">
+            {t('depositLink.admin.list.searchPageScope')}
+          </p>
+        ) : null}
+        {searchingByPhone ? (
+          <p className="text-fine text-warning-700" data-testid="deposit-link-search-no-phone">
+            {t('depositLink.admin.list.searchNoPhone')}
+          </p>
+        ) : null}
+      </div>
+
       {revealedLink && (
         <div className="space-y-2">
           <IssuedDepositLinkPanel link={revealedLink} />
@@ -498,10 +629,20 @@ export default function DepositLinkListPanel({ active = true }: DepositLinkListP
         <Table<DepositLinkListItem>
           aria-label={t('depositLink.admin.list.heading')}
           columns={columns}
-          rows={links}
+          rows={visibleLinks}
           rowKey={(row) => row.linkId}
           loading={linksQuery.isLoading}
-          empty={<EmptyState title={t('depositLink.admin.list.empty')} />}
+          empty={
+            // "Nothing matched" and "nothing exists" are the same picture and
+            // a different instruction — the first one means keep looking.
+            <EmptyState
+              title={
+                query.length > 0 && links.length > 0
+                  ? t('depositLink.admin.list.searchEmpty')
+                  : t('depositLink.admin.list.empty')
+              }
+            />
+          }
           mobileCard={(row) => (
             <div className="space-y-3">
               <div className="flex items-start justify-between gap-3">
