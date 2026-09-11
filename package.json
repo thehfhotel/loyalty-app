@@ -1,6 +1,6 @@
 {
   "name": "loyalty-app",
-  "version": "4.5.3",
+  "version": "4.6.0",
   "type": "module",
   "scripts": {
     "install:all": "cd backend-rust && cargo fetch && cd ../frontend && npm ci",

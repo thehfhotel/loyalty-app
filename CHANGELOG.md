@@ -11,6 +11,44 @@ merging that PR is what tags `vX.Y.Z` and publishes the GitHub release.
 Entries below the generated sections are the earlier hand-written, dated
 format, kept verbatim for history.
 
+## [4.6.0](https://github.com/thehfhotel/loyalty-app/compare/v4.5.3...v4.6.0) (2026-09-11)
+
+
+### Features
+
+* **admin:** deposit-link hand-off, guest search and a booking-not-confirmed line ([#431](https://github.com/thehfhotel/loyalty-app/issues/431)) ([248c661](https://github.com/thehfhotel/loyalty-app/commit/248c6615580edea63180bbb7faeb3bc577d6cbef))
+* **bookings:** email the property desk on every new booking and verified deposit (B0) ([#410](https://github.com/thehfhotel/loyalty-app/issues/410)) ([35cc86a](https://github.com/thehfhotel/loyalty-app/commit/35cc86a9a70934d376c02fc02e0ea78b60625c0c))
+* **deposit:** deposit request links — token in fragment + header, visitor-keyed rate limits ([#409](https://github.com/thehfhotel/loyalty-app/issues/409)) ([d8f527f](https://github.com/thehfhotel/loyalty-app/commit/d8f527f090e8d4a74d38e6c96071146da7041ec9))
+* **deposit:** guest deposit page at /d/:token and the desk's link form (B1 frontend) ([#406](https://github.com/thehfhotel/loyalty-app/issues/406)) ([a6fcc0f](https://github.com/thehfhotel/loyalty-app/commit/a6fcc0f625d083da17166054c92743e72b0f40c2))
+* **deposit:** the desk's deposit-link list — states, expiry, revoke, reissue (B2) ([#422](https://github.com/thehfhotel/loyalty-app/issues/422)) ([eabde89](https://github.com/thehfhotel/loyalty-app/commit/eabde8922c22a907836a6738bf929721ec2a04cf))
+* idempotent PMS hold creates, guest-readable outage copy, bounded OAuth client ([#436](https://github.com/thehfhotel/loyalty-app/issues/436)) ([c6bd86c](https://github.com/thehfhotel/loyalty-app/commit/c6bd86c5ef18d8f80d20ca32120ff302a9dfb5b9))
+* **payment:** widen the SlipOK badges for guests and surface the reason at the desk (A5) ([#404](https://github.com/thehfhotel/loyalty-app/issues/404)) ([9732aa7](https://github.com/thehfhotel/loyalty-app/commit/9732aa710f0a70874be6e607f4035dfc92ad8be8))
+* **privacy:** retention for booking_audit_log and slip_access_log (F10) ([#429](https://github.com/thehfhotel/loyalty-app/issues/429)) ([3bab56b](https://github.com/thehfhotel/loyalty-app/commit/3bab56b5bab6b64dabbaa68fcc139b058375c6d4))
+* **privacy:** slip image retention, deletion and admin-viewer access logging (F2) ([#425](https://github.com/thehfhotel/loyalty-app/issues/425)) ([d812dba](https://github.com/thehfhotel/loyalty-app/commit/d812dbabc9ae67d2894247a27c2dea2d9283a71f))
+* **slips:** attribute automatic slip verifies to a SlipOK system actor ([#405](https://github.com/thehfhotel/loyalty-app/issues/405)) ([a7d0238](https://github.com/thehfhotel/loyalty-app/commit/a7d0238f631bb1ee6bad01f41bc1423545dd0646))
+* **slips:** verify guest deposit slips automatically with SlipOK, manual fallback ([#399](https://github.com/thehfhotel/loyalty-app/issues/399)) ([3a21313](https://github.com/thehfhotel/loyalty-app/commit/3a213131392a1897516a217b2948270550e0ace2))
+* wire admin booking pages to the shipped Rust endpoints ([#411](https://github.com/thehfhotel/loyalty-app/issues/411)) ([d6b818e](https://github.com/thehfhotel/loyalty-app/commit/d6b818e63823cfe30562fbcc070a015ccb534d14))
+
+
+### Bug Fixes
+
+* account deletion severs every push and identity path (PDPA F3) ([#435](https://github.com/thehfhotel/loyalty-app/issues/435)) ([4d3fcbd](https://github.com/thehfhotel/loyalty-app/commit/4d3fcbdf1791ec615a06a20317039662683b6091))
+* **channel:** a late slip must not confirm a released PMS hold (A15) ([#432](https://github.com/thehfhotel/loyalty-app/issues/432)) ([c581446](https://github.com/thehfhotel/loyalty-app/commit/c5814460957eba91d5a7f7071d585e79d1228d05))
+* **ci:** make the frontend eslint --max-warnings ratchet actually gate ([#408](https://github.com/thehfhotel/loyalty-app/issues/408)) ([a1f0589](https://github.com/thehfhotel/loyalty-app/commit/a1f0589469a5a6c6295987f88ff4cd99844e5013))
+* **compose:** set STORAGE_PATH=/app/storage so slips are served from where they are written ([#428](https://github.com/thehfhotel/loyalty-app/issues/428)) ([6279eb0](https://github.com/thehfhotel/loyalty-app/commit/6279eb0997494f45bbd15f9c6a8aa07eef16d844))
+* **config:** forward SlipOK and PromptPay settings to the backend container ([#403](https://github.com/thehfhotel/loyalty-app/issues/403)) ([a335483](https://github.com/thehfhotel/loyalty-app/commit/a335483dace2451fb187b2974c0a3767d3fb279c))
+* **deploy:** restart staging containers unless-stopped ([#392](https://github.com/thehfhotel/loyalty-app/issues/392)) ([eaffc97](https://github.com/thehfhotel/loyalty-app/commit/eaffc97cac2e3958de8ba4143489f05d112d6ba4))
+* **migrations:** resolve the 20260913000000 version collision; CI guard ([#433](https://github.com/thehfhotel/loyalty-app/issues/433)) ([7b96dcc](https://github.com/thehfhotel/loyalty-app/commit/7b96dccbc750e6cd08ccfa564dbb095f56de511a))
+* **nginx:** map /storage/* onto the backend's /api/storage mount; never cache slip images ([#426](https://github.com/thehfhotel/loyalty-app/issues/426)) ([627d7d7](https://github.com/thehfhotel/loyalty-app/commit/627d7d740a14d1e4c9b45b74648295af58717071))
+* **privacy:** erase slip images shared by several rows, and forbid new sharers (F2b) ([#430](https://github.com/thehfhotel/loyalty-app/issues/430)) ([4f1088b](https://github.com/thehfhotel/loyalty-app/commit/4f1088b6afb1a6bf04bdc3480a4ceef7cbdf8a43))
+* **rate-limit:** bound Redis waits so fail-closed answers in seconds, not minutes ([#416](https://github.com/thehfhotel/loyalty-app/issues/416)) ([bfe8777](https://github.com/thehfhotel/loyalty-app/commit/bfe8777318c680833aabfba650aaf299a6739871))
+* **test:** stop No-name-provided test racing row render ([#407](https://github.com/thehfhotel/loyalty-app/issues/407)) ([ff2554a](https://github.com/thehfhotel/loyalty-app/commit/ff2554abf07731d7dd2b74e5ab119484f2a861bb))
+
+
+### Performance
+
+* **build:** release codegen-units 16 for a faster deploy critical path ([#418](https://github.com/thehfhotel/loyalty-app/issues/418)) ([a092bcf](https://github.com/thehfhotel/loyalty-app/commit/a092bcf24acea08bd67cfb96c7f1dfff8bb32641))
+
 ## [4.5.3](https://github.com/thehfhotel/loyalty-app/compare/v4.5.2...v4.5.3) (2026-07-27)
 
 
