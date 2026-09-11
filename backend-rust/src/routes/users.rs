@@ -953,7 +953,23 @@ async fn delete_avatar(
     )))
 }
 
-/// Delete account handler
+/// `DELETE /api/users/account` — PDPA erasure (F3, data map §8 gap P1-3).
+///
+/// This used to be `UPDATE users SET is_active = false` and nothing else,
+/// which left `oauth_provider_id` resolving, the `line_friendships` rows
+/// linked, and the account ready to be resurrected by the next LINE or
+/// Google login. It now delegates to
+/// [`crate::services::account_deletion::erase_account`], which severs
+/// every identity and delivery path in one transaction and keeps the
+/// bookings, slips, points transactions and audit rows attributable by
+/// user id. See that module for the full table-by-table account and for
+/// the trade-off (points cannot be reclaimed afterwards).
+///
+/// **Idempotent.** The JWT stays valid until it expires — `auth_middleware`
+/// does not re-read `users` — so a client that retries a timed-out request
+/// reaches this handler with an already-erased account. That is a 200 with
+/// the same body, not a 404: the caller asked for the account to be gone
+/// and it is gone. Only a user id with no row at all is a 404.
 async fn delete_account(
     State(state): State<FullAppState>,
     Extension(auth_user): Extension<AuthUser>,
@@ -961,16 +977,18 @@ async fn delete_account(
     let user_id = Uuid::parse_str(&auth_user.id)
         .map_err(|_| AppError::BadRequest("Invalid user ID".to_string()))?;
 
-    // Soft delete: set is_active to false
-    let result = sqlx::query(
-        "UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1 AND is_active = true",
+    let outcome = crate::services::account_deletion::erase_account(
+        state.db(),
+        user_id,
+        crate::services::account_deletion::DeletionActor::SelfService,
     )
-    .bind(user_id)
-    .execute(state.db())
-    .await?;
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("User not found".to_string()));
+    if outcome.already_erased {
+        return Ok(Json(SuccessResponse::with_message(
+            "Account already deleted",
+        )));
     }
 
     Ok(Json(SuccessResponse::with_message(

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT oauth_provider_id FROM users WHERE id = $1 AND oauth_provider = 'line'",
+  "query": "SELECT oauth_provider_id FROM push_targets WHERE id = $1 AND oauth_provider = 'line'",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       true
     ]
   },
-  "hash": "321e04cf2955484da9bd9cae61719f3c50fcf07bbcaadcbde8dc0a37d47881ea"
+  "hash": "909426a48296bfda3ab897ed3e5b20610377181b0ccbb7e091c22857c3eaad30"
 }

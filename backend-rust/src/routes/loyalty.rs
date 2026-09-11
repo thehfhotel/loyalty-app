@@ -867,7 +867,7 @@ async fn record_stay(
             message.push_str(&format!("\nยินดีด้วย! คุณเลื่อนระดับเป็น {new_tier} 🎉"));
         }
     }
-    if let Err(e) = crate::services::line::push_to_member(
+    match crate::services::line::push_to_member(
         db,
         state.config(),
         user_id,
@@ -876,7 +876,15 @@ async fn record_stay(
     )
     .await
     {
-        tracing::warn!(error = %e, user_id = %user_id, "stay accrual push failed");
+        // Non-delivery is normal, but the reason matters: `no_push_target`
+        // is an erased/deactivated account (the `push_targets` view hid it),
+        // `no_channel` is a LINE misconfiguration we should fix.
+        Ok(outcome) => tracing::info!(
+            user_id = %user_id,
+            reason = outcome.reason(),
+            "stay accrual push outcome"
+        ),
+        Err(e) => tracing::warn!(error = %e, user_id = %user_id, "stay accrual push failed"),
     }
 
     tracing::info!(

@@ -140,13 +140,13 @@ struct GoogleUserInfo {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
-pub(crate) struct LineProfile {
-    pub(crate) user_id: String,
-    pub(crate) display_name: String,
+pub struct LineProfile {
+    pub user_id: String,
+    pub display_name: String,
     #[serde(default)]
-    pub(crate) picture_url: Option<String>,
+    pub picture_url: Option<String>,
     #[serde(default)]
-    pub(crate) status_message: Option<String>,
+    pub status_message: Option<String>,
 }
 
 /// Authentication result after OAuth processing
@@ -741,8 +741,11 @@ async fn process_google_auth(
     // Check if user exists by email or OAuth provider ID
     let existing_user: Option<(String, Option<String>, String, bool, bool, Option<String>)> =
         sqlx::query_as(
+            // `login_identities`, never `users`: an erased account is invisible
+            // here, so this login provisions a NEW user id instead of
+            // resurrecting it. Migration 20260914020000; PDPA data map §6.
             r#"SELECT id::text, email, role::text, is_active, email_verified, oauth_provider
-           FROM users
+           FROM login_identities
            WHERE email = $1 OR (oauth_provider = 'google' AND oauth_provider_id = $2)"#,
         )
         .bind(email)
@@ -1294,7 +1297,7 @@ async fn process_line_auth(state: &AppState, profile: LineProfile) -> AppResult<
 /// Shared by the web LINE OAuth callback and the LIFF login endpoint
 /// (/api/auth/liff): both surfaces yield the same LINE userId because all
 /// channels live under one provider (ADR-0002).
-pub(crate) async fn upsert_line_user(
+pub async fn upsert_line_user(
     state: &AppState,
     profile: &LineProfile,
 ) -> AppResult<(UserResponse, bool)> {
@@ -1309,9 +1312,14 @@ pub(crate) async fn upsert_line_user(
     let db = state.db();
 
     // Check if user exists by LINE ID
+    // `login_identities`, never `users`: an erased account is invisible here,
+    // so a LINE login with the same userId provisions a NEW user id instead of
+    // resurrecting it. The erase also nulls `oauth_provider_id`, so this could
+    // not match anyway — the view is the guarantee, the NULL is the belt.
+    // Migration 20260914020000; PDPA data map §6.
     let existing_user: Option<(String, Option<String>, String, bool, bool)> = sqlx::query_as(
         r#"SELECT id::text, email, role::text, is_active, email_verified
-           FROM users
+           FROM login_identities
            WHERE oauth_provider = 'line' AND oauth_provider_id = $1"#,
     )
     .bind(line_id)
@@ -1474,7 +1482,8 @@ async fn link_provider(
 
             // Check if this Google account is already linked to another user
             let existing: Option<(String,)> = sqlx::query_as(
-                "SELECT id::text FROM users WHERE oauth_provider = 'google' AND oauth_provider_id = $1 AND id != $2::uuid",
+                // An erased account must not block a live one from linking.
+                "SELECT id::text FROM login_identities WHERE oauth_provider = 'google' AND oauth_provider_id = $1 AND id != $2::uuid",
             )
             .bind(&user_info.id)
             .bind(user_id)
@@ -1510,7 +1519,8 @@ async fn link_provider(
 
             // Check if this LINE account is already linked to another user
             let existing: Option<(String,)> = sqlx::query_as(
-                "SELECT id::text FROM users WHERE oauth_provider = 'line' AND oauth_provider_id = $1 AND id != $2::uuid",
+                // An erased account must not block a live one from linking.
+                "SELECT id::text FROM login_identities WHERE oauth_provider = 'line' AND oauth_provider_id = $1 AND id != $2::uuid",
             )
             .bind(&profile.user_id)
             .bind(user_id)
@@ -1713,7 +1723,7 @@ async fn oauth_me(
 
     let row: Option<(String, Option<String>, String, Option<String>, Option<String>)> =
         sqlx::query_as(
-            "SELECT id::text, email, role::text, oauth_provider, oauth_provider_id FROM users WHERE id = $1",
+            "SELECT id::text, email, role::text, oauth_provider, oauth_provider_id FROM login_identities WHERE id = $1",
         )
         .bind(user_id)
         .fetch_optional(state.db())
