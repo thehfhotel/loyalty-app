@@ -1563,20 +1563,28 @@ async fn link_provider(
 // Helper Functions for User Creation
 // =============================================================================
 
-/// Generate a unique membership ID
+/// Generate a unique membership ID.
+///
+/// Delegates to the one real generator, `routes::auth::generate_membership_id`
+/// — the same one the password-registration and profile-completion paths use.
+///
+/// This used to run `SELECT nextval('membership_id_sequence')`, which was
+/// broken twice over and made **every** new LINE/Google signup a 500:
+///
+/// 1. `membership_id_sequence` is a *table* (`init.sql:183`), not a sequence,
+///    so Postgres answered `42809 "membership_id_sequence" is not a sequence`.
+///    The table's `id SERIAL` does create a sequence, but it is named
+///    `membership_id_sequence_id_seq`. Nothing in `migrations/` ever creates
+///    a bare `membership_id_sequence` sequence.
+/// 2. Even had it worked, the `MBRX{:08}` it formatted does not match the
+///    `^269\d{5}$` membership-id shape the rest of the app validates against
+///    (`routes/membership.rs::validate_membership_id`).
+///
+/// Found by the account-deletion tests, which are the first thing in the
+/// suite to drive OAuth *provisioning* (rather than an existing account)
+/// against a real database.
 async fn generate_membership_id(state: &AppState) -> AppResult<String> {
-    let db = state.db();
-
-    // Get next sequence value
-    let result: (i64,) = sqlx::query_as("SELECT nextval('membership_id_sequence')")
-        .fetch_one(db)
-        .await
-        .map_err(AppError::Database)?;
-
-    let sequence_num = result.0;
-    let membership_id = format!("MBRX{:08}", sequence_num);
-
-    Ok(membership_id)
+    super::auth::generate_membership_id(state.db()).await
 }
 
 /// Create default notification preferences for a user
