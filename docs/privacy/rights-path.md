@@ -145,13 +145,20 @@ can resurrect them.
 | Slip image files | `SLIP_RETENTION_DAYS` after booking closure (proposed 90 days). **Off unless the variable is set** |
 | Slip metadata, bookings, payment evidence | Kept as accounting records (proposed 5 years) |
 | `points_transactions`, `stays`, `user_loyalty` | Kept — they are the money and the audit trail |
-| `booking_audit_log` | `AUDIT_LOG_RETENTION_DAYS`, **floored at 365 days** |
-| `slip_access_log` | `SLIP_ACCESS_LOG_RETENTION_DAYS`, **floored at 90 days** |
+| `booking_audit_log` | `AUDIT_LOG_RETENTION_DAYS`, **floored at 365 days**. **Unset today**, so nothing is pruned |
+| `slip_access_log` | `SLIP_ACCESS_LOG_RETENTION_DAYS`, **floored at 90 days**. **Unset today**, so nothing is pruned |
 | Encrypted backups | An erase in the live database does not reach them. The deletion is complete when the last backup holding it expires — **OWNER: state the backup retention window** so "deleted" has a defined meaning |
 
 Those floors are not configuration mistakes, they are the point: they exist so
 we can always answer "who looked at this guest's payer's bank details", which
 is what F1 §8 gap 2 asked for. They cannot be set lower.
+
+**As of 2026-09-12 none of the three retention variables is set** (`gh variable
+list` shows only `DESK_PHONE_*`), so no sweep runs at all: slip images are
+never deleted and the audit logs grow without bound. The notice's "at least
+365 days / at least 90 days" is therefore true today by accident rather than
+by configuration, and its "90 days, then we delete the image" is **not yet
+true at all** — see owner decision 3.
 
 ### The trade-off to say out loud before pressing the button
 
@@ -317,8 +324,12 @@ Everything below blocks "the notice is finished", not "the code works".
    *proposals* (F1 §10 Q1) and are published on `/privacy` marked as such.
    Confirm them, then remove the "(proposed)" labels from the `privacy.retention*`
    locale keys.
-3. **`SLIP_RETENTION_DAYS` is unset**, so no slip image has ever been deleted.
-   The notice says 90 days. Set the variable, or the sentence is not yet true.
+3. **All three retention variables are unset** — `SLIP_RETENTION_DAYS`,
+   `AUDIT_LOG_RETENTION_DAYS`, `SLIP_ACCESS_LOG_RETENTION_DAYS`. No slip image
+   has ever been deleted, and no audit row has ever been pruned. The notice
+   says slip images go after 90 days; **that sentence is not true until
+   `SLIP_RETENTION_DAYS` is set.** This is the one open item where the
+   published notice currently overstates what the system does.
 4. **Non-member identity proof** (§6) — the largest open item.
 5. **Who signs a PDPC notification** (§7).
 6. **Backup retention window** (§4) — so "deleted" has a defined end date.
