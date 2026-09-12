@@ -1537,6 +1537,21 @@ impl Settings {
             errors.push("REDIS_URL must be a valid Redis connection string".to_string());
         }
 
+        // PMS_BASE_URL is the only config string this app turns into an
+        // outbound request target, so it is parsed and checked **here**,
+        // at startup, rather than on the first guest booking: a value that
+        // points at the wrong scheme or carries credentials should stop the
+        // process, not surface as a 500 on somebody's hold. Optional — the
+        // channel is dark until the owner sets it — but never merely
+        // trusted once it is set. The rejected value is not echoed: it is
+        // the config string most likely to have a credential pasted into
+        // it, and this message goes to the boot log.
+        if let Some(base_url) = self.pms.base_url.as_deref() {
+            if let Err(e) = crate::services::pms_channel::validate_pms_base_url(base_url) {
+                errors.push(format!("PMS_BASE_URL is not usable: {e}"));
+            }
+        }
+
         if !errors.is_empty() {
             return Err(ConfigurationError::ValidationError(errors.join("; ")));
         }

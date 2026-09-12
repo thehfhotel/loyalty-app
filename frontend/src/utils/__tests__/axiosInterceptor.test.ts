@@ -322,6 +322,31 @@ describe('axiosInterceptor - Auth Refresh Loop Prevention', () => {
 
       expect(rejected.code).toBe('EMAIL_ALREADY_REGISTERED');
     });
+
+    /**
+     * A19 — `reason` is carried through *alongside* `code`, never instead of
+     * it. The two 409s from the PMS channel share a `code` of `conflict`, so
+     * the reason is the only thing that tells a guest who should change
+     * their dates from one who should pick up the phone.
+     */
+    it('carries the PMS reason alongside the unchanged code and message', async () => {
+      const rejected = (await reject(409, {
+        error: 'conflict',
+        message: 'The last room for these dates is kept for booking with the hotel directly.',
+        reason: 'last_room_held_for_desk'
+      })) as ApiError;
+
+      expect(rejected.reason).toBe('last_room_held_for_desk');
+      expect(rejected.code).toBe('conflict');
+      expect(rejected.status).toBe(409);
+      expect(rejected.message).toContain('kept for booking with the hotel directly');
+    });
+
+    it('leaves reason undefined when the backend sent none', async () => {
+      const rejected = (await reject(409, { error: 'conflict', message: 'nope' })) as ApiError;
+
+      expect(rejected.reason).toBeUndefined();
+    });
   });
 
   describe('Auth page bypass', () => {

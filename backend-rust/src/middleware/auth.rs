@@ -178,6 +178,7 @@ impl IntoResponse for AuthError {
             error: error.to_string(),
             message: message.to_string(),
             details: None,
+            reason: None,
         });
 
         (status, body).into_response()
@@ -363,6 +364,7 @@ pub async fn require_role(
             error: "unauthorized".to_string(),
             message: "Authentication required".to_string(),
             details: None,
+            reason: None,
         });
         (StatusCode::UNAUTHORIZED, body).into_response()
     })?;
@@ -372,6 +374,7 @@ pub async fn require_role(
             error: "forbidden".to_string(),
             message: format!("Insufficient permissions. Required role: {}", required_role),
             details: None,
+            reason: None,
         });
         return Err((StatusCode::FORBIDDEN, body).into_response());
     }

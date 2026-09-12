@@ -16,6 +16,8 @@ interface ApiErrorResponse {
   error?: string;
   message?: string;
   code?: string;
+  /** A19 — the dependency's own machine reason, when it named one. */
+  reason?: string;
 }
 
 // Custom error class to preserve error code from backend
@@ -57,7 +59,17 @@ export class ApiError extends Error {
      * still tell it apart from an axios transport message like
      * `"Network Error"`.
      */
-    public detail?: string
+    public detail?: string,
+    /**
+     * The dependency's own machine reason, verbatim (A19).
+     *
+     * Distinct from `code`, which is the *app's* key: a PMS refusal is
+     * `code: "conflict"` for both "sold out" and "the last room is held for
+     * the desk", and only `reason` tells the two apart. Read it through
+     * `pmsReasonOf()` rather than comparing strings at the call site —
+     * an unknown token must degrade to the generic copy, not render raw.
+     */
+    public reason?: string
   ) {
     super(message);
     this.name = 'ApiError';
@@ -75,7 +87,7 @@ function createApiError(error: AxiosError): Error {
   // `data.code` is the documented field; the backend actually ships the
   // machine key as `data.error`, so fall back to it rather than losing it.
   const code = data?.code ?? data?.error;
-  return new ApiError(message, code, error.response?.status, data?.message);
+  return new ApiError(message, code, error.response?.status, data?.message, data?.reason);
 }
 
 export function setupAxiosInterceptors() {

@@ -241,6 +241,14 @@ pub mod schemas {
         /// Optional field-level error details
         #[serde(skip_serializing_if = "Option::is_none")]
         pub details: Option<std::collections::HashMap<String, Vec<String>>>,
+        /// Machine-readable sub-reason from the dependency that failed,
+        /// when it names one. Present on PMS booking-channel failures
+        /// (A19): `channel_disabled`, `unauthorized`, `sold_out`,
+        /// `last_room_held_for_desk`, `inventory_lock_timeout`,
+        /// `idempotency_key_mismatch`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schema(example = "sold_out")]
+        pub reason: Option<String>,
     }
 
     // ============================================================================

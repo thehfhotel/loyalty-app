@@ -1775,7 +1775,19 @@
       "heading": "The booking system is temporarily unavailable",
       "withPhone": "Our booking system is temporarily unavailable. Please contact the front desk on {{phone}}.",
       "withoutPhone": "Our booking system is temporarily unavailable. Please contact the front desk.",
-      "notCharged": "No booking was made and you have not been charged."
+      "notCharged": "No booking was made and you have not been charged.",
+      "closedWithPhone": "Online booking is closed right now. Please contact the front desk on {{phone}}.",
+      "closedWithoutPhone": "Online booking is closed right now. Please contact the front desk."
+    },
+    "refusal": {
+      "soldOut": {
+        "body": "This room type is fully booked for the dates you chose.",
+        "action": "Pick other dates"
+      },
+      "deskHeld": {
+        "withPhone": "The last room for these dates is kept for booking with the hotel directly. Please call {{phone}}.",
+        "withoutPhone": "The last room for these dates is kept for booking with the hotel directly. Please contact the front desk."
+      }
     }
   },
   "payment": {
@@ -1991,10 +2003,6 @@
       "body": "Please try again, or contact the front desk.",
       "retry": "Try again"
     },
-    "desk": {
-      "withPhone": "Call the front desk, open 24 hours, on {{phone}}",
-      "withoutPhone": "Please contact the front desk of the hotel you booked."
-    },
     "privacyNote": "We use the slip image only to check and confirm this deposit payment. A slip may show the name and account number of whoever sent the money, which may not be the guest who booked.",
     "privacyLink": "Read the privacy notice",
     "state": {
@@ -2090,6 +2098,13 @@
         "searchNoPhone": "None of the links on this page carry a phone number — search by guest name instead.",
         "searchEmpty": "No deposit link matches that search"
       }
+    }
+  },
+  "desk": {
+    "footer": {
+      "withPhone": "Contact the front desk on {{phone}} (open 24 hours)",
+      "withoutPhone": "Please contact the front desk of the hotel you booked (open 24 hours).",
+      "anyProperty": "Contact the front desk (open 24 hours)"
     }
   }
 }

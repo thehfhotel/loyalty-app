@@ -7,6 +7,7 @@
 
 use chrono::{DateTime, NaiveDate, Utc};
 use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
+use reqwest::Url;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -77,15 +78,139 @@ const HOLD_GUARD_REDIS_TIMEOUT: std::time::Duration = std::time::Duration::from_
 /// actually decides.
 const MAX_PMS_BOOKING_ID_LEN: usize = 100;
 
-/// Characters that survive into the path segment untouched.
+/// Characters that survive into a path segment untouched.
 ///
-/// The allow-list in [`validate_pms_booking_id`] has already rejected
-/// everything outside `[A-Za-z0-9_-]`, so for an id this client accepts the
-/// encoder is a no-op and the request on the wire is byte-for-byte what it
-/// was before. It stays because a URL built by `format!` has no encoder of
-/// its own, and a second pair of hands on this file should not have to
-/// re-derive that the id was checked three functions ago.
+/// [`validate_pms_booking_id`] has already rejected everything outside
+/// `[A-Za-z0-9_-]`, so for an id this client accepts the encoder is a
+/// no-op and the request on the wire is byte-for-byte what it always was.
+/// It stays because the relative path in [`action_url`] is assembled before
+/// it is joined, and a reader should not have to re-derive that the id was
+/// checked one function up: whatever the allow-list is ever loosened to, a
+/// `/`, `?`, `#` or `..` in an id comes out of here percent-encoded and
+/// cannot become a path element.
 const PMS_PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'_');
+
+/// Why `PMS_BASE_URL` may not be used to build requests.
+///
+/// Its own type rather than an `AppError` for the same reason
+/// [`PmsBookingIdError`] is: the caller decides what to log, and the
+/// rejected value never travels with the error — a misconfigured base URL
+/// is the one string in this module most likely to have a credential
+/// accidentally pasted into it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum PmsBaseUrlError {
+    /// Not an absolute URL at all.
+    #[error("PMS_BASE_URL is not an absolute URL")]
+    Unparseable,
+    /// Something other than `http` or `https` — `file:`, `ftp:`, a
+    /// `data:` payload. None of them is a PMS.
+    #[error("PMS_BASE_URL must use http or https")]
+    UnsupportedScheme,
+    /// No host to send the request to.
+    #[error("PMS_BASE_URL has no host")]
+    NoHost,
+    /// Plain `http` to a host that is not loopback or container-local, so
+    /// the channel token would cross a network in clear text.
+    #[error("PMS_BASE_URL may only use plain http for a loopback or container-local host")]
+    InsecureScheme,
+    /// `https://user:pass@host` — credentials in a URL end up in logs,
+    /// and this client authenticates with a bearer token.
+    #[error("PMS_BASE_URL must not carry credentials")]
+    HasCredentials,
+    /// A query string or fragment on a *base* is a sign of a pasted full
+    /// URL, and it would be silently dropped by every join below.
+    #[error("PMS_BASE_URL must not carry a query string or fragment")]
+    HasQueryOrFragment,
+}
+
+/// Parse `PMS_BASE_URL` once, or refuse to build a client at all.
+///
+/// Everything this client sends is `base.join(<fixed path>)` off the value
+/// returned here, so this is the **only** place a config string becomes a
+/// request target. Nothing downstream concatenates a host with a path, and
+/// nothing downstream can be steered by a value that got past this
+/// function.
+///
+/// The rules, and why each one:
+///
+/// * **`https`, or `http` only for loopback and container-local hosts.**
+///   The channel token is a bearer credential; `http://pms.example.com`
+///   would put it on the wire in clear text on every availability call. The
+///   exceptions are the shapes that never leave a host: `localhost`,
+///   `127.0.0.0/8`, `::1`, `host.docker.internal`, and a bare hostname with
+///   no dots — a Docker Compose service or container name, which is what
+///   the integration suite and a same-network deploy both use, and which
+///   cannot be a public name.
+/// * **No credentials.** `https://user:pass@host` leaks into every log line
+///   that prints a URL, and this client authenticates with a bearer token
+///   anyway.
+/// * **No query or fragment.** Either one on a base is a pasted full URL,
+///   and `Url::join` would drop it silently — the request would go
+///   somewhere the operator did not intend and nothing would say so.
+///
+/// The path is normalised to end in `/` so a base that carries a prefix
+/// (`https://pms.example.com/hotel/`) keeps it: `Url::join` replaces the
+/// last segment of a path that does not end in a slash, which would
+/// quietly drop the prefix.
+///
+/// **Fails loudly, never falls back.** A base URL that cannot be trusted is
+/// not replaced with a default — `Settings::validate` refuses to start the
+/// process, and `from_settings` refuses to build a client.
+pub fn validate_pms_base_url(raw: &str) -> Result<Url, PmsBaseUrlError> {
+    let mut url = Url::parse(raw.trim()).map_err(|_| PmsBaseUrlError::Unparseable)?;
+
+    // Scheme first, host second, so the error names the actual problem: a
+    // `file:///etc/passwd` has no host *and* the wrong scheme, and being
+    // told "PMS_BASE_URL has no host" about it sends an operator looking
+    // for a typo in a value whose whole shape is wrong.
+    match url.scheme() {
+        "https" => {},
+        "http" => {
+            let host = url.host_str().ok_or(PmsBaseUrlError::NoHost)?;
+            if !host_is_local(host) {
+                return Err(PmsBaseUrlError::InsecureScheme);
+            }
+        },
+        _ => return Err(PmsBaseUrlError::UnsupportedScheme),
+    }
+    if url.host_str().is_none() {
+        return Err(PmsBaseUrlError::NoHost);
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(PmsBaseUrlError::HasCredentials);
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err(PmsBaseUrlError::HasQueryOrFragment);
+    }
+
+    if !url.path().ends_with('/') {
+        let with_slash = format!("{}/", url.path());
+        url.set_path(&with_slash);
+    }
+    Ok(url)
+}
+
+/// Is this host one that plain `http` never leaves a machine or a container
+/// network to reach?
+///
+/// Loopback in either family, `localhost` (and the reserved `.localhost`
+/// suffix), Docker Desktop's `host.docker.internal`, and any dotless
+/// hostname — a Compose service name, a container name, a Kubernetes
+/// in-namespace service. A dotless name cannot be a public DNS name, which
+/// is what makes the rule safe to state this simply.
+fn host_is_local(host: &str) -> bool {
+    let host = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_ascii_lowercase();
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return ip.is_loopback();
+    }
+    host == "localhost"
+        || host.ends_with(".localhost")
+        || host == "host.docker.internal"
+        || !host.contains('.')
+}
 
 /// Why a `pms_booking_id` was refused before it could reach a URL.
 ///
@@ -135,21 +260,50 @@ pub fn validate_pms_booking_id(id: &str) -> Result<&str, PmsBookingIdError> {
     Ok(id)
 }
 
-/// The per-booking action URL, or the reason the id may not be used in one.
+/// Why a per-booking action URL could not be built.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum PmsActionUrlError {
+    /// The booking id is not a plain token.
+    #[error("{0}")]
+    BookingId(#[from] PmsBookingIdError),
+    /// The relative path did not resolve against the base. Unreachable for
+    /// a base that came through [`validate_pms_base_url`] and an id that
+    /// came through [`validate_pms_booking_id`]; present so a future change
+    /// to either becomes an error rather than a request somewhere else.
+    #[error("PMS action URL could not be built")]
+    Malformed,
+}
+
+/// The per-booking action URL, or the reason it could not be built.
 ///
-/// Split out of [`PmsChannelClient::post_action`] so the validation and the
-/// encoding are one testable step: there is no way to reach the `format!`
-/// without having gone through `validate_pms_booking_id` first.
+/// Split out of [`PmsChannelClient::post_action`] so validation and URL
+/// construction are one testable step.
+///
+/// **The shape that matters**: the config-derived part of the URL — scheme,
+/// host, port, any base path prefix — comes only from the parsed `base`,
+/// and the caller-derived part is a *relative* path joined onto it. Nothing
+/// formats a config value into a string. The id passes
+/// [`validate_pms_booking_id`] (so it is `[A-Za-z0-9_-]` and has no `/`,
+/// `?`, `#` or `..` to escape its segment with) and is percent-encoded
+/// anyway, which keeps that guarantee local rather than something a reader
+/// has to go and check. `action` is `&'static str` because both call sites
+/// pass a literal and nothing else ever should.
+///
+/// This is the same `base.join(...)` construction the other two endpoints
+/// use, deliberately: one way to build a URL in this module, not two.
 fn action_url(
-    base_url: &str,
+    base: &Url,
     pms_booking_id: &str,
-    action: &str,
-) -> Result<String, PmsBookingIdError> {
+    action: &'static str,
+) -> Result<Url, PmsActionUrlError> {
     let id = validate_pms_booking_id(pms_booking_id)?;
     let segment = utf8_percent_encode(id, PMS_PATH_SEGMENT);
-    Ok(format!(
-        "{base_url}/api/channel/bookings/{segment}/{action}"
-    ))
+    // Relative — no leading slash — so a base carrying a path prefix keeps
+    // it. `validate_pms_base_url` normalised the base to end in `/`, which
+    // is what makes the join an append rather than a replace.
+    let relative = format!("api/channel/bookings/{segment}/{action}");
+    base.join(&relative)
+        .map_err(|_| PmsActionUrlError::Malformed)
 }
 
 /// The header `new-hotel` reads the idempotency key from (its #305).
@@ -300,6 +454,179 @@ pub struct PmsBookingCreated {
     pub replayed: bool,
 }
 
+/// The machine `reason` the PMS channel API puts on **every** error body.
+///
+/// Since new-hotel #311 the channel answers a stable token alongside the
+/// status, so this client no longer has to infer intent from a number that
+/// several unrelated conditions share. The two 409s are the reason this
+/// type exists: `sold_out` and `last_room_held_for_desk` are both "409
+/// Conflict" and both definitive, but one means *pick other dates* and the
+/// other means *phone the desk, the room is there* — advice a guest acts on
+/// differently, and which the status alone cannot carry.
+///
+/// The token is part of the wire contract in both directions: it is parsed
+/// here and re-emitted verbatim as the `reason` field of the app's own
+/// error body (`ErrorResponse::reason`), so the LIFF flow picks its Thai
+/// copy from the same string the PMS chose. Renaming a variant's
+/// [`as_str`](Self::as_str) breaks the frontend, not just this module.
+///
+/// **Unknown reasons are not an error.** `from_body` answers `None` for a
+/// token this build has never heard of, and the caller falls back to the
+/// status-shaped mapping that predates this type — a PMS that grows a new
+/// reason must not turn every booking into a 500 here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PmsReason {
+    /// 503 — `LOYALTY_CHANNEL_ENABLED=false`. The channel is *closed*, not
+    /// broken: no amount of retrying opens it, and the guest copy has to
+    /// say so rather than "temporarily unavailable".
+    ChannelDisabled,
+    /// 401 — `LOYALTY_CHANNEL_TOKEN` rotated out from under us. Ours to
+    /// fix, so the guest is told the system is down, never "rejected".
+    Unauthorized,
+    /// 409 — no room of this type is free for these dates. Definitive.
+    SoldOut,
+    /// 409 — rooms remain, but the last `LOYALTY_CHANNEL_LAST_ROOM_FLOOR`
+    /// of them are reserved for the desk (new-hotel #311). Definitive, and
+    /// the one refusal where the guest can still get the room by phoning.
+    /// The body also carries `free_rooms` and `floor`; neither is read here
+    /// because neither changes what the guest is told.
+    LastRoomHeldForDesk,
+    /// 503 + `Retry-After: 1` — the PMS could not take its inventory lock
+    /// in time. Transient by construction, and the only reason this client
+    /// retries on its own.
+    InventoryLockTimeout,
+    /// 422 — this `Idempotency-Key` was already used with a *different*
+    /// booking. Definitive: the stored request for that key will never
+    /// match this one, so the guest must start a new booking.
+    IdempotencyKeyMismatch,
+}
+
+impl PmsReason {
+    /// The wire token, verbatim. This is what the frontend switches on.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ChannelDisabled => "channel_disabled",
+            Self::Unauthorized => "unauthorized",
+            Self::SoldOut => "sold_out",
+            Self::LastRoomHeldForDesk => "last_room_held_for_desk",
+            Self::InventoryLockTimeout => "inventory_lock_timeout",
+            Self::IdempotencyKeyMismatch => "idempotency_key_mismatch",
+        }
+    }
+
+    /// Parse one token. Unknown tokens answer `None` — see the type docs.
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim() {
+            "channel_disabled" => Some(Self::ChannelDisabled),
+            "unauthorized" => Some(Self::Unauthorized),
+            "sold_out" => Some(Self::SoldOut),
+            "last_room_held_for_desk" => Some(Self::LastRoomHeldForDesk),
+            "inventory_lock_timeout" => Some(Self::InventoryLockTimeout),
+            "idempotency_key_mismatch" => Some(Self::IdempotencyKeyMismatch),
+            _ => None,
+        }
+    }
+
+    /// Pull `reason` out of a PMS error body.
+    ///
+    /// Tolerant on purpose: a body that is not JSON, has no `reason`, or
+    /// carries a token this build does not know answers `None`. The extra
+    /// fields the PMS sends with some reasons (`free_rooms`, `floor`) are
+    /// ignored rather than modelled — they do not change what the guest is
+    /// told, and modelling them would make an added field a parse failure.
+    pub fn from_body(body: &str) -> Option<Self> {
+        #[derive(Deserialize)]
+        struct ReasonOnly {
+            reason: Option<String>,
+        }
+        serde_json::from_str::<ReasonOnly>(body)
+            .ok()?
+            .reason
+            .as_deref()
+            .and_then(Self::parse)
+    }
+
+    /// Did the PMS decide about **this booking**, such that no retry — by
+    /// this client, by the guest, or by a human — can change the answer?
+    ///
+    /// This is the same split `PmsActionError` draws between `Refused` and
+    /// `Unavailable`, expressed per reason instead of per status: it is
+    /// what turns into 409-vs-503 on our own response, and therefore into
+    /// "the answer is no" vs "try again" for everything downstream.
+    pub const fn is_definitive(self) -> bool {
+        match self {
+            Self::SoldOut | Self::LastRoomHeldForDesk | Self::IdempotencyKeyMismatch => true,
+            // `inventory_lock_timeout` is definitive only *after* this
+            // client has spent its one retry; by the time it is mapped it
+            // is still an outage, because trying later can still work.
+            Self::ChannelDisabled | Self::Unauthorized | Self::InventoryLockTimeout => false,
+        }
+    }
+
+    /// The sentence a guest is shown when the frontend has no copy of its
+    /// own for this reason.
+    ///
+    /// English, and deliberately so: the LIFF flow renders Thai first from
+    /// its own locale files keyed on [`as_str`](Self::as_str), and this is
+    /// the fallback for everything else that reads the API — the admin
+    /// tools, a curl, a client build older than the reason. It must never
+    /// name the PMS, a header or a flag.
+    pub const fn guest_message(self) -> &'static str {
+        match self {
+            Self::ChannelDisabled => {
+                "Online booking is closed right now. Please contact the front desk."
+            },
+            Self::Unauthorized | Self::InventoryLockTimeout => {
+                "The booking system is temporarily unavailable. Please try again shortly, or \
+                 contact the front desk."
+            },
+            Self::SoldOut => "This room type is sold out for the dates you chose.",
+            Self::LastRoomHeldForDesk => {
+                "The last room for these dates is kept for booking with the hotel directly. \
+                 Please call the front desk."
+            },
+            Self::IdempotencyKeyMismatch => IDEMPOTENCY_KEY_REUSED_MESSAGE,
+        }
+    }
+
+    /// The app error this reason becomes — 409 when definitive, 503 when
+    /// not, with the token riding out to the caller as `reason`.
+    pub fn into_app_error(self) -> AppError {
+        AppError::PmsChannel {
+            reason: self.as_str(),
+            definitive: self.is_definitive(),
+            message: self.guest_message().to_string(),
+        }
+    }
+}
+
+/// How long to wait before this client's one retry of an
+/// `inventory_lock_timeout`.
+///
+/// The PMS sends `Retry-After: 1`. The header is honoured rather than
+/// assumed, but bounded: this retry happens *inside* a guest's request,
+/// while the hold guard's lock is held, so a PMS that answered
+/// `Retry-After: 600` must not park the request until the router's own
+/// timeout kills it. Anything absent, unparseable, or out of range becomes
+/// [`INVENTORY_LOCK_RETRY_DEFAULT`].
+const INVENTORY_LOCK_RETRY_MAX: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Fallback delay when `Retry-After` is missing or unusable.
+const INVENTORY_LOCK_RETRY_DEFAULT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Read `Retry-After` as a bounded delay. Seconds only: the HTTP-date form
+/// is legal but the PMS does not send it, and a date this client failed to
+/// parse is better served by the default than by a guess.
+pub fn retry_after_delay(headers: &reqwest::header::HeaderMap) -> std::time::Duration {
+    headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .map(std::time::Duration::from_secs)
+        .filter(|d| *d <= INVENTORY_LOCK_RETRY_MAX)
+        .unwrap_or(INVENTORY_LOCK_RETRY_DEFAULT)
+}
+
 /// What the PMS said when it would not perform an action.
 ///
 /// Split from "the PMS could not be reached" because the two demand opposite
@@ -411,7 +738,15 @@ impl From<PmsActionError> for AppError {
 }
 
 pub struct PmsChannelClient {
-    base_url: String,
+    /// The parsed, validated `PMS_BASE_URL`.
+    ///
+    /// A `Url`, not a `String`, on purpose: it is the only thing in this
+    /// client that decides where a request goes, it was checked once by
+    /// [`validate_pms_base_url`], and every endpoint below is a
+    /// `base.join(<fixed path>)` off it. There is no string concatenation
+    /// of a config value with a path anywhere in this module, so nothing a
+    /// caller supplies can move a request to another host.
+    base: Url,
     token: String,
     http: reqwest::Client,
     /// Whether [`create_booking`](PmsChannelClient::create_booking) takes
@@ -425,14 +760,28 @@ impl PmsChannelClient {
     /// (PMS_BASE_URL / PMS_CHANNEL_TOKEN).
     pub fn from_settings(settings: &Settings) -> AppResult<Self> {
         let base_url =
-            settings.pms.base_url.clone().ok_or_else(|| {
+            settings.pms.base_url.as_deref().ok_or_else(|| {
                 AppError::Configuration("PMS_BASE_URL is not configured".to_string())
             })?;
+        // Parsed and checked **here, once**, rather than formatted into a
+        // string at each call site. `Settings::validate` runs the same
+        // check at startup so a bad value never reaches a guest's booking;
+        // this is the second gate, for a client built from settings that
+        // did not come through that path (the tests build several).
+        //
+        // The rejected value is not in the error: it is the one config
+        // string most likely to have a credential pasted into it, and this
+        // message reaches an admin's browser through
+        // `AppError::Configuration`.
+        let base = validate_pms_base_url(base_url).map_err(|e| {
+            tracing::error!(reason = %e, "PMS_BASE_URL is not usable; refusing to build a PMS client");
+            AppError::Configuration(format!("PMS_BASE_URL is not usable: {e}"))
+        })?;
         let token = settings.pms.channel_token.clone().ok_or_else(|| {
             AppError::Configuration("PMS_CHANNEL_TOKEN is not configured".to_string())
         })?;
         Ok(Self {
-            base_url: base_url.trim_end_matches('/').to_string(),
+            base,
             token,
             hold_guard: settings.pms.hold_guard,
             http: reqwest::Client::builder()
@@ -445,6 +794,19 @@ impl PmsChannelClient {
         })
     }
 
+    /// A fixed channel endpoint, joined onto the validated base.
+    ///
+    /// `path` is always a literal in this module — there is no caller-
+    /// supplied component — and the base was parsed by
+    /// [`validate_pms_base_url`], so the only way this fails is a
+    /// programming error in one of those literals, which is why it is an
+    /// `Internal` error rather than anything a guest could provoke.
+    fn endpoint(&self, path: &'static str) -> AppResult<Url> {
+        self.base.join(path).map_err(|e| {
+            AppError::Internal(format!("PMS endpoint {path} is not a valid path: {e}"))
+        })
+    }
+
     pub async fn availability(
         &self,
         property: Property,
@@ -452,10 +814,10 @@ impl PmsChannelClient {
         check_out: NaiveDate,
         guests: i32,
     ) -> AppResult<PmsAvailability> {
-        let url = format!("{}/api/channel/availability", self.base_url);
+        let url = self.endpoint("api/channel/availability")?;
         let response = self
             .http
-            .get(&url)
+            .get(url)
             .bearer_auth(&self.token)
             .query(&[
                 ("property", property.as_str().to_string()),
@@ -537,16 +899,24 @@ impl PmsChannelClient {
         //   see, so a retry is no longer blind; holding the lock past that
         //   only punishes a guest who genuinely wants a second room for the
         //   same nights.
-        // * **The PMS answered and refused** (`parse_json` maps a 4xx to
-        //   `BadRequest`: sold out, bad dates) — release. Nothing was
+        // * **The PMS answered and refused** — release. Nothing was
         //   created, and the guest may correct their input and retry now.
-        // * **Anything else** — a timeout, an unreachable host, a 5xx, a
-        //   malformed body — *keep* it to its TTL. This is the only branch
-        //   where it is genuinely unknown whether a hold now exists, and it
-        //   is precisely B8 race 2.3: the guest gives up on a hung request
-        //   and taps "book" again.
+        //   Two shapes of that: a `reason` the PMS named
+        //   ([`AppError::PmsChannel`], A19 — sold out, the desk floor, a
+        //   closed channel, an exhausted lock retry), and the pre-A19
+        //   `BadRequest` for a 4xx it did not name. Both mean the PMS spoke
+        //   and made nothing, so holding the lock past them would answer a
+        //   sold-out guest "a booking for these dates is already being
+        //   created" for the next twenty seconds.
+        // * **Anything else** — a timeout, an unreachable host, an unnamed
+        //   5xx, a malformed body — *keep* it to its TTL. This is the only
+        //   branch where it is genuinely unknown whether a hold now exists,
+        //   and it is precisely B8 race 2.3: the guest gives up on a hung
+        //   request and taps "book" again.
         match &outcome {
-            Ok(_) | Err(AppError::BadRequest(_)) => guard.release().await,
+            Ok(_) | Err(AppError::BadRequest(_)) | Err(AppError::PmsChannel { .. }) => {
+                guard.release().await
+            },
             _ => guard.keep(),
         }
 
@@ -560,42 +930,85 @@ impl PmsChannelClient {
         request: &PmsCreateBookingRequest,
         idempotency_key: &IdempotencyKey,
     ) -> AppResult<PmsBookingCreated> {
-        let url = format!("{}/api/channel/bookings", self.base_url);
-        let response = self
-            .http
-            .post(&url)
-            .bearer_auth(&self.token)
-            .header(IDEMPOTENCY_KEY_HEADER, idempotency_key.as_str())
-            .json(request)
-            .send()
-            .await
-            .map_err(pms_unreachable)?;
+        let url = self.endpoint("api/channel/bookings")?;
+        // `inventory_lock_timeout` is the one reason this client retries by
+        // itself, and it retries **exactly once**. The PMS could not take
+        // its per-room-night lock in the time it allows itself (new-hotel
+        // #311) and says so with `Retry-After: 1`; the contended window is
+        // one other booking's write, so one wait is either enough or the
+        // lock is not the problem. A loop here would sit inside a guest's
+        // request holding the hold guard's lock, which is the shape of an
+        // outage, not a fix for one.
+        let mut retried_lock_timeout = false;
+        let (response, replayed) = loop {
+            let response = self
+                .http
+                .post(url.clone())
+                .bearer_auth(&self.token)
+                .header(IDEMPOTENCY_KEY_HEADER, idempotency_key.as_str())
+                .json(request)
+                .send()
+                .await
+                .map_err(pms_unreachable)?;
 
-        // Read before `parse_json` consumes the response.
-        let replayed = replay_header_says_yes(response.headers());
+            // Read before the body is consumed either way.
+            let replayed = replay_header_says_yes(response.headers());
+            let status = response.status();
+            if status.is_success() {
+                break (response, replayed);
+            }
 
-        // 422 is the PMS's answer to "this key has already been used, with
-        // a *different* body" (new-hotel #305). It is the only status on
-        // this path that is about the key rather than the stay, and it is
-        // definitive: no retry of this request can succeed, because the
-        // stored request for this key will never match this one.
-        //
-        // Intercepted here rather than left to `parse_json`, which would
-        // render it as `BadRequest("PMS rejected create booking: …")` — the
-        // PMS's raw body in front of a guest, explaining nothing and
-        // inviting exactly the retry that cannot work.
-        if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            // The reason is in the *body*, so reading it consumes the
+            // response — which is why the non-2xx path is handled here in
+            // full rather than handed to `parse_json`.
+            let retry_after = retry_after_delay(response.headers());
             let detail = response.text().await.unwrap_or_default();
-            tracing::error!(
-                idempotency_key = %idempotency_key,
-                detail = %truncate_refusal_body(&detail),
-                "PMS refused the create: this idempotency key was already used with a different \
-                 booking. Something re-used a key across two different stays."
-            );
-            return Err(AppError::Conflict(
-                IDEMPOTENCY_KEY_REUSED_MESSAGE.to_string(),
-            ));
-        }
+            let reason = PmsReason::from_body(&detail).or_else(|| {
+                // A PMS build older than new-hotel #311 sends no reason,
+                // and 422 on this path can only ever have been the key
+                // (new-hotel #305). Keeping the status fallback means a
+                // half-deployed estate still tells the guest the useful
+                // thing instead of the PMS's raw body.
+                (status == reqwest::StatusCode::UNPROCESSABLE_ENTITY)
+                    .then_some(PmsReason::IdempotencyKeyMismatch)
+            });
+
+            if reason == Some(PmsReason::InventoryLockTimeout) && !retried_lock_timeout {
+                retried_lock_timeout = true;
+                tracing::warn!(
+                    idempotency_key = %idempotency_key,
+                    retry_after_ms = retry_after.as_millis() as u64,
+                    "PMS could not take its inventory lock; retrying the hold create once"
+                );
+                tokio::time::sleep(retry_after).await;
+                continue;
+            }
+
+            if reason == Some(PmsReason::IdempotencyKeyMismatch) {
+                tracing::error!(
+                    idempotency_key = %idempotency_key,
+                    detail = %truncate_refusal_body(&detail),
+                    "PMS refused the create: this idempotency key was already used with a \
+                     different booking. Something re-used a key across two different stays."
+                );
+            }
+
+            return Err(match reason {
+                Some(reason) => {
+                    tracing::warn!(
+                        pms_status = status.as_u16(),
+                        reason = reason.as_str(),
+                        definitive = reason.is_definitive(),
+                        retried_lock_timeout,
+                        "PMS refused the hold create"
+                    );
+                    reason.into_app_error()
+                },
+                // No reason on the body: the pre-A19 status-shaped mapping,
+                // unchanged.
+                None => map_status_error(status, &detail, "create booking"),
+            });
+        };
 
         let mut created: PmsBookingCreated = Self::parse_json(response, "create booking").await?;
         created.replayed = replayed;
@@ -712,12 +1125,12 @@ impl PmsChannelClient {
     async fn post_action(
         &self,
         pms_booking_id: &str,
-        action: &str,
+        action: &'static str,
         body: Option<serde_json::Value>,
     ) -> Result<(), PmsActionError> {
         // Validate *before* anything is formatted: a booking id that is not a
         // plain token cannot be allowed to steer where this request goes.
-        let url = match action_url(&self.base_url, pms_booking_id, action) {
+        let url = match action_url(&self.base, pms_booking_id, action) {
             Ok(url) => url,
             Err(e) => {
                 // Logged here and nowhere else. The rejected value is not in
@@ -736,7 +1149,7 @@ impl PmsChannelClient {
                 )));
             },
         };
-        let mut request = self.http.post(&url).bearer_auth(&self.token);
+        let mut request = self.http.post(url).bearer_auth(&self.token);
         if let Some(body) = body {
             request = request.json(&body);
         }
@@ -779,30 +1192,53 @@ impl PmsChannelClient {
         let status = response.status();
         if !status.is_success() {
             let detail = response.text().await.unwrap_or_default();
-            // The same split B1 drew one function over. A 4xx that is about
-            // the *request* — sold out, bad dates, a room type that no
-            // longer exists — is the guest's to fix, so it surfaces as a
-            // client error. A 401 (rotated `LOYALTY_CHANNEL_TOKEN`), a 403
-            // (`HFVILLE_WRITES_ENABLED` off) or a 404 (channel router not
-            // mounted, which is what a PMS with a dead PG pool looks like
-            // from out here) is *ours*, and telling the guest "bad request"
-            // about our own expired credential is both wrong and unhelpful.
-            return if status.is_client_error() && !NOT_THE_CALLERS_FAULT.contains(&status.as_u16())
-            {
-                Err(AppError::BadRequest(format!(
-                    "PMS rejected {what}: {}",
-                    truncate_refusal_body(&detail)
-                )))
-            } else {
-                Err(AppError::ExternalServiceUnavailable(format!(
-                    "PMS {what} failed: {status} {}",
-                    truncate_refusal_body(&detail)
-                )))
-            };
+            // A19: the PMS's own `reason` wins when it sent one. It is
+            // strictly better information than the status — `sold_out` and
+            // `last_room_held_for_desk` are the same 409 — and it is what
+            // the guest's copy is keyed on. Availability goes through here
+            // too, so a closed channel says "closed" on the first screen of
+            // the flow rather than only on the create.
+            if let Some(reason) = PmsReason::from_body(&detail) {
+                tracing::warn!(
+                    pms_status = status.as_u16(),
+                    reason = reason.as_str(),
+                    what = %what,
+                    "PMS refused with a machine reason"
+                );
+                return Err(reason.into_app_error());
+            }
+            return Err(map_status_error(status, &detail, what));
         }
         response.json::<T>().await.map_err(|e| {
             AppError::ExternalServiceUnavailable(format!("PMS {what} response malformed: {e}"))
         })
+    }
+}
+
+/// The pre-A19 mapping: infer intent from the status alone.
+///
+/// Still the fallback for a PMS that sent no `reason` — an older build, a
+/// Cloudflare Access challenge, an nginx error page, anything between us
+/// and the channel that answered instead of it.
+///
+/// The split B1 drew: a 4xx that is about the *request* — bad dates, a room
+/// type that no longer exists — is the guest's to fix, so it surfaces as a
+/// client error. A 401 (rotated `LOYALTY_CHANNEL_TOKEN`), a 403
+/// (`HFVILLE_WRITES_ENABLED` off) or a 404 (channel router not mounted,
+/// which is what a PMS with a dead PG pool looks like from out here) is
+/// *ours*, and telling the guest "bad request" about our own expired
+/// credential is both wrong and unhelpful.
+fn map_status_error(status: reqwest::StatusCode, detail: &str, what: &str) -> AppError {
+    if status.is_client_error() && !NOT_THE_CALLERS_FAULT.contains(&status.as_u16()) {
+        AppError::BadRequest(format!(
+            "PMS rejected {what}: {}",
+            truncate_refusal_body(detail)
+        ))
+    } else {
+        AppError::ExternalServiceUnavailable(format!(
+            "PMS {what} failed: {status} {}",
+            truncate_refusal_body(detail)
+        ))
     }
 }
 
@@ -1270,6 +1706,12 @@ mod tests {
 
     const BASE: &str = "https://pms.example.com";
 
+    /// The base every URL test builds from, parsed the way production
+    /// parses it.
+    fn base() -> Url {
+        validate_pms_base_url(BASE).expect("the prod shape is accepted")
+    }
+
     /// Every shape the PMS has been seen to issue, plus the boundary.
     #[test]
     fn accepts_a_plain_booking_token() {
@@ -1355,18 +1797,197 @@ mod tests {
     /// The whole point of the type: a rejected id never reaches a URL.
     #[test]
     fn a_rejected_id_produces_no_url() {
+        let base = base();
         assert_eq!(
-            action_url(BASE, "../../admin/keys", "release"),
-            Err(PmsBookingIdError::IllegalCharacter)
+            action_url(&base, "../../admin/keys", "release"),
+            Err(PmsBookingIdError::IllegalCharacter.into())
         );
         assert_eq!(
-            action_url(BASE, "//evil.example.com", "payment-verified"),
-            Err(PmsBookingIdError::IllegalCharacter)
+            action_url(&base, "//evil.example.com", "payment-verified"),
+            Err(PmsBookingIdError::IllegalCharacter.into())
         );
         assert_eq!(
-            action_url(BASE, "", "release"),
-            Err(PmsBookingIdError::Empty)
+            action_url(&base, "", "release"),
+            Err(PmsBookingIdError::Empty.into())
         );
+    }
+
+    // ========================================================================
+    // The base URL is parsed once, and is the only thing that picks a host
+    // ========================================================================
+
+    /// The shapes production and the test suite actually use.
+    ///
+    /// The dotless-host case is not a curiosity: it is a Docker Compose
+    /// service name, which is how this app reaches the PMS on a shared
+    /// network, and it is why plain `http` has an exception at all.
+    #[test]
+    fn the_validator_accepts_every_shape_we_deploy() {
+        for raw in [
+            "https://pms.example.com",
+            "https://pms.example.com/",
+            "https://pms.example.com:8443",
+            "https://pms.example.com/hotel",
+            "http://localhost:3000",
+            "http://127.0.0.1:8080",
+            "http://[::1]:8080",
+            "http://host.docker.internal:3000",
+            "http://new-hotel-backend:8080",
+        ] {
+            assert!(
+                validate_pms_base_url(raw).is_ok(),
+                "{raw} is a base we deploy and must be accepted"
+            );
+        }
+    }
+
+    /// Plain http to anything routable would put the channel bearer token
+    /// on the wire in clear text on every availability call.
+    #[test]
+    fn the_validator_rejects_plain_http_to_a_public_host() {
+        for raw in [
+            "http://pms.example.com",
+            "http://pms.example.com:8080/hotel",
+            "http://203.0.113.10:8080",
+            "http://192.168.1.10",
+        ] {
+            assert_eq!(
+                validate_pms_base_url(raw),
+                Err(PmsBaseUrlError::InsecureScheme),
+                "{raw} must be refused"
+            );
+        }
+    }
+
+    /// Everything else the value must not be.
+    #[test]
+    fn the_validator_rejects_a_base_that_is_not_a_plain_endpoint() {
+        for (raw, expected) in [
+            // Credentials in a URL end up in every log line that prints it.
+            (
+                "https://user:pass@pms.example.com",
+                PmsBaseUrlError::HasCredentials,
+            ),
+            (
+                "https://user@pms.example.com",
+                PmsBaseUrlError::HasCredentials,
+            ),
+            // A query or fragment on a *base* is a pasted full URL, and
+            // `Url::join` would drop it without a word.
+            (
+                "https://pms.example.com/?token=abc",
+                PmsBaseUrlError::HasQueryOrFragment,
+            ),
+            (
+                "https://pms.example.com/#frag",
+                PmsBaseUrlError::HasQueryOrFragment,
+            ),
+            // Not a PMS. The scheme is checked before the host so the
+            // message names the real problem: `file:///etc/passwd` has no
+            // host *either*, and "PMS_BASE_URL has no host" would send an
+            // operator hunting for a typo in a value whose whole shape is
+            // wrong.
+            ("file:///etc/passwd", PmsBaseUrlError::UnsupportedScheme),
+            ("ftp://pms.example.com", PmsBaseUrlError::UnsupportedScheme),
+            ("data:text/plain,hello", PmsBaseUrlError::UnsupportedScheme),
+            // Right scheme, nothing to send to.
+            ("https://", PmsBaseUrlError::Unparseable),
+            // Not a URL at all — the shape of an unset variable that
+            // someone filled in with a hostname.
+            ("pms.example.com", PmsBaseUrlError::Unparseable),
+            ("", PmsBaseUrlError::Unparseable),
+            ("   ", PmsBaseUrlError::Unparseable),
+        ] {
+            assert_eq!(
+                validate_pms_base_url(raw),
+                Err(expected),
+                "{raw:?} must be refused"
+            );
+        }
+    }
+
+    /// A base that carries a path prefix keeps it.
+    ///
+    /// `Url::join` replaces the last segment of a path that does not end in
+    /// a slash, so without the normalisation in the validator
+    /// `https://pms.example.com/hotel` + `api/channel/availability` would
+    /// resolve to `/api/channel/availability` and quietly drop the prefix —
+    /// a 404 at deploy time, from a value that looked right.
+    #[test]
+    fn a_base_path_prefix_survives_the_join() {
+        let base = validate_pms_base_url("https://pms.example.com/hotel").unwrap();
+        assert_eq!(base.as_str(), "https://pms.example.com/hotel/");
+        assert_eq!(
+            base.join("api/channel/availability").unwrap().as_str(),
+            "https://pms.example.com/hotel/api/channel/availability"
+        );
+        assert_eq!(
+            action_url(&base, "HF-42", "release").unwrap().as_str(),
+            "https://pms.example.com/hotel/api/channel/bookings/HF-42/release"
+        );
+    }
+
+    /// The ordinary case, spelled out: the host, scheme and port come from
+    /// the base and the id is one segment.
+    #[test]
+    fn an_accepted_id_lands_on_the_pms_as_one_path_segment() {
+        let base = base();
+        assert_eq!(
+            action_url(&base, "hf-2026-000417", "payment-verified")
+                .unwrap()
+                .as_str(),
+            "https://pms.example.com/api/channel/bookings/hf-2026-000417/payment-verified"
+        );
+        assert_eq!(
+            base.join("api/channel/bookings").unwrap().as_str(),
+            "https://pms.example.com/api/channel/bookings"
+        );
+    }
+
+    /// Belt and braces on the encoder: even if the allow-list were ever
+    /// loosened, an id cannot grow into a path, an authority, a query or a
+    /// fragment, because it is percent-encoded before the relative path is
+    /// assembled and joined.
+    ///
+    /// Asserted against the encode-then-join step rather than through
+    /// `action_url`, which refuses all of these before they get there — the
+    /// point is that the second line of defence is real and not a comment.
+    #[test]
+    fn an_encoded_id_can_never_add_a_path_element() {
+        for hostile in [
+            "../../admin/keys",
+            "//evil.example.com",
+            "x?token=1",
+            "x#frag",
+            "x/y",
+        ] {
+            let segment = utf8_percent_encode(hostile, PMS_PATH_SEGMENT);
+            let url = base()
+                .join(&format!("api/channel/bookings/{segment}/release"))
+                .expect("an encoded segment always resolves");
+            assert_eq!(
+                url.host_str(),
+                Some("pms.example.com"),
+                "{hostile:?} must not move the request to another host"
+            );
+            assert!(
+                url.path().starts_with("/api/channel/bookings/"),
+                "{hostile:?} must stay inside the bookings path: {url}"
+            );
+            assert!(
+                url.path().ends_with("/release"),
+                "{hostile:?} must not swallow the action: {url}"
+            );
+            assert!(
+                url.query().is_none() && url.fragment().is_none(),
+                "{hostile:?} must not open a query or fragment: {url}"
+            );
+            assert_eq!(
+                url.path_segments().unwrap().count(),
+                5,
+                "{hostile:?} must stay one segment: {url}"
+            );
+        }
     }
 
     fn hold_request(phone: &str, membership: Option<&str>) -> PmsCreateBookingRequest {
@@ -1714,16 +2335,22 @@ mod tests {
     }
 
     /// Behaviour for a valid id is byte-for-byte what it was before the
-    /// allow-list existed — the encoder touches nothing the allow-list
-    /// admits.
+    /// allow-list and the parsed base existed — the encoder touches
+    /// nothing the allow-list admits, and the join reproduces the string
+    /// the old `format!` produced.
     #[test]
     fn a_valid_id_builds_exactly_the_url_it_always_did() {
+        let base = base();
         assert_eq!(
-            action_url(BASE, "hf-2026-000417", "payment-verified").unwrap(),
+            action_url(&base, "hf-2026-000417", "payment-verified")
+                .unwrap()
+                .as_str(),
             "https://pms.example.com/api/channel/bookings/hf-2026-000417/payment-verified"
         );
         assert_eq!(
-            action_url(BASE, "booking_00042", "release").unwrap(),
+            action_url(&base, "booking_00042", "release")
+                .unwrap()
+                .as_str(),
             "https://pms.example.com/api/channel/bookings/booking_00042/release"
         );
     }

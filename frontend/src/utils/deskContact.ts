@@ -1,22 +1,25 @@
 import type { Property } from '../services/channelBookingService';
 
 /**
- * The desk phone number a guest is told to call when a deposit link is
- * expired, revoked, or simply not working.
- *
- * B16 supplies the real numbers; until it does, both variables are blank in
- * every environment and `deskPhone()` returns null. Callers must render a
- * "contact the front desk" line WITHOUT a number in that case rather than
- * hide the fallback altogether — a guest stuck on a payment page always
- * needs a way out, even a vague one.
+ * The desk phone number a guest is told to call.
  *
  * These are BUILD-TIME substitutions, not runtime configuration: Vite
- * statically replaces `import.meta.env.VITE_*` when the bundle is built, so
- * reading them inside the function buys testability (a test can stub
- * `import.meta.env` per case) and nothing else. When B16 supplies the
- * numbers, they have to reach the frontend *build* step in `deploy.yml` and
- * the image has to be rebuilt and redeployed — adding them to the running
- * container's environment changes nothing.
+ * statically replaces `import.meta.env.VITE_*` when the bundle is built. The
+ * wiring is in place — `frontend/Dockerfile` takes
+ * `VITE_DESK_PHONE_HF` / `VITE_DESK_PHONE_HFVILLE` as build args and
+ * `ci-build-e2e.yml` fills them from the repository variables
+ * `DESK_PHONE_HF` / `DESK_PHONE_HFVILLE` (#414) — so a number change is a
+ * variable edit plus a rebuild, and editing the running container's
+ * environment does nothing.
+ *
+ * Reading the variables inside the function rather than at module scope
+ * buys testability (a test can stub `import.meta.env` per case) and nothing
+ * else.
+ *
+ * A blank variable still answers null, and callers must render a "contact
+ * the front desk" line WITHOUT a number in that case rather than hide the
+ * fallback altogether: a local build, a preview, or a property whose number
+ * has not been set yet must still leave a guest a way out.
  */
 export function deskPhone(property: Property | null | undefined): string | null {
   if (!property) {
