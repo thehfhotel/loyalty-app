@@ -61,13 +61,20 @@ and the deposit-link one — is observed without either route handler knowing.
   anyway.
 - **`quota_exceeded`** degrades on the **first** refusal. Quota does not fix
   itself on retry.
-- Once degraded, **nothing further is sent** until the vendor answers again.
-  One outage is one alert, however long it lasts.
+- Once degraded **and announced**, nothing further is sent until the vendor
+  answers again. One outage is one alert, however long it lasts.
 - The first answer after an announced outage sends **one** recovery notice.
 - `SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS` (default **60**) stops a flapping
-  vendor turning one bad hour into forty emails: a degradation inside the
-  cooldown is recorded but not announced, and a recovery is only sent for an
-  episode that *was* announced.
+  vendor turning one bad hour into forty emails: a degradation that begins
+  inside the cooldown is recorded but not announced, and a recovery is only
+  sent for an episode that *was* announced.
+- **The cooldown delays an alert; it never cancels one.** An episode that was
+  suppressed on the way in is announced by the first failure at or after the
+  cooldown expiry, provided it is still failing — and its recovery is then
+  announced too. Without that, an outage beginning inside the previous
+  cooldown stayed silent for ever, the desk's last message read "recovered"
+  while slips piled up, and a quota exhaustion landing in that window was
+  swallowed for the rest of the month.
 
 ### The monthly quota warning
 
@@ -86,7 +93,7 @@ the first seven hours of every month under the previous one.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SLIPOK_MONTHLY_QUOTA` | *(blank — unknown)* | Monthly check allowance. Blank ⇒ no quota warning ever. |
+| `SLIPOK_MONTHLY_QUOTA` | *(blank — unknown)* | Monthly check allowance, `1`–`10000000`. Blank, zero, a typo or an out-of-range value ⇒ unknown ⇒ no quota warning ever (the ceiling keeps the 80 % arithmetic inside an `i64`); an out-of-range value is logged at WARN. |
 | `SLIPOK_DEGRADE_FAILURE_THRESHOLD` | `3` | Consecutive no-verdict calls before degrading (quota ignores it). |
 | `SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS` | `60` | Minimum gap between degradation alerts. |
 
@@ -154,12 +161,23 @@ what a person would do:
   on the response so nobody has to guess which one was used).
 
 **The recommendation.** `verdict` is exactly `flip` or `keep shadow`.
-`flip` needs **all** of: `rowsConsidered ≥ 20`,
-`machineVerifiedHumanRejected == 0`, and
-`humanVerifiedMachineManual / humanVerifiedRows ≤ 0.20`. Otherwise
+`flip` needs **all four** of: `rowsConsidered ≥ 20`;
+`machineVerifiedHumanRejected == 0`;
+`humanVerifiedMachineManual / humanVerifiedRows ≤ 0.20`; **and
+`humanVerifiedRows > 0`**, so that rate has a denominator at all — a window
+in which a person approved nothing is not a window proving the machine is
+cheap to run, it is a window with nothing to measure, and `0 / 0` must not
+read as a flawless 0 %. The fourth shares the `false_manual_rate` label,
+because it is the same threshold failing for want of data. Otherwise
 `failedThresholds` names which of `rows`,
 `machine_verified_human_rejected`, `false_manual_rate` did not hold and
 `reason` says it in a sentence.
+
+**Bounds.** The window may span at most **400 days** (`from <= to` is
+ordered, not bounded — a longer span is a `400`), and at most **20,000**
+slips are read; `rowsTruncated` says when that bit, and a truncated report is
+not a recommendation. The disagreement *list* is separately capped at 200
+with `disagreementsTruncated`, and the counts beside it stay exact.
 
 Read `overall` for the decision — `SLIPOK_AUTO_VERIFY` is one global
 variable — and the per-property sections to spot a single bad property
@@ -177,6 +195,8 @@ image URLs.
   "to": "2026-09-11",
   "property": null,                 // echo of the filter; null = both
   "generatedAt": "2026-09-12T05:00:00Z",
+  "rowsTruncated": false,           // true => the window held more than 20,000 slips
+
   "overall": {                      // every row in the window, combined
     "property": "all",
     "rowsConsidered": 42,

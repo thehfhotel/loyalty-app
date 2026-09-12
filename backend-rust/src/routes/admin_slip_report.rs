@@ -59,10 +59,25 @@
 //!   [`MAX_FALSE_MANUAL_RATE`]. This one only costs work — reception checks
 //!   it by hand, which is what happens today anyway — so it is a rate, and
 //!   the denominator is the human-verified rows (`humanVerifiedRows` on the
-//!   response, so nobody has to guess which denominator was used).
+//!   response, so nobody has to guess which denominator was used);
+//! * **at least one** human-verified row, so that rate has a denominator at
+//!   all. A window in which a person approved nothing is not a window in
+//!   which the machine was proved cheap to run — it is a window with nothing
+//!   to measure, and `0 / 0` must not read as a flawless 0 %. This shares
+//!   the `false_manual_rate` label because it is the same threshold failing
+//!   for want of data.
 //!
 //! Anything else is `keep shadow`, with `failedThresholds` naming which of
-//! the three did not hold and `reason` saying it in a sentence.
+//! them did not hold and `reason` saying it in a sentence.
+//!
+//! ## Bounds
+//!
+//! The window may span at most [`MAX_WINDOW_DAYS`] days (`from <= to` alone
+//! is ordered, not bounded), and at most [`MAX_ROWS_SCANNED`] slips are read
+//! — `rowsTruncated` on the response says when that bit, because every count
+//! is computed from the rows actually read. The disagreement *list* is
+//! separately capped at [`MAX_DISAGREEMENTS_LISTED`] with
+//! `disagreementsTruncated`; the counts beside it stay exact.
 //!
 //! ## PII
 //!
@@ -113,6 +128,26 @@ const DEFAULT_WINDOW_DAYS: i64 = 14;
 /// Ceiling on how many disagreement rows one section lists. A report the
 /// owner cannot open is not a report; the counts above it stay exact.
 const MAX_DISAGREEMENTS_LISTED: usize = 200;
+
+/// Longest window the report will answer for, in days.
+///
+/// `from <= to` on its own is not a bound: `from=1970-01-01` is a perfectly
+/// ordered window that scans the whole table. A shadow run is fourteen days
+/// and a year of history is already far more than any flip decision needs,
+/// so 400 days leaves room for "the last year and a bit" and refuses the
+/// rest rather than quietly spending the database on it.
+const MAX_WINDOW_DAYS: i64 = 400;
+
+/// Ceiling on how many slip rows one report reads.
+///
+/// The window cap above bounds this in practice — at real slip volumes 400
+/// days is a few thousand rows — but the two are independent: volume could
+/// grow without the window changing. Every count in the report is computed
+/// from the rows actually read, so hitting this ceiling would silently
+/// understate them; [`AgreementReport::rows_truncated`] says so on the
+/// response instead, and a truncated report must not be read as a
+/// recommendation.
+const MAX_ROWS_SCANNED: i64 = 20_000;
 
 /// Asia/Bangkok. `from` and `to` are dates a person typed while looking at a
 /// Thai calendar, so they are resolved as Thai days, not UTC ones.
@@ -281,6 +316,11 @@ pub struct AgreementReport {
     /// Echo of the `property` filter, or null when both were asked for.
     pub property: Option<String>,
     pub generated_at: DateTime<Utc>,
+    /// True when the window held more slips than [`MAX_ROWS_SCANNED`] and the
+    /// report therefore describes only the oldest of them. Every count below
+    /// is exact *for the rows read*; a truncated report is not a
+    /// recommendation, so narrow the window and ask again.
+    pub rows_truncated: bool,
     /// Every row in the window, combined. The flag being flipped is one
     /// global environment variable, so this is the block the decision rests
     /// on; the per-property split below is how a single bad property is
@@ -302,6 +342,7 @@ pub fn build_report(
     to: NaiveDate,
     property: Option<String>,
     generated_at: DateTime<Utc>,
+    rows_truncated: bool,
 ) -> AgreementReport {
     let overall = summarise("all", &rows);
 
@@ -325,6 +366,7 @@ pub fn build_report(
         to,
         property,
         generated_at,
+        rows_truncated,
         overall,
         properties,
     }
@@ -562,6 +604,16 @@ fn resolve_window(
         ));
     }
 
+    // Ordered is not the same as bounded: `from=1970-01-01&to=today` passes
+    // the check above and scans the whole table. Refuse it rather than spend
+    // the database on a window no flip decision needs.
+    let span_days = (to - from).num_days() + 1;
+    if span_days > MAX_WINDOW_DAYS {
+        return Err(AppError::BadRequest(format!(
+            "the window may span at most {MAX_WINDOW_DAYS} days; {span_days} were asked for"
+        )));
+    }
+
     let start = offset
         .from_local_datetime(&from.and_hms_opt(0, 0, 0).expect("midnight exists"))
         .single()
@@ -631,6 +683,7 @@ async fn agreement_report(
           AND s.admin_verified_by IS DISTINCT FROM $5
           AND ($3::text IS NULL OR b.property = $3)
         ORDER BY s.slipok_checked_at ASC, s.id ASC
+        LIMIT $6
         "#,
     )
     .bind(start)
@@ -638,11 +691,18 @@ async fn agreement_report(
     .bind(property.as_deref())
     .bind(UNKNOWN_PROPERTY)
     .bind(crate::services::slip_confirm::SLIPOK_SYSTEM_USER_ID)
+    // One more than the ceiling, so a full page is distinguishable from a
+    // window that happens to hold exactly `MAX_ROWS_SCANNED` slips. The
+    // extra row is dropped below; it is only ever a flag.
+    .bind(MAX_ROWS_SCANNED + 1)
     .fetch_all(state.db())
     .await?;
 
+    let rows_truncated = rows.len() as i64 > MAX_ROWS_SCANNED;
+
     let rows = rows
         .into_iter()
+        .take(MAX_ROWS_SCANNED as usize)
         .map(|row| {
             let decided_by: Option<Uuid> = row.try_get("admin_verified_by")?;
             // Belt and braces: the SQL already excludes the system actor, so
@@ -665,7 +725,14 @@ async fn agreement_report(
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()?;
 
-    Ok(Json(build_report(rows, from, to, property, now)))
+    Ok(Json(build_report(
+        rows,
+        from,
+        to,
+        property,
+        now,
+        rows_truncated,
+    )))
 }
 
 // ---------------------------------------------------------------------------
@@ -717,6 +784,7 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 9, 11).expect("date"),
             None,
             Utc::now(),
+            false,
         )
     }
 
@@ -991,6 +1059,7 @@ mod tests {
             "\"reasonHistogram\"",
             "\"disagreements\"",
             "\"disagreementsTruncated\"",
+            "\"rowsTruncated\"",
             "\"recommendation\"",
             "\"failedThresholds\"",
             "\"slipId\"",
@@ -1046,6 +1115,49 @@ mod tests {
         // 2026-09-11 20:00 UTC is already 2026-09-12 in Bangkok.
         assert_eq!(to, NaiveDate::from_ymd_opt(2026, 9, 12).expect("date"));
         assert_eq!(end.to_rfc3339(), "2026-09-12T17:00:00+00:00");
+    }
+
+    /// Ordered is not bounded: `from=1970-01-01` passes `from <= to` and
+    /// would scan the whole table.
+    #[test]
+    fn an_unbounded_window_is_refused() {
+        let whole_history = AgreementReportQuery {
+            from: Some("1970-01-01".to_string()),
+            to: Some("2026-09-11".to_string()),
+            property: None,
+        };
+        let err = resolve_window(&whole_history, Utc::now())
+            .expect_err("a decades-long window must be refused");
+        assert!(
+            matches!(err, AppError::BadRequest(ref m) if m.contains("at most")),
+            "expected a bad-request naming the ceiling, got {err:?}"
+        );
+
+        // Exactly at the ceiling is accepted; one day more is not.
+        let to = NaiveDate::from_ymd_opt(2026, 9, 11).expect("date");
+        let at_ceiling = AgreementReportQuery {
+            from: Some((to - Duration::days(MAX_WINDOW_DAYS - 1)).to_string()),
+            to: Some(to.to_string()),
+            property: None,
+        };
+        assert!(resolve_window(&at_ceiling, Utc::now()).is_ok());
+
+        let one_too_many = AgreementReportQuery {
+            from: Some((to - Duration::days(MAX_WINDOW_DAYS)).to_string()),
+            to: Some(to.to_string()),
+            property: None,
+        };
+        assert!(resolve_window(&one_too_many, Utc::now()).is_err());
+    }
+
+    /// The default window has to fit inside the ceiling it is bounded by,
+    /// or the endpoint refuses its own default.
+    #[test]
+    fn the_default_window_fits_inside_the_ceiling() {
+        // A compile-time check, so shrinking the ceiling below the default
+        // fails the build rather than one test run.
+        const _: () = assert!(DEFAULT_WINDOW_DAYS <= MAX_WINDOW_DAYS);
+        assert!(resolve_window(&AgreementReportQuery::default(), Utc::now()).is_ok());
     }
 
     #[test]

@@ -288,6 +288,111 @@ async fn one_alert_down_silence_while_down_one_notice_back_up() {
     app.cleanup().await.expect("cleanup");
 }
 
+/// The cooldown delays an alert; it must never cancel one — asserted across
+/// the *stored* episode, because that is where it went wrong: `announced`
+/// survives in `slipok_health` between calls, and nothing used to
+/// re-evaluate it once an episode had been suppressed.
+///
+/// The sequence that used to go permanently silent: announce, recover, go
+/// down again inside the cooldown, and stay down. Every later failure
+/// short-circuited on `degraded`, so hours past the cooldown nothing had
+/// been said — the desk's last message read "recovered" while every slip
+/// queued for manual review — and the eventual recovery was silent too,
+/// because a recovery notice is only sent for an announced episode. A quota
+/// exhaustion landing in that window was swallowed for the rest of the
+/// month.
+#[tokio::test]
+async fn a_suppressed_outage_that_stays_down_is_announced_after_the_cooldown() {
+    let app = TestApp::new().await.expect("test app");
+    let mut config = config_with_mailboxes();
+    // One mailbox, so each event is exactly one message.
+    config.booking_notify.hfville = None;
+    let email = RecordingEmailService::new();
+
+    // Episode one: announced, then recovered.
+    record_with_service(
+        app.db(),
+        &config,
+        &email,
+        CheckOutcome::QuotaExceeded,
+        at(0),
+    )
+    .await;
+    record_with_service(app.db(), &config, &email, CheckOutcome::Answered, at(1)).await;
+    assert_eq!(email.sent().len(), 2, "one alert, one recovery");
+
+    // Episode two starts inside the 60-minute cooldown: degraded, suppressed.
+    record_with_service(
+        app.db(),
+        &config,
+        &email,
+        CheckOutcome::QuotaExceeded,
+        at(5),
+    )
+    .await;
+    assert_eq!(email.sent().len(), 2, "suppressed by the cooldown");
+    assert_eq!(
+        stored_state(app.db()).await,
+        (1, true, false),
+        "degraded, and knowingly un-announced"
+    );
+
+    // …and it stays down. Still nothing while the cooldown holds.
+    for minute in [10, 20, 30, 50, 59] {
+        record_with_service(
+            app.db(),
+            &config,
+            &email,
+            CheckOutcome::QuotaExceeded,
+            at(minute),
+        )
+        .await;
+    }
+    assert_eq!(email.sent().len(), 2, "still inside the cooldown");
+
+    // The first failure past the cooldown says it — once.
+    for minute in [61, 62, 63, 70] {
+        record_with_service(
+            app.db(),
+            &config,
+            &email,
+            CheckOutcome::QuotaExceeded,
+            at(minute),
+        )
+        .await;
+    }
+    let after = email.sent();
+    assert_eq!(
+        after.len(),
+        3,
+        "exactly one late alert, not one per failure — got {:?}",
+        email.subjects()
+    );
+    assert!(after[2].subject.contains("รอพนักงานตรวจ"));
+    let (_, degraded, announced) = stored_state(app.db()).await;
+    assert!(degraded, "still degraded");
+    assert!(
+        announced,
+        "and now announced, so the recovery will be heard"
+    );
+
+    // And because it was announced, the recovery is announced too — the desk
+    // is never left with "recovered" as the last thing it heard.
+    record_with_service(app.db(), &config, &email, CheckOutcome::Answered, at(80)).await;
+    assert_eq!(
+        email.subjects(),
+        vec![
+            "ระบบตรวจสลิปอัตโนมัติหยุดทำงาน — สลิปรอพนักงานตรวจ".to_string(),
+            "ระบบตรวจสลิปอัตโนมัติกลับมาทำงานแล้ว".to_string(),
+            "ระบบตรวจสลิปอัตโนมัติหยุดทำงาน — สลิปรอพนักงานตรวจ".to_string(),
+            "ระบบตรวจสลิปอัตโนมัติกลับมาทำงานแล้ว".to_string(),
+        ]
+    );
+    assert_eq!(stored_state(app.db()).await, (0, false, false));
+
+    app.cleanup().await.expect("cleanup");
+}
+
 /// Quota does not wait for the threshold: the first refusal is the outage.
 #[tokio::test]
 async fn a_quota_refusal_degrades_on_the_first_one() {

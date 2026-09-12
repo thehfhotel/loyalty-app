@@ -283,11 +283,47 @@ pub fn next_state(
 
     next.consecutive_failures = current.consecutive_failures.saturating_add(1);
 
+    // Has enough time passed since the last thing we said for us to be
+    // allowed to speak again? Computed once, because it gates both the first
+    // announcement of an episode and the *late* announcement of one the
+    // cooldown suppressed.
+    let cooled_down = current
+        .last_alert_at
+        .map_or(true, |last| now - last >= policy.cooldown);
+
     if current.degraded {
-        // Already down and already (possibly) announced. Nothing more to say
-        // until it comes back — this is the branch that makes "repeated
-        // failures send none" true.
-        return Transition { next, alert: None };
+        // Already down. While the episode is announced there is nothing more
+        // to say until it comes back — that is what makes "repeated failures
+        // send none" true.
+        //
+        // An **unannounced** episode is a different thing. The cooldown
+        // delays an alert; it must never cancel one. Without this branch, an
+        // outage that began inside the cooldown of the previous one stayed
+        // silent for ever: every later failure short-circuited here, the
+        // desk's last message said "recovered" while slips piled up for
+        // manual review, and — because a recovery notice is only sent for an
+        // announced episode — the eventual recovery was silent too. A quota
+        // exhaustion landing in that window was swallowed for the rest of the
+        // month.
+        if current.announced || !cooled_down {
+            return Transition { next, alert: None };
+        }
+
+        // Speak now. `degraded_since` stays as the episode's own start — the
+        // outage began when it began, not when we got around to saying so —
+        // but the reason reported is the one that is still failing *now*,
+        // which is what the desk needs in order to act.
+        next.announced = true;
+        next.last_alert_at = Some(now);
+        next.degraded_reason = Some(reason.to_string());
+        let consecutive_failures = next.consecutive_failures;
+        return Transition {
+            next,
+            alert: Some(Alert::Degraded {
+                reason,
+                consecutive_failures,
+            }),
+        };
     }
 
     let threshold = i32::try_from(policy.failure_threshold).unwrap_or(i32::MAX);
@@ -300,10 +336,9 @@ pub fn next_state(
     next.degraded_since = Some(now);
     next.degraded_reason = Some(reason.to_string());
 
-    // Cooldown. A vendor that flaps cannot spend the desk's attention.
-    let cooled_down = current
-        .last_alert_at
-        .map_or(true, |last| now - last >= policy.cooldown);
+    // Cooldown. A vendor that flaps cannot spend the desk's attention — but
+    // the episode is only *deferred*: the branch above announces it as soon
+    // as the cooldown elapses, provided it is still failing.
     if !cooled_down {
         next.announced = false;
         return Transition { next, alert: None };
@@ -329,7 +364,16 @@ pub fn next_state(
 /// once per check after the line is crossed.
 pub fn quota_warning_due(used: i64, quota: Option<i64>, already_warned: bool) -> bool {
     match quota {
-        Some(quota) if quota > 0 && !already_warned => used * 100 >= quota * QUOTA_WARNING_PERCENT,
+        Some(quota) if quota > 0 && !already_warned => {
+            // Saturating, not plain multiplication. `SlipokConfig::monthly_quota`
+            // already refuses anything above `MAX_MONTHLY_QUOTA` precisely so
+            // this cannot overflow, but this function is `pub` and takes a
+            // bare `i64`: a future caller that skips the config accessor must
+            // not be able to panic the detached task that records a check.
+            // Saturating also gives the right answer — an unreachable ceiling
+            // is never 80 % consumed.
+            used.saturating_mul(100) >= quota.saturating_mul(QUOTA_WARNING_PERCENT)
+        },
         _ => false,
     }
 }
@@ -872,6 +916,66 @@ mod tests {
         ]);
         assert_eq!(alerts.len(), 3);
         assert!(matches!(alerts[2], Alert::Degraded { .. }));
+    }
+
+    /// The cooldown **delays** an alert; it must never cancel one.
+    ///
+    /// The sequence that used to go permanently silent: an outage is
+    /// announced and recovers, the vendor goes down again inside the
+    /// cooldown — so that episode is suppressed — and then it *stays* down.
+    /// Every later failure used to short-circuit on `degraded`, so hours
+    /// past the cooldown nothing had been said; the desk's last message read
+    /// "recovered" while every slip queued for manual review, and the
+    /// eventual recovery was silent too because no alert had gone out for
+    /// the episode. A quota exhaustion landing in that window was swallowed
+    /// for the rest of the month.
+    #[test]
+    fn a_suppressed_outage_that_stays_down_is_announced_once_the_cooldown_passes() {
+        let mut steps = vec![
+            // Episode one: announced at minute 0, recovers at minute 1.
+            (0, CheckOutcome::QuotaExceeded),
+            (1, CheckOutcome::Answered),
+        ];
+        // Episode two starts at minute 5, well inside the 60-minute cooldown,
+        // and never recovers: a failure every minute out to minute 90.
+        steps.extend((5..=90).map(|minute| (minute, CheckOutcome::QuotaExceeded)));
+        // …and then the vendor comes back.
+        steps.push((95, CheckOutcome::Answered));
+
+        let (state, alerts) = run(&steps);
+
+        assert_eq!(
+            alerts.len(),
+            4,
+            "degraded, recovered, the late degraded, and its recovery — got {alerts:?}"
+        );
+        assert!(matches!(alerts[0], Alert::Degraded { .. }));
+        assert!(matches!(alerts[1], Alert::Recovered { .. }));
+
+        // Exactly one alert for the second episode, and it lands on the first
+        // failure at or after the cooldown expiry (minute 0 + 60), not on the
+        // one that started the episode at minute 5.
+        assert_eq!(
+            alerts[2],
+            Alert::Degraded {
+                reason: "quota_exceeded",
+                // The run was cleared by the answer at minute 1, so this
+                // counts minutes 5..=60 inclusive.
+                consecutive_failures: 56,
+            }
+        );
+
+        // And because it was announced, the recovery is announced too — the
+        // desk is never left with "recovered" as the last thing it heard.
+        assert_eq!(
+            alerts[3],
+            Alert::Recovered {
+                degraded_since: Some(at(5))
+            },
+            "the episode began at minute 5, even though we only said so at 60"
+        );
+        assert!(!state.degraded);
+        assert!(!state.announced);
     }
 
     /// A recovery from an outage that was never announced is silence, not a

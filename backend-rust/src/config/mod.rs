@@ -455,6 +455,17 @@ pub const DEFAULT_DEGRADE_FAILURE_THRESHOLD: u32 = 3;
 /// Percentage of the monthly quota at which the "running out" warning fires.
 pub const QUOTA_WARNING_PERCENT: i64 = 80;
 
+/// Largest monthly quota this accepts — ten million checks.
+///
+/// A bound, not a style preference. The 80 % test is `used * 100 >= quota *
+/// [`QUOTA_WARNING_PERCENT`]`, so an absurd value overflows `i64` and panics
+/// in a debug build — inside the detached task that records a slip check,
+/// where nothing would report it. Ten million is four orders of magnitude
+/// above any plan a hotel buys, so no legitimate setting is excluded, and an
+/// out-of-range value reads as *unknown* (silent) rather than as a ceiling
+/// nobody can reach.
+pub const MAX_MONTHLY_QUOTA: i64 = 10_000_000;
+
 impl SlipokConfig {
     pub fn is_configured(&self) -> bool {
         self.branch_id.is_some() && self.api_key.is_some()
@@ -462,14 +473,27 @@ impl SlipokConfig {
 
     /// The monthly quota, or `None` while the owner has not recorded one.
     ///
-    /// Only a positive whole number counts. A zero, a negative or a typo is
-    /// treated as unknown rather than as "you have already spent your
-    /// allowance", which is what a `0` would otherwise mean to the 80 %
-    /// arithmetic.
+    /// Only a positive whole number up to [`MAX_MONTHLY_QUOTA`] counts. A
+    /// zero, a negative or a typo is treated as unknown rather than as "you
+    /// have already spent your allowance", which is what a `0` would
+    /// otherwise mean to the 80 % arithmetic; an absurdly large value is
+    /// refused for the overflow reason on that constant, and logged, because
+    /// silently treating a typed-in number as "no quota" is exactly the kind
+    /// of quiet that this whole feature exists to remove.
     pub fn monthly_quota(&self) -> Option<i64> {
-        present(&self.monthly_quota)
-            .and_then(|raw| raw.parse::<i64>().ok())
-            .filter(|quota| *quota > 0)
+        let raw = present(&self.monthly_quota)?;
+        match raw.parse::<i64>() {
+            Ok(quota) if (1..=MAX_MONTHLY_QUOTA).contains(&quota) => Some(quota),
+            _ => {
+                tracing::warn!(
+                    value = %raw,
+                    max = MAX_MONTHLY_QUOTA,
+                    "SLIPOK_MONTHLY_QUOTA is not a whole number in 1..=max; \
+                     treating the monthly allowance as unknown, so no quota warning will be sent"
+                );
+                None
+            },
+        }
     }
 
     /// Minutes between degradation alerts. Falls back to the default on a
@@ -1924,6 +1948,32 @@ mod tests {
         assert_eq!(cfg(Some("-5")).monthly_quota(), None);
         assert_eq!(cfg(Some("lots")).monthly_quota(), None);
         assert_eq!(cfg(Some(" 2000 ")).monthly_quota(), Some(2000));
+
+        // The ceiling exists because the 80 % test multiplies the quota by
+        // 80: an `i64::MAX` typed into a repository variable would overflow
+        // and panic inside the detached task that records a slip check.
+        assert_eq!(
+            cfg(Some(&MAX_MONTHLY_QUOTA.to_string())).monthly_quota(),
+            Some(MAX_MONTHLY_QUOTA)
+        );
+        assert_eq!(
+            cfg(Some(&(MAX_MONTHLY_QUOTA + 1).to_string())).monthly_quota(),
+            None
+        );
+        assert_eq!(cfg(Some(&i64::MAX.to_string())).monthly_quota(), None);
+        // Wider than an i64 — a parse failure, not a range failure, and the
+        // same "unknown" answer.
+        assert_eq!(cfg(Some("99999999999999999999999")).monthly_quota(), None);
+    }
+
+    /// The overflow the ceiling prevents, asserted directly against the
+    /// arithmetic that would have panicked.
+    #[test]
+    fn the_quota_ceiling_keeps_the_eighty_percent_test_inside_an_i64() {
+        assert!(MAX_MONTHLY_QUOTA
+            .checked_mul(QUOTA_WARNING_PERCENT)
+            .is_some());
+        assert!(i64::MAX.checked_mul(QUOTA_WARNING_PERCENT).is_none());
     }
 
     /// The cooldown and the failure threshold *do* have defaults, because a
