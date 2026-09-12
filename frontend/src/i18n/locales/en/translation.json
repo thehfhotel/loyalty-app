@@ -828,7 +828,13 @@
           "autoVerifier": "SlipOK",
           "bookingNotConfirmed": "Slip verified, but the booking was not confirmed: {{reason}}",
           "bookingNotConfirmedHint": "The money arrived but the booking is still pending. Press Verify again to confirm it by hand, or edit the booking, before telling the guest.",
-          "bookingNotConfirmedReasonUnknown": "reason not recorded"
+          "bookingNotConfirmedReasonUnknown": "reason not recorded",
+          "autoVerified": "Checked automatically by SlipOK",
+          "awaitingStaffReview": "This slip is waiting for staff to check it",
+          "slipokTransRef": "Transaction reference",
+          "copyTransRef": "Copy transaction reference",
+          "transRefCopied": "Transaction reference copied",
+          "transRefCopyFailed": "Could not copy — read the reference off the screen"
         },
         "modals": {
           "needsAction": {

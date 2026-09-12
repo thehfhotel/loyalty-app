@@ -846,7 +846,13 @@
           "autoVerifier": "SlipOK",
           "bookingNotConfirmed": "ยืนยันสลิปแล้ว แต่การจองยังไม่ได้รับการยืนยัน: {{reason}}",
           "bookingNotConfirmedHint": "เงินเข้าแล้วแต่การจองยังอยู่สถานะรอยืนยัน กดยืนยันสลิปอีกครั้งเพื่อยืนยันการจองด้วยตนเอง หรือแก้ไขการจองก่อนแจ้งแขก",
-          "bookingNotConfirmedReasonUnknown": "ไม่ได้บันทึกสาเหตุไว้"
+          "bookingNotConfirmedReasonUnknown": "ไม่ได้บันทึกสาเหตุไว้",
+          "autoVerified": "ตรวจอัตโนมัติแล้ว",
+          "awaitingStaffReview": "สลิปนี้รอพนักงานตรวจสอบ",
+          "slipokTransRef": "เลขอ้างอิงธุรกรรม",
+          "copyTransRef": "คัดลอกเลขอ้างอิงธุรกรรม",
+          "transRefCopied": "คัดลอกเลขอ้างอิงแล้ว",
+          "transRefCopyFailed": "คัดลอกไม่สำเร็จ กรุณาอ่านเลขอ้างอิงจากหน้าจอ"
         },
         "modals": {
           "needsAction": {
