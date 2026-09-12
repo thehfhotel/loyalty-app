@@ -353,6 +353,142 @@ impl BookingSourceCounts {
     }
 }
 
+/// Why a friction proxy has no rate. Emitted **only** beside a `null` rate.
+///
+/// One value is reachable today. The other is the contract the brief for task
+/// D15 asked for and is documented rather than emitted: see
+/// [`FrictionCounters`] for what the schema does and does not record.
+const FRICTION_REASON_NO_DATA: &str = "no_data";
+
+/// One friction proxy: a rate, and the two counts it was computed from.
+///
+/// The counts travel with the rate because a rate alone is unreadable at the
+/// volumes this desk works at. "50%" over two links is noise and "50%" over
+/// two hundred is a problem, and a weekly pack that cannot tell them apart
+/// will chase the first one.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrictionRate {
+    /// Fraction in `0.0..=1.0`, to four decimal places — not a percent.
+    ///
+    /// `null`, never `0`, when `denominator` is 0. "0% of nothing" is a claim
+    /// the data does not support, and a standing line that quietly reads 0%
+    /// is one the weekly pack would report as an improvement.
+    pub rate: Option<f64>,
+    pub numerator: i64,
+    pub denominator: i64,
+    /// Why there is no rate. Present only when `rate` is `null`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<&'static str>,
+}
+
+impl FrictionRate {
+    fn new(numerator: i64, denominator: i64) -> Self {
+        if denominator <= 0 {
+            return Self {
+                rate: None,
+                numerator,
+                denominator,
+                reason: Some(FRICTION_REASON_NO_DATA),
+            };
+        }
+        // Four decimal places: the rate is read as a percent to one decimal,
+        // and carrying `0.16666666666666666` only makes it harder to assert
+        // on without making it more true.
+        let rate = (numerator as f64 / denominator as f64 * 10_000.0).round() / 10_000.0;
+        Self {
+            rate: Some(rate),
+            numerator,
+            denominator,
+            reason: None,
+        }
+    }
+}
+
+impl Default for FrictionRate {
+    /// Not `#[derive]`d: a derived default would be `rate: None` with no
+    /// `reason`, and the contract is that a null rate always says why. A
+    /// bucket that exists only in the bookings-by-source query gets this.
+    fn default() -> Self {
+        Self::new(0, 0)
+    }
+}
+
+/// The three friction proxies (task D15).
+///
+/// Standing lines, so the weekly pack can say whether last week's fix worked.
+/// All three are cut on the same cohort as the funnel above — the bucket the
+/// **link was issued in** — so a friction rate and a funnel stage in the same
+/// row are about the same links.
+///
+/// ## What the schema does and does not record
+///
+/// The brief asked whether the loyalty database records PMS hold expiry at
+/// all, and to report the line as `null` with `"reason": "not_instrumented"`
+/// rather than invent it. The answer is split:
+///
+/// * **The deposit-link hold is recorded.** `booking_deposit_links.expires_at`
+///   is `NOT NULL` on every link and `routes::admin_deposit_links` stamps it
+///   onto `bookings.hold_expires_at`. The admin link list already derives an
+///   `expired` state from it, and [`expired_hold_rate`](Self::expired_hold_rate)
+///   reuses that predicate verbatim — so the card and that list agree.
+/// * **The PMS-channel hold's expiry is not.** `services::pms_channel`'s sweep
+///   cancels the booking and writes the free-text
+///   `cancellation_reason = 'Payment window expired'`; there is no `expired`
+///   status in `chk_booking_status`, no `expired_at` column and no typed audit
+///   action, so an expired channel hold is indistinguishable from any other
+///   cancellation without matching English prose. The channel is also dark.
+///   Channel holds are therefore **out of** the expired-hold denominator, and
+///   the line is scoped to deposit-link holds rather than reported as a number
+///   that silently covers half its subject.
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrictionCounters {
+    /// Links whose **latest** slip still sits on `needs_action`, over links
+    /// that got a slip (`slipsUploaded`).
+    ///
+    /// Deliberately counted on `admin_status` alone, whoever wrote it — unlike
+    /// [`HumanDecisionCounts::needs_action`], which excludes the machine's.
+    /// `services::slip_confirm::revert_auto_confirm` writes `needs_action`
+    /// **without** re-stamping `admin_verified_by`, so a slip the PMS refused
+    /// after an automatic verify reads as the SlipOK actor's and lands in
+    /// `humanDecision.autoVerified`. That breakdown answers *who decided*.
+    /// This one answers *what the guest was put through*, and a guest told to
+    /// upload again felt the same friction either way. The two numbers will
+    /// therefore differ, and should.
+    pub needs_action_slip_rate: FrictionRate,
+    /// Bookings that had a slip verified and are now `cancelled`, over
+    /// bookings that had a slip verified.
+    ///
+    /// `verified` on **any** slip of the booking, not the latest one: money
+    /// that arrived and was later handed back is exactly the case this proxy
+    /// exists to catch, and the latest slip of such a booking is often the
+    /// refund conversation rather than the payment. Counted with
+    /// `COUNT(DISTINCT booking_id)`, so a booking that went through Reissue is
+    /// one booking and not two.
+    pub cancel_after_deposit_rate: FrictionRate,
+    /// Deposit-link holds that lapsed unpaid, over holds whose payment window
+    /// has **closed**.
+    ///
+    /// Numerator is `routes::admin_deposit_links`' own `expired` predicate —
+    /// not revoked, `expires_at <= NOW()`, and no verified slip on the booking
+    /// — so this count equals what the desk gets by filtering that list on
+    /// "expired".
+    ///
+    /// The denominator is the settled cohort, not every link issued, and the
+    /// two exclusions are the whole reason the line is trustworthy:
+    ///
+    /// * a link still inside its window (the default is 48 hours) has not had
+    ///   the chance to lapse. In the denominator it would make today's row
+    ///   read artificially good and then drift downwards as the day aged —
+    ///   the precise failure mode that would make the weekly pack claim a fix
+    ///   worked;
+    /// * a link **revoked** by Reissue did not expire, it was replaced. It can
+    ///   never reach the numerator, so leaving it in the denominator would
+    ///   score reception's own corrections as an improvement.
+    pub expired_hold_rate: FrictionRate,
+}
+
 /// One row of the funnel — either a bucket, or the window's totals.
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -379,6 +515,10 @@ pub struct DepositFunnelCounters {
     /// `bookingsConfirmed` above, which counts *links* issued in the bucket
     /// whose booking is confirmed now — see the handler docs.
     pub bookings_by_source: BookingSourceCounts,
+    /// The three friction proxies (task D15), on the same cohort as the
+    /// stages above. Added after the wire shape was first published; every
+    /// key that was there before is untouched.
+    pub friction: FrictionCounters,
 }
 
 /// One bucket of the funnel.
@@ -427,6 +567,14 @@ struct FunnelRow {
     bookings_confirmed: i64,
     median_link_to_slip: Option<f64>,
     median_slip_to_decision: Option<f64>,
+    // Task D15. The needs-action denominator is `slips_uploaded` above —
+    // "links with a slip" is already counted, and counting it twice is one
+    // more place for the two to disagree.
+    friction_needs_action: i64,
+    friction_deposit_paid: i64,
+    friction_cancelled_after_deposit: i64,
+    friction_holds_settled: i64,
+    friction_holds_expired: i64,
 }
 
 /// Raw bookings-by-source row.
@@ -1000,6 +1148,16 @@ async fn get_analytics_dashboard(
 ///
 /// A verify stamped with the SlipOK actor is a machine's, not a person's:
 /// see [`HumanDecisionCounts`].
+///
+/// ## Friction proxies (task D15)
+///
+/// `friction` carries three standing rates on the same cohort, on the totals
+/// and on every bucket, so the weekly pack can say whether last week's fix
+/// worked. What each one counts, why its denominator is what it is, and what
+/// the schema does *not* record about PMS-channel hold expiry are all in
+/// [`FrictionCounters`]. They are computed in the same pass as the stages
+/// above: no second query, and no counter that can drift from the funnel it
+/// sits beside.
 async fn get_deposit_funnel(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
@@ -1077,10 +1235,25 @@ sequenced_link AS (
         dl.booking_id     AS booking_id,
         dl.issued_at      AS issued_at,
         dl.last_opened_at AS last_opened_at,
+        dl.expires_at     AS expires_at,
+        dl.revoked_at     AS revoked_at,
         LEAD(dl.issued_at) OVER (PARTITION BY dl.booking_id ORDER BY dl.issued_at)
                           AS superseded_at
     FROM booking_deposit_links dl
     JOIN windowed_booking wb ON wb.booking_id = dl.booking_id
+),
+booking_slip_flags AS (
+    -- "The guest paid" is a fact about the BOOKING, not about one link's
+    -- window: it is what `routes::admin_deposit_links` reads to call a link
+    -- `expired` on the desk's own list, and reusing it is what makes this
+    -- card and that list agree. Bounded to `windowed_booking` so it does not
+    -- become a scan of every slip ever uploaded.
+    SELECT
+        s.booking_id                                             AS booking_id,
+        COALESCE(BOOL_OR(s.admin_status = 'verified'), FALSE)    AS any_verified
+    FROM booking_slips s
+    JOIN windowed_booking wb ON wb.booking_id = s.booking_id
+    GROUP BY s.booking_id
 ),
 link AS (
     SELECT
@@ -1089,11 +1262,15 @@ link AS (
         sl.issued_at                     AS issued_at,
         sl.last_opened_at                AS last_opened_at,
         sl.superseded_at                 AS superseded_at,
+        sl.expires_at                    AS expires_at,
+        sl.revoked_at                    AS revoked_at,
+        COALESCE(bsf.any_verified, FALSE) AS booking_any_verified,
         date_trunc($3, sl.issued_at AT TIME ZONE $5)::date AS bucket,
         COALESCE(b.property, 'unknown')  AS property,
         b.status                         AS booking_status
     FROM sequenced_link sl
     JOIN bookings b ON b.id = sl.booking_id
+    LEFT JOIN booking_slip_flags bsf ON bsf.booking_id = sl.booking_id
     WHERE sl.issued_at >= ($1::date::timestamp AT TIME ZONE $5)
       AND sl.issued_at <  (($2::date + 1)::timestamp AT TIME ZONE $5)
       AND ($4::text IS NULL OR COALESCE(b.property, 'unknown') = $4)
@@ -1161,7 +1338,31 @@ SELECT
     percentile_cont(0.5) WITHIN GROUP (
         ORDER BY EXTRACT(EPOCH FROM (s.first_uploaded_at - l.issued_at))::double precision / 60.0
     )                                                               AS median_link_to_slip,
-    percentile_cont(0.5) WITHIN GROUP (ORDER BY s.decision_minutes) AS median_slip_to_decision
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY s.decision_minutes) AS median_slip_to_decision,
+    -- ---- friction proxies (task D15) ------------------------------------
+    -- On `admin_status` alone, whoever wrote it, unlike `human_needs_action`
+    -- above: `revert_auto_confirm` writes `needs_action` without re-stamping
+    -- `admin_verified_by`, and a guest told to upload again felt the same
+    -- friction whether a person or the PMS sent them back.
+    COUNT(*) FILTER (WHERE s.last_admin_status = 'needs_action')::bigint
+                                                                    AS friction_needs_action,
+    -- DISTINCT on the booking for the same reason `bookings_confirmed` is:
+    -- Reissue makes one booking two links, and a booking cancelled after
+    -- paying must be counted once.
+    COUNT(DISTINCT l.booking_id) FILTER (WHERE l.booking_any_verified)::bigint
+                                                                    AS friction_deposit_paid,
+    COUNT(DISTINCT l.booking_id) FILTER (WHERE l.booking_any_verified
+                                           AND l.booking_status = 'cancelled')::bigint
+                                                        AS friction_cancelled_after_deposit,
+    -- Holds that ran their course: the window has closed and Reissue did not
+    -- replace them first. A live link has not had the chance to lapse and a
+    -- revoked one never will, so neither belongs in the denominator.
+    COUNT(*) FILTER (WHERE l.revoked_at IS NULL
+                       AND l.expires_at <= NOW())::bigint           AS friction_holds_settled,
+    -- `routes::admin_deposit_links`' `expired` predicate, verbatim.
+    COUNT(*) FILTER (WHERE l.revoked_at IS NULL
+                       AND l.expires_at <= NOW()
+                       AND NOT l.booking_any_verified)::bigint      AS friction_holds_expired
 FROM link l
 LEFT JOIN slip s ON s.link_id = l.link_id
 -- The empty grouping set is the totals row: medians cannot be summed out of
@@ -1305,6 +1506,22 @@ impl DepositFunnelCounters {
         self.bookings_confirmed = row.bookings_confirmed;
         self.median_minutes_link_to_slip = round_minutes(row.median_link_to_slip);
         self.median_minutes_slip_to_decision = round_minutes(row.median_slip_to_decision);
+        self.friction = FrictionCounters {
+            // `slips_uploaded` is the denominator, not a second count of the
+            // same thing — see [`FunnelRow`].
+            needs_action_slip_rate: FrictionRate::new(
+                row.friction_needs_action,
+                row.slips_uploaded,
+            ),
+            cancel_after_deposit_rate: FrictionRate::new(
+                row.friction_cancelled_after_deposit,
+                row.friction_deposit_paid,
+            ),
+            expired_hold_rate: FrictionRate::new(
+                row.friction_holds_expired,
+                row.friction_holds_settled,
+            ),
+        };
     }
 }
 
@@ -1667,6 +1884,11 @@ mod tests {
             bookings_confirmed: 4,
             median_link_to_slip: Some(23.483_333_333_333_3),
             median_slip_to_decision: Some(11.0),
+            friction_needs_action: 1,
+            friction_deposit_paid: 4,
+            friction_cancelled_after_deposit: 1,
+            friction_holds_settled: 8,
+            friction_holds_expired: 3,
         }
     }
 
@@ -1880,5 +2102,107 @@ mod tests {
         assert!(!FUNNEL_CONFIRMED_STATUSES.contains(&"pending"));
         assert!(!FUNNEL_CONFIRMED_STATUSES.contains(&"cancelled"));
         assert!(!FUNNEL_CONFIRMED_STATUSES.contains(&"no_show"));
+    }
+
+    // ------------------------------------------------------------------
+    // Friction proxies (task D15)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn friction_rate_is_a_fraction_to_four_places() {
+        let rate = FrictionRate::new(1, 6);
+        assert_eq!(rate.rate, Some(0.1667), "a fraction, not a percent");
+        assert_eq!(rate.numerator, 1);
+        assert_eq!(rate.denominator, 6);
+        assert_eq!(rate.reason, None, "a rate that exists needs no excuse");
+
+        assert_eq!(FrictionRate::new(3, 4).rate, Some(0.75));
+        assert_eq!(FrictionRate::new(0, 4).rate, Some(0.0));
+        assert_eq!(FrictionRate::new(4, 4).rate, Some(1.0));
+    }
+
+    #[test]
+    fn friction_rate_with_nothing_to_measure_is_null_and_says_why() {
+        let rate = FrictionRate::new(0, 0);
+        assert_eq!(
+            rate.rate, None,
+            "0% of nothing would read as an improvement in the weekly pack"
+        );
+        assert_eq!(rate.denominator, 0);
+        assert_eq!(rate.reason, Some(FRICTION_REASON_NO_DATA));
+    }
+
+    #[test]
+    fn a_defaulted_friction_rate_still_carries_its_reason() {
+        // `DepositFunnelCounters::default()` is what a bucket that exists
+        // only in the bookings-by-source query gets. A derived default would
+        // give it a null rate with no reason and break the contract that a
+        // standing line always says why it is blank.
+        let rate = FrictionRate::default();
+        assert_eq!(rate.rate, None);
+        assert_eq!(rate.reason, Some(FRICTION_REASON_NO_DATA));
+    }
+
+    #[test]
+    fn friction_is_carried_onto_totals_and_buckets() {
+        let (totals, buckets) = merge_funnel_rows(
+            vec![
+                funnel_row(None, None),
+                funnel_row(Some("2026-09-01"), Some("hf")),
+            ],
+            vec![BookingSourceRow {
+                bucket: date("2026-09-02"),
+                property: "hf".to_string(),
+                source: "app".to_string(),
+                bookings_confirmed: 2,
+            }],
+        );
+
+        // 1 needs-action over 6 links with a slip; 1 cancelled over 4 that
+        // paid; 3 lapsed over 8 holds that ran their course.
+        assert_eq!(totals.friction.needs_action_slip_rate.rate, Some(0.1667));
+        assert_eq!(totals.friction.needs_action_slip_rate.denominator, 6);
+        assert_eq!(totals.friction.cancel_after_deposit_rate.rate, Some(0.25));
+        assert_eq!(totals.friction.expired_hold_rate.rate, Some(0.375));
+        assert_eq!(totals.friction.expired_hold_rate.numerator, 3);
+        assert_eq!(totals.friction.expired_hold_rate.denominator, 8);
+
+        assert_eq!(
+            buckets[0].counters.friction.expired_hold_rate.rate,
+            Some(0.375),
+            "buckets carry the same object as the totals row"
+        );
+
+        // A bucket with no links at all is a blank line with a reason, not a
+        // row of zero-percents.
+        let link_less = &buckets[1];
+        assert_eq!(link_less.bucket_start, date("2026-09-02"));
+        assert_eq!(
+            link_less.counters.friction.needs_action_slip_rate.rate,
+            None
+        );
+        assert_eq!(
+            link_less.counters.friction.expired_hold_rate.reason,
+            Some(FRICTION_REASON_NO_DATA)
+        );
+    }
+
+    #[test]
+    fn friction_serialises_reason_only_when_the_rate_is_missing() {
+        let present = serde_json::to_value(FrictionRate::new(1, 4)).unwrap();
+        assert_eq!(present["rate"], 0.25);
+        assert!(
+            present.get("reason").is_none(),
+            "a reason beside a real rate would read as a caveat on it"
+        );
+
+        let absent = serde_json::to_value(FrictionRate::new(0, 0)).unwrap();
+        assert_eq!(absent["rate"], JsonValue::Null);
+        assert_eq!(absent["reason"], "no_data");
+        assert_eq!(absent["numerator"], 0);
+        assert_eq!(
+            absent["denominator"], 0,
+            "the counts stay on the wire even when the rate cannot be formed"
+        );
     }
 }
