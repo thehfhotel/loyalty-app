@@ -2164,6 +2164,30 @@
       },
       "bucket": "Period",
       "noData": "Nothing in this period yet"
+    },
+    "friction": {
+      "title": "Friction",
+      "description": "Three proxies for where a deposit request goes wrong. Counted against the day the link was issued, like the funnel above.",
+      "needsAction": {
+        "label": "Slips sent back",
+        "hint": "Links whose latest slip still asks the guest to try again, out of links that got a slip."
+      },
+      "cancelAfterDeposit": {
+        "label": "Cancelled after paying",
+        "hint": "Bookings that had a slip verified and are now cancelled, out of bookings that had a slip verified."
+      },
+      "expiredHold": {
+        "label": "Holds that lapsed",
+        "hint": "Deposit links that ran out unpaid, out of links whose payment window has closed."
+      },
+      "ratio": "{{numerator}} / {{denominator}}",
+      "percent": "{{percent}}%",
+      "reason": {
+        "noData": "Nothing to measure yet",
+        "notInstrumented": "Not recorded yet"
+      },
+      "bucketHeading": "By period",
+      "noData": "Nothing in this period yet"
     }
   }
 }
