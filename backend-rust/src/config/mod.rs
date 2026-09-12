@@ -680,6 +680,108 @@ impl RetentionConfig {
     }
 }
 
+/// LINE free-plan push allowance per guest OA, per calendar month (C5).
+///
+/// Every push a property OA sends — a stay-accrual thank-you, an ops report,
+/// a campaign blast — comes out of the same ~300-message free allowance. The
+/// program plan (§8) splits it into fixed buckets so one feature cannot
+/// quietly spend another's share:
+///
+/// | bucket        | default | who draws on it                          |
+/// |---------------|---------|------------------------------------------|
+/// | `auto_verify` | **0**   | nobody — slip auto-verify never pushes   |
+/// | `ops`         | 50      | stay accruals, ops/report messages       |
+/// | `campaign`    | 200     | admin broadcasts                         |
+/// | `reserve`     | 50      | ops only, with an explicit override      |
+///
+/// `auto_verify` is deliberately not configurable: the plan fixes it at zero,
+/// and a settable zero is an invitation to make it non-zero by accident.
+///
+/// Blank means the default, not zero. Every compose file passes these as
+/// `${VAR:-}`, so an unset variable arrives as `Some("")` — and a budget of
+/// zero pushes read from a blank would silence the OA with no operator ever
+/// having asked for that. A value that is not a whole number is refused the
+/// same way: the default stands and [`LinePushBudgetConfig::errors`] names it
+/// so startup can say so out loud.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct LinePushBudgetConfig {
+    /// `LINE_PUSH_BUDGET_OPS` — default [`DEFAULT_LINE_PUSH_BUDGET_OPS`].
+    pub ops: Option<String>,
+    /// `LINE_PUSH_BUDGET_CAMPAIGN` — default
+    /// [`DEFAULT_LINE_PUSH_BUDGET_CAMPAIGN`].
+    pub campaign: Option<String>,
+    /// `LINE_PUSH_BUDGET_RESERVE` — default
+    /// [`DEFAULT_LINE_PUSH_BUDGET_RESERVE`].
+    pub reserve: Option<String>,
+    /// `LINE_PUSH_BUDGET_TOTAL` — the whole-OA ceiling, default
+    /// [`DEFAULT_LINE_PUSH_BUDGET_TOTAL`]. Enforced on top of the per-bucket
+    /// caps, so raising one bucket by hand cannot overshoot the free plan.
+    pub total: Option<String>,
+}
+
+/// Ops/report bucket default — 50 pushes per OA per month (plan §8).
+pub const DEFAULT_LINE_PUSH_BUDGET_OPS: u32 = 50;
+/// Campaign bucket default — 200 pushes per OA per month (plan §8).
+pub const DEFAULT_LINE_PUSH_BUDGET_CAMPAIGN: u32 = 200;
+/// Reserve bucket default — 50 pushes per OA per month (plan §8). Drawable
+/// only by ops, and only with an explicit override.
+pub const DEFAULT_LINE_PUSH_BUDGET_RESERVE: u32 = 50;
+/// Whole-OA monthly ceiling — 300, the LINE free plan (plan §8).
+pub const DEFAULT_LINE_PUSH_BUDGET_TOTAL: u32 = 300;
+
+impl LinePushBudgetConfig {
+    /// Ops/report bucket cap for one OA for one month.
+    pub fn ops(&self) -> u32 {
+        limit_or_default(&self.ops, DEFAULT_LINE_PUSH_BUDGET_OPS)
+    }
+
+    /// Campaign bucket cap for one OA for one month.
+    pub fn campaign(&self) -> u32 {
+        limit_or_default(&self.campaign, DEFAULT_LINE_PUSH_BUDGET_CAMPAIGN)
+    }
+
+    /// Reserve bucket cap for one OA for one month.
+    pub fn reserve(&self) -> u32 {
+        limit_or_default(&self.reserve, DEFAULT_LINE_PUSH_BUDGET_RESERVE)
+    }
+
+    /// Whole-OA monthly ceiling, enforced across every bucket.
+    pub fn total(&self) -> u32 {
+        limit_or_default(&self.total, DEFAULT_LINE_PUSH_BUDGET_TOTAL)
+    }
+
+    /// Every `LINE_PUSH_BUDGET_*` that was set to something this config
+    /// refuses, as `(variable name, raw value)`. Empty when the deployment is
+    /// either fully default or fully valid.
+    ///
+    /// A typo here is silent by construction — the default is still a working
+    /// budget — so `main` logs these at startup rather than letting an
+    /// operator believe they raised a cap they did not raise.
+    pub fn errors(&self) -> Vec<(&'static str, &str)> {
+        [
+            ("LINE_PUSH_BUDGET_OPS", &self.ops),
+            ("LINE_PUSH_BUDGET_CAMPAIGN", &self.campaign),
+            ("LINE_PUSH_BUDGET_RESERVE", &self.reserve),
+            ("LINE_PUSH_BUDGET_TOTAL", &self.total),
+        ]
+        .into_iter()
+        .filter_map(|(name, raw)| match present(raw) {
+            Some(value) if value.parse::<u32>().is_err() => Some((name, value)),
+            _ => None,
+        })
+        .collect()
+    }
+}
+
+/// Parse a budget cap, falling back to the plan default for absent, blank or
+/// unparseable values. See [`LinePushBudgetConfig`] for why blank is the
+/// default rather than zero.
+fn limit_or_default(raw: &Option<String>, default: u32) -> u32 {
+    present(raw)
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(default)
+}
+
 /// One LINE Messaging API channel (a property's OA).
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct LineMessagingChannelConfig {
@@ -1086,6 +1188,10 @@ pub struct Settings {
     #[serde(default)]
     pub line_messaging: LineMessagingConfig,
 
+    /// LINE free-plan push allowance per OA per month (C5)
+    #[serde(default)]
+    pub line_push_budget: LinePushBudgetConfig,
+
     /// PMS booking-channel client (ADR-0003)
     #[serde(default)]
     pub pms: PmsConfig,
@@ -1259,6 +1365,25 @@ impl Settings {
             .set_override_option(
                 "line_messaging.hfville.channel_secret",
                 env::var("LINE_MESSAGING_HFVILLE_CHANNEL_SECRET").ok(),
+            )?
+            // LINE free-plan push buckets (C5). `env_present`, so the
+            // `${VAR:-}` blank every compose file passes reads as "use the
+            // plan default" — a blank parsed as 0 would mute the OA entirely.
+            .set_override_option(
+                "line_push_budget.ops",
+                env_present("LINE_PUSH_BUDGET_OPS"),
+            )?
+            .set_override_option(
+                "line_push_budget.campaign",
+                env_present("LINE_PUSH_BUDGET_CAMPAIGN"),
+            )?
+            .set_override_option(
+                "line_push_budget.reserve",
+                env_present("LINE_PUSH_BUDGET_RESERVE"),
+            )?
+            .set_override_option(
+                "line_push_budget.total",
+                env_present("LINE_PUSH_BUDGET_TOTAL"),
             )?
             .set_override_option("pms.base_url", env::var("PMS_BASE_URL").ok())?
             .set_override_option("pms.channel_token", env::var("PMS_CHANNEL_TOKEN").ok())?
@@ -2026,5 +2151,68 @@ mod tests {
         settings
             .validate()
             .expect("strong, non-placeholder production secrets should pass validation");
+    }
+
+    // ========================================================================
+    // LINE push budget (C5)
+    // ========================================================================
+
+    fn budget(
+        ops: Option<&str>,
+        campaign: Option<&str>,
+        reserve: Option<&str>,
+        total: Option<&str>,
+    ) -> LinePushBudgetConfig {
+        LinePushBudgetConfig {
+            ops: ops.map(str::to_string),
+            campaign: campaign.map(str::to_string),
+            reserve: reserve.map(str::to_string),
+            total: total.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn line_push_budget_defaults_to_the_plan() {
+        let cfg = budget(None, None, None, None);
+        assert_eq!(cfg.ops(), 50);
+        assert_eq!(cfg.campaign(), 200);
+        assert_eq!(cfg.reserve(), 50);
+        assert_eq!(cfg.total(), 300);
+        assert!(cfg.errors().is_empty());
+    }
+
+    #[test]
+    fn line_push_budget_reads_a_blank_as_the_default_not_zero() {
+        // Every compose file passes these as `${VAR:-}`. A blank parsed as 0
+        // would silence the OA with nobody having asked for that.
+        let cfg = budget(Some(""), Some("  "), Some(""), Some(""));
+        assert_eq!(cfg.ops(), 50);
+        assert_eq!(cfg.campaign(), 200);
+        assert_eq!(cfg.reserve(), 50);
+        assert_eq!(cfg.total(), 300);
+        assert!(cfg.errors().is_empty(), "a blank is not an error");
+    }
+
+    #[test]
+    fn line_push_budget_accepts_explicit_values_including_zero() {
+        let cfg = budget(Some("10"), Some("0"), Some(" 7 "), Some("100"));
+        assert_eq!(cfg.ops(), 10);
+        assert_eq!(cfg.campaign(), 0, "an explicit 0 is an operator decision");
+        assert_eq!(cfg.reserve(), 7);
+        assert_eq!(cfg.total(), 100);
+        assert!(cfg.errors().is_empty());
+    }
+
+    #[test]
+    fn line_push_budget_names_a_refused_value_and_keeps_the_default() {
+        let cfg = budget(Some("fifty"), None, Some("-1"), Some("3.5"));
+        assert_eq!(cfg.ops(), 50);
+        assert_eq!(cfg.reserve(), 50);
+        assert_eq!(cfg.total(), 300);
+        let errors = cfg.errors();
+        assert_eq!(errors.len(), 3);
+        assert_eq!(errors[0], ("LINE_PUSH_BUDGET_OPS", "fifty"));
+        assert_eq!(errors[1], ("LINE_PUSH_BUDGET_RESERVE", "-1"));
+        assert_eq!(errors[2], ("LINE_PUSH_BUDGET_TOTAL", "3.5"));
     }
 }

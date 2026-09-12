@@ -21,6 +21,7 @@
 //! - `loyalty_test` - Loyalty program tests (/api/loyalty/*)
 //! - `survey_test` - Survey management tests (/api/surveys/*)
 //! - `oauth_test` - OAuth authentication tests (/api/oauth/*)
+//! - `push_budget_test` - C5: the LINE OA free-plan push budget guard
 //! - `slipok_auto_verify_test` - Automatic SlipOK slip verification
 //! - `slipok_system_actor_test` - The seeded SlipOK audit actor's guards
 //! - `slip_retention_test` - F2: slip image retention + admin access logging
@@ -56,6 +57,7 @@ pub mod health_test;
 pub mod loyalty_test;
 pub mod notification_test;
 pub mod oauth_test;
+pub mod push_budget_test;
 pub mod slip_retention_test;
 pub mod slipok_auto_verify_test;
 pub mod slipok_system_actor_test;

@@ -940,6 +940,11 @@ fn create_test_config() -> loyalty_backend::Settings {
         },
         cf_access: CfAccessConfig::default(),
         line_messaging: LineMessagingConfig::default(),
+        // Blank everywhere, which the config layer reads as "use the plan
+        // defaults" (ops 50, campaign 200, reserve 50, total 300). A test that
+        // wants to exhaust a bucket sets small caps on its own copy rather
+        // than shrinking the budget for the whole suite.
+        line_push_budget: LinePushBudgetConfig::default(),
         pms: PmsConfig::default(),
         loyalty_service: LoyaltyServiceConfig {
             token: Some(TEST_LOYALTY_SERVICE_TOKEN.to_string()),

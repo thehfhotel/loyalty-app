@@ -257,6 +257,14 @@ jobs:
           # notification is off for that property.
           BOOKING_NOTIFY_EMAIL_HF:      ${{ vars.BOOKING_NOTIFY_EMAIL_HF }}
           BOOKING_NOTIFY_EMAIL_HFVILLE: ${{ vars.BOOKING_NOTIFY_EMAIL_HFVILLE }}
+          # LINE free-plan push buckets per OA per month (C5, plan §8).
+          # Repository *variables*, not secrets: a message allowance is
+          # policy, and the owner needs to read it back in the UI. Unset =
+          # the plan defaults (ops 50, campaign 200, reserve 50, total 300).
+          LINE_PUSH_BUDGET_OPS:      ${{ vars.LINE_PUSH_BUDGET_OPS }}
+          LINE_PUSH_BUDGET_CAMPAIGN: ${{ vars.LINE_PUSH_BUDGET_CAMPAIGN }}
+          LINE_PUSH_BUDGET_RESERVE:  ${{ vars.LINE_PUSH_BUDGET_RESERVE }}
+          LINE_PUSH_BUDGET_TOTAL:    ${{ vars.LINE_PUSH_BUDGET_TOTAL }}
         run: |
           set -euo pipefail
 
@@ -284,7 +292,8 @@ jobs:
           # comments inside it (an apostrophe in a comment ends the quote and the
           # step dies with a shell syntax error, 2026-09-10 09:56Z). Optional keys
           # (SLIPOK_*, PROMPTPAY_*_ID, BOOKING_NOTIFY_EMAIL_*, SLIP_RETENTION_DAYS,
-          # AUDIT_LOG_RETENTION_DAYS, SLIP_ACCESS_LOG_RETENTION_DAYS)
+          # AUDIT_LOG_RETENTION_DAYS, SLIP_ACCESS_LOG_RETENTION_DAYS,
+          # LINE_PUSH_BUDGET_*)
           # are merged only when non-empty: the backend reads an empty value as
           # set, which would mint a QR with no receiving id, call SlipOK with no
           # key, mail nobody, or run a retention sweep on a window nobody chose.
@@ -327,6 +336,10 @@ jobs:
             --arg SLIP_RETENTION_DAYS          "${SLIP_RETENTION_DAYS:-}" \
             --arg AUDIT_LOG_RETENTION_DAYS       "${AUDIT_LOG_RETENTION_DAYS:-}" \
             --arg SLIP_ACCESS_LOG_RETENTION_DAYS "${SLIP_ACCESS_LOG_RETENTION_DAYS:-}" \
+            --arg LINE_PUSH_BUDGET_OPS      "${LINE_PUSH_BUDGET_OPS:-}" \
+            --arg LINE_PUSH_BUDGET_CAMPAIGN "${LINE_PUSH_BUDGET_CAMPAIGN:-}" \
+            --arg LINE_PUSH_BUDGET_RESERVE  "${LINE_PUSH_BUDGET_RESERVE:-}" \
+            --arg LINE_PUSH_BUDGET_TOTAL    "${LINE_PUSH_BUDGET_TOTAL:-}" \
             '{
               commit_sha: $commit_sha,
               deploy_payload_b64: $deploy_payload_b64,
@@ -370,7 +383,11 @@ jobs:
                          SLIPOK_AUTO_VERIFY: $SLIPOK_AUTO_VERIFY,
                          SLIP_RETENTION_DAYS: $SLIP_RETENTION_DAYS,
                          AUDIT_LOG_RETENTION_DAYS: $AUDIT_LOG_RETENTION_DAYS,
-                         SLIP_ACCESS_LOG_RETENTION_DAYS: $SLIP_ACCESS_LOG_RETENTION_DAYS }
+                         SLIP_ACCESS_LOG_RETENTION_DAYS: $SLIP_ACCESS_LOG_RETENTION_DAYS,
+                         LINE_PUSH_BUDGET_OPS: $LINE_PUSH_BUDGET_OPS,
+                         LINE_PUSH_BUDGET_CAMPAIGN: $LINE_PUSH_BUDGET_CAMPAIGN,
+                         LINE_PUSH_BUDGET_RESERVE: $LINE_PUSH_BUDGET_RESERVE,
+                         LINE_PUSH_BUDGET_TOTAL: $LINE_PUSH_BUDGET_TOTAL }
                        | with_entries(select(.value != "")))' \
           | ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=yes \

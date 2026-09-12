@@ -330,6 +330,30 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    // LINE free-plan push budget (C5). Nothing to start — the guard runs on
+    // the push path — but a refused `LINE_PUSH_BUDGET_*` value is otherwise
+    // completely silent: the plan default is still a working budget, so an
+    // operator who mistyped a raised cap would never learn that it did not
+    // take. `{:?}` keeps a stray newline in the value from forging a log line.
+    {
+        for (name, raw) in config.line_push_budget.errors() {
+            error!(
+                "{} is set to {:?}, which is not a whole number of pushes — the \
+                 plan default is in force for that bucket instead.",
+                name, raw
+            );
+        }
+        info!(
+            "LINE push budget per OA per month: ops {}, campaign {}, reserve {}, \
+             total {} (auto-verify is fixed at {})",
+            config.line_push_budget.ops(),
+            config.line_push_budget.campaign(),
+            config.line_push_budget.reserve(),
+            config.line_push_budget.total(),
+            loyalty_backend::services::push_budget::AUTO_VERIFY_BUDGET,
+        );
+    }
+
     // Build the application router with all routes and middleware
     let app = create_app(state, &config);
 
