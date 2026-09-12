@@ -43,13 +43,25 @@
 //! erasure that drifts from the first, which is the failure mode the
 //! shared service exists to prevent.
 //!
-//! What it deliberately does **not** do is reach past the retention
-//! floors. `bookings`, `booking_slips`, `points_transactions`, `stays`
-//! and `booking_audit_log` survive an erasure under `AUDIT_LOG_RETENTION_DAYS`
-//! (floored at 365 days), `SLIP_ACCESS_LOG_RETENTION_DAYS` (floored at 90)
-//! and `SLIP_RETENTION_DAYS`. `docs/privacy/rights-path.md` states, in the
-//! words the desk gives the guest, what disappears at once and what
-//! expires later.
+//! What it deliberately does **not** do is reach the money or the audit
+//! trail. Two different mechanisms are at work and they are easy to
+//! conflate:
+//!
+//! - **Kept outright, governed by no variable at all.** `bookings`,
+//!   `points_transactions`, `stays`, `user_loyalty` and the `booking_slips`
+//!   metadata rows survive an erasure because they are accounting and
+//!   loyalty evidence. Nothing sweeps them; they are simply not the
+//!   erase's business.
+//! - **Kept for a configured window, floored.** Only
+//!   `booking_audit_log` (`AUDIT_LOG_RETENTION_DAYS`, floored at 365
+//!   days), `slip_access_log` (`SLIP_ACCESS_LOG_RETENTION_DAYS`, floored
+//!   at 90) and the slip **image files** (`SLIP_RETENTION_DAYS`) are
+//!   swept, and each sweep is off entirely unless its variable is set —
+//!   which, as of 2026-09-12, none of them is.
+//!
+//! `docs/privacy/rights-path.md` states this in the words the desk gives
+//! the guest: what disappears at once, what is kept, and what expires
+//! later.
 //!
 //! ## Slip images are never in an export
 //!
@@ -84,6 +96,7 @@ use axum::{
     extract::{Extension, Path, Query, State},
     http::StatusCode,
     middleware,
+    response::IntoResponse,
     routing::{get, patch},
     Json, Router,
 };
@@ -95,6 +108,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::middleware::auth::{auth_middleware, require_admin, AuthUser};
+use crate::middleware::rate_limit::{redis_rate_limit_middleware, RedisRateLimiter};
 use crate::services::account_deletion::{erase_account, DeletionActor};
 use crate::state::AppState;
 
@@ -115,6 +129,11 @@ pub const MAX_NOTE_CHARS: usize = 2_000;
 /// unique index in `20260915030000_privacy_requests.sql` uses exactly this
 /// set, and the two drifting apart would quietly break the 409.
 const LIVE_STATUSES: [&str; 2] = ["open", "in_progress"];
+
+/// How many requests one admin-queue page returns. The counters beside the
+/// list are a separate `COUNT(*)` over the whole table, so this bounds the
+/// response body without ever bounding the numbers the desk reads.
+const ADMIN_PAGE_LIMIT: i64 = 500;
 
 /// Why a slip image is never in an access export. Returned verbatim in the
 /// response so the reason travels with the data instead of living only in
@@ -430,7 +449,7 @@ async fn admin_list_requests(
          JOIN users u ON u.id = pr.user_id \
          LEFT JOIN user_profiles up ON up.user_id = pr.user_id \
          {} \
-         ORDER BY pr.requested_at ASC LIMIT 500",
+         ORDER BY pr.requested_at ASC LIMIT {ADMIN_PAGE_LIMIT}",
         if all {
             ""
         } else {
@@ -445,16 +464,38 @@ async fn admin_list_requests(
         .map(|row| admin_row(row, now))
         .collect::<AppResult<Vec<_>>>()?;
 
-    let open_count = requests
-        .iter()
-        .filter(|r| LIVE_STATUSES.contains(&r.status.as_str()))
-        .count();
-    let overdue_count = requests.iter().filter(|r| r.overdue).count();
+    // Counted over the whole table, not over the page. Deriving these from
+    // `requests` made them silently wrong the moment the queue passed
+    // `ADMIN_PAGE_LIMIT`: the desk would have read "3 overdue" off a
+    // truncated list and believed it. An overdue counter that undercounts
+    // is worse than none, because it is the number somebody stops worrying
+    // about.
+    //
+    // `RESPONSE_WINDOW_DAYS` is interpolated rather than bound: it is a
+    // compile-time `i64` constant, never user input, and binding it would
+    // mean an `($1 || ' days')::INTERVAL` cast whose type inference is the
+    // only fragile thing in this statement.
+    let counts = sqlx::query(&format!(
+        "SELECT COUNT(*) FILTER (WHERE status IN ('open', 'in_progress')) AS open_count, \
+                COUNT(*) FILTER (WHERE status IN ('open', 'in_progress') \
+                                   AND requested_at \
+                                       < NOW() - INTERVAL '{RESPONSE_WINDOW_DAYS} days') \
+                    AS overdue_count \
+         FROM privacy_requests"
+    ))
+    .fetch_one(state.db())
+    .await?;
+    let open_count: i64 = counts.try_get("open_count")?;
+    let overdue_count: i64 = counts.try_get("overdue_count")?;
 
     Ok(Json(json!({
         "requests": requests,
+        // Global, over every row in the table.
         "openCount": open_count,
         "overdueCount": overdue_count,
+        // How many rows this page could hold, so a caller can tell a short
+        // list from a truncated one instead of guessing.
+        "pageLimit": ADMIN_PAGE_LIMIT,
         "responseWindowDays": RESPONSE_WINDOW_DAYS,
     })))
 }
@@ -533,8 +574,14 @@ async fn admin_resolve_request(
     }
 
     let terminal = body.status.is_terminal();
+    // `COALESCE`, not a bare assignment: moving a request to `in_progress`
+    // without retyping the note must not erase a note somebody already
+    // wrote. A terminal status always carries one (checked above), so the
+    // only case this preserves is the non-terminal one — which is exactly
+    // the case where the caller was never asked for a note.
     let sql = format!(
-        "UPDATE privacy_requests SET status = $2, resolution_note = $3, \
+        "UPDATE privacy_requests SET status = $2, \
+            resolution_note = COALESCE($3, resolution_note), \
             resolved_at = CASE WHEN $4 THEN NOW() ELSE NULL END, \
             resolved_by = CASE WHEN $4 THEN $5::uuid ELSE NULL END \
          WHERE id = $1 AND status IN ('open', 'in_progress') \
@@ -814,23 +861,59 @@ SELECT jsonb_build_object(
 /// 127.0.0.1 would otherwise trip a 5/min budget and fail for the wrong
 /// reason.
 pub fn routes(state: AppState) -> Router<AppState> {
-    use crate::middleware::rate_limit::{redis_rate_limit_middleware, RedisRateLimiter};
-
-    let write = Router::new().route("/requests", axum::routing::post(create_request));
-    let write = if state.is_production() {
-        write.route_layer(middleware::from_fn_with_state(
-            RedisRateLimiter::strict(state.redis(), "privacy"),
-            redis_rate_limit_middleware,
-        ))
-    } else {
-        write
-    };
+    // One shape, every environment. The earlier version only built the
+    // merge-a-layered-sub-router arrangement when `is_production()` was
+    // true, which meant the router CI exercised was never the router
+    // production runs — a `merge` panic or a layer ordering mistake would
+    // have shipped green. Now the *limiter* is what varies (it is `None`
+    // outside production) and the route tree is byte-identical everywhere.
+    let write = Router::new()
+        .route("/requests", axum::routing::post(create_request))
+        .route_layer(middleware::from_fn_with_state(
+            privacy_write_limiter(&state),
+            privacy_write_rate_limit,
+        ));
 
     Router::new()
         .route("/requests", get(list_my_requests))
         .route("/requests/:id/export", get(admin_export_request))
         .merge(write)
         .layer(middleware::from_fn(auth_middleware))
+}
+
+/// The strict bucket for `POST /api/privacy/requests`, or `None` outside
+/// production.
+///
+/// Production-only for the reason `routes::mod::create_router` gives for
+/// every other limiter: an integration suite hammering one endpoint from
+/// 127.0.0.1 would otherwise trip a 5/min budget and fail for the wrong
+/// reason. Extracted into a named function so the decision is one testable
+/// expression rather than an `if` buried in the router.
+fn privacy_write_limiter(state: &AppState) -> Option<RedisRateLimiter> {
+    state
+        .is_production()
+        .then(|| RedisRateLimiter::strict(state.redis(), "privacy"))
+}
+
+/// Rate-limit a write when a limiter is configured; pass through when it is
+/// not.
+///
+/// This exists so the layer is always attached and the router shape never
+/// depends on the environment. It delegates to
+/// [`redis_rate_limit_middleware`] rather than re-deriving the client IP,
+/// because a second copy of that logic is a second place for a
+/// trusted-proxy mistake to live.
+async fn privacy_write_rate_limit(
+    State(limiter): State<Option<RedisRateLimiter>>,
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> axum::response::Response {
+    match limiter {
+        Some(limiter) => redis_rate_limit_middleware(State(limiter), request, next)
+            .await
+            .into_response(),
+        None => next.run(request).await,
+    }
 }
 
 /// Admin routes, merged into `routes::admin::router()` — which supplies

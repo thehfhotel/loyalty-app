@@ -1929,7 +1929,7 @@
     "slipBody1": "When you pay a deposit, we store the transfer slip image you upload. The slip may show the bank account name and number of whoever sent the money, which may not be the guest who made the booking (for example, a family member or friend transferring on their behalf).",
     "slipBody2": "We use the slip image only to check and confirm the deposit payment. Never for marketing or any other purpose.",
     "slipBody3": "We send the slip image to a Thai slip-verification provider for an automatic check, and we ask that provider not to keep it.",
-    "slipBody4": "We keep the slip image for 90 days after the booking ends (check-out or cancellation), then delete it. Payment details such as the amount and the transaction reference are kept for 5 years, as accounting records.",
+    "slipBody4": "We propose to keep the slip image for 90 days after the booking ends (check-out or cancellation) and then delete it; that schedule is not yet in force. Payment details such as the amount and the transaction reference are kept for 5 years, as accounting records.",
     "slipBody5": "Only front desk staff and authorised admins can view slip images. Every view is logged.",
     "slipBody6": "If you, or the person who sent the payment on your behalf, want to ask about this, request a copy, or ask us to delete it, use the contact below. A slip image is never included in a copy of your own data, because it would disclose the sender's banking details.",
     "messagesTitle": "Messages from us",
@@ -1953,7 +1953,7 @@
     "rightsNonMember": "If you booked by phone or at the desk and have no account, contact us using the details below with your booking reference and the phone number the booking was taken on, and we will verify you before answering.",
     "rightsErasureCaveat": "Erasing your account destroys the link between you and your points, tier and nights. Signing in again later with the same LINE or Google account creates a new, empty membership — the old balance cannot be restored. Bookings, payment records and audit entries are kept for the periods above, because accounting and accountability duties require them.",
     "breachTitle": "If something goes wrong",
-    "breachBody": "If personal data we hold is breached, we notify Thailand's Personal Data Protection Committee (PDPC) without delay and within 72 hours of becoming aware of it, as PDPA s.37(4) requires. Where the breach is likely to result in a high risk to your rights and freedoms, we notify you as well, together with what happened and what you can do about it.",
+    "breachBody": "If personal data we hold is breached, we notify the Office of the Personal Data Protection Committee (Office of the PDPC) without delay and within 72 hours of becoming aware of it, as PDPA s.37(4) requires. Where the breach is likely to result in a high risk to your rights and freedoms, we notify you as well, together with what happened and what you can do about it.",
     "contactTitle": "Contact",
     "contactBody": "For data questions, a copy of your data, correction or deletion, contact:",
     "contactFallback": "We have not yet published a dedicated address for data requests. Until we do, please contact the front desk:",
@@ -2000,7 +2000,7 @@
     "adminKind": "Request",
     "adminNote": "Their note",
     "adminResolutionNote": "Resolution note",
-    "adminResolutionNoteHint": "Required. What you did, or why you refused.",
+    "adminResolutionNoteHint": "Required. What you did, or why you refused. The member sees this text word for word.",
     "adminMarkInProgress": "Start",
     "adminMarkDone": "Mark answered",
     "adminRefuse": "Refuse",
@@ -2008,7 +2008,10 @@
     "adminExportHint": "Access requests only. The file excludes slip images.",
     "adminResolveError": "Could not update this request.",
     "adminExportError": "Could not produce the export.",
-    "adminErasureWarning": "Marking an erasure answered erases the member's account immediately. This cannot be undone."
+    "adminErasureWarning": "Marking an erasure answered erases the member's account immediately. This cannot be undone.",
+    "adminErasureConfirmTitle": "Erase this member's account?",
+    "adminErasureConfirmBody": "This erases {{member}} immediately: name, contact details and LINE identity are destroyed, every message stops, and their points, tier and nights cannot be restored. Bookings and payment records are kept as accounting evidence. This cannot be undone.",
+    "adminErasureConfirmOk": "Erase account"
   },
   "nav": {
     "home": "Home",

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import AppShell from '../../components/layout/AppShell';
 import { Badge, Button, Card, EmptyState, PageHeader, Skeleton, Textarea } from '../../components/ui';
+import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { logger } from '../../utils/logger';
 import {
   LIVE_STATUSES,
@@ -58,6 +59,17 @@ export default function PrivacyRequestsPage() {
   const [showAll, setShowAll] = useState(false);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The erasure awaiting confirmation, or null.
+   *
+   * Filing a request is reversible and still gets a dialog on the member
+   * side; *running* an erasure is irreversible and had only a red
+   * paragraph next to a plain button. The asymmetry was backwards, so the
+   * destructive action now has to be confirmed too — and the dialog names
+   * the member, because "are you sure" without a name is what makes an
+   * admin click through on the wrong row.
+   */
+  const [pendingErasure, setPendingErasure] = useState<AdminPrivacyRequest | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'privacy', 'requests', showAll ? 'all' : 'open'],
@@ -254,12 +266,16 @@ export default function PrivacyRequestsPage() {
                           </Button>
                         )}
                         <Button
-                          variant="primary"
+                          variant={request.kind === 'erasure' ? 'destructive' : 'primary'}
                           size="sm"
                           disabled={!canClose || resolve.isPending}
-                          onClick={() =>
-                            resolve.mutate({ id: request.id, status: 'done', note })
-                          }
+                          onClick={() => {
+                            if (request.kind === 'erasure') {
+                              setPendingErasure(request);
+                              return;
+                            }
+                            resolve.mutate({ id: request.id, status: 'done', note });
+                          }}
                           data-testid={`privacy-done-${request.id}`}
                         >
                           {t('privacy.adminMarkDone')}
@@ -283,6 +299,34 @@ export default function PrivacyRequestsPage() {
           </div>
         )}
       </div>
+
+      {/* The one irreversible action on this page gets the one dialog. */}
+      <ConfirmDialog
+        isOpen={pendingErasure !== null}
+        title={t('privacy.adminErasureConfirmTitle')}
+        message={t('privacy.adminErasureConfirmBody', {
+          member:
+            pendingErasure?.email ??
+            pendingErasure?.membershipId ??
+            pendingErasure?.userId ??
+            '',
+        })}
+        confirmText={t('privacy.adminErasureConfirmOk')}
+        cancelText={t('privacy.cancel')}
+        variant="danger"
+        onConfirm={() => {
+          const target = pendingErasure;
+          setPendingErasure(null);
+          if (target) {
+            resolve.mutate({
+              id: target.id,
+              status: 'done',
+              note: notes[target.id] ?? '',
+            });
+          }
+        }}
+        onCancel={() => setPendingErasure(null)}
+      />
     </AppShell>
   );
 }

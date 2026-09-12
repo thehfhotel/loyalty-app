@@ -119,7 +119,15 @@ Resolving an `erasure` request as **done** calls
 `services::account_deletion::erase_account` with `DeletionActor::Admin` — the
 same code path as the member's own `DELETE /api/users/account`. It runs
 *before* the row is marked done, so the log never claims an erasure that
-failed.
+failed. The admin screen asks for confirmation first, naming the account,
+because this is the one irreversible action on the page.
+
+**Scope note.** The approval step described here governs erasures requested
+*through this path* only. The pre-existing self-service
+`DELETE /api/users/account` already lets a member erase their own account
+with no desk involvement at all, and that remains true — so "a human
+approves every erasure" is false as a general statement about the system,
+and true only of requests filed as `privacy_requests` rows.
 
 ### Deleted immediately
 
@@ -157,8 +165,11 @@ is what F1 §8 gap 2 asked for. They cannot be set lower.
 list` shows only `DESK_PHONE_*`), so no sweep runs at all: slip images are
 never deleted and the audit logs grow without bound. The notice's "at least
 365 days / at least 90 days" is therefore true today by accident rather than
-by configuration, and its "90 days, then we delete the image" is **not yet
-true at all** — see owner decision 3.
+by configuration. The 90-day slip-image schedule is published on `/privacy`
+as an explicit **proposal that is not yet in force** (`privacy.slipBody4` in
+all three locales says so in as many words), so the page states no deletion
+that has not happened — but it stays a proposal until owner decision 3 is
+made.
 
 ### The trade-off to say out loud before pressing the button
 
@@ -327,9 +338,11 @@ Everything below blocks "the notice is finished", not "the code works".
 3. **All three retention variables are unset** — `SLIP_RETENTION_DAYS`,
    `AUDIT_LOG_RETENTION_DAYS`, `SLIP_ACCESS_LOG_RETENTION_DAYS`. No slip image
    has ever been deleted, and no audit row has ever been pruned. The notice
-   says slip images go after 90 days; **that sentence is not true until
-   `SLIP_RETENTION_DAYS` is set.** This is the one open item where the
-   published notice currently overstates what the system does.
+   proposes that slip images go after 90 days and says plainly that the
+   schedule **is not yet in force**; setting `SLIP_RETENTION_DAYS` is what
+   turns that proposal into a fact, and the "(proposed)" wording in
+   `privacy.slipBody4` and `privacy.retentionSlipImage` comes out at the
+   same time.
 4. **Non-member identity proof** (§6) — the largest open item.
 5. **Who signs a PDPC notification** (§7).
 6. **Backup retention window** (§4) — so "deleted" has a defined end date.

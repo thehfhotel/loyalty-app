@@ -616,6 +616,129 @@ async fn a_closed_request_cannot_be_resolved_twice() {
     app.cleanup().await.ok();
 }
 
+/// N6: the erasure variant of the double-resolve guard.
+///
+/// The 409 on a second PATCH is only half the property that matters. The
+/// half that matters more is that the **erase ran once** — a second call
+/// that slipped past the status check would invoke `erase_account` again,
+/// and while that function is idempotent, a second `user_deletions` row
+/// would mean the audit trail claims two erasures for one account. This
+/// test reads the audit table directly, because that row is the artefact a
+/// regulator would count.
+#[tokio::test]
+async fn a_second_resolve_of_an_erasure_neither_succeeds_nor_erases_again() {
+    let app = TestApp::new().await.expect("failed to create test app");
+    let member = create_member(app.db(), "erase-twice").await;
+    let admin = create_admin(app.db(), "erase-twice-admin").await;
+    let admin_client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let created: Value = app
+        .authenticated_client(&member.id, &member.email)
+        .post("/api/privacy/requests", &json!({ "kind": "erasure" }))
+        .await
+        .json()
+        .expect("response should be JSON");
+    let request_id = created["id"].as_str().expect("id").to_string();
+
+    admin_client
+        .patch(
+            &format!("/api/admin/privacy/requests/{request_id}"),
+            &json!({ "status": "done", "resolutionNote": "Erased on request" }),
+        )
+        .await
+        .assert_status(200);
+
+    let after_first: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM user_deletions WHERE user_id = $1")
+            .bind(member.id)
+            .fetch_one(app.db())
+            .await
+            .expect("count failed");
+    assert_eq!(after_first, 1, "the first resolve must erase exactly once");
+
+    // Second attempt: refused, and it must not reach `erase_account`.
+    admin_client
+        .patch(
+            &format!("/api/admin/privacy/requests/{request_id}"),
+            &json!({ "status": "done", "resolutionNote": "Erased again?" }),
+        )
+        .await
+        .assert_status(409);
+
+    let after_second: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM user_deletions WHERE user_id = $1")
+            .bind(member.id)
+            .fetch_one(app.db())
+            .await
+            .expect("count failed");
+    assert_eq!(
+        after_second, 1,
+        "a refused second resolve must not write a second erasure audit row"
+    );
+
+    // And the first resolution note survives — the refusal changed nothing.
+    let note: Option<String> =
+        sqlx::query_scalar("SELECT resolution_note FROM privacy_requests WHERE id = $1")
+            .bind(Uuid::parse_str(&request_id).expect("uuid"))
+            .fetch_one(app.db())
+            .await
+            .expect("read failed");
+    assert_eq!(note.as_deref(), Some("Erased on request"));
+
+    app.cleanup().await.ok();
+}
+
+/// N7: moving a request to `in_progress` without retyping the note must not
+/// wipe a note somebody already wrote. Before the `COALESCE` this
+/// `UPDATE ... SET resolution_note = $3` with a `None` bind nulled it.
+#[tokio::test]
+async fn a_non_terminal_patch_keeps_an_existing_resolution_note() {
+    let app = TestApp::new().await.expect("failed to create test app");
+    let member = create_member(app.db(), "keepnote").await;
+    let admin = create_admin(app.db(), "keepnote-admin").await;
+    let admin_client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let created: Value = app
+        .authenticated_client(&member.id, &member.email)
+        .post("/api/privacy/requests", &json!({ "kind": "rectification" }))
+        .await
+        .json()
+        .expect("response should be JSON");
+    let request_id = created["id"].as_str().expect("id").to_string();
+
+    // A first pass writes a note while staying non-terminal.
+    admin_client
+        .patch(
+            &format!("/api/admin/privacy/requests/{request_id}"),
+            &json!({ "status": "in_progress", "resolutionNote": "Called the guest, awaiting ID" }),
+        )
+        .await
+        .assert_status(200);
+
+    // A second pass with no note at all must leave it alone.
+    admin_client
+        .patch(
+            &format!("/api/admin/privacy/requests/{request_id}"),
+            &json!({ "status": "in_progress" }),
+        )
+        .await
+        .assert_status(200);
+
+    let note: Option<String> =
+        sqlx::query_scalar("SELECT resolution_note FROM privacy_requests WHERE id = $1")
+            .bind(Uuid::parse_str(&request_id).expect("uuid"))
+            .fetch_one(app.db())
+            .await
+            .expect("read failed");
+    assert_eq!(
+        note.as_deref(),
+        Some("Called the guest, awaiting ID"),
+        "a note-less in_progress PATCH must not erase an existing note"
+    );
+
+    app.cleanup().await.ok();
+}
+
 // ============================================================================
 // 6. The admin queue and its clock
 // ============================================================================
@@ -665,6 +788,11 @@ async fn the_admin_queue_shows_live_work_and_the_thirty_day_clock() {
         "the desk needs a way to identify the member"
     );
     assert!(body["overdueCount"].as_i64().unwrap_or(0) >= 1);
+    // The counters come from their own COUNT(*) over the whole table, not
+    // from the page, so the response says how big a page is and a caller
+    // can tell a short list from a truncated one.
+    assert_eq!(body["pageLimit"].as_i64(), Some(500));
+    assert!(body["openCount"].as_i64().unwrap_or(0) >= 1);
 
     app.cleanup().await.ok();
 }
