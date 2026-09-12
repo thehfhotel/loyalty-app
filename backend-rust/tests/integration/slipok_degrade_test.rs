@@ -184,8 +184,11 @@ fn at(minute: i64) -> DateTime<Utc> {
 }
 
 /// How many checks `slipok_monthly_usage` has counted this month.
+///
+/// The cast is load-bearing: Postgres widens `SUM` over a `BIGINT` to
+/// `NUMERIC`, which sqlx will not decode into an `i64`.
 async fn checks_counted(pool: &sqlx::PgPool) -> i64 {
-    sqlx::query_scalar("SELECT COALESCE(SUM(checks), 0) FROM slipok_monthly_usage")
+    sqlx::query_scalar("SELECT COALESCE(SUM(checks), 0)::BIGINT FROM slipok_monthly_usage")
         .fetch_one(pool)
         .await
         .expect("read monthly usage")
