@@ -10,6 +10,13 @@
 //! written in local-machine time would pass in Bangkok and fail on a CI
 //! runner set to UTC — which is exactly the bug the bucketing exists to
 //! prevent.
+//!
+//! The one exception is the still-live deposit link in the task D15 friction
+//! coverage below. "This hold has not lapsed yet" is a fact about the clock
+//! and nothing else — the expired-hold proxy compares `expires_at` against
+//! `NOW()` — so a fixed future date would quietly become a lapsed hold on the
+//! day it passed and turn the test red for no reason. That one fixture is
+//! written relative to `now()` on purpose, and says so where it is seeded.
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde_json::Value;
@@ -79,14 +86,41 @@ async fn seed_link(
     issued_at: DateTime<Utc>,
     opened_at: Option<DateTime<Utc>>,
 ) -> Uuid {
+    // Two days is `admin_deposit_links::DEFAULT_EXPIRY_HOURS` in spirit; the
+    // fixture instants are all in the fixed past, so every link seeded this
+    // way has a window that has already closed.
+    seed_link_with_window(
+        pool,
+        booking_id,
+        issued_at,
+        opened_at,
+        issued_at + Duration::days(2),
+        None,
+    )
+    .await
+}
+
+/// Insert a deposit link with an explicit payment window and revocation.
+///
+/// The expired-hold proxy is the one counter that reads the clock
+/// (`expires_at <= NOW()`), so its fixtures have to say where the window sits
+/// relative to now rather than only where it sits in the seeded world.
+async fn seed_link_with_window(
+    pool: &PgPool,
+    booking_id: Uuid,
+    issued_at: DateTime<Utc>,
+    opened_at: Option<DateTime<Utc>>,
+    expires_at: DateTime<Utc>,
+    revoked_at: Option<DateTime<Utc>>,
+) -> Uuid {
     sqlx::query_scalar::<_, Uuid>(
         r#"
         INSERT INTO booking_deposit_links (
             booking_id, token_hash, issued_by, issued_at, expires_at,
-            first_opened_at, last_opened_at, open_count
+            first_opened_at, last_opened_at, open_count, revoked_at
         )
-        VALUES ($1, $2, $3, $4, $4 + INTERVAL '2 days', $5, $5,
-                CASE WHEN $5::timestamptz IS NULL THEN 0 ELSE 1 END)
+        VALUES ($1, $2, $3, $4, $6, $5, $5,
+                CASE WHEN $5::timestamptz IS NULL THEN 0 ELSE 1 END, $7)
         RETURNING id
         "#,
     )
@@ -97,6 +131,8 @@ async fn seed_link(
     .bind(system_user())
     .bind(issued_at)
     .bind(opened_at)
+    .bind(expires_at)
+    .bind(revoked_at)
     .fetch_one(pool)
     .await
     .expect("insert deposit link fixture")
@@ -1077,6 +1113,459 @@ async fn the_update_daily_stub_is_gone() {
         "the stub must be gone, not answering; got {} with body {}",
         response.status, response.body
     );
+
+    app.cleanup().await.ok();
+}
+
+// ============================================================================
+// Friction proxies (task D15)
+// ============================================================================
+//
+// Three standing lines, so the weekly pack can say whether last week's fix
+// worked: slips handed back, bookings cancelled after the deposit landed, and
+// holds that lapsed unpaid. Each carries its numerator and denominator, and a
+// rate of `null` — never `0` — when there is nothing to divide.
+
+/// Read one friction proxy off a totals or bucket object.
+fn friction<'a>(row: &'a Value, proxy: &str) -> &'a Value {
+    &row["friction"][proxy]
+}
+
+#[tokio::test]
+async fn friction_proxies_count_the_seeded_world() {
+    let app = TestApp::new().await.expect("create test app");
+    let admin = seed_admin(&app, "friction-world@test.com").await;
+    seed_world(app.db()).await;
+
+    let body = funnel(&app, &admin, "?startDate=2026-09-01&endDate=2026-09-02").await;
+    let hf = bucket(&body, "2026-09-01", "hf").expect("1 Sep hf bucket");
+
+    // Two links got a slip; the handed-back one still sits on needs_action.
+    let needs_action = friction(hf, "needsActionSlipRate");
+    assert_eq!(needs_action["numerator"], 1);
+    assert_eq!(needs_action["denominator"], 2, "links with a slip");
+    assert_eq!(needs_action["rate"], 0.5);
+
+    // One booking had a slip verified, and it is confirmed, not cancelled.
+    let cancelled = friction(hf, "cancelAfterDepositRate");
+    assert_eq!(cancelled["numerator"], 0);
+    assert_eq!(cancelled["denominator"], 1);
+    assert_eq!(
+        cancelled["rate"], 0.0,
+        "0 out of 1 is a real rate; only 0 out of 0 is null"
+    );
+
+    // All four windows closed two days after they were issued, in the fixed
+    // past. Only the paid request escapes the numerator.
+    let expired = friction(hf, "expiredHoldRate");
+    assert_eq!(expired["numerator"], 3);
+    assert_eq!(expired["denominator"], 4);
+    assert_eq!(expired["rate"], 0.75);
+
+    let totals = &body["totals"];
+    assert_eq!(friction(totals, "needsActionSlipRate")["rate"], 0.3333);
+    assert_eq!(friction(totals, "cancelAfterDepositRate")["denominator"], 1);
+    assert_eq!(friction(totals, "expiredHoldRate")["numerator"], 4);
+    assert_eq!(friction(totals, "expiredHoldRate")["denominator"], 5);
+    assert_eq!(friction(totals, "expiredHoldRate")["rate"], 0.8);
+
+    // Nothing the funnel already published moved.
+    assert_eq!(totals["linksIssued"], 5);
+    assert_eq!(totals["slipsUploaded"], 3);
+    assert_eq!(totals["humanDecision"]["needsAction"], 1);
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn a_verified_reupload_clears_an_earlier_needs_action() {
+    let app = TestApp::new().await.expect("create test app");
+    let admin = seed_admin(&app, "friction-reupload@test.com").await;
+
+    // The guest's first slip was handed back and the second was accepted.
+    // The proxy reads the LATEST slip, so this guest is no longer friction:
+    // counting the history instead would make a desk that fixes problems
+    // look worse than one that ignores them.
+    let fixed = seed_booking(
+        app.db(),
+        Some("hf"),
+        "confirmed",
+        Some("deposit_link"),
+        None,
+        bangkok("2026-09-05", 8, 0),
+    )
+    .await;
+    seed_link(
+        app.db(),
+        fixed,
+        bangkok("2026-09-05", 8, 0),
+        Some(bangkok("2026-09-05", 8, 1)),
+    )
+    .await;
+    seed_slip(
+        app.db(),
+        fixed,
+        bangkok("2026-09-05", 8, 30),
+        "manual",
+        "needs_action",
+        Some(bangkok("2026-09-05", 8, 40)),
+    )
+    .await;
+    seed_slip(
+        app.db(),
+        fixed,
+        bangkok("2026-09-05", 9, 0),
+        "shadow_pass",
+        "verified",
+        Some(bangkok("2026-09-05", 9, 10)),
+    )
+    .await;
+
+    // And one that was handed back and left there.
+    let still_stuck = seed_booking(
+        app.db(),
+        Some("hf"),
+        "pending",
+        Some("deposit_link"),
+        None,
+        bangkok("2026-09-05", 10, 0),
+    )
+    .await;
+    seed_link(
+        app.db(),
+        still_stuck,
+        bangkok("2026-09-05", 10, 0),
+        Some(bangkok("2026-09-05", 10, 1)),
+    )
+    .await;
+    seed_slip(
+        app.db(),
+        still_stuck,
+        bangkok("2026-09-05", 10, 30),
+        "manual",
+        "needs_action",
+        Some(bangkok("2026-09-05", 10, 40)),
+    )
+    .await;
+
+    let body = funnel(&app, &admin, "?startDate=2026-09-05&endDate=2026-09-05").await;
+    let hf = bucket(&body, "2026-09-05", "hf").expect("5 Sep hf bucket");
+
+    let needs_action = friction(hf, "needsActionSlipRate");
+    assert_eq!(
+        needs_action["numerator"], 1,
+        "only the link still sitting on needs_action counts"
+    );
+    assert_eq!(needs_action["denominator"], 2);
+    assert_eq!(needs_action["rate"], 0.5);
+
+    // The re-upload also takes its booking out of the expired half: a
+    // verified slip is the guest having paid.
+    assert_eq!(friction(hf, "expiredHoldRate")["numerator"], 1);
+    assert_eq!(friction(hf, "expiredHoldRate")["denominator"], 2);
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn a_machine_handed_back_slip_is_friction_even_though_no_one_decided_it() {
+    let app = TestApp::new().await.expect("create test app");
+    let admin = seed_admin(&app, "friction-machine@test.com").await;
+
+    // `services::slip_confirm::revert_auto_confirm` moves a slip to
+    // `needs_action` when the PMS refuses the confirm, WITHOUT re-stamping
+    // `admin_verified_by` — so the row still names the SlipOK actor. The
+    // funnel's `humanDecision` files that under `autoVerified`, because that
+    // breakdown answers *who decided*. The friction proxy answers *what the
+    // guest was put through*, and this guest was told to upload again.
+    let bounced = seed_booking(
+        app.db(),
+        Some("hf"),
+        "pending",
+        Some("deposit_link"),
+        None,
+        bangkok("2026-09-06", 8, 0),
+    )
+    .await;
+    seed_link(
+        app.db(),
+        bounced,
+        bangkok("2026-09-06", 8, 0),
+        Some(bangkok("2026-09-06", 8, 1)),
+    )
+    .await;
+    seed_slip_decided_by(
+        app.db(),
+        bounced,
+        bangkok("2026-09-06", 8, 30),
+        "verified",
+        "needs_action",
+        Some(bangkok("2026-09-06", 8, 31)),
+        Some(SLIPOK_SYSTEM_USER_ID),
+    )
+    .await;
+
+    let body = funnel(&app, &admin, "?startDate=2026-09-06&endDate=2026-09-06").await;
+    let hf = bucket(&body, "2026-09-06", "hf").expect("6 Sep hf bucket");
+
+    assert_eq!(
+        hf["humanDecision"]["needsAction"], 0,
+        "nobody at the desk decided this one"
+    );
+    assert_eq!(hf["humanDecision"]["autoVerified"], 1);
+    assert_eq!(
+        friction(hf, "needsActionSlipRate")["numerator"],
+        1,
+        "the guest was sent back regardless of who sent them"
+    );
+    assert_eq!(friction(hf, "needsActionSlipRate")["rate"], 1.0);
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn a_booking_cancelled_after_its_deposit_is_counted_once() {
+    let app = TestApp::new().await.expect("create test app");
+    let admin = seed_admin(&app, "friction-cancel@test.com").await;
+
+    // Reissue makes this one booking two links. A cancel-after-deposit rate
+    // counted on links would report it twice and read as two guests lost.
+    let refunded = seed_booking(
+        app.db(),
+        Some("hf"),
+        "cancelled",
+        Some("deposit_link"),
+        None,
+        bangkok("2026-09-07", 8, 0),
+    )
+    .await;
+    seed_link_with_window(
+        app.db(),
+        refunded,
+        bangkok("2026-09-07", 8, 0),
+        Some(bangkok("2026-09-07", 8, 1)),
+        bangkok("2026-09-09", 8, 0),
+        Some(bangkok("2026-09-07", 9, 0)),
+    )
+    .await;
+    seed_link(
+        app.db(),
+        refunded,
+        bangkok("2026-09-07", 9, 0),
+        Some(bangkok("2026-09-07", 9, 1)),
+    )
+    .await;
+    // The slip landed against the second link and was verified: the money
+    // arrived, and the booking was cancelled afterwards.
+    seed_slip(
+        app.db(),
+        refunded,
+        bangkok("2026-09-07", 9, 20),
+        "shadow_pass",
+        "verified",
+        Some(bangkok("2026-09-07", 9, 40)),
+    )
+    .await;
+
+    // A second booking that paid and stayed booked, so the rate is not 100%.
+    let kept = seed_booking(
+        app.db(),
+        Some("hf"),
+        "checked_out",
+        Some("deposit_link"),
+        None,
+        bangkok("2026-09-07", 10, 0),
+    )
+    .await;
+    seed_link(
+        app.db(),
+        kept,
+        bangkok("2026-09-07", 10, 0),
+        Some(bangkok("2026-09-07", 10, 1)),
+    )
+    .await;
+    seed_slip(
+        app.db(),
+        kept,
+        bangkok("2026-09-07", 10, 20),
+        "shadow_pass",
+        "verified",
+        Some(bangkok("2026-09-07", 10, 40)),
+    )
+    .await;
+
+    let body = funnel(&app, &admin, "?startDate=2026-09-07&endDate=2026-09-07").await;
+    let hf = bucket(&body, "2026-09-07", "hf").expect("7 Sep hf bucket");
+
+    assert_eq!(hf["linksIssued"], 3, "two links on one booking, plus one");
+    let cancelled = friction(hf, "cancelAfterDepositRate");
+    assert_eq!(
+        cancelled["numerator"], 1,
+        "one booking, however many links it went through"
+    );
+    assert_eq!(
+        cancelled["denominator"], 2,
+        "two bookings had a slip verified"
+    );
+    assert_eq!(cancelled["rate"], 0.5);
+
+    // And the totals row must not double it either.
+    assert_eq!(
+        friction(&body["totals"], "cancelAfterDepositRate")["numerator"],
+        1
+    );
+    assert_eq!(
+        friction(&body["totals"], "cancelAfterDepositRate")["denominator"],
+        2
+    );
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn a_live_or_revoked_hold_is_in_neither_half_of_the_expired_rate() {
+    let app = TestApp::new().await.expect("create test app");
+    let admin = seed_admin(&app, "friction-live-hold@test.com").await;
+
+    let issued = bangkok("2026-09-08", 8, 0);
+
+    // Lapsed: window closed in the fixed past, nothing paid.
+    let lapsed = seed_booking(
+        app.db(),
+        Some("hf"),
+        "pending",
+        Some("deposit_link"),
+        None,
+        issued,
+    )
+    .await;
+    seed_link(app.db(), lapsed, issued, Some(bangkok("2026-09-08", 8, 5))).await;
+
+    // Still live. This is the one fixture that MUST be written relative to
+    // `now()`: "the window has not closed yet" is a fact about the clock, and
+    // a fixed future date would silently become a lapsed hold one day and
+    // turn this test red for no reason. Counting it in the denominator would
+    // make today's row read artificially good and then drift down as the day
+    // aged — exactly the drift that would let the weekly pack claim a fix
+    // worked.
+    let still_live = seed_booking(
+        app.db(),
+        Some("hf"),
+        "pending",
+        Some("deposit_link"),
+        None,
+        issued,
+    )
+    .await;
+    seed_link_with_window(
+        app.db(),
+        still_live,
+        issued,
+        None,
+        Utc::now() + Duration::days(2),
+        None,
+    )
+    .await;
+
+    // Revoked by Reissue before it could lapse. It was replaced, not missed,
+    // so scoring it as a settled hold would count reception's own correction
+    // against them.
+    let reissued = seed_booking(
+        app.db(),
+        Some("hf"),
+        "pending",
+        Some("deposit_link"),
+        None,
+        issued,
+    )
+    .await;
+    seed_link_with_window(
+        app.db(),
+        reissued,
+        issued,
+        None,
+        bangkok("2026-09-10", 8, 0),
+        Some(bangkok("2026-09-08", 9, 0)),
+    )
+    .await;
+    seed_link_with_window(
+        app.db(),
+        reissued,
+        bangkok("2026-09-08", 9, 0),
+        None,
+        Utc::now() + Duration::days(2),
+        None,
+    )
+    .await;
+
+    let body = funnel(&app, &admin, "?startDate=2026-09-08&endDate=2026-09-08").await;
+    let hf = bucket(&body, "2026-09-08", "hf").expect("8 Sep hf bucket");
+
+    assert_eq!(hf["linksIssued"], 4, "every link is still an issuance");
+    let expired = friction(hf, "expiredHoldRate");
+    assert_eq!(
+        expired["denominator"], 1,
+        "only the lapsed link's window has closed without being revoked"
+    );
+    assert_eq!(expired["numerator"], 1);
+    assert_eq!(expired["rate"], 1.0);
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn an_empty_window_has_null_friction_rates_rather_than_zeroes() {
+    let app = TestApp::new().await.expect("create test app");
+    let admin = seed_admin(&app, "friction-empty@test.com").await;
+    seed_world(app.db()).await;
+
+    // A window the seeded world does not reach. The card has to render
+    // something, and "0%" would read as a week with no friction at all.
+    let body = funnel(&app, &admin, "?startDate=2026-01-01&endDate=2026-01-31").await;
+    assert_eq!(body["buckets"].as_array().expect("buckets").len(), 0);
+
+    let totals = &body["totals"];
+    for proxy in [
+        "needsActionSlipRate",
+        "cancelAfterDepositRate",
+        "expiredHoldRate",
+    ] {
+        let rate = friction(totals, proxy);
+        assert_eq!(rate["rate"], Value::Null, "{proxy} must not report 0%");
+        assert_eq!(rate["numerator"], 0);
+        assert_eq!(rate["denominator"], 0);
+        assert_eq!(
+            rate["reason"], "no_data",
+            "{proxy} must say why it is blank — a standing line that goes \
+             quiet is one nobody can read"
+        );
+    }
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn a_friction_rate_that_exists_carries_no_reason() {
+    let app = TestApp::new().await.expect("create test app");
+    let admin = seed_admin(&app, "friction-reason@test.com").await;
+    seed_world(app.db()).await;
+
+    let body = funnel(&app, &admin, "?startDate=2026-09-01&endDate=2026-09-02").await;
+    let expired = friction(&body["totals"], "expiredHoldRate");
+
+    assert_eq!(expired["rate"], 0.8);
+    assert_eq!(
+        expired.get("reason"),
+        None,
+        "a reason beside a real rate would read as a caveat on it"
+    );
+
+    // The hfville bucket has nobody who paid, so its cancel rate is the
+    // blank-with-a-reason case inside an otherwise populated response.
+    let hfville = bucket(&body, "2026-09-02", "hfville").expect("2 Sep hfville bucket");
+    let cancelled = friction(hfville, "cancelAfterDepositRate");
+    assert_eq!(cancelled["rate"], Value::Null);
+    assert_eq!(cancelled["reason"], "no_data");
 
     app.cleanup().await.ok();
 }

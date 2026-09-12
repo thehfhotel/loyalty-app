@@ -10,17 +10,20 @@ import {
   FUNNEL_PROPERTIES,
   type DepositFunnelBucket,
   type DepositFunnelCounters,
+  type FrictionCounters,
+  type FrictionRate,
   type FunnelGranularity,
   type FunnelProperty,
 } from '../../services/analyticsService';
 import { BANGKOK_TIME_ZONE } from '../../utils/bangkokTime';
 
 /**
- * Admin analytics (task D6).
+ * Admin analytics (tasks D6, D15).
  *
- * One section so far: the deposit-request funnel. Every number on it is read
- * live from the tables that already hold the data — there is no rollup job
- * behind this page, so what it shows is what the database says right now.
+ * Two sections: the deposit-request funnel, and the friction proxies beneath
+ * it. Every number on both is read live from the tables that already hold the
+ * data — there is no rollup job behind this page, so what it shows is what the
+ * database says right now.
  */
 
 /** `YYYY-MM-DD` for a date, in Bangkok — the zone the backend buckets on. */
@@ -111,6 +114,72 @@ function Breakdown({ title, rows }: { title: string; rows: { label: string; valu
   );
 }
 
+/**
+ * The three friction proxies, in the order the card reads them. Tiles and
+ * table share this list so a column can never drift from the tile above it.
+ */
+const FRICTION_PROXIES = [
+  {
+    key: 'needsAction',
+    testId: 'friction-needs-action',
+    pick: (friction: FrictionCounters) => friction.needsActionSlipRate,
+  },
+  {
+    key: 'cancelAfterDeposit',
+    testId: 'friction-cancel-after-deposit',
+    pick: (friction: FrictionCounters) => friction.cancelAfterDepositRate,
+  },
+  {
+    key: 'expiredHold',
+    testId: 'friction-expired-hold',
+    pick: (friction: FrictionCounters) => friction.expiredHoldRate,
+  },
+] as const;
+
+/** The last column drops its trailing gutter, as in the funnel table. */
+function isLastFrictionColumn(index: number): boolean {
+  return index === FRICTION_PROXIES.length - 1;
+}
+
+/**
+ * Both class strings are written out in full rather than concatenated:
+ * Tailwind only emits utilities it can read literally in the source.
+ */
+function frictionCellClass(index: number): string {
+  return isLastFrictionColumn(index) ? 'py-2 text-right text-ink' : 'py-2 pr-4 text-right text-ink';
+}
+
+function frictionHeaderClass(index: number): string {
+  return isLastFrictionColumn(index)
+    ? 'py-2 text-right font-semibold'
+    : 'py-2 pr-4 text-right font-semibold';
+}
+
+type FrictionStatProps = {
+  label: string;
+  hint: string;
+  /** The rate as a percent, or an em dash when there is nothing to divide by. */
+  value: string;
+  ratio: string;
+  /** Why there is no rate, or `null` when there is one. */
+  reason: string | null;
+  testId: string;
+};
+
+function FrictionStat({ label, hint, value, ratio, reason, testId }: FrictionStatProps) {
+  return (
+    <div className="rounded-lg border border-hairline bg-surface-card p-4" data-testid={testId}>
+      <p className="text-fine text-ink-muted">{label}</p>
+      <p className="text-display font-semibold text-ink">{value}</p>
+      {/* Kept even when the rate is withheld: "0 / 0" tells the operator the
+          window was empty, which an em dash on its own does not. */}
+      <p className="text-fine text-ink-muted">{ratio}</p>
+      {reason === null ? null : <p className="text-fine text-ink-muted">{reason}</p>}
+      <p className="mt-2 text-fine text-ink-muted">{hint}</p>
+    </div>
+  );
+}
+
 export default function AnalyticsPage() {
   const { t } = useTranslation();
   const initialRange = useMemo(defaultRange, []);
@@ -142,6 +211,28 @@ export default function AnalyticsPage() {
 
   const minutes = (value: number | null | undefined) =>
     value === null || value === undefined ? '—' : t('analytics.funnel.minutes', { count: value });
+
+  /**
+   * A friction rate as a percent to one decimal, or an em dash. The wire
+   * carries a fraction and withholds it entirely when nothing reached the
+   * denominator, so a rate nobody could measure never renders as "0.0%".
+   */
+  const frictionPercent = (rate: FrictionRate) =>
+    rate.rate === null ? '—' : t('analytics.friction.percent', { percent: (rate.rate * 100).toFixed(1) });
+
+  const frictionRatio = (rate: FrictionRate) =>
+    t('analytics.friction.ratio', { numerator: rate.numerator, denominator: rate.denominator });
+
+  /**
+   * Why the percent is missing. An absent `reason` still means an empty
+   * denominator, so "no data" is the default rather than a blank line.
+   */
+  const frictionReason = (rate: FrictionRate) => {
+    if (rate.rate !== null) {return null;}
+    return rate.reason === 'not_instrumented'
+      ? t('analytics.friction.reason.notInstrumented')
+      : t('analytics.friction.reason.noData');
+  };
 
   const stageRows = (counters: DepositFunnelCounters) => {
     const issued = counters.linksIssued;
@@ -357,6 +448,88 @@ export default function AnalyticsPage() {
                 {funnel.buckets.length === 0 ? (
                   <p className="py-6 text-center text-caption text-ink-muted" data-testid="funnel-empty">
                     {t('analytics.funnel.noData')}
+                  </p>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+        </Card>
+
+        <Card as="section" aria-labelledby="friction-heading" className="mt-6">
+          <h2 id="friction-heading" className="text-title text-ink">
+            {t('analytics.friction.title')}
+          </h2>
+          <p className="mt-1 text-caption text-ink-muted">{t('analytics.friction.description')}</p>
+
+          {/* No range error and no load error are repeated here: both cards
+              read the one query, and saying "could not load" twice about a
+              single failed request is noise, not information. The funnel card
+              above carries the message; this one simply shows nothing. */}
+          {rangeError === null && funnelQuery.isPending ? (
+            <div className="mt-6 grid gap-3 sm:grid-cols-3" data-testid="friction-loading">
+              {[0, 1, 2].map((index) => (
+                <Skeleton key={index} className="h-24" />
+              ))}
+            </div>
+          ) : null}
+
+          {rangeError === null && totals && funnel ? (
+            <>
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                {FRICTION_PROXIES.map((proxy) => {
+                  const rate = proxy.pick(totals.friction);
+                  return (
+                    <FrictionStat
+                      key={proxy.key}
+                      testId={proxy.testId}
+                      label={t(`analytics.friction.${proxy.key}.label`)}
+                      hint={t(`analytics.friction.${proxy.key}.hint`)}
+                      value={frictionPercent(rate)}
+                      ratio={frictionRatio(rate)}
+                      reason={frictionReason(rate)}
+                    />
+                  );
+                })}
+              </div>
+
+              <p className="mb-2 mt-8 text-caption font-semibold text-ink">
+                {t('analytics.friction.bucketHeading')}
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-caption" data-testid="friction-table">
+                  <caption className="sr-only">{t('analytics.friction.title')}</caption>
+                  <thead>
+                    <tr className="border-b border-hairline text-left text-ink-muted">
+                      <th scope="col" className="py-2 pr-4 font-semibold">{t('analytics.funnel.bucket')}</th>
+                      <th scope="col" className="py-2 pr-4 font-semibold">{t('analytics.filters.property')}</th>
+                      {FRICTION_PROXIES.map((proxy, index) => (
+                        <th key={proxy.key} scope="col" className={frictionHeaderClass(index)}>
+                          {t(`analytics.friction.${proxy.key}.label`)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {funnel.buckets.map((bucket: DepositFunnelBucket) => (
+                      <tr key={`${bucket.bucketStart}-${bucket.property}`} className="border-b border-hairline">
+                        <td className="py-2 pr-4 text-ink">{bucket.bucketStart}</td>
+                        <td className="py-2 pr-4 text-ink">
+                          {bucket.property === 'unknown'
+                            ? t('analytics.filters.unknownProperty')
+                            : t(`property.${bucket.property}`)}
+                        </td>
+                        {FRICTION_PROXIES.map((proxy, index) => (
+                          <td key={proxy.key} className={frictionCellClass(index)}>
+                            {frictionPercent(proxy.pick(bucket.friction))}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {funnel.buckets.length === 0 ? (
+                  <p className="py-6 text-center text-caption text-ink-muted" data-testid="friction-empty">
+                    {t('analytics.friction.noData')}
                   </p>
                 ) : null}
               </div>

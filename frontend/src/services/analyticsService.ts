@@ -61,6 +61,35 @@ export type BookingSourceCounts = {
   channel: number;
 };
 
+/**
+ * Why a friction rate is `null`. Present only when `rate` is null.
+ *
+ * `no_data` — nothing in this window reached the denominator.
+ * `not_instrumented` — the underlying fact is not recorded in the schema.
+ *   No proxy emits this today; it is in the vocabulary because a proxy
+ *   whose fact the database does not hold must still keep its line on the
+ *   card rather than vanishing from the weekly pack.
+ */
+export type FrictionReason = 'no_data' | 'not_instrumented';
+
+/** One friction proxy: a rate in `0..=1`, and the two counts behind it. */
+export type FrictionRate = {
+  /** `null`, never `0`, when `denominator` is 0 — "0% of nothing" is a claim the data does not support. */
+  rate: number | null;
+  numerator: number;
+  denominator: number;
+  reason?: FrictionReason;
+};
+
+export type FrictionCounters = {
+  /** Links whose LATEST slip sits on `needs_action`, over links with a slip. */
+  needsActionSlipRate: FrictionRate;
+  /** Bookings that had a verified slip and are now cancelled, over bookings that had a verified slip. */
+  cancelAfterDepositRate: FrictionRate;
+  /** Deposit-link holds that lapsed unpaid, over holds whose window has closed. */
+  expiredHoldRate: FrictionRate;
+};
+
 export type DepositFunnelCounters = {
   linksIssued: number;
   linksOpened: number;
@@ -78,6 +107,12 @@ export type DepositFunnelCounters = {
   /** A **person's** response time; automatic verifies are excluded. */
   medianMinutesSlipToDecision: number | null;
   bookingsBySource: BookingSourceCounts;
+  /**
+   * Where a deposit request goes wrong (task D15). The funnel says how many
+   * got through; these say what went wrong for the rest, so a week read
+   * against the week before answers whether last week's fix worked.
+   */
+  friction: FrictionCounters;
 };
 
 /** The counters are flattened onto the bucket by the backend. */

@@ -3,7 +3,12 @@ import React from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { DepositFunnel, DepositFunnelParams } from '../../../services/analyticsService';
+import type {
+  DepositFunnel,
+  DepositFunnelCounters,
+  DepositFunnelParams,
+  FrictionRate,
+} from '../../../services/analyticsService';
 
 const mockGetDepositFunnel = vi.fn();
 
@@ -30,6 +35,8 @@ vi.mock('react-i18next', () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       if (key === 'analytics.funnel.minutes') {return `${options?.count} min`;}
       if (key === 'analytics.funnel.ofIssued') {return `${options?.percent}% of links issued`;}
+      if (key === 'analytics.friction.percent') {return `${options?.percent}%`;}
+      if (key === 'analytics.friction.ratio') {return `${options?.numerator} / ${options?.denominator}`;}
       if (key === 'analytics.filters.rangeTooLong') {
         return `The date range must not exceed ${options?.max} days`;
       }
@@ -77,6 +84,14 @@ function funnelFixture(overrides: Partial<DepositFunnel> = {}): DepositFunnel {
       medianMinutesLinkToSlip: 23.5,
       medianMinutesSlipToDecision: 11,
       bookingsBySource: { depositLink: 4, app: 3, channel: 2 },
+      // Consistent with the counters above: 1 of the 6 links with a slip sits
+      // on needs_action, 1 of the 4 confirmed bookings cancelled after paying,
+      // 3 of the 10 issued links lapsed unpaid.
+      friction: {
+        needsActionSlipRate: { rate: 0.1667, numerator: 1, denominator: 6 },
+        cancelAfterDepositRate: { rate: 0.25, numerator: 1, denominator: 4 },
+        expiredHoldRate: { rate: 0.3, numerator: 3, denominator: 10 },
+      },
     },
     buckets: [
       {
@@ -91,6 +106,11 @@ function funnelFixture(overrides: Partial<DepositFunnel> = {}): DepositFunnel {
         medianMinutesLinkToSlip: 20,
         medianMinutesSlipToDecision: 10,
         bookingsBySource: { depositLink: 3, app: 0, channel: 1 },
+        friction: {
+          needsActionSlipRate: { rate: 0.25, numerator: 1, denominator: 4 },
+          cancelAfterDepositRate: { rate: 0.3333, numerator: 1, denominator: 3 },
+          expiredHoldRate: { rate: 0.3333, numerator: 2, denominator: 6 },
+        },
       },
       {
         bucketStart: '2026-09-02',
@@ -104,6 +124,13 @@ function funnelFixture(overrides: Partial<DepositFunnel> = {}): DepositFunnel {
         medianMinutesLinkToSlip: 30,
         medianMinutesSlipToDecision: null,
         bookingsBySource: { depositLink: 1, app: 3, channel: 1 },
+        friction: {
+          // A real 0%, not a missing one: two links got a slip and neither
+          // came back.
+          needsActionSlipRate: { rate: 0, numerator: 0, denominator: 2 },
+          cancelAfterDepositRate: { rate: 0, numerator: 0, denominator: 1 },
+          expiredHoldRate: { rate: 0.25, numerator: 1, denominator: 4 },
+        },
       },
     ],
     ...overrides,
@@ -266,6 +293,11 @@ describe('AnalyticsPage — deposit funnel', () => {
           medianMinutesLinkToSlip: null,
           medianMinutesSlipToDecision: null,
           bookingsBySource: { depositLink: 0, app: 0, channel: 0 },
+          friction: {
+            needsActionSlipRate: { rate: null, numerator: 0, denominator: 0, reason: 'no_data' },
+            cancelAfterDepositRate: { rate: null, numerator: 0, denominator: 0, reason: 'no_data' },
+            expiredHoldRate: { rate: null, numerator: 0, denominator: 0, reason: 'no_data' },
+          },
         },
         buckets: [],
       }),
@@ -327,5 +359,131 @@ describe('AnalyticsPage — deposit funnel', () => {
     // Still the one call from the default window: a range the backend will
     // refuse is not worth a round trip.
     expect(mockGetDepositFunnel).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AnalyticsPage — friction proxies', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetDepositFunnel.mockResolvedValue(funnelFixture());
+  });
+
+  /** The fixture's totals, with one proxy swapped for the case under test. */
+  function totalsWithFriction(
+    proxy: keyof DepositFunnelCounters['friction'],
+    rate: FrictionRate,
+  ): DepositFunnelCounters {
+    const { totals } = funnelFixture();
+    return { ...totals, friction: { ...totals.friction, [proxy]: rate } };
+  }
+
+  it('renders each proxy as a percentage over the two counts behind it', async () => {
+    render(<AnalyticsPage />, { wrapper });
+
+    // 1 of the 6 links that got a slip is still asking the guest to retry.
+    const needsAction = await screen.findByTestId('friction-needs-action');
+    expect(needsAction).toHaveTextContent('16.7%');
+    expect(needsAction).toHaveTextContent('1 / 6');
+
+    const cancelled = screen.getByTestId('friction-cancel-after-deposit');
+    expect(cancelled).toHaveTextContent('25.0%');
+    expect(cancelled).toHaveTextContent('1 / 4');
+
+    const expired = screen.getByTestId('friction-expired-hold');
+    expect(expired).toHaveTextContent('30.0%');
+    expect(expired).toHaveTextContent('3 / 10');
+  });
+
+  it('shows an em dash and a reason where a rate has no denominator', async () => {
+    mockGetDepositFunnel.mockResolvedValue(
+      funnelFixture({
+        totals: totalsWithFriction('cancelAfterDepositRate', {
+          rate: null,
+          numerator: 0,
+          denominator: 0,
+          reason: 'no_data',
+        }),
+      }),
+    );
+
+    render(<AnalyticsPage />, { wrapper });
+
+    const cancelled = await screen.findByTestId('friction-cancel-after-deposit');
+    expect(cancelled).toHaveTextContent('—');
+    expect(cancelled).toHaveTextContent('analytics.friction.reason.noData');
+    // The counts stay on: "0 / 0" says the window was empty, which an em dash
+    // on its own does not.
+    expect(cancelled).toHaveTextContent('0 / 0');
+    // "0% of nothing" is a claim the data does not support.
+    expect(cancelled).not.toHaveTextContent('0.0%');
+  });
+
+  it('keeps an uninstrumented proxy on the card and says why it is blank', async () => {
+    mockGetDepositFunnel.mockResolvedValue(
+      funnelFixture({
+        totals: totalsWithFriction('expiredHoldRate', {
+          rate: null,
+          numerator: 0,
+          denominator: 0,
+          reason: 'not_instrumented',
+        }),
+      }),
+    );
+
+    render(<AnalyticsPage />, { wrapper });
+
+    // Dropping the line would quietly shrink the weekly pack by one proxy.
+    const expired = await screen.findByTestId('friction-expired-hold');
+    expect(expired).toHaveTextContent('analytics.friction.reason.notInstrumented');
+    expect(expired).toHaveTextContent('—');
+    expect(expired).not.toHaveTextContent('analytics.friction.reason.noData');
+  });
+
+  it('defaults a reasonless null rate to "no data" rather than a blank line', async () => {
+    mockGetDepositFunnel.mockResolvedValue(
+      funnelFixture({
+        totals: totalsWithFriction('needsActionSlipRate', {
+          rate: null,
+          numerator: 0,
+          denominator: 0,
+        }),
+      }),
+    );
+
+    render(<AnalyticsPage />, { wrapper });
+
+    expect(await screen.findByTestId('friction-needs-action')).toHaveTextContent(
+      'analytics.friction.reason.noData',
+    );
+  });
+
+  it('lists one friction row per bucket, so two periods can be read against each other', async () => {
+    render(<AnalyticsPage />, { wrapper });
+
+    const table = await screen.findByTestId('friction-table');
+    const rows = within(table).getAllByRole('row');
+    // header + two buckets
+    expect(rows).toHaveLength(3);
+
+    // 1 of 4 slips sent back, 1 of 3 cancelled, 2 of 6 holds lapsed.
+    expect(rows[1]).toHaveTextContent('2026-09-01');
+    expect(rows[1]).toHaveTextContent('property.hf');
+    expect(rows[1]).toHaveTextContent('25.0%');
+    expect(rows[1]).toHaveTextContent('33.3%');
+
+    // A measured zero, which is not the same as no measurement.
+    expect(rows[2]).toHaveTextContent('2026-09-02');
+    expect(rows[2]).toHaveTextContent('property.hfville');
+    expect(rows[2]).toHaveTextContent('0.0%');
+  });
+
+  it('shows the friction empty state for a window with no buckets', async () => {
+    mockGetDepositFunnel.mockResolvedValue(funnelFixture({ buckets: [] }));
+
+    render(<AnalyticsPage />, { wrapper });
+
+    expect(await screen.findByTestId('friction-empty')).toHaveTextContent(
+      'analytics.friction.noData',
+    );
   });
 });

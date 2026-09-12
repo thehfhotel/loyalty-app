@@ -1378,6 +1378,30 @@
       },
       "bucket": "时间段",
       "noData": "该时间段暂无数据"
+    },
+    "friction": {
+      "title": "阻力指标",
+      "description": "三项指标，反映押金请求在哪一步出问题。与上方流程一样，按链接发出的日期统计。",
+      "needsAction": {
+        "label": "被退回的水单",
+        "hint": "最新水单仍要求客人重新提交的链接，占有水单链接的比例。"
+      },
+      "cancelAfterDeposit": {
+        "label": "付款后取消",
+        "hint": "水单已通过核验但现已取消的订单，占水单已通过核验订单的比例。"
+      },
+      "expiredHold": {
+        "label": "逾期失效的保留",
+        "hint": "未付款即到期的押金链接，占付款时限已结束链接的比例。"
+      },
+      "ratio": "{{numerator}} / {{denominator}}",
+      "percent": "{{percent}}%",
+      "reason": {
+        "noData": "暂无可统计的数据",
+        "notInstrumented": "尚未记录"
+      },
+      "bucketHeading": "按时间段",
+      "noData": "该时间段暂无数据"
     }
   }
 }
