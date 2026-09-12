@@ -8,7 +8,6 @@
 
 use chrono::{TimeZone, Utc};
 use serde_json::Value;
-use uuid::Uuid;
 
 use loyalty_backend::services::push_budget::{
     PushBucket, PushBudget, PushRefusal, PushResult, PushTargetHash,
@@ -381,7 +380,7 @@ async fn the_ledger_row_never_contains_a_raw_line_user_id() {
         .unwrap();
 
     let rows: Vec<(String, String)> =
-        sqlx::query_as("SELECT target_hash, result FROM line_push_ledger ORDER BY sent_at")
+        sqlx::query_as("SELECT target_hash, result FROM line_push_ledger ORDER BY sent_at, result")
             .fetch_all(app.db())
             .await
             .expect("ledger read failed");
@@ -548,8 +547,9 @@ async fn admin_endpoint_reports_month_to_date_per_bucket_per_oa() {
             .unwrap();
     }
 
-    let admin_id = Uuid::new_v4();
-    let client = app.authenticated_client_with_role(&admin_id, "admin@example.com", "admin");
+    let admin = TestUser::admin("budget-admin@example.com");
+    admin.insert(app.db()).await.expect("admin insert failed");
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
     let response = client.get("/api/admin/line/push-budget").await;
     response.assert_success();
 
@@ -609,8 +609,9 @@ async fn admin_endpoint_reports_month_to_date_per_bucket_per_oa() {
 #[tokio::test]
 async fn admin_endpoint_refuses_a_non_admin() {
     let app = TestApp::new().await.expect("Failed to create test app");
-    let user_id = Uuid::new_v4();
-    let client = app.authenticated_client(&user_id, "member@example.com");
+    let member = TestUser::new("budget-member@example.com");
+    member.insert(app.db()).await.expect("member insert failed");
+    let client = app.authenticated_client(&member.id, &member.email);
 
     let response = client.get("/api/admin/line/push-budget").await;
     assert!(
