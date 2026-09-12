@@ -51,7 +51,16 @@ async fn create_admin(pool: &sqlx::PgPool, prefix: &str) -> TestUser {
 
 /// A booking with one slip hanging off it, so the export has slip metadata
 /// to include and a `slip_url` to leave out.
-async fn create_booking_with_slip(pool: &sqlx::PgPool, user_id: Uuid) -> (Uuid, Uuid) {
+///
+/// `trans_ref` is a parameter rather than a constant because
+/// `booking_slips_slipok_trans_ref_uidx` is a **global** unique index — it is
+/// the duplicate-slip detection key (F1 §1), so two fixtures in one test
+/// cannot share a reference any more than two real guests could.
+async fn create_booking_with_slip(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    trans_ref: &str,
+) -> (Uuid, Uuid) {
     let room_type_id: Uuid = sqlx::query_scalar(
         "INSERT INTO room_types (id, name, price_per_night, max_guests, is_active) \
          VALUES ($1, $2, 2000.00, 2, true) RETURNING id",
@@ -92,12 +101,13 @@ async fn create_booking_with_slip(pool: &sqlx::PgPool, user_id: Uuid) -> (Uuid, 
     sqlx::query(
         "INSERT INTO booking_slips (id, booking_id, slip_url, uploaded_by, slipok_status, \
          slipok_trans_ref, admin_status, is_primary) \
-         VALUES ($1, $2, $3, $4, 'success', 'TRX-F3-0001', 'verified', true)",
+         VALUES ($1, $2, $3, $4, 'success', $5, 'verified', true)",
     )
     .bind(slip_id)
     .bind(booking_id)
     .bind("/storage/slips/f3-secret-payer-image.jpg")
     .bind(user_id)
+    .bind(trans_ref)
     .execute(pool)
     .await
     .expect("slip insert failed");
@@ -376,7 +386,8 @@ async fn the_access_export_carries_slip_metadata_but_never_the_image() {
     let app = TestApp::new().await.expect("failed to create test app");
     let member = create_member(app.db(), "export").await;
     let admin = create_admin(app.db(), "export-admin").await;
-    let (booking_id, slip_id) = create_booking_with_slip(app.db(), member.id).await;
+    let (booking_id, slip_id) =
+        create_booking_with_slip(app.db(), member.id, "TRX-F3-EXPORT").await;
 
     let created: Value = app
         .authenticated_client(&member.id, &member.email)
@@ -407,7 +418,7 @@ async fn the_access_export_carries_slip_metadata_but_never_the_image() {
         slips[0]["booking_id"].as_str(),
         Some(booking_id.to_string().as_str())
     );
-    assert_eq!(slips[0]["slipok_trans_ref"].as_str(), Some("TRX-F3-0001"));
+    assert_eq!(slips[0]["slipok_trans_ref"].as_str(), Some("TRX-F3-EXPORT"));
     assert_eq!(slips[0]["admin_status"].as_str(), Some("verified"));
 
     // The image is not — not as a column, not as a path, not anywhere in
@@ -475,8 +486,9 @@ async fn an_export_never_includes_another_members_data() {
     let stranger = create_member(app.db(), "stranger").await;
     let admin = create_admin(app.db(), "leak-admin").await;
 
-    create_booking_with_slip(app.db(), subject.id).await;
-    let (stranger_booking, _) = create_booking_with_slip(app.db(), stranger.id).await;
+    create_booking_with_slip(app.db(), subject.id, "TRX-F3-SUBJECT").await;
+    let (stranger_booking, _) =
+        create_booking_with_slip(app.db(), stranger.id, "TRX-F3-STRANGER").await;
 
     let created: Value = app
         .authenticated_client(&subject.id, &subject.email)
