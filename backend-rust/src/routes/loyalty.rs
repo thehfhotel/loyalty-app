@@ -872,13 +872,18 @@ async fn record_stay(
         state.config(),
         user_id,
         Some(payload.property),
+        // A stay thank-you is an ops message, so it draws on the ops share of
+        // the OA's LINE free plan (C5, plan §8) — never on the campaign or
+        // reserve buckets.
+        crate::services::push_budget::PushBucket::Ops,
         &message,
     )
     .await
     {
         // Non-delivery is normal, but the reason matters: `no_push_target`
         // is an erased/deactivated account (the `push_targets` view hid it),
-        // `no_channel` is a LINE misconfiguration we should fix.
+        // `no_channel` is a LINE misconfiguration we should fix, and
+        // `budget_exhausted` is the month's ops allowance being spent.
         Ok(outcome) => tracing::info!(
             user_id = %user_id,
             reason = outcome.reason(),

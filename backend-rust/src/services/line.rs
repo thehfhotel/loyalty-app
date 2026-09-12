@@ -5,6 +5,11 @@
 //! - LIFF ID-token verification (silent enrollment login)
 //! - Messaging API webhook signature verification (follow/unfollow)
 //! - Messaging API push with property-affinity routing (ADR-0001/0002)
+//!
+//! Every push here is metered by `services::push_budget` first: each OA is on
+//! the LINE free plan and the month's ~300 messages are a shared, hard cap
+//! (C5). A push whose bucket is spent is a logged no-op, never an error the
+//! guest can see.
 
 use base64::Engine;
 use hmac::{Hmac, Mac};
@@ -16,6 +21,9 @@ use uuid::Uuid;
 use crate::config::Settings;
 use crate::error::{AppError, AppResult};
 use crate::services::http::outbound;
+use crate::services::push_budget::{
+    PushBucket, PushBudget, PushResult, PushTargetHash, ReserveOutcome,
+};
 use crate::types::Property;
 
 const LINE_VERIFY_URL: &str = "https://api.line.me/oauth2/v2.1/verify";
@@ -114,6 +122,11 @@ pub enum PushOutcome {
     /// Friended, but no friended OA has a usable channel token, or every
     /// attempt was rejected by LINE.
     NoChannel,
+    /// A friended, configured OA was reachable, but its share of the LINE
+    /// free plan is spent for the month (C5). Distinct from `NoChannel`
+    /// because nothing is wrong with the configuration — the allowance ran
+    /// out, and the fix is a budget decision, not a credential.
+    BudgetExhausted,
 }
 
 impl PushOutcome {
@@ -124,6 +137,7 @@ impl PushOutcome {
             Self::NoPushTarget => "no_push_target",
             Self::NoFriendship => "no_friendship",
             Self::NoChannel => "no_channel",
+            Self::BudgetExhausted => "budget_exhausted",
         }
     }
 
@@ -142,11 +156,27 @@ impl PushOutcome {
 /// sent. An erased or deactivated account resolves to
 /// [`PushOutcome::NoPushTarget`] because the `push_targets` view does not
 /// contain it (migration `20260914020000`; PDPA data map §6 / §8 gap P1-3).
+///
+/// ## Budget (C5)
+///
+/// `bucket` names whose share of the OA's LINE free plan this push spends —
+/// [`PushBucket::Ops`] for stay accruals and ops messages,
+/// [`PushBucket::Campaign`] for admin broadcasts. The reservation is taken
+/// **per candidate OA and only once a usable channel token has been found**,
+/// so an unconfigured OA never costs a configured one its quota. An OA whose
+/// bucket is spent is skipped like a failed send: the next friended OA gets a
+/// turn, and only if every candidate refused on budget does the call answer
+/// [`PushOutcome::BudgetExhausted`].
+///
+/// To spend the reserve bucket, call
+/// [`PushBudget::reserve_with_override`][crate::services::push_budget::PushBudget::reserve_with_override]
+/// directly; this routing never draws on it.
 pub async fn push_to_member(
     db: &PgPool,
     settings: &Settings,
     user_id: Uuid,
     event_property: Option<Property>,
+    bucket: PushBucket,
     text: &str,
 ) -> AppResult<PushOutcome> {
     // Resolve the member's LINE userId (LINE Login / LIFF identity).
@@ -203,6 +233,11 @@ pub async fn push_to_member(
         }
     }
 
+    // The only form of the member's LINE identity that reaches the ledger.
+    let target = PushTargetHash::of(&line_user_id);
+    let budget = PushBudget::from_settings(settings);
+    let mut refused_on_budget = false;
+
     for property in candidates {
         if !friended.iter().any(|f| f == property.as_str()) {
             continue;
@@ -214,14 +249,57 @@ pub async fn push_to_member(
             tracing::warn!(property = %property, "LINE channel not configured; skipping push");
             continue;
         };
-        match push_text(token, &line_user_id, text).await {
-            Ok(()) => return Ok(PushOutcome::Delivered),
+
+        // Spend the quota only once there is something to spend it on.
+        let reservation = match budget.reserve(db, property, bucket, &target).await {
+            Ok(ReserveOutcome::Granted(reservation)) => reservation,
+            Ok(ReserveOutcome::Refused(refusal)) => {
+                // A refusal is a normal operating state, not a fault: the
+                // month's share of a hard external cap is gone. The guest
+                // must never see an error for it, so this is a logged no-op.
+                tracing::warn!(
+                    property = %property,
+                    bucket = %bucket,
+                    reason = refusal.reason(),
+                    "LINE push refused by the budget guard; not sending"
+                );
+                refused_on_budget = true;
+                continue;
+            },
             Err(e) => {
+                // The guard itself failing must not take the push path down
+                // with it, and must not silently hand out free quota either:
+                // skip this OA, exactly as an unusable channel would.
+                tracing::error!(
+                    property = %property,
+                    bucket = %bucket,
+                    error = %e,
+                    "LINE push budget reservation failed; skipping this OA"
+                );
+                continue;
+            },
+        };
+
+        match push_text(token, &line_user_id, text).await {
+            Ok(()) => {
+                if let Err(e) = budget.settle(db, &reservation, PushResult::Delivered).await {
+                    tracing::warn!(error = %e, "LINE push ledger settle failed");
+                }
+                return Ok(PushOutcome::Delivered);
+            },
+            Err(e) => {
+                if let Err(settle_err) = budget.settle(db, &reservation, PushResult::Failed).await {
+                    tracing::warn!(error = %settle_err, "LINE push ledger settle failed");
+                }
                 // Fall through to the next friended OA rather than failing
                 // the caller — push is best-effort by design.
                 tracing::warn!(property = %property, error = %e, "LINE push failed; trying next OA");
             },
         }
+    }
+
+    if refused_on_budget {
+        return Ok(PushOutcome::BudgetExhausted);
     }
 
     Ok(PushOutcome::NoChannel)

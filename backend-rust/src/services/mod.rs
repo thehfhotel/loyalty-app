@@ -6,7 +6,8 @@
 //! `slip_match`, and the shared confirm path in `slip_confirm`), the slip
 //! privacy pair from F2 (`slip_access_log`, `slip_retention`), the audit-log
 //! retention prune from F10 (`audit_retention`), the PDPA account erase
-//! from F3 (`account_deletion`), storage,
+//! from F3 (`account_deletion`), the LINE free-plan push budget guard from
+//! C5 (`push_budget`), storage,
 //! SSE, PromptPay, request idempotency, and the shared bounded outbound
 //! HTTP client in `http`.
 //! Domain CRUD lives directly in the `routes/` handlers via `sqlx` rather
@@ -23,6 +24,7 @@ pub mod line;
 pub mod oauth;
 pub mod pms_channel;
 pub mod promptpay;
+pub mod push_budget;
 pub mod slip_access_log;
 pub mod slip_confirm;
 pub mod slip_match;
@@ -38,6 +40,9 @@ pub use email::{EmailConfig, EmailService, EmailServiceImpl, NoOpEmailService};
 pub use oauth::{
     GoogleTokens, GoogleUserInfo, LineTokens, LineUserInfo, OAuthAuthResult, OAuthService,
     OAuthServiceImpl, OAuthUser, OAuthUserInfo,
+};
+pub use push_budget::{
+    PushBucket, PushBudget, PushRefusal, PushResult, PushTargetHash, Reservation, ReserveOutcome,
 };
 pub use slip_confirm::{confirm_slip, ConfirmOutcome};
 pub use slip_match::{decide, SlipDecision};

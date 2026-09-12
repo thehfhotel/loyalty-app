@@ -7,6 +7,7 @@ pub mod admin;
 pub mod admin_bookings;
 pub mod admin_deposit_links;
 pub mod admin_email;
+pub mod admin_line;
 pub mod admin_rooms;
 pub mod admin_slips;
 pub mod analytics;

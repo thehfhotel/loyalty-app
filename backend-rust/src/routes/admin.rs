@@ -1064,6 +1064,13 @@ async fn get_bookings_analytics(
 
 /// POST /api/admin/notifications/broadcast
 /// Send notification to all users or filtered users
+///
+/// In-app notification rows only — this handler does not push to LINE. When
+/// it grows a LINE leg it must spend
+/// [`PushBucket::Campaign`][crate::services::push_budget::PushBucket::Campaign]
+/// (C5, plan §8): a broadcast is the one thing here that can empty an OA's
+/// whole monthly allowance in a single request, which is exactly why the
+/// campaign bucket is separate from the ops one.
 async fn broadcast_notification(
     Extension(user): Extension<AuthUser>,
     State(state): State<AppState>,
@@ -1429,6 +1436,7 @@ impl From<UserRow> for AdminUserResponse {
 /// - `GET /admin/stats` - Dashboard statistics
 /// - `GET /admin/analytics` - Analytics data
 /// - `POST /admin/notifications/broadcast` - Send notification to all users
+/// - `GET  /admin/line/push-budget` - LINE OA push budget, month to date
 ///
 /// # Example
 ///
@@ -1477,6 +1485,9 @@ pub fn router() -> Router<AppState> {
         // Deposit request links (B1): issue / list / revoke / reissue the
         // link reception sends a guest who booked by phone or at the desk.
         .merge(crate::routes::admin_deposit_links::router())
+        // LINE OA push budget (C5): month-to-date usage per bucket per OA,
+        // so the guard that silently declines to send is visible to someone.
+        .merge(crate::routes::admin_line::router())
         // Apply auth middleware to all routes
         .layer(middleware::from_fn(auth_middleware))
 }

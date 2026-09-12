@@ -142,6 +142,7 @@ async fn push_to_an_erased_member_is_a_no_op_with_a_reason() {
         &settings,
         user.id,
         None,
+        loyalty_backend::services::push_budget::PushBucket::Ops,
         "สวัสดีค่ะ",
     )
     .await
@@ -166,6 +167,7 @@ async fn push_to_an_erased_member_is_a_no_op_with_a_reason() {
         &settings,
         user.id,
         None,
+        loyalty_backend::services::push_budget::PushBucket::Ops,
         "สวัสดีค่ะ",
     )
     .await
