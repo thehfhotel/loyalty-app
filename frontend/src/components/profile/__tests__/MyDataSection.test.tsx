@@ -108,9 +108,13 @@ describe('MyDataSection', () => {
     expect(screen.getAllByText('privacy.kindErasureDesc').length).toBeGreaterThan(0);
 
     // The dialog's own confirm button carries `privacy.submit`; there are
-    // two on screen, and the last one rendered is the dialog's.
+    // several on screen, and the last one rendered is the dialog's.
     const confirms = screen.getAllByRole('button', { name: 'privacy.submit' });
-    await user.click(confirms[confirms.length - 1]);
+    const dialogConfirm: HTMLElement | undefined = confirms[confirms.length - 1];
+    if (!dialogConfirm) {
+      throw new Error('the confirm dialog rendered no confirm button');
+    }
+    await user.click(dialogConfirm);
 
     await waitFor(() => expect(mockCreate).toHaveBeenCalledWith('erasure', ''));
   });
