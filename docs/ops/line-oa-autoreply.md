@@ -104,8 +104,13 @@ will drive traffic here.
 
 - App-side desk line: `frontend/src/components/booking/DeskContactFooter.tsx`
   (booking form, hold/checkout, deposit and slip upload, booking status).
-- Build-time numbers: `VITE_DESK_PHONE_HF` / `VITE_DESK_PHONE_HFVILLE` in
-  `deploy.yml`'s frontend build step. Adding them to a running container
-  changes nothing — the bundle has to be rebuilt.
+- Build-time numbers: `frontend/Dockerfile` takes `VITE_DESK_PHONE_HF` /
+  `VITE_DESK_PHONE_HFVILLE` as build args and `ci-build-e2e.yml` fills them
+  from the repository variables `DESK_PHONE_HF` / `DESK_PHONE_HFVILLE`
+  (#414), so production already renders the numbers in the app. Changing one
+  is a variable edit plus a rebuild; editing a running container's
+  environment does nothing. **Use the same number here as in that
+  variable** — a guest given two different numbers for one desk phones the
+  wrong one.
 - Rich menu with the Book tile: board item **C1**, blocked on the channel
   flip (B10).

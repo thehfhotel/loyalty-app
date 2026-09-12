@@ -42,10 +42,10 @@ interface PmsOutageNoticeProps {
  * colleague is usually Thai. English sits beneath it for everyone else,
  * which is also what the deposit-link pages do.
  *
- * When `VITE_DESK_PHONE_*` is unset (B16 has not supplied the numbers in
- * every environment yet) `deskPhone()` returns null and the copy drops the
- * number rather than the whole line — a guest who cannot book always needs
- * *some* way out, even a vague one.
+ * When `VITE_DESK_PHONE_*` is blank — a local build, a preview, a property
+ * whose number has not been set — `deskPhone()` returns null and the copy
+ * drops the number rather than the whole line: a guest who cannot book
+ * always needs *some* way out, even a vague one.
  */
 export default function PmsOutageNotice({ property, reason = null }: PmsOutageNoticeProps) {
   const { i18n } = useTranslation();

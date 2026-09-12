@@ -83,10 +83,10 @@ describe('PmsOutageNotice', () => {
   });
 
   /**
-   * B16 has not supplied the numbers in every environment, so `deskPhone()`
-   * returns null there. The line must degrade to "contact the front desk"
-   * rather than disappear: a guest who cannot book always needs some way
-   * out, even a vague one.
+   * A build without the numbers — local, preview, a property whose variable
+   * is blank — makes `deskPhone()` return null. The line must degrade to
+   * "contact the front desk" rather than disappear: a guest who cannot book
+   * always needs some way out, even a vague one.
    */
   it('still points at the desk when no number is configured', () => {
     vi.stubEnv('VITE_DESK_PHONE_HF', '');

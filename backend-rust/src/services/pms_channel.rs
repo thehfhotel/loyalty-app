@@ -6,7 +6,7 @@
 //! contract is locked in docs/launch-plan.md.
 
 use chrono::{DateTime, NaiveDate, Utc};
-use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
+use reqwest::Url;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -77,15 +77,117 @@ const HOLD_GUARD_REDIS_TIMEOUT: std::time::Duration = std::time::Duration::from_
 /// actually decides.
 const MAX_PMS_BOOKING_ID_LEN: usize = 100;
 
-/// Characters that survive into the path segment untouched.
+/// Why `PMS_BASE_URL` may not be used to build requests.
 ///
-/// The allow-list in [`validate_pms_booking_id`] has already rejected
-/// everything outside `[A-Za-z0-9_-]`, so for an id this client accepts the
-/// encoder is a no-op and the request on the wire is byte-for-byte what it
-/// was before. It stays because a URL built by `format!` has no encoder of
-/// its own, and a second pair of hands on this file should not have to
-/// re-derive that the id was checked three functions ago.
-const PMS_PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'_');
+/// Its own type rather than an `AppError` for the same reason
+/// [`PmsBookingIdError`] is: the caller decides what to log, and the
+/// rejected value never travels with the error — a misconfigured base URL
+/// is the one string in this module most likely to have a credential
+/// accidentally pasted into it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum PmsBaseUrlError {
+    /// Not an absolute URL at all.
+    #[error("PMS_BASE_URL is not an absolute URL")]
+    Unparseable,
+    /// Something other than `http` or `https` — `file:`, `ftp:`, a
+    /// `data:` payload. None of them is a PMS.
+    #[error("PMS_BASE_URL must use http or https")]
+    UnsupportedScheme,
+    /// No host to send the request to.
+    #[error("PMS_BASE_URL has no host")]
+    NoHost,
+    /// Plain `http` to a host that is not loopback or container-local, so
+    /// the channel token would cross a network in clear text.
+    #[error("PMS_BASE_URL may only use plain http for a loopback or container-local host")]
+    InsecureScheme,
+    /// `https://user:pass@host` — credentials in a URL end up in logs,
+    /// and this client authenticates with a bearer token.
+    #[error("PMS_BASE_URL must not carry credentials")]
+    HasCredentials,
+    /// A query string or fragment on a *base* is a sign of a pasted full
+    /// URL, and it would be silently dropped by every join below.
+    #[error("PMS_BASE_URL must not carry a query string or fragment")]
+    HasQueryOrFragment,
+}
+
+/// Parse `PMS_BASE_URL` once, or refuse to build a client at all.
+///
+/// Everything this client sends is `base.join(<fixed path>)` off the value
+/// returned here, so this is the **only** place a config string becomes a
+/// request target. Nothing downstream concatenates a host with a path, and
+/// nothing downstream can be steered by a value that got past this
+/// function.
+///
+/// The rules, and why each one:
+///
+/// * **`https`, or `http` only for loopback and container-local hosts.**
+///   The channel token is a bearer credential; `http://pms.example.com`
+///   would put it on the wire in clear text on every availability call. The
+///   exceptions are the shapes that never leave a host: `localhost`,
+///   `127.0.0.0/8`, `::1`, `host.docker.internal`, and a bare hostname with
+///   no dots — a Docker Compose service or container name, which is what
+///   the integration suite and a same-network deploy both use, and which
+///   cannot be a public name.
+/// * **No credentials.** `https://user:pass@host` leaks into every log line
+///   that prints a URL, and this client authenticates with a bearer token
+///   anyway.
+/// * **No query or fragment.** Either one on a base is a pasted full URL,
+///   and `Url::join` would drop it silently — the request would go
+///   somewhere the operator did not intend and nothing would say so.
+///
+/// The path is normalised to end in `/` so a base that carries a prefix
+/// (`https://pms.example.com/hotel/`) keeps it: `Url::join` replaces the
+/// last segment of a path that does not end in a slash, which would
+/// quietly drop the prefix.
+///
+/// **Fails loudly, never falls back.** A base URL that cannot be trusted is
+/// not replaced with a default — `Settings::validate` refuses to start the
+/// process, and `from_settings` refuses to build a client.
+pub fn validate_pms_base_url(raw: &str) -> Result<Url, PmsBaseUrlError> {
+    let mut url = Url::parse(raw.trim()).map_err(|_| PmsBaseUrlError::Unparseable)?;
+
+    let host = url.host_str().ok_or(PmsBaseUrlError::NoHost)?.to_string();
+    match url.scheme() {
+        "https" => {},
+        "http" if host_is_local(&host) => {},
+        "http" => return Err(PmsBaseUrlError::InsecureScheme),
+        _ => return Err(PmsBaseUrlError::UnsupportedScheme),
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(PmsBaseUrlError::HasCredentials);
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err(PmsBaseUrlError::HasQueryOrFragment);
+    }
+
+    if !url.path().ends_with('/') {
+        let with_slash = format!("{}/", url.path());
+        url.set_path(&with_slash);
+    }
+    Ok(url)
+}
+
+/// Is this host one that plain `http` never leaves a machine or a container
+/// network to reach?
+///
+/// Loopback in either family, `localhost` (and the reserved `.localhost`
+/// suffix), Docker Desktop's `host.docker.internal`, and any dotless
+/// hostname — a Compose service name, a container name, a Kubernetes
+/// in-namespace service. A dotless name cannot be a public DNS name, which
+/// is what makes the rule safe to state this simply.
+fn host_is_local(host: &str) -> bool {
+    let host = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_ascii_lowercase();
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return ip.is_loopback();
+    }
+    host == "localhost"
+        || host.ends_with(".localhost")
+        || host == "host.docker.internal"
+        || !host.contains('.')
+}
 
 /// Why a `pms_booking_id` was refused before it could reach a URL.
 ///
@@ -135,21 +237,46 @@ pub fn validate_pms_booking_id(id: &str) -> Result<&str, PmsBookingIdError> {
     Ok(id)
 }
 
-/// The per-booking action URL, or the reason the id may not be used in one.
+/// Why a per-booking action URL could not be built.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum PmsActionUrlError {
+    /// The booking id is not a plain token.
+    #[error("{0}")]
+    BookingId(#[from] PmsBookingIdError),
+    /// The client's base URL cannot take path segments. Unreachable for a
+    /// base that came through [`validate_pms_base_url`] — http and https
+    /// are always hierarchical — and present so a future scheme change
+    /// becomes an error rather than a request to the bare base URL.
+    #[error("PMS base URL cannot take a path")]
+    BaseNotHierarchical,
+}
+
+/// The per-booking action URL, or the reason it could not be built.
 ///
-/// Split out of [`PmsChannelClient::post_action`] so the validation and the
-/// encoding are one testable step: there is no way to reach the `format!`
-/// without having gone through `validate_pms_booking_id` first.
-fn action_url(
-    base_url: &str,
-    pms_booking_id: &str,
-    action: &str,
-) -> Result<String, PmsBookingIdError> {
+/// Split out of [`PmsChannelClient::post_action`] so validation and URL
+/// construction are one testable step, and built with
+/// [`Url::path_segments_mut`] rather than `format!`: every segment is
+/// percent-encoded by the `url` crate as it is pushed, so a `/` in a
+/// segment becomes `%2F` and **cannot** add a path element, and the host,
+/// scheme, port and any base path prefix come from the parsed base and are
+/// not reachable from the id at all. `validate_pms_booking_id` still runs
+/// first — the encoder makes a bad id harmless, the allow-list makes it
+/// loud.
+fn action_url(base: &Url, pms_booking_id: &str, action: &str) -> Result<Url, PmsActionUrlError> {
     let id = validate_pms_booking_id(pms_booking_id)?;
-    let segment = utf8_percent_encode(id, PMS_PATH_SEGMENT);
-    Ok(format!(
-        "{base_url}/api/channel/bookings/{segment}/{action}"
-    ))
+    let mut url = base.clone();
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|()| PmsActionUrlError::BaseNotHierarchical)?;
+        // The base path is normalised to end in `/`, which leaves a
+        // trailing empty segment; dropping it is what keeps the result
+        // `/api/...` rather than `//api/...`.
+        segments
+            .pop_if_empty()
+            .extend(["api", "channel", "bookings", id, action]);
+    }
+    Ok(url)
 }
 
 /// The header `new-hotel` reads the idempotency key from (its #305).
@@ -584,7 +711,15 @@ impl From<PmsActionError> for AppError {
 }
 
 pub struct PmsChannelClient {
-    base_url: String,
+    /// The parsed, validated `PMS_BASE_URL`.
+    ///
+    /// A `Url`, not a `String`, on purpose: it is the only thing in this
+    /// client that decides where a request goes, it was checked once by
+    /// [`validate_pms_base_url`], and every endpoint below is a
+    /// `base.join(<fixed path>)` off it. There is no string concatenation
+    /// of a config value with a path anywhere in this module, so nothing a
+    /// caller supplies can move a request to another host.
+    base: Url,
     token: String,
     http: reqwest::Client,
     /// Whether [`create_booking`](PmsChannelClient::create_booking) takes
@@ -598,14 +733,28 @@ impl PmsChannelClient {
     /// (PMS_BASE_URL / PMS_CHANNEL_TOKEN).
     pub fn from_settings(settings: &Settings) -> AppResult<Self> {
         let base_url =
-            settings.pms.base_url.clone().ok_or_else(|| {
+            settings.pms.base_url.as_deref().ok_or_else(|| {
                 AppError::Configuration("PMS_BASE_URL is not configured".to_string())
             })?;
+        // Parsed and checked **here, once**, rather than formatted into a
+        // string at each call site. `Settings::validate` runs the same
+        // check at startup so a bad value never reaches a guest's booking;
+        // this is the second gate, for a client built from settings that
+        // did not come through that path (the tests build several).
+        //
+        // The rejected value is not in the error: it is the one config
+        // string most likely to have a credential pasted into it, and this
+        // message reaches an admin's browser through
+        // `AppError::Configuration`.
+        let base = validate_pms_base_url(base_url).map_err(|e| {
+            tracing::error!(reason = %e, "PMS_BASE_URL is not usable; refusing to build a PMS client");
+            AppError::Configuration(format!("PMS_BASE_URL is not usable: {e}"))
+        })?;
         let token = settings.pms.channel_token.clone().ok_or_else(|| {
             AppError::Configuration("PMS_CHANNEL_TOKEN is not configured".to_string())
         })?;
         Ok(Self {
-            base_url: base_url.trim_end_matches('/').to_string(),
+            base,
             token,
             hold_guard: settings.pms.hold_guard,
             http: reqwest::Client::builder()
@@ -618,6 +767,19 @@ impl PmsChannelClient {
         })
     }
 
+    /// A fixed channel endpoint, joined onto the validated base.
+    ///
+    /// `path` is always a literal in this module — there is no caller-
+    /// supplied component — and the base was parsed by
+    /// [`validate_pms_base_url`], so the only way this fails is a
+    /// programming error in one of those literals, which is why it is an
+    /// `Internal` error rather than anything a guest could provoke.
+    fn endpoint(&self, path: &'static str) -> AppResult<Url> {
+        self.base.join(path).map_err(|e| {
+            AppError::Internal(format!("PMS endpoint {path} is not a valid path: {e}"))
+        })
+    }
+
     pub async fn availability(
         &self,
         property: Property,
@@ -625,10 +787,10 @@ impl PmsChannelClient {
         check_out: NaiveDate,
         guests: i32,
     ) -> AppResult<PmsAvailability> {
-        let url = format!("{}/api/channel/availability", self.base_url);
+        let url = self.endpoint("api/channel/availability")?;
         let response = self
             .http
-            .get(&url)
+            .get(url)
             .bearer_auth(&self.token)
             .query(&[
                 ("property", property.as_str().to_string()),
@@ -741,7 +903,7 @@ impl PmsChannelClient {
         request: &PmsCreateBookingRequest,
         idempotency_key: &IdempotencyKey,
     ) -> AppResult<PmsBookingCreated> {
-        let url = format!("{}/api/channel/bookings", self.base_url);
+        let url = self.endpoint("api/channel/bookings")?;
         // `inventory_lock_timeout` is the one reason this client retries by
         // itself, and it retries **exactly once**. The PMS could not take
         // its per-room-night lock in the time it allows itself (new-hotel
@@ -754,7 +916,7 @@ impl PmsChannelClient {
         let (response, replayed) = loop {
             let response = self
                 .http
-                .post(&url)
+                .post(url.clone())
                 .bearer_auth(&self.token)
                 .header(IDEMPOTENCY_KEY_HEADER, idempotency_key.as_str())
                 .json(request)
@@ -941,7 +1103,7 @@ impl PmsChannelClient {
     ) -> Result<(), PmsActionError> {
         // Validate *before* anything is formatted: a booking id that is not a
         // plain token cannot be allowed to steer where this request goes.
-        let url = match action_url(&self.base_url, pms_booking_id, action) {
+        let url = match action_url(&self.base, pms_booking_id, action) {
             Ok(url) => url,
             Err(e) => {
                 // Logged here and nowhere else. The rejected value is not in
@@ -960,7 +1122,7 @@ impl PmsChannelClient {
                 )));
             },
         };
-        let mut request = self.http.post(&url).bearer_auth(&self.token);
+        let mut request = self.http.post(url).bearer_auth(&self.token);
         if let Some(body) = body {
             request = request.json(&body);
         }
@@ -1517,6 +1679,12 @@ mod tests {
 
     const BASE: &str = "https://pms.example.com";
 
+    /// The base every URL test builds from, parsed the way production
+    /// parses it.
+    fn base() -> Url {
+        validate_pms_base_url(BASE).expect("the prod shape is accepted")
+    }
+
     /// Every shape the PMS has been seen to issue, plus the boundary.
     #[test]
     fn accepts_a_plain_booking_token() {
@@ -1602,18 +1770,185 @@ mod tests {
     /// The whole point of the type: a rejected id never reaches a URL.
     #[test]
     fn a_rejected_id_produces_no_url() {
+        let base = base();
         assert_eq!(
-            action_url(BASE, "../../admin/keys", "release"),
-            Err(PmsBookingIdError::IllegalCharacter)
+            action_url(&base, "../../admin/keys", "release"),
+            Err(PmsBookingIdError::IllegalCharacter.into())
         );
         assert_eq!(
-            action_url(BASE, "//evil.example.com", "payment-verified"),
-            Err(PmsBookingIdError::IllegalCharacter)
+            action_url(&base, "//evil.example.com", "payment-verified"),
+            Err(PmsBookingIdError::IllegalCharacter.into())
         );
         assert_eq!(
-            action_url(BASE, "", "release"),
-            Err(PmsBookingIdError::Empty)
+            action_url(&base, "", "release"),
+            Err(PmsBookingIdError::Empty.into())
         );
+    }
+
+    // ========================================================================
+    // The base URL is parsed once, and is the only thing that picks a host
+    // ========================================================================
+
+    /// The shapes production and the test suite actually use.
+    ///
+    /// The dotless-host case is not a curiosity: it is a Docker Compose
+    /// service name, which is how this app reaches the PMS on a shared
+    /// network, and it is why plain `http` has an exception at all.
+    #[test]
+    fn the_validator_accepts_every_shape_we_deploy() {
+        for raw in [
+            "https://pms.example.com",
+            "https://pms.example.com/",
+            "https://pms.example.com:8443",
+            "https://pms.example.com/hotel",
+            "http://localhost:3000",
+            "http://127.0.0.1:8080",
+            "http://[::1]:8080",
+            "http://host.docker.internal:3000",
+            "http://new-hotel-backend:8080",
+        ] {
+            assert!(
+                validate_pms_base_url(raw).is_ok(),
+                "{raw} is a base we deploy and must be accepted"
+            );
+        }
+    }
+
+    /// Plain http to anything routable would put the channel bearer token
+    /// on the wire in clear text on every availability call.
+    #[test]
+    fn the_validator_rejects_plain_http_to_a_public_host() {
+        for raw in [
+            "http://pms.example.com",
+            "http://pms.example.com:8080/hotel",
+            "http://203.0.113.10:8080",
+            "http://192.168.1.10",
+        ] {
+            assert_eq!(
+                validate_pms_base_url(raw),
+                Err(PmsBaseUrlError::InsecureScheme),
+                "{raw} must be refused"
+            );
+        }
+    }
+
+    /// Everything else the value must not be.
+    #[test]
+    fn the_validator_rejects_a_base_that_is_not_a_plain_endpoint() {
+        for (raw, expected) in [
+            // Credentials in a URL end up in every log line that prints it.
+            (
+                "https://user:pass@pms.example.com",
+                PmsBaseUrlError::HasCredentials,
+            ),
+            (
+                "https://user@pms.example.com",
+                PmsBaseUrlError::HasCredentials,
+            ),
+            // A query or fragment on a *base* is a pasted full URL, and
+            // `Url::join` would drop it without a word.
+            (
+                "https://pms.example.com/?token=abc",
+                PmsBaseUrlError::HasQueryOrFragment,
+            ),
+            (
+                "https://pms.example.com/#frag",
+                PmsBaseUrlError::HasQueryOrFragment,
+            ),
+            // Not a PMS.
+            ("file:///etc/passwd", PmsBaseUrlError::UnsupportedScheme),
+            ("ftp://pms.example.com", PmsBaseUrlError::UnsupportedScheme),
+            // Not a URL at all — the shape of an unset variable that
+            // someone filled in with a hostname.
+            ("pms.example.com", PmsBaseUrlError::Unparseable),
+            ("", PmsBaseUrlError::Unparseable),
+            ("   ", PmsBaseUrlError::Unparseable),
+        ] {
+            assert_eq!(
+                validate_pms_base_url(raw),
+                Err(expected),
+                "{raw:?} must be refused"
+            );
+        }
+    }
+
+    /// A base that carries a path prefix keeps it.
+    ///
+    /// `Url::join` replaces the last segment of a path that does not end in
+    /// a slash, so without the normalisation in the validator
+    /// `https://pms.example.com/hotel` + `api/channel/availability` would
+    /// resolve to `/api/channel/availability` and quietly drop the prefix —
+    /// a 404 at deploy time, from a value that looked right.
+    #[test]
+    fn a_base_path_prefix_survives_the_join() {
+        let base = validate_pms_base_url("https://pms.example.com/hotel").unwrap();
+        assert_eq!(base.as_str(), "https://pms.example.com/hotel/");
+        assert_eq!(
+            base.join("api/channel/availability").unwrap().as_str(),
+            "https://pms.example.com/hotel/api/channel/availability"
+        );
+        assert_eq!(
+            action_url(&base, "HF-42", "release").unwrap().as_str(),
+            "https://pms.example.com/hotel/api/channel/bookings/HF-42/release"
+        );
+    }
+
+    /// The ordinary case, spelled out: the host, scheme and port come from
+    /// the base and the id is one segment.
+    #[test]
+    fn an_accepted_id_lands_on_the_pms_as_one_path_segment() {
+        let base = base();
+        assert_eq!(
+            action_url(&base, "hf-2026-000417", "payment-verified")
+                .unwrap()
+                .as_str(),
+            "https://pms.example.com/api/channel/bookings/hf-2026-000417/payment-verified"
+        );
+        assert_eq!(
+            base.join("api/channel/bookings").unwrap().as_str(),
+            "https://pms.example.com/api/channel/bookings"
+        );
+    }
+
+    /// Belt and braces on the encoder: even if the allow-list were ever
+    /// loosened, a segment cannot grow into a path, an authority or a
+    /// query, because `path_segments_mut` percent-encodes what it is given.
+    ///
+    /// Asserted against the *encoder* rather than through `action_url`,
+    /// which refuses all of these before they get there — the point is that
+    /// the second line of defence is real and not just a comment.
+    #[test]
+    fn a_pushed_segment_can_never_add_a_path_element() {
+        for hostile in [
+            "../../admin/keys",
+            "//evil.example.com",
+            "x?token=1",
+            "x#frag",
+            "x/y",
+        ] {
+            let mut url = base();
+            url.path_segments_mut()
+                .unwrap()
+                .pop_if_empty()
+                .extend(["api", "channel", "bookings", hostile, "release"]);
+            assert_eq!(
+                url.host_str(),
+                Some("pms.example.com"),
+                "{hostile:?} must not move the request to another host"
+            );
+            assert!(
+                url.path().starts_with("/api/channel/bookings/"),
+                "{hostile:?} must stay inside the bookings path: {url}"
+            );
+            assert!(
+                url.path().ends_with("/release"),
+                "{hostile:?} must not swallow the action: {url}"
+            );
+            assert!(
+                url.query().is_none() && url.fragment().is_none(),
+                "{hostile:?} must not open a query or fragment: {url}"
+            );
+        }
     }
 
     fn hold_request(phone: &str, membership: Option<&str>) -> PmsCreateBookingRequest {
@@ -1961,16 +2296,22 @@ mod tests {
     }
 
     /// Behaviour for a valid id is byte-for-byte what it was before the
-    /// allow-list existed — the encoder touches nothing the allow-list
-    /// admits.
+    /// allow-list and the parsed base existed — the encoder touches
+    /// nothing the allow-list admits, and the join reproduces the string
+    /// the old `format!` produced.
     #[test]
     fn a_valid_id_builds_exactly_the_url_it_always_did() {
+        let base = base();
         assert_eq!(
-            action_url(BASE, "hf-2026-000417", "payment-verified").unwrap(),
+            action_url(&base, "hf-2026-000417", "payment-verified")
+                .unwrap()
+                .as_str(),
             "https://pms.example.com/api/channel/bookings/hf-2026-000417/payment-verified"
         );
         assert_eq!(
-            action_url(BASE, "booking_00042", "release").unwrap(),
+            action_url(&base, "booking_00042", "release")
+                .unwrap()
+                .as_str(),
             "https://pms.example.com/api/channel/bookings/booking_00042/release"
         );
     }

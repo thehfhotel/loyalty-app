@@ -40,8 +40,11 @@ interface DeskContactFooterProps {
  * Thai first, English beneath, regardless of the UI language the guest
  * picked: the desk answers in Thai, and this is the line that gets read
  * aloud. Same `deskPhone()` source as every other desk line in the app, so
- * the number cannot drift between screens; when `VITE_DESK_PHONE_*` is
- * unset the copy drops the number rather than the whole line.
+ * the number cannot drift between screens. The numbers reach the bundle
+ * through the image build (`VITE_DESK_PHONE_*` build args, filled from the
+ * `DESK_PHONE_HF` / `DESK_PHONE_HFVILLE` repository variables, #414), so
+ * production renders them; a build without them drops the number rather
+ * than the whole line.
  */
 export default function DeskContactFooter({ property, className }: DeskContactFooterProps) {
   const { i18n } = useTranslation();

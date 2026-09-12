@@ -85,8 +85,9 @@ describe('DeskContactFooter', () => {
   });
 
   /**
-   * `VITE_DESK_PHONE_*` is a build-time substitution and is still blank in
-   * some environments. The line degrades; it does not vanish.
+   * `VITE_DESK_PHONE_*` is a build-time substitution, filled in CI from the
+   * `DESK_PHONE_*` repository variables. A build without them — local, a
+   * preview — must degrade the line, not lose it.
    */
   it('still points at the desk when no number is configured anywhere', () => {
     vi.stubEnv('VITE_DESK_PHONE_HF', '');
