@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE booking_slips\n        SET admin_status      = 'verified',\n            admin_verified_at = NOW(),\n            admin_verified_by = $1,\n            admin_notes       = COALESCE($2, admin_notes)\n        WHERE id = $3\n        RETURNING\n            id,\n            booking_id,\n            slip_url,\n            uploaded_at,\n            admin_status,\n            admin_verified_at,\n            admin_verified_by,\n            admin_notes,\n            slipok_status,\n            slipok_verified_at\n        ",
+  "query": "\n        UPDATE booking_slips\n        SET admin_status      = 'verified',\n            admin_verified_at = NOW(),\n            admin_verified_by = $1,\n            admin_notes       = COALESCE($2, admin_notes)\n        WHERE id = $3\n        RETURNING\n            id,\n            booking_id,\n            slip_url,\n            uploaded_at,\n            admin_status,\n            admin_verified_at,\n            admin_verified_by,\n            admin_notes,\n            slipok_status\n        ",
   "describe": {
     "columns": [
       {
@@ -47,11 +47,6 @@
         "ordinal": 8,
         "name": "slipok_status",
         "type_info": "Varchar"
-      },
-      {
-        "ordinal": 9,
-        "name": "slipok_verified_at",
-        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -70,9 +65,8 @@
       true,
       true,
       true,
-      true,
       true
     ]
   },
-  "hash": "77456c9b0a5d7ba2d1609aef9567c98faa72ac57c8327d4b83acdb4fef005c77"
+  "hash": "5b4ae828a6128dbaa2bd9b63163bb92d0b27d17090eacd50426b4ac58f9f835b"
 }

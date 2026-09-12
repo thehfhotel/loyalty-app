@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            b.id                            AS \"id!\",\n            b.user_id                       AS \"user_id!\",\n            b.room_type_id                  AS \"room_type_id!\",\n            b.check_in_date                 AS \"check_in_date!\",\n            b.check_out_date                AS \"check_out_date!\",\n            b.num_guests                    AS \"num_guests!\",\n            b.total_price                   AS \"total_price!\",\n            b.payment_type                  AS \"payment_type?\",\n            b.payment_amount                AS \"payment_amount?\",\n            b.discount_amount               AS \"discount_amount?\",\n            b.discount_reason               AS \"discount_reason?\",\n            b.status                        AS \"status!\",\n            b.notes                         AS \"notes?\",\n            b.admin_notes                   AS \"admin_notes?\",\n            b.created_at                    AS \"created_at?\",\n            b.updated_at                    AS \"updated_at?\",\n            u.email                         AS \"user_email?\",\n            up.first_name                   AS \"first_name?\",\n            up.last_name                    AS \"last_name?\",\n            up.membership_id                AS \"membership_id?\",\n            up.phone                        AS \"phone?\",\n            rt.name                         AS \"rt_name!\",\n            s.id                            AS \"slip_id?\",\n            s.slip_url                      AS \"slip_url?\",\n            s.uploaded_at                   AS \"slip_uploaded_at?\",\n            s.slipok_status                 AS \"slip_slipok_status?\",\n            s.slipok_verified_at            AS \"slip_slipok_verified_at?\",\n            s.admin_status                  AS \"slip_admin_status?\",\n            s.admin_verified_at             AS \"slip_admin_verified_at?\",\n            s.admin_verified_by             AS \"slip_admin_verified_by?\",\n            s.deleted_at                    AS \"slip_deleted_at?\",\n            COALESCE(NULLIF(TRIM(COALESCE(vup.first_name, '') || ' ' || COALESCE(vup.last_name, '')), ''),\n                     vu.email)\n                AS \"slip_admin_verified_by_name?\"\n          FROM bookings b\n          JOIN room_types rt              ON rt.id = b.room_type_id\n          LEFT JOIN users u               ON u.id = b.user_id\n          LEFT JOIN user_profiles up      ON up.user_id = b.user_id\n          LEFT JOIN LATERAL (\n              SELECT *\n                FROM booking_slips bs\n               WHERE bs.booking_id = b.id\n               ORDER BY bs.uploaded_at DESC NULLS LAST, bs.created_at DESC NULLS LAST\n               LIMIT 1\n          ) s ON TRUE\n          LEFT JOIN user_profiles vup     ON vup.user_id = s.admin_verified_by\n          LEFT JOIN users vu              ON vu.id = s.admin_verified_by\n         WHERE b.id = $1\n        ",
+  "query": "\n        SELECT\n            b.id                            AS \"id!\",\n            b.user_id                       AS \"user_id!\",\n            b.room_type_id                  AS \"room_type_id!\",\n            b.check_in_date                 AS \"check_in_date!\",\n            b.check_out_date                AS \"check_out_date!\",\n            b.num_guests                    AS \"num_guests!\",\n            b.total_price                   AS \"total_price!\",\n            b.payment_type                  AS \"payment_type?\",\n            b.payment_amount                AS \"payment_amount?\",\n            b.discount_amount               AS \"discount_amount?\",\n            b.discount_reason               AS \"discount_reason?\",\n            b.status                        AS \"status!\",\n            b.notes                         AS \"notes?\",\n            b.admin_notes                   AS \"admin_notes?\",\n            b.created_at                    AS \"created_at?\",\n            b.updated_at                    AS \"updated_at?\",\n            u.email                         AS \"user_email?\",\n            up.first_name                   AS \"first_name?\",\n            up.last_name                    AS \"last_name?\",\n            up.membership_id                AS \"membership_id?\",\n            up.phone                        AS \"phone?\",\n            rt.name                         AS \"rt_name!\",\n            s.id                            AS \"slip_id?\",\n            s.slip_url                      AS \"slip_url?\",\n            s.uploaded_at                   AS \"slip_uploaded_at?\",\n            s.slipok_status                 AS \"slip_slipok_status?\",\n            s.admin_status                  AS \"slip_admin_status?\",\n            s.admin_verified_at             AS \"slip_admin_verified_at?\",\n            s.admin_verified_by             AS \"slip_admin_verified_by?\",\n            s.deleted_at                    AS \"slip_deleted_at?\",\n            COALESCE(NULLIF(TRIM(COALESCE(vup.first_name, '') || ' ' || COALESCE(vup.last_name, '')), ''),\n                     vu.email)\n                AS \"slip_admin_verified_by_name?\"\n          FROM bookings b\n          JOIN room_types rt              ON rt.id = b.room_type_id\n          LEFT JOIN users u               ON u.id = b.user_id\n          LEFT JOIN user_profiles up      ON up.user_id = b.user_id\n          LEFT JOIN LATERAL (\n              SELECT *\n                FROM booking_slips bs\n               WHERE bs.booking_id = b.id\n               ORDER BY bs.uploaded_at DESC NULLS LAST, bs.created_at DESC NULLS LAST\n               LIMIT 1\n          ) s ON TRUE\n          LEFT JOIN user_profiles vup     ON vup.user_id = s.admin_verified_by\n          LEFT JOIN users vu              ON vu.id = s.admin_verified_by\n         WHERE b.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -135,31 +135,26 @@
       },
       {
         "ordinal": 26,
-        "name": "slip_slipok_verified_at?",
-        "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 27,
         "name": "slip_admin_status?",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 28,
+        "ordinal": 27,
         "name": "slip_admin_verified_at?",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 29,
+        "ordinal": 28,
         "name": "slip_admin_verified_by?",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 30,
+        "ordinal": 29,
         "name": "slip_deleted_at?",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 31,
+        "ordinal": 30,
         "name": "slip_admin_verified_by_name?",
         "type_info": "Text"
       }
@@ -200,9 +195,8 @@
       true,
       true,
       true,
-      true,
       null
     ]
   },
-  "hash": "e693877915e697b8ecfe7b25297a0dd02ba08c286554a672c6f0e0d05f462b71"
+  "hash": "ed3409a5ad427862d8f483152cfa054165b7bf6a6b46e297b187cf113267a522"
 }

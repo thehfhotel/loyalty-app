@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE booking_slips\n        SET admin_status      = 'needs_action',\n            admin_verified_at = NOW(),\n            admin_verified_by = $1,\n            admin_notes       = $2\n        WHERE id = $3\n        RETURNING\n            id,\n            booking_id,\n            slip_url,\n            uploaded_at,\n            admin_status,\n            admin_verified_at,\n            admin_verified_by,\n            admin_notes,\n            slipok_status,\n            slipok_verified_at\n        ",
+  "query": "\n        UPDATE booking_slips\n        SET admin_status      = 'needs_action',\n            admin_verified_at = NOW(),\n            admin_verified_by = $1,\n            admin_notes       = $2\n        WHERE id = $3\n        RETURNING\n            id,\n            booking_id,\n            slip_url,\n            uploaded_at,\n            admin_status,\n            admin_verified_at,\n            admin_verified_by,\n            admin_notes,\n            slipok_status\n        ",
   "describe": {
     "columns": [
       {
@@ -47,11 +47,6 @@
         "ordinal": 8,
         "name": "slipok_status",
         "type_info": "Varchar"
-      },
-      {
-        "ordinal": 9,
-        "name": "slipok_verified_at",
-        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -70,9 +65,8 @@
       true,
       true,
       true,
-      true,
       true
     ]
   },
-  "hash": "9d0d6e01e669df76b70a3ca2cd70070338e4c2fc205e771cb55c940165d9f7a0"
+  "hash": "f14e903b49fe4f1ff713ae431924af83222fbee0b704e2e55406a1f236815cd5"
 }
