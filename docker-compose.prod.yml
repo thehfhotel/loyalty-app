@@ -59,6 +59,19 @@ services:
       - "127.0.0.1:4011:4001"
     build:
       target: runner  # Use production-optimized runner stage with Rust binary
+    # Reachability for the PMS booking channel (B4b). The PMS backend
+    # container publishes NO host port and sits on a different bridge
+    # network (`new-hotel-production_hotel-network`), so the only route to
+    # `/api/channel/*` from this container without coupling the two stacks
+    # together is the PMS web tier's published 3003, via the host gateway.
+    # Docker Desktop supplies `host.docker.internal` for free; on the Linux
+    # box it has to be asked for, and this is the same entry `hf-ads-guard`
+    # already uses on evergreen.
+    #
+    # INERT until `PMS_BASE_URL` is set: this adds one line to /etc/hosts
+    # and nothing else. See docs/ops/pms-channel-wiring.md.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Environment variables are loaded from .env file created by GitHub Actions
       # The workflow injects secrets from GitHub Secrets into .env
