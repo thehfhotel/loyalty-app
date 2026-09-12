@@ -45,6 +45,7 @@
 pub mod account_deletion_test;
 pub mod admin_bootstrap_test;
 pub mod admin_test;
+pub mod analytics_funnel_test;
 pub mod audit_retention_test;
 pub mod auth_test;
 pub mod booking_notify_test;

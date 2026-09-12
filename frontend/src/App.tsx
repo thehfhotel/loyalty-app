@@ -47,6 +47,7 @@ const RoomTypeManagement = lazy(() => import('./pages/admin/RoomTypeManagement')
 const RoomManagement = lazy(() => import('./pages/admin/RoomManagement'));
 const RoomAvailability = lazy(() => import('./pages/admin/RoomAvailability'));
 const BookingManagement = lazy(() => import('./pages/admin/BookingManagement'));
+const AnalyticsPage = lazy(() => import('./pages/admin/AnalyticsPage'));
 import { useEffect, useState, useRef } from 'react';
 import { checkPWAInstallPrompt } from './utils/pwaUtils';
 import { notificationService } from './services/notificationService';
@@ -470,6 +471,14 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin">
               <AdminTransactionHistoryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/analytics"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <AnalyticsPage />
             </ProtectedRoute>
           }
         />
