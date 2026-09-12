@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 
 // Mock data for testing
 const mockUserWithAllData = {
@@ -115,6 +115,26 @@ function getDesktopTable() {
   return screen.getByRole('table');
 }
 
+// UserManagement fetches twice on mount: the initial-load effect fills the
+// table, then the auto-search effect immediately re-runs (it is gated on
+// `initialLoading`, so it fires the moment that flips false) and sets
+// `isSearching`, which makes <Table loading> swap every row for a Skeleton
+// before the second fetch resolves.
+//
+// So a row node queried once can be torn out of the DOM a tick later. A bare
+// `expect(await findByText(x)).toBeInTheDocument()` captures the node in the
+// first window and asserts after the swap — which is why this file passed on
+// an idle CI runner but failed on a loaded dev laptop, where the swap lands
+// between the query and the assertion.
+//
+// Re-querying inside waitFor removes the race: it retries through the skeleton
+// window and only ever asserts on a node that is live at assertion time.
+async function expectTextInTable(text: string) {
+  await waitFor(() => {
+    expect(within(getDesktopTable()).getByText(text)).toBeInTheDocument();
+  });
+}
+
 describe('UserManagement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -129,7 +149,9 @@ describe('UserManagement', () => {
     it('should render the page title', async () => {
       render(<UserManagement />);
 
-      expect(await screen.findByText('User Management')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('User Management')).toBeInTheDocument();
+      });
     });
 
     it('should render without crashing', async () => {
@@ -142,14 +164,18 @@ describe('UserManagement', () => {
     it('should render search input', async () => {
       render(<UserManagement />);
 
-      expect(await screen.findByPlaceholderText('Search users...')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('Search users...')).toBeInTheDocument();
+      });
     });
 
     it('should render stats cards', async () => {
       render(<UserManagement />);
 
-      expect(await screen.findByText('100')).toBeInTheDocument();
-      expect(await screen.findByText('85')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('100')).toBeInTheDocument();
+        expect(screen.getByText('85')).toBeInTheDocument();
+      });
     });
   });
 
@@ -167,8 +193,7 @@ describe('UserManagement', () => {
 
       render(<UserManagement />);
 
-      const table = await screen.findByRole('table');
-      expect(await within(table).findByText('No name provided')).toBeInTheDocument();
+      await expectTextInTable('No name provided');
     });
 
     it('renders name when only firstName is available', async () => {
@@ -184,8 +209,7 @@ describe('UserManagement', () => {
 
       render(<UserManagement />);
 
-      const table = await screen.findByRole('table');
-      expect(await within(table).findByText('John')).toBeInTheDocument();
+      await expectTextInTable('John');
     });
 
     it('renders name when only lastName is available', async () => {
@@ -201,8 +225,7 @@ describe('UserManagement', () => {
 
       render(<UserManagement />);
 
-      const table = await screen.findByRole('table');
-      expect(await within(table).findByText('Doe')).toBeInTheDocument();
+      await expectTextInTable('Doe');
     });
 
     it('renders "-" when membershipId is null', async () => {
@@ -217,11 +240,13 @@ describe('UserManagement', () => {
 
       render(<UserManagement />);
 
-      await screen.findByText('User Management');
-      // Find the table cell with "-" for membership ID
-      const cells = screen.getAllByRole('cell');
-      const membershipCell = cells.find(cell => cell.textContent === '-');
-      expect(membershipCell).toBeInTheDocument();
+      // Find the table cell with "-" for membership ID. Re-query inside
+      // waitFor: during the post-load re-fetch every cell holds a Skeleton.
+      await waitFor(() => {
+        const cells = screen.getAllByRole('cell');
+        const membershipCell = cells.find(cell => cell.textContent === '-');
+        expect(membershipCell).toBeInTheDocument();
+      });
     });
 
     it('renders "-" when phone is null', async () => {
@@ -236,11 +261,13 @@ describe('UserManagement', () => {
 
       render(<UserManagement />);
 
-      await screen.findByText('User Management');
-      // Phone column should show "-"
-      const cells = screen.getAllByRole('cell');
-      const phoneCell = cells.find(cell => cell.textContent === '-');
-      expect(phoneCell).toBeInTheDocument();
+      // Phone column should show "-". Re-query inside waitFor: during the
+      // post-load re-fetch every cell holds a Skeleton.
+      await waitFor(() => {
+        const cells = screen.getAllByRole('cell');
+        const phoneCell = cells.find(cell => cell.textContent === '-');
+        expect(phoneCell).toBeInTheDocument();
+      });
     });
 
     it('renders default avatar when avatarUrl is null', async () => {
@@ -255,7 +282,10 @@ describe('UserManagement', () => {
 
       render(<UserManagement />);
 
-      await screen.findByText('User Management');
+      // Anchor on the rendered row first — asserting absence while the table
+      // still shows loading Skeletons would pass for the wrong reason.
+      await expectTextInTable('John Doe');
+
       // Should not have img element, should have fallback div
       const images = screen.queryAllByRole('img');
       expect(images).toHaveLength(0);
@@ -283,11 +313,10 @@ describe('UserManagement', () => {
 
       // Should not crash
       const { container } = render(<UserManagement />);
-      const table = await screen.findByRole('table');
 
+      await expectTextInTable('No name provided');
+      await expectTextInTable('test@example.com');
       expect(container).toBeTruthy();
-      expect(within(table).getByText('No name provided')).toBeInTheDocument();
-      expect(within(table).getByText('test@example.com')).toBeInTheDocument();
     });
   });
 
@@ -295,35 +324,31 @@ describe('UserManagement', () => {
     it('renders full name when both firstName and lastName are present', async () => {
       render(<UserManagement />);
 
-      const table = await screen.findByRole('table');
-      expect(await within(table).findByText('John Doe')).toBeInTheDocument();
+      await expectTextInTable('John Doe');
     });
 
     it('renders email', async () => {
       render(<UserManagement />);
 
-      const table = await screen.findByRole('table');
-      expect(await within(table).findByText('john.doe@example.com')).toBeInTheDocument();
+      await expectTextInTable('john.doe@example.com');
     });
 
     it('renders phone when present', async () => {
       render(<UserManagement />);
 
-      expect(await screen.findByText('0812345678')).toBeInTheDocument();
+      await expectTextInTable('0812345678');
     });
 
     it('renders membership ID when present', async () => {
       render(<UserManagement />);
 
-      const table = await screen.findByRole('table');
-      expect(await within(table).findByText('MEM001')).toBeInTheDocument();
+      await expectTextInTable('MEM001');
     });
 
     it('renders active status badge', async () => {
       render(<UserManagement />);
 
-      const table = await screen.findByRole('table');
-      expect(await within(table).findByText('Active')).toBeInTheDocument();
+      await expectTextInTable('Active');
     });
   });
 
@@ -336,11 +361,12 @@ describe('UserManagement', () => {
 
       render(<UserManagement />);
 
-      await screen.findByText('User Management');
-      // Table should be empty (no user rows)
-      const rows = screen.queryAllByRole('row');
-      // Only header row + the empty-state row should exist
-      expect(rows.length).toBeLessThanOrEqual(2);
+      // Re-query inside waitFor: the loading pass renders placeholder
+      // Skeleton rows, so a single read can see more rows than the settled
+      // empty state has. Only header row + the empty-state row should remain.
+      await waitFor(() => {
+        expect(screen.queryAllByRole('row').length).toBeLessThanOrEqual(2);
+      });
     });
   });
 
@@ -348,11 +374,14 @@ describe('UserManagement', () => {
     it('should render view/status/delete actions for each user', async () => {
       render(<UserManagement />);
 
-      await screen.findByRole('table');
-      const table = getDesktopTable();
-      expect(within(table).getByRole('button', { name: 'View Details' })).toBeInTheDocument();
-      expect(within(table).getByRole('button', { name: 'Deactivate' })).toBeInTheDocument();
-      expect(within(table).getByRole('button', { name: 'Delete User' })).toBeInTheDocument();
+      // Re-query inside waitFor: the loading pass replaces the action
+      // buttons with Skeletons.
+      await waitFor(() => {
+        const table = getDesktopTable();
+        expect(within(table).getByRole('button', { name: 'View Details' })).toBeInTheDocument();
+        expect(within(table).getByRole('button', { name: 'Deactivate' })).toBeInTheDocument();
+        expect(within(table).getByRole('button', { name: 'Delete User' })).toBeInTheDocument();
+      });
     });
   });
 });
