@@ -51,7 +51,6 @@ const SLIP = {
   imageUrl: 'https://example.test/slip-1.png',
   uploadedAt: '2027-06-01T10:00:00Z',
   slipokStatus: 'manual' as const,
-  slipokVerifiedAt: null,
   adminStatus: 'pending' as const,
   adminVerifiedAt: null,
   adminVerifiedBy: null,
@@ -259,7 +258,6 @@ describe('BookingManagement', () => {
       slipokReason: null,
       slipokTransRef: null,
       slipokCheckedAt: null,
-      slipokVerifiedAt: null,
       autoVerified: false,
     });
   });

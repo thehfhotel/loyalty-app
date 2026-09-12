@@ -154,11 +154,6 @@ pub struct AdminSlipResponse {
     pub slipok_trans_ref: Option<String>,
     /// When the machine last decided about this slip.
     pub slipok_checked_at: Option<DateTime<Utc>>,
-    /// Legacy, always null: nothing in the backend writes
-    /// `booking_slips.slipok_verified_at` — the automatic path records its
-    /// timestamp in `slipok_checked_at`. Kept on the response only until
-    /// A6's sidebar stops reading it; drop it then, along with the column.
-    pub slipok_verified_at: Option<DateTime<Utc>>,
     /// True when `admin_verified_by` is the SlipOK system actor — the slip
     /// was decided by the machine and no human has touched it since.
     ///
@@ -444,7 +439,6 @@ async fn verify_slip(
         slipok_reason: extras.slipok_reason,
         slipok_trans_ref: extras.slipok_trans_ref,
         slipok_checked_at: extras.slipok_checked_at,
-        slipok_verified_at: outcome.slipok_verified_at,
         auto_verified: crate::services::slip_confirm::is_slipok_actor(outcome.admin_verified_by),
         booking_confirmed: outcome.booking_confirmed,
         booking_not_confirmed_reason: outcome.booking_not_confirmed_reason.map(str::to_string),
@@ -509,8 +503,7 @@ async fn mark_slip_needs_action(
             admin_verified_at,
             admin_verified_by,
             admin_notes,
-            slipok_status,
-            slipok_verified_at
+            slipok_status
         "#,
         admin_id,
         payload.notes,
@@ -582,7 +575,6 @@ async fn mark_slip_needs_action(
         slipok_reason: extras.slipok_reason,
         slipok_trans_ref: extras.slipok_trans_ref,
         slipok_checked_at: extras.slipok_checked_at,
-        slipok_verified_at: row.slipok_verified_at,
         auto_verified: crate::services::slip_confirm::is_slipok_actor(row.admin_verified_by),
         // needs-action never confirms anything and never refuses a
         // confirmation: it hands the slip back to the guest.
@@ -631,7 +623,7 @@ async fn get_slip(
         SELECT id, booking_id, slip_url, uploaded_at, admin_status,
                admin_verified_at, admin_verified_by, admin_notes,
                slipok_status, slipok_reason, slipok_trans_ref,
-               slipok_checked_at, slipok_verified_at,
+               slipok_checked_at,
                deleted_at, deletion_reason
         FROM booking_slips
         WHERE id = $1
@@ -674,7 +666,6 @@ async fn get_slip(
         slipok_reason: row.try_get("slipok_reason")?,
         slipok_trans_ref: row.try_get("slipok_trans_ref")?,
         slipok_checked_at: row.try_get("slipok_checked_at")?,
-        slipok_verified_at: row.try_get("slipok_verified_at")?,
         auto_verified: crate::services::slip_confirm::is_slipok_actor(admin_verified_by),
         // A read decides nothing. Both fields describe what a *call* did to
         // the booking, so on this endpoint they are always the empty answer;
@@ -849,7 +840,6 @@ mod tests {
             slipok_reason: None,
             slipok_trans_ref: Some("TESTREF0001".to_string()),
             slipok_checked_at: Some(Utc::now()),
-            slipok_verified_at: None,
             auto_verified: crate::services::slip_confirm::is_slipok_actor(admin_verified_by),
             booking_confirmed: true,
             booking_not_confirmed_reason: None,

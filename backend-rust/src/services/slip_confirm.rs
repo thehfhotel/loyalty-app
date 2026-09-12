@@ -187,7 +187,6 @@ pub struct ConfirmOutcome {
     pub admin_verified_by: Option<Uuid>,
     pub admin_notes: Option<String>,
     pub slipok_status: Option<String>,
-    pub slipok_verified_at: Option<DateTime<Utc>>,
     /// True when this call flipped the booking the slip pays for to
     /// `confirmed` — either through the PMS payment event (channel
     /// booking) or directly (every other booking).
@@ -336,8 +335,7 @@ pub async fn confirm_slip_with_notes(
             admin_verified_at,
             admin_verified_by,
             admin_notes,
-            slipok_status,
-            slipok_verified_at
+            slipok_status
         "#,
         verified_by,
         admin_notes,
@@ -686,7 +684,6 @@ pub async fn confirm_slip_with_notes(
         admin_verified_by: row.admin_verified_by,
         admin_notes: row.admin_notes,
         slipok_status: row.slipok_status,
-        slipok_verified_at: row.slipok_verified_at,
         booking_confirmed,
         booking_not_confirmed_reason,
     })
@@ -1403,7 +1400,7 @@ async fn read_outcome(
         r#"
         SELECT id, booking_id, slip_url, uploaded_at, admin_status,
                admin_verified_at, admin_verified_by, admin_notes,
-               slipok_status, slipok_verified_at
+               slipok_status
         FROM booking_slips
         WHERE id = $1
         "#,
@@ -1423,7 +1420,6 @@ async fn read_outcome(
         admin_verified_by: row.try_get("admin_verified_by")?,
         admin_notes: row.try_get("admin_notes")?,
         slipok_status: row.try_get("slipok_status")?,
-        slipok_verified_at: row.try_get("slipok_verified_at")?,
         booking_confirmed: false,
         booking_not_confirmed_reason: None,
     })

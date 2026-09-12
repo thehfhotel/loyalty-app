@@ -76,7 +76,6 @@ export interface AdminBookingSlipSummary {
   /** `Option<String>` on the wire — NULL on legacy rows, so nullable here.
    *  `deskSlipOkStatus` is the only place that null becomes a badge. */
   slipokStatus: SlipOkStatusValue | null;
-  slipokVerifiedAt: string | null;
   slipokReason?: string | null;
   slipokCheckedAt?: string | null;
   /** `Option<String>` on the wire; readers fall back to `pending`. */
@@ -100,7 +99,6 @@ export interface AdminBookingSlip {
   uploadedAt: string;
   uploadedBy?: string;
   slipokStatus: SlipOkStatusValue | null;
-  slipokVerifiedAt: string | null;
   slipokReason?: string | null;
   slipokCheckedAt?: string | null;
   adminStatus: 'pending' | 'verified' | 'needs_action' | null;
@@ -249,9 +247,6 @@ export interface AdminSlip {
   slipokTransRef: string | null;
   /** When the machine last decided about this slip. */
   slipokCheckedAt: string | null;
-  /** Legacy, always null on new rows — the automatic path stamps
-   *  `slipokCheckedAt` instead. */
-  slipokVerifiedAt: string | null;
   /** True when `adminVerifiedBy` is the SlipOK system actor. */
   autoVerified: boolean;
   /**

@@ -274,7 +274,6 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
         deletedAt: booking.slip.deletedAt,
         uploadedAt: booking.slip.uploadedAt,
         slipokStatus: booking.slip.slipokStatus,
-        slipokVerifiedAt: booking.slip.slipokVerifiedAt,
         slipokReason: booking.slip.slipokReason ?? null,
         slipokCheckedAt: booking.slip.slipokCheckedAt ?? null,
         adminStatus: booking.slip.adminStatus,
@@ -322,7 +321,6 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
       slipokStatus: (detail.slipokStatus as SlipOkStatusValue | null) ?? listSlip.slipokStatus,
       slipokReason: detail.slipokReason ?? listSlip.slipokReason ?? null,
       slipokCheckedAt: detail.slipokCheckedAt ?? listSlip.slipokCheckedAt ?? null,
-      slipokVerifiedAt: detail.slipokVerifiedAt ?? listSlip.slipokVerifiedAt,
       adminStatus: detail.adminStatus,
       adminVerifiedAt: detail.adminVerifiedAt,
       adminVerifiedBy: detail.adminVerifiedBy,
@@ -476,12 +474,11 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
    */
   const SlipStatusBadge: React.FC<{
     status: string | null;
-    verifiedAt: string | null;
     reason?: string | null;
     checkedAt?: string | null;
     transRef?: string | null;
     autoVerified?: boolean;
-  }> = ({ status, verifiedAt, reason, checkedAt, transRef, autoVerified = false }) => {
+  }> = ({ status, reason, checkedAt, transRef, autoVerified = false }) => {
     // Keyed by the locked vocabulary, not `string`: adding a status to
     // `SLIPOK_STATUSES` must break this build rather than quietly render the
     // machine's new verdict as "not yet checked" at the desk.
@@ -501,12 +498,11 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     const deskStatus = deskSlipOkStatus(status);
     const badge = badges[deskStatus];
     const reasonKey = slipOkReasonKey(reason);
-    const decidedAt = checkedAt ?? verifiedAt;
     // Bangkok, not the browser's zone: reception reads this time out loud to
     // a guest on the phone, and a laptop left on UTC would report a 17:05
     // check as 10:05 — the same reason `utils/bangkokTime` exists for the
     // deposit-link desk.
-    const checkedAtText = formatBangkokDateTime(decidedAt);
+    const checkedAtText = formatBangkokDateTime(checkedAt ?? null);
     // Nothing has decided this slip yet (`pending`), or the machine could
     // not (`unavailable`). Both mean the same thing to the desk — this one
     // is still theirs — and a sentence says it where a badge has to be
@@ -708,7 +704,6 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
             </p>
             <SlipStatusBadge
               status={currentSlip.slipokStatus}
-              verifiedAt={currentSlip.slipokVerifiedAt}
               reason={currentSlip.slipokReason}
               checkedAt={currentSlip.slipokCheckedAt}
               transRef={slipokTransRef}

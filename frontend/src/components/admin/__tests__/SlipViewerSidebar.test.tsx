@@ -104,7 +104,6 @@ function slipResponse(overrides: Record<string, unknown> = {}) {
     slipokReason: null,
     slipokTransRef: null,
     slipokCheckedAt: null,
-    slipokVerifiedAt: null,
     autoVerified: false,
     // `GET /admin/bookings/slips/:id` hard-codes both — "a read decides
     // nothing" — so this is what a plain read of any slip looks like.
@@ -133,7 +132,6 @@ type SlipOverrides = {
   slipokStatus?: string;
   slipokReason?: string | null;
   slipokCheckedAt?: string | null;
-  slipokVerifiedAt?: string | null;
   adminStatus?: string;
   adminVerifiedAt?: string | null;
   adminVerifiedByName?: string | null;
@@ -186,7 +184,6 @@ function makeBooking(overrides: SlipOverrides = {}, booking: BookingOverrides = 
         slipUrl: 'https://example.test/slip-1.png',
         uploadedAt: '2027-06-01T10:00:00Z',
         slipokStatus: 'pending' as const,
-        slipokVerifiedAt: null,
         slipokReason: null,
         slipokCheckedAt: null,
         adminStatus: 'pending' as const,
@@ -224,7 +221,6 @@ function renderSidebar(
         slipokStatus: overrides.slipokStatus ?? 'pending',
         slipokReason: overrides.slipokReason ?? null,
         slipokCheckedAt: overrides.slipokCheckedAt ?? null,
-        slipokVerifiedAt: overrides.slipokVerifiedAt ?? null,
         adminStatus: overrides.adminStatus ?? 'pending',
         adminVerifiedAt: overrides.adminVerifiedAt ?? null,
         autoVerified: overrides.autoVerified ?? false,
@@ -331,7 +327,6 @@ describe('SlipViewerSidebar SlipOK surfacing', () => {
   it('attributes an auto-verified slip to SlipOK', () => {
     renderSidebar({
       slipokStatus: 'verified',
-      slipokVerifiedAt: '2027-06-01T10:05:00Z',
       adminStatus: 'verified',
       adminVerifiedAt: '2027-06-01T10:05:01Z',
       autoVerified: true,
