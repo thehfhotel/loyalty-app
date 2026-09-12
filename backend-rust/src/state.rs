@@ -5,6 +5,7 @@ use sqlx::PgPool;
 
 use crate::config::Settings;
 use crate::services::slipok::SlipOkService;
+use crate::services::slipok_health::SlipokHealthRecorder;
 
 /// Application state shared across all request handlers.
 ///
@@ -34,16 +35,28 @@ impl AppState {
     /// * `redis` - Redis connection manager
     /// * `config` - Application settings
     pub fn new(db: PgPool, redis: ConnectionManager, config: Settings) -> Self {
+        let config = Arc::new(config);
+
         // Built from the settings (which `Settings::new` already fills from
         // SLIPOK_API_KEY / SLIPOK_BRANCH_ID) rather than straight from the
         // environment, so an integration test can point the client at a
         // wiremock server through the same code path production uses.
-        let slipok = SlipOkService::from_settings(&config.slipok).map(Arc::new);
+        //
+        // The A4 degradation tracker is attached here, at the one place that
+        // holds both the pool and the settings, rather than at the two route
+        // handlers that run a slip check. Wiring it to the client means a
+        // third upload path gets the tracking for free instead of silently
+        // going unwatched.
+        let slipok = SlipOkService::from_settings(&config.slipok)
+            .map(|service| {
+                service.with_health(SlipokHealthRecorder::new(db.clone(), Arc::clone(&config)))
+            })
+            .map(Arc::new);
 
         Self {
             db,
             redis,
-            config: Arc::new(config),
+            config,
             slipok,
         }
     }

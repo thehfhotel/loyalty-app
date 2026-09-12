@@ -3,7 +3,9 @@
 //! Contains the service logic the route handlers delegate to: email, the
 //! property booking notification in `booking_notify`, OAuth,
 //! slip verification (the SlipOK client, the pure decision rules in
-//! `slip_match`, and the shared confirm path in `slip_confirm`), the slip
+//! `slip_match`, the shared confirm path in `slip_confirm`, and the
+//! degradation tracker in `slipok_health` that tells the desk when the
+//! automatic check has stopped working), the slip
 //! privacy pair from F2 (`slip_access_log`, `slip_retention`), the audit-log
 //! retention prune from F10 (`audit_retention`), the PDPA account erase
 //! from F3 (`account_deletion`), the LINE free-plan push budget guard from
@@ -30,6 +32,7 @@ pub mod slip_confirm;
 pub mod slip_match;
 pub mod slip_retention;
 pub mod slipok;
+pub mod slipok_health;
 pub mod sse;
 pub mod storage;
 
@@ -50,5 +53,6 @@ pub use slipok::{
     SlipOKConfig, SlipOKHealthStatus, SlipOKService, SlipOkService, SlipVerificationResult,
     VerificationStatus,
 };
+pub use slipok_health::{CheckOutcome, SlipokHealthRecorder};
 pub use sse::{get_sse_service, SseConnectionManager, SseEvent, SseEventType};
 pub use storage::{AllowedMimeTypes, StorageConfig, StorageReport, StorageService, StorageStats};

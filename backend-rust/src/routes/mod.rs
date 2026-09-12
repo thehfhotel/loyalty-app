@@ -9,6 +9,7 @@ pub mod admin_deposit_links;
 pub mod admin_email;
 pub mod admin_line;
 pub mod admin_rooms;
+pub mod admin_slip_report;
 pub mod admin_slips;
 pub mod analytics;
 pub mod auth;

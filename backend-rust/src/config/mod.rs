@@ -413,11 +413,106 @@ pub struct SlipokConfig {
     /// not a deploy.
     #[serde(default)]
     pub auto_verify: bool,
+
+    /// The plan's monthly check allowance (`SLIPOK_MONTHLY_QUOTA`).
+    ///
+    /// **Blank means unknown, and unknown means silent.** The real number is
+    /// not in this repository: it is whatever the owner's SlipOK plan says,
+    /// and task A3 is the step where they record it. Guessing one would be
+    /// worse than having none — an invented ceiling either cries wolf at 80 %
+    /// of a number nobody chose, or stays quiet past the real limit.
+    ///
+    /// A string for the same reason every other optional setting here is one
+    /// (see [`RetentionConfig`]): every compose file passes it as
+    /// `${SLIPOK_MONTHLY_QUOTA:-}`, so "unset" arrives as `Some("")`.
+    pub monthly_quota: Option<String>,
+
+    /// Minutes a degradation alert suppresses the next one
+    /// (`SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS`, default
+    /// [`DEFAULT_DEGRADE_ALERT_COOLDOWN_MINS`]).
+    ///
+    /// A vendor that flaps — up, down, up, down every few minutes — must not
+    /// be able to turn one outage into forty emails to the desk.
+    pub degrade_alert_cooldown_mins: Option<String>,
+
+    /// Consecutive no-verdict answers before the automatic check is declared
+    /// degraded (`SLIPOK_DEGRADE_FAILURE_THRESHOLD`, default
+    /// [`DEFAULT_DEGRADE_FAILURE_THRESHOLD`]).
+    ///
+    /// A single 5xx or timeout is a blip, not an outage — the slip already
+    /// lands in the manual queue on its own, so nothing is lost by waiting
+    /// for the second and third. A **quota** refusal ignores this threshold
+    /// entirely: quota does not come back on its own.
+    pub degrade_failure_threshold: Option<String>,
 }
+
+/// Default cooldown between degradation alerts, in minutes.
+pub const DEFAULT_DEGRADE_ALERT_COOLDOWN_MINS: u32 = 60;
+
+/// Default number of consecutive no-verdict answers before degrading.
+pub const DEFAULT_DEGRADE_FAILURE_THRESHOLD: u32 = 3;
+
+/// Percentage of the monthly quota at which the "running out" warning fires.
+pub const QUOTA_WARNING_PERCENT: i64 = 80;
+
+/// Largest monthly quota this accepts — ten million checks.
+///
+/// A bound, not a style preference. The 80 % test is `used * 100 >= quota *
+/// [`QUOTA_WARNING_PERCENT`]`, so an absurd value overflows `i64` and panics
+/// in a debug build — inside the detached task that records a slip check,
+/// where nothing would report it. Ten million is four orders of magnitude
+/// above any plan a hotel buys, so no legitimate setting is excluded, and an
+/// out-of-range value reads as *unknown* (silent) rather than as a ceiling
+/// nobody can reach.
+pub const MAX_MONTHLY_QUOTA: i64 = 10_000_000;
 
 impl SlipokConfig {
     pub fn is_configured(&self) -> bool {
         self.branch_id.is_some() && self.api_key.is_some()
+    }
+
+    /// The monthly quota, or `None` while the owner has not recorded one.
+    ///
+    /// Only a positive whole number up to [`MAX_MONTHLY_QUOTA`] counts. A
+    /// zero, a negative or a typo is treated as unknown rather than as "you
+    /// have already spent your allowance", which is what a `0` would
+    /// otherwise mean to the 80 % arithmetic; an absurdly large value is
+    /// refused for the overflow reason on that constant, and logged, because
+    /// silently treating a typed-in number as "no quota" is exactly the kind
+    /// of quiet that this whole feature exists to remove.
+    pub fn monthly_quota(&self) -> Option<i64> {
+        let raw = present(&self.monthly_quota)?;
+        match raw.parse::<i64>() {
+            Ok(quota) if (1..=MAX_MONTHLY_QUOTA).contains(&quota) => Some(quota),
+            _ => {
+                tracing::warn!(
+                    value = %raw,
+                    max = MAX_MONTHLY_QUOTA,
+                    "SLIPOK_MONTHLY_QUOTA is not a whole number in 1..=max; \
+                     treating the monthly allowance as unknown, so no quota warning will be sent"
+                );
+                None
+            },
+        }
+    }
+
+    /// Minutes between degradation alerts. Falls back to the default on a
+    /// blank, a typo or a zero — a zero cooldown is the spam this setting
+    /// exists to prevent, so it is refused rather than honoured.
+    pub fn degrade_alert_cooldown_mins(&self) -> u32 {
+        present(&self.degrade_alert_cooldown_mins)
+            .and_then(|raw| raw.parse::<u32>().ok())
+            .filter(|mins| *mins > 0)
+            .unwrap_or(DEFAULT_DEGRADE_ALERT_COOLDOWN_MINS)
+    }
+
+    /// Consecutive failures before degrading. Floored at 1: a threshold of
+    /// zero would declare an outage before anything had failed.
+    pub fn degrade_failure_threshold(&self) -> u32 {
+        present(&self.degrade_failure_threshold)
+            .and_then(|raw| raw.parse::<u32>().ok())
+            .filter(|n| *n > 0)
+            .unwrap_or(DEFAULT_DEGRADE_FAILURE_THRESHOLD)
     }
 }
 
@@ -1305,6 +1400,22 @@ impl Settings {
             .set_override_option("slipok.api_key", env_present("SLIPOK_API_KEY"))?
             .set_override_option("slipok.api_url", env_present("SLIPOK_API_URL"))?
             .set_override_option("slipok.auto_verify", env_present("SLIPOK_AUTO_VERIFY"))?
+            // A4 degradation tracking. All three are `env_present` for the
+            // usual `${VAR:-}` reason, and the quota deliberately has **no**
+            // default: until the owner records the plan's real allowance
+            // (A3), the 80 % warning stays silent rather than guessing.
+            .set_override_option(
+                "slipok.monthly_quota",
+                env_present("SLIPOK_MONTHLY_QUOTA"),
+            )?
+            .set_override_option(
+                "slipok.degrade_alert_cooldown_mins",
+                env_present("SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS"),
+            )?
+            .set_override_option(
+                "slipok.degrade_failure_threshold",
+                env_present("SLIPOK_DEGRADE_FAILURE_THRESHOLD"),
+            )?
             // Which hop's `X-Forwarded-For` the per-IP limiters believe.
             // `env_present` so the `${VAR:-}` blank a compose file passes
             // reads as "unset" and keeps the default rather than trusting
@@ -1828,6 +1939,107 @@ mod tests {
         assert!(!load(None).auto_verify, "unset must default to off");
         assert!(load(Some("true")).auto_verify);
         assert!(!load(Some("false")).auto_verify);
+    }
+
+    /// The A4 quota ceiling has **no default**, and that is the point: until
+    /// the owner records the plan's real allowance (task A3), an 80 % warning
+    /// would be 80 % of a number this repository invented.
+    #[test]
+    fn the_slipok_monthly_quota_is_unknown_until_somebody_records_it() {
+        fn cfg(raw: Option<&str>) -> SlipokConfig {
+            SlipokConfig {
+                monthly_quota: raw.map(str::to_string),
+                ..Default::default()
+            }
+        }
+
+        assert_eq!(cfg(None).monthly_quota(), None, "unset is unknown");
+        // The `${SLIPOK_MONTHLY_QUOTA:-}` blank every compose file passes.
+        assert_eq!(cfg(Some("")).monthly_quota(), None);
+        assert_eq!(cfg(Some("   ")).monthly_quota(), None);
+        // A zero would mean "you have already spent your allowance" to the
+        // 80 % arithmetic, which is a very different claim from "unknown".
+        assert_eq!(cfg(Some("0")).monthly_quota(), None);
+        assert_eq!(cfg(Some("-5")).monthly_quota(), None);
+        assert_eq!(cfg(Some("lots")).monthly_quota(), None);
+        assert_eq!(cfg(Some(" 2000 ")).monthly_quota(), Some(2000));
+
+        // The ceiling exists because the 80 % test multiplies the quota by
+        // 80: an `i64::MAX` typed into a repository variable would overflow
+        // and panic inside the detached task that records a slip check.
+        assert_eq!(
+            cfg(Some(&MAX_MONTHLY_QUOTA.to_string())).monthly_quota(),
+            Some(MAX_MONTHLY_QUOTA)
+        );
+        assert_eq!(
+            cfg(Some(&(MAX_MONTHLY_QUOTA + 1).to_string())).monthly_quota(),
+            None
+        );
+        assert_eq!(cfg(Some(&i64::MAX.to_string())).monthly_quota(), None);
+        // Wider than an i64 — a parse failure, not a range failure, and the
+        // same "unknown" answer.
+        assert_eq!(cfg(Some("99999999999999999999999")).monthly_quota(), None);
+    }
+
+    /// The overflow the ceiling prevents, asserted directly against the
+    /// arithmetic that would have panicked.
+    #[test]
+    fn the_quota_ceiling_keeps_the_eighty_percent_test_inside_an_i64() {
+        assert!(MAX_MONTHLY_QUOTA
+            .checked_mul(QUOTA_WARNING_PERCENT)
+            .is_some());
+        assert!(i64::MAX.checked_mul(QUOTA_WARNING_PERCENT).is_none());
+    }
+
+    /// The cooldown and the failure threshold *do* have defaults, because a
+    /// missing one would mean "alert on everything, for ever" rather than
+    /// "stay quiet" — the opposite trade from the quota.
+    #[test]
+    fn the_degrade_knobs_fall_back_to_their_defaults() {
+        fn cfg(cooldown: Option<&str>, threshold: Option<&str>) -> SlipokConfig {
+            SlipokConfig {
+                degrade_alert_cooldown_mins: cooldown.map(str::to_string),
+                degrade_failure_threshold: threshold.map(str::to_string),
+                ..Default::default()
+            }
+        }
+
+        let unset = cfg(None, None);
+        assert_eq!(
+            unset.degrade_alert_cooldown_mins(),
+            DEFAULT_DEGRADE_ALERT_COOLDOWN_MINS
+        );
+        assert_eq!(
+            unset.degrade_failure_threshold(),
+            DEFAULT_DEGRADE_FAILURE_THRESHOLD
+        );
+
+        let blank = cfg(Some(""), Some("  "));
+        assert_eq!(
+            blank.degrade_alert_cooldown_mins(),
+            DEFAULT_DEGRADE_ALERT_COOLDOWN_MINS
+        );
+        assert_eq!(
+            blank.degrade_failure_threshold(),
+            DEFAULT_DEGRADE_FAILURE_THRESHOLD
+        );
+
+        // A zero cooldown is exactly the spam the setting exists to prevent,
+        // and a zero threshold would declare an outage before anything had
+        // failed. Both are refused, not honoured.
+        let zeroed = cfg(Some("0"), Some("0"));
+        assert_eq!(
+            zeroed.degrade_alert_cooldown_mins(),
+            DEFAULT_DEGRADE_ALERT_COOLDOWN_MINS
+        );
+        assert_eq!(
+            zeroed.degrade_failure_threshold(),
+            DEFAULT_DEGRADE_FAILURE_THRESHOLD
+        );
+
+        let set = cfg(Some("15"), Some("5"));
+        assert_eq!(set.degrade_alert_cooldown_mins(), 15);
+        assert_eq!(set.degrade_failure_threshold(), 5);
     }
 
     /// `PMS_HOLD_GUARD` is the retirement lever for the Redis hold guard,

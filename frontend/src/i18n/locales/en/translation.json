@@ -790,7 +790,7 @@
           "quotaExceeded": "Quota Exceeded",
           "shadowPass": "System pass (awaiting admin)",
           "manual": "Manual check needed",
-          "unavailable": "Auto-check unavailable"
+          "unavailable": "Auto-check not available — staff will verify"
         },
         "adminStatus": {
           "verified": "Verified",
