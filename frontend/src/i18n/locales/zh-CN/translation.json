@@ -1300,20 +1300,23 @@
       "unknownProperty": "未指定酒店",
       "day": "按日",
       "week": "按周",
-      "month": "按月"
+      "month": "按月",
+      "rangeTooLong": "日期范围不得超过 {{max}} 天",
+      "rangeReversed": "开始日期不得晚于结束日期",
+      "rangeInvalid": "请选择完整的日期范围"
     },
     "funnel": {
       "title": "押金链接转化流程",
       "description": "按链接发出的日期统计：周一发出、周二付款的链接，各阶段都计入周一。",
       "linksIssued": "已发出链接",
       "linksOpened": "已打开",
-      "slipsUploaded": "已上传水单",
+      "slipsUploaded": "有水单的链接",
       "machineDecided": "系统已核验",
       "humanDecided": "员工已处理",
       "bookingsConfirmed": "订单已确认",
       "ofIssued": "占已发出链接的 {{percent}}%",
       "machineVerdict": "系统核验结果",
-      "humanDecision": "员工处理结果",
+      "humanDecision": "处理结果（员工／系统）",
       "verdict": {
         "verified": "自动通过",
         "shadowPass": "通过（影子模式）",
@@ -1324,7 +1327,8 @@
       "decision": {
         "verified": "已通过",
         "needsAction": "需重新提交",
-        "pending": "等待员工"
+        "pending": "等待员工",
+        "autoVerified": "系统自动通过（无员工处理）"
       },
       "timings": "耗时（中位数）",
       "medianLinkToSlip": "发出链接 → 上传水单",

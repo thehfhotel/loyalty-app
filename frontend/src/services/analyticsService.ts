@@ -36,10 +36,22 @@ export type MachineVerdictCounts = {
   pending: number;
 };
 
-/** Exhaustive over `booking_slips.admin_status`, so it sums to `slipsUploaded`. */
+/**
+ * The decision on the slip that stands for a link, and who made it.
+ *
+ * `verified` and `needsAction` are a **person's**. An automatic verify also
+ * writes `admin_status = 'verified'`, stamped with the SlipOK system actor,
+ * and lands in `autoVerified` instead — otherwise, once `SLIPOK_AUTO_VERIFY`
+ * is on, the staff stage would swell with decisions no one at the desk made
+ * and the slip-to-decision median would collapse towards zero.
+ *
+ * Still exhaustive over `booking_slips.admin_status`: the four sum to
+ * `slipsUploaded`.
+ */
 export type HumanDecisionCounts = {
   verified: number;
   needsAction: number;
+  autoVerified: number;
   pending: number;
 };
 
@@ -52,12 +64,18 @@ export type BookingSourceCounts = {
 export type DepositFunnelCounters = {
   linksIssued: number;
   linksOpened: number;
+  /**
+   * Links that received **at least one** slip. The funnel counts links at
+   * every stage, so this is not a count of slip rows: a guest who uploaded
+   * twice against one link is one.
+   */
   slipsUploaded: number;
   machineVerdict: MachineVerdictCounts;
   humanDecision: HumanDecisionCounts;
   bookingsConfirmed: number;
   /** `null` when no link in the row got a slip — not 0, which would read as instant. */
   medianMinutesLinkToSlip: number | null;
+  /** A **person's** response time; automatic verifies are excluded. */
   medianMinutesSlipToDecision: number | null;
   bookingsBySource: BookingSourceCounts;
 };

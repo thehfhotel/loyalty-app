@@ -16,6 +16,8 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use loyalty_backend::services::slip_confirm::SLIPOK_SYSTEM_USER_ID;
+
 use crate::common::{TestApp, TestUser};
 
 /// The non-loginable actor every deposit-link booking is owned by, seeded by
@@ -109,13 +111,39 @@ async fn seed_slip(
     admin_status: &str,
     decided_at: Option<DateTime<Utc>>,
 ) -> Uuid {
+    seed_slip_decided_by(
+        pool,
+        booking_id,
+        uploaded_at,
+        slipok_status,
+        admin_status,
+        decided_at,
+        None,
+    )
+    .await
+}
+
+/// Insert a slip and say **who** decided it. `decided_by` `None` leaves
+/// `admin_verified_by` NULL, which is what every hand-made fixture wants; an
+/// automatic verify passes [`SLIPOK_SYSTEM_USER_ID`], exactly as
+/// `services::slip_confirm` stamps it.
+#[allow(clippy::too_many_arguments)]
+async fn seed_slip_decided_by(
+    pool: &PgPool,
+    booking_id: Uuid,
+    uploaded_at: DateTime<Utc>,
+    slipok_status: &str,
+    admin_status: &str,
+    decided_at: Option<DateTime<Utc>>,
+    decided_by: Option<Uuid>,
+) -> Uuid {
     sqlx::query_scalar::<_, Uuid>(
         r#"
         INSERT INTO booking_slips (
             booking_id, slip_url, uploaded_by, uploaded_at,
-            slipok_status, admin_status, admin_verified_at
+            slipok_status, admin_status, admin_verified_at, admin_verified_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id
         "#,
     )
@@ -127,6 +155,7 @@ async fn seed_slip(
     .bind(slipok_status)
     .bind(admin_status)
     .bind(decided_at)
+    .bind(decided_by)
     .fetch_one(pool)
     .await
     .expect("insert slip fixture")
@@ -631,6 +660,15 @@ async fn a_slip_counts_against_the_link_that_was_live_when_it_landed() {
         "one slip, against the link that was live when it landed"
     );
     assert_eq!(hf["humanDecision"]["verified"], 1);
+    assert_eq!(
+        hf["bookingsConfirmed"], 1,
+        "two links, one booking: counting the links would make the funnel \
+         rise at its last stage"
+    );
+    assert_eq!(
+        body["totals"]["bookingsConfirmed"], 1,
+        "and the totals row must not double it either"
+    );
     // 20 minutes after the *second* link, not 80 after the first.
     assert_eq!(hf["medianMinutesLinkToSlip"], 20.0);
 
@@ -689,8 +727,197 @@ async fn a_links_verdict_is_read_off_its_latest_slip() {
     assert_eq!(hf["humanDecision"]["needsAction"], 0);
     // The first slip landed 10 minutes after the link.
     assert_eq!(hf["medianMinutesLinkToSlip"], 10.0);
-    // The fastest decision on that link's slips: 10 minutes.
+    // The *latest* slip's decision — the same slip the verdicts above come
+    // from — 10 minutes after it landed.
     assert_eq!(hf["medianMinutesSlipToDecision"], 10.0);
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn a_reissue_after_the_window_still_closes_the_link_inside_it() {
+    let app = TestApp::new().await.expect("create test app");
+    let admin = seed_admin(&app, "funnel-reissue-outside@test.com").await;
+
+    // Reception issued a link on 1 September, the guest never paid, and
+    // weeks later — outside the window this report asks about — reception
+    // reissued and the guest paid against the new link.
+    //
+    // The successor has to be found over EVERY link of the booking. Sought
+    // only among the links inside the window, September's link looks like
+    // the live one for ever: it swallows the October slip, the day reports a
+    // payment that happened in another month, the same slip is counted again
+    // in October's report, and the link-to-slip median inherits the 19-day
+    // gap between them.
+    let booking = seed_booking(
+        app.db(),
+        Some("hf"),
+        "confirmed",
+        Some("deposit_link"),
+        None,
+        bangkok("2026-09-01", 8, 0),
+    )
+    .await;
+    seed_link(
+        app.db(),
+        booking,
+        bangkok("2026-09-01", 8, 0),
+        Some(bangkok("2026-09-01", 8, 5)),
+    )
+    .await;
+    sqlx::query("UPDATE booking_deposit_links SET revoked_at = $1 WHERE booking_id = $2")
+        .bind(bangkok("2026-09-20", 10, 0))
+        .bind(booking)
+        .execute(app.db())
+        .await
+        .expect("revoke the first link");
+    seed_link(
+        app.db(),
+        booking,
+        bangkok("2026-09-20", 10, 0),
+        Some(bangkok("2026-09-20", 10, 5)),
+    )
+    .await;
+    seed_slip(
+        app.db(),
+        booking,
+        bangkok("2026-09-20", 10, 30),
+        "shadow_pass",
+        "verified",
+        Some(bangkok("2026-09-20", 10, 50)),
+    )
+    .await;
+
+    let body = funnel(&app, &admin, "?startDate=2026-09-01&endDate=2026-09-02").await;
+    let hf = bucket(&body, "2026-09-01", "hf").expect("1 Sep hf bucket");
+
+    assert_eq!(
+        hf["linksIssued"], 1,
+        "only September's link is in the window"
+    );
+    assert_eq!(
+        hf["slipsUploaded"], 0,
+        "the October slip belongs to the link that superseded this one"
+    );
+    assert_eq!(hf["humanDecision"]["verified"], 0);
+    assert_eq!(
+        hf["medianMinutesLinkToSlip"],
+        Value::Null,
+        "no slip in this cohort means no timing, not a 19-day one"
+    );
+    // The booking really is confirmed — that much is true on 1 September's
+    // row, because the link that led to it was issued that day.
+    assert_eq!(hf["bookingsConfirmed"], 1);
+
+    // And the slip lands exactly once, in the window that actually contains
+    // the link it was uploaded against.
+    let october = funnel(&app, &admin, "?startDate=2026-09-20&endDate=2026-09-21").await;
+    let late = bucket(&october, "2026-09-20", "hf").expect("20 Sep hf bucket");
+    assert_eq!(late["linksIssued"], 1);
+    assert_eq!(late["slipsUploaded"], 1);
+    assert_eq!(late["medianMinutesLinkToSlip"], 30.0);
+
+    app.cleanup().await.ok();
+}
+
+#[tokio::test]
+async fn an_automatic_verify_is_not_a_staff_decision() {
+    let app = TestApp::new().await.expect("create test app");
+    let admin = seed_admin(&app, "funnel-auto-verify@test.com").await;
+
+    // With SLIPOK_AUTO_VERIFY on, `services::slip_confirm` writes
+    // `admin_status = 'verified'` stamped with the SlipOK actor. Counted as a
+    // staff decision, that would inflate the "staff decided" stage and pull
+    // the slip-to-decision median towards zero — which would hide exactly
+    // the thing this card is meant to calibrate.
+    let auto = seed_booking(
+        app.db(),
+        Some("hf"),
+        "confirmed",
+        Some("deposit_link"),
+        None,
+        bangkok("2026-09-01", 8, 0),
+    )
+    .await;
+    seed_link(
+        app.db(),
+        auto,
+        bangkok("2026-09-01", 8, 0),
+        Some(bangkok("2026-09-01", 8, 2)),
+    )
+    .await;
+    seed_slip_decided_by(
+        app.db(),
+        auto,
+        bangkok("2026-09-01", 8, 10),
+        "verified",
+        "verified",
+        Some(bangkok("2026-09-01", 8, 11)),
+        Some(SLIPOK_SYSTEM_USER_ID),
+    )
+    .await;
+
+    // A second request an admin really did look at, so the median has
+    // something human to report.
+    let by_hand = seed_booking(
+        app.db(),
+        Some("hf"),
+        "pending",
+        Some("deposit_link"),
+        None,
+        bangkok("2026-09-01", 9, 0),
+    )
+    .await;
+    seed_link(
+        app.db(),
+        by_hand,
+        bangkok("2026-09-01", 9, 0),
+        Some(bangkok("2026-09-01", 9, 2)),
+    )
+    .await;
+    seed_slip_decided_by(
+        app.db(),
+        by_hand,
+        bangkok("2026-09-01", 9, 10),
+        "manual",
+        "needs_action",
+        Some(bangkok("2026-09-01", 9, 40)),
+        Some(admin.id),
+    )
+    .await;
+
+    let body = funnel(&app, &admin, "?startDate=2026-09-01&endDate=2026-09-01").await;
+    let hf = bucket(&body, "2026-09-01", "hf").expect("1 Sep hf bucket");
+
+    assert_eq!(hf["slipsUploaded"], 2);
+    // The machine's own verdict still counts the auto-verify.
+    assert_eq!(hf["machineVerdict"]["verified"], 1);
+    assert_eq!(hf["machineVerdict"]["manual"], 1);
+
+    assert_eq!(
+        hf["humanDecision"]["verified"], 0,
+        "nobody verified that slip — SlipOK did"
+    );
+    assert_eq!(hf["humanDecision"]["autoVerified"], 1);
+    assert_eq!(hf["humanDecision"]["needsAction"], 1);
+    assert_eq!(
+        hf["humanDecision"]["pending"], 0,
+        "an auto-verified slip is decided, not waiting for staff"
+    );
+
+    // The four still account for every slip.
+    let decisions = &hf["humanDecision"];
+    let summed = decisions["verified"].as_i64().unwrap()
+        + decisions["needsAction"].as_i64().unwrap()
+        + decisions["autoVerified"].as_i64().unwrap()
+        + decisions["pending"].as_i64().unwrap();
+    assert_eq!(summed, hf["slipsUploaded"].as_i64().unwrap());
+
+    assert_eq!(
+        hf["medianMinutesSlipToDecision"], 30.0,
+        "only the admin's 30 minutes: the machine's 1 minute is not a \
+         staff response time"
+    );
 
     app.cleanup().await.ok();
 }
@@ -743,6 +970,7 @@ async fn deposit_funnel_answers_a_fixed_shape() {
     assert!(first.get("linksIssued").is_some());
     assert!(first["machineVerdict"].get("shadowPass").is_some());
     assert!(first["humanDecision"].get("needsAction").is_some());
+    assert!(first["humanDecision"].get("autoVerified").is_some());
     assert!(first["bookingsBySource"].get("depositLink").is_some());
 
     app.cleanup().await.ok();
@@ -800,8 +1028,9 @@ async fn deposit_funnel_refuses_parameters_it_cannot_answer() {
     let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
 
     for query in [
-        // `granularity` is interpolated into `date_trunc`, so it is an
-        // allowlist and not a passthrough.
+        // `granularity` reaches `date_trunc` as a bind parameter, never as
+        // text spliced into the SQL — the allowlist is what turns an unknown
+        // field name into a 400 rather than a Postgres error read as a 500.
         "?granularity=hour",
         // Percent-encoded, because a raw one is not a valid request URI and
         // would never reach the handler to be refused.

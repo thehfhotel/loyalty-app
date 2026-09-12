@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 import AppShell from '../../components/layout/AppShell';
 import { Card, EmptyState, FormField, Input, PageHeader, Select, Skeleton } from '../../components/ui';
 import {
@@ -26,6 +27,36 @@ import { BANGKOK_TIME_ZONE } from '../../utils/bangkokTime';
 function bangkokDay(date: Date): string {
   // `en-CA` formats as YYYY-MM-DD, which is what the API takes.
   return new Intl.DateTimeFormat('en-CA', { timeZone: BANGKOK_TIME_ZONE }).format(date);
+}
+
+/**
+ * The backend's own cap. Checked here too so a two-year range shows the
+ * operator what is wrong with it instead of a 400 dressed up as a network
+ * error.
+ */
+const MAX_RANGE_DAYS = 366;
+
+/** Days in an inclusive range, or `null` if either end is unparseable. */
+function rangeDays(startDate: string, endDate: string): number | null {
+  const start = Date.parse(`${startDate}T00:00:00Z`);
+  const end = Date.parse(`${endDate}T00:00:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end)) {return null;}
+  return Math.round((end - start) / 86_400_000) + 1;
+}
+
+/**
+ * The backend's own words for a refusal, when it sent any. `AppError`
+ * serialises `{ error, message }`, and "The date range must not exceed 366
+ * days" is a far more useful thing to put on screen than "network error".
+ */
+function serverMessage(error: unknown): string | null {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as { message?: unknown } | undefined;
+    if (typeof data?.message === 'string' && data.message.length > 0) {
+      return data.message;
+    }
+  }
+  return null;
 }
 
 function defaultRange(): { startDate: string; endDate: string } {
@@ -88,10 +119,22 @@ export default function AnalyticsPage() {
   const [granularity, setGranularity] = useState<FunnelGranularity>('day');
   const [property, setProperty] = useState<FunnelProperty | ''>('');
 
+  const span = rangeDays(startDate, endDate);
+  const rangeError =
+    span === null
+      ? t('analytics.filters.rangeInvalid')
+      : span < 1
+        ? t('analytics.filters.rangeReversed')
+        : span > MAX_RANGE_DAYS
+          ? t('analytics.filters.rangeTooLong', { max: MAX_RANGE_DAYS })
+          : null;
+
   const params = { startDate, endDate, granularity, property } as const;
   const funnelQuery = useQuery({
     queryKey: ['admin', 'analytics', 'depositFunnel', params],
     queryFn: () => analyticsService.getDepositFunnel(params),
+    // A range the backend will refuse is not worth a round trip.
+    enabled: rangeError === null,
   });
 
   const funnel = funnelQuery.data;
@@ -185,7 +228,13 @@ export default function AnalyticsPage() {
           </h2>
           <p className="mt-1 text-caption text-ink-muted">{t('analytics.funnel.description')}</p>
 
-          {funnelQuery.isPending ? (
+          {rangeError ? (
+            <div className="mt-6" data-testid="funnel-range-error">
+              <EmptyState title={rangeError} />
+            </div>
+          ) : null}
+
+          {rangeError === null && funnelQuery.isPending ? (
             <div className="mt-6 grid gap-3 sm:grid-cols-3 lg:grid-cols-6" data-testid="funnel-loading">
               {[0, 1, 2, 3, 4, 5].map((index) => (
                 <Skeleton key={index} className="h-24" />
@@ -193,13 +242,16 @@ export default function AnalyticsPage() {
             </div>
           ) : null}
 
-          {funnelQuery.isError ? (
+          {rangeError === null && funnelQuery.isError ? (
             <div className="mt-6">
-              <EmptyState title={t('analytics.loadError')} description={t('errors.networkError')} />
+              <EmptyState
+                title={t('analytics.loadError')}
+                description={serverMessage(funnelQuery.error) ?? t('errors.networkError')}
+              />
             </div>
           ) : null}
 
-          {totals && funnel ? (
+          {rangeError === null && totals && funnel ? (
             <>
               <div className="mt-6 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
                 {stageRows(totals).map((stage) => (
@@ -229,6 +281,11 @@ export default function AnalyticsPage() {
                   rows={[
                     { label: t('analytics.funnel.decision.verified'), value: totals.humanDecision.verified },
                     { label: t('analytics.funnel.decision.needsAction'), value: totals.humanDecision.needsAction },
+                    // Closed by SlipOK, not by anyone at the desk. Shown
+                    // beside the staff decisions rather than folded into
+                    // them: with auto-verify on, the gap between these two
+                    // columns is the calibration.
+                    { label: t('analytics.funnel.decision.autoVerified'), value: totals.humanDecision.autoVerified },
                     { label: t('analytics.funnel.decision.pending'), value: totals.humanDecision.pending },
                   ]}
                 />

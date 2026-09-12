@@ -30,6 +30,9 @@ vi.mock('react-i18next', () => ({
     t: (key: string, options?: Record<string, unknown>) => {
       if (key === 'analytics.funnel.minutes') {return `${options?.count} min`;}
       if (key === 'analytics.funnel.ofIssued') {return `${options?.percent}% of links issued`;}
+      if (key === 'analytics.filters.rangeTooLong') {
+        return `The date range must not exceed ${options?.max} days`;
+      }
       return key;
     },
   }),
@@ -69,7 +72,7 @@ function funnelFixture(overrides: Partial<DepositFunnel> = {}): DepositFunnel {
       linksOpened: 8,
       slipsUploaded: 6,
       machineVerdict: { verified: 0, shadowPass: 4, manual: 1, unavailable: 1, pending: 0 },
-      humanDecision: { verified: 4, needsAction: 1, pending: 1 },
+      humanDecision: { verified: 4, needsAction: 1, autoVerified: 2, pending: 1 },
       bookingsConfirmed: 4,
       medianMinutesLinkToSlip: 23.5,
       medianMinutesSlipToDecision: 11,
@@ -83,7 +86,7 @@ function funnelFixture(overrides: Partial<DepositFunnel> = {}): DepositFunnel {
         linksOpened: 5,
         slipsUploaded: 4,
         machineVerdict: { verified: 0, shadowPass: 3, manual: 1, unavailable: 0, pending: 0 },
-        humanDecision: { verified: 3, needsAction: 1, pending: 0 },
+        humanDecision: { verified: 3, needsAction: 1, autoVerified: 0, pending: 0 },
         bookingsConfirmed: 3,
         medianMinutesLinkToSlip: 20,
         medianMinutesSlipToDecision: 10,
@@ -96,7 +99,7 @@ function funnelFixture(overrides: Partial<DepositFunnel> = {}): DepositFunnel {
         linksOpened: 3,
         slipsUploaded: 2,
         machineVerdict: { verified: 0, shadowPass: 1, manual: 0, unavailable: 1, pending: 0 },
-        humanDecision: { verified: 1, needsAction: 0, pending: 1 },
+        humanDecision: { verified: 1, needsAction: 0, autoVerified: 0, pending: 1 },
         bookingsConfirmed: 1,
         medianMinutesLinkToSlip: 30,
         medianMinutesSlipToDecision: null,
@@ -169,6 +172,20 @@ describe('AnalyticsPage — deposit funnel', () => {
     expect(screen.getByTestId('breakdown-analytics.funnel.decision.needsAction')).toHaveTextContent('1');
     expect(screen.getByTestId('breakdown-analytics.funnel.source.app')).toHaveTextContent('3');
     expect(screen.getByTestId('breakdown-analytics.funnel.source.channel')).toHaveTextContent('2');
+  });
+
+  it('shows auto-verified slips beside the staff decisions, not inside them', async () => {
+    render(<AnalyticsPage />, { wrapper });
+
+    // SlipOK closed two of them. Folded into "verified" they would flatter
+    // the desk's throughput and hide what auto-verify is actually doing.
+    expect(
+      await screen.findByTestId('breakdown-analytics.funnel.decision.autoVerified'),
+    ).toHaveTextContent('2');
+    expect(screen.getByTestId('breakdown-analytics.funnel.decision.verified')).toHaveTextContent('4');
+
+    // The staff stage counts the 4 + 1 a person decided, not the 2 SlipOK did.
+    expect(screen.getByText('50% of links issued')).toBeInTheDocument();
   });
 
   it('renders the median timings and leaves an undecided one blank', async () => {
@@ -244,7 +261,7 @@ describe('AnalyticsPage — deposit funnel', () => {
           linksOpened: 0,
           slipsUploaded: 0,
           machineVerdict: { verified: 0, shadowPass: 0, manual: 0, unavailable: 0, pending: 0 },
-          humanDecision: { verified: 0, needsAction: 0, pending: 0 },
+          humanDecision: { verified: 0, needsAction: 0, autoVerified: 0, pending: 0 },
           bookingsConfirmed: 0,
           medianMinutesLinkToSlip: null,
           medianMinutesSlipToDecision: null,
@@ -269,5 +286,46 @@ describe('AnalyticsPage — deposit funnel', () => {
 
     expect(await screen.findByText('analytics.loadError')).toBeInTheDocument();
     expect(screen.queryByTestId('funnel-table')).not.toBeInTheDocument();
+  });
+
+  it('shows the backend\'s own words when it refuses the request', async () => {
+    mockGetDepositFunnel.mockRejectedValue(
+      Object.assign(new Error('Request failed with status code 400'), {
+        isAxiosError: true,
+        response: {
+          status: 400,
+          data: { error: 'bad_request', message: 'The date range must not exceed 366 days' },
+        },
+      }),
+    );
+
+    render(<AnalyticsPage />, { wrapper });
+
+    // "Network error" would send the operator to check their wifi over a
+    // parameter they typed.
+    expect(
+      await screen.findByText('The date range must not exceed 366 days'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('errors.networkError')).not.toBeInTheDocument();
+  });
+
+  it('refuses a range longer than the cap without asking the server', async () => {
+    const user = userEvent.setup();
+    render(<AnalyticsPage />, { wrapper });
+
+    await waitFor(() => expect(mockGetDepositFunnel).toHaveBeenCalledTimes(1));
+
+    const startInput = await screen.findByTestId('funnel-start-date');
+    await user.clear(startInput);
+    await user.type(startInput, '2020-01-01');
+
+    expect(await screen.findByTestId('funnel-range-error')).toHaveTextContent(
+      'The date range must not exceed 366 days',
+    );
+    expect(screen.queryByTestId('funnel-table')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('funnel-loading')).not.toBeInTheDocument();
+    // Still the one call from the default window: a range the backend will
+    // refuse is not worth a round trip.
+    expect(mockGetDepositFunnel).toHaveBeenCalledTimes(1);
   });
 });

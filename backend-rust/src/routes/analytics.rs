@@ -33,6 +33,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::middleware::auth::{auth_middleware, has_role, require_admin, AuthUser};
+use crate::services::slip_confirm::SLIPOK_SYSTEM_USER_ID;
 use crate::state::AppState;
 
 // ============================================================================
@@ -309,13 +310,23 @@ pub struct MachineVerdictCounts {
     pub pending: i64,
 }
 
-/// Human decision on the slip that currently stands for a link. Exhaustive
-/// over `booking_slips.admin_status`, so these also sum to `slipsUploaded`.
+/// Decision on the slip that currently stands for a link, and who made it.
+///
+/// `verified` and `needsAction` are decisions a **person** made. An automatic
+/// verify also writes `admin_status = 'verified'`, stamped with
+/// [`SLIPOK_SYSTEM_USER_ID`] (`services::slip_confirm`), and those land in
+/// `autoVerified` instead: with `SLIPOK_AUTO_VERIFY` on they would otherwise
+/// inflate the staff stage and drag the slip-to-decision median towards zero,
+/// which is exactly the calibration this card exists to show.
+///
+/// Still exhaustive over `booking_slips.admin_status`, so the four sum to
+/// `slipsUploaded`.
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanDecisionCounts {
     pub verified: i64,
     pub needs_action: i64,
+    pub auto_verified: i64,
     pub pending: i64,
 }
 
@@ -348,6 +359,9 @@ impl BookingSourceCounts {
 pub struct DepositFunnelCounters {
     pub links_issued: i64,
     pub links_opened: i64,
+    /// Links that received **at least one** slip — the funnel counts links at
+    /// every stage, so this is not a count of `booking_slips` rows. A guest
+    /// who uploaded twice against one link is one.
     pub slips_uploaded: i64,
     pub machine_verdict: MachineVerdictCounts,
     pub human_decision: HumanDecisionCounts,
@@ -355,8 +369,10 @@ pub struct DepositFunnelCounters {
     /// Median minutes from the link being issued to the guest's first slip,
     /// over the links in this row that got one. `null` when none did.
     pub median_minutes_link_to_slip: Option<f64>,
-    /// Median minutes from a slip landing to an admin deciding it
-    /// (`verified` or `needs_action`). `null` when nothing was decided.
+    /// Median minutes from a slip landing to a **person** deciding it
+    /// (`verified` or `needs_action`), measured on the same latest slip the
+    /// verdicts above describe. Automatic verifies are excluded — see
+    /// [`HumanDecisionCounts`]. `null` when nothing was decided by hand.
     pub median_minutes_slip_to_decision: Option<f64>,
     /// Bookings **created** in this bucket that are confirmed today, split by
     /// where they came from. Deliberately a different cohort from
@@ -406,6 +422,7 @@ struct FunnelRow {
     machine_pending: i64,
     human_verified: i64,
     human_needs_action: i64,
+    human_auto_verified: i64,
     human_pending: i64,
     bookings_confirmed: i64,
     median_link_to_slip: Option<f64>,
@@ -973,7 +990,16 @@ async fn get_analytics_dashboard(
 /// uploaded (`uploaded_at` between that link's `issued_at` and the next
 /// one's), and a link's machine verdict and human decision are read off its
 /// **latest** such slip — a guest whose first slip came back `needs_action`
-/// and whose second was verified has been verified, not both.
+/// and whose second was verified has been verified, not both. The successor
+/// is found over *every* link of the booking, not only those inside the
+/// window: clipped first, a link whose Reissue lands after `endDate` would
+/// look like the live one for ever and swallow the successor's slips.
+///
+/// `bookingsConfirmed` is the only stage counted on **bookings** rather than
+/// links, because a reissued booking is two links and still one booking.
+///
+/// A verify stamped with the SlipOK actor is a machine's, not a person's:
+/// see [`HumanDecisionCounts`].
 async fn get_deposit_funnel(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
@@ -995,6 +1021,10 @@ async fn get_deposit_funnel(
         .bind(granularity.as_str())
         .bind(property.as_deref())
         .bind(FUNNEL_TIME_ZONE)
+        // Bound rather than written into the SQL, so this half and the
+        // bookings-by-source query below cannot drift apart.
+        .bind(FUNNEL_CONFIRMED_STATUSES)
+        .bind(SLIPOK_SYSTEM_USER_ID)
         .fetch_all(state.db())
         .await?;
 
@@ -1024,26 +1054,48 @@ async fn get_deposit_funnel(
 /// Funnel stages, per bucket and property plus one totals row.
 ///
 /// `$1` start date, `$2` end date (both inclusive, in `$5`), `$3` the
-/// `date_trunc` field, `$4` the optional property filter, `$5` the time zone.
+/// `date_trunc` field, `$4` the optional property filter, `$5` the time zone,
+/// `$6` the statuses that count as confirmed, `$7` the SlipOK system actor.
 const FUNNEL_SQL: &str = r#"
-WITH link AS (
-    SELECT
-        dl.id                            AS link_id,
-        dl.booking_id                    AS booking_id,
-        dl.issued_at                     AS issued_at,
-        dl.last_opened_at                AS last_opened_at,
-        -- The moment a Reissue took over, so a slip counts against the link
-        -- that was live when the guest uploaded it and not against every
-        -- link the booking ever had.
-        LEAD(dl.issued_at) OVER (PARTITION BY dl.booking_id ORDER BY dl.issued_at)
-                                         AS superseded_at,
-        date_trunc($3, dl.issued_at AT TIME ZONE $5)::date AS bucket,
-        COALESCE(b.property, 'unknown')  AS property,
-        b.status                         AS booking_status
+WITH windowed_booking AS (
+    -- The bookings that had a link issued inside the window. This exists to
+    -- bound the unfiltered pass below to those bookings rather than to every
+    -- link the table has ever held.
+    SELECT DISTINCT dl.booking_id AS booking_id
     FROM booking_deposit_links dl
-    JOIN bookings b ON b.id = dl.booking_id
     WHERE dl.issued_at >= ($1::date::timestamp AT TIME ZONE $5)
       AND dl.issued_at <  (($2::date + 1)::timestamp AT TIME ZONE $5)
+),
+sequenced_link AS (
+    -- `LEAD` over EVERY link of those bookings, BEFORE the window filter.
+    -- Computed on the clipped set instead, a link whose Reissue lands after
+    -- `endDate` would see no successor, stay live for ever, and swallow that
+    -- successor's slips into this window — counting one slip in two months
+    -- and dragging the link-to-slip median out by the gap between them.
+    SELECT
+        dl.id             AS link_id,
+        dl.booking_id     AS booking_id,
+        dl.issued_at      AS issued_at,
+        dl.last_opened_at AS last_opened_at,
+        LEAD(dl.issued_at) OVER (PARTITION BY dl.booking_id ORDER BY dl.issued_at)
+                          AS superseded_at
+    FROM booking_deposit_links dl
+    JOIN windowed_booking wb ON wb.booking_id = dl.booking_id
+),
+link AS (
+    SELECT
+        sl.link_id                       AS link_id,
+        sl.booking_id                    AS booking_id,
+        sl.issued_at                     AS issued_at,
+        sl.last_opened_at                AS last_opened_at,
+        sl.superseded_at                 AS superseded_at,
+        date_trunc($3, sl.issued_at AT TIME ZONE $5)::date AS bucket,
+        COALESCE(b.property, 'unknown')  AS property,
+        b.status                         AS booking_status
+    FROM sequenced_link sl
+    JOIN bookings b ON b.id = sl.booking_id
+    WHERE sl.issued_at >= ($1::date::timestamp AT TIME ZONE $5)
+      AND sl.issued_at <  (($2::date + 1)::timestamp AT TIME ZONE $5)
       AND ($4::text IS NULL OR COALESCE(b.property, 'unknown') = $4)
 ),
 slip AS (
@@ -1052,9 +1104,24 @@ slip AS (
         MIN(s.uploaded_at)                                         AS first_uploaded_at,
         (ARRAY_AGG(s.slipok_status ORDER BY s.uploaded_at DESC))[1] AS last_slipok_status,
         (ARRAY_AGG(s.admin_status  ORDER BY s.uploaded_at DESC))[1] AS last_admin_status,
-        MIN(EXTRACT(EPOCH FROM (s.admin_verified_at - s.uploaded_at))::double precision / 60.0)
-            FILTER (WHERE s.admin_status IN ('verified', 'needs_action')
-                      AND s.admin_verified_at IS NOT NULL)          AS decision_minutes
+        -- Whether the latest slip's decision was a machine's. An automatic
+        -- verify writes `admin_status = 'verified'` stamped with the SlipOK
+        -- actor ($7), and counting that as a staff decision would put a
+        -- machine's sub-second verify into the slip-to-decision median and
+        -- destroy the calibration this card exists for.
+        (ARRAY_AGG(s.admin_verified_by IS NOT DISTINCT FROM $7::uuid
+                   ORDER BY s.uploaded_at DESC))[1]                AS last_decided_by_machine,
+        -- The LATEST slip's decision time, so the timing and the verdict two
+        -- columns up describe the same slip.
+        (ARRAY_AGG(
+            CASE
+                WHEN s.admin_status IN ('verified', 'needs_action')
+                 AND s.admin_verified_at IS NOT NULL
+                 AND s.admin_verified_by IS DISTINCT FROM $7::uuid
+                THEN EXTRACT(EPOCH FROM (s.admin_verified_at - s.uploaded_at))::double precision
+                     / 60.0
+            END
+            ORDER BY s.uploaded_at DESC))[1]                       AS decision_minutes
     FROM link l
     JOIN booking_slips s
       ON s.booking_id = l.booking_id
@@ -1076,14 +1143,20 @@ SELECT
                        AND COALESCE(s.last_slipok_status, 'pending')
                            NOT IN ('verified', 'shadow_pass', 'manual', 'unavailable'))::bigint
                                                                     AS machine_pending,
-    COUNT(*) FILTER (WHERE s.last_admin_status = 'verified')::bigint     AS human_verified,
-    COUNT(*) FILTER (WHERE s.last_admin_status = 'needs_action')::bigint AS human_needs_action,
+    COUNT(*) FILTER (WHERE s.last_admin_status = 'verified'
+                       AND NOT s.last_decided_by_machine)::bigint        AS human_verified,
+    COUNT(*) FILTER (WHERE s.last_admin_status = 'needs_action'
+                       AND NOT s.last_decided_by_machine)::bigint        AS human_needs_action,
+    COUNT(*) FILTER (WHERE s.last_admin_status IN ('verified', 'needs_action')
+                       AND s.last_decided_by_machine)::bigint           AS human_auto_verified,
     COUNT(*) FILTER (WHERE s.link_id IS NOT NULL
                        AND COALESCE(s.last_admin_status, 'pending')
                            NOT IN ('verified', 'needs_action'))::bigint
                                                                     AS human_pending,
-    COUNT(*) FILTER (WHERE l.booking_status
-                           IN ('confirmed', 'checked_in', 'checked_out', 'completed'))::bigint
+    -- DISTINCT on the booking, not COUNT(*) on the rows: a reissued booking
+    -- is two links and still one confirmed booking, and counting the links
+    -- would make the funnel *rise* at its last stage.
+    COUNT(DISTINCT l.booking_id) FILTER (WHERE l.booking_status = ANY($6))::bigint
                                                                     AS bookings_confirmed,
     percentile_cont(0.5) WITHIN GROUP (
         ORDER BY EXTRACT(EPOCH FROM (s.first_uploaded_at - l.issued_at))::double precision / 60.0
@@ -1226,6 +1299,7 @@ impl DepositFunnelCounters {
         self.human_decision = HumanDecisionCounts {
             verified: row.human_verified,
             needs_action: row.human_needs_action,
+            auto_verified: row.human_auto_verified,
             pending: row.human_pending,
         };
         self.bookings_confirmed = row.bookings_confirmed;
@@ -1588,6 +1662,7 @@ mod tests {
             machine_pending: 0,
             human_verified: 4,
             human_needs_action: 1,
+            human_auto_verified: 2,
             human_pending: 1,
             bookings_confirmed: 4,
             median_link_to_slip: Some(23.483_333_333_333_3),
@@ -1665,8 +1740,10 @@ mod tests {
             parse_funnel_granularity(Some("month")).unwrap(),
             FunnelGranularity::Month
         );
-        // Not an allowlist typo — this value is interpolated into
-        // `date_trunc`, so anything outside the three must never reach SQL.
+        // Not an allowlist typo. The value is *bound* into `date_trunc`,
+        // never spliced into the SQL, so this is not an injection guard — it
+        // is what turns an unknown field name into a 400 instead of a
+        // Postgres error surfacing as a 500.
         assert!(parse_funnel_granularity(Some("hour")).is_err());
         assert!(parse_funnel_granularity(Some("day'); DROP TABLE bookings --")).is_err());
     }
@@ -1721,6 +1798,10 @@ mod tests {
         assert_eq!(buckets[0].counters.slips_uploaded, 6);
         assert_eq!(buckets[0].counters.machine_verdict.shadow_pass, 3);
         assert_eq!(buckets[0].counters.human_decision.needs_action, 1);
+        // A machine's verify is carried on its own, never folded into the
+        // staff column.
+        assert_eq!(buckets[0].counters.human_decision.auto_verified, 2);
+        assert_eq!(totals.human_decision.auto_verified, 2);
         assert_eq!(buckets[0].counters.median_minutes_link_to_slip, Some(23.5));
     }
 
