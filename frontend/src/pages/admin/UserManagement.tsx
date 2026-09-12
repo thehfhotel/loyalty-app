@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import { FiUser, FiUsers, FiUserCheck, FiUserX, FiSearch, FiTrash2, FiEye } from 'react-icons/fi';
@@ -91,10 +91,23 @@ const UserManagement: React.FC = () => {
     loadInitialData();
   }, [fetchUsers, fetchStats]);
 
+  // The auto-search effect below re-runs the instant `initialLoading` flips
+  // to false (it's in that effect's dependency array), which would otherwise
+  // re-fetch page 1 with an empty term a second time right after the initial
+  // load already fetched exactly that. Skip that one transition so mount
+  // performs exactly one fetch; any later change to the page or search term
+  // fires normally.
+  const skipNextAutoSearchRef = useRef(true);
+
   // Auto-search on debounced term change or page change
   useEffect(() => {
     // Skip if still in initial loading
     if (initialLoading) {return;}
+
+    if (skipNextAutoSearchRef.current) {
+      skipNextAutoSearchRef.current = false;
+      return;
+    }
 
     const searchUsers = async () => {
       setIsSearching(true);

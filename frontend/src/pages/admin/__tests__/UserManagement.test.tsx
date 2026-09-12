@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent, act } from '@testing-library/react';
 
 // Mock data for testing
 const mockUserWithAllData = {
@@ -48,50 +48,56 @@ vi.mock('react-hot-toast', () => ({
   },
 }));
 
-// Mock react-i18next
+// Mock react-i18next. `t` must keep one stable identity across renders —
+// same as the real hook — because UserManagement's fetchUsers/fetchStats
+// callbacks depend on it ([t] in their useCallback deps); a `t` that were
+// re-created on every call would make those callbacks re-identify every
+// render and defeat the mount/search fetch-count guarantees below.
+const { t } = vi.hoisted(() => {
+  const translations: Record<string, string> = {
+    'userManagement.title': 'User Management',
+    'userManagement.totalUsers': 'Total Users',
+    'userManagement.activeUsers': 'Active Users',
+    'userManagement.administrators': 'Administrators',
+    'userManagement.recentJoins': 'Recent Joins',
+    'userManagement.searchPlaceholder': 'Search users...',
+    'userManagement.searchHint': 'Search by name, email, phone, or membership ID',
+    'userManagement.user': 'User',
+    'userManagement.email': 'Email',
+    'userManagement.phone': 'Phone',
+    'userManagement.role': 'Role',
+    'userManagement.status': 'Status',
+    'userManagement.joined': 'Joined',
+    'userManagement.actions': 'Actions',
+    'userManagement.noNameProvided': 'No name provided',
+    'userManagement.notProvided': 'Not provided',
+    'userManagement.active': 'Active',
+    'userManagement.inactive': 'Inactive',
+    'userManagement.customer': 'Customer',
+    'userManagement.admin': 'Admin',
+    'userManagement.superAdmin': 'Super Admin',
+    'userManagement.viewDetails': 'View Details',
+    'userManagement.deactivate': 'Deactivate',
+    'userManagement.activate': 'Activate',
+    'userManagement.deleteUser': 'Delete User',
+    'userManagement.delete': 'Delete',
+    'userManagement.cancel': 'Cancel',
+    'userManagement.userDetails': 'User Details',
+    'userManagement.name': 'Name',
+    'userManagement.emailVerified': 'Email Verified',
+    'userManagement.yes': 'Yes',
+    'userManagement.no': 'No',
+    'userManagement.confirmDelete': 'Are you sure you want to delete {{name}}? This action cannot be undone.',
+    'profile.membershipId': 'Membership ID',
+    'admin.coupons.notAssigned': 'Not assigned',
+  };
+  return {
+    t: (key: string, fallback?: string) => translations[key] ?? fallback ?? key,
+  };
+});
+
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, fallback?: string) => {
-      const translations: Record<string, string> = {
-        'userManagement.title': 'User Management',
-        'userManagement.totalUsers': 'Total Users',
-        'userManagement.activeUsers': 'Active Users',
-        'userManagement.administrators': 'Administrators',
-        'userManagement.recentJoins': 'Recent Joins',
-        'userManagement.searchPlaceholder': 'Search users...',
-        'userManagement.searchHint': 'Search by name, email, phone, or membership ID',
-        'userManagement.user': 'User',
-        'userManagement.email': 'Email',
-        'userManagement.phone': 'Phone',
-        'userManagement.role': 'Role',
-        'userManagement.status': 'Status',
-        'userManagement.joined': 'Joined',
-        'userManagement.actions': 'Actions',
-        'userManagement.noNameProvided': 'No name provided',
-        'userManagement.notProvided': 'Not provided',
-        'userManagement.active': 'Active',
-        'userManagement.inactive': 'Inactive',
-        'userManagement.customer': 'Customer',
-        'userManagement.admin': 'Admin',
-        'userManagement.superAdmin': 'Super Admin',
-        'userManagement.viewDetails': 'View Details',
-        'userManagement.deactivate': 'Deactivate',
-        'userManagement.activate': 'Activate',
-        'userManagement.deleteUser': 'Delete User',
-        'userManagement.delete': 'Delete',
-        'userManagement.cancel': 'Cancel',
-        'userManagement.userDetails': 'User Details',
-        'userManagement.name': 'Name',
-        'userManagement.emailVerified': 'Email Verified',
-        'userManagement.yes': 'Yes',
-        'userManagement.no': 'No',
-        'userManagement.confirmDelete': 'Are you sure you want to delete {{name}}? This action cannot be undone.',
-        'profile.membershipId': 'Membership ID',
-        'admin.coupons.notAssigned': 'Not assigned',
-      };
-      return translations[key] ?? fallback ?? key;
-    },
-  }),
+  useTranslation: () => ({ t }),
 }));
 
 // Mock AppShell — its own AdminTopBar/AdminNavRail behavior is covered by
@@ -115,20 +121,15 @@ function getDesktopTable() {
   return screen.getByRole('table');
 }
 
-// UserManagement fetches twice on mount: the initial-load effect fills the
-// table, then the auto-search effect immediately re-runs (it is gated on
-// `initialLoading`, so it fires the moment that flips false) and sets
-// `isSearching`, which makes <Table loading> swap every row for a Skeleton
-// before the second fetch resolves.
+// Mount performs exactly one fetch (see "Fetch behavior" below), but a
+// search-term or page change still flips `isSearching` and makes <Table
+// loading> swap every row for a Skeleton while the fetch resolves. A bare
+// `expect(await findByText(x)).toBeInTheDocument()` can capture a row node
+// that a later render tears back out of the DOM before the assertion runs.
 //
-// So a row node queried once can be torn out of the DOM a tick later. A bare
-// `expect(await findByText(x)).toBeInTheDocument()` captures the node in the
-// first window and asserts after the swap — which is why this file passed on
-// an idle CI runner but failed on a loaded dev laptop, where the swap lands
-// between the query and the assertion.
-//
-// Re-querying inside waitFor removes the race: it retries through the skeleton
-// window and only ever asserts on a node that is live at assertion time.
+// Re-querying inside waitFor removes that race: it retries through any
+// skeleton window and only ever asserts on a node that is live at assertion
+// time.
 async function expectTextInTable(text: string) {
   await waitFor(() => {
     expect(within(getDesktopTable()).getByText(text)).toBeInTheDocument();
@@ -176,6 +177,48 @@ describe('UserManagement', () => {
         expect(screen.getByText('100')).toBeInTheDocument();
         expect(screen.getByText('85')).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Fetch behavior', () => {
+    it('fetches users exactly once on mount', async () => {
+      render(<UserManagement />);
+
+      await expectTextInTable('John Doe');
+
+      // The auto-search effect re-runs the instant `initialLoading` flips to
+      // false; if the mount-skip guard regressed, this would observe a
+      // second identical call here.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      });
+
+      expect(mockGetUsers).toHaveBeenCalledTimes(1);
+      expect(mockGetUsers).toHaveBeenCalledWith(1, 10, '');
+      expect(mockGetUserStats).toHaveBeenCalledTimes(1);
+    });
+
+    it('fetches users exactly once per search term change', async () => {
+      render(<UserManagement />);
+      await expectTextInTable('John Doe');
+      mockGetUsers.mockClear();
+
+      const input = screen.getByPlaceholderText('Search users...');
+      fireEvent.change(input, { target: { value: 'jane' } });
+
+      await waitFor(() => {
+        expect(mockGetUsers).toHaveBeenCalledTimes(1);
+      });
+      expect(mockGetUsers).toHaveBeenCalledWith(1, 10, 'jane');
+
+      // A second, distinct search change fetches exactly once more.
+      mockGetUsers.mockClear();
+      fireEvent.change(input, { target: { value: 'jane doe' } });
+
+      await waitFor(() => {
+        expect(mockGetUsers).toHaveBeenCalledTimes(1);
+      });
+      expect(mockGetUsers).toHaveBeenCalledWith(1, 10, 'jane doe');
     });
   });
 

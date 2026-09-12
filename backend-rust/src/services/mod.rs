@@ -1,7 +1,7 @@
 //! Business logic services module
 //!
 //! Contains the service logic the route handlers delegate to: email, the
-//! property booking notification in `booking_notify`, OAuth,
+//! property booking notification in `booking_notify`,
 //! slip verification (the SlipOK client, the pure decision rules in
 //! `slip_match`, the shared confirm path in `slip_confirm`, and the
 //! degradation tracker in `slipok_health` that tells the desk when the
@@ -23,7 +23,6 @@ pub mod email;
 pub mod http;
 pub mod idempotency;
 pub mod line;
-pub mod oauth;
 pub mod pms_channel;
 pub mod promptpay;
 pub mod push_budget;
@@ -40,10 +39,6 @@ pub mod storage;
 pub use account_deletion::{erase_account, DeletionActor, DeletionOutcome};
 pub use booking_notify::BookingNotifyEvent;
 pub use email::{EmailConfig, EmailService, EmailServiceImpl, NoOpEmailService};
-pub use oauth::{
-    GoogleTokens, GoogleUserInfo, LineTokens, LineUserInfo, OAuthService, OAuthServiceImpl,
-    OAuthUserInfo,
-};
 pub use push_budget::{
     PushBucket, PushBudget, PushRefusal, PushResult, PushTargetHash, Reservation, ReserveOutcome,
 };
