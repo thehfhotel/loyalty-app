@@ -506,6 +506,18 @@ async fn admin_resolve_request(
     // Rule 3: the erase runs before the row is marked done. An erasure
     // recorded as complete that did not run is the one inconsistency this
     // table exists to make impossible.
+    //
+    // The order is deliberate and it is the *lesser* of two races. Claiming
+    // the row first and erasing second would mean a failed erase leaves a
+    // request marked done — the log lying about what happened. This way the
+    // residual window is the opposite: a second admin could refuse the same
+    // request between the read above and the UPDATE below, in which case the
+    // account is erased and this call answers 409. That is visible (the
+    // member shows as erased, the request shows as refused) and recoverable,
+    // where a silent false "done" is neither. Closing it entirely would mean
+    // holding a row lock across `erase_account`'s own transaction, which
+    // buys little against two admins deciding the same request in opposite
+    // directions in the same second.
     let mut erasure: Option<JsonValue> = None;
     if kind == RequestKind::Erasure.as_str() && body.status == ResolutionStatus::Done {
         let outcome = erase_account(state.db(), subject_id, DeletionActor::Admin(admin_id))
