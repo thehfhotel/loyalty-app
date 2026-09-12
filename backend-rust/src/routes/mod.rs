@@ -23,6 +23,7 @@ pub mod membership;
 pub mod notifications;
 pub mod oauth;
 pub mod payments;
+pub mod privacy;
 pub mod slips;
 pub mod sse;
 pub mod storage;
@@ -142,6 +143,11 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/slips", slips::routes())
         .nest("/api/deposit", deposit_routes)
         .nest("/api/analytics", analytics::routes())
+        // PDPA data-subject rights (F3). The member's own surface: file a
+        // request, read its status. The admin surface is merged into
+        // `/api/admin` instead — except the access export, which is
+        // reachable from both and admin-guarded in either case.
+        .nest("/api/privacy", privacy::routes(state.clone()))
         .nest("/api/translation", translation::routes())
         // LINE Messaging API webhooks (per-property OA). Public by design —
         // authenticated by X-Line-Signature inside the handler.
