@@ -20,13 +20,10 @@ use reqwest::Client as HttpClient;
 type ConfiguredBasicClient =
     BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
-use tracing::{debug, error, info, warn};
-use uuid::Uuid;
+use tracing::{debug, error};
 
 use crate::config::{GoogleOAuthConfig, LineOAuthConfig};
 use crate::error::AppError;
-use crate::state::AppState;
 
 // =============================================================================
 // Structs for OAuth User Info
@@ -178,31 +175,6 @@ pub struct LineTokens {
     pub id_token: Option<String>,
 }
 
-/// OAuth user from database
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct OAuthUser {
-    pub id: Uuid,
-    pub email: Option<String>,
-    pub role: Option<String>,
-    pub is_active: Option<bool>,
-    pub email_verified: Option<bool>,
-    pub oauth_provider: Option<String>,
-    pub oauth_provider_id: Option<String>,
-}
-
-/// Result of OAuth authentication including user and tokens
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OAuthAuthResult {
-    /// The authenticated user
-    pub user: OAuthUser,
-    /// JWT access token
-    pub access_token: String,
-    /// Refresh token
-    pub refresh_token: String,
-    /// Whether this is a new user registration
-    pub is_new_user: bool,
-}
-
 // =============================================================================
 // OAuth Service Trait
 // =============================================================================
@@ -231,12 +203,6 @@ pub trait OAuthService: Send + Sync {
     async fn get_line_user_info(&self, access_token: &str) -> Result<LineUserInfo, AppError>;
 
     // Common methods
-    /// Find or create a user from OAuth info
-    async fn find_or_create_oauth_user(
-        &self,
-        user_info: OAuthUserInfo,
-    ) -> Result<OAuthAuthResult, AppError>;
-
     /// Check if Google OAuth is configured
     fn is_google_configured(&self) -> bool;
 
@@ -250,19 +216,21 @@ pub trait OAuthService: Send + Sync {
 
 /// Implementation of the OAuthService trait
 pub struct OAuthServiceImpl {
-    state: AppState,
     http_client: HttpClient,
     google_config: GoogleOAuthConfig,
     line_config: LineOAuthConfig,
 }
 
 impl OAuthServiceImpl {
-    /// Create a new OAuthServiceImpl instance
-    pub fn new(
-        state: AppState,
-        google_config: GoogleOAuthConfig,
-        line_config: LineOAuthConfig,
-    ) -> Self {
+    /// Create a new OAuthServiceImpl instance.
+    ///
+    /// Takes no `AppState`: this service owns no database work. The
+    /// provisioning path that used one (`find_or_create_oauth_user`) was
+    /// deleted once `routes::oauth` became the only live OAuth flow, and
+    /// what is left here is the provider round-trip — authorization URLs,
+    /// code exchange and userinfo — which needs nothing but the HTTP client
+    /// and the two provider configs.
+    pub fn new(google_config: GoogleOAuthConfig, line_config: LineOAuthConfig) -> Self {
         // oauth2 v5 requires the HTTP client used for token exchange to
         // reject redirects (SSRF mitigation per the upstream upgrade guide).
         // The same client is reused for plain userinfo GETs — userinfo
@@ -280,7 +248,6 @@ impl OAuthServiceImpl {
         let http_client = crate::services::http::outbound_no_redirect().clone();
 
         Self {
-            state,
             http_client,
             google_config,
             line_config,
@@ -341,73 +308,6 @@ impl OAuthServiceImpl {
             .set_redirect_uri(redirect_url);
 
         Ok(client)
-    }
-
-    /// Generate membership ID using database sequence
-    async fn generate_membership_id(&self) -> Result<String, AppError> {
-        let membership_id: String = sqlx::query_scalar!(
-            r#"SELECT 'LYL' || LPAD(nextval('membership_id_sequence')::text, 8, '0') as "id!: String""#,
-        )
-        .fetch_one(self.state.db())
-        .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to generate membership ID: {}", e)))?;
-
-        Ok(membership_id)
-    }
-
-    /// Generate JWT tokens for a user
-    ///
-    /// Creates access and refresh JWT tokens directly using jsonwebtoken,
-    /// encoding the UUID as a string in the claims for proper user identification.
-    fn generate_tokens(&self, user_id: Uuid, email: &str) -> Result<(String, String), AppError> {
-        use chrono::{Duration, Utc};
-        use jsonwebtoken::{encode, EncodingKey, Header};
-        use serde::{Deserialize, Serialize};
-
-        #[derive(Debug, Serialize, Deserialize)]
-        struct AccessClaims {
-            sub: String,
-            email: String,
-            exp: i64,
-            iat: i64,
-        }
-
-        #[derive(Debug, Serialize, Deserialize)]
-        struct RefreshClaims {
-            sub: String,
-            exp: i64,
-            iat: i64,
-            token_type: String,
-        }
-
-        let now = Utc::now();
-        let access_expiration = now + Duration::seconds(self.state.jwt_expiration());
-        let refresh_expiration =
-            now + Duration::seconds(self.state.config().auth.refresh_token_expiry_secs as i64);
-
-        let access_claims = AccessClaims {
-            sub: user_id.to_string(),
-            email: email.to_string(),
-            exp: access_expiration.timestamp(),
-            iat: now.timestamp(),
-        };
-
-        let refresh_claims = RefreshClaims {
-            sub: user_id.to_string(),
-            exp: refresh_expiration.timestamp(),
-            iat: now.timestamp(),
-            token_type: "refresh".to_string(),
-        };
-
-        let encoding_key = EncodingKey::from_secret(self.state.jwt_secret().as_bytes());
-
-        let access_token = encode(&Header::default(), &access_claims, &encoding_key)
-            .map_err(|e| AppError::Internal(format!("Failed to generate access token: {}", e)))?;
-
-        let refresh_token = encode(&Header::default(), &refresh_claims, &encoding_key)
-            .map_err(|e| AppError::Internal(format!("Failed to generate refresh token: {}", e)))?;
-
-        Ok((access_token, refresh_token))
     }
 }
 
@@ -620,428 +520,6 @@ impl OAuthService for OAuthServiceImpl {
 
         Ok(user_info)
     }
-
-    async fn find_or_create_oauth_user(
-        &self,
-        user_info: OAuthUserInfo,
-    ) -> Result<OAuthAuthResult, AppError> {
-        debug!(
-            "[OAuth Service] Processing {} auth for provider_id: {}",
-            user_info.provider, user_info.provider_id
-        );
-
-        // Try to find existing user by OAuth provider ID
-        let existing_user: Option<OAuthUser> = sqlx::query_as!(
-            OAuthUser,
-            r#"
-            SELECT id, email, role::text as role, is_active, email_verified,
-                   oauth_provider, oauth_provider_id
-            FROM users
-            WHERE oauth_provider = $1 AND oauth_provider_id = $2
-            "#,
-            &user_info.provider,
-            &user_info.provider_id,
-        )
-        .fetch_optional(self.state.db())
-        .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to find user by OAuth ID: {}", e)))?;
-
-        if let Some(user) = existing_user {
-            info!(
-                "[OAuth Service] Existing {} user found: {:?}",
-                user_info.provider, user.id
-            );
-
-            // Update profile if needed (avatar, name)
-            self.update_oauth_user_profile(&user.id, &user_info).await?;
-
-            let email = user.email.as_deref().unwrap_or("");
-            let (access_token, refresh_token) = self.generate_tokens(user.id, email)?;
-
-            // Log OAuth login
-            self.log_oauth_login(&user.id, &user_info.provider, false)
-                .await?;
-
-            return Ok(OAuthAuthResult {
-                user,
-                access_token,
-                refresh_token,
-                is_new_user: false,
-            });
-        }
-
-        // If user has email, try to find by email
-        if let Some(ref email) = user_info.email {
-            let existing_by_email: Option<OAuthUser> = sqlx::query_as!(
-                OAuthUser,
-                r#"
-                SELECT id, email, role::text as role, is_active, email_verified,
-                       oauth_provider, oauth_provider_id
-                FROM users
-                WHERE email = $1
-                "#,
-                email,
-            )
-            .fetch_optional(self.state.db())
-            .await
-            .map_err(|e| AppError::DatabaseQuery(format!("Failed to find user by email: {}", e)))?;
-
-            if let Some(user) = existing_by_email {
-                info!(
-                    "[OAuth Service] Linking {} OAuth to existing email account: {}",
-                    user_info.provider, email
-                );
-
-                // Update OAuth provider info
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET oauth_provider = $1, oauth_provider_id = $2,
-                        email_verified = CASE WHEN $3 THEN true ELSE email_verified END,
-                        updated_at = NOW()
-                    WHERE id = $4
-                    "#,
-                    &user_info.provider,
-                    &user_info.provider_id,
-                    user_info.email_verified,
-                    user.id,
-                )
-                .execute(self.state.db())
-                .await
-                .map_err(|e| {
-                    AppError::DatabaseQuery(format!("Failed to update OAuth provider: {}", e))
-                })?;
-
-                // Update profile
-                self.update_oauth_user_profile(&user.id, &user_info).await?;
-
-                let (access_token, refresh_token) = self.generate_tokens(user.id, email)?;
-
-                // Log OAuth login
-                self.log_oauth_login(&user.id, &user_info.provider, false)
-                    .await?;
-
-                // Refresh user data after update
-                let updated_user: OAuthUser = sqlx::query_as!(
-                    OAuthUser,
-                    r#"
-                    SELECT id, email, role::text as role, is_active, email_verified,
-                           oauth_provider, oauth_provider_id
-                    FROM users
-                    WHERE id = $1
-                    "#,
-                    user.id,
-                )
-                .fetch_one(self.state.db())
-                .await
-                .map_err(|e| AppError::DatabaseQuery(format!("Failed to refresh user: {}", e)))?;
-
-                return Ok(OAuthAuthResult {
-                    user: updated_user,
-                    access_token,
-                    refresh_token,
-                    is_new_user: false,
-                });
-            }
-        }
-
-        // Create new user.
-        //
-        // MED-5 (correctness-2026-05-13.md): wrap the user / profile /
-        // notification_preferences / audit / loyalty inserts in one
-        // transaction so we never leave a half-provisioned user behind
-        // when any one step fails. Matches the pattern already used by
-        // `routes/auth.rs::register`.
-        //
-        // The `INSERT INTO users` uses `ON CONFLICT (email) DO NOTHING
-        // RETURNING ...` so a concurrent password-registration (or sibling
-        // OAuth callback) that has already inserted a row for the same
-        // email can't be silently duplicated. The UNIQUE constraint on
-        // `users.email` (migration `20260513000000`) is the source of
-        // truth; the earlier find-by-email probe at the top of this
-        // function only narrows the *common* case.
-        //
-        // If we lose the race, `fetch_optional` returns `None`; re-fetch
-        // the winner by email and link the OAuth provider to it via the
-        // same path as the "user already exists by email" branch above.
-        // The race-loss path doesn't insert a new user so it doesn't need
-        // the multi-statement transaction — it commits its single UPDATE
-        // before returning.
-        info!("[OAuth Service] Creating new {} user", user_info.provider);
-
-        let membership_id = self.generate_membership_id().await?;
-
-        let mut tx = self.state.db().begin().await.map_err(|e| {
-            AppError::DatabaseQuery(format!("Failed to begin OAuth provisioning tx: {}", e))
-        })?;
-
-        let new_user_opt: Option<OAuthUser> = sqlx::query_as!(
-            OAuthUser,
-            r#"
-            INSERT INTO users (email, password_hash, email_verified, oauth_provider, oauth_provider_id)
-            VALUES ($1, '', $2, $3, $4)
-            ON CONFLICT (email) DO NOTHING
-            RETURNING id, email, role::text as role, is_active, email_verified,
-                      oauth_provider, oauth_provider_id
-            "#,
-            user_info.email.as_deref(),
-            user_info.email_verified,
-            &user_info.provider,
-            &user_info.provider_id,
-        )
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to create OAuth user: {}", e)))?;
-
-        let new_user = match new_user_opt {
-            Some(row) => row,
-            None => {
-                // Lost the race: another concurrent flow already inserted a
-                // users row for this email between the find-by-email probe
-                // and this insert. Roll back the (now-empty) provisioning
-                // transaction, then run the linking path against the pool.
-                tx.rollback().await.ok();
-
-                info!(
-                    "[OAuth Service] Race lost on email insert; linking {} to existing row",
-                    user_info.provider
-                );
-
-                let email_for_lookup = user_info.email.as_deref().ok_or_else(|| {
-                    AppError::Internal(
-                        "ON CONFLICT (email) fired with no email payload".to_string(),
-                    )
-                })?;
-
-                let winner: OAuthUser = sqlx::query_as!(
-                    OAuthUser,
-                    r#"
-                    SELECT id, email, role::text as role, is_active, email_verified,
-                           oauth_provider, oauth_provider_id
-                    FROM users
-                    WHERE email = $1
-                    "#,
-                    email_for_lookup,
-                )
-                .fetch_one(self.state.db())
-                .await
-                .map_err(|e| {
-                    AppError::DatabaseQuery(format!(
-                        "Failed to re-fetch user after ON CONFLICT: {}",
-                        e
-                    ))
-                })?;
-
-                sqlx::query!(
-                    r#"
-                    UPDATE users
-                    SET oauth_provider = $1, oauth_provider_id = $2,
-                        email_verified = CASE WHEN $3 THEN true ELSE email_verified END,
-                        updated_at = NOW()
-                    WHERE id = $4
-                    "#,
-                    &user_info.provider,
-                    &user_info.provider_id,
-                    user_info.email_verified,
-                    winner.id,
-                )
-                .execute(self.state.db())
-                .await
-                .map_err(|e| {
-                    AppError::DatabaseQuery(format!("Failed to link OAuth provider: {}", e))
-                })?;
-
-                self.update_oauth_user_profile(&winner.id, &user_info)
-                    .await?;
-
-                let email = winner.email.as_deref().unwrap_or("");
-                let (access_token, refresh_token) = self.generate_tokens(winner.id, email)?;
-
-                self.log_oauth_login(&winner.id, &user_info.provider, false)
-                    .await?;
-
-                return Ok(OAuthAuthResult {
-                    user: winner,
-                    access_token,
-                    refresh_token,
-                    is_new_user: false,
-                });
-            },
-        };
-
-        // Create user profile.
-        sqlx::query!(
-            r#"
-            INSERT INTO user_profiles (user_id, first_name, last_name, avatar_url, membership_id)
-            VALUES ($1, $2, $3, $4, $5)
-            "#,
-            new_user.id,
-            user_info.first_name.as_deref(),
-            user_info.last_name.as_deref(),
-            user_info.avatar_url.as_deref(),
-            &membership_id,
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to create user profile: {}", e)))?;
-
-        // Create default notification preferences. MED-5
-        // (correctness-2026-05-13.md) + LOW-2: this used to be
-        // `let _ = ...` so a transient failure was silently dropped; now
-        // it propagates with `?` (the existing `ON CONFLICT DO NOTHING`
-        // keeps the call idempotent).
-        sqlx::query!(
-            r#"
-            INSERT INTO notification_preferences (user_id)
-            VALUES ($1)
-            ON CONFLICT (user_id) DO NOTHING
-            "#,
-            new_user.id,
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            AppError::DatabaseQuery(format!("Failed to create notification preferences: {}", e))
-        })?;
-
-        // Audit-log the OAuth signup. Same shape as `log_oauth_login`,
-        // inlined here so it runs inside the provisioning transaction.
-        let oauth_login_details = serde_json::json!({
-            "provider": user_info.provider,
-            "isNewUser": true,
-        });
-        sqlx::query!(
-            r#"
-            INSERT INTO user_audit_log (user_id, action, details)
-            VALUES ($1, 'oauth_login', $2)
-            "#,
-            new_user.id,
-            oauth_login_details,
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to log OAuth login: {}", e)))?;
-
-        // Enroll in loyalty program with the default tier — the lowest
-        // active tier by min_nights, not a name match ('Bronze' is
-        // renameable through the admin tier editor). Same shape as
-        // `ensure_loyalty_enrollment`, inlined to stay inside the
-        // transaction.
-        let tier_id: Option<Uuid> = sqlx::query_scalar!(
-            r#"
-            SELECT id FROM tiers
-            WHERE is_active = true
-            ORDER BY min_nights ASC, sort_order ASC
-            LIMIT 1
-            "#,
-        )
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to get default tier: {}", e)))?;
-        let tier_id =
-            tier_id.ok_or_else(|| AppError::NotFound("Default tier not found".to_string()))?;
-        sqlx::query!(
-            r#"
-            INSERT INTO user_loyalty (user_id, tier_id, current_points, total_nights)
-            VALUES ($1, $2, 0, 0)
-            ON CONFLICT (user_id) DO NOTHING
-            "#,
-            new_user.id,
-            tier_id,
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to create loyalty record: {}", e)))?;
-
-        tx.commit().await.map_err(|e| {
-            AppError::DatabaseQuery(format!("Failed to commit OAuth provisioning tx: {}", e))
-        })?;
-
-        info!(
-            "[OAuth Service] Provisioned new {} user {} with loyalty enrollment",
-            user_info.provider, new_user.id
-        );
-
-        let email = new_user.email.as_deref().unwrap_or("");
-        let (access_token, refresh_token) = self.generate_tokens(new_user.id, email)?;
-
-        Ok(OAuthAuthResult {
-            user: new_user,
-            access_token,
-            refresh_token,
-            is_new_user: true,
-        })
-    }
-}
-
-impl OAuthServiceImpl {
-    /// Update OAuth user's profile with new information
-    async fn update_oauth_user_profile(
-        &self,
-        user_id: &Uuid,
-        user_info: &OAuthUserInfo,
-    ) -> Result<(), AppError> {
-        // Only update avatar if there's no local avatar (starting with /storage/ or emoji:)
-        sqlx::query!(
-            r#"
-            UPDATE user_profiles
-            SET first_name = COALESCE(NULLIF($2, ''), first_name),
-                last_name = COALESCE(NULLIF($3, ''), last_name),
-                avatar_url = CASE
-                    WHEN avatar_url IS NULL OR (NOT avatar_url LIKE '/storage/%' AND NOT avatar_url LIKE 'emoji:%')
-                    THEN COALESCE(NULLIF($4, ''), avatar_url)
-                    ELSE avatar_url
-                END,
-                updated_at = NOW()
-            WHERE user_id = $1
-            "#,
-            user_id,
-            user_info.first_name.as_deref().unwrap_or(""),
-            user_info.last_name.as_deref().unwrap_or(""),
-            user_info.avatar_url.as_deref().unwrap_or(""),
-        )
-        .execute(self.state.db())
-        .await
-        .map_err(|e| AppError::DatabaseQuery(format!("Failed to update user profile: {}", e)))?;
-
-        Ok(())
-    }
-
-    /// Log OAuth login event to audit log
-    async fn log_oauth_login(
-        &self,
-        user_id: &Uuid,
-        provider: &str,
-        is_new_user: bool,
-    ) -> Result<(), AppError> {
-        let details = serde_json::json!({
-            "provider": provider,
-            "isNewUser": is_new_user
-        });
-
-        sqlx::query!(
-            r#"
-            INSERT INTO user_audit_log (user_id, action, details)
-            VALUES ($1, 'oauth_login', $2)
-            "#,
-            user_id,
-            details,
-        )
-        .execute(self.state.db())
-        .await
-        .map_err(|e| {
-            warn!("Failed to log OAuth login: {}", e);
-            AppError::DatabaseQuery(format!("Failed to log OAuth login: {}", e))
-        })?;
-
-        Ok(())
-    }
-
-    // `ensure_loyalty_enrollment` was inlined into the provisioning
-    // transaction in MED-5 (correctness-2026-05-13.md) so the loyalty
-    // INSERT shares atomicity with the user/profile/audit inserts.
-    // The race-loss path (which doesn't insert a new user) doesn't need
-    // a loyalty enrollment either — it just links an existing user.
 }
 
 #[cfg(test)]

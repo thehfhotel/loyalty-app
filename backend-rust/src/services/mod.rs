@@ -41,8 +41,8 @@ pub use account_deletion::{erase_account, DeletionActor, DeletionOutcome};
 pub use booking_notify::BookingNotifyEvent;
 pub use email::{EmailConfig, EmailService, EmailServiceImpl, NoOpEmailService};
 pub use oauth::{
-    GoogleTokens, GoogleUserInfo, LineTokens, LineUserInfo, OAuthAuthResult, OAuthService,
-    OAuthServiceImpl, OAuthUser, OAuthUserInfo,
+    GoogleTokens, GoogleUserInfo, LineTokens, LineUserInfo, OAuthService, OAuthServiceImpl,
+    OAuthUserInfo,
 };
 pub use push_budget::{
     PushBucket, PushBudget, PushRefusal, PushResult, PushTargetHash, Reservation, ReserveOutcome,
